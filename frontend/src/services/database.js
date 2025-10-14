@@ -1,188 +1,266 @@
-// Database simulation using in-memory storage
+// API service for CRUD operations
+const baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+
 class DatabaseService {
-  constructor() {
-    this.boards = [];
-    this.lists = [];
-    this.cards = [];
-    this.initialized = false;
-  }
-
-  // Initialize with sample data
-  init() {
-    if (this.initialized) return;
-    
-    this.boards = [{
-      id: '1',
-      name: 'My Trello board',
-      createdAt: new Date().toISOString()
-    }];
-    
-    this.lists = [
-      { id: '1', boardId: '1', title: 'Trello Starter Guide', position: 0, color: null },
-      { id: '2', boardId: '1', title: 'Today', position: 1, color: 'yellow' },
-      { id: '3', boardId: '1', title: 'This Week', position: 2, color: 'cyan' },
-      { id: '4', boardId: '1', title: 'Later', position: 3, color: null }
-    ];
-    
-    this.cards = [
-      { 
-        id: '1', 
-        listId: '1', 
-        title: 'New to Trello? Start here', 
-        description: '', 
-        position: 0,
-        labels: [],
-        members: [],
-        dueDate: null,
-        checklist: [],
-        createdAt: new Date().toISOString()
-      },
-      { 
-        id: '2', 
-        listId: '2', 
-        title: 'hello', 
-        description: '', 
-        position: 0,
-        labels: [],
-        members: [],
-        dueDate: null,
-        checklist: [],
-        createdAt: new Date().toISOString()
-      }
-    ];
-    
-    this.initialized = true;
-  }
-
   // Board CRUD operations
-  getBoards() {
-    return [...this.boards];
+  async getBoards() {
+    const res = await fetch(`${baseURL}/api/boards`);
+    return await res.json();
   }
 
-  createBoard(name) {
-    const newBoard = {
-      id: Date.now().toString(),
-      name,
-      createdAt: new Date().toISOString()
-    };
-    this.boards.push(newBoard);
-    return newBoard;
+  async createBoard(name) {
+    const res = await fetch(`${baseURL}/api/boards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    return await res.json();
   }
 
-  updateBoard(boardId, updates) {
-    const index = this.boards.findIndex(b => b.id === boardId);
-    if (index !== -1) {
-      this.boards[index] = { ...this.boards[index], ...updates };
-      return this.boards[index];
-    }
-    return null;
+  async updateBoard(boardId, updates) {
+    const res = await fetch(`${baseURL}/api/boards/${boardId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    return await res.json();
   }
 
-  deleteBoard(boardId) {
-    this.boards = this.boards.filter(b => b.id !== boardId);
-    this.lists = this.lists.filter(l => l.boardId !== boardId);
-    const listIds = this.lists.filter(l => l.boardId === boardId).map(l => l.id);
-    this.cards = this.cards.filter(c => !listIds.includes(c.listId));
+  async deleteBoard(boardId) {
+    await fetch(`${baseURL}/api/boards/${boardId}`, { method: 'DELETE' });
   }
 
   // List CRUD operations
-  getLists(boardId) {
-    return this.lists
-      .filter(list => list.boardId === boardId)
-      .sort((a, b) => a.position - b.position);
+  async getLists(boardId) {
+    const res = await fetch(`${baseURL}/api/lists/board/${boardId}`);
+    return await res.json();
   }
 
-  createList(boardId, title) {
-    const newList = {
-      id: Date.now().toString(),
-      boardId,
-      title,
-      position: this.lists.filter(l => l.boardId === boardId).length,
-      color: null
-    };
-    this.lists.push(newList);
-    return newList;
+  async createList(boardId, title) {
+    const lists = await this.getLists(boardId);
+    const position = lists.length;
+    const res = await fetch(`${baseURL}/api/lists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ boardId, title, position })
+    });
+    return await res.json();
   }
 
-  updateList(listId, updates) {
-    const index = this.lists.findIndex(l => l.id === listId);
-    if (index !== -1) {
-      this.lists[index] = { ...this.lists[index], ...updates };
-      return this.lists[index];
-    }
-    return null;
+  async updateList(listId, updates) {
+    const res = await fetch(`${baseURL}/api/lists/${listId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    return await res.json();
   }
 
-  deleteList(listId) {
-    this.lists = this.lists.filter(l => l.id !== listId);
-    this.cards = this.cards.filter(c => c.listId !== listId);
+  async deleteList(listId) {
+    await fetch(`${baseURL}/api/lists/${listId}`, { method: 'DELETE' });
   }
 
   // Card CRUD operations
-  getCards(listId) {
-    return this.cards
-      .filter(card => card.listId === listId)
-      .sort((a, b) => a.position - b.position);
+  async getCards(listId) {
+    const res = await fetch(`${baseURL}/api/cards/list/${listId}`);
+    return await res.json();
   }
 
-  getAllCards() {
-    return [...this.cards];
+  async getCard(cardId) {
+    const res = await fetch(`${baseURL}/api/cards/${cardId}`);
+    return await res.json();
   }
 
-  createCard(listId, title) {
-    const newCard = {
-      id: Date.now().toString(),
-      listId,
-      title,
-      description: '',
-      position: this.cards.filter(c => c.listId === listId).length,
-      labels: [],
-      members: [],
-      dueDate: null,
-      checklist: [],
-      createdAt: new Date().toISOString()
-    };
-    this.cards.push(newCard);
-    return newCard;
+  async createCard(listId, title) {
+    const cards = await this.getCards(listId);
+    const position = cards.length;
+    const res = await fetch(`${baseURL}/api/cards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listId, title, position })
+    });
+    return await res.json();
   }
 
-  updateCard(cardId, updates) {
-    const index = this.cards.findIndex(c => c.id === cardId);
-    if (index !== -1) {
-      this.cards[index] = { ...this.cards[index], ...updates };
-      return this.cards[index];
+  async updateCard(cardId, updates) {
+    const res = await fetch(`${baseURL}/api/cards/${cardId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    return await res.json();
+  }
+
+  async deleteCard(cardId) {
+    await fetch(`${baseURL}/api/cards/${cardId}`, { method: 'DELETE' });
+  }
+
+  async moveCard(cardId, newListId, newPosition) {
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/move`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newListId, newPosition })
+    });
+    return await res.json();
+  }
+
+  async moveList(listId, newPosition) {
+    const res = await fetch(`${baseURL}/api/lists/${listId}/move`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPosition })
+    });
+    return await res.json();
+  }
+
+  // User operations
+  async getProfile() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['x-auth-token'] = token;
     }
-    return null;
+    const res = await fetch(`${baseURL}/api/users/profile`, { headers });
+    return await res.json();
   }
 
-  deleteCard(cardId) {
-    this.cards = this.cards.filter(c => c.id !== cardId);
-  }
-
-  moveCard(cardId, newListId, newPosition) {
-    const card = this.cards.find(c => c.id === cardId);
-    if (card) {
-      const oldListId = card.listId;
-      
-      // Update positions in old list
-      this.cards
-        .filter(c => c.listId === oldListId && c.position > card.position)
-        .forEach(c => c.position--);
-      
-      // Update positions in new list
-      this.cards
-        .filter(c => c.listId === newListId && c.position >= newPosition)
-        .forEach(c => c.position++);
-      
-      // Move the card
-      card.listId = newListId;
-      card.position = newPosition;
+  // Team operations
+  async getTeams() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['x-auth-token'] = token;
     }
+    const res = await fetch(`${baseURL}/api/teams`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async createTeam(name, department) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['x-auth-token'] = token;
+    }
+    const res = await fetch(`${baseURL}/api/teams`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name, department })
+    });
+    return await res.json();
+  }
+
+  async inviteUser(teamId, email) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['x-auth-token'] = token;
+    }
+    const res = await fetch(`${baseURL}/api/teams/${teamId}/invite`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email })
+    });
+    return await res.json();
+  }
+
+  async joinTeam(token) {
+    const authToken = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers['x-auth-token'] = authToken;
+    }
+    const res = await fetch(`${baseURL}/api/teams/join`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token })
+    });
+    return await res.json();
+  }
+
+  // Comment operations
+  async getComments(cardId) {
+    const res = await fetch(`${baseURL}/api/comments/card/${cardId}`);
+    return await res.json();
+  }
+
+  async createComment(cardId, text) {
+    const res = await fetch(`${baseURL}/api/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardId, text })
+    });
+    return await res.json();
+  }
+
+  async updateComment(commentId, text) {
+    const res = await fetch(`${baseURL}/api/comments/${commentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    return await res.json();
+  }
+
+  async deleteComment(commentId) {
+    await fetch(`${baseURL}/api/comments/${commentId}`, { method: 'DELETE' });
+  }
+
+  // Notification operations
+  async getNotifications() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['x-auth-token'] = token;
+    }
+    const res = await fetch(`${baseURL}/api/notifications`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async markNotificationAsRead(notificationId) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['x-auth-token'] = token;
+    }
+    const res = await fetch(`${baseURL}/api/notifications/${notificationId}/read`, {
+      method: 'PATCH',
+      headers
+    });
+    return await res.json();
+  }
+
+  async deleteNotification(notificationId) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['x-auth-token'] = token;
+    }
+    await fetch(`${baseURL}/api/notifications/${notificationId}`, {
+      method: 'DELETE',
+      headers
+    });
+  }
+
+  // Search operations
+  async search(query) {
+    const res = await fetch(`${baseURL}/api/search?q=${encodeURIComponent(query)}`);
+    return await res.json();
+  }
+
+  // Analytics operations
+  async getAnalytics(teamId) {
+    const res = await fetch(`${baseURL}/api/analytics/team/${teamId}`);
+    return await res.json();
   }
 }
 
 // Create singleton instance
 const Database = new DatabaseService();
-Database.init();
 
 export default Database;

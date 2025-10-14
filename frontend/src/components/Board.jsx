@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import List from './List';
 
-const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onMoveCard }) => {
+const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onMoveCard, onMoveList }) => {
   const [isAddingList, setIsAddingList] = useState(false);
   const [newListTitle, setNewListTitle] = useState('');
+  const [draggedList, setDraggedList] = useState(null);
   
   const handleAddList = () => {
     if (newListTitle.trim()) {
@@ -13,6 +14,31 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
       setIsAddingList(false);
     }
   };
+
+  const handleListDragStart = (e, list) => {
+    setDraggedList(list);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('dragType', 'list');
+    e.dataTransfer.setData('dragId', list._id);
+  };
+
+  const handleListDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleListDrop = (e, targetList) => {
+    e.preventDefault();
+    const dragType = e.dataTransfer.getData('dragType');
+    if (dragType === 'list' && draggedList && draggedList._id !== targetList._id) {
+      // Determine if dropping before or after the target list based on mouse position
+      const rect = e.currentTarget.getBoundingClientRect();
+      const centerY = rect.top + rect.height / 2;
+      const newPosition = e.clientY < centerY ? targetList.position : targetList.position + 1;
+      onMoveList(draggedList._id, newPosition);
+    }
+    setDraggedList(null);
+  };
   
   return (
     <div className="p-4 overflow-x-auto h-[calc(100vh-64px)]">
@@ -20,15 +46,18 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
         {/* Lists */}
         {lists.map(list => (
           <List
-            key={list.id}
+            key={list._id}
             list={list}
-            cards={cardsByList[list.id] || []}
+            cards={cardsByList[list._id] || []}
             onAddCard={onAddCard}
             onDeleteCard={onDeleteCard}
             onCardClick={onCardClick}
             onDeleteList={onDeleteList}
             onUpdateListColor={onUpdateListColor}
             onMoveCard={onMoveCard}
+            onDragStart={handleListDragStart}
+            onDragOver={handleListDragOver}
+            onDrop={handleListDrop}
           />
         ))}
         

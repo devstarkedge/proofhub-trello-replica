@@ -3,11 +3,13 @@ import { Plus, MoreHorizontal, X, Copy, Move, Eye, Palette, Zap, Archive, Trash2
 import Card from './Card';
 import AddCardForm from './AddCardForm';
 
-const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard }) => {
+const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop }) => {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [draggedCard, setDraggedCard] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dropTarget, setDropTarget] = useState(null);
   
   const handleAddCard = (listId, title) => {
     onAddCard(listId, title);
@@ -44,49 +46,105 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
     { name: 'gray', class: 'bg-gray-400' }
   ];
   
-  // Drag and drop handlers
-  const handleDragStart = (e, card) => {
+  // Drag and drop handlers for cards
+  const handleCardDragStart = (e, card) => {
     setDraggedCard(card);
+    setIsDragging(true);
     e.dataTransfer.effectAllowed = 'move';
-  };
-  
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-  
-  const handleDrop = (e) => {
-    e.preventDefault();
-    if (draggedCard && draggedCard.listId !== list.id) {
-      onMoveCard(draggedCard.id, list.id);
-    }
-    setDraggedCard(null);
+    e.dataTransfer.setData('text/plain', card._id);
   };
   
   const handleCardDragOver = (e, targetCard) => {
     e.preventDefault();
     e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTarget(targetCard._id);
+  };
+  
+  const handleCardDragLeave = (e, targetCard) => {
+    if (dropTarget === targetCard._id) {
+      setDropTarget(null);
+    }
+  };
+  
+  const handleCardDrop = (e, targetCard) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const cardId = e.dataTransfer.getData('text/plain');
+    if (cardId && draggedCard && draggedCard._id !== targetCard._id) {
+      const newPosition = targetCard.position;
+      onMoveCard(draggedCard._id, list._id, newPosition);
+    } else if (!cardId) {
+      // List drop on card position - insert before this card
+      onDrop(e, list);
+    }
+    setDraggedCard(null);
+    setIsDragging(false);
+    setDropTarget(null);
+  };
+  
+  const handleListDrop = (e) => {
+    e.preventDefault();
+    const cardId = e.dataTransfer.getData('text/plain');
+    if (cardId && draggedCard && draggedCard.listId !== list._id) {
+      const newPosition = cards.length;
+      onMoveCard(draggedCard._id, list._id, newPosition);
+    } else if (!cardId) {
+      // List drop at end of list
+      onDrop(e, list);
+    }
+    setDraggedCard(null);
+    setIsDragging(false);
+    setDropTarget(null);
+  };
+  
+  const handleDragEnd = () => {
+    setIsDragging(false);
+    setDraggedCard(null);
+    setDropTarget(null);
   };
   
   const handleChangeColor = (colorName) => {
-    onUpdateListColor(list.id, colorName);
+    onUpdateListColor(list._id, colorName);
     setShowColorPicker(false);
     setShowMenu(false);
   };
   
+  const getCardClass = (card) => {
+    let className = '';
+    if (isDragging && draggedCard?._id === card._id) {
+      className += ' opacity-30 scale-105 shadow-2xl z-10';
+    }
+    if (dropTarget === card._id) {
+      className += ' border-2 border-blue-400 rounded';
+    }
+    return className;
+  };
+  
+  const listClass = `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit max-h-[calc(100vh-120px)] flex flex-col transition-all duration-200 ${
+    dropTarget ? 'border-2 border-dashed border-blue-400' : ''
+  } ${isDragging ? 'opacity-75' : ''}`;
+  
   return (
-    <div 
-      className={`${listColors[list.color] || listColors[list.id] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit max-h-[calc(100vh-120px)] flex flex-col`}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+    <div
+      className={listClass}
+      draggable
+      onDragStart={(e) => onDragStart(e, list)}
+      onDragOver={onDragOver}
+      onDrop={handleListDrop}
+      onDragEnd={handleDragEnd}
+      style={{ cursor: 'grab' }}
     >
       {/* List Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 cursor-move" style={{ cursor: 'grab' }}>
         <h3 className="font-semibold text-gray-800 text-sm px-2 flex-1">{list.title}</h3>
         <div className="flex items-center gap-1">
           <div className="relative">
             <button 
-              onClick={() => setShowMenu(!showMenu)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
               className="text-gray-600 hover:bg-gray-200 p-1 rounded transition-colors"
             >
               <MoreHorizontal size={16} />
@@ -118,7 +176,10 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
                   {/* Menu Options */}
                   <div className="py-2">
                     <button
-                      onClick={() => setIsAddingCard(true)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsAddingCard(true);
+                      }}
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
                     >
                       <Plus size={16} />
@@ -130,7 +191,10 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
                     {/* Color Picker */}
                     <div className="px-4 py-2">
                       <button
-                        onClick={() => setShowColorPicker(!showColorPicker)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowColorPicker(!showColorPicker);
+                        }}
                         className="w-full text-left text-sm text-gray-700 hover:bg-gray-100 px-2 py-1 rounded flex items-center justify-between"
                       >
                         <span className="flex items-center gap-2">
@@ -167,45 +231,10 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
                     
                     <div className="border-t border-gray-200 my-2"></div>
                     
-                    {/* Automation Section */}
-                    {/* <div className="px-4 py-2">
-                      <button className="w-full text-left text-sm font-semibold text-gray-700 px-2 py-1 flex items-center justify-between">
-                        <span className="flex items-center gap-2">
-                          <Zap size={16} />
-                          Automation
-                        </span>
-                      </button>
-                      <div className="mt-2 space-y-1">
-                        <button className="w-full text-left px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded">
-                          When a card is added to the list...
-                        </button>
-                        <button className="w-full text-left px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded">
-                          Every day, sort list by...
-                        </button>
-                        <button className="w-full text-left px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded">
-                          Every Monday, sort list by...
-                        </button>
-                        <button className="w-full text-left px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded font-medium">
-                          Create a rule
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="border-t border-gray-200 my-2"></div>
-                    
-                    <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                      <Archive size={16} />
-                      Archive this list
-                    </button>
-                    
-                    <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                      <Archive size={16} />
-                      Archive all cards in this list
-                    </button> */}
-                    
                     <button
-                      onClick={() => {
-                        onDeleteList(list.id);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteList(list._id);
                         setShowMenu(false);
                       }}
                       className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center gap-2"
@@ -222,13 +251,22 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
       </div>
       
       {/* Cards Container */}
-      <div className="space-y-2 mb-2 overflow-y-auto flex-1">
+      <div 
+        className="space-y-2 mb-2 overflow-y-auto flex-1"
+        onDragOver={onDragOver}
+        onDrop={handleListDrop}
+        onDragLeave={() => setDropTarget(null)}
+      >
         {cards.map(card => (
           <div
-            key={card.id}
+            key={card._id}
+            className={`transition-all duration-200 ${getCardClass(card)}`}
             draggable
-            onDragStart={(e) => handleDragStart(e, card)}
+            onDragStart={(e) => handleCardDragStart(e, card)}
             onDragOver={(e) => handleCardDragOver(e, card)}
+            onDragLeave={(e) => handleCardDragLeave(e, card)}
+            onDrop={(e) => handleCardDrop(e, card)}
+            onDragEnd={handleDragEnd}
           >
             <Card
               card={card}
@@ -242,7 +280,7 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
       {/* Add Card Section */}
       {isAddingCard ? (
         <AddCardForm
-          listId={list.id}
+          listId={list._id}
           onAdd={handleAddCard}
           onCancel={() => setIsAddingCard(false)}
         />
