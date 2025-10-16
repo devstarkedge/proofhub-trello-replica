@@ -1,33 +1,49 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
+import axios from 'axios';
 
 const RegisterPage = () => {
-  const [formData, setFormData] = useState({ 
-    name: '', 
-    email: '', 
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
     password: '',
-    role: 'Member' // Default role
+    department: ''
   });
+  const [departments, setDepartments] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { register } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const { name, email, password, role } = formData;
+  const { name, email, password, department } = formData;
 
   const onChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+  // Fetch departments on component mount
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const res = await axios.get('/api/departments');
+        setDepartments(res.data.data);
+      } catch (err) {
+        console.error('Failed to fetch departments:', err);
+      }
+    };
+    fetchDepartments();
+  }, []);
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    
+
     try {
-      await register(name, email, password, role);
-      navigate('/'); // Redirect to workflow
+      await register(name, email, password, department);
+      setError('Registration successful! Please wait for an administrator to verify your account.');
+      // Do not navigate; stay on page to show message
     } catch (err) {
-      setError(err.response?.data?.msg || 'Registration failed. Please try again.');
+      setError(err.response?.data?.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -90,20 +106,21 @@ const RegisterPage = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Role</label>
+            <label className="block text-sm font-medium text-gray-700">Department</label>
             <select
-              name="role"
-              value={role}
+              name="department"
+              value={department}
               onChange={onChange}
               className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             >
-              <option value="Member">Member</option>
-              <option value="Manager">Manager</option>
-              <option value="Admin">Admin</option>
+              <option value="">Select a department (optional)</option>
+              {departments.map((dept) => (
+                <option key={dept._id} value={dept._id}>
+                  {dept.name}
+                </option>
+              ))}
             </select>
-            <p className="mt-1 text-xs text-gray-500">
-              Select your role in the organization
-            </p>
+            <p className="mt-1 text-xs text-gray-500">Choose your department for better organization</p>
           </div>
 
           <div>

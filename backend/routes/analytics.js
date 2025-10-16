@@ -1,16 +1,11 @@
 import express from 'express';
-import authMiddleware from '../middleware/authMiddleware.js';
-import { getCompletionRate, getOverdueTasks, getWorkloadByUser } from '../controllers/analyticsController.js';
+import { getTeamAnalytics, getUserAnalytics, getBoardAnalytics } from '../controllers/analyticsController.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Get task completion rate
-router.get('/completion-rate', authMiddleware, getCompletionRate);
-
-// Get overdue tasks
-router.get('/overdue', authMiddleware, getOverdueTasks);
-
-// Get workload distribution
-router.get('/workload', authMiddleware, getWorkloadByUser);
+router.get('/team/:teamId', protect, getTeamAnalytics);
+router.get('/user/:userId', protect, getUserAnalytics);
+router.get('/board/:boardId', protect, getBoardAnalytics);
 
 export default router;

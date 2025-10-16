@@ -1,23 +1,30 @@
 import express from 'express';
-import authMiddleware from '../middleware/authMiddleware.js';
-import { adminOnly, managerOrAdmin } from '../middleware/rbacMiddleware.js';
-import { createTeam, inviteUser, joinTeam, removeMember, getTeams } from '../controllers/teamController.js';
+import { body } from 'express-validator';
+import { getTeams, getTeam, createTeam, updateTeam, addMember, deleteTeam, inviteUser, joinTeam, removeMember } from '../controllers/teamController.js';
+import { protect, authorize } from '../middleware/authMiddleware.js';
+import { validate } from '../middleware/validation.js';
 
 const router = express.Router();
 
-// Create a team
-router.post('/', authMiddleware, managerOrAdmin, createTeam);
+router.get('/', protect, getTeams);
+router.get('/:id', protect, getTeam);
 
-// Invite user to team
-router.post('/:teamId/invite', authMiddleware, managerOrAdmin, inviteUser);
+router.post('/', protect, authorize('admin', 'manager'), [
+  body('name').trim().notEmpty().withMessage('Team name is required'),
+  body('department').notEmpty().withMessage('Department is required'),
+  validate
+], createTeam);
 
-// Join team via invite link
-router.post('/join/:token', authMiddleware, joinTeam);
+router.put('/:id', protect, authorize('admin', 'manager'), updateTeam);
+router.post('/:id/members', protect, authorize('admin', 'manager'), [
+  body('userId').notEmpty().withMessage('User ID is required'),
+  validate
+], addMember);
+router.delete('/:id', protect, authorize('admin', 'manager'), deleteTeam);
 
-// Remove member from team
-router.delete('/:teamId/members/:userId', authMiddleware, managerOrAdmin, removeMember);
-
-// Get user's teams
-router.get('/', authMiddleware, getTeams);
+// Legacy routes for compatibility
+router.post('/:teamId/invite', protect, inviteUser);
+router.post('/join/:token', protect, joinTeam);
+router.delete('/:teamId/members/:userId', protect, removeMember);
 
 export default router;

@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-const baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 class SocketService {
   constructor() {
@@ -13,7 +13,8 @@ class SocketService {
 
     this.socket = io(baseURL, {
       auth: {
-        userId
+        userId,
+        token: localStorage.getItem('token')
       },
       reconnection: true,
       reconnectionDelay: 1000,

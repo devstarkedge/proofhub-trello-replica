@@ -1,35 +1,182 @@
 import Team from '../models/Team.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
-import crypto from 'crypto';
-import nodemailer from 'nodemailer';
+import asyncHandler from '../middleware/asyncHandler.js';
+import { ErrorResponse } from '../middleware/errorHandler.js';
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
+// @desc    Get teams for current user
+// @route   GET /api/teams
+// @access  Private
+export const getTeams = asyncHandler(async (req, res, next) => {
+  const teams = await Team.find({ members: req.user.id })
+    .populate('owner', 'name email')
+    .populate('members', 'name email')
+    .populate('department', 'name')
+    .sort('name');
+
+  res.status(200).json({
+    success: true,
+    count: teams.length,
+    data: teams
+  });
 });
 
-export const createTeam = async (req, res) => {
-  const { name, department } = req.body;
-  try {
-    const team = new Team({
-      name,
-      owner: req.user.id,
-      department,
-      members: [req.user.id],
-    });
-    await team.save();
-    await User.findByIdAndUpdate(req.user.id, { team: team._id });
-    res.status(201).json(team);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
+// @desc    Get single team
+// @route   GET /api/teams/:id
+// @access  Private
+export const getTeam = asyncHandler(async (req, res, next) => {
+  const team = await Team.findById(req.params.id)
+    .populate('owner', 'name email')
+    .populate('members', 'name email')
+    .populate('department', 'name');
 
+  if (!team) {
+    return next(new ErrorResponse('Team not found', 404));
+  }
+
+  res.status(200).json({
+    success: true,
+    data: team
+  });
+});
+
+// @desc    Create team
+// @route   POST /api/teams
+// @access  Private/Manager
+export const createTeam = asyncHandler(async (req, res, next) => {
+  const { name, description, department } = req.body;
+
+  // Check if team exists in department
+  const existingTeam = await Team.findOne({ name, department });
+  if (existingTeam) {
+    return next(new ErrorResponse('Team already exists in this department', 400));
+  }
+
+  const team = await Team.create({
+    name,
+    description,
+    department,
+    owner: req.user.id,
+    members: [req.user.id]
+  });
+
+  // Update user with team
+  await User.findByIdAndUpdate(req.user.id, { team: team._id });
+
+  res.status(201).json({
+    success: true,
+    data: team
+  });
+});
+
+// @desc    Update team
+// @route   PUT /api/teams/:id
+// @access  Private/Manager
+export const updateTeam = asyncHandler(async (req, res, next) => {
+  const { name, description, members } = req.body;
+
+  const team = await Team.findById(req.params.id);
+
+  if (!team) {
+    return next(new ErrorResponse('Team not found', 404));
+  }
+
+  // Only owner or admin can update
+  if (team.owner.toString() !== req.user.id && req.user.role !== 'admin') {
+    return next(new ErrorResponse('Not authorized to update this team', 403));
+  }
+
+  // Update fields
+  if (name) team.name = name;
+  if (description !== undefined) team.description = description;
+  if (members) team.members = members;
+
+  await team.save();
+
+  res.status(200).json({
+    success: true,
+    data: team
+  });
+});
+
+// @desc    Add member to team
+// @route   POST /api/teams/:id/members
+// @access  Private/Manager
+export const addMember = asyncHandler(async (req, res, next) => {
+  const { userId } = req.body;
+
+  const team = await Team.findById(req.params.id);
+  const user = await User.findById(userId);
+
+  if (!team) {
+    return next(new ErrorResponse('Team not found', 404));
+  }
+
+  if (!user) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  // Only owner or admin can add members
+  if (team.owner.toString() !== req.user.id && req.user.role !== 'admin') {
+    return next(new ErrorResponse('Not authorized to add members', 403));
+  }
+
+  if (!team.members.includes(userId)) {
+    team.members.push(userId);
+    await team.save();
+
+    // Update user
+    user.team = team._id;
+    await user.save();
+
+    // Create notification
+    await Notification.create({
+      type: 'team_assigned',
+      title: 'Added to Team',
+      message: `You have been added to ${team.name}`,
+      user: userId,
+      sender: req.user.id
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: team
+  });
+});
+
+// @desc    Delete team
+// @route   DELETE /api/teams/:id
+// @access  Private/Manager
+export const deleteTeam = asyncHandler(async (req, res, next) => {
+  const team = await Team.findById(req.params.id);
+
+  if (!team) {
+    return next(new ErrorResponse('Team not found', 404));
+  }
+
+  // Only owner or admin can delete
+  if (team.owner.toString() !== req.user.id && req.user.role !== 'admin') {
+    return next(new ErrorResponse('Not authorized to delete this team', 403));
+  }
+
+  // Soft delete - mark as inactive
+  team.isActive = false;
+  await team.save();
+
+  // Remove team from users
+  await User.updateMany(
+    { team: req.params.id },
+    { $unset: { team: 1 } }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: 'Team deactivated successfully'
+  });
+});
+
+// Legacy functions for compatibility
 export const inviteUser = async (req, res) => {
   const { email } = req.body;
   const teamId = req.params.teamId;
@@ -38,20 +185,25 @@ export const inviteUser = async (req, res) => {
     if (!team) return res.status(404).json({ msg: 'Team not found' });
     if (team.owner.toString() !== req.user.id) return res.status(403).json({ msg: 'Not authorized' });
 
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-    team.inviteTokens.push({ token, email, expiresAt });
-    await team.save();
+    // Simplified invite - just add user if exists
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ msg: 'User not found' });
 
-    const inviteLink = `${process.env.FRONTEND_URL}/join-team/${token}`;
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: `Invitation to join ${team.name}`,
-      html: `<p>You've been invited to join ${team.name}. Click <a href="${inviteLink}">here</a> to accept.</p>`,
-    });
+    if (!team.members.includes(user._id)) {
+      team.members.push(user._id);
+      await team.save();
+      await User.findByIdAndUpdate(user._id, { team: team._id });
 
-    res.json({ msg: 'Invitation sent' });
+      await Notification.create({
+        type: 'team_invite',
+        title: 'Team Invitation',
+        message: `You have been invited to join ${team.name}`,
+        user: user._id,
+        sender: req.user.id
+      });
+    }
+
+    res.json({ msg: 'User added to team' });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');
@@ -61,28 +213,22 @@ export const inviteUser = async (req, res) => {
 export const joinTeam = async (req, res) => {
   const { token } = req.params;
   try {
-    const team = await Team.findOne({ 'inviteTokens.token': token });
+    // Simplified - assume token is team ID for now
+    const team = await Team.findById(token);
     if (!team) return res.status(404).json({ msg: 'Invalid token' });
 
-    const invite = team.inviteTokens.find(t => t.token === token);
-    if (new Date() > invite.expiresAt) return res.status(400).json({ msg: 'Token expired' });
+    if (!team.members.includes(req.user.id)) {
+      team.members.push(req.user.id);
+      await team.save();
+      await User.findByIdAndUpdate(req.user.id, { team: team._id });
 
-    if (req.user.email !== invite.email) return res.status(403).json({ msg: 'Email mismatch' });
-
-    team.members.push(req.user.id);
-    team.inviteTokens = team.inviteTokens.filter(t => t.token !== token);
-    await team.save();
-
-    await User.findByIdAndUpdate(req.user.id, { team: team._id, $pull: { invites: team._id } });
-
-    // Create notification
-    const notification = new Notification({
-      type: 'team_invite',
-      message: `You joined ${team.name}`,
-      user: req.user.id,
-      relatedTeam: team._id,
-    });
-    await notification.save();
+      await Notification.create({
+        type: 'team_join',
+        title: 'Joined Team',
+        message: `You joined ${team.name}`,
+        user: req.user.id
+      });
+    }
 
     res.json({ msg: 'Joined team successfully' });
   } catch (err) {
@@ -103,16 +249,6 @@ export const removeMember = async (req, res) => {
     await team.save();
     await User.findByIdAndUpdate(userId, { $unset: { team: 1 } });
     res.json({ msg: 'Member removed' });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
-
-export const getTeams = async (req, res) => {
-  try {
-    const teams = await Team.find({ members: req.user.id }).populate('owner members department');
-    res.json(teams);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');

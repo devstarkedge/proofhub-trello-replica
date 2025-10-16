@@ -1,34 +1,27 @@
 import express from 'express';
+import { body } from 'express-validator';
+import { register, login, getMe, updateDetails, updatePassword, refreshToken } from '../controllers/authController.js';
+import { protect, authorize } from '../middleware/authMiddleware.js';
+import { validate } from '../middleware/validation.js';
+
 const router = express.Router();
-import { check } from 'express-validator';
-import { registerUser, loginUser } from '../controllers/authController.js';
 
-// @route   POST api/auth/register
-// @desc    Register a new user
-// @access  Public
-router.post(
-  '/register',
-  [
-    check('name', 'Name is required').not().isEmpty(),
-    check('email', 'Please include a valid email').isEmail(),
-    check(
-      'password',
-      'Please enter a password with 6 or more characters'
-    ).isLength({ min: 6 }),
-  ],
-  registerUser
-);
+router.post('/register', [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  validate
+], register);
 
-// @route   POST api/auth/login
-// @desc    Authenticate user & get token
-// @access  Public
-router.post(
-  '/login',
-  [
-    check('email', 'Please include a valid email').isEmail(),
-    check('password', 'Password is required').exists(),
-  ],
-  loginUser
-);
+router.post('/login', [
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('password').notEmpty().withMessage('Password is required'),
+  validate
+], login);
+
+router.get('/me', protect, getMe);
+router.put('/updatedetails', protect, updateDetails);
+router.put('/updatepassword', protect, updatePassword);
+router.post('/refresh', protect, refreshToken);
 
 export default router;

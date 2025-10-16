@@ -1,15 +1,49 @@
-import React from 'react';
-import { Home, Folder, Users, BarChart3, Settings, LayoutDashboard } from 'lucide-react';
+import React, { useContext } from 'react';
+import { Home, Folder, Users, BarChart3, Settings, LayoutDashboard, UserCheck } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+import AuthContext from '../context/AuthContext';
 
 const Sidebar = () => {
-  const navItems = [
-    { path: '/', icon: Home, label: 'Home' },
-    { path: '/projects', icon: Folder, label: 'Projects' }, // Placeholder for projects page if needed
-    { path: '/dashboard', icon: BarChart3, label: 'Analytics Dashboard' },
-    { path: '/teams', icon: Users, label: 'Teams' },
-    { path: '/settings', icon: Settings, label: 'Settings' }, // Placeholder
-  ];
+  const { user } = useContext(AuthContext);
+
+  const getNavItems = () => {
+    const baseItems = [
+      { path: '/', icon: Home, label: 'Home' },
+      { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
+    ];
+
+    // Role-based navigation items
+    if (user) {
+      const userRole = user.role.toLowerCase();
+
+      if (userRole === 'admin') {
+        return [
+          ...baseItems,
+          { path: '/teams', icon: Users, label: 'Teams' },
+          { path: '/hr-panel', icon: UserCheck, label: 'HR Panel' },
+          { path: '/admin/settings', icon: Settings, label: 'Admin Settings' },
+        ];
+      } else if (userRole === 'hr') {
+        return [
+          ...baseItems,
+          { path: '/teams', icon: Users, label: 'Teams' },
+          { path: '/hr-panel', icon: UserCheck, label: 'HR Panel' },
+        ];
+      } else if (userRole === 'manager') {
+        return [
+          ...baseItems,
+          { path: '/teams', icon: Users, label: 'Teams' },
+        ];
+      } else {
+        // Employee
+        return baseItems;
+      }
+    }
+
+    return baseItems;
+  };
+
+  const navItems = getNavItems();
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 h-screen fixed left-0 top-0 overflow-y-auto">

@@ -4,15 +4,17 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 import TeamContext from '../context/TeamContext';
 import NotificationContext from '../context/NotificationContext';
+import UserVerificationModal from './UserVerificationModal';
 
 const Header = ({ boardName }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useContext(AuthContext);
-  const { currentTeam, teams, setCurrentTeam } = useContext(TeamContext);
-  const { notifications, unreadCount, markAsRead, deleteNotification } = useContext(NotificationContext);
+  const { currentTeam, currentDepartment, teams, departments, setCurrentTeam, setCurrentDepartment } = useContext(TeamContext);
+  const { notifications, unreadCount, markAsRead, deleteNotification, handleNotificationClick, verificationModal, handleVerificationAction, closeVerificationModal } = useContext(NotificationContext);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
+  const [showDepartmentSelector, setShowDepartmentSelector] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleSearch = (e) => {
@@ -31,6 +33,9 @@ const Header = ({ boardName }) => {
 
   const isActive = (path) => location.pathname === path;
 
+  // Check if user is admin or manager
+  const isAdminOrManager = user && (user.role === 'admin' || user.role === 'manager');
+
   return (
     <header className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
       <div className="flex items-center justify-between">
@@ -38,42 +43,74 @@ const Header = ({ boardName }) => {
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-bold text-gray-900">FlowTask</h1>
 
-          {/* Team Selector */}
-          {teams.length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setShowTeamSelector(!showTeamSelector)}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
-              >
-                <Users size={16} />
-                {currentTeam?.name || 'Select Team'}
-              </button>
-              {showTeamSelector && (
-                <div className="absolute top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                  {teams.map(team => (
-                    <button
-                      key={team._id}
-                      onClick={() => {
-                        setCurrentTeam(team);
-                        setShowTeamSelector(false);
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
-                    >
-                      {team.name}
-                    </button>
-                  ))}
-                  <div className="border-t border-gray-200">
-                    <button
-                      onClick={() => navigate('/teams')}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm text-blue-600"
-                    >
-                      Manage Teams
-                    </button>
+          {/* Department and Team Selectors */}
+          <div className="flex items-center gap-2">
+            {departments.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowDepartmentSelector(!showDepartmentSelector)}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Users size={16} />
+                  {currentDepartment?.name || 'Select Dept'}
+                </button>
+                {showDepartmentSelector && (
+                  <div className="absolute top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                    {departments.map(dept => (
+                      <button
+                        key={dept._id}
+                        onClick={() => {
+                          setCurrentDepartment(dept);
+                          setShowDepartmentSelector(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                      >
+                        {dept.name}
+                      </button>
+                    ))}
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
+
+            {teams.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowTeamSelector(!showTeamSelector)}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Users size={16} />
+                  {currentTeam?.name || 'Select Team'}
+                </button>
+                {showTeamSelector && (
+                  <div className="absolute top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                    {teams.map(team => (
+                      <button
+                        key={team._id}
+                        onClick={() => {
+                          setCurrentTeam(team);
+                          setShowTeamSelector(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                      >
+                        {team.name}
+                      </button>
+                    ))}
+                    {isAdminOrManager && (
+                      <div className="border-t border-gray-200">
+                        <button
+                          onClick={() => navigate('/team-management')}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm text-blue-600"
+                        >
+                          Manage Teams
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Navigation Tabs */}
           <nav className="flex items-center gap-1">
@@ -145,7 +182,7 @@ const Header = ({ boardName }) => {
                   notifications.slice(0, 5).map(notification => (
                     <div key={notification._id} className="p-3 border-b border-gray-100 hover:bg-gray-50">
                       <div className="flex justify-between items-start">
-                        <div className="flex-1">
+                        <div className="flex-1 cursor-pointer" onClick={() => handleNotificationClick(notification)}>
                           <p className="text-sm text-gray-900">{notification.message}</p>
                           <p className="text-xs text-gray-500 mt-1">
                             {new Date(notification.createdAt).toLocaleString()}
@@ -208,6 +245,15 @@ const Header = ({ boardName }) => {
           </button>
         </div>
       </div>
+
+      {/* User Verification Modal */}
+      {verificationModal && (
+        <UserVerificationModal
+          notification={verificationModal}
+          onClose={closeVerificationModal}
+          onAction={handleVerificationAction}
+        />
+      )}
     </header>
   );
 };

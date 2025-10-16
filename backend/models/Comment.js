@@ -1,24 +1,43 @@
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
 
-const commentSchema = new Schema({
+const commentSchema = new mongoose.Schema({
   text: {
     type: String,
-    required: true,
-  },
-  user: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
+    required: [true, 'Comment text is required'],
+    trim: true,
+    maxlength: [2000, 'Comment cannot exceed 2000 characters']
   },
   card: {
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Card',
-    required: true,
+    required: true
+  },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  mentions: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  isEdited: {
+    type: Boolean,
+    default: false
+  },
+  editedAt: {
+    type: Date
   },
   createdAt: {
     type: Date,
-    default: Date.now,
-  },
+    default: Date.now
+  }
+}, {
+  timestamps: true
 });
 
-export default model('Comment', commentSchema);
+// Indexes
+commentSchema.index({ card: 1, createdAt: -1 });
+commentSchema.index({ user: 1 });
+
+export default mongoose.model('Comment', commentSchema);

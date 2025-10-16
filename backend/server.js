@@ -10,11 +10,13 @@ import boardsRoutes from './routes/boards.js';
 import listsRoutes from './routes/lists.js';
 import cardsRoutes from './routes/cards.js';
 import teamsRoutes from './routes/teams.js';
+import departmentRoutes from './routes/departmentRoutes.js';
 import commentsRoutes from './routes/comments.js';
 import notificationsRoutes from './routes/notifications.js';
 import searchRoutes from './routes/search.js';
 import analyticsRoutes from './routes/analytics.js';
 import usersRoutes from './routes/users.js';
+import adminRoutes from './routes/admin.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -32,7 +34,7 @@ const io = new Server(server, {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
@@ -49,11 +51,13 @@ app.use('/api/boards', boardsRoutes);
 app.use('/api/lists', listsRoutes);
 app.use('/api/cards', cardsRoutes);
 app.use('/api/teams', teamsRoutes);
+app.use('/api/departments', departmentRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
@@ -63,8 +67,9 @@ import jwt from 'jsonwebtoken';
 
 // Socket.IO connection
 io.on('connection', (socket) => {
-  const userId = socket.handshake.query.userId;
-  const token = socket.handshake.auth.token;
+  console.log('New socket connection attempt:', socket.id);
+  console.log('Handshake auth:', socket.handshake.auth);
+  const { userId, token } = socket.handshake.auth;
 
   if (!userId) {
     socket.disconnect();
@@ -97,16 +102,6 @@ io.on('connection', (socket) => {
     console.log(`User ${userId} left team ${teamId}`);
   });
 
-  socket.on('join-board', (boardId) => {
-    socket.join(`board-${boardId}`);
-    console.log(`User ${userId} joined board ${boardId}`);
-  });
-
-  socket.on('leave-board', (boardId) => {
-    socket.leave(`board-${boardId}`);
-    console.log(`User ${userId} left board ${boardId}`);
-  });
-
   // Handle real-time events (optional, can be emitted from controllers)
   socket.on('update-card', ({ cardId, updates, boardId }) => {
     // Broadcast to board room
@@ -116,6 +111,16 @@ io.on('connection', (socket) => {
   socket.on('add-comment', ({ cardId, comment, boardId }) => {
     // Broadcast to board room
     io.to(`board-${boardId}`).emit('comment-added', { cardId, comment });
+  });
+
+  socket.on('join-board', (boardId) => {
+    socket.join(`board-${boardId}`);
+    console.log(`User ${userId} joined board ${boardId}`);
+  });
+
+  socket.on('leave-board', (boardId) => {
+    socket.leave(`board-${boardId}`);
+    console.log(`User ${userId} left board ${boardId}`);
   });
 
   socket.on('disconnect', () => {
@@ -138,10 +143,14 @@ export const emitToBoard = (boardId, event, data) => {
   io.to(`board-${boardId}`).emit(event, data);
 };
 
+import seedAdmin from './utils/seed.js';
+
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('Connected to MongoDB');
+    // Seed the admin user
+    seedAdmin();
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

@@ -28,7 +28,7 @@ const WorkFlow = () => {
   // Socket connection and real-time updates
   useEffect(() => {
     if (user && board) {
-      socketService.connect(user._id);
+      socketService.connect(user.id);
       socketService.joinBoard(board._id);
 
       // Listen for real-time card updates

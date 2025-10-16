@@ -1,26 +1,44 @@
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
 
-const departmentSchema = new Schema({
+const departmentSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
+    required: [true, 'Department name is required'],
     unique: true,
     trim: true,
+    maxlength: [50, 'Department name cannot exceed 50 characters']
   },
   description: {
     type: String,
-    default: '',
+    trim: true,
+    maxlength: [500, 'Description cannot exceed 500 characters']
   },
-  teams: [
-    {
-      type: Schema.Types.ObjectId,
-      ref: 'Team',
-    },
-  ],
+  manager: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  members: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  projects: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Board'
+  }],
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   createdAt: {
     type: Date,
-    default: Date.now,
-  },
+    default: Date.now
+  }
+}, {
+  timestamps: true
 });
 
-export default model('Department', departmentSchema);
+// Indexes
+departmentSchema.index({ name: 1 });
+departmentSchema.index({ isActive: 1 });
+
+export default mongoose.model('Department', departmentSchema);

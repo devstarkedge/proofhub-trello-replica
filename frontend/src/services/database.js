@@ -1,18 +1,51 @@
 // API service for CRUD operations
-const baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 class DatabaseService {
   // Board CRUD operations
   async getBoards() {
-    const res = await fetch(`${baseURL}/api/boards`);
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/boards`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
     return await res.json();
   }
 
-  async createBoard(name) {
+  async getBoardsByDepartment(departmentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/boards/department/${departmentId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async createBoard(name, description, team, department, members, background) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     const res = await fetch(`${baseURL}/api/boards`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name })
+      headers,
+      body: JSON.stringify({
+        name,
+        description,
+        team,
+        department,
+        members,
+        background: background || '#6366f1'
+      })
     });
     return await res.json();
   }
@@ -66,6 +99,19 @@ class DatabaseService {
     return await res.json();
   }
 
+  async getCardsByBoard(boardId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/cards/board/${boardId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
   async getCard(cardId) {
     const res = await fetch(`${baseURL}/api/cards/${cardId}`);
     return await res.json();
@@ -114,14 +160,107 @@ class DatabaseService {
   }
 
   // User operations
+  async getUser(userId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/users/${userId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
   async getProfile() {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
-      headers['x-auth-token'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/users/profile`, { headers });
     return await res.json();
+  }
+
+  // Department operations
+  async getDepartments() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async createDepartment(name, description, managerId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name, description, manager: managerId })
+    });
+    return await res.json();
+  }
+
+  async updateDepartment(id, updates) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments/${id}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(updates)
+    });
+    return await res.json();
+  }
+
+  async deleteDepartment(id) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    await fetch(`${baseURL}/api/departments/${id}`, {
+      method: 'DELETE',
+      headers
+    });
+  }
+
+  async addMemberToDepartment(deptId, userId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments/${deptId}/members`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ userId })
+    });
+    return await res.json();
+  }
+
+  async removeMemberFromDepartment(deptId, userId) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    await fetch(`${baseURL}/api/departments/${deptId}/members/${userId}`, {
+      method: 'DELETE',
+      headers
+    });
   }
 
   // Team operations
@@ -129,7 +268,7 @@ class DatabaseService {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
-      headers['x-auth-token'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/teams`, { headers });
     if (!res.ok) {
@@ -138,16 +277,56 @@ class DatabaseService {
     return await res.json();
   }
 
-  async createTeam(name, department) {
+  async createTeam(name, department, description) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
-      headers['x-auth-token'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/teams`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ name, department })
+      body: JSON.stringify({ name, department, description })
+    });
+    return await res.json();
+  }
+
+  async updateTeam(id, updates) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/teams/${id}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(updates)
+    });
+    return await res.json();
+  }
+
+  async deleteTeam(id) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    await fetch(`${baseURL}/api/teams/${id}`, {
+      method: 'DELETE',
+      headers
+    });
+  }
+
+  async addMemberToTeam(teamId, userId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/teams/${teamId}/members`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ userId })
     });
     return await res.json();
   }
@@ -156,7 +335,7 @@ class DatabaseService {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
-      headers['x-auth-token'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/teams/${teamId}/invite`, {
       method: 'POST',
@@ -170,12 +349,80 @@ class DatabaseService {
     const authToken = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (authToken) {
-      headers['x-auth-token'] = authToken;
+      headers['Authorization'] = `Bearer ${authToken}`;
     }
-    const res = await fetch(`${baseURL}/api/teams/join`, {
+    const res = await fetch(`${baseURL}/api/teams/join/${token}`, {
       method: 'POST',
+      headers
+    });
+    return await res.json();
+  }
+
+  // User assignment operations
+  async assignUserToDepartment(userId, deptId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/users/${userId}/assign`, {
+      method: 'PUT',
       headers,
-      body: JSON.stringify({ token })
+      body: JSON.stringify({ department: deptId })
+    });
+    return await res.json();
+  }
+
+  async assignUserToTeam(userId, teamId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/users/${userId}/assign`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ team: teamId })
+    });
+    return await res.json();
+  }
+
+  async getUsers() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/users`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async verifyUser(userId, role, department) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/users/${userId}/verify`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ role, department })
+    });
+    return await res.json();
+  }
+
+  async declineUser(userId) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/users/${userId}/decline`, {
+      method: 'DELETE',
+      headers
     });
     return await res.json();
   }
@@ -213,7 +460,7 @@ class DatabaseService {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
-      headers['x-auth-token'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/notifications`, { headers });
     if (!res.ok) {
@@ -226,12 +473,15 @@ class DatabaseService {
     const token = localStorage.getItem('token');
     const headers = {};
     if (token) {
-      headers['x-auth-token'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/notifications/${notificationId}/read`, {
       method: 'PATCH',
       headers
     });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
     return await res.json();
   }
 
@@ -239,7 +489,7 @@ class DatabaseService {
     const token = localStorage.getItem('token');
     const headers = {};
     if (token) {
-      headers['x-auth-token'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
     await fetch(`${baseURL}/api/notifications/${notificationId}`, {
       method: 'DELETE',

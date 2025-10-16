@@ -1,10 +1,10 @@
 import express from 'express';
-import authMiddleware from '../middleware/authMiddleware.js';
-import { globalSearch } from '../controllers/searchController.js';
+import { globalSearch, searchCards } from '../controllers/searchController.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Global search
-router.get('/', authMiddleware, globalSearch);
+router.get('/', protect, globalSearch);
+router.get('/cards', protect, searchCards);
 
 export default router;

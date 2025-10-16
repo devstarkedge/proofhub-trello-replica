@@ -9,11 +9,12 @@ export const NotificationProvider = ({ children }) => {
   const { user } = useContext(AuthContext);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [verificationModal, setVerificationModal] = useState(null);
 
   useEffect(() => {
     if (user) {
       loadNotifications();
-      socketService.connect(user._id);
+      socketService.connect(user.id);
 
       // Listen for real-time notifications
       const handleSocketNotification = (event) => {
@@ -68,13 +69,48 @@ export const NotificationProvider = ({ children }) => {
     }
   };
 
+  const handleNotificationClick = (notification) => {
+    if (notification.type === 'user_registered' && user?.role === 'admin') {
+      setVerificationModal(notification);
+      markAsRead(notification._id);
+    }
+  };
+
+  const handleVerificationAction = async (action, userData) => {
+    try {
+      if (action === 'verify') {
+        await Database.verifyUser(userData.userId, userData.role, userData.department);
+      } else if (action === 'decline') {
+        await Database.declineUser(userData.userId);
+      }
+
+      // Remove the notification after action
+      setNotifications(prev => prev.filter(n => n._id !== verificationModal._id));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+      setVerificationModal(null);
+
+      // Reload notifications to get updated list
+      loadNotifications();
+    } catch (error) {
+      console.error('Error handling verification action:', error);
+    }
+  };
+
+  const closeVerificationModal = () => {
+    setVerificationModal(null);
+  };
+
   return (
     <NotificationContext.Provider value={{
       notifications,
       unreadCount,
       loadNotifications,
       markAsRead,
-      deleteNotification
+      deleteNotification,
+      handleNotificationClick,
+      verificationModal,
+      handleVerificationAction,
+      closeVerificationModal
     }}>
       {children}
     </NotificationContext.Provider>

@@ -4,6 +4,7 @@ import AuthContext from '../context/AuthContext';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
+  const [error, setError] = useState('');
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
 
@@ -13,15 +14,24 @@ const LoginPage = () => {
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    await login(email, password);
-    // Navigate after login completes
-    navigate('/');
+    setError('');
+    try {
+      const { redirect } = await login(email, password);
+      navigate(redirect);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Login failed. Please try again.');
+    }
   };
 
   return (
     <div className="flex items-center justify-center h-screen bg-gray-100">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <h2 className="text-2xl font-bold text-center text-gray-900">Login</h2>
+        {error && (
+          <div className="p-3 text-sm text-red-700 bg-red-100 border border-red-400 rounded-md">
+            {error}
+          </div>
+        )}
         <form className="space-y-6" onSubmit={onSubmit}>
           <div>
             <label className="block text-sm font-medium text-gray-700">Email</label>

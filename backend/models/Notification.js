@@ -1,36 +1,70 @@
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
 
-const notificationSchema = new Schema({
+const notificationSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['task_assigned', 'task_due', 'comment_added', 'team_invite', 'reminder'],
+    enum: [
+      'task_assigned',
+      'task_updated',
+      'task_due_soon',
+      'task_overdue',
+      'comment_added',
+      'comment_mention',
+      'team_invite',
+      'board_shared',
+      'user_registered'
+    ],
+    required: true
+  },
+  title: {
+    type: String,
     required: true,
+    trim: true
   },
   message: {
     type: String,
     required: true,
+    trim: true
   },
   user: {
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    required: true
+  },
+  sender: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
   relatedCard: {
-    type: Schema.Types.ObjectId,
-    ref: 'Card',
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Card'
+  },
+  relatedBoard: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Board'
   },
   relatedTeam: {
-    type: Schema.Types.ObjectId,
-    ref: 'Team',
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Team'
   },
   isRead: {
     type: Boolean,
-    default: false,
+    default: false
+  },
+  readAt: {
+    type: Date
   },
   createdAt: {
     type: Date,
-    default: Date.now,
-  },
+    default: Date.now
+  }
+}, {
+  timestamps: true
 });
 
-export default model('Notification', notificationSchema);
+// Indexes
+notificationSchema.index({ user: 1, createdAt: -1 });
+notificationSchema.index({ isRead: 1 });
+notificationSchema.index({ type: 1 });
+
+export default mongoose.model('Notification', notificationSchema);
