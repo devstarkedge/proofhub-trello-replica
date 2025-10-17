@@ -14,12 +14,12 @@ const boardSchema = new mongoose.Schema({
   },
   team: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Team',
-    required: true
+    ref: 'Team'
   },
   department: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Department'
+    ref: 'Department',
+    required: true
   },
   owner: {
     type: mongoose.Schema.Types.ObjectId,
@@ -43,6 +43,54 @@ const boardSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  startDate: {
+    type: Date
+  },
+  dueDate: {
+    type: Date
+  },
+  labels: [{
+    type: String
+  }],
+  estimatedTime: {
+    type: String
+  },
+  status: {
+    type: String,
+    enum: ['planning', 'in-progress', 'completed', 'on-hold'],
+    default: 'planning'
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'medium'
+  },
+  attachments: [{
+    filename: {
+      type: String,
+      required: true
+    },
+    originalname: {
+      type: String,
+      required: true
+    },
+    mimetype: {
+      type: String,
+      required: true
+    },
+    size: {
+      type: Number,
+      required: true
+    },
+    path: {
+      type: String,
+      required: true
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   createdAt: {
     type: Date,
     default: Date.now

@@ -54,6 +54,45 @@ export const getBoardsByDepartment = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Get workflow data by department and project
+// @route   GET /api/boards/workflow/:departmentId/:projectId
+// @access  Private
+export const getWorkflowData = asyncHandler(async (req, res, next) => {
+  const { departmentId, projectId } = req.params;
+
+  const board = await Board.findById(projectId)
+    .populate("owner", "name email avatar")
+    .populate("team", "name")
+    .populate("department", "name")
+    .populate("members", "name email avatar");
+
+  if (!board) {
+    return next(new ErrorResponse("Project not found", 404));
+  }
+
+  // Verify the project belongs to the specified department
+  if (board.department._id.toString() !== departmentId) {
+    return next(new ErrorResponse("This project does not belong to the specified department", 403));
+  }
+
+  // Check access
+  const hasAccess =
+    board.owner._id.toString() === req.user.id ||
+    board.members.some((m) => m._id.toString() === req.user.id) ||
+    board.visibility === "public" ||
+    req.user.role === "admin" ||
+    (req.user.department && req.user.department.toString() === departmentId);
+
+  if (!hasAccess) {
+    return next(new ErrorResponse("Not authorized to access this project workflow", 403));
+  }
+
+  res.status(200).json({
+    success: true,
+    data: board,
+  });
+});
+
 // @desc    Get single board
 // @route   GET /api/boards/:id
 // @access  Private
@@ -96,12 +135,41 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     members,
     visibility,
     background,
+    startDate,
+    dueDate,
+    labels,
+    estimatedTime,
+    status,
+    priority
   } = req.body;
+
+  // Handle file attachments
+  let attachments = [];
+  if (req.files && req.files.length > 0) {
+    attachments = req.files.map(file => ({
+      filename: file.filename,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      path: file.path
+    }));
+  }
+
+  // Department is required
+  const projectDepartment = department || req.user.department;
+  if (!projectDepartment) {
+    return next(
+      new ErrorResponse(
+        "Department is required to create a project",
+        400
+      )
+    );
+  }
 
   // Managers can only create boards for their department
   if (
     req.user.role === "manager" &&
-    (!department || department.toString() !== req.user.department?.toString())
+    projectDepartment.toString() !== req.user.department?.toString()
   ) {
     return next(
       new ErrorResponse(
@@ -111,34 +179,28 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Ensure team is provided or use user's team
-  const boardTeam = team || req.user.team;
-  if (!boardTeam) {
-    return next(
-      new ErrorResponse(
-        "Team is required to create a board",
-        400
-      )
-    );
-  }
-
   const board = await Board.create({
     name,
     description,
-    team: boardTeam,
-    department: department || req.user.department,
+    team: team || req.user.team,
+    department: projectDepartment,
     owner: req.user.id,
     members: members || [req.user.id],
     visibility: visibility || "private",
     background: background || "#6366f1",
+    startDate,
+    dueDate,
+    labels: labels || [],
+    estimatedTime,
+    status: status || "planning",
+    priority: priority || "medium",
+    attachments
   });
 
-  // Add board to department's projects array if department exists
-  if (board.department) {
-    await Department.findByIdAndUpdate(board.department, {
-      $push: { projects: board._id }
-    });
-  }
+  // Add board to department's projects array
+  await Department.findByIdAndUpdate(board.department, {
+    $push: { projects: board._id }
+  });
 
   // Create default lists
   const defaultLists = ["To Do", "In Progress", "Review", "Done"];
@@ -161,6 +223,7 @@ export const createBoard = asyncHandler(async (req, res, next) => {
   const populatedBoard = await Board.findById(board._id)
     .populate("owner", "name email avatar")
     .populate("team", "name")
+    .populate("department", "name")
     .populate("members", "name email avatar");
 
   res.status(201).json({
@@ -219,6 +282,13 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   }
   await List.deleteMany({ board: board._id });
   await Activity.deleteMany({ board: board._id });
+
+  // Remove board from department's projects array if department exists
+  if (board.department) {
+    await Department.findByIdAndUpdate(board.department, {
+      $pull: { projects: board._id }
+    });
+  }
 
   await board.deleteOne();
 

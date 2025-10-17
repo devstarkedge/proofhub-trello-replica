@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Plus, Paperclip, File, Image, Upload } from 'lucide-react';
+import { X, Paperclip } from 'lucide-react';
 import Database from '../services/database';
 
-const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
+const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -11,42 +11,40 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
     dueDate: '',
     labels: [],
     assignees: [],
-    estimatedTime: ''
+    estimatedTime: '',
+    status: 'planning',
+    priority: 'medium'
   });
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [attachments, setAttachments] = useState([]);
-  const fileInputRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && project) {
+      setFormData({
+        title: project.name || '',
+        description: project.description || '',
+        startDate: project.startDate ? new Date(project.startDate).toISOString().split('T')[0] : '',
+        dueDate: project.dueDate ? new Date(project.dueDate).toISOString().split('T')[0] : '',
+        labels: project.labels || [],
+        assignees: project.members?.map(m => typeof m === 'string' ? m : m._id) || [],
+        estimatedTime: project.estimatedTime || '',
+        status: project.status || 'planning',
+        priority: project.priority || 'medium'
+      });
       fetchEmployees();
     }
-  }, [isOpen, departmentId]);
+  }, [isOpen, project]);
 
   const fetchEmployees = async () => {
     try {
       const response = await Database.getUsers();
       const deptEmployees = response.data.filter(user =>
-        user.department && user.department._id === departmentId && user.role === 'employee' && user.isVerified
+        user.department && user.department._id === project.department?._id && user.role === 'employee' && user.isVerified
       );
       setEmployees(deptEmployees);
     } catch (error) {
       console.error('Error fetching employees:', error);
-    }
-  };
-
-  const fetchDepartmentTeams = async () => {
-    try {
-      const response = await Database.getTeams();
-      const deptTeams = response.data.filter(team =>
-        team.department && team.department._id === departmentId
-      );
-      return deptTeams;
-    } catch (error) {
-      console.error('Error fetching teams:', error);
-      return [];
     }
   };
 
@@ -76,24 +74,6 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
     }));
   };
 
-  const handleFileSelect = (e) => {
-    const files = Array.from(e.target.files);
-    const validFiles = files.filter(file => {
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/plain', 'application/zip'];
-      return allowedTypes.includes(file.type) && file.size <= 5 * 1024 * 1024; // 5MB limit
-    });
-
-    if (validFiles.length !== files.length) {
-      alert('Some files were rejected. Only images, PDFs, documents, and zip files under 5MB are allowed.');
-    }
-
-    setAttachments(prev => [...prev, ...validFiles]);
-  };
-
-  const removeAttachment = (index) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index));
-  };
-
   const validateForm = () => {
     const newErrors = {};
     if (!formData.title.trim()) newErrors.title = 'Title is required';
@@ -114,59 +94,36 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
 
     setLoading(true);
     try {
-      // Fetch department teams to get the first team as default
-      const deptTeams = await fetchDepartmentTeams();
-      const defaultTeam = deptTeams.length > 0 ? deptTeams[0]._id : null;
+      const updates = {
+        name: formData.title,
+        description: formData.description,
+        members: formData.assignees,
+        startDate: formData.startDate,
+        dueDate: formData.dueDate,
+        labels: formData.labels,
+        estimatedTime: formData.estimatedTime,
+        status: formData.status,
+        priority: formData.priority
+      };
 
-      const formDataToSend = new FormData();
-      formDataToSend.append('name', formData.title);
-      formDataToSend.append('description', formData.description);
-      formDataToSend.append('team', defaultTeam || '');
-      formDataToSend.append('department', departmentId);
-      formData.assignees.forEach(id => {
-        formDataToSend.append('members', id);
-      });
-      formDataToSend.append('background', '#6366f1');
-      formDataToSend.append('startDate', formData.startDate);
-      formDataToSend.append('dueDate', formData.dueDate);
-      formDataToSend.append('labels', JSON.stringify(formData.labels));
-      formDataToSend.append('estimatedTime', formData.estimatedTime);
-      formDataToSend.append('status', 'planning');
-      formDataToSend.append('priority', 'medium');
-
-      // Add attachments
-      attachments.forEach((file, index) => {
-        formDataToSend.append('attachments', file);
-      });
-
-      const response = await Database.createProject(formDataToSend);
+      const response = await Database.updateProject(project._id, updates);
 
       if (response.success) {
-        onProjectAdded(response.data);
+        onProjectUpdated(response.data);
         onClose();
-        setFormData({
-          title: '',
-          description: '',
-          startDate: '',
-          dueDate: '',
-          labels: [],
-          assignees: [],
-          estimatedTime: ''
-        });
-        setAttachments([]);
-        alert('Project created successfully!');
+        alert('Project updated successfully!');
       } else {
-        throw new Error(response.message || 'Failed to create project');
+        throw new Error(response.message || 'Failed to update project');
       }
     } catch (error) {
-      console.error('Error creating project:', error);
-      alert(error.message || 'Failed to create project. Please try again.');
+      console.error('Error updating project:', error);
+      alert(error.message || 'Failed to update project. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !project) return null;
 
   return (
     <motion.div
@@ -185,7 +142,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
       >
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">Add Project</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Edit Project</h2>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600"
@@ -259,6 +216,41 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="planning">Planning</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="on-hold">On Hold</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Priority
+                </label>
+                <select
+                  name="priority"
+                  value={formData.priority}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Labels
@@ -315,54 +307,6 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Attachments
-              </label>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileSelect}
-                multiple
-                accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
-                className="hidden"
-              />
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700"
-                >
-                  <Upload className="h-4 w-4" />
-                  <span>Choose Files</span>
-                </button>
-                {attachments.length > 0 && (
-                  <div className="space-y-1">
-                    {attachments.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        <div className="flex items-center space-x-2">
-                          {file.type.startsWith('image/') ? (
-                            <Image className="h-4 w-4 text-blue-500" />
-                          ) : (
-                            <File className="h-4 w-4 text-gray-500" />
-                          )}
-                          <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                          <span className="text-xs text-gray-500">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeAttachment(index)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
             <div className="flex justify-between items-center pt-4">
               <button
                 type="button"
@@ -371,22 +315,13 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
               >
                 Cancel
               </button>
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2 text-gray-400 hover:text-gray-600"
-                >
-                  <Paperclip className="h-5 w-5" />
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-                >
-                  {loading ? 'Adding...' : 'Add'}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+              >
+                {loading ? 'Updating...' : 'Update'}
+              </button>
             </div>
           </form>
         </div>
@@ -395,4 +330,4 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
   );
 };
 
-export default AddProjectModal;
+export default EditProjectModal;

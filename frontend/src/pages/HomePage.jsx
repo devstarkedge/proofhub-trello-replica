@@ -8,6 +8,8 @@ import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import AddProjectModal from '../components/AddProjectModal';
 
+const baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
 const HomePage = () => {
   const { user } = useContext(AuthContext);
   const [departments, setDepartments] = useState([]);
@@ -139,6 +141,7 @@ const HomePage = () => {
                               title={project.name}
                               subtitle={project.description || 'Project description'}
                               color={`bg-[${project.background || '#6366f1'}]`}
+                              image={project.attachments && project.attachments.length > 0 ? `${baseURL}/uploads/${project.attachments[0].filename}` : undefined}
                               deptId={department._id}
                               projectId={project._id}
                             />

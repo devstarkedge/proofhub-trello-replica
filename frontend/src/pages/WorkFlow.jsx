@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import Database from '../services/database';
 import Header from '../components/Header';
 import Board from '../components/Board';
@@ -8,6 +9,8 @@ import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';
 
 const WorkFlow = () => {
+  const { deptId, projectId } = useParams();
+  const navigate = useNavigate();
   const { currentTeam, loading: teamLoading } = useContext(TeamContext);
   const { user } = useContext(AuthContext);
   const [board, setBoard] = useState(null);
@@ -15,15 +18,16 @@ const WorkFlow = () => {
   const [cardsByList, setCardsByList] = useState({});
   const [selectedCard, setSelectedCard] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('All');
   const [priorityFilter, setPriorityFilter] = useState('All');
 
   // Load data from database
   useEffect(() => {
-    if (currentTeam && !teamLoading) {
+    if (deptId && projectId && !teamLoading) {
       loadData();
     }
-  }, [currentTeam, teamLoading]);
+  }, [deptId, projectId, teamLoading]);
 
   // Socket connection and real-time updates
   useEffect(() => {
@@ -75,20 +79,41 @@ const WorkFlow = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const boards = await Database.getBoards();
-      const currentBoard = boards[0] || await Database.createBoard(`${currentTeam.name} Board`);
-      setBoard(currentBoard);
+      setError(null);
+      
+      // Fetch the specific project/board by ID
+      const response = await Database.getProject(projectId);
+      
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to load project');
+      }
+      
+      const projectBoard = response.data;
+      
+      // Verify the project belongs to the specified department
+      if (projectBoard.department._id !== deptId && projectBoard.department !== deptId) {
+        setError('This project does not belong to the specified department.');
+        setLoading(false);
+        return;
+      }
+      
+      setBoard(projectBoard);
 
-      const boardLists = await Database.getLists(currentBoard._id);
+      // Fetch lists for this board
+      const listsResponse = await Database.getLists(projectBoard._id);
+      const boardLists = listsResponse.data || listsResponse;
       setLists(boardLists);
 
+      // Fetch cards for each list
       const cardsMap = {};
       for (const list of boardLists) {
-        cardsMap[list._id] = await Database.getCards(list._id);
+        const cardsResponse = await Database.getCards(list._id);
+        cardsMap[list._id] = cardsResponse.data || cardsResponse;
       }
       setCardsByList(cardsMap);
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Error loading project data:', error);
+      setError(error.message || 'Failed to load project. You may not have permission to access this project.');
     } finally {
       setLoading(false);
     }
@@ -96,7 +121,7 @@ const WorkFlow = () => {
   
   // Card CRUD operations
   const handleAddCard = async (listId, title) => {
-    await Database.createCard(listId, title);
+    await Database.createCard(listId, title, board._id);
     loadData();
   };
 
@@ -148,17 +173,23 @@ const WorkFlow = () => {
   if (loading || teamLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-800 to-pink-400 flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
+        <div className="text-white text-xl">Loading project workflow...</div>
       </div>
     );
   }
 
-  if (!currentTeam) {
+  if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-800 to-pink-400 flex items-center justify-center">
-        <div className="text-white text-xl text-center">
-          <p className="mb-4">You are not part of any team yet.</p>
-          <p>Please create or join a team to start managing tasks.</p>
+        <div className="text-white text-center">
+          <h2 className="text-2xl font-bold mb-4">Access Denied</h2>
+          <p className="text-xl mb-6">{error}</p>
+          <button
+            onClick={() => navigate('/')}
+            className="px-6 py-3 bg-white text-purple-800 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+          >
+            Return to Home
+          </button>
         </div>
       </div>
     );
@@ -167,27 +198,57 @@ const WorkFlow = () => {
   if (!board) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-800 to-pink-400 flex items-center justify-center">
-        <div className="text-white text-xl">Error loading board. Please ensure the backend server is running.</div>
+        <div className="text-white text-center">
+          <h2 className="text-2xl font-bold mb-4">Project Not Found</h2>
+          <p className="text-xl mb-6">The requested project could not be found.</p>
+          <button
+            onClick={() => navigate('/')}
+            className="px-6 py-3 bg-white text-purple-800 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+          >
+            Return to Home
+          </button>
+        </div>
       </div>
     );
   }
+
+  // Show empty state if no lists exist
+  const hasNoLists = lists.length === 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-800 to-pink-400">
       <Header boardName={board.name} />
 
-      <Board
-        lists={lists}
-        cardsByList={cardsByList}
-        onAddCard={handleAddCard}
-        onDeleteCard={handleDeleteCard}
-        onCardClick={setSelectedCard}
-        onAddList={handleAddList}
-        onDeleteList={handleDeleteList}
-        onUpdateListColor={handleUpdateListColor}
-        onMoveCard={handleMoveCard}
-        onMoveList={handleMoveList}
-      />
+      {hasNoLists ? (
+        <div className="flex items-center justify-center" style={{ height: 'calc(100vh - 80px)' }}>
+          <div className="text-center text-white">
+            <h2 className="text-3xl font-bold mb-4">No tasks yet!</h2>
+            <p className="text-xl mb-8">Create your first list to get started with this project.</p>
+            <button
+              onClick={() => {
+                const title = prompt('Enter list name:');
+                if (title) handleAddList(title);
+              }}
+              className="px-8 py-4 bg-white text-purple-800 rounded-lg font-semibold text-lg hover:bg-gray-100 transition-colors shadow-lg"
+            >
+              Create First List
+            </button>
+          </div>
+        </div>
+      ) : (
+        <Board
+          lists={lists}
+          cardsByList={cardsByList}
+          onAddCard={handleAddCard}
+          onDeleteCard={handleDeleteCard}
+          onCardClick={setSelectedCard}
+          onAddList={handleAddList}
+          onDeleteList={handleDeleteList}
+          onUpdateListColor={handleUpdateListColor}
+          onMoveCard={handleMoveCard}
+          onMoveList={handleMoveList}
+        />
+      )}
 
       {selectedCard && (
         <CardDetailModal
