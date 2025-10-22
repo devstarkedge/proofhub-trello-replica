@@ -65,6 +65,46 @@ const boardSchema = new mongoose.Schema({
     enum: ['low', 'medium', 'high', 'urgent'],
     default: 'medium'
   },
+  projectUrl: {
+    type: String,
+    trim: true
+  },
+  projectSource: {
+    type: String,
+    enum: ['Upwork', 'Direct', 'Contra']
+  },
+  upworkId: {
+    type: String,
+    trim: true
+  },
+  billingCycle: {
+    type: String,
+    enum: ['hr', 'fixed']
+  },
+  fixedPrice: {
+    type: Number
+  },
+  hourlyPrice: {
+    type: Number
+  },
+  clientDetails: {
+    clientName: {
+      type: String,
+      trim: true
+    },
+    clientEmail: {
+      type: String,
+      trim: true
+    },
+    clientWhatsappNumber: {
+      type: String,
+      trim: true
+    }
+  },
+  projectCategory: {
+    type: String,
+    trim: true
+  },
   attachments: [{
     filename: {
       type: String,

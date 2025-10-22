@@ -1,15 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Paperclip } from 'lucide-react';
+import { X } from 'lucide-react';
 import Database from '../services/database';
 
 const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
+    projectUrl: '',
     startDate: '',
+    projectSource: 'Direct',
+    upworkId: '',
+    billingCycle: 'hr',
+    fixedPrice: '',
+    hourlyPrice: '',
     dueDate: '',
-    labels: [],
+    clientName: '',
+    clientEmail: '',
+    clientWhatsappNumber: '',
+    projectCategory: '',
     assignees: [],
     estimatedTime: '',
     status: 'planning',
@@ -24,9 +33,18 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
       setFormData({
         title: project.name || '',
         description: project.description || '',
+        projectUrl: project.projectUrl || '',
         startDate: project.startDate ? new Date(project.startDate).toISOString().split('T')[0] : '',
+        projectSource: project.projectSource || 'Direct',
+        upworkId: project.upworkId || '',
+        billingCycle: project.billingCycle || 'hr',
+        fixedPrice: project.fixedPrice || '',
+        hourlyPrice: project.hourlyPrice || '',
         dueDate: project.dueDate ? new Date(project.dueDate).toISOString().split('T')[0] : '',
-        labels: project.labels || [],
+        clientName: project.clientName || '',
+        clientEmail: project.clientEmail || '',
+        clientWhatsappNumber: project.clientWhatsappNumber || '',
+        projectCategory: project.projectCategory || '',
         assignees: project.members?.map(m => typeof m === 'string' ? m : m._id) || [],
         estimatedTime: project.estimatedTime || '',
         status: project.status || 'planning',
@@ -54,15 +72,6 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
-  };
-
-  const handleLabelChange = (label) => {
-    setFormData(prev => ({
-      ...prev,
-      labels: prev.labels.includes(label)
-        ? prev.labels.filter(l => l !== label)
-        : [...prev.labels, label]
-    }));
   };
 
   const handleAssigneeChange = (userId) => {
@@ -97,10 +106,19 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
       const updates = {
         name: formData.title,
         description: formData.description,
-        members: formData.assignees,
+        projectUrl: formData.projectUrl,
         startDate: formData.startDate,
+        projectSource: formData.projectSource,
+        upworkId: formData.upworkId,
+        billingCycle: formData.billingCycle,
+        fixedPrice: formData.fixedPrice,
+        hourlyPrice: formData.hourlyPrice,
         dueDate: formData.dueDate,
-        labels: formData.labels,
+        clientName: formData.clientName,
+        clientEmail: formData.clientEmail,
+        clientWhatsappNumber: formData.clientWhatsappNumber,
+        projectCategory: formData.projectCategory,
+        members: formData.assignees,
         estimatedTime: formData.estimatedTime,
         status: formData.status,
         priority: formData.priority
@@ -252,25 +270,140 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Labels
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Project URL
               </label>
-              <div className="flex flex-wrap gap-2">
-                {['Urgent', 'Design', 'Frontend', 'Backend', 'Testing'].map(label => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => handleLabelChange(label)}
-                    className={`px-3 py-1 rounded-full text-sm ${
-                      formData.labels.includes(label)
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <input
+                type="text"
+                name="projectUrl"
+                value={formData.projectUrl}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter project URL"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Project Source
+                </label>
+                <select
+                  name="projectSource"
+                  value={formData.projectSource}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="Direct">Direct</option>
+                  <option value="Upwork">Upwork</option>
+                  <option value="Contra">Contra</option>
+                </select>
               </div>
+              {formData.projectSource === 'Upwork' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Upwork ID
+                  </label>
+                  <input
+                    type="text"
+                    name="upworkId"
+                    value={formData.upworkId}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter Upwork ID"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Billing Cycle
+                </label>
+                <select
+                  name="billingCycle"
+                  value={formData.billingCycle}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="hr">Hourly</option>
+                  <option value="fixed">Fixed</option>
+                </select>
+              </div>
+              {formData.billingCycle === 'fixed' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Fixed Price
+                  </label>
+                  <input
+                    type="number"
+                    name="fixedPrice"
+                    value={formData.fixedPrice}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter fixed price"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Hourly Price
+                  </label>
+                  <input
+                    type="number"
+                    name="hourlyPrice"
+                    value={formData.hourlyPrice}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter hourly price"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Client Details</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <input
+                  type="text"
+                  name="clientName"
+                  value={formData.clientName}
+                  onChange={handleInputChange}
+                  placeholder="Client Name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="email"
+                  name="clientEmail"
+                  value={formData.clientEmail}
+                  onChange={handleInputChange}
+                  placeholder="Client Email"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  name="clientWhatsappNumber"
+                  value={formData.clientWhatsappNumber}
+                  onChange={handleInputChange}
+                  placeholder="Client WhatsApp Number"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Project Category
+              </label>
+              <input
+                type="text"
+                name="projectCategory"
+                value={formData.projectCategory}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter project category"
+              />
             </div>
 
             <div>

@@ -23,5 +23,6 @@ router.get('/me', protect, getMe);
 router.put('/updatedetails', protect, updateDetails);
 router.put('/updatepassword', protect, updatePassword);
 router.post('/refresh', protect, refreshToken);
+router.get('/verify', protect, getMe);
 
 export default router;

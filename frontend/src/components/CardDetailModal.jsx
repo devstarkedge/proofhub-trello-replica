@@ -27,8 +27,10 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
   }, []);
 
   const loadComments = async () => {
+    const cardId = card.id || card._id;
+    if (!cardId) return;
     try {
-      const cardComments = await Database.getComments(card._id);
+      const cardComments = await Database.getComments(cardId);
       setComments(cardComments);
     } catch (error) {
       console.error('Error loading comments:', error);
@@ -36,13 +38,13 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
   };
 
   const loadTeamMembers = async () => {
-    // Assuming team members are available via context or API
-    // For now, mock data
-    setTeamMembers([
-      { _id: '1', name: 'John Doe' },
-      { _id: '2', name: 'Jane Smith' },
-      { _id: '3', name: 'Bob Johnson' }
-    ]);
+    try {
+      const users = await Database.getUsers();
+      setTeamMembers(users.data || []);
+    } catch (error) {
+      console.error('Error loading team members:', error);
+      setTeamMembers([]);
+    }
   };
 
   const handleSave = () => {
@@ -61,8 +63,10 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
+    const cardId = card.id || card._id;
+    if (!cardId) return;
     try {
-      await Database.createComment(card._id, newComment);
+      await Database.createComment(cardId, newComment);
       setNewComment('');
       loadComments();
     } catch (error) {

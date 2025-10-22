@@ -1,23 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Plus, Paperclip, File, Image, Upload } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 import Database from '../services/database';
 
 const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
+    projectUrl: '',
     startDate: '',
+    projectSource: 'Direct',
+    upworkId: '',
+    billingCycle: 'hr',
+    fixedPrice: '',
+    hourlyPrice: '',
     dueDate: '',
-    labels: [],
+    clientName: '',
+    clientEmail: '',
+    clientWhatsappNumber: '',
+    projectCategory: '',
     assignees: [],
     estimatedTime: ''
   });
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [attachments, setAttachments] = useState([]);
-  const fileInputRef = useRef(null);
+
 
   useEffect(() => {
     if (isOpen) {
@@ -58,41 +66,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
     }
   };
 
-  const handleLabelChange = (label) => {
-    setFormData(prev => ({
-      ...prev,
-      labels: prev.labels.includes(label)
-        ? prev.labels.filter(l => l !== label)
-        : [...prev.labels, label]
-    }));
-  };
 
-  const handleAssigneeChange = (userId) => {
-    setFormData(prev => ({
-      ...prev,
-      assignees: prev.assignees.includes(userId)
-        ? prev.assignees.filter(id => id !== userId)
-        : [...prev.assignees, userId]
-    }));
-  };
-
-  const handleFileSelect = (e) => {
-    const files = Array.from(e.target.files);
-    const validFiles = files.filter(file => {
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/plain', 'application/zip'];
-      return allowedTypes.includes(file.type) && file.size <= 5 * 1024 * 1024; // 5MB limit
-    });
-
-    if (validFiles.length !== files.length) {
-      alert('Some files were rejected. Only images, PDFs, documents, and zip files under 5MB are allowed.');
-    }
-
-    setAttachments(prev => [...prev, ...validFiles]);
-  };
-
-  const removeAttachment = (index) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index));
-  };
 
   const validateForm = () => {
     const newErrors = {};
@@ -129,15 +103,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
       formDataToSend.append('background', '#6366f1');
       formDataToSend.append('startDate', formData.startDate);
       formDataToSend.append('dueDate', formData.dueDate);
-      formDataToSend.append('labels', JSON.stringify(formData.labels));
-      formDataToSend.append('estimatedTime', formData.estimatedTime);
-      formDataToSend.append('status', 'planning');
-      formDataToSend.append('priority', 'medium');
 
-      // Add attachments
-      attachments.forEach((file, index) => {
-        formDataToSend.append('attachments', file);
-      });
 
       const response = await Database.createProject(formDataToSend);
 
@@ -147,13 +113,21 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
         setFormData({
           title: '',
           description: '',
+          projectUrl: '',
           startDate: '',
+          projectSource: 'Direct',
+          upworkId: '',
+          billingCycle: 'hr',
+          fixedPrice: '',
+          hourlyPrice: '',
           dueDate: '',
-          labels: [],
+          clientName: '',
+          clientEmail: '',
+          clientWhatsappNumber: '',
+          projectCategory: '',
           assignees: [],
           estimatedTime: ''
         });
-        setAttachments([]);
         alert('Project created successfully!');
       } else {
         throw new Error(response.message || 'Failed to create project');
@@ -259,27 +233,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Labels
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {['Urgent', 'Design', 'Frontend', 'Backend', 'Testing'].map(label => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => handleLabelChange(label)}
-                    className={`px-3 py-1 rounded-full text-sm ${
-                      formData.labels.includes(label)
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
+
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -316,52 +270,143 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Attachments
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Project URL
               </label>
               <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileSelect}
-                multiple
-                accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
-                className="hidden"
+                type="text"
+                name="projectUrl"
+                value={formData.projectUrl}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter project URL"
               />
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700"
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Project Source
+                </label>
+                <select
+                  name="projectSource"
+                  value={formData.projectSource}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <Upload className="h-4 w-4" />
-                  <span>Choose Files</span>
-                </button>
-                {attachments.length > 0 && (
-                  <div className="space-y-1">
-                    {attachments.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        <div className="flex items-center space-x-2">
-                          {file.type.startsWith('image/') ? (
-                            <Image className="h-4 w-4 text-blue-500" />
-                          ) : (
-                            <File className="h-4 w-4 text-gray-500" />
-                          )}
-                          <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                          <span className="text-xs text-gray-500">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeAttachment(index)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  <option value="Direct">Direct</option>
+                  <option value="Upwork">Upwork</option>
+                  <option value="Contra">Contra</option>
+                </select>
+              </div>
+              {formData.projectSource === 'Upwork' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Upwork ID
+                  </label>
+                  <input
+                    type="text"
+                    name="upworkId"
+                    value={formData.upworkId}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter Upwork ID"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Billing Cycle
+                </label>
+                <select
+                  name="billingCycle"
+                  value={formData.billingCycle}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="hr">Hourly</option>
+                  <option value="fixed">Fixed</option>
+                </select>
+              </div>
+              {formData.billingCycle === 'fixed' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Fixed Price
+                  </label>
+                  <input
+                    type="number"
+                    name="fixedPrice"
+                    value={formData.fixedPrice}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter fixed price"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Hourly Price
+                  </label>
+                  <input
+                    type="number"
+                    name="hourlyPrice"
+                    value={formData.hourlyPrice}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter hourly price"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Client Details</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <input
+                  type="text"
+                  name="clientName"
+                  value={formData.clientName}
+                  onChange={handleInputChange}
+                  placeholder="Client Name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="email"
+                  name="clientEmail"
+                  value={formData.clientEmail}
+                  onChange={handleInputChange}
+                  placeholder="Client Email"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  name="clientWhatsappNumber"
+                  value={formData.clientWhatsappNumber}
+                  onChange={handleInputChange}
+                  placeholder="Client WhatsApp Number"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Project Category
+              </label>
+              <input
+                type="text"
+                name="projectCategory"
+                value={formData.projectCategory}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter project category"
+              />
+            </div>
+
+
 
             <div className="flex justify-between items-center pt-4">
               <button
@@ -372,13 +417,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
                 Cancel
               </button>
               <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2 text-gray-400 hover:text-gray-600"
-                >
-                  <Paperclip className="h-5 w-5" />
-                </button>
+
                 <button
                   type="submit"
                   disabled={loading}

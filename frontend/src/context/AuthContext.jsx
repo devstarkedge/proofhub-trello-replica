@@ -1,35 +1,57 @@
-import React, { createContext, useState, useEffect } from "react";
+import React, { createContext, useState, useEffect, useCallback } from "react";
 import axios from "axios";
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [auth, setAuth] = useState({
-    token: localStorage.getItem("token"),
-    isAuthenticated: !!localStorage.getItem("token"),
-    loading: true,
-    user: null,
-  });
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem("token"));
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const getProfile = async () => {
-    const res = await axios.get("/api/users/profile");
-    return res.data;
+  const loginUser = (userData, userToken) => {
+    localStorage.setItem("token", userToken);
+    localStorage.setItem("user", JSON.stringify(userData));
+    setToken(userToken);
+    setUser(userData);
+    setIsAuthenticated(true);
+    axios.defaults.headers.common["Authorization"] = `Bearer ${userToken}`;
   };
 
-  // Token refresh mechanism
-  const refreshToken = async () => {
-    try {
-      const response = await axios.post('/api/auth/refresh');
-      const { token } = response.data;
-      localStorage.setItem('token', token);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      return token;
-    } catch (error) {
-      console.error('Token refresh failed:', error);
-      logout();
-      throw error;
+  const logoutUser = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+    delete axios.defaults.headers.common["Authorization"];
+  }, []);
+
+  const restoreSession = useCallback(async () => {
+    const savedToken = localStorage.getItem("token");
+    const savedUser = localStorage.getItem("user");
+
+    if (savedToken && savedUser) {
+      try {
+        axios.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
+        const response = await axios.get("/api/auth/verify");
+        const userData = response.data.data;
+
+        // Re-hydrate state from verified data
+        setToken(savedToken);
+        setUser(userData);
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error("Session restore failed:", error);
+        logoutUser();
+      }
     }
-  };
+    setLoading(false);
+  }, [logoutUser]);
+
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
 
   // Axios interceptor for automatic token refresh
   useEffect(() => {
@@ -40,10 +62,16 @@ export const AuthProvider = ({ children }) => {
         if (error.response?.status === 401 && !originalRequest._retry) {
           originalRequest._retry = true;
           try {
-            const newToken = await refreshToken();
-            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+            const refreshResponse = await axios.post("/api/auth/refresh");
+            const { token: newToken } = refreshResponse.data;
+            localStorage.setItem("token", newToken);
+            setToken(newToken);
+            axios.defaults.headers.common["Authorization"] = `Bearer ${newToken}`;
+            originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
             return axios(originalRequest);
           } catch (refreshError) {
+            console.error("Token refresh failed:", refreshError);
+            logoutUser();
             return Promise.reject(refreshError);
           }
         }
@@ -54,62 +82,7 @@ export const AuthProvider = ({ children }) => {
     return () => {
       axios.interceptors.response.eject(interceptor);
     };
-  }, []);
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      getProfile()
-        .then((user) => {
-          setAuth((prev) => ({ ...prev, user, loading: false }));
-        })
-        .catch((err) => {
-          console.error("Failed to fetch profile:", err);
-          localStorage.removeItem("token");
-          delete axios.defaults.headers.common["Authorization"];
-          setAuth({
-            token: null,
-            isAuthenticated: false,
-            loading: false,
-            user: null,
-          });
-        });
-    } else {
-      setAuth({
-        token: null,
-        isAuthenticated: false,
-        loading: false,
-        user: null,
-      });
-    }
-  }, []);
-
-  const register = async (name, email, password, department) => {
-    const config = {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    };
-
-    const body = JSON.stringify({ name, email, password, department });
-
-    try {
-      const res = await axios.post("/api/auth/register", body, config);
-      // Do not set token or authenticate immediately; user needs verification
-      setAuth({
-        token: null,
-        isAuthenticated: false,
-        loading: false,
-        user: null,
-      });
-      // Return success to show message in RegisterPage
-      return { success: true };
-    } catch (err) {
-      console.error(err.response.data);
-      throw err; // Re-throw to handle in component
-    }
-  };
+  }, [logoutUser]);
 
   const login = async (email, password) => {
     const config = {
@@ -117,51 +90,47 @@ export const AuthProvider = ({ children }) => {
         "Content-Type": "application/json",
       },
     };
-
     const body = JSON.stringify({ email, password });
 
     try {
       const res = await axios.post("/api/auth/login", body, config);
       const { token, user } = res.data;
-
-      localStorage.setItem("token", token);
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-
-      setAuth({ token, isAuthenticated: true, loading: false, user });
-
-      // Role-based redirects
-      const userRole = user.role.toLowerCase();
-
-      if (userRole === "admin") {
-        // Admin users are redirected to the dashboard
-        return { success: true, redirect: "/" };
-      } else if (!user.isVerified) {
-        // Non-admin users who are not verified are redirected to a pending page
-        return { success: true, redirect: "/verify-pending" };
-      } else {
-        // Verified non-admin users are redirected to the workflow/dashboard
-        return { success: true, redirect: "/" };
-      }
+      loginUser(user, token);
+      return { success: true, user };
     } catch (err) {
       console.error(err.response?.data);
       throw err;
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    delete axios.defaults.headers.common["Authorization"];
-    setAuth({
-      token: null,
-      isAuthenticated: false,
-      loading: false,
-      user: null,
-    });
+  const register = async (name, email, password, department) => {
+    const config = {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+    const body = JSON.stringify({ name, email, password, department });
+
+    try {
+      await axios.post("/api/auth/register", body, config);
+      return { success: true };
+    } catch (err) {
+      console.error(err.response.data);
+      throw err;
+    }
   };
 
   return (
     <AuthContext.Provider
-      value={{ ...auth, register, login, logout, getProfile }}
+      value={{
+        user,
+        token,
+        isAuthenticated,
+        loading,
+        login,
+        logoutUser,
+        register,
+      }}
     >
       {children}
     </AuthContext.Provider>

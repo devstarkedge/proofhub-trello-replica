@@ -16,8 +16,12 @@ const LoginPage = () => {
     e.preventDefault();
     setError('');
     try {
-      const { redirect } = await login(email, password);
-      navigate(redirect);
+      const { user } = await login(email, password);
+      if (user.role === 'admin' || user.isVerified) {
+        navigate('/');
+      } else {
+        navigate('/verify-pending');
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');
     }

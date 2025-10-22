@@ -140,7 +140,15 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     labels,
     estimatedTime,
     status,
-    priority
+    priority,
+    projectUrl,
+    projectSource,
+    upworkId,
+    billingCycle,
+    fixedPrice,
+    hourlyPrice,
+    clientDetails,
+    projectCategory
   } = req.body;
 
   // Handle file attachments
@@ -194,7 +202,15 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     estimatedTime,
     status: status || "planning",
     priority: priority || "medium",
-    attachments
+    attachments,
+    projectUrl,
+    projectSource,
+    upworkId,
+    billingCycle,
+    fixedPrice,
+    hourlyPrice,
+    clientDetails,
+    projectCategory
   });
 
   // Add board to department's projects array

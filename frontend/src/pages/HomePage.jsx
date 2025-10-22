@@ -7,6 +7,8 @@ import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import AddProjectModal from '../components/AddProjectModal';
+import EditProjectModal from '../components/EditProjectModal';
+import ViewProjectModal from '../components/ViewProjectModal';
 
 const baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
@@ -17,6 +19,10 @@ const HomePage = () => {
   const [error, setError] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
 
   useEffect(() => {
     fetchDepartments();
@@ -50,6 +56,51 @@ const HomePage = () => {
       }
       return dept;
     }));
+  };
+
+  const handleEditProject = (project, departmentId) => {
+    setSelectedProject({ ...project, departmentId });
+    setEditModalOpen(true);
+  };
+
+  const handleProjectUpdated = (updatedProject) => {
+    setDepartments(prev => prev.map(dept => {
+      if (dept._id === selectedProject.departmentId) {
+        return {
+          ...dept,
+          projects: dept.projects.map(project =>
+            project._id === updatedProject._id ? updatedProject : project
+          )
+        };
+      }
+      return dept;
+    }));
+  };
+
+  const handleDeleteProject = async (project, departmentId) => {
+    if (window.confirm(`Are you sure you want to delete the project "${project.name}"?`)) {
+      try {
+        await Database.deleteProject(project._id);
+        setDepartments(prev => prev.map(dept => {
+          if (dept._id === departmentId) {
+            return {
+              ...dept,
+              projects: dept.projects.filter(p => p._id !== project._id)
+            };
+          }
+          return dept;
+        }));
+        alert('Project deleted successfully!');
+      } catch (error) {
+        console.error('Error deleting project:', error);
+        alert('Failed to delete project. Please try again.');
+      }
+    }
+  };
+
+  const handleViewProject = (projectId) => {
+    setSelectedProjectId(projectId);
+    setViewModalOpen(true);
   };
 
   const canAddProject = user?.role === 'admin' || user?.role === 'manager';
@@ -138,12 +189,12 @@ const HomePage = () => {
                             className="flex-shrink-0 w-80"
                           >
                             <ProjectCard
-                              title={project.name}
-                              subtitle={project.description || 'Project description'}
-                              color={`bg-[${project.background || '#6366f1'}]`}
-                              image={project.attachments && project.attachments.length > 0 ? `${baseURL}/uploads/${project.attachments[0].filename}` : undefined}
+                              project={project}
                               deptId={department._id}
                               projectId={project._id}
+                              onEdit={() => handleEditProject(project, department._id)}
+                              onDelete={() => handleDeleteProject(project, department._id)}
+                              onView={() => handleViewProject(project._id)}
                             />
                           </motion.div>
                         ))}
@@ -166,6 +217,19 @@ const HomePage = () => {
         onClose={() => setModalOpen(false)}
         departmentId={selectedDepartment}
         onProjectAdded={handleProjectAdded}
+      />
+
+      <EditProjectModal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        project={selectedProject}
+        onProjectUpdated={handleProjectUpdated}
+      />
+
+      <ViewProjectModal
+        isOpen={viewModalOpen}
+        onClose={() => setViewModalOpen(false)}
+        projectId={selectedProjectId}
       />
     </div>
   );

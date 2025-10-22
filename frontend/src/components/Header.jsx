@@ -25,7 +25,7 @@ const Header = ({ boardName }) => {
   };
 
   const navItems = [
-    { path: '/', icon: Kanban, label: 'Kanban' },
+    { path: '/', icon: Kanban, label: 'Home' },
     { path: '/list-view', icon: List, label: 'List' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     { path: '/gantt', icon: BarChart3, label: 'Gantt' },
