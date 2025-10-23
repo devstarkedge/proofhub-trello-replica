@@ -295,19 +295,6 @@ const HRPanel = () => {
                         ))}
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
-                      <select
-                        id="team-select"
-                        className="w-full p-2 border rounded"
-                        defaultValue={selectedUser.team?._id || ''}
-                      >
-                        <option value="">Select Team</option>
-                        {teams.map(team => (
-                          <option key={team._id} value={team._id}>{team.name}</option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
                   <div className="flex justify-end space-x-2 mt-6">
                     <button

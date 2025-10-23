@@ -134,11 +134,11 @@ const HomePage = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <Sidebar />
       <div className="flex-1 ml-64">
         <Header />
-        <main className="p-6">
+        <main className="p-6 space-y-6">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900">Home</h1>
             <p className="text-gray-600 mt-1">Welcome back, {user?.name}!</p>
@@ -150,7 +150,7 @@ const HomePage = () => {
               <p className="text-gray-400 mt-2">Contact your administrator to create departments.</p>
             </div>
           ) : (
-            <div className="space-y-8 overflow-y-auto max-h-[calc(100vh-200px)] scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+            <div className="space-y-8">
               {departments.map((department) => (
                 <motion.div
                   key={department._id}
@@ -178,27 +178,24 @@ const HomePage = () => {
                   )}
 
                   {department.projects && department.projects.length > 0 ? (
-                    <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pb-2">
-                      <div className="flex space-x-4 min-w-max">
-                        {department.projects.map((project) => (
-                          <motion.div
-                            key={project._id}
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ duration: 0.2 }}
-                            className="flex-shrink-0 w-80"
-                          >
-                            <ProjectCard
-                              project={project}
-                              deptId={department._id}
-                              projectId={project._id}
-                              onEdit={() => handleEditProject(project, department._id)}
-                              onDelete={() => handleDeleteProject(project, department._id)}
-                              onView={() => handleViewProject(project._id)}
-                            />
-                          </motion.div>
-                        ))}
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {department.projects.map((project) => (
+                        <motion.div
+                          key={project._id}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <ProjectCard
+                            project={project}
+                            deptId={department._id}
+                            projectId={project._id}
+                            onEdit={() => handleEditProject(project, department._id)}
+                            onDelete={() => handleDeleteProject(project, department._id)}
+                            onView={() => handleViewProject(project._id)}
+                          />
+                        </motion.div>
+                      ))}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-500">

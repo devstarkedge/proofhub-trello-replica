@@ -1,9 +1,11 @@
 import Card from "../models/Card.js";
 import List from "../models/List.js";
+import Board from "../models/Board.js";
 import Activity from "../models/Activity.js";
 import Notification from "../models/Notification.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import { emitToBoard, emitNotification } from "../server.js";
 
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
@@ -100,24 +102,56 @@ export const createCard = asyncHandler(async (req, res, next) => {
   // Log activity
   await Activity.create({
     type: "card_created",
-    description: `Created card \"${title}\"`,
+    description: `Created card "${title}"`,
     user: req.user.id,
     board,
     card: card._id,
     list,
   });
 
-  // Notify assignee
+  // Emit real-time update to board
+  emitToBoard(board, 'card-created', {
+    card,
+    listId: list,
+    createdBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  // Notify assignee if different from creator
   if (assignee && assignee.toString() !== req.user.id) {
-    await Notification.create({
+    const notification = await Notification.create({
       type: "task_assigned",
       title: "New Task Assigned",
-      message: `${req.user.name} assigned you to \"${title}\"`,
+      message: `${req.user.name} assigned you to "${title}"`,
       user: assignee,
       sender: req.user.id,
       relatedCard: card._id,
       relatedBoard: board,
     });
+
+    // Send real-time notification
+    emitNotification(assignee.toString(), notification);
+  }
+
+  // Notify all members
+  if (members && members.length > 0) {
+    for (const memberId of members) {
+      if (memberId.toString() !== req.user.id && memberId.toString() !== assignee?.toString()) {
+        const notification = await Notification.create({
+          type: "member_added",
+          title: "Added to Task",
+          message: `${req.user.name} added you to "${title}"`,
+          user: memberId,
+          sender: req.user.id,
+          relatedCard: card._id,
+          relatedBoard: board,
+        });
+
+        emitNotification(memberId.toString(), notification);
+      }
+    }
   }
 
   const populatedCard = await Card.findById(card._id)
@@ -143,6 +177,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
   const oldAssignee = card.assignee?.toString();
   const oldDueDate = card.dueDate;
+  const oldStatus = card.status;
 
   card = await Card.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
@@ -155,11 +190,24 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   // Log activity
   await Activity.create({
     type: "card_updated",
-    description: `Updated card \"${card.title}\"`,
+    description: `Updated card "${card.title}"`,
     user: req.user.id,
     board: card.board,
     card: card._id,
     list: card.list,
+    metadata: {
+      changes: req.body
+    }
+  });
+
+  // Emit real-time update
+  emitToBoard(card.board.toString(), 'card-updated', {
+    cardId: card._id,
+    updates: req.body,
+    updatedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
   });
 
   // Notify if assignee changed
@@ -168,28 +216,47 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     req.body.assignee !== oldAssignee &&
     req.body.assignee !== req.user.id
   ) {
-    await Notification.create({
+    const notification = await Notification.create({
       type: "task_assigned",
       title: "Task Assigned",
-      message: `${req.user.name} assigned you to \"${card.title}\"`,
+      message: `${req.user.name} assigned you to "${card.title}"`,
       user: req.body.assignee,
       sender: req.user.id,
       relatedCard: card._id,
       relatedBoard: card.board,
     });
+
+    emitNotification(req.body.assignee, notification);
   }
 
   // Notify if due date changed
   if (req.body.dueDate && req.body.dueDate !== oldDueDate && card.assignee) {
-    await Notification.create({
+    const notification = await Notification.create({
       type: "task_updated",
       title: "Due Date Changed",
-      message: `Due date for \"${card.title}\" has been updated`,
-      user: card.assignee,
+      message: `Due date for "${card.title}" has been updated to ${new Date(req.body.dueDate).toLocaleDateString()}`,
+      user: card.assignee._id,
       sender: req.user.id,
       relatedCard: card._id,
       relatedBoard: card.board,
     });
+
+    emitNotification(card.assignee._id.toString(), notification);
+  }
+
+  // Notify if status changed to done
+  if (req.body.status === 'done' && oldStatus !== 'done' && card.assignee) {
+    const notification = await Notification.create({
+      type: "task_updated",
+      title: "Task Completed",
+      message: `"${card.title}" has been marked as complete`,
+      user: card.assignee._id,
+      sender: req.user.id,
+      relatedCard: card._id,
+      relatedBoard: card.board,
+    });
+
+    emitNotification(card.assignee._id.toString(), notification);
   }
 
   res.status(200).json({
@@ -274,11 +341,28 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   // Log activity
   await Activity.create({
     type: "card_moved",
-    description: `Moved card \"${card.title}\"`,
+    description: `Moved card "${card.title}"`,
     user: req.user.id,
     board: card.board,
     card: card._id,
     list: card.list,
+    metadata: {
+      sourceListId,
+      destinationListId,
+      newPosition
+    }
+  });
+
+  // Emit real-time update
+  emitToBoard(card.board.toString(), 'card-moved', {
+    cardId: card._id,
+    sourceListId,
+    destinationListId,
+    newPosition,
+    movedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
   });
 
   res.status(200).json({
@@ -296,6 +380,27 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   if (!card) {
     return next(new ErrorResponse("Card not found", 404));
   }
+
+  const boardId = card.board;
+
+  // Log activity before deletion
+  await Activity.create({
+    type: "card_deleted",
+    description: `Deleted card "${card.title}"`,
+    user: req.user.id,
+    board: card.board,
+    list: card.list,
+  });
+
+  // Emit real-time update
+  emitToBoard(boardId.toString(), 'card-deleted', {
+    cardId: card._id,
+    listId: card.list,
+    deletedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
 
   await card.deleteOne();
 
@@ -334,10 +439,20 @@ export const uploadAttachment = asyncHandler(async (req, res, next) => {
   // Log activity
   await Activity.create({
     type: "attachment_added",
-    description: `Added attachment to \"${card.title}\"`,
+    description: `Added attachment to "${card.title}"`,
     user: req.user.id,
     board: card.board,
     card: card._id,
+  });
+
+  // Emit real-time update
+  emitToBoard(card.board.toString(), 'card-updated', {
+    cardId: card._id,
+    updates: { attachments: card.attachments },
+    updatedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
   });
 
   res.status(200).json({

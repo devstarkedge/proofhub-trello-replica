@@ -6,80 +6,180 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.connected = false;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 10;
   }
 
-  connect(userId) {
-    if (this.connected) return;
+  connect(userId, token) {
+    if (this.connected && this.socket) {
+      console.log('Socket already connected');
+      return;
+    }
 
+    console.log('Connecting to socket server...');
+    
     this.socket = io(baseURL, {
       auth: {
         userId,
-        token: localStorage.getItem('token')
+        token: token || localStorage.getItem('token')
       },
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: this.maxReconnectAttempts,
+      transports: ['websocket', 'polling']
     });
 
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    if (!this.socket) return;
+
+    // Connection events
     this.socket.on('connect', () => {
-      console.log('Socket connected');
+      console.log('Socket connected successfully');
       this.connected = true;
+      this.reconnectAttempts = 0;
+      
+      // Dispatch custom event for connection
+      window.dispatchEvent(new CustomEvent('socket-connected'));
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('Socket disconnected');
+    this.socket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
       this.connected = false;
+      
+      // Dispatch custom event for disconnection
+      window.dispatchEvent(new CustomEvent('socket-disconnected', { detail: reason }));
     });
 
-    // Listen for card updates
+    this.socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      this.reconnectAttempts++;
+      
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.error('Max reconnection attempts reached');
+        window.dispatchEvent(new CustomEvent('socket-connection-failed'));
+      }
+    });
+
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log('Socket reconnected after', attemptNumber, 'attempts');
+      this.reconnectAttempts = 0;
+    });
+
+    // Real-time data events
     this.socket.on('card-updated', (data) => {
+      console.log('Card updated:', data);
       window.dispatchEvent(new CustomEvent('socket-card-updated', { detail: data }));
     });
 
-    // Listen for new comments
+    this.socket.on('card-created', (data) => {
+      console.log('Card created:', data);
+      window.dispatchEvent(new CustomEvent('socket-card-created', { detail: data }));
+    });
+
+    this.socket.on('card-deleted', (data) => {
+      console.log('Card deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-card-deleted', { detail: data }));
+    });
+
+    this.socket.on('card-moved', (data) => {
+      console.log('Card moved:', data);
+      window.dispatchEvent(new CustomEvent('socket-card-moved', { detail: data }));
+    });
+
     this.socket.on('comment-added', (data) => {
+      console.log('Comment added:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-added', { detail: data }));
     });
 
-    // Listen for notifications
-    this.socket.on('notification', (data) => {
-      window.dispatchEvent(new CustomEvent('socket-notification', { detail: data }));
+    this.socket.on('list-created', (data) => {
+      console.log('List created:', data);
+      window.dispatchEvent(new CustomEvent('socket-list-created', { detail: data }));
     });
 
-    // Listen for list updates
     this.socket.on('list-updated', (data) => {
+      console.log('List updated:', data);
       window.dispatchEvent(new CustomEvent('socket-list-updated', { detail: data }));
     });
 
-    // Listen for board updates
+    this.socket.on('list-deleted', (data) => {
+      console.log('List deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-list-deleted', { detail: data }));
+    });
+
     this.socket.on('board-updated', (data) => {
+      console.log('Board updated:', data);
       window.dispatchEvent(new CustomEvent('socket-board-updated', { detail: data }));
+    });
+
+    // Notification events
+    this.socket.on('notification', (data) => {
+      console.log('New notification:', data);
+      window.dispatchEvent(new CustomEvent('socket-notification', { detail: data }));
+    });
+
+    this.socket.on('task-assigned', (data) => {
+      console.log('Task assigned:', data);
+      window.dispatchEvent(new CustomEvent('socket-task-assigned', { detail: data }));
     });
   }
 
   disconnect() {
     if (this.socket) {
+      console.log('Disconnecting socket...');
       this.socket.disconnect();
       this.socket = null;
       this.connected = false;
     }
   }
 
+  // Room management
   joinBoard(boardId) {
     if (this.socket && this.connected) {
+      console.log('Joining board:', boardId);
       this.socket.emit('join-board', boardId);
     }
   }
 
   leaveBoard(boardId) {
     if (this.socket && this.connected) {
+      console.log('Leaving board:', boardId);
       this.socket.emit('leave-board', boardId);
     }
   }
 
+  joinRoom(roomId) {
+    if (this.socket && this.connected) {
+      console.log('Joining room:', roomId);
+      this.socket.emit('join-room', roomId);
+    }
+  }
+
+  leaveRoom(roomId) {
+    if (this.socket && this.connected) {
+      console.log('Leaving room:', roomId);
+      this.socket.emit('leave-room', roomId);
+    }
+  }
+
+  // Emit events
   emitCardUpdate(cardId, updates) {
     if (this.socket && this.connected) {
       this.socket.emit('update-card', { cardId, updates });
+    }
+  }
+
+  emitCardMove(cardId, sourceListId, destinationListId, newPosition) {
+    if (this.socket && this.connected) {
+      this.socket.emit('move-card', { 
+        cardId, 
+        sourceListId, 
+        destinationListId, 
+        newPosition 
+      });
     }
   }
 
@@ -87,6 +187,52 @@ class SocketService {
     if (this.socket && this.connected) {
       this.socket.emit('add-comment', { cardId, comment });
     }
+  }
+
+  emitListUpdate(listId, updates) {
+    if (this.socket && this.connected) {
+      this.socket.emit('update-list', { listId, updates });
+    }
+  }
+
+  emitBoardUpdate(boardId, updates) {
+    if (this.socket && this.connected) {
+      this.socket.emit('update-board', { boardId, updates });
+    }
+  }
+
+  // Typing indicators
+  startTyping(cardId, userId, userName) {
+    if (this.socket && this.connected) {
+      this.socket.emit('typing-start', { cardId, userId, userName });
+    }
+  }
+
+  stopTyping(cardId, userId) {
+    if (this.socket && this.connected) {
+      this.socket.emit('typing-stop', { cardId, userId });
+    }
+  }
+
+  // Online status
+  getUsersOnline(boardId) {
+    if (this.socket && this.connected) {
+      return new Promise((resolve) => {
+        this.socket.emit('get-users-online', boardId, (users) => {
+          resolve(users);
+        });
+      });
+    }
+    return Promise.resolve([]);
+  }
+
+  // Utility methods
+  isConnected() {
+    return this.connected && this.socket && this.socket.connected;
+  }
+
+  getSocket() {
+    return this.socket;
   }
 }
 
