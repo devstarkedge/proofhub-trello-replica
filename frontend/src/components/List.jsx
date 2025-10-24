@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Plus, MoreHorizontal, X, Copy, Move, Eye, Palette, Zap, Archive, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, MoreHorizontal, X, Palette, Trash2 } from 'lucide-react';
 import Card from './Card';
 import AddCardForm from './AddCardForm';
 
@@ -10,6 +11,8 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
   const [draggedCard, setDraggedCard] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dropTarget, setDropTarget] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [isListDragging, setIsListDragging] = useState(false);
   
   const handleAddCard = (listId, title) => {
     onAddCard(listId, title);
@@ -46,62 +49,143 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
     { name: 'gray', class: 'bg-gray-400' }
   ];
   
-  // Drag and drop handlers for cards
+  // ============ CARD DRAG AND DROP HANDLERS ============
   const handleCardDragStart = (e, card) => {
     setDraggedCard(card);
     setIsDragging(true);
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', card._id);
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      type: 'card',
+      cardId: card._id,
+      sourceListId: list._id
+    }));
+    
+    // Add visual feedback
+    e.currentTarget.style.opacity = '0.5';
   };
-  
-  const handleCardDragOver = (e, targetCard) => {
+
+  const handleCardDragOver = (e, targetCard, index) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    setDropTarget(targetCard._id);
+    
+    if (draggedCard && draggedCard._id !== targetCard._id) {
+      setDropTarget(targetCard._id);
+      
+      // Calculate if we're dragging above or below the target card
+      const rect = e.currentTarget.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+      const isDraggingBelow = e.clientY > midpoint;
+      
+      setDragOverIndex(isDraggingBelow ? index + 1 : index);
+    }
   };
-  
-  const handleCardDragLeave = (e, targetCard) => {
-    if (dropTarget === targetCard._id) {
+
+  const handleCardDragLeave = (e) => {
+    // Only clear if we're actually leaving the card area
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (
+      e.clientX < rect.left ||
+      e.clientX > rect.right ||
+      e.clientY < rect.top ||
+      e.clientY > rect.bottom
+    ) {
       setDropTarget(null);
     }
   };
-  
+
   const handleCardDrop = (e, targetCard) => {
     e.preventDefault();
     e.stopPropagation();
-    const cardId = e.dataTransfer.getData('text/plain');
-    if (cardId && draggedCard && draggedCard._id !== targetCard._id) {
-      const newPosition = targetCard.position;
+    
+    const dragData = JSON.parse(e.dataTransfer.getData('text/plain') || '{}');
+    
+    if (dragData.type === 'card' && draggedCard && draggedCard._id !== targetCard._id) {
+      const targetIndex = cards.findIndex(card => card._id === targetCard._id);
+      const draggedIndex = cards.findIndex(card => card._id === draggedCard._id);
+
+      let newPosition;
+      
+      // If within same list
+      if (dragData.sourceListId === list._id) {
+        if (dragOverIndex !== null) {
+          newPosition = dragOverIndex > draggedIndex ? dragOverIndex - 1 : dragOverIndex;
+        } else {
+          newPosition = targetIndex;
+        }
+      } else {
+        // Moving from another list
+        newPosition = dragOverIndex !== null ? dragOverIndex : targetIndex;
+      }
+
+      // Call the move function with calculated position
       onMoveCard(draggedCard._id, list._id, newPosition);
-    } else if (!cardId) {
-      // List drop on card position - insert before this card
-      onDrop(e, list);
     }
-    setDraggedCard(null);
-    setIsDragging(false);
-    setDropTarget(null);
+    
+    handleDragEnd();
   };
-  
+
+  const handleListAreaDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const dragData = JSON.parse(e.dataTransfer.getData('text/plain') || '{}');
+    
+    if (dragData.type === 'card' && draggedCard) {
+      e.dataTransfer.dropEffect = 'move';
+      
+      // If dragging over empty space in list, show drop at end
+      if (cards.length === 0) {
+        setDragOverIndex(0);
+      } else if (!dropTarget) {
+        setDragOverIndex(cards.length);
+      }
+    }
+  };
+
   const handleListDrop = (e) => {
     e.preventDefault();
-    const cardId = e.dataTransfer.getData('text/plain');
-    if (cardId && draggedCard && draggedCard.listId !== list._id) {
-      const newPosition = cards.length;
-      onMoveCard(draggedCard._id, list._id, newPosition);
-    } else if (!cardId) {
-      // List drop at end of list
+    e.stopPropagation();
+    
+    const dragData = JSON.parse(e.dataTransfer.getData('text/plain') || '{}');
+    
+    if (dragData.type === 'card' && draggedCard) {
+      if (dragData.sourceListId !== list._id) {
+        // Dropping card from another list at the end
+        const newPosition = dragOverIndex !== null ? dragOverIndex : cards.length;
+        onMoveCard(draggedCard._id, list._id, newPosition);
+      }
+    } else if (dragData.type === 'list') {
+      // Handle list drop
       onDrop(e, list);
+      setIsListDragging(false);
     }
-    setDraggedCard(null);
-    setIsDragging(false);
-    setDropTarget(null);
+    
+    handleDragEnd();
   };
   
-  const handleDragEnd = () => {
+  const handleDragEnd = (e) => {
     setIsDragging(false);
     setDraggedCard(null);
     setDropTarget(null);
+    setDragOverIndex(null);
+    
+    // Reset opacity
+    if (e && e.currentTarget) {
+      e.currentTarget.style.opacity = '1';
+    }
+  };
+  
+  // ============ LIST DRAG HANDLERS ============
+  const handleListDragStart = (e) => {
+    setIsListDragging(true);
+    onDragStart(e, list);
+    e.currentTarget.style.opacity = '0.6';
+  };
+  
+  const handleListDragEnd = (e) => {
+    setIsListDragging(false);
+    e.currentTarget.style.opacity = '1';
   };
   
   const handleChangeColor = (colorName) => {
@@ -110,34 +194,72 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
     setShowMenu(false);
   };
   
-  const getCardClass = (card) => {
-    let className = '';
-    if (isDragging && draggedCard?._id === card._id) {
-      className += ' opacity-30 scale-105 shadow-2xl z-10';
-    }
-    if (dropTarget === card._id) {
-      className += ' border-2 border-blue-400 rounded';
-    }
-    return className;
+  // ============ STYLING FUNCTIONS ============
+  const getCardWrapperClass = (card, index) => {
+    const isBeingDragged = isDragging && draggedCard?._id === card._id;
+    const isDropTarget = dropTarget === card._id;
+    
+    return `
+      relative
+      transition-all duration-300 ease-out
+      ${isBeingDragged ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}
+      ${isDropTarget ? 'transform translate-y-1' : ''}
+    `;
   };
   
-  const listClass = `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit max-h-[calc(100vh-120px)] flex flex-col transition-all duration-200 ${
-    dropTarget ? 'border-2 border-dashed border-blue-400' : ''
-  } ${isDragging ? 'opacity-75' : ''}`;
+  const getDropIndicatorClass = (index) => {
+    if (dragOverIndex !== index || !isDragging) return 'hidden';
+    
+    return `
+      h-2 
+      bg-gradient-to-r from-blue-400 via-blue-500 to-blue-400
+      rounded-full 
+      shadow-lg 
+      shadow-blue-500/50
+      mb-2 
+      transition-all 
+      duration-200
+      animate-pulse
+    `;
+  };
+  
+  const listClass = `
+    ${listColors[list.color] || 'bg-gray-100'} 
+    rounded-xl 
+    p-3 
+    w-72 
+    flex-shrink-0 
+    h-fit 
+    max-h-[calc(100vh-120px)] 
+    flex 
+    flex-col 
+    transition-all 
+    duration-300
+    ${isListDragging ? 'opacity-60 scale-95 shadow-2xl ring-4 ring-blue-400 ring-opacity-50' : 'opacity-100 scale-100'}
+    ${isDragging && !isListDragging ? 'ring-2 ring-blue-300 ring-opacity-30 bg-opacity-90' : ''}
+    hover:shadow-lg
+  `;
   
   return (
-    <div
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
       className={listClass}
       draggable
-      onDragStart={(e) => onDragStart(e, list)}
+      onDragStart={handleListDragStart}
       onDragOver={onDragOver}
       onDrop={handleListDrop}
-      onDragEnd={handleDragEnd}
+      onDragEnd={handleListDragEnd}
       style={{ cursor: 'grab' }}
     >
       {/* List Header */}
       <div className="flex items-center justify-between mb-3 cursor-move" style={{ cursor: 'grab' }}>
         <h3 className="font-semibold text-gray-800 text-sm px-2 flex-1">{list.title}</h3>
+        <span className="text-xs text-gray-600 bg-white/50 px-2 py-1 rounded-full mr-2">
+          {cards.length}
+        </span>
         <div className="flex items-center gap-1">
           <div className="relative">
             <button 
@@ -179,6 +301,7 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
                       onClick={(e) => {
                         e.stopPropagation();
                         setIsAddingCard(true);
+                        setShowMenu(false);
                       }}
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
                     >
@@ -252,48 +375,101 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
       
       {/* Cards Container */}
       <div 
-        className="space-y-2 mb-2 overflow-y-auto flex-1"
-        onDragOver={onDragOver}
+        className="space-y-2 mb-2 overflow-y-auto flex-1 px-1"
+        onDragOver={handleListAreaDragOver}
         onDrop={handleListDrop}
-        onDragLeave={() => setDropTarget(null)}
+        onDragLeave={() => {
+          if (!dropTarget) setDragOverIndex(null);
+        }}
       >
-        {cards.map(card => (
-          <div
-            key={card._id}
-            className={`transition-all duration-200 ${getCardClass(card)}`}
-            draggable
-            onDragStart={(e) => handleCardDragStart(e, card)}
-            onDragOver={(e) => handleCardDragOver(e, card)}
-            onDragLeave={(e) => handleCardDragLeave(e, card)}
-            onDrop={(e) => handleCardDrop(e, card)}
-            onDragEnd={handleDragEnd}
-          >
-            <Card
-              card={card}
-              onClick={() => onCardClick(card)}
-              onDelete={onDeleteCard}
+        <AnimatePresence mode="popLayout">
+          {/* Drop indicator at start */}
+          {dragOverIndex === 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 8, opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className={getDropIndicatorClass(0)}
             />
-          </div>
-        ))}
+          )}
+          
+          {cards.map((card, index) => (
+            <div key={card._id}>
+              <motion.div
+                layout
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.2 }}
+                className={getCardWrapperClass(card, index)}
+                draggable
+                onDragStart={(e) => handleCardDragStart(e, card)}
+                onDragOver={(e) => handleCardDragOver(e, card, index)}
+                onDragLeave={handleCardDragLeave}
+                onDrop={(e) => handleCardDrop(e, card)}
+                onDragEnd={handleDragEnd}
+              >
+                {/* Dragging Shadow Effect */}
+                {isDragging && draggedCard?._id === card._id && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 0.5 }}
+                    className="absolute inset-0 bg-blue-200 rounded-lg blur-sm -z-10"
+                  />
+                )}
+                
+                <Card
+                  card={card}
+                  onClick={() => onCardClick(card)}
+                  onDelete={onDeleteCard}
+                  isDragging={isDragging && draggedCard?._id === card._id}
+                />
+              </motion.div>
+              
+              {/* Drop indicator after each card */}
+              {dragOverIndex === index + 1 && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 8, opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className={getDropIndicatorClass(index + 1)}
+                />
+              )}
+            </div>
+          ))}
+        </AnimatePresence>
+        
+        {/* Empty state drop zone */}
+        {cards.length === 0 && isDragging && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="h-20 border-2 border-dashed border-blue-400 rounded-lg flex items-center justify-center text-blue-500 text-sm font-medium bg-blue-50"
+          >
+            Drop card here
+          </motion.div>
+        )}
       </div>
       
       {/* Add Card Section */}
-      {isAddingCard ? (
-        <AddCardForm
-          listId={list._id}
-          onAdd={handleAddCard}
-          onCancel={() => setIsAddingCard(false)}
-        />
-      ) : (
-        <button
-          onClick={() => setIsAddingCard(true)}
-          className="flex items-center gap-2 text-gray-700 hover:text-black text-sm w-full p-2 rounded-lg hover:bg-orange-400 hover:bg-opacity-10 transition-colors"
-        >
-          <Plus size={16} />
-          Add a card
-        </button>
-      )}
-    </div>
+      <div className="mt-auto">
+        {isAddingCard ? (
+          <AddCardForm
+            listId={list._id}
+            onAdd={handleAddCard}
+            onCancel={() => setIsAddingCard(false)}
+          />
+        ) : (
+          <button
+            onClick={() => setIsAddingCard(true)}
+            className="flex items-center gap-2 text-gray-700 hover:text-black text-sm w-full p-2 rounded-lg hover:bg-white hover:bg-opacity-30 transition-colors"
+          >
+            <Plus size={16} />
+            Add a card
+          </button>
+        )}
+      </div>
+    </motion.div>
   );
 };
 

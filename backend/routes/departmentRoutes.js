@@ -1,20 +1,49 @@
 import express from 'express';
-import { body } from 'express-validator';
-import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment } from '../controllers/departmentController.js';
+import { 
+  getDepartments, 
+  getDepartment, 
+  createDepartment, 
+  updateDepartment, 
+  deleteDepartment,
+  addMemberToDepartment,
+  removeMemberFromDepartment
+} from '../controllers/departmentController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
-import { validate } from '../middleware/validation.js';
+import { departmentValidation } from '../middleware/validation.js';
 
 const router = express.Router();
 
-router.get('/', getDepartments);
+// Get all departments (all authenticated users can view)
+router.get('/', protect, getDepartments);
+
+// Get single department
 router.get('/:id', protect, getDepartment);
 
-router.post('/', protect, authorize('admin'), [
-  body('name').trim().notEmpty().withMessage('Department name is required'),
-  validate
-], createDepartment);
+// Create department (Admin only)
+router.post(
+  '/', 
+  protect, 
+  authorize('admin'), 
+  departmentValidation.create, 
+  createDepartment
+);
 
-router.put('/:id', protect, authorize('admin', 'manager'), updateDepartment);
+// Update department (Admin/Manager)
+router.put(
+  '/:id', 
+  protect, 
+  authorize('admin', 'manager'), 
+  departmentValidation.update, 
+  updateDepartment
+);
+
+// Delete department (Admin/Manager)
 router.delete('/:id', protect, authorize('admin', 'manager'), deleteDepartment);
+
+// Add member to department (Admin/Manager)
+router.post('/:id/members', protect, authorize('admin', 'manager'), addMemberToDepartment);
+
+// Remove member from department (Admin/Manager)
+router.delete('/:id/members/:userId', protect, authorize('admin', 'manager'), removeMemberFromDepartment);
 
 export default router;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2 } from 'lucide-react';
@@ -26,55 +26,8 @@ const WorkFlow = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    if (deptId && projectId && !teamLoading) {
-      loadData();
-    }
-  }, [deptId, projectId, teamLoading]);
-
-  useEffect(() => {
-    if (user && board) {
-      socketService.connect(user.id);
-      socketService.joinBoard(board._id);
-
-      const handleCardUpdate = (event) => {
-        const { cardId, updates } = event.detail;
-        setCardsByList(prev => {
-          const newCardsByList = { ...prev };
-          Object.keys(newCardsByList).forEach(listId => {
-            newCardsByList[listId] = newCardsByList[listId].map(card =>
-              card._id === cardId ? { ...card, ...updates } : card
-            );
-          });
-          return newCardsByList;
-        });
-      };
-
-      const handleCommentAdded = (event) => {
-        const { cardId, comment } = event.detail;
-        setCardsByList(prev => {
-          const newCardsByList = { ...prev };
-          Object.keys(newCardsByList).forEach(listId => {
-            newCardsByList[listId] = newCardsByList[listId].map(card =>
-              card._id === cardId ? { ...card, comments: [...card.comments, comment._id] } : card
-            );
-          });
-          return newCardsByList;
-        });
-      };
-
-      window.addEventListener('socket-card-updated', handleCardUpdate);
-      window.addEventListener('socket-comment-added', handleCommentAdded);
-
-      return () => {
-        window.removeEventListener('socket-card-updated', handleCardUpdate);
-        window.removeEventListener('socket-comment-added', handleCommentAdded);
-        socketService.leaveBoard(board._id);
-      };
-    }
-  }, [user, board]);
-
-  const loadData = async () => {
+  // Load data with optimization
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -111,54 +64,201 @@ const WorkFlow = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId, deptId]);
+
+  useEffect(() => {
+    if (deptId && projectId && !teamLoading) {
+      loadData();
+    }
+  }, [deptId, projectId, teamLoading, loadData]);
+
+  // Socket real-time updates
+  useEffect(() => {
+    if (user && board) {
+      socketService.connect(user.id);
+      socketService.joinBoard(board._id);
+
+      const handleCardUpdate = (event) => {
+        const { cardId, updates } = event.detail;
+        setCardsByList(prev => {
+          const newCardsByList = { ...prev };
+          Object.keys(newCardsByList).forEach(listId => {
+            newCardsByList[listId] = newCardsByList[listId].map(card =>
+              card._id === cardId ? { ...card, ...updates } : card
+            );
+          });
+          return newCardsByList;
+        });
+      };
+
+      const handleCommentAdded = (event) => {
+        const { cardId, comment } = event.detail;
+        setCardsByList(prev => {
+          const newCardsByList = { ...prev };
+          Object.keys(newCardsByList).forEach(listId => {
+            newCardsByList[listId] = newCardsByList[listId].map(card =>
+              card._id === cardId ? { ...card, comments: [...card.comments, comment._id] } : card
+            );
+          });
+          return newCardsByList;
+        });
+      };
+
+      const handleCardMoved = (event) => {
+        const { cardId, sourceListId, destinationListId, newPosition } = event.detail;
+        setCardsByList(prev => {
+          const newCardsByList = { ...prev };
+
+          // Find and remove card from source list
+          let movedCard = null;
+          if (newCardsByList[sourceListId]) {
+            const sourceIndex = newCardsByList[sourceListId].findIndex(card => card._id === cardId);
+            if (sourceIndex !== -1) {
+              [movedCard] = newCardsByList[sourceListId].splice(sourceIndex, 1);
+            }
+          }
+
+          // Add card to destination list at new position
+          if (movedCard && newCardsByList[destinationListId]) {
+            newCardsByList[destinationListId].splice(newPosition, 0, movedCard);
+          }
+
+          return newCardsByList;
+        });
+      };
+
+      window.addEventListener('socket-card-updated', handleCardUpdate);
+      window.addEventListener('socket-comment-added', handleCommentAdded);
+      window.addEventListener('socket-card-moved', handleCardMoved);
+
+      return () => {
+        window.removeEventListener('socket-card-updated', handleCardUpdate);
+        window.removeEventListener('socket-comment-added', handleCommentAdded);
+        window.removeEventListener('socket-card-moved', handleCardMoved);
+        socketService.leaveBoard(board._id);
+      };
+    }
+  }, [user, board]);
   
   const handleAddCard = async (listId, title) => {
-    await Database.createCard(listId, title, board._id);
-    loadData();
+    try {
+      await Database.createCard(listId, title, board._id);
+      await loadData();
+    } catch (error) {
+      console.error('Error adding card:', error);
+    }
   };
 
   const handleDeleteCard = async (cardId) => {
     if (window.confirm('Are you sure you want to delete this card?')) {
-      await Database.deleteCard(cardId);
-      loadData();
+      try {
+        await Database.deleteCard(cardId);
+        await loadData();
+      } catch (error) {
+        console.error('Error deleting card:', error);
+      }
     }
   };
 
   const handleUpdateCard = async (cardId, updates) => {
-    await Database.updateCard(cardId, updates);
-    loadData();
-    if (selectedCard && selectedCard._id === cardId) {
-      const updatedCard = await Database.getCard(cardId);
-      setSelectedCard(updatedCard);
+    try {
+      await Database.updateCard(cardId, updates);
+      await loadData();
+      if (selectedCard && selectedCard._id === cardId) {
+        const updatedCard = await Database.getCard(cardId);
+        setSelectedCard(updatedCard);
+      }
+    } catch (error) {
+      console.error('Error updating card:', error);
     }
   };
 
   const handleMoveCard = async (cardId, newListId, newPosition) => {
-    await Database.moveCard(cardId, newListId, newPosition);
-    loadData();
+    try {
+      // Optimistic update for smooth UI
+      setCardsByList(prev => {
+        const newCardsByList = { ...prev };
+        let movedCard = null;
+        let sourceListId = null;
+
+        // Find and remove card from its current list
+        for (const listId in newCardsByList) {
+          const cardIndex = newCardsByList[listId].findIndex(c => c._id === cardId);
+          if (cardIndex !== -1) {
+            sourceListId = listId;
+            [movedCard] = newCardsByList[listId].splice(cardIndex, 1);
+            break;
+          }
+        }
+
+        // Add card to new list at specified position
+        if (movedCard && newCardsByList[newListId]) {
+          const updatedCard = { ...movedCard, list: newListId };
+          newCardsByList[newListId].splice(newPosition, 0, updatedCard);
+        }
+
+        return newCardsByList;
+      });
+
+      // Persist to database
+      await Database.moveCard(cardId, newListId, newPosition);
+    } catch (error) {
+      console.error('Error moving card:', error);
+      // Reload on error to ensure consistency
+      await loadData();
+    }
   };
 
   const handleAddList = async (title) => {
-    await Database.createList(board._id, title);
-    loadData();
+    try {
+      await Database.createList(board._id, title);
+      await loadData();
+    } catch (error) {
+      console.error('Error adding list:', error);
+    }
   };
 
   const handleDeleteList = async (listId) => {
     if (window.confirm('Are you sure you want to delete this list and all its cards?')) {
-      await Database.deleteList(listId);
-      loadData();
+      try {
+        await Database.deleteList(listId);
+        await loadData();
+      } catch (error) {
+        console.error('Error deleting list:', error);
+      }
     }
   };
 
   const handleUpdateListColor = async (listId, color) => {
-    await Database.updateList(listId, { color });
-    loadData();
+    try {
+      await Database.updateList(listId, { color });
+      await loadData();
+    } catch (error) {
+      console.error('Error updating list color:', error);
+    }
   };
 
   const handleMoveList = async (listId, newPosition) => {
-    await Database.moveList(listId, newPosition);
-    loadData();
+    try {
+      // Optimistic update for smooth UI
+      setLists(prev => {
+        const newLists = [...prev];
+        const listIndex = newLists.findIndex(l => l._id === listId);
+        if (listIndex === -1) return prev;
+
+        const [movedList] = newLists.splice(listIndex, 1);
+        newLists.splice(newPosition, 0, movedList);
+
+        return newLists;
+      });
+
+      // Persist to database
+      await Database.moveList(listId, newPosition);
+    } catch (error) {
+      console.error('Error moving list:', error);
+      // Reload on error to ensure consistency
+      await loadData();
+    }
   };
   
   if (loading || teamLoading) {

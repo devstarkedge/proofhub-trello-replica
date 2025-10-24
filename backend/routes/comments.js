@@ -1,20 +1,25 @@
 import express from 'express';
-import { body } from 'express-validator';
-import { getCommentsByCard, createComment, updateComment, deleteComment } from '../controllers/commentController.js';
+import { 
+  getCommentsByCard, 
+  createComment, 
+  updateComment, 
+  deleteComment 
+} from '../controllers/commentController.js';
 import { protect } from '../middleware/authMiddleware.js';
-import { validate } from '../middleware/validation.js';
+import { commentValidation } from '../middleware/validation.js';
 
 const router = express.Router();
 
+// Get comments by card
 router.get('/card/:cardId', protect, getCommentsByCard);
 
-router.post('/', protect, [
-  body('text').trim().notEmpty().withMessage('Comment text is required'),
-  body('card').notEmpty().withMessage('Card ID is required'),
-  validate
-], createComment);
+// Create comment
+router.post('/', protect, commentValidation.create, createComment);
 
+// Update comment (owner only)
 router.put('/:id', protect, updateComment);
+
+// Delete comment (owner only)
 router.delete('/:id', protect, deleteComment);
 
 export default router;

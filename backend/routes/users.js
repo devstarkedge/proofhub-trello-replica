@@ -1,31 +1,42 @@
 import express from 'express';
-import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, assignUser, declineUser } from '../controllers/userController.js';
+import { 
+  getUsers, 
+  getUser, 
+  updateUser, 
+  deleteUser, 
+  verifyUser, 
+  getProfile, 
+  assignUser, 
+  declineUser 
+} from '../controllers/userController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
+import { userValidation } from '../middleware/validation.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
 
 const router = express.Router();
 
+// Get current user profile (all authenticated users)
 router.get('/profile', protect, getProfile);
 
-// Admin and HR can view all users, Manager can view users in their department/team
+// Get all users (HR/Admin only)
 router.get('/', protect, hrOrAdmin, getUsers);
 
-// All authenticated users can view individual user profiles
+// Get single user (all authenticated users)
 router.get('/:id', protect, getUser);
 
-// Admin can update any user, users can update their own profile
+// Update user (Owner/Manager/Admin only)
 router.put('/:id', protect, ownerOrAdminManager, updateUser);
 
-// Only admin can verify users
-router.put('/:id/verify', protect, authorize('admin'), verifyUser);
+// Verify user (Admin only)
+router.put('/:id/verify', protect, authorize('admin'), userValidation.verify, verifyUser);
 
-// Only admin can decline user registrations
+// Decline user registration (Admin only)
 router.delete('/:id/decline', protect, authorize('admin'), declineUser);
 
-// Admin and Manager can assign Employee to departments/teams
+// Assign user to department/team (Manager/HR/Admin)
 router.put('/:id/assign', protect, managerHrOrAdmin, assignUser);
 
-// Only admin can delete users
+// Delete user (Admin only)
 router.delete('/:id', protect, authorize('admin'), deleteUser);
 
 export default router;

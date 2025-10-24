@@ -11,9 +11,10 @@ import {
   CheckSquare,
   Clock,
   Eye,
+  GripVertical,
 } from "lucide-react";
 
-const Card = ({ card, onClick, onDelete, compact = false }) => {
+const Card = ({ card, onClick, onDelete, compact = false, isDragging = false }) => {
   const hasDetails =
     card.description ||
     card.labels?.length > 0 ||
@@ -120,10 +121,18 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
 
   return (
     <motion.div
-      whileHover={{ y: -2, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}
+      whileHover={!isDragging ? { y: -2, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" } : {}}
       onClick={onClick}
-      className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100"
+      className={`
+        bg-white rounded-lg p-4 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100
+        ${isDragging ? 'shadow-2xl ring-2 ring-blue-400 ring-offset-2' : ''}
+      `}
     >
+      {/* Drag Handle */}
+      <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+        <GripVertical size={16} className="text-gray-400" />
+      </div>
+
       {/* Card Cover */}
       {card.cover && (
         <div
