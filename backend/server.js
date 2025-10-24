@@ -84,7 +84,7 @@ if (isProduction) {
 }
 
 // Static files
-app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
+// app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Health check endpoint
@@ -112,9 +112,9 @@ app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Serve frontend for all other routes (SPA)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
-});
+// app.get('*', (req, res) => {
+//   res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
+// });
 
 // Socket.IO with enhanced error handling
 io.on('connection', (socket) => {
