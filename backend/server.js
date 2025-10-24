@@ -42,7 +42,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
+// app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
 app.use('/uploads', express.static('uploads'));
 
 // Routes
@@ -59,9 +59,9 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
-});
+// app.get('*', (req, res) => {
+//   res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
+// });
 
 import jwt from 'jsonwebtoken';
 
