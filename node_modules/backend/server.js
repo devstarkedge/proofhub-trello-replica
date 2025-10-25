@@ -44,7 +44,13 @@ app.use(cors({
 
 // In production, set FRONTEND_URL to your deployed URL, e.g., 'https://flowtask-x3z4.onrender.com'
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
+app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist'), {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css');
+    }
+  }
+}));
 app.use('/uploads', express.static('uploads'));
 
 // Routes
