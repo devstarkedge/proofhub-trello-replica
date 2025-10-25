@@ -1,0 +1,462 @@
+import Card from "../models/Card.js";
+import List from "../models/List.js";
+import Board from "../models/Board.js";
+import Activity from "../models/Activity.js";
+import Notification from "../models/Notification.js";
+import asyncHandler from "../middleware/asyncHandler.js";
+import { ErrorResponse } from "../middleware/errorHandler.js";
+import { emitToBoard, emitNotification } from "../server.js";
+
+// @desc    Get all cards for a list
+// @route   GET /api/cards/list/:listId
+// @access  Private
+export const getCards = asyncHandler(async (req, res, next) => {
+  const { listId } = req.params;
+
+  const cards = await Card.find({ list: listId })
+    .populate("assignee", "name email avatar")
+    .populate("members", "name email avatar")
+    .populate("createdBy", "name email avatar")
+    .sort("position");
+
+  res.status(200).json({
+    success: true,
+    count: cards.length,
+    data: cards,
+  });
+});
+
+// @desc    Get all cards for a board
+// @route   GET /api/cards/board/:boardId
+// @access  Private
+export const getCardsByBoard = asyncHandler(async (req, res, next) => {
+  const { boardId } = req.params;
+
+  const cards = await Card.find({ board: boardId })
+    .populate("assignee", "name email avatar")
+    .populate("members", "name email avatar")
+    .populate("createdBy", "name email avatar")
+    .populate("list", "title")
+    .sort("position");
+
+  res.status(200).json({
+    success: true,
+    count: cards.length,
+    data: cards,
+  });
+});
+
+// @desc    Get single card
+// @route   GET /api/cards/:id
+// @access  Private
+export const getCard = asyncHandler(async (req, res, next) => {
+  const card = await Card.findById(req.params.id)
+    .populate("assignee", "name email avatar")
+    .populate("members", "name email avatar")
+    .populate("createdBy", "name email avatar")
+    .populate("list", "title")
+    .populate("board", "name");
+
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  res.status(200).json({
+    success: true,
+    data: card,
+  });
+});
+
+// @desc    Create card
+// @route   POST /api/cards
+// @access  Private
+export const createCard = asyncHandler(async (req, res, next) => {
+  const {
+    title,
+    description,
+    list,
+    board,
+    assignee,
+    members,
+    labels,
+    priority,
+    dueDate,
+    startDate,
+  } = req.body;
+
+  const card = await Card.create({
+    title,
+    description,
+    list,
+    board,
+    assignee,
+    members: members || [],
+    labels: labels || [],
+    priority: priority || "medium",
+    dueDate,
+    startDate,
+    position: await Card.countDocuments({ list }),
+    createdBy: req.user.id,
+  });
+
+  // Log activity
+  await Activity.create({
+    type: "card_created",
+    description: `Created card "${title}"`,
+    user: req.user.id,
+    board,
+    card: card._id,
+    list,
+  });
+
+  // Emit real-time update to board
+  emitToBoard(board, 'card-created', {
+    card,
+    listId: list,
+    createdBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  // Notify assignee if different from creator
+  if (assignee && assignee.toString() !== req.user.id) {
+    const notification = await Notification.create({
+      type: "task_assigned",
+      title: "New Task Assigned",
+      message: `${req.user.name} assigned you to "${title}"`,
+      user: assignee,
+      sender: req.user.id,
+      relatedCard: card._id,
+      relatedBoard: board,
+    });
+
+    // Send real-time notification
+    emitNotification(assignee.toString(), notification);
+  }
+
+  // Notify all members
+  if (members && members.length > 0) {
+    for (const memberId of members) {
+      if (memberId.toString() !== req.user.id && memberId.toString() !== assignee?.toString()) {
+        const notification = await Notification.create({
+          type: "member_added",
+          title: "Added to Task",
+          message: `${req.user.name} added you to "${title}"`,
+          user: memberId,
+          sender: req.user.id,
+          relatedCard: card._id,
+          relatedBoard: board,
+        });
+
+        emitNotification(memberId.toString(), notification);
+      }
+    }
+  }
+
+  const populatedCard = await Card.findById(card._id)
+    .populate("assignee", "name email avatar")
+    .populate("members", "name email avatar")
+    .populate("createdBy", "name email avatar");
+
+  res.status(201).json({
+    success: true,
+    data: populatedCard,
+  });
+});
+
+// @desc    Update card
+// @route   PUT /api/cards/:id
+// @access  Private
+export const updateCard = asyncHandler(async (req, res, next) => {
+  let card = await Card.findById(req.params.id);
+
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  const oldAssignee = card.assignee?.toString();
+  const oldDueDate = card.dueDate;
+  const oldStatus = card.status;
+
+  card = await Card.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true,
+  })
+    .populate("assignee", "name email avatar")
+    .populate("members", "name email avatar")
+    .populate("createdBy", "name email avatar");
+
+  // Log activity
+  await Activity.create({
+    type: "card_updated",
+    description: `Updated card "${card.title}"`,
+    user: req.user.id,
+    board: card.board,
+    card: card._id,
+    list: card.list,
+    metadata: {
+      changes: req.body
+    }
+  });
+
+  // Emit real-time update
+  emitToBoard(card.board.toString(), 'card-updated', {
+    cardId: card._id,
+    updates: req.body,
+    updatedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  // Notify if assignee changed
+  if (
+    req.body.assignee &&
+    req.body.assignee !== oldAssignee &&
+    req.body.assignee !== req.user.id
+  ) {
+    const notification = await Notification.create({
+      type: "task_assigned",
+      title: "Task Assigned",
+      message: `${req.user.name} assigned you to "${card.title}"`,
+      user: req.body.assignee,
+      sender: req.user.id,
+      relatedCard: card._id,
+      relatedBoard: card.board,
+    });
+
+    emitNotification(req.body.assignee, notification);
+  }
+
+  // Notify if due date changed
+  if (req.body.dueDate && req.body.dueDate !== oldDueDate && card.assignee) {
+    const notification = await Notification.create({
+      type: "task_updated",
+      title: "Due Date Changed",
+      message: `Due date for "${card.title}" has been updated to ${new Date(req.body.dueDate).toLocaleDateString()}`,
+      user: card.assignee._id,
+      sender: req.user.id,
+      relatedCard: card._id,
+      relatedBoard: card.board,
+    });
+
+    emitNotification(card.assignee._id.toString(), notification);
+  }
+
+  // Notify if status changed to done
+  if (req.body.status === 'done' && oldStatus !== 'done' && card.assignee) {
+    const notification = await Notification.create({
+      type: "task_updated",
+      title: "Task Completed",
+      message: `"${card.title}" has been marked as complete`,
+      user: card.assignee._id,
+      sender: req.user.id,
+      relatedCard: card._id,
+      relatedBoard: card.board,
+    });
+
+    emitNotification(card.assignee._id.toString(), notification);
+  }
+
+  res.status(200).json({
+    success: true,
+    data: card,
+  });
+});
+
+// @desc    Move card
+// @route   PUT /api/cards/:id/move
+// @access  Private
+export const moveCard = asyncHandler(async (req, res, next) => {
+  const { destinationListId, newPosition } = req.body;
+  const card = await Card.findById(req.params.id);
+
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  const sourceListId = card.list;
+  const oldPosition = card.position;
+
+  // If moving within same list
+  if (sourceListId.toString() === destinationListId) {
+    if (newPosition === oldPosition) {
+      return res.status(200).json({ success: true, data: card });
+    }
+
+    if (newPosition > oldPosition) {
+      await Card.updateMany(
+        {
+          list: sourceListId,
+          position: { $gt: oldPosition, $lte: newPosition },
+        },
+        { $inc: { position: -1 } }
+      );
+    } else {
+      await Card.updateMany(
+        {
+          list: sourceListId,
+          position: { $gte: newPosition, $lt: oldPosition },
+        },
+        { $inc: { position: 1 } }
+      );
+    }
+
+    card.position = newPosition;
+  } else {
+    // Moving to different list
+    // Update positions in source list
+    await Card.updateMany(
+      {
+        list: sourceListId,
+        position: { $gt: oldPosition },
+      },
+      { $inc: { position: -1 } }
+    );
+
+    // Update positions in destination list
+    await Card.updateMany(
+      {
+        list: destinationListId,
+        position: { $gte: newPosition },
+      },
+      { $inc: { position: 1 } }
+    );
+
+    card.list = destinationListId;
+    card.position = newPosition;
+
+    // Update status based on list
+    const destList = await List.findById(destinationListId);
+    const listTitle = destList.title.toLowerCase();
+    if (listTitle.includes("done")) card.status = "done";
+    else if (listTitle.includes("review")) card.status = "review";
+    else if (listTitle.includes("progress")) card.status = "in-progress";
+    else card.status = "todo";
+  }
+
+  await card.save();
+
+  // Log activity
+  await Activity.create({
+    type: "card_moved",
+    description: `Moved card "${card.title}"`,
+    user: req.user.id,
+    board: card.board,
+    card: card._id,
+    list: card.list,
+    metadata: {
+      sourceListId,
+      destinationListId,
+      newPosition
+    }
+  });
+
+  // Emit real-time update
+  emitToBoard(card.board.toString(), 'card-moved', {
+    cardId: card._id,
+    sourceListId,
+    destinationListId,
+    newPosition,
+    movedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  res.status(200).json({
+    success: true,
+    data: card,
+  });
+});
+
+// @desc    Delete card
+// @route   DELETE /api/cards/:id
+// @access  Private
+export const deleteCard = asyncHandler(async (req, res, next) => {
+  const card = await Card.findById(req.params.id);
+
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  const boardId = card.board;
+
+  // Log activity before deletion
+  await Activity.create({
+    type: "card_deleted",
+    description: `Deleted card "${card.title}"`,
+    user: req.user.id,
+    board: card.board,
+    list: card.list,
+  });
+
+  // Emit real-time update
+  emitToBoard(boardId.toString(), 'card-deleted', {
+    cardId: card._id,
+    listId: card.list,
+    deletedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  await card.deleteOne();
+
+  res.status(200).json({
+    success: true,
+    message: "Card deleted successfully",
+  });
+});
+
+// @desc    Upload attachment
+// @route   POST /api/cards/:id/upload
+// @access  Private
+export const uploadAttachment = asyncHandler(async (req, res, next) => {
+  const card = await Card.findById(req.params.id);
+
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  if (!req.file) {
+    return next(new ErrorResponse("Please upload a file", 400));
+  }
+
+  const attachment = {
+    filename: req.file.filename,
+    originalName: req.file.originalname,
+    mimetype: req.file.mimetype,
+    size: req.file.size,
+    url: `/uploads/${req.file.filename}`,
+    uploadedBy: req.user.id,
+  };
+
+  card.attachments.push(attachment);
+  await card.save();
+
+  // Log activity
+  await Activity.create({
+    type: "attachment_added",
+    description: `Added attachment to "${card.title}"`,
+    user: req.user.id,
+    board: card.board,
+    card: card._id,
+  });
+
+  // Emit real-time update
+  emitToBoard(card.board.toString(), 'card-updated', {
+    cardId: card._id,
+    updates: { attachments: card.attachments },
+    updatedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  res.status(200).json({
+    success: true,
+    data: attachment,
+  });
+});
