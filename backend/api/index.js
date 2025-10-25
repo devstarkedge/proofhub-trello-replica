@@ -1,23 +1,22 @@
 import express from 'express';
-import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Import routes
-import authRoutes from '../routes/auth.js';
-import boardsRoutes from '../routes/boards.js';
-import listsRoutes from '../routes/lists.js';
-import cardsRoutes from '../routes/cards.js';
-import teamsRoutes from '../routes/teams.js';
-import departmentRoutes from '../routes/departmentRoutes.js';
-import commentsRoutes from '../routes/comments.js';
-import notificationsRoutes from '../routes/notifications.js';
-import searchRoutes from '../routes/search.js';
-import analyticsRoutes from '../routes/analytics.js';
-import usersRoutes from '../routes/users.js';
-import adminRoutes from '../routes/admin.js';
+// Import API routes
+import authRoutes from './auth.js';
+import boardsRoutes from './boards.js';
+import listsRoutes from './lists.js';
+import cardsRoutes from './cards.js';
+import teamsRoutes from './teams.js';
+import departmentRoutes from './departments.js';
+import commentsRoutes from './comments.js';
+import notificationsRoutes from './notifications.js';
+import searchRoutes from './search.js';
+import analyticsRoutes from './analytics.js';
+import usersRoutes from './users.js';
+import adminRoutes from './admin.js';
 
 dotenv.config();
 
@@ -74,17 +73,6 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong!'
   });
 });
-
-// Database connection (only for non-serverless environments)
-if (process.env.NODE_ENV !== 'production' || process.env.VERCEL !== '1') {
-  mongoose.connect(process.env.MONGO_URI)
-    .then(() => {
-      console.log('Connected to MongoDB');
-    })
-    .catch((error) => {
-      console.error('MongoDB connection error:', error);
-    });
-}
 
 // Export for Vercel
 export default app;
