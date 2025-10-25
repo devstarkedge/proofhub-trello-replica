@@ -22,7 +22,7 @@ export const register = asyncHandler(async (req, res, next) => {
   // Check if user exists
   const userExists = await User.findOne({ email });
   if (userExists) {
-    return next(new ErrorResponse('User already exists', 400));
+    return next(new ErrorResponse('Email already exists. Please use a different email address.', 400));
   }
 
   // Validate department if provided
@@ -111,7 +111,7 @@ export const login = asyncHandler(async (req, res, next) => {
   const user = await User.findOne({ email }).select('+password');
 
   if (!user) {
-    return next(new ErrorResponse('Invalid credentials', 401));
+    return next(new ErrorResponse('No account found with this email address. Please check your email or register for a new account.', 401));
   }
 
   // Check if user is active

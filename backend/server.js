@@ -18,6 +18,7 @@ import analyticsRoutes from './routes/analytics.js';
 import usersRoutes from './routes/users.js';
 import adminRoutes from './routes/admin.js';
 import path from 'path';
+import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -155,7 +156,10 @@ mongoose.connect(process.env.MONGO_URI)
   });
 
 // Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong!' });
-});
+
+app.use(errorHandler);
+
+// app.use((err, req, res, next) => {
+//   console.error(err.stack);
+//   res.status(500).json({ message: 'Something went wrong!' });
+// });
