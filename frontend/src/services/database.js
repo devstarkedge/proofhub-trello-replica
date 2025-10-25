@@ -663,7 +663,7 @@ class DatabaseService {
       headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/notifications/${notificationId}/read`, {
-      method: 'PATCH',
+      method: 'PUT',
       headers
     });
     if (!res.ok) {

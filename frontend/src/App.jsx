@@ -1,5 +1,6 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
+import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from "./context/AuthContext";
 import { TeamProvider } from "./context/TeamContext";
 import { NotificationProvider } from "./context/NotificationContext";
@@ -117,6 +118,18 @@ function App() {
               }
             />
           </Routes>
+          <ToastContainer
+            position="top-right"
+            autoClose={5000}
+            hideProgressBar={false}
+            newestOnTop={false}
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+            theme="light"
+          />
         </NotificationProvider>
       </TeamProvider>
     </AuthProvider>

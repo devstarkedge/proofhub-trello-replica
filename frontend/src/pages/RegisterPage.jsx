@@ -1,5 +1,6 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import api from '../services/api';
 
@@ -40,10 +41,13 @@ const RegisterPage = () => {
 
     try {
       await register(name, email, password, department);
+      toast.success('Registration successful! Please wait for an administrator to verify your account.');
       setError('Registration successful! Please wait for an administrator to verify your account.');
       // Do not navigate; stay on page to show message
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      const errorMessage = err.response?.data?.message || 'Registration failed. Please try again.';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

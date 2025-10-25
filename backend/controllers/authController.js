@@ -126,15 +126,6 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Invalid credentials', 401));
   }
 
-  // Check if user is verified (admin is always verified)
-  if (!user.isVerified && user.role !== 'admin') {
-    return res.status(401).json({
-      success: false,
-      message: 'Account not verified. Please contact an administrator to verify your account.',
-      verified: false
-    });
-  }
-
   // Update last login
   user.lastLogin = Date.now();
   await user.save();
