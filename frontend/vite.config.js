@@ -9,6 +9,9 @@ export default ({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const backend = env.VITE_BACKEND_URL || 'http://localhost:5000'
 
+  // In production, since frontend is served by backend, proxy is not needed
+  // But for development, keep the proxy
+
   return defineConfig({
     plugins: [react(), tailwindcss()],
     server: {
