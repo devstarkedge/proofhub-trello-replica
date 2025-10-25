@@ -42,7 +42,6 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
 app.use('/uploads', express.static('uploads'));
 
 // Routes
@@ -58,11 +57,6 @@ app.use('/api/search', searchRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
-
-// Catch all handler: send back React's index.html file for client-side routing
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
-});
 
 import jwt from 'jsonwebtoken';
 
