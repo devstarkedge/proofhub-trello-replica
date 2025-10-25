@@ -1,6 +1,6 @@
 import React, { useState, useContext } from "react";
 import AuthContext from "../context/AuthContext";
-import axios from "axios";
+import api from "../services/api";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 
@@ -45,7 +45,7 @@ const AdminSettings = () => {
       if (currentPassword) body.currentPassword = currentPassword;
       if (newPassword) body.newPassword = newPassword;
 
-      const res = await axios.put("/api/admin/settings", body, config);
+      const res = await api.put("/api/admin/settings", body, config);
 
       setMessage(res.data.message);
       // Refresh user profile to get updated info

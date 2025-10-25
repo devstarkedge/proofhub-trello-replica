@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
@@ -27,7 +27,7 @@ const HRPanel = () => {
 
   const loadUsers = async () => {
     try {
-      const res = await axios.get('/api/users');
+      const res = await api.get('/api/users');
       setUsers(res.data.data);
     } catch (error) {
       console.error('Error loading users:', error);
@@ -38,7 +38,7 @@ const HRPanel = () => {
 
   const loadDepartments = async () => {
     try {
-      const res = await axios.get('/api/departments');
+      const res = await api.get('/api/departments');
       setDepartments(res.data.data);
     } catch (error) {
       console.error('Error loading departments:', error);
@@ -47,7 +47,7 @@ const HRPanel = () => {
 
   const loadTeams = async () => {
     try {
-      const res = await axios.get('/api/teams');
+      const res = await api.get('/api/teams');
       setTeams(res.data.data);
     } catch (error) {
       console.error('Error loading teams:', error);
@@ -56,7 +56,7 @@ const HRPanel = () => {
 
   const handleVerifyUser = async (userId) => {
     try {
-      await axios.put(`/api/users/${userId}/verify`, {
+      await api.put(`/api/users/${userId}/verify`, {
         role: 'employee', // Default role for verified users
         department: null // HR/Admin will assign department
       });
@@ -68,7 +68,7 @@ const HRPanel = () => {
 
   const handleDeclineUser = async (userId) => {
     try {
-      await axios.delete(`/api/users/${userId}/decline`);
+      await api.delete(`/api/users/${userId}/decline`);
       loadUsers();
     } catch (error) {
       console.error('Error declining user:', error);
@@ -77,7 +77,7 @@ const HRPanel = () => {
 
   const handleAssignUser = async (userId, departmentId, teamId) => {
     try {
-      await axios.put(`/api/users/${userId}/assign`, {
+      await api.put(`/api/users/${userId}/assign`, {
         department: departmentId,
         team: teamId
       });

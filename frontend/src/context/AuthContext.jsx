@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback } from "react";
-import axios from "axios";
+import api from "../services/api";
 
 const AuthContext = createContext();
 
@@ -15,7 +15,6 @@ export const AuthProvider = ({ children }) => {
     setToken(userToken);
     setUser(userData);
     setIsAuthenticated(true);
-    axios.defaults.headers.common["Authorization"] = `Bearer ${userToken}`;
   };
 
   const logoutUser = useCallback(() => {
@@ -24,7 +23,6 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
-    delete axios.defaults.headers.common["Authorization"];
   }, []);
 
   const restoreSession = useCallback(async () => {
@@ -33,8 +31,7 @@ export const AuthProvider = ({ children }) => {
 
     if (savedToken && savedUser) {
       try {
-        axios.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
-        const response = await axios.get("/api/auth/verify");
+        const response = await api.get("/api/auth/verify");
         const userData = response.data.data;
 
         // Re-hydrate state from verified data
@@ -55,20 +52,19 @@ export const AuthProvider = ({ children }) => {
 
   // Axios interceptor for automatic token refresh
   useEffect(() => {
-    const interceptor = axios.interceptors.response.use(
+    const interceptor = api.interceptors.response.use(
       (response) => response,
       async (error) => {
         const originalRequest = error.config;
         if (error.response?.status === 401 && !originalRequest._retry) {
           originalRequest._retry = true;
           try {
-            const refreshResponse = await axios.post("/api/auth/refresh");
+            const refreshResponse = await api.post("/api/auth/refresh");
             const { token: newToken } = refreshResponse.data;
             localStorage.setItem("token", newToken);
             setToken(newToken);
-            axios.defaults.headers.common["Authorization"] = `Bearer ${newToken}`;
             originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
-            return axios(originalRequest);
+            return api(originalRequest);
           } catch (refreshError) {
             console.error("Token refresh failed:", refreshError);
             logoutUser();
@@ -80,20 +76,15 @@ export const AuthProvider = ({ children }) => {
     );
 
     return () => {
-      axios.interceptors.response.eject(interceptor);
+      api.interceptors.response.eject(interceptor);
     };
   }, [logoutUser]);
 
   const login = async (email, password) => {
-    const config = {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    };
     const body = JSON.stringify({ email, password });
 
     try {
-      const res = await axios.post("/api/auth/login", body, config);
+      const res = await api.post("/api/auth/login", body);
       const { token, user } = res.data;
       loginUser(user, token);
       return { success: true, user };
@@ -104,15 +95,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (name, email, password, department) => {
-    const config = {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    };
     const body = JSON.stringify({ name, email, password, department });
 
     try {
-      await axios.post("/api/auth/register", body, config);
+      await api.post("/api/auth/register", body);
       return { success: true };
     } catch (err) {
       console.error(err.response.data);
