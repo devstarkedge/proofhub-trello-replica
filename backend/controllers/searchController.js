@@ -28,7 +28,7 @@ export const globalSearch = asyncHandler(async (req, res, next) => {
         { labels: searchRegex },
       ],
     })
-      .populate("assignee", "name email avatar")
+      .populate("assignees", "name email avatar")
       .populate("list", "title")
       .populate("board", "name")
       .limit(20);
@@ -98,7 +98,7 @@ export const searchCards = asyncHandler(async (req, res, next) => {
 
   // Filters
   if (board) query.board = board;
-  if (assignee) query.assignee = assignee;
+  if (assignee) query.assignees = { $in: [assignee] };
   if (priority) query.priority = priority;
   if (status) query.status = status;
   if (labels) query.labels = { $in: Array.isArray(labels) ? labels : [labels] };
@@ -110,7 +110,7 @@ export const searchCards = asyncHandler(async (req, res, next) => {
   }
 
   const cards = await Card.find(query)
-    .populate("assignee", "name email avatar")
+    .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
     .populate("list", "title")
     .populate("board", "name")

@@ -85,7 +85,7 @@ export const getUserAnalytics = asyncHandler(async (req, res, next) => {
   const { userId } = req.params;
 
   // Get all cards assigned to this user
-  const cards = await Card.find({ assignee: userId });
+  const cards = await Card.find({ assignees: userId });
 
   // Calculate statistics
   const totalTasks = cards.length;

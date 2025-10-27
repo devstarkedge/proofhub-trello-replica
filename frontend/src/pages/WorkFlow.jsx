@@ -56,7 +56,7 @@ const WorkFlow = () => {
           const newCardsByList = { ...prev };
           Object.keys(newCardsByList).forEach(listId => {
             newCardsByList[listId] = newCardsByList[listId].map(card =>
-              card._id === cardId ? { ...card, comments: [...card.comments, comment._id] } : card
+              card._id === cardId ? { ...card, comments: [...(card.comments || []), comment._id] } : card
             );
           });
           return newCardsByList;

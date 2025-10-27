@@ -14,7 +14,7 @@ export const getCards = asyncHandler(async (req, res, next) => {
   const { listId } = req.params;
 
   const cards = await Card.find({ list: listId })
-    .populate("assignee", "name email avatar")
+    .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
     .sort("position");
@@ -33,7 +33,7 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
   const { boardId } = req.params;
 
   const cards = await Card.find({ board: boardId })
-    .populate("assignee", "name email avatar")
+    .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
     .populate("list", "title")
@@ -51,7 +51,7 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const getCard = asyncHandler(async (req, res, next) => {
   const card = await Card.findById(req.params.id)
-    .populate("assignee", "name email avatar")
+    .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
     .populate("list", "title")
@@ -155,7 +155,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
   }
 
   const populatedCard = await Card.findById(card._id)
-    .populate("assignee", "name email avatar")
+    .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar");
 
@@ -175,7 +175,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Card not found", 404));
   }
 
-  const oldAssignee = card.assignee?.toString();
+  const oldAssignees = card.assignees?.map(a => a.toString()) || [];
   const oldDueDate = card.dueDate;
   const oldStatus = card.status;
 
@@ -183,7 +183,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     new: true,
     runValidators: true,
   })
-    .populate("assignee", "name email avatar")
+    .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar");
 
@@ -210,53 +210,65 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
   });
 
-  // Notify if assignee changed
-  if (
-    req.body.assignee &&
-    req.body.assignee !== oldAssignee &&
-    req.body.assignee !== req.user.id
-  ) {
-    const notification = await Notification.create({
-      type: "task_assigned",
-      title: "Task Assigned",
-      message: `${req.user.name} assigned you to "${card.title}"`,
-      user: req.body.assignee,
-      sender: req.user.id,
-      relatedCard: card._id,
-      relatedBoard: card.board,
-    });
+  // Notify if assignees changed (only if actually changed)
+  if (req.body.assignees !== undefined) {
+    const newAssignees = req.body.assignees;
+    const addedAssignees = newAssignees.filter(id => !oldAssignees.includes(id.toString()));
+    const removedAssignees = oldAssignees.filter(id => !newAssignees.map(a => a.toString()).includes(id));
 
-    emitNotification(req.body.assignee, notification);
+    // Notify added assignees
+    for (const assigneeId of addedAssignees) {
+      if (assigneeId.toString() !== req.user.id) {
+        const notification = await Notification.create({
+          type: "task_assigned",
+          title: "Task Assigned",
+          message: `${req.user.name} assigned you to "${card.title}"`,
+          user: assigneeId,
+          sender: req.user.id,
+          relatedCard: card._id,
+          relatedBoard: card.board,
+        });
+
+        emitNotification(assigneeId.toString(), notification);
+      }
+    }
+
+    // Notify removed assignees if needed (optional)
+    // For now, we'll skip notifications for removals to avoid spam
   }
 
-  // Notify if due date changed
-  if (req.body.dueDate && req.body.dueDate !== oldDueDate && card.assignee) {
-    const notification = await Notification.create({
-      type: "task_updated",
-      title: "Due Date Changed",
-      message: `Due date for "${card.title}" has been updated to ${new Date(req.body.dueDate).toLocaleDateString()}`,
-      user: card.assignee._id,
-      sender: req.user.id,
-      relatedCard: card._id,
-      relatedBoard: card.board,
-    });
+  // Notify if due date changed (only if actually changed)
+  if (req.body.dueDate !== undefined && req.body.dueDate !== oldDueDate && card.assignees && card.assignees.length > 0) {
+    for (const assignee of card.assignees) {
+      const notification = await Notification.create({
+        type: "task_updated",
+        title: "Due Date Changed",
+        message: `Due date for "${card.title}" has been updated to ${new Date(req.body.dueDate).toLocaleDateString()}`,
+        user: assignee._id,
+        sender: req.user.id,
+        relatedCard: card._id,
+        relatedBoard: card.board,
+      });
 
-    emitNotification(card.assignee._id.toString(), notification);
+      emitNotification(assignee._id.toString(), notification);
+    }
   }
 
-  // Notify if status changed to done
-  if (req.body.status === 'done' && oldStatus !== 'done' && card.assignee) {
-    const notification = await Notification.create({
-      type: "task_updated",
-      title: "Task Completed",
-      message: `"${card.title}" has been marked as complete`,
-      user: card.assignee._id,
-      sender: req.user.id,
-      relatedCard: card._id,
-      relatedBoard: card.board,
-    });
+  // Notify if status changed to done (only if actually changed)
+  if (req.body.status !== undefined && req.body.status === 'done' && oldStatus !== 'done' && card.assignees && card.assignees.length > 0) {
+    for (const assignee of card.assignees) {
+      const notification = await Notification.create({
+        type: "task_updated",
+        title: "Task Completed",
+        message: `"${card.title}" has been marked as complete`,
+        user: assignee._id,
+        sender: req.user.id,
+        relatedCard: card._id,
+        relatedBoard: card.board,
+      });
 
-    emitNotification(card.assignee._id.toString(), notification);
+      emitNotification(assignee._id.toString(), notification);
+    }
   }
 
   res.status(200).json({

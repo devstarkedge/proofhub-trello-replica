@@ -75,10 +75,10 @@ const cardSchema = new mongoose.Schema({
     required: true,
     default: 0
   },
-  assignee: {
+  assignees: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  },
+  }],
   members: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -126,7 +126,7 @@ const cardSchema = new mongoose.Schema({
 // Indexes
 cardSchema.index({ list: 1, position: 1 });
 cardSchema.index({ board: 1 });
-cardSchema.index({ assignee: 1 });
+cardSchema.index({ assignees: 1 });
 cardSchema.index({ members: 1 });
 cardSchema.index({ status: 1 });
 cardSchema.index({ priority: 1 });

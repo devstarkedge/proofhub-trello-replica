@@ -7,7 +7,7 @@ import { emitNotification, emitToBoard } from '../server.js';
 export const createComment = asyncHandler(async (req, res) => {
   const { text, card } = req.body;
 
-  const cardDoc = await Card.findById(card).populate('assignee', 'name');
+  const cardDoc = await Card.findById(card).populate('assignees', 'name');
   if (!cardDoc) {
     return res.status(404).json({ message: 'Card not found' });
   }
@@ -19,9 +19,6 @@ export const createComment = asyncHandler(async (req, res) => {
   });
   await comment.save();
 
-  cardDoc.comments.push(comment._id);
-  await cardDoc.save();
-
   const populatedComment = await Comment.findById(comment._id).populate('user', 'name avatar');
 
   // Emit real-time comment added to board
@@ -32,18 +29,24 @@ export const createComment = asyncHandler(async (req, res) => {
     });
   }
 
-  // Notify assignee if different from commenter
-  if (cardDoc.assignee && cardDoc.assignee._id.toString() !== req.user.id) {
-    const notification = new Notification({
-      type: 'comment_added',
-      message: `${req.user.name || 'Someone'} commented on "${cardDoc.title}"`,
-      user: cardDoc.assignee._id,
-      relatedCard: card,
-    });
-    await notification.save();
+  // Notify assignees if different from commenter
+  if (cardDoc.assignees && cardDoc.assignees.length > 0) {
+    for (const assignee of cardDoc.assignees) {
+      if (assignee._id.toString() !== req.user.id) {
+        const notification = new Notification({
+          type: 'comment_added',
+          title: 'New Comment',
+          message: `${req.user.name || 'Someone'} commented on "${cardDoc.title}"`,
+          user: assignee._id,
+          sender: req.user.id,
+          relatedCard: card,
+        });
+        await notification.save();
 
-    // Emit real-time notification
-    emitNotification(cardDoc.assignee._id.toString(), notification);
+        // Emit real-time notification
+        emitNotification(assignee._id.toString(), notification);
+      }
+    }
   }
 
   res.status(201).json(populatedComment);
@@ -52,7 +55,7 @@ export const createComment = asyncHandler(async (req, res) => {
 export const getCommentsByCard = asyncHandler(async (req, res) => {
   const { cardId } = req.params;
 
-  const comments = await Comment.find({ card: cardId }).populate('user', 'name avatar').sort({ createdAt: 1 });
+  const comments = await Comment.find({ card: cardId }).populate('user', 'name avatar').sort({ createdAt: -1 });
 
   res.status(200).json({
     success: true,

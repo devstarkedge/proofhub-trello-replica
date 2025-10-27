@@ -203,7 +203,7 @@ const Dashboard = () => {
                 <LayoutDashboard className="text-blue-600" size={32} />
                 Dashboard
               </h1>
-              <p className="text-gray-600 mt-1">Welcome back, {user?.name}! 👋</p>
+              <p className="text-gray-600 mt-1">Welcome, {user?.name}! 👋</p>
             </div>
             <div className="flex items-center gap-3">
               <motion.button

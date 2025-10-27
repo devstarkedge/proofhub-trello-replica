@@ -33,7 +33,7 @@ const boardSchema = new mongoose.Schema({
   visibility: {
     type: String,
     enum: ['public', 'private'],
-    default: 'private'
+    default: 'public'
   },
   background: {
     type: String,

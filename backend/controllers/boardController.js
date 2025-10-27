@@ -14,6 +14,11 @@ export const getBoards = asyncHandler(async (req, res, next) => {
     $or: [{ owner: req.user.id }, { members: req.user.id }],
   };
 
+  // Include public projects for managers and admins
+  if (req.user.role === 'admin' || req.user.role === 'manager') {
+    query.$or.push({ visibility: 'public' });
+  }
+
   if (req.user.team) {
     query.$or.push({ team: req.user.team });
   }
@@ -194,7 +199,7 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     department: projectDepartment,
     owner: req.user.id,
     members: members || [req.user.id],
-    visibility: visibility || "private",
+    visibility: visibility || "public",
     background: background || "#6366f1",
     startDate,
     dueDate,
@@ -235,6 +240,20 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     user: req.user.id,
     board: board._id,
   });
+
+  // Send notifications to assigned members if project is public
+  if (board.visibility === 'public' && board.members && board.members.length > 0) {
+    const Notification = (await import('../models/Notification.js')).default;
+    const notifications = board.members.map(memberId => ({
+      type: 'board_shared',
+      title: 'New Project Assigned',
+      message: `You have been assigned to the project "${name}"`,
+      user: memberId,
+      sender: req.user.id,
+      relatedBoard: board._id
+    }));
+    await Notification.insertMany(notifications);
+  }
 
   const populatedBoard = await Board.findById(board._id)
     .populate("owner", "name email avatar")

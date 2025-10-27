@@ -10,7 +10,7 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
   const departments = await Department.find({ isActive: true })
     .populate('manager', 'name email')
     .populate('members', 'name email')
-    .populate('projects', 'name description background')
+    .populate('projects', 'name description background members')
     .sort('name');
 
   res.status(200).json({

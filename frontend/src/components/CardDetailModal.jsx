@@ -14,7 +14,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || '');
   const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [assignee, setAssignee] = useState(card.assignee?._id || '');
+  const [assignees, setAssignees] = useState(card.assignees ? card.assignees.map(a => a._id) : []);
   const [priority, setPriority] = useState(card.priority || '');
   const [status, setStatus] = useState(card.status || '');
   const [dueDate, setDueDate] = useState(
@@ -28,10 +28,10 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [subtasks, setSubtasks] = useState(
-    card.subtasks ? card.subtasks.map(s => ({ 
-      id: s._id || Date.now(), 
-      text: s.title || s.text, 
-      completed: s.completed 
+    card.subtasks ? card.subtasks.map(s => ({
+      id: s._id || Date.now(),
+      text: s.title || s.text,
+      completed: s.completed
     })) : []
   );
   const [newSubtask, setNewSubtask] = useState('');
@@ -39,6 +39,23 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
   const [teamMembers, setTeamMembers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [projectName, setProjectName] = useState('');
+
+  // Store original values to track changes
+  const originalValues = {
+    title: card.title,
+    description: card.description || '',
+    assignees: card.assignees ? card.assignees.map(a => a._id) : [],
+    priority: card.priority || '',
+    status: card.status || '',
+    dueDate: card.dueDate ? new Date(card.dueDate).toISOString().split('T')[0] : '',
+    startDate: card.startDate ? new Date(card.startDate).toISOString().split('T')[0] : '',
+    labels: card.labels || [],
+    subtasks: card.subtasks ? card.subtasks.map(s => ({
+      id: s._id || Date.now(),
+      text: s.title || s.text,
+      completed: s.completed
+    })) : []
+  };
 
   useEffect(() => {
     loadComments();
@@ -92,7 +109,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
       const updates = {
         title,
         description,
-        assignee: assignee || null,
+        assignees: assignees.length > 0 ? assignees : null,
         priority,
         status,
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
@@ -103,9 +120,10 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
           completed: Boolean(s.completed)
         }))
       };
-      
-      await onUpdate(cardId, updates);
+
+      await onUpdate(updates);
       toast.success('Task updated successfully!');
+      onClose();
     } catch (error) {
       console.error('Error saving card:', error);
       toast.error('Failed to save changes');
@@ -528,24 +546,33 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
                   </h4>
                   
                   <div className="space-y-3">
-                    {/* Assignee */}
+                    {/* Assignees */}
                     <div>
                       <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-                        <User size={14} />
-                        Assignee
+                        <Users size={14} />
+                        Assignees
                       </label>
                       <select
-                        value={assignee}
-                        onChange={(e) => setAssignee(e.target.value)}
+                        multiple
+                        value={assignees}
+                        onChange={(e) => {
+                          const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                          setAssignees(selectedOptions);
+                        }}
                         className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        size="4"
                       >
-                        <option value="">Unassigned</option>
                         {teamMembers.map(member => (
                           <option key={member._id} value={member._id}>
-                            {member.name}
+                            {member.name} ({member.email})
                           </option>
                         ))}
                       </select>
+                      {assignees.length > 0 && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          {assignees.length} member{assignees.length > 1 ? 's' : ''} selected
+                        </div>
+                      )}
                     </div>
 
                     {/* Priority */}

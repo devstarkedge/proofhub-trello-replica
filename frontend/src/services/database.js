@@ -279,7 +279,18 @@ class DatabaseService {
       headers,
       body: JSON.stringify(updates)
     });
-    return await res.json();
+    try {
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to update card');
+      }
+      return data;
+    } catch (error) {
+      if (error.message.includes('JSON')) {
+        throw new Error('Invalid response from server');
+      }
+      throw error;
+    }
   }
 
   async deleteCard(cardId) {

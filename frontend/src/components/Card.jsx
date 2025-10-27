@@ -94,10 +94,14 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
       >
         <p className="text-sm font-medium text-gray-900">{card.title}</p>
         <div className="flex items-center gap-2 mt-2 text-xs text-gray-600">
-          {card.assignee && (
+          {card.assignees && card.assignees.length > 0 && (
             <div className="flex items-center gap-1">
               <User size={12} />
-              <span className="truncate">{card.assignee.name}</span>
+              <span className="truncate">
+                {card.assignees.length === 1
+                  ? card.assignees[0].name
+                  : `${card.assignees.length} members`}
+              </span>
             </div>
           )}
           {card.priority && (
@@ -205,16 +209,33 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
         )}
       </div>
 
-      {/* Assignee */}
-      {card.assignee && (
+      {/* Assignees */}
+      {card.assignees && card.assignees.length > 0 && (
         <div className="flex items-center gap-2 mb-3 p-2 bg-gray-50 rounded-lg">
-          <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
-            <span className="text-white text-xs font-bold">
-              {card.assignee.name?.[0]?.toUpperCase()}
-            </span>
+          <div className="flex -space-x-2">
+            {card.assignees.slice(0, 3).map((assignee, idx) => (
+              <div
+                key={assignee._id}
+                className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center border-2 border-white"
+                title={assignee.name}
+              >
+                <span className="text-white text-xs font-bold">
+                  {assignee.name?.[0]?.toUpperCase()}
+                </span>
+              </div>
+            ))}
+            {card.assignees.length > 3 && (
+              <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white">
+                <span className="text-white text-xs font-bold">
+                  +{card.assignees.length - 3}
+                </span>
+              </div>
+            )}
           </div>
           <span className="text-xs text-gray-700 font-medium truncate">
-            {card.assignee.name}
+            {card.assignees.length === 1
+              ? card.assignees[0].name
+              : `${card.assignees.length} members`}
           </span>
         </div>
       )}
@@ -224,6 +245,7 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
         <div className="flex items-center flex-wrap gap-3 pt-3 border-t border-gray-100">
           {card.dueDate && (
             <motion.div
+              key="due-date"
               whileHover={{ scale: 1.05 }}
               className={`flex items-center gap-1 text-xs ${
                 isOverdue
@@ -237,7 +259,10 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
           )}
 
           {card.description && (
-            <div className="flex items-center gap-1 text-xs text-gray-600">
+            <div
+              key="description"
+              className="flex items-center gap-1 text-xs text-gray-600"
+            >
               <MessageSquare size={12} />
               <span>Description</span>
             </div>
@@ -245,6 +270,7 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
 
           {card.subtasks && card.subtasks.length > 0 && (
             <motion.div
+              key="subtasks"
               whileHover={{ scale: 1.05 }}
               className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md ${
                 card.subtasks.every((s) => s.completed)
@@ -262,6 +288,7 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
 
           {card.attachments && card.attachments.length > 0 && (
             <motion.div
+              key="attachments"
               whileHover={{ scale: 1.05 }}
               className="flex items-center gap-1 text-xs text-gray-600"
             >
@@ -272,6 +299,7 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
 
           {card.comments && card.comments.length > 0 && (
             <motion.div
+              key="comments"
               whileHover={{ scale: 1.05 }}
               className="flex items-center gap-1 text-xs text-gray-600"
             >

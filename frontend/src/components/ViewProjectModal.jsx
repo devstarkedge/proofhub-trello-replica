@@ -103,6 +103,14 @@ const ViewProjectModal = ({ isOpen, onClose, projectId }) => {
                     <p className="text-gray-900 font-medium">{project.name}</p>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Visibility</label>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      project.visibility === 'public' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {project.visibility || 'private'}
+                    </span>
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Project Category</label>
                     <p className="text-gray-900">{project.projectCategory || 'Not specified'}</p>
                   </div>

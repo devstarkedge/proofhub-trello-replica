@@ -1,437 +1,519 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { X, Plus } from 'lucide-react';
-import Database from '../services/database';
+"use client"
+
+import { useState, useEffect } from "react"
+import { motion, AnimatePresence } from "framer-motion"
+import { X, Plus, AlertCircle, Loader } from "lucide-react"
+import { toast } from "react-toastify"
+import Database from "../services/database"
 
 const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    projectUrl: '',
-    startDate: '',
-    projectSource: 'Direct',
-    upworkId: '',
-    billingCycle: 'hr',
-    fixedPrice: '',
-    hourlyPrice: '',
-    dueDate: '',
-    clientName: '',
-    clientEmail: '',
-    clientWhatsappNumber: '',
-    projectCategory: '',
+    title: "",
+    description: "",
+    projectUrl: "",
+    startDate: "",
+    projectSource: "Direct",
+    upworkId: "",
+    billingCycle: "hr",
+    fixedPrice: "",
+    hourlyPrice: "",
+    dueDate: "",
+    clientName: "",
+    clientEmail: "",
+    clientWhatsappNumber: "",
+    projectCategory: "",
     assignees: [],
-    estimatedTime: ''
-  });
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({});
-
+    estimatedTime: "",
+    visibility: "public",
+  })
+  const [employees, setEmployees] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [errors, setErrors] = useState({})
+  const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
-      fetchEmployees();
+      fetchEmployees()
     }
-  }, [isOpen, departmentId]);
+  }, [isOpen, departmentId])
 
   const fetchEmployees = async () => {
     try {
-      const response = await Database.getUsers();
-      const deptEmployees = response.data.filter(user =>
-        user.department && user.department._id === departmentId && user.role === 'employee' && user.isVerified
-      );
-      setEmployees(deptEmployees);
+      const response = await Database.getUsers()
+      const deptEmployees = response.data.filter(
+        (user) =>
+          (user.role === "employee" || user.role === "manager") &&
+          user.isVerified &&
+          user.department &&
+          user.department._id === departmentId,
+      )
+      setEmployees(deptEmployees)
     } catch (error) {
-      console.error('Error fetching employees:', error);
+      console.error("Error fetching employees:", error)
+      toast.error("Failed to load employees")
     }
-  };
+  }
 
   const fetchDepartmentTeams = async () => {
     try {
-      const response = await Database.getTeams();
-      const deptTeams = response.data.filter(team =>
-        team.department && team.department._id === departmentId
-      );
-      return deptTeams;
+      const response = await Database.getTeams()
+      const deptTeams = response.data.filter((team) => team.department && team.department._id === departmentId)
+      return deptTeams
     } catch (error) {
-      console.error('Error fetching teams:', error);
-      return [];
+      console.error("Error fetching teams:", error)
+      return []
     }
-  };
+  }
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
     if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+      setErrors((prev) => ({ ...prev, [name]: "" }))
     }
-  };
+  }
 
-
+  const handleAssigneeChange = (employeeId) => {
+    setFormData((prev) => ({
+      ...prev,
+      assignees: prev.assignees.includes(employeeId)
+        ? prev.assignees.filter((id) => id !== employeeId)
+        : [...prev.assignees, employeeId],
+    }))
+    if (errors.assignees) {
+      setErrors((prev) => ({ ...prev, assignees: "" }))
+    }
+  }
 
   const validateForm = () => {
-    const newErrors = {};
-    if (!formData.title.trim()) newErrors.title = 'Title is required';
-    if (formData.title.length < 3) newErrors.title = 'Title must be at least 3 characters';
-    if (!formData.startDate) newErrors.startDate = 'Start date is required';
-    if (!formData.dueDate) newErrors.dueDate = 'Due date is required';
+    const newErrors = {}
+    if (!formData.title.trim()) newErrors.title = "Title is required"
+    if (formData.title.length < 3) newErrors.title = "Title must be at least 3 characters"
+    if (!formData.startDate) newErrors.startDate = "Start date is required"
+    if (!formData.dueDate) newErrors.dueDate = "Due date is required"
     if (new Date(formData.startDate) >= new Date(formData.dueDate)) {
-      newErrors.dueDate = 'Due date must be after start date';
+      newErrors.dueDate = "Due date must be after start date"
     }
-    if (formData.assignees.length === 0) newErrors.assignees = 'At least one assignee is required';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+    if (formData.assignees.length === 0) newErrors.assignees = "At least one assignee is required"
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
+    e.preventDefault()
+    if (!validateForm()) {
+      toast.error("Please fix the errors in the form")
+      return
+    }
 
-    setLoading(true);
+    setIsSaving(true)
     try {
-      // Fetch department teams to get the first team as default
-      const deptTeams = await fetchDepartmentTeams();
-      const defaultTeam = deptTeams.length > 0 ? deptTeams[0]._id : null;
+      const deptTeams = await fetchDepartmentTeams()
+      const defaultTeam = deptTeams.length > 0 ? deptTeams[0]._id : null
 
-      const formDataToSend = new FormData();
-      formDataToSend.append('name', formData.title);
-      formDataToSend.append('description', formData.description);
-      formDataToSend.append('team', defaultTeam || '');
-      formDataToSend.append('department', departmentId);
-      formData.assignees.forEach(id => {
-        formDataToSend.append('members', id);
-      });
-      formDataToSend.append('background', '#6366f1');
-      formDataToSend.append('startDate', formData.startDate);
-      formDataToSend.append('dueDate', formData.dueDate);
+      const projectData = {
+        name: formData.title,
+        description: formData.description,
+        team: defaultTeam || "",
+        department: departmentId,
+        members: formData.assignees,
+        background: "#6366f1",
+        startDate: formData.startDate,
+        dueDate: formData.dueDate,
+        visibility: formData.visibility,
+        projectUrl: formData.projectUrl,
+        projectSource: formData.projectSource,
+        upworkId: formData.upworkId,
+        billingCycle: formData.billingCycle,
+        fixedPrice: formData.fixedPrice,
+        hourlyPrice: formData.hourlyPrice,
+        clientDetails: {
+          clientName: formData.clientName,
+          clientEmail: formData.clientEmail,
+          clientWhatsappNumber: formData.clientWhatsappNumber
+        },
+        projectCategory: formData.projectCategory,
+        estimatedTime: formData.estimatedTime
+      }
 
-
-      const response = await Database.createProject(formDataToSend);
+      const response = await Database.createProject(projectData)
 
       if (response.success) {
-        onProjectAdded(response.data);
-        onClose();
+        onProjectAdded(response.data)
+        onClose()
         setFormData({
-          title: '',
-          description: '',
-          projectUrl: '',
-          startDate: '',
-          projectSource: 'Direct',
-          upworkId: '',
-          billingCycle: 'hr',
-          fixedPrice: '',
-          hourlyPrice: '',
-          dueDate: '',
-          clientName: '',
-          clientEmail: '',
-          clientWhatsappNumber: '',
-          projectCategory: '',
+          title: "",
+          description: "",
+          projectUrl: "",
+          startDate: "",
+          projectSource: "Direct",
+          upworkId: "",
+          billingCycle: "hr",
+          fixedPrice: "",
+          hourlyPrice: "",
+          dueDate: "",
+          clientName: "",
+          clientEmail: "",
+          clientWhatsappNumber: "",
+          projectCategory: "",
           assignees: [],
-          estimatedTime: ''
-        });
-        alert('Project created successfully!');
+          estimatedTime: "",
+          visibility: "public",
+        })
+        toast.success("Project created successfully!")
       } else {
-        throw new Error(response.message || 'Failed to create project');
+        throw new Error(response.message || "Failed to create project")
       }
     } catch (error) {
-      console.error('Error creating project:', error);
-      alert(error.message || 'Failed to create project. Please try again.');
+      console.error("Error creating project:", error)
+      toast.error(error.message || "Failed to create project")
     } finally {
-      setLoading(false);
+      setIsSaving(false)
     }
-  };
+  }
 
-  if (!isOpen) return null;
+  if (!isOpen) return null
+
+  const modalVariants = {
+    hidden: { opacity: 0, scale: 0.95 },
+    visible: { opacity: 1, scale: 1, transition: { duration: 0.3 } },
+    exit: { opacity: 0, scale: 0.95, transition: { duration: 0.2 } },
+  }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={onClose}
-    >
+    <AnimatePresence>
       <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+        onClick={onClose}
       >
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">Add Project</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Title *
-              </label>
-              <input
-                type="text"
-                name="title"
-                value={formData.title}
-                onChange={handleInputChange}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  errors.title ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="Enter project title"
-              />
-              {errors.title && <p className="text-red-500 text-sm mt-1">{errors.title}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Description
-              </label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter project description"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Date *
-                </label>
-                <input
-                  type="date"
-                  name="startDate"
-                  value={formData.startDate}
-                  onChange={handleInputChange}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.startDate ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                />
-                {errors.startDate && <p className="text-red-500 text-sm mt-1">{errors.startDate}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date *
-                </label>
-                <input
-                  type="date"
-                  name="dueDate"
-                  value={formData.dueDate}
-                  onChange={handleInputChange}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.dueDate ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                />
-                {errors.dueDate && <p className="text-red-500 text-sm mt-1">{errors.dueDate}</p>}
-              </div>
-            </div>
-
-
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Assignees *
-              </label>
-              <div className="max-h-32 overflow-y-auto border border-gray-300 rounded-md p-2">
-                {employees.map(employee => (
-                  <label key={employee._id} className="flex items-center space-x-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={formData.assignees.includes(employee._id)}
-                      onChange={() => handleAssigneeChange(employee._id)}
-                      className="rounded"
-                    />
-                    <span className="text-sm">{employee.name}</span>
-                  </label>
-                ))}
-              </div>
-              {errors.assignees && <p className="text-red-500 text-sm mt-1">{errors.assignees}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Estimated Time
-              </label>
-              <input
-                type="text"
-                name="estimatedTime"
-                value={formData.estimatedTime}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., 3 days, 8h"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Project URL
-              </label>
-              <input
-                type="text"
-                name="projectUrl"
-                value={formData.projectUrl}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter project URL"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Project Source
-                </label>
-                <select
-                  name="projectSource"
-                  value={formData.projectSource}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        <motion.div
+          variants={modalVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-6 sm:p-8">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Add New Project</h2>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-semibold text-gray-700">Visibility:</label>
+                  <select
+                    name="visibility"
+                    value={formData.visibility}
+                    onChange={handleInputChange}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium"
+                  >
+                    <option value="private">Private</option>
+                    <option value="public">Public</option>
+                  </select>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={onClose}
+                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors"
                 >
-                  <option value="Direct">Direct</option>
-                  <option value="Upwork">Upwork</option>
-                  <option value="Contra">Contra</option>
-                </select>
+                  <X className="h-6 w-6" />
+                </motion.button>
               </div>
-              {formData.projectSource === 'Upwork' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Upwork ID
-                  </label>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Title */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Title *</label>
+                <input
+                  type="text"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleInputChange}
+                  className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
+                    errors.title ? "border-red-500 bg-red-50" : "border-gray-300 focus:border-transparent"
+                  }`}
+                  placeholder="Enter project title"
+                />
+                {errors.title && (
+                  <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                    <AlertCircle size={14} /> {errors.title}
+                  </p>
+                )}
+              </motion.div>
+
+              {/* Description */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                  placeholder="Enter project description"
+                />
+              </motion.div>
+
+              {/* Dates */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Start Date *</label>
+                  <input
+                    type="date"
+                    name="startDate"
+                    value={formData.startDate}
+                    onChange={handleInputChange}
+                    className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
+                      errors.startDate ? "border-red-500 bg-red-50" : "border-gray-300 focus:border-transparent"
+                    }`}
+                  />
+                  {errors.startDate && <p className="text-red-600 text-sm mt-1">{errors.startDate}</p>}
+                </motion.div>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Due Date *</label>
+                  <input
+                    type="date"
+                    name="dueDate"
+                    value={formData.dueDate}
+                    onChange={handleInputChange}
+                    className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
+                      errors.dueDate ? "border-red-500 bg-red-50" : "border-gray-300 focus:border-transparent"
+                    }`}
+                  />
+                  {errors.dueDate && <p className="text-red-600 text-sm mt-1">{errors.dueDate}</p>}
+                </motion.div>
+              </div>
+
+              {/* Assignees */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Assignees *</label>
+                <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg p-3 bg-gray-50">
+                  {employees.map((employee) => (
+                    <label
+                      key={employee._id}
+                      className="flex items-center space-x-3 py-2 hover:bg-white px-2 rounded transition-colors cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.assignees.includes(employee._id)}
+                        onChange={() => handleAssigneeChange(employee._id)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span className="text-sm text-gray-900 font-medium">
+                        {employee.name?.name || employee.name || "Unknown"}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        ({employee.email?.email || employee.email || "No email"})
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {errors.assignees && (
+                  <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                    <AlertCircle size={14} /> {errors.assignees}
+                  </p>
+                )}
+              </motion.div>
+
+              {/* Estimated Time */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Estimated Time</label>
+                <input
+                  type="text"
+                  name="estimatedTime"
+                  value={formData.estimatedTime}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="e.g., 3 days, 8h"
+                />
+              </motion.div>
+
+              {/* Project URL */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Project URL</label>
+                <input
+                  type="text"
+                  name="projectUrl"
+                  value={formData.projectUrl}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="Enter project URL"
+                />
+              </motion.div>
+
+              {/* Project Source */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Project Source</label>
+                  <select
+                    name="projectSource"
+                    value={formData.projectSource}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  >
+                    <option value="Direct">Direct</option>
+                    <option value="Upwork">Upwork</option>
+                    <option value="Contra">Contra</option>
+                  </select>
+                </motion.div>
+                {formData.projectSource === "Upwork" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.45 }}
+                  >
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Upwork ID</label>
+                    <input
+                      type="text"
+                      name="upworkId"
+                      value={formData.upworkId}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter Upwork ID"
+                    />
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Billing */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Billing Cycle</label>
+                  <select
+                    name="billingCycle"
+                    value={formData.billingCycle}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  >
+                    <option value="hr">Hourly</option>
+                    <option value="fixed">Fixed</option>
+                  </select>
+                </motion.div>
+                {formData.billingCycle === "fixed" ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.55 }}
+                  >
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Fixed Price</label>
+                    <input
+                      type="number"
+                      name="fixedPrice"
+                      value={formData.fixedPrice}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter fixed price"
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.55 }}
+                  >
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Hourly Price</label>
+                    <input
+                      type="number"
+                      name="hourlyPrice"
+                      value={formData.hourlyPrice}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Enter hourly price"
+                    />
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Client Details */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Client Details</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <input
                     type="text"
-                    name="upworkId"
-                    value={formData.upworkId}
+                    name="clientName"
+                    value={formData.clientName}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter Upwork ID"
+                    placeholder="Client Name"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Billing Cycle
-                </label>
-                <select
-                  name="billingCycle"
-                  value={formData.billingCycle}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="hr">Hourly</option>
-                  <option value="fixed">Fixed</option>
-                </select>
-              </div>
-              {formData.billingCycle === 'fixed' ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Fixed Price
-                  </label>
                   <input
-                    type="number"
-                    name="fixedPrice"
-                    value={formData.fixedPrice}
+                    type="email"
+                    name="clientEmail"
+                    value={formData.clientEmail}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter fixed price"
+                    placeholder="Client Email"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Hourly Price
-                  </label>
                   <input
-                    type="number"
-                    name="hourlyPrice"
-                    value={formData.hourlyPrice}
+                    type="text"
+                    name="clientWhatsappNumber"
+                    value={formData.clientWhatsappNumber}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter hourly price"
+                    placeholder="Client WhatsApp Number"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                 </div>
-              )}
-            </div>
+              </motion.div>
 
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Client Details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Project Category */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Project Category</label>
                 <input
                   type="text"
-                  name="clientName"
-                  value={formData.clientName}
+                  name="projectCategory"
+                  value={formData.projectCategory}
                   onChange={handleInputChange}
-                  placeholder="Client Name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="Enter project category"
                 />
-                <input
-                  type="email"
-                  name="clientEmail"
-                  value={formData.clientEmail}
-                  onChange={handleInputChange}
-                  placeholder="Client Email"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  name="clientWhatsappNumber"
-                  value={formData.clientWhatsappNumber}
-                  onChange={handleInputChange}
-                  placeholder="Client WhatsApp Number"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
+              </motion.div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Project Category
-              </label>
-              <input
-                type="text"
-                name="projectCategory"
-                value={formData.projectCategory}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter project category"
-              />
-            </div>
-
-
-
-            <div className="flex justify-between items-center pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+              {/* Buttons */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7 }}
+                className="flex justify-between items-center pt-6 border-t border-gray-200"
               >
-                Cancel
-              </button>
-              <div className="flex items-center space-x-2">
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  type="button"
+                  onClick={onClose}
+                  className="px-6 py-2.5 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors"
                 >
-                  {loading ? 'Adding...' : 'Add'}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
+                  Cancel
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  type="submit"
+                  disabled={isSaving}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors shadow-sm"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader size={18} className="animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={18} />
+                      Add Project
+                    </>
+                  )}
+                </motion.button>
+              </motion.div>
+            </form>
+          </div>
+        </motion.div>
       </motion.div>
-    </motion.div>
-  );
-};
+    </AnimatePresence>
+  )
+}
 
-export default AddProjectModal;
+export default AddProjectModal
