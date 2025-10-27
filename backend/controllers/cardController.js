@@ -327,13 +327,23 @@ export const moveCard = asyncHandler(async (req, res, next) => {
     card.list = destinationListId;
     card.position = newPosition;
 
-    // Update status based on list
+    // Update status based on list title
     const destList = await List.findById(destinationListId);
     const listTitle = destList.title.toLowerCase();
-    if (listTitle.includes("done")) card.status = "done";
-    else if (listTitle.includes("review")) card.status = "review";
-    else if (listTitle.includes("progress")) card.status = "in-progress";
-    else card.status = "todo";
+
+    // Dynamic status mapping based on list title keywords
+    if (listTitle.includes("done") || listTitle.includes("completed") || listTitle.includes("finished")) {
+      card.status = "done";
+    } else if (listTitle.includes("review") || listTitle.includes("testing") || listTitle.includes("qa")) {
+      card.status = "review";
+    } else if (listTitle.includes("progress") || listTitle.includes("doing") || listTitle.includes("working") || listTitle.includes("in progress")) {
+      card.status = "in-progress";
+    } else if (listTitle.includes("todo") || listTitle.includes("backlog") || listTitle.includes("to do")) {
+      card.status = "todo";
+    } else {
+      // For custom list names, set status to the list title (normalized)
+      card.status = destList.title.toLowerCase().replace(/\s+/g, '-');
+    }
   }
 
   await card.save();

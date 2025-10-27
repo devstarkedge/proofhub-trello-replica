@@ -6,6 +6,8 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
   const [isAddingList, setIsAddingList] = useState(false);
   const [newListTitle, setNewListTitle] = useState('');
   const [draggedList, setDraggedList] = useState(null);
+  const [draggedCard, setDraggedCard] = useState(null);
+  const [isDraggingCard, setIsDraggingCard] = useState(false);
   
   const handleAddList = () => {
     if (newListTitle.trim()) {
@@ -39,26 +41,62 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
     }
     setDraggedList(null);
   };
+
+  const handleCardDragStart = (e, card) => {
+    setDraggedCard(card);
+    setIsDraggingCard(true);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', card._id);
+  };
+
+  const handleCardDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleCardDrop = (e, targetList) => {
+    e.preventDefault();
+    const cardId = e.dataTransfer.getData('text/plain');
+    if (cardId && draggedCard && draggedCard.list !== targetList._id) {
+      const newPosition = cardsByList[targetList._id]?.length || 0;
+      onMoveCard(draggedCard._id, targetList._id, newPosition);
+    }
+    setDraggedCard(null);
+    setIsDraggingCard(false);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedCard(null);
+    setIsDraggingCard(false);
+  };
   
   return (
     <div className="p-4 overflow-x-auto h-[calc(100vh-64px)]">
       <div className="flex gap-3 pb-4 h-full">
         {/* Lists */}
         {lists.map(list => (
-          <List
+          <div
             key={list._id}
-            list={list}
-            cards={cardsByList[list._id] || []}
-            onAddCard={onAddCard}
-            onDeleteCard={onDeleteCard}
-            onCardClick={onCardClick}
-            onDeleteList={onDeleteList}
-            onUpdateListColor={onUpdateListColor}
-            onMoveCard={onMoveCard}
-            onDragStart={handleListDragStart}
-            onDragOver={handleListDragOver}
-            onDrop={handleListDrop}
-          />
+            onDragOver={handleCardDragOver}
+            onDrop={(e) => handleCardDrop(e, list)}
+            className={`${isDraggingCard ? 'border-2 border-dashed border-blue-400 rounded-xl' : ''}`}
+          >
+            <List
+              list={list}
+              cards={cardsByList[list._id] || []}
+              onAddCard={onAddCard}
+              onDeleteCard={onDeleteCard}
+              onCardClick={onCardClick}
+              onDeleteList={onDeleteList}
+              onUpdateListColor={onUpdateListColor}
+              onMoveCard={onMoveCard}
+              onDragStart={handleListDragStart}
+              onDragOver={handleListDragOver}
+              onDrop={handleListDrop}
+              onCardDragStart={handleCardDragStart}
+              onCardDragEnd={handleDragEnd}
+            />
+          </div>
         ))}
         
         {/* Add List */}

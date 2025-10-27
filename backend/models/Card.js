@@ -94,7 +94,6 @@ const cardSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['todo', 'in-progress', 'review', 'done'],
     default: 'todo'
   },
   dueDate: {

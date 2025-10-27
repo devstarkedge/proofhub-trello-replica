@@ -291,16 +291,16 @@ class DatabaseService {
     await fetch(`${baseURL}/api/cards/${cardId}`, { method: 'DELETE', headers });
   }
 
-  async moveCard(cardId, newListId, newPosition) {
+  async moveCard(cardId, destinationListId, newPosition) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/cards/${cardId}/move`, {
-      method: 'PATCH',
+      method: 'PUT',
       headers,
-      body: JSON.stringify({ newListId, newPosition })
+      body: JSON.stringify({ destinationListId, newPosition })
     });
     return await res.json();
   }

@@ -3,7 +3,7 @@ import { Plus, MoreHorizontal, X, Copy, Move, Eye, Palette, Zap, Archive, Trash2
 import Card from './Card';
 import AddCardForm from './AddCardForm';
 
-const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop }) => {
+const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -262,11 +262,17 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
             key={card._id}
             className={`transition-all duration-200 ${getCardClass(card)}`}
             draggable
-            onDragStart={(e) => handleCardDragStart(e, card)}
+            onDragStart={(e) => {
+              handleCardDragStart(e, card);
+              onCardDragStart(e, card);
+            }}
             onDragOver={(e) => handleCardDragOver(e, card)}
             onDragLeave={(e) => handleCardDragLeave(e, card)}
             onDrop={(e) => handleCardDrop(e, card)}
-            onDragEnd={handleDragEnd}
+            onDragEnd={() => {
+              handleDragEnd();
+              onCardDragEnd();
+            }}
           >
             <Card
               card={card}

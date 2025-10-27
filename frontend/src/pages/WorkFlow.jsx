@@ -63,12 +63,51 @@ const WorkFlow = () => {
         });
       };
 
+      const handleCardMoved = (event) => {
+        const { cardId, sourceListId, destinationListId, newPosition } = event.detail;
+        setCardsByList(prev => {
+          const newCardsByList = { ...prev };
+
+          // Find the card being moved
+          let movedCard = null;
+          Object.keys(newCardsByList).forEach(listId => {
+            const cardIndex = newCardsByList[listId].findIndex(card => card._id === cardId);
+            if (cardIndex !== -1) {
+              movedCard = newCardsByList[listId][cardIndex];
+              // Remove from source list
+              newCardsByList[listId] = newCardsByList[listId].filter(card => card._id !== cardId);
+            }
+          });
+
+          if (movedCard) {
+            // Update card's listId
+            movedCard = { ...movedCard, list: destinationListId, position: newPosition };
+
+            // Add to destination list at the correct position
+            if (!newCardsByList[destinationListId]) {
+              newCardsByList[destinationListId] = [];
+            }
+            newCardsByList[destinationListId].splice(newPosition, 0, movedCard);
+
+            // Update positions in destination list
+            newCardsByList[destinationListId] = newCardsByList[destinationListId].map((card, index) => ({
+              ...card,
+              position: index
+            }));
+          }
+
+          return newCardsByList;
+        });
+      };
+
       window.addEventListener('socket-card-updated', handleCardUpdate);
       window.addEventListener('socket-comment-added', handleCommentAdded);
+      window.addEventListener('socket-card-moved', handleCardMoved);
 
       return () => {
         window.removeEventListener('socket-card-updated', handleCardUpdate);
         window.removeEventListener('socket-comment-added', handleCommentAdded);
+        window.removeEventListener('socket-card-moved', handleCardMoved);
         socketService.leaveBoard(board._id);
       };
     }

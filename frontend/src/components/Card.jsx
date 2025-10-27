@@ -57,18 +57,26 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
 
   const getStatusConfig = (status) => {
     switch (status) {
-      case "Done":
+      case "done":
         return {
           bg: "bg-green-100",
           text: "text-green-800",
           icon: CheckSquare,
         };
-      case "In Progress":
+      case "in-progress":
         return { bg: "bg-blue-100", text: "text-blue-800", icon: Clock };
-      case "Review":
+      case "review":
         return { bg: "bg-purple-100", text: "text-purple-800", icon: Eye };
-      default:
+      case "todo":
         return { bg: "bg-gray-100", text: "text-gray-800", icon: AlertCircle };
+      default:
+        // For custom statuses, use a neutral style and capitalize the status
+        return {
+          bg: "bg-indigo-100",
+          text: "text-indigo-800",
+          icon: Tag,
+          displayText: status.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+        };
     }
   };
 
@@ -184,7 +192,7 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
             className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md font-medium ${statusConfig.bg} ${statusConfig.text}`}
           >
             {StatusIcon && <StatusIcon size={12} />}
-            {card.status}
+            {statusConfig.displayText || card.status}
           </span>
         )}
         {priorityConfig && (
