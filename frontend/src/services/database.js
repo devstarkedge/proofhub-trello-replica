@@ -242,6 +242,19 @@ class DatabaseService {
     return await res.json();
   }
 
+  async getCardsByDepartment(departmentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/cards/department/${departmentId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
   async getCard(cardId) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
@@ -435,13 +448,14 @@ class DatabaseService {
   }
 
   // Team operations
-  async getTeams() {
+  async getTeams(departmentId = null) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(`${baseURL}/api/teams`, { headers });
+    const url = departmentId ? `${baseURL}/api/teams?department=${departmentId}` : `${baseURL}/api/teams`;
+    const res = await fetch(url, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
@@ -540,6 +554,19 @@ class DatabaseService {
       method: 'PUT',
       headers,
       body: JSON.stringify({ department: deptId })
+    });
+    return await res.json();
+  }
+
+  async unassignUserFromDepartment(userId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments/users/${userId}/unassign`, {
+      method: 'PUT',
+      headers
     });
     return await res.json();
   }

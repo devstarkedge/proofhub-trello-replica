@@ -58,7 +58,8 @@ const TeamManagement = () => {
     createDepartment,
     updateDepartment,
     deleteDepartment,
-    assignUserToDepartment
+    assignUserToDepartment,
+    unassignUserFromDepartment
   } = useContext(TeamContext);
 
   const [users, setUsers] = useState([]);
@@ -205,6 +206,19 @@ const TeamManagement = () => {
       showToast('Department deleted successfully', 'success');
     } catch (error) {
       showToast('Failed to delete department', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUnassignUser = async (userId) => {
+    setIsLoading(true);
+    try {
+      await unassignUserFromDepartment(userId);
+      showToast('User unassigned successfully', 'success');
+      loadUsers();
+    } catch (error) {
+      showToast('Failed to unassign user', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -496,33 +510,6 @@ const TeamManagement = () => {
                       </button>
                     </div>
 
-                    {/* Selected Count */}
-                    <AnimatePresence>
-                      {selectedUsers.length > 0 && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-blue-600 rounded-lg">
-                              <CheckCircle className="text-white" size={20} />
-                            </div>
-                            <span className="font-semibold text-blue-900">
-                              {selectedUsers.length} employee{selectedUsers.length !== 1 ? 's' : ''} selected
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => setSelectedUsers([])}
-                            className="text-sm text-blue-600 hover:text-blue-800 font-semibold hover:underline"
-                          >
-                            Clear Selection
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
                     {/* Employee List */}
                     <div className="border border-gray-200 rounded-xl overflow-hidden">
                       <div className="max-h-96 overflow-y-auto">
@@ -577,14 +564,26 @@ const TeamManagement = () => {
                                   </div>
                                 </div>
                                 {employee.department?.name === currentDepartment.name && (
-                                  <motion.span
+                                  <motion.div
                                     initial={{ scale: 0 }}
                                     animate={{ scale: 1 }}
-                                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-full font-semibold shadow-sm"
+                                    className="flex items-center gap-2"
                                   >
-                                    <CheckCircle size={14} />
-                                    Already Assigned
-                                  </motion.span>
+                                    <span className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-full font-semibold shadow-sm">
+                                      <CheckCircle size={14} />
+                                      Assigned
+                                    </span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUnassignUser(employee._id);
+                                      }}
+                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Unassign from department"
+                                    >
+                                      <UserPlus size={14} className="rotate-45" />
+                                    </button>
+                                  </motion.div>
                                 )}
                               </motion.label>
                             ))}
@@ -617,6 +616,33 @@ const TeamManagement = () => {
                         </>
                       )}
                     </motion.button>
+
+                    {/* Selected Count */}
+                    <AnimatePresence>
+                      {selectedUsers.length > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-600 rounded-lg">
+                              <CheckCircle className="text-white" size={20} />
+                            </div>
+                            <span className="font-semibold text-blue-900">
+                              {selectedUsers.length} employee{selectedUsers.length !== 1 ? 's' : ''} selected
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => setSelectedUsers([])}
+                            className="text-sm text-blue-600 hover:text-blue-800 font-semibold hover:underline"
+                          >
+                            Clear Selection
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </motion.div>
               ) : (

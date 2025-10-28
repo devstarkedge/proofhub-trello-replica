@@ -360,6 +360,9 @@ const HomePage = () => {
                 const displayedProjects = isExpanded ? filteredProjects : filteredProjects.slice(0, 6);
                 const hasMore = filteredProjects.length > 6;
 
+                // Get members assigned to this department
+                const departmentMembers = department.members || [];
+
                 return (
                   <motion.div
                     key={department._id}
@@ -401,7 +404,7 @@ const HomePage = () => {
                               className="appearance-none pl-3 pr-8 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer text-sm transition-all"
                             >
                               <option value="all">All Members</option>
-                              {department.members?.map((member) => (
+                              {departmentMembers.map((member) => (
                                 <option key={member._id} value={member._id}>
                                   {member.name}
                                 </option>

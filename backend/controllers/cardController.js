@@ -46,6 +46,32 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Get all cards for a department
+// @route   GET /api/cards/department/:departmentId
+// @access  Private
+export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
+  const { departmentId } = req.params;
+
+  // Find all boards in the department
+  const boards = await Board.find({ department: departmentId });
+  const boardIds = boards.map(board => board._id);
+
+  // Find all cards in those boards
+  const cards = await Card.find({ board: { $in: boardIds } })
+    .populate("assignees", "name email avatar")
+    .populate("members", "name email avatar")
+    .populate("createdBy", "name email avatar")
+    .populate("list", "title")
+    .populate("board", "name")
+    .sort("-updatedAt");
+
+  res.status(200).json({
+    success: true,
+    count: cards.length,
+    data: cards,
+  });
+});
+
 // @desc    Get single card
 // @route   GET /api/cards/:id
 // @access  Private

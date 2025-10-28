@@ -136,6 +136,15 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('User not found', 404));
   }
 
+  // Check if user is already assigned to another department
+  if (user.department && user.department.toString() !== req.params.id) {
+    const currentDept = await Department.findById(user.department);
+    return res.status(400).json({
+      success: false,
+      message: `Employee ${user.name} is already assigned to ${currentDept?.name || 'another department'}.`
+    });
+  }
+
   if (!department.members.includes(userId)) {
     department.members.push(userId);
     await department.save();
@@ -168,5 +177,37 @@ export const removeMemberFromDepartment = asyncHandler(async (req, res, next) =>
   res.status(200).json({
     success: true,
     data: department
+  });
+});
+
+// @desc    Unassign user from department
+// @route   PUT /api/users/:id/unassign
+// @access  Private/Admin
+export const unassignUserFromDepartment = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.params.id);
+
+  if (!user) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  if (!user.department) {
+    return res.status(400).json({
+      success: false,
+      message: 'User is not assigned to any department'
+    });
+  }
+
+  const department = await Department.findById(user.department);
+  if (department) {
+    department.members = department.members.filter(id => id.toString() !== req.params.id);
+    await department.save();
+  }
+
+  user.department = null;
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: `Employee ${user.name} unassigned from ${department?.name || 'department'} successfully`
   });
 });

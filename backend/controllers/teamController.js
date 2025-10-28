@@ -8,11 +8,26 @@ import { ErrorResponse } from '../middleware/errorHandler.js';
 // @route   GET /api/teams
 // @access  Private
 export const getTeams = asyncHandler(async (req, res, next) => {
-  const teams = await Team.find({ members: req.user.id })
-    .populate('owner', 'name email')
-    .populate('members', 'name email')
-    .populate('department', 'name')
-    .sort('name');
+  let teams;
+
+  if (req.query.department) {
+    // Filter teams by department if department query parameter is provided
+    teams = await Team.find({
+      members: req.user.id,
+      department: req.query.department
+    })
+      .populate('owner', 'name email')
+      .populate('members', 'name email')
+      .populate('department', 'name')
+      .sort('name');
+  } else {
+    // Get all teams for the user if no department filter
+    teams = await Team.find({ members: req.user.id })
+      .populate('owner', 'name email')
+      .populate('members', 'name email')
+      .populate('department', 'name')
+      .sort('name');
+  }
 
   res.status(200).json({
     success: true,

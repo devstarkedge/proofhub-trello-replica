@@ -25,12 +25,23 @@ export const TeamProvider = ({ children }) => {
     }
   }, [isAuthenticated, user]);
 
+  useEffect(() => {
+    if (isAuthenticated && user && currentDepartment) {
+      loadTeams();
+    }
+  }, [currentDepartment]);
+
   const loadDepartments = async () => {
     try {
       const userDepartments = await Database.getDepartments();
       setDepartments(userDepartments.data || []);
       if (userDepartments.data && userDepartments.data.length > 0) {
-        setCurrentDepartment(userDepartments.data[0]); // Default to first department
+        // Only set currentDepartment if not already set or if current one no longer exists
+        if (!currentDepartment || !userDepartments.data.find(d => d._id === currentDepartment._id)) {
+          setCurrentDepartment(userDepartments.data[0]);
+        }
+      } else {
+        setCurrentDepartment(null);
       }
     } catch (error) {
       console.error('Error loading departments:', error);
@@ -40,10 +51,12 @@ export const TeamProvider = ({ children }) => {
   const loadTeams = async () => {
     try {
       setLoading(true);
-      const userTeams = await Database.getTeams();
+      const userTeams = await Database.getTeams(currentDepartment?._id);
       setTeams(userTeams.data || []);
       if (userTeams.data && userTeams.data.length > 0) {
         setCurrentTeam(userTeams.data[0]); // Default to first team
+      } else {
+        setCurrentTeam(null); // No teams in this department
       }
     } catch (error) {
       console.error('Error loading teams:', error);
@@ -140,6 +153,16 @@ export const TeamProvider = ({ children }) => {
     }
   };
 
+  const unassignUserFromDepartment = async (userId) => {
+    try {
+      await Database.unassignUserFromDepartment(userId);
+      await loadDepartments(); // Reload to get updated members
+    } catch (error) {
+      console.error('Error unassigning user from department:', error);
+      throw error;
+    }
+  };
+
   const assignUserToTeam = async (userId, teamId) => {
     try {
       await Database.assignUserToTeam(userId, teamId);
@@ -188,6 +211,7 @@ export const TeamProvider = ({ children }) => {
       updateTeam,
       deleteTeam,
       assignUserToDepartment,
+      unassignUserFromDepartment,
       assignUserToTeam,
       inviteUser,
       joinTeam
