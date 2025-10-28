@@ -16,6 +16,7 @@ import CalendarView from "./pages/CalendarView";
 import GanttView from "./pages/GanttView";
 import AdminSettings from "./pages/AdminSettings";
 import HRPanel from "./pages/HRPanel";
+import Analytics from "./pages/Analytics";
 import PrivateRoute from "./components/PrivateRoute";
 import HomePage from "./pages/HomePage";
 import "./App.css";
@@ -114,6 +115,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <GanttView />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <PrivateRoute>
+                  <Analytics />
                 </PrivateRoute>
               }
             />

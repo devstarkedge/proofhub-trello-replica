@@ -743,6 +743,19 @@ class DatabaseService {
     const res = await fetch(`${baseURL}/api/analytics/team/${teamId}`, { headers });
     return await res.json();
   }
+
+  async getProjectsAnalytics(departmentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/analytics/projects/${departmentId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
 }
 
 // Create singleton instance

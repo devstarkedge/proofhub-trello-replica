@@ -171,3 +171,45 @@ export const getBoardAnalytics = asyncHandler(async (req, res, next) => {
     }
   });
 });
+
+// @desc    Get projects analytics by department
+// @route   GET /api/analytics/projects/:departmentId
+// @access  Private
+export const getProjectsAnalytics = asyncHandler(async (req, res, next) => {
+  const { departmentId } = req.params;
+
+  const boards = await Board.find({ department: departmentId }).populate('team', 'name');
+
+  const projects = await Promise.all(boards.map(async (board) => {
+    const cards = await Card.find({ board: board._id });
+    const totalCards = cards.length;
+    const completedCards = cards.filter(card => card.status === 'done').length;
+    const progress = totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0;
+
+    let status = 'Planning';
+    if (progress === 100) status = 'Completed';
+    else if (progress > 0) status = 'In Progress';
+
+    const dueDates = cards.map(card => card.dueDate).filter(date => date).sort((a, b) => new Date(b) - new Date(a));
+    const dueDate = dueDates.length > 0 ? new Date(dueDates[0]).toISOString().split('T')[0] : null;
+
+    return {
+      id: board._id,
+      name: board.name,
+      description: board.description || 'Project description',
+      department: board.department,
+      team: board.team?.name || 'General',
+      progress: progress,
+      dueDate: dueDate,
+      status: status,
+      totalCards,
+      completedCards,
+      members: board.members || []
+    };
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: projects
+  });
+});
