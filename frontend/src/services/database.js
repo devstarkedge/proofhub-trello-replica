@@ -381,7 +381,7 @@ class DatabaseService {
     return await res.json();
   }
 
-  async createDepartment(name, description, managerId) {
+  async createDepartment(name, description, managerIds) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
@@ -390,7 +390,7 @@ class DatabaseService {
     const res = await fetch(`${baseURL}/api/departments`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ name, description, manager: managerId })
+      body: JSON.stringify({ name, description, managers: managerIds })
     });
     return await res.json();
   }

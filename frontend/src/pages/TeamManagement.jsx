@@ -77,7 +77,7 @@ const TeamManagement = () => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    managerId: ''
+    managers: []
   });
   const [stats, setStats] = useState({
     totalDepartments: 0,
@@ -130,9 +130,9 @@ const TeamManagement = () => {
     }
     setIsLoading(true);
     try {
-      await createDepartment(formData.name, formData.description, formData.managerId || user._id);
+      await createDepartment(formData.name, formData.description, formData.managers.length > 0 ? formData.managers : [user._id]);
       setShowCreateModal(false);
-      setFormData({ name: '', description: '', managerId: '' });
+      setFormData({ name: '', description: '', managers: [] });
       showToast('Department created successfully!', 'success');
     } catch (error) {
       showToast('Failed to create department', 'error');
@@ -151,7 +151,7 @@ const TeamManagement = () => {
     try {
       await updateDepartment(currentDepartment._id, formData);
       setShowEditModal(false);
-      setFormData({ name: '', description: '', managerId: '' });
+      setFormData({ name: '', description: '', managers: [] });
       showToast('Department updated successfully!', 'success');
     } catch (error) {
       showToast('Failed to update department', 'error');
@@ -229,7 +229,7 @@ const TeamManagement = () => {
     setFormData({
       name: dept.name,
       description: dept.description || '',
-      managerId: dept.manager?._id || ''
+      managers: dept.managers || []
     });
     setShowEditModal(true);
   };
@@ -324,7 +324,7 @@ const TeamManagement = () => {
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-gray-900">{stats.totalMembers}</p>
-                      <p className="text-xs text-gray-600">Total Members</p>
+                      <p className="text-xs text-gray-600">Total Employees</p>
                     </div>
                   </div>
                 </motion.div>
@@ -419,11 +419,15 @@ const TeamManagement = () => {
                               <div className="flex flex-wrap items-center gap-3 text-xs">
                                 <span className="flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-lg font-medium">
                                   <Shield size={12} />
-                                  {dept.manager?.name || 'No manager'}
+                                  {dept.managers?.length ? `${dept.managers.length} manager${dept.managers.length > 1 ? 's' : ''}` : 'No manager'}
                                 </span>
                                 <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg font-medium">
                                   <Users size={12} />
-                                  {dept.members?.length || 0} members
+                                  {dept.members?.length || 0} employees
+                                </span>
+                                <span className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg font-medium">
+                                  <Building2 size={12} />
+                                  {dept.projectsCount || 0} projects
                                 </span>
                               </div>
                             </div>
@@ -742,15 +746,18 @@ const TeamManagement = () => {
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Department Manager
+                    Department Managers
                   </label>
                   <select
-                    value={formData.managerId}
-                    onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
+                    multiple
+                    value={formData.managers}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, option => option.value);
+                      setFormData({ ...formData, managers: selected });
+                    }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     disabled={isLoading}
                   >
-                    <option value="">Select Manager (Optional)</option>
                     {managers.map(manager => (
                       <option key={manager._id} value={manager._id}>
                         {manager.name} - {manager.email}
@@ -863,15 +870,18 @@ const TeamManagement = () => {
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Department Manager
+                    Department Managers
                   </label>
                   <select
-                    value={formData.managerId}
-                    onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
+                    multiple
+                    value={formData.managers}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, option => option.value);
+                      setFormData({ ...formData, managers: selected });
+                    }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                     disabled={isLoading}
                   >
-                    <option value="">Select Manager (Optional)</option>
                     {managers.map(manager => (
                       <option key={manager._id} value={manager._id}>
                         {manager.name} - {manager.email}

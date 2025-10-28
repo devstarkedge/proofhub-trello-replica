@@ -8,15 +8,21 @@ import { ErrorResponse } from '../middleware/errorHandler.js';
 // @access  Private
 export const getDepartments = asyncHandler(async (req, res, next) => {
   const departments = await Department.find({ isActive: true })
-    .populate('manager', 'name email')
+    .populate('managers', 'name email')
     .populate('members', 'name email')
     .populate('projects', 'name description background members')
     .sort('name');
 
+  // Add projects count to each department
+  const departmentsWithCount = departments.map(dept => ({
+    ...dept.toObject(),
+    projectsCount: dept.projects.length
+  }));
+
   res.status(200).json({
     success: true,
-    count: departments.length,
-    data: departments
+    count: departmentsWithCount.length,
+    data: departmentsWithCount
   });
 });
 
@@ -25,7 +31,7 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const getDepartment = asyncHandler(async (req, res, next) => {
   const department = await Department.findById(req.params.id)
-    .populate('manager', 'name email')
+    .populate('managers', 'name email')
     .populate('members', 'name email');
 
   if (!department) {
@@ -42,7 +48,7 @@ export const getDepartment = asyncHandler(async (req, res, next) => {
 // @route   POST /api/departments
 // @access  Private/Admin
 export const createDepartment = asyncHandler(async (req, res, next) => {
-  const { name, description, manager } = req.body;
+  const { name, description, managers } = req.body;
 
   // Check if department exists
   const existingDept = await Department.findOne({ name });
@@ -53,8 +59,8 @@ export const createDepartment = asyncHandler(async (req, res, next) => {
   const department = await Department.create({
     name,
     description,
-    manager,
-    members: manager ? [manager] : []
+    managers: managers || [],
+    members: managers ? managers : []
   });
 
   res.status(201).json({
@@ -67,7 +73,7 @@ export const createDepartment = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/departments/:id
 // @access  Private/Admin
 export const updateDepartment = asyncHandler(async (req, res, next) => {
-  const { name, description, manager, members, isActive } = req.body;
+  const { name, description, managers, members, isActive } = req.body;
 
   const department = await Department.findById(req.params.id);
 
@@ -78,14 +84,14 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
   // Update fields
   if (name) department.name = name;
   if (description !== undefined) department.description = description;
-  if (manager !== undefined) department.manager = manager;
+  if (managers !== undefined) department.managers = managers;
   if (members) department.members = members;
   if (isActive !== undefined) department.isActive = isActive;
 
   await department.save();
 
-  // Populate manager data before returning
-  await department.populate('manager', 'name email');
+  // Populate managers data before returning
+  await department.populate('managers', 'name email');
 
   res.status(200).json({
     success: true,

@@ -27,10 +27,10 @@ const userSchema = new mongoose.Schema({
     enum: ['admin', 'manager', 'hr', 'employee'],
     default: 'employee'
   },
-  department: {
+  department: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Department'
-  },
+  }],
   team: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Team'

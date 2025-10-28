@@ -182,7 +182,7 @@ export const declineUser = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/users/:id/assign
 // @access  Private/Admin
 export const assignUser = asyncHandler(async (req, res, next) => {
-  const { department, team } = req.body;
+  const { departments, team } = req.body; // Changed to departments (plural)
 
   const user = await User.findById(req.params.id);
 
@@ -190,15 +190,18 @@ export const assignUser = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('User not found', 404));
   }
 
-  if (department !== undefined) {
-    user.department = department;
-    // Also add user to department's members array if department is set
-    if (department) {
+  if (departments !== undefined) {
+    user.department = departments; // Assign the array of department IDs
+
+    // Also add user to department's members array for each department
+    if (departments && departments.length > 0) {
       const Department = (await import('../models/Department.js')).default;
-      const dept = await Department.findById(department);
-      if (dept && !dept.members.includes(req.params.id)) {
-        dept.members.push(req.params.id);
-        await dept.save();
+      for (const deptId of departments) {
+        const dept = await Department.findById(deptId);
+        if (dept && !dept.members.includes(req.params.id)) {
+          dept.members.push(req.params.id);
+          await dept.save();
+        }
       }
     }
   }

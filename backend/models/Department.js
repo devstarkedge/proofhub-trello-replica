@@ -13,10 +13,10 @@ const departmentSchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, 'Description cannot exceed 500 characters']
   },
-  manager: {
+  managers: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  },
+  }],
   members: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
