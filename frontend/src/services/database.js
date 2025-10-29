@@ -306,6 +306,79 @@ class DatabaseService {
     }
   }
 
+  async updateEstimationTime(cardId, hours, minutes) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/estimation`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0 })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to update estimation time');
+    }
+    return await res.json();
+  }
+
+  async addLoggedTime(cardId, time) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const { hours, minutes } = time;
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/log-time`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0 })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to log time');
+    }
+    return await res.json();
+  }
+
+  async updateLoggedTime(cardId, entryId, time) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const { hours, minutes } = time;
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/log-time/${entryId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0 })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to update time entry');
+    }
+    return await res.json();
+  }
+
+  async deleteLoggedTime(cardId, entryId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/log-time/${entryId}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to delete time entry');
+    }
+    return await res.json();
+  }
+
   async deleteCard(cardId) {
     const token = localStorage.getItem('token');
     const headers = {};

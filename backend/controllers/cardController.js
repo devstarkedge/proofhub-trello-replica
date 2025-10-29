@@ -205,13 +205,42 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   const oldDueDate = card.dueDate;
   const oldStatus = card.status;
 
+  // Handle time tracking updates
+  if (req.body.estimationTime) {
+    req.body.estimationTime.forEach(entry => {
+      if (!entry._id) { // Only for new entries
+        if (!entry.user) {
+          entry.user = req.user.id;
+        }
+        if (!entry.reason) {
+          return next(new ErrorResponse("Reason is required for new estimation entries", 400));
+        }
+      }
+    });
+  }
+
+  if (req.body.loggedTime) {
+    req.body.loggedTime.forEach(entry => {
+      if (!entry._id) { // Only for new entries
+        if (!entry.user) {
+          entry.user = req.user.id;
+        }
+        if (!entry.description) {
+          return next(new ErrorResponse("Description is required for new logged time entries", 400));
+        }
+      }
+    });
+  }
+
   card = await Card.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
   })
     .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
-    .populate("createdBy", "name email avatar");
+    .populate("createdBy", "name email avatar")
+    .populate("estimationTime.user", "name email avatar")
+    .populate("loggedTime.user", "name email avatar");
 
   // Log activity
   await Activity.create({
@@ -238,7 +267,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
   // Notify if assignees changed (only if actually changed)
   if (req.body.assignees !== undefined) {
-    const newAssignees = req.body.assignees;
+    const newAssignees = req.body.assignees || [];
     const addedAssignees = newAssignees.filter(id => !oldAssignees.includes(id.toString()));
     const removedAssignees = oldAssignees.filter(id => !newAssignees.map(a => a.toString()).includes(id));
 
@@ -455,56 +484,5 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: "Card deleted successfully",
-  });
-});
-
-// @desc    Upload attachment
-// @route   POST /api/cards/:id/upload
-// @access  Private
-export const uploadAttachment = asyncHandler(async (req, res, next) => {
-  const card = await Card.findById(req.params.id);
-
-  if (!card) {
-    return next(new ErrorResponse("Card not found", 404));
-  }
-
-  if (!req.file) {
-    return next(new ErrorResponse("Please upload a file", 400));
-  }
-
-  const attachment = {
-    filename: req.file.filename,
-    originalName: req.file.originalname,
-    mimetype: req.file.mimetype,
-    size: req.file.size,
-    url: `/uploads/${req.file.filename}`,
-    uploadedBy: req.user.id,
-  };
-
-  card.attachments.push(attachment);
-  await card.save();
-
-  // Log activity
-  await Activity.create({
-    type: "attachment_added",
-    description: `Added attachment to "${card.title}"`,
-    user: req.user.id,
-    board: card.board,
-    card: card._id,
-  });
-
-  // Emit real-time update
-  emitToBoard(card.board.toString(), 'card-updated', {
-    cardId: card._id,
-    updates: { attachments: card.attachments },
-    updatedBy: {
-      id: req.user.id,
-      name: req.user.name
-    }
-  });
-
-  res.status(200).json({
-    success: true,
-    data: attachment,
   });
 });

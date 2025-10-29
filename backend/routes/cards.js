@@ -1,6 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getCards, getCardsByBoard, getCardsByDepartment, getCard, createCard, updateCard, moveCard, deleteCard, uploadAttachment } from '../controllers/cardController.js';
+import { getCards, getCardsByBoard, getCardsByDepartment, getCard, createCard, updateCard, moveCard, deleteCard } from '../controllers/cardController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import upload from '../middleware/upload.js';
@@ -22,6 +22,5 @@ router.post('/', protect, [
 router.put('/:id', protect, updateCard);
 router.put('/:id/move', protect, moveCard);
 router.delete('/:id', protect, deleteCard);
-router.post('/:id/upload', protect, upload.single('file'), uploadAttachment);
 
 export default router;

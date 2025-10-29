@@ -543,7 +543,7 @@ const HRPanel = () => {
         </main>
       </div>
 
-      <style jsx>{`
+      <style jsx="true">{`
         @keyframes fade-in {
           from {
             opacity: 0;

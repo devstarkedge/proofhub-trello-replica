@@ -16,7 +16,9 @@ const activitySchema = new mongoose.Schema({
       'due_date_changed',
       'list_created',
       'list_updated',
-      'board_created'
+      'board_created',
+      'estimation_updated',
+      'time_logged'
     ],
     required: true
   },

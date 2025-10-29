@@ -104,6 +104,20 @@ const cardSchema = new mongoose.Schema({
   },
   subtasks: [subtaskSchema],
   attachments: [attachmentSchema],
+  estimationTime: [{
+    hours: { type: Number, required: true, min: 0 },
+    minutes: { type: Number, required: true, min: 0, max: 59 },
+    reason: { type: String, trim: true, maxlength: 500 },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    date: { type: Date, default: Date.now }
+  }],
+  loggedTime: [{
+    hours: { type: Number, required: true, min: 0 },
+    minutes: { type: Number, required: true, min: 0, max: 59 },
+    description: { type: String, trim: true, maxlength: 500 },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    date: { type: Date, default: Date.now }
+  }],
   isArchived: {
     type: Boolean,
     default: false
