@@ -420,6 +420,7 @@ const WorkFlow = () => {
           onClose={() => setSelectedCard(null)}
           onUpdate={(updates) => handleUpdateCard(selectedCard._id, updates)}
           onDelete={() => handleDeleteCard(selectedCard._id)}
+          onMoveCard={handleMoveCard}
         />
       )}
     </div>

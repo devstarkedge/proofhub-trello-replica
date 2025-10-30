@@ -28,7 +28,7 @@ import Database from "../services/database";
 import AuthContext from "../context/AuthContext";
 import { toast } from "react-toastify";
 
-const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
+const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const { user } = useContext(AuthContext);
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || "");
@@ -38,6 +38,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
   );
   const [priority, setPriority] = useState(card.priority || "");
   const [status, setStatus] = useState(card.status || "");
+  const [availableStatuses, setAvailableStatuses] = useState([]);
   const [dueDate, setDueDate] = useState(
     card.dueDate ? new Date(card.dueDate).toISOString().split("T")[0] : ""
   );
@@ -87,6 +88,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
     loadComments();
     loadTeamMembers();
     loadProjectName();
+    loadAvailableStatuses();
   }, []);
 
   const loadProjectName = async () => {
@@ -99,6 +101,29 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
     } catch (error) {
       console.error("Error loading project name:", error);
       setProjectName("Project");
+    }
+  };
+
+  const loadAvailableStatuses = async () => {
+    try {
+      const boardId = card.board?._id || card.board;
+      if (boardId) {
+        const response = await Database.getLists(boardId);
+        const statuses = response.data.map(list => ({
+          value: list.title.toLowerCase().replace(/\s+/g, '-'),
+          label: list.title
+        }));
+        setAvailableStatuses(statuses);
+      }
+    } catch (error) {
+      console.error("Error loading available statuses:", error);
+      // Fallback to default statuses
+      setAvailableStatuses([
+        { value: 'todo', label: 'To-Do' },
+        { value: 'in-progress', label: 'In Progress' },
+        { value: 'review', label: 'Review' },
+        { value: 'done', label: 'Done' }
+      ]);
     }
   };
 
@@ -403,6 +428,28 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
         })),
       };
 
+      // Check if status has changed and move card if needed
+      if (status !== card.status) {
+        try {
+          // Get all lists to find the target list ID
+          const boardId = card.board?._id || card.board;
+          const listsResponse = await Database.getLists(boardId);
+          const targetListObj = listsResponse.data.find(list =>
+            list.title.toLowerCase().replace(/\s+/g, '-') === status
+          );
+
+          if (targetListObj) {
+            // Move the card to the new list
+            const newPosition = 0; // Add to the beginning of the list
+            await onMoveCard(card._id, targetListObj._id, newPosition);
+            toast.success(`Card moved to "${targetListObj.title}" list`);
+          }
+        } catch (moveError) {
+          console.error("Error moving card:", moveError);
+          toast.error("Card status updated but failed to move to new list");
+        }
+      }
+
       await onUpdate(updates);
       toast.success("Task updated successfully!");
       onClose();
@@ -413,6 +460,8 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
       setSaving(false);
     }
   };
+
+
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
@@ -1524,10 +1573,11 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete }) => {
                         className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       >
                         <option value="">Select status</option>
-                        <option value="todo">To-Do</option>
-                        <option value="in-progress">In Progress</option>
-                        <option value="review">Review</option>
-                        <option value="done">Done</option>
+                        {availableStatuses.map((statusOption) => (
+                          <option key={statusOption.value} value={statusOption.value}>
+                            {statusOption.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
 

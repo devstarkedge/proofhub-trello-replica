@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, MoreHorizontal, X, Copy, Move, Eye, Palette, Zap, Archive, Trash2 } from 'lucide-react';
+import { Plus, MoreHorizontal, X, Copy, Move, Eye, Palette, Zap, Archive, Trash2, Edit3 } from 'lucide-react';
 import Card from './Card';
 import AddCardForm from './AddCardForm';
+import Database from '../services/database';
 
 const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
   const [isAddingCard, setIsAddingCard] = useState(false);
@@ -185,7 +186,30 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
                       <Plus size={16} />
                       Add card
                     </button>
-                    
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const newTitle = prompt('Enter new list name:', list.title);
+                        if (newTitle && newTitle.trim() && newTitle.trim() !== list.title) {
+                          Database.updateList(list._id, { title: newTitle.trim() })
+                            .then(() => {
+                              // Refresh the page or emit event to update UI
+                              window.location.reload();
+                            })
+                            .catch((error) => {
+                              console.error('Error renaming list:', error);
+                              alert('Failed to rename list. Please try again.');
+                            });
+                        }
+                        setShowMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <Edit3 size={16} />
+                      Rename list
+                    </button>
+
                     <div className="border-t border-gray-200 my-2"></div>
                     
                     {/* Color Picker */}

@@ -1,17 +1,22 @@
-# Time Tracking Implementation for Card Details Modal
+# Workflow List Rename and Dynamic Status Implementation
 
-## Backend Changes
-- [x] Update Card.js model to add estimationTime and loggedTime fields
-- [x] Update cardController.js to handle time tracking validation and updates
+## Tasks to Complete
 
-## Frontend Changes
-- [x] Update database.js to add time tracking API methods
-- [ ] Update CardDetailModal.jsx to add time tracking UI section
+### 1. Add Rename Option to List Menu
+- [x] Add rename button to List.jsx actions menu
+- [x] Implement rename functionality with prompt
+- [x] Add updateList method to database.js if missing
 
-## Features to Implement
-- [ ] Estimation time input (hours/minutes) - editable until task is done
-- [ ] Logged time input with add button
-- [ ] Time chips display in horizontal scrollable container
-- [ ] Total logged time calculation and display
-- [ ] Input validation and auto-conversion (90m → 1h 30m)
-- [ ] Toast notifications for success messages
+### 2. Update Card Status Logic
+- [x] Modify moveCard controller to use exact list title (normalized) for status
+- [x] Ensure status updates when cards are moved between lists
+
+### 3. Make CardDetailModal Status Dynamic
+- [x] Fetch current board's lists to populate status dropdown
+- [x] Replace fixed status options with dynamic list-based options
+
+### 4. Testing and Verification
+- [x] Test list rename functionality
+- [x] Test drag and drop status updates
+- [x] Verify status changes in card modal
+- [x] Ensure real-time updates work across the project
