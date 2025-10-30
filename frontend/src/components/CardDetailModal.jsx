@@ -63,6 +63,8 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [teamMembers, setTeamMembers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [projectName, setProjectName] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filteredMembers, setFilteredMembers] = useState([]);
 
   // Time Tracking States
   const [estimationEntries, setEstimationEntries] = useState(
@@ -90,6 +92,19 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     loadProjectName();
     loadAvailableStatuses();
   }, []);
+
+  // Filter members based on search query
+  useEffect(() => {
+    if (searchQuery.length >= 3) {
+      const filtered = teamMembers.filter(member =>
+        member.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        member.email?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredMembers(filtered);
+    } else {
+      setFilteredMembers([]);
+    }
+  }, [searchQuery, teamMembers]);
 
   const loadProjectName = async () => {
     try {
@@ -1496,50 +1511,70 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                         </div>
                       )}
 
-                      {/* Available Users Dropdown */}
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors">
-                        <div className="text-sm text-gray-600 mb-2">
-                          Available Team Members
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                          {teamMembers
-                            .filter((member) => !assignees.includes(member._id))
-                            .map((member) => (
-                              <motion.button
-                                key={member._id}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() =>
-                                  setAssignees([...assignees, member._id])
-                                }
-                                className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left"
-                              >
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center text-sm font-bold">
-                                  {member.name?.[0]?.toUpperCase() || "U"}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-medium text-gray-900 truncate">
-                                    {member.name}
-                                  </div>
-                                  <div className="text-xs text-gray-500 truncate">
-                                    {member.email}
-                                  </div>
-                                </div>
-                                <Plus
-                                  size={16}
-                                  className="text-blue-500 flex-shrink-0"
-                                />
-                              </motion.button>
-                            ))}
-                        </div>
-                        {teamMembers.filter(
-                          (member) => !assignees.includes(member._id)
-                        ).length === 0 && (
-                          <div className="text-center text-gray-500 text-sm py-4">
-                            All team members are assigned
-                          </div>
-                        )}
+                      {/* Search Bar */}
+                      <div className="mb-3">
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Search members by name or email..."
+                          className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
                       </div>
+
+                      {/* Search Results */}
+                      {searchQuery.length >= 3 && (
+                        <div className="border border-gray-200 rounded-lg bg-white max-h-48 overflow-y-auto">
+                          {filteredMembers.length > 0 ? (
+                            filteredMembers.map((member) => {
+                              const isAssigned = assignees.includes(member._id);
+                              return (
+                                <motion.button
+                                  key={member._id}
+                                  whileHover={{ scale: 1.02 }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => {
+                                    if (!isAssigned) {
+                                      setAssignees([...assignees, member._id]);
+                                    }
+                                  }}
+                                  disabled={isAssigned}
+                                  className={`w-full flex items-center gap-3 p-3 text-left border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-all ${
+                                    isAssigned ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                  }`}
+                                >
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center text-sm font-bold">
+                                    {member.name?.[0]?.toUpperCase() || "U"}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium text-gray-900 truncate">
+                                      {member.name}
+                                    </div>
+                                    <div className="text-xs text-gray-500 truncate">
+                                      {member.email}
+                                    </div>
+                                  </div>
+                                  {isAssigned ? (
+                                    <span className="text-xs text-green-600 font-medium">Assigned</span>
+                                  ) : (
+                                    <Plus size={16} className="text-blue-500 flex-shrink-0" />
+                                  )}
+                                </motion.button>
+                              );
+                            })
+                          ) : (
+                            <div className="text-center text-gray-500 text-sm py-4">
+                              No members found
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {searchQuery.length < 3 && searchQuery.length > 0 && (
+                        <div className="text-center text-gray-500 text-sm py-4">
+                          Type at least 3 characters to search
+                        </div>
+                      )}
                     </div>
 
                     {/* Priority */}
