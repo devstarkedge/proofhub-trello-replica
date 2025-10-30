@@ -4,7 +4,7 @@ import Card from './Card';
 import AddCardForm from './AddCardForm';
 import Database from '../services/database';
 
-const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
+const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -47,6 +47,8 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
     { name: 'gray', class: 'bg-gray-400' }
   ];
   
+
+
   // Drag and drop handlers for cards
   const handleCardDragStart = (e, card) => {
     setDraggedCard(card);
@@ -54,20 +56,20 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', card._id);
   };
-  
+
   const handleCardDragOver = (e, targetCard) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setDropTarget(targetCard._id);
   };
-  
+
   const handleCardDragLeave = (e, targetCard) => {
     if (dropTarget === targetCard._id) {
       setDropTarget(null);
     }
   };
-  
+
   const handleCardDrop = (e, targetCard) => {
     e.preventDefault();
     e.stopPropagation();
@@ -83,7 +85,7 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
     setIsDragging(false);
     setDropTarget(null);
   };
-  
+
   const handleListDrop = (e) => {
     e.preventDefault();
     const cardId = e.dataTransfer.getData('text/plain');
@@ -98,19 +100,19 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
     setIsDragging(false);
     setDropTarget(null);
   };
-  
+
   const handleDragEnd = () => {
     setIsDragging(false);
     setDraggedCard(null);
     setDropTarget(null);
   };
-  
+
   const handleChangeColor = (colorName) => {
     onUpdateListColor(list._id, colorName);
     setShowColorPicker(false);
     setShowMenu(false);
   };
-  
+
   const getCardClass = (card) => {
     let className = '';
     if (isDragging && draggedCard?._id === card._id) {
@@ -275,7 +277,7 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
       </div>
       
       {/* Cards Container */}
-      <div 
+      <div
         className="space-y-2 mb-2 overflow-y-auto flex-1"
         onDragOver={onDragOver}
         onDrop={handleListDrop}
@@ -327,4 +329,4 @@ const List = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList,
   );
 };
 
-export default List;
+export default KanbanList;

@@ -145,5 +145,9 @@ boardSchema.index({ department: 1 });
 boardSchema.index({ owner: 1 });
 boardSchema.index({ members: 1 });
 boardSchema.index({ isArchived: 1 });
+boardSchema.index({ createdAt: -1 });
+boardSchema.index({ department: 1, isArchived: 1 });
+boardSchema.index({ department: 1, team: 1 });
+boardSchema.index({ department: 1, createdAt: -1 });
 
 export default mongoose.model('Board', boardSchema);

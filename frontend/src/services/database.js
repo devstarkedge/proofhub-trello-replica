@@ -829,6 +829,44 @@ class DatabaseService {
     }
     return await res.json();
   }
+
+  async getDashboardData() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/analytics/dashboard`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  // Caching mechanism for dashboard data
+  async getCachedDashboardData() {
+    const cacheKey = 'dashboardData';
+    const cacheExpiryKey = 'dashboardDataExpiry';
+    const now = Date.now();
+    const cacheExpiry = localStorage.getItem(cacheExpiryKey);
+
+    // Check if cache is valid (5 minutes)
+    if (cacheExpiry && now < parseInt(cacheExpiry)) {
+      const cachedData = localStorage.getItem(cacheKey);
+      if (cachedData) {
+        return JSON.parse(cachedData);
+      }
+    }
+
+    // Fetch fresh data
+    const data = await this.getDashboardData();
+
+    // Cache the data
+    localStorage.setItem(cacheKey, JSON.stringify(data));
+    localStorage.setItem(cacheExpiryKey, (now + 5 * 60 * 1000).toString()); // 5 minutes
+
+    return data;
+  }
 }
 
 // Create singleton instance

@@ -147,6 +147,9 @@ cardSchema.index({ priority: 1 });
 cardSchema.index({ dueDate: 1 });
 cardSchema.index({ isArchived: 1 });
 cardSchema.index({ createdBy: 1 });
+cardSchema.index({ board: 1, status: 1 });
+cardSchema.index({ board: 1, dueDate: 1 });
+cardSchema.index({ board: 1, priority: 1 });
 
 // Virtual for comments
 cardSchema.virtual('comments', {

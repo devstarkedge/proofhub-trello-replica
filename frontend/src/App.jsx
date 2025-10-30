@@ -1,32 +1,36 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { Routes, Route } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from "./context/AuthContext";
 import { TeamProvider } from "./context/TeamContext";
 import { NotificationProvider } from "./context/NotificationContext";
-import WorkFlow from "./pages/WorkFlow";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import VerifyPending from "./pages/VerifyPending";
-import TeamManagement from "./pages/TeamManagement";
-import Dashboard from "./pages/Dashboard";
-import Search from "./pages/Search";
-import ListView from "./pages/ListView";
-import CalendarView from "./pages/CalendarView";
-import GanttView from "./pages/GanttView";
-import AdminSettings from "./pages/AdminSettings";
-import HRPanel from "./pages/HRPanel";
-import Analytics from "./pages/Analytics";
-import PrivateRoute from "./components/PrivateRoute";
-import HomePage from "./pages/HomePage";
+import Loading from "./components/Loading";
 import "./App.css";
+
+// Lazy load components for code splitting
+const WorkFlow = lazy(() => import("./pages/WorkFlow"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const VerifyPending = lazy(() => import("./pages/VerifyPending"));
+const TeamManagement = lazy(() => import("./pages/TeamManagement"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Search = lazy(() => import("./pages/Search"));
+const ListView = lazy(() => import("./pages/ListView"));
+const CalendarView = lazy(() => import("./pages/CalendarView"));
+const GanttView = lazy(() => import("./pages/GanttView"));
+const AdminSettings = lazy(() => import("./pages/AdminSettings"));
+const HRPanel = lazy(() => import("./pages/HRPanel"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const HomePage = lazy(() => import("./pages/HomePage"));
+const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
 
 function App() {
   return (
     <AuthProvider>
       <TeamProvider>
         <NotificationProvider>
-          <Routes>
+          <Suspense fallback={<Loading size="lg" text="Loading application..." />}>
+            <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/verify-pending" element={<VerifyPending />} />
@@ -126,7 +130,8 @@ function App() {
                 </PrivateRoute>
               }
             />
-          </Routes>
+            </Routes>
+          </Suspense>
           <ToastContainer
             position="top-right"
             autoClose={5000}

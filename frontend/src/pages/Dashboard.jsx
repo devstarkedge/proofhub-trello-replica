@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, Suspense } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -8,22 +8,22 @@ import {
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import TeamContext from '../context/TeamContext';
-import Database from '../services/database';
+import { useDashboardData } from '../hooks/useProjects';
+import { useDebounce } from '../hooks/useDebounce';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
-import ViewProjectModal from '../components/ViewProjectModal';
+import { lazy } from 'react';
+const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
 import EditProjectModal from '../components/EditProjectModal';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
   const { currentTeam, currentDepartment, departments, loadDepartments } = useContext(TeamContext);
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery] = useDebounce(searchQuery, 300);
   const [statusFilter, setStatusFilter] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
@@ -31,78 +31,15 @@ const Dashboard = () => {
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
 
+  // Use React Query for optimized data fetching
+  const { data: dashboardData, isLoading, refetch } = useDashboardData();
+
   useEffect(() => {
     loadDepartments();
   }, []);
 
-  useEffect(() => {
-    if (departments.length > 0) {
-      loadProjects();
-    }
-  }, [departments, selectedDepartment]);
-
-  const loadProjects = async () => {
-    try {
-      setLoading(true);
-      const allProjects = [];
-
-      for (const dept of departments) {
-        try {
-          const response = await Database.getBoardsByDepartment(dept._id);
-          const boards = response.data || [];
-
-          for (const board of boards) {
-            try {
-              const cardsResponse = await Database.getCardsByBoard(board._id);
-              const cards = cardsResponse.data || [];
-
-              const totalCards = cards.length;
-              const completedCards = cards.filter(card => card.status === 'done').length;
-              const progress = totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0;
-
-              let status = 'Planning';
-              if (progress === 100) status = 'Completed';
-              else if (progress > 0) status = 'In Progress';
-
-              const dueDates = cards.map(card => card.dueDate).filter(date => date).sort((a, b) => new Date(b) - new Date(a));
-              const dueDate = dueDates.length > 0 ? new Date(dueDates[0]).toISOString().split('T')[0] : null;
-
-              allProjects.push({
-                id: board._id,
-                name: board.name,
-                description: board.description || 'Project description',
-                department: dept.name,
-                team: board.team?.name || currentTeam?.name || 'General',
-                progress: progress,
-                dueDate: dueDate,
-                status: status,
-                departmentId: dept._id,
-                totalCards,
-                completedCards,
-                members: board.members || []
-              });
-            } catch (cardError) {
-              console.error(`Error loading cards for board ${board.name}:`, cardError);
-            }
-          }
-        } catch (error) {
-          console.error(`Error loading boards for department ${dept.name}:`, error);
-        }
-      }
-
-      setProjects(allProjects);
-    } catch (error) {
-      console.error('Error loading projects:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadProjects();
-  };
+  const projects = dashboardData?.data?.projects || [];
+  const loading = isLoading;
 
   const handleViewProject = (projectId) => {
     setSelectedProjectId(projectId);
@@ -114,14 +51,8 @@ const Dashboard = () => {
     setEditModalOpen(true);
   };
 
-  const handleProjectUpdated = (updatedProject) => {
-    setProjects(prev => prev.map(project =>
-      project.id === updatedProject._id ? {
-        ...project,
-        name: updatedProject.name,
-        description: updatedProject.description
-      } : project
-    ));
+  const handleRefresh = () => {
+    refetch();
   };
 
   const filteredProjects = projects.filter(p => {
@@ -210,10 +141,10 @@ const Dashboard = () => {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleRefresh}
-                disabled={refreshing}
+                disabled={isLoading}
                 className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
-                <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+                <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
                 Refresh
               </motion.button>
               <motion.button
@@ -350,17 +281,19 @@ const Dashboard = () => {
         </main>
       </div>
 
-      <ViewProjectModal
-        isOpen={viewModalOpen}
-        onClose={() => setViewModalOpen(false)}
-        projectId={selectedProjectId}
-      />
+      <Suspense fallback={<div>Loading...</div>}>
+        <ViewProjectModal
+          isOpen={viewModalOpen}
+          onClose={() => setViewModalOpen(false)}
+          projectId={selectedProjectId}
+        />
+      </Suspense>
 
       <EditProjectModal
         isOpen={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         project={selectedProject}
-        onProjectUpdated={handleProjectUpdated}
+        onProjectUpdated={() => refetch()}
       />
     </div>
   );

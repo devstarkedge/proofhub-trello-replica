@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -559,4 +559,4 @@ const ProjectCard = ({
   );
 };
 
-export default ProjectCard;
+export default memo(ProjectCard);

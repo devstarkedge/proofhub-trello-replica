@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import List from './List';
+import KanbanList from './List';
 
 const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onMoveCard, onMoveList }) => {
   const [isAddingList, setIsAddingList] = useState(false);
@@ -81,7 +81,7 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
             onDrop={(e) => handleCardDrop(e, list)}
             className={`${isDraggingCard ? 'border-2 border-dashed border-blue-400 rounded-xl' : ''}`}
           >
-            <List
+            <KanbanList
               list={list}
               cards={cardsByList[list._id] || []}
               onAddCard={onAddCard}

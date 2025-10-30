@@ -1,6 +1,7 @@
 import Card from '../models/Card.js';
 import Board from '../models/Board.js';
 import Team from '../models/Team.js';
+import Department from '../models/Department.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 
@@ -211,5 +212,153 @@ export const getProjectsAnalytics = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: projects
+  });
+});
+
+// @desc    Get dashboard data with optimized aggregation
+// @route   GET /api/analytics/dashboard
+// @access  Private
+export const getDashboardData = asyncHandler(async (req, res, next) => {
+  const user = req.user;
+
+  // Get all departments user has access to
+  let departmentQuery = {};
+  if (user.role === 'manager') {
+    departmentQuery._id = user.department;
+  } else if (user.role !== 'admin') {
+    // For regular users, get departments they belong to
+    departmentQuery.members = user._id;
+  }
+
+  const departments = await Department.find(departmentQuery);
+
+  // Optimized aggregation pipeline with better performance
+  const departmentIds = departments.map(d => d._id);
+
+  const dashboardData = await Board.aggregate([
+    {
+      $match: {
+        department: { $in: departmentIds },
+        isArchived: { $ne: true } // More efficient than isArchived: false
+      }
+    },
+    {
+      $lookup: {
+        from: 'departments',
+        localField: 'department',
+        foreignField: '_id',
+        as: 'departmentInfo',
+        pipeline: [
+          { $project: { name: 1, _id: 1 } } // Only fetch needed fields
+        ]
+      }
+    },
+    {
+      $lookup: {
+        from: 'teams',
+        localField: 'team',
+        foreignField: '_id',
+        as: 'teamInfo',
+        pipeline: [
+          { $project: { name: 1 } } // Only fetch needed fields
+        ]
+      }
+    },
+    {
+      $lookup: {
+        from: 'cards',
+        localField: '_id',
+        foreignField: 'board',
+        as: 'cards',
+        pipeline: [
+          {
+            $project: {
+              status: 1,
+              dueDate: 1,
+              _id: 0 // Exclude _id to reduce data transfer
+            }
+          }
+        ]
+      }
+    },
+    {
+      $project: {
+        id: '$_id',
+        _id: 0, // Exclude _id from output
+        name: 1,
+        description: 1,
+        department: { $arrayElemAt: ['$departmentInfo.name', 0] },
+        departmentId: { $arrayElemAt: ['$departmentInfo._id', 0] },
+        team: { $ifNull: [{ $arrayElemAt: ['$teamInfo.name', 0] }, 'General'] },
+        members: 1,
+        totalCards: { $size: '$cards' },
+        completedCards: {
+          $size: {
+            $filter: {
+              input: '$cards',
+              cond: { $eq: ['$$this.status', 'done'] }
+            }
+          }
+        },
+        dueDate: {
+          $ifNull: [
+            {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: {
+                  $max: {
+                    $filter: {
+                      input: '$cards.dueDate',
+                      cond: { $ne: ['$$this', null] }
+                    }
+                  }
+                }
+              }
+            },
+            null
+          ]
+        }
+      }
+    },
+    {
+      $addFields: {
+        progress: {
+          $cond: {
+            if: { $gt: ['$totalCards', 0] },
+            then: { $round: { $multiply: [{ $divide: ['$completedCards', '$totalCards'] }, 100] } },
+            else: 0
+          }
+        },
+        status: {
+          $switch: {
+            branches: [
+              { case: { $eq: ['$progress', 100] }, then: 'Completed' },
+              { case: { $gt: ['$progress', 0] }, then: 'In Progress' }
+            ],
+            default: 'Planning'
+          }
+        }
+      }
+    },
+    {
+      $sort: { createdAt: -1 }
+    }
+  ]);
+
+  // Calculate stats
+  const stats = {
+    totalProjects: dashboardData.length,
+    completedProjects: dashboardData.filter(p => p.status === 'Completed').length,
+    inProgressProjects: dashboardData.filter(p => p.status === 'In Progress').length,
+    planningProjects: dashboardData.filter(p => p.status === 'Planning').length
+  };
+
+  res.status(200).json({
+    success: true,
+    data: {
+      projects: dashboardData,
+      stats,
+      departments: departments.map(d => ({ _id: d._id, name: d.name }))
+    }
   });
 });

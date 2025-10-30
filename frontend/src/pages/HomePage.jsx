@@ -10,7 +10,8 @@ import Database from '../services/database';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
-import AddProjectModal from '../components/AddProjectModal';
+import { lazy, Suspense } from 'react';
+const AddProjectModal = lazy(() => import('../components/AddProjectModal'));
 import EditProjectModal from '../components/EditProjectModal';
 import ViewProjectModal from '../components/ViewProjectModal';
 
@@ -518,12 +519,14 @@ const HomePage = () => {
       </div>
 
       {/* Modals */}
-      <AddProjectModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        departmentId={selectedDepartment}
-        onProjectAdded={handleProjectAdded}
-      />
+      <Suspense fallback={<div>Loading...</div>}>
+        <AddProjectModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          departmentId={selectedDepartment}
+          onProjectAdded={handleProjectAdded}
+        />
+      </Suspense>
 
       <EditProjectModal
         isOpen={editModalOpen}

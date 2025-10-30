@@ -5,7 +5,8 @@ import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2 } from 'lucid
 import Database from '../services/database';
 import Header from '../components/Header';
 import Board from '../components/Board';
-import CardDetailModal from '../components/CardDetailModal';
+import { lazy } from 'react';
+const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
 import TeamContext from '../context/TeamContext';
 import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';

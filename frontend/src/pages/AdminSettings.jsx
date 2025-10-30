@@ -348,7 +348,7 @@ const AdminSettings = () => {
         </main>
       </div>
 
-      <style jsx>{`
+      <style jsx="true">{`
         @keyframes fade-in {
           from {
             opacity: 0;
