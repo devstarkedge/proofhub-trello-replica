@@ -1,4 +1,4 @@
-import React, { useContext, useState, useRef, useEffect } from 'react';
+import React, { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { 
   Search, Bell, Menu, Settings, LogOut, User,
   ChevronDown, Kanban, List, Calendar, BarChart3,
@@ -9,7 +9,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
 import TeamContext from '../context/TeamContext';
 import NotificationContext from '../context/NotificationContext';
-import UserVerificationModal from './UserVerificationModal';
+
+const UserVerificationModal = lazy(() => import('./UserVerificationModal'));
 
 const Header = ({ boardName }) => {
   const navigate = useNavigate();
@@ -411,11 +412,13 @@ const Header = ({ boardName }) => {
 
       {/* User Verification Modal */}
       {verificationModal && (
-        <UserVerificationModal
-          notification={verificationModal}
-          onClose={closeVerificationModal}
-          onAction={handleVerificationAction}
-        />
+        <Suspense fallback={<div>Loading...</div>}>
+          <UserVerificationModal
+            notification={verificationModal}
+            onClose={closeVerificationModal}
+            onAction={handleVerificationAction}
+          />
+        </Suspense>
       )}
     </header>
   );

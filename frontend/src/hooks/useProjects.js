@@ -37,10 +37,27 @@ export function useCreateProject() {
 
   return useMutation({
     mutationFn: (projectData) => Database.createProject(projectData),
-    onSuccess: () => {
-      // Invalidate and refetch dashboard data
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    onMutate: async (newProject) => {
+      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+      await queryClient.cancelQueries({ queryKey: ['projects'] });
+
+      // Snapshot the previous value
+      const previousProjects = queryClient.getQueryData(['projects']);
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(['projects'], (old) => old ? [...old, newProject] : [newProject]);
+
+      // Return a context object with the snapshotted value
+      return { previousProjects };
+    },
+    // If the mutation fails, use the context returned from onMutate to roll back
+    onError: (err, newProject, context) => {
+      queryClient.setQueryData(['projects'], context.previousProjects);
+    },
+    // Always refetch after error or success:
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

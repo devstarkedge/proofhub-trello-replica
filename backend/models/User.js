@@ -69,6 +69,9 @@ userSchema.index({ email: 1 });
 userSchema.index({ department: 1 });
 userSchema.index({ team: 1 });
 userSchema.index({ role: 1 });
+userSchema.index({ isVerified: 1 });
+userSchema.index({ isActive: 1 });
+userSchema.index({ createdAt: -1 });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {

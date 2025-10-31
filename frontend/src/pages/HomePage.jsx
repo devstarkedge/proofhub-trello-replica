@@ -12,8 +12,8 @@ import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import { lazy, Suspense } from 'react';
 const AddProjectModal = lazy(() => import('../components/AddProjectModal'));
-import EditProjectModal from '../components/EditProjectModal';
-import ViewProjectModal from '../components/ViewProjectModal';
+const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
+const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
 
 const HomePage = () => {
   const { user } = useContext(AuthContext);
@@ -528,18 +528,22 @@ const HomePage = () => {
         />
       </Suspense>
 
-      <EditProjectModal
-        isOpen={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        project={selectedProject}
-        onProjectUpdated={handleProjectUpdated}
-      />
+      <Suspense fallback={<div>Loading...</div>}>
+        <EditProjectModal
+          isOpen={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          project={selectedProject}
+          onProjectUpdated={handleProjectUpdated}
+        />
+      </Suspense>
 
-      <ViewProjectModal
-        isOpen={viewModalOpen}
-        onClose={() => setViewModalOpen(false)}
-        projectId={selectedProjectId}
-      />
+      <Suspense fallback={<div>Loading...</div>}>
+        <ViewProjectModal
+          isOpen={viewModalOpen}
+          onClose={() => setViewModalOpen(false)}
+          projectId={selectedProjectId}
+        />
+      </Suspense>
     </div>
   );
 };

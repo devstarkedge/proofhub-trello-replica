@@ -42,8 +42,17 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static('uploads'));
+
+// Compression middleware
+import compression from 'compression';
+app.use(compression());
+
+// Caching middleware
+import { cacheMiddleware } from './middleware/cache.js';
+app.use('/api/', cacheMiddleware(300)); // 5 minutes cache
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -141,10 +150,14 @@ export const emitToBoard = (boardId, event, data) => {
 
 import seedAdmin from './utils/seed.js';
 
-// MongoDB connection
-mongoose.connect(process.env.MONGO_URI)
+// MongoDB connection with connection pooling
+mongoose.connect(process.env.MONGO_URI, {
+  maxPoolSize: 10, // Maintain up to 10 socket connections
+  serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+  socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+})
   .then(() => {
-    console.log('Connected to MongoDB');
+    console.log('Connected to MongoDB with connection pooling');
     // Seed the admin user
     seedAdmin();
     server.listen(PORT, () => {

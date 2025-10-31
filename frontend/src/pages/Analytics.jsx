@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useContext, memo } from 'react';
+import React, { useState, useEffect, useContext, memo, lazy, Suspense } from 'react';
 import Header from '../components/Header';
 import TeamContext from '../context/TeamContext';
 import api from '../services/api';
 import StatsGrid from '../components/StatsGrid';
-import ChartsSection from '../components/ChartsSection';
 import AdditionalMetrics from '../components/AdditionalMetrics';
 import OverdueTasksList from '../components/OverdueTasksList';
+import Loading from '../components/Loading';
+
+const ChartsSection = lazy(() => import('../components/ChartsSection'));
 
 const Analytics = memo(() => {
 
@@ -87,7 +89,9 @@ const Analytics = memo(() => {
 
         <StatsGrid analyticsData={analyticsData} />
 
-        <ChartsSection priorityData={priorityData} statusData={statusData} />
+        <Suspense fallback={<Loading />}>
+          <ChartsSection priorityData={priorityData} statusData={statusData} />
+        </Suspense>
 
         <AdditionalMetrics analyticsData={analyticsData} />
 

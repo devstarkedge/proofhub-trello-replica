@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import mongoosePaginate from 'mongoose-paginate-v2';
 
 const subtaskSchema = new mongoose.Schema({
   title: {
@@ -150,6 +151,11 @@ cardSchema.index({ createdBy: 1 });
 cardSchema.index({ board: 1, status: 1 });
 cardSchema.index({ board: 1, dueDate: 1 });
 cardSchema.index({ board: 1, priority: 1 });
+cardSchema.index({ createdAt: -1 });
+cardSchema.index({ updatedAt: -1 });
+cardSchema.index({ startDate: 1 });
+cardSchema.index({ 'estimationTime.user': 1 });
+cardSchema.index({ 'loggedTime.user': 1 });
 
 // Virtual for comments
 cardSchema.virtual('comments', {
@@ -164,5 +170,8 @@ cardSchema.virtual('progress').get(function() {
   const completed = this.subtasks.filter(st => st.completed).length;
   return Math.round((completed / this.subtasks.length) * 100);
 });
+
+// Add pagination plugin
+cardSchema.plugin(mongoosePaginate);
 
 export default mongoose.model('Card', cardSchema);

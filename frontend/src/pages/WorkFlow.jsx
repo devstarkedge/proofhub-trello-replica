@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2 } from 'lucide-react';
@@ -416,13 +416,15 @@ const WorkFlow = () => {
       )}
 
       {selectedCard && (
-        <CardDetailModal
-          card={selectedCard}
-          onClose={() => setSelectedCard(null)}
-          onUpdate={(updates) => handleUpdateCard(selectedCard._id, updates)}
-          onDelete={() => handleDeleteCard(selectedCard._id)}
-          onMoveCard={handleMoveCard}
-        />
+        <Suspense fallback={<div>Loading...</div>}>
+          <CardDetailModal
+            card={selectedCard}
+            onClose={() => setSelectedCard(null)}
+            onUpdate={(updates) => handleUpdateCard(selectedCard._id, updates)}
+            onDelete={() => handleDeleteCard(selectedCard._id)}
+            onMoveCard={handleMoveCard}
+          />
+        </Suspense>
       )}
     </div>
   );

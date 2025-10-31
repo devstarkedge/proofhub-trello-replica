@@ -3,6 +3,7 @@ import List from "../models/List.js";
 import Board from "../models/Board.js";
 import Activity from "../models/Activity.js";
 import Notification from "../models/Notification.js";
+import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitToBoard, emitNotification } from "../server.js";
@@ -12,17 +13,31 @@ import { emitToBoard, emitNotification } from "../server.js";
 // @access  Private
 export const getCards = asyncHandler(async (req, res, next) => {
   const { listId } = req.params;
+  const { page = 1, limit = 50 } = req.query;
 
-  const cards = await Card.find({ list: listId })
-    .populate("assignees", "name email avatar")
-    .populate("members", "name email avatar")
-    .populate("createdBy", "name email avatar")
-    .sort("position");
+  const options = {
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10),
+    sort: { position: 1 },
+    populate: [
+      { path: "assignees", select: "name email avatar" },
+      { path: "members", select: "name email avatar" },
+      { path: "createdBy", select: "name email avatar" }
+    ]
+  };
+
+  const result = await Card.paginate({ list: listId }, options);
 
   res.status(200).json({
     success: true,
-    count: cards.length,
-    data: cards,
+    count: result.totalDocs,
+    pagination: {
+      currentPage: result.page,
+      totalPages: result.totalPages,
+      hasNext: result.hasNextPage,
+      hasPrev: result.hasPrevPage
+    },
+    data: result.docs,
   });
 });
 
@@ -31,18 +46,32 @@ export const getCards = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const getCardsByBoard = asyncHandler(async (req, res, next) => {
   const { boardId } = req.params;
+  const { page = 1, limit = 100 } = req.query;
 
-  const cards = await Card.find({ board: boardId })
-    .populate("assignees", "name email avatar")
-    .populate("members", "name email avatar")
-    .populate("createdBy", "name email avatar")
-    .populate("list", "title")
-    .sort("position");
+  const options = {
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10),
+    sort: { position: 1 },
+    populate: [
+      { path: "assignees", select: "name email avatar" },
+      { path: "members", select: "name email avatar" },
+      { path: "createdBy", select: "name email avatar" },
+      { path: "list", select: "title" }
+    ]
+  };
+
+  const result = await Card.paginate({ board: boardId }, options);
 
   res.status(200).json({
     success: true,
-    count: cards.length,
-    data: cards,
+    count: result.totalDocs,
+    pagination: {
+      currentPage: result.page,
+      totalPages: result.totalPages,
+      hasNext: result.hasNextPage,
+      hasPrev: result.hasPrevPage
+    },
+    data: result.docs,
   });
 });
 
@@ -51,23 +80,121 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
   const { departmentId } = req.params;
+  const { page = 1, limit = 200 } = req.query;
 
-  // Find all boards in the department
-  const boards = await Board.find({ department: departmentId });
-  const boardIds = boards.map(board => board._id);
+  // Use aggregation pipeline for better performance
+  const pipeline = [
+    {
+      $lookup: {
+        from: 'boards',
+        localField: 'board',
+        foreignField: '_id',
+        as: 'boardInfo'
+      }
+    },
+    {
+      $match: {
+        'boardInfo.department': new mongoose.Types.ObjectId(departmentId)
+      }
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'assignees',
+        foreignField: '_id',
+        as: 'assignees'
+      }
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'members',
+        foreignField: '_id',
+        as: 'members'
+      }
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'createdBy',
+        foreignField: '_id',
+        as: 'createdBy'
+      }
+    },
+    {
+      $lookup: {
+        from: 'lists',
+        localField: 'list',
+        foreignField: '_id',
+        as: 'list'
+      }
+    },
+    {
+      $lookup: {
+        from: 'boards',
+        localField: 'board',
+        foreignField: '_id',
+        as: 'board'
+      }
+    },
+    {
+      $project: {
+        title: 1,
+        description: 1,
+        status: 1,
+        priority: 1,
+        dueDate: 1,
+        position: 1,
+        assignees: { name: 1, email: 1, avatar: 1 },
+        members: { name: 1, email: 1, avatar: 1 },
+        createdBy: { name: 1, email: 1, avatar: 1 },
+        list: { title: 1 },
+        board: { name: 1 },
+        updatedAt: 1
+      }
+    },
+    {
+      $sort: { updatedAt: -1 }
+    },
+    {
+      $skip: (parseInt(page, 10) - 1) * parseInt(limit, 10)
+    },
+    {
+      $limit: parseInt(limit, 10)
+    }
+  ];
 
-  // Find all cards in those boards
-  const cards = await Card.find({ board: { $in: boardIds } })
-    .populate("assignees", "name email avatar")
-    .populate("members", "name email avatar")
-    .populate("createdBy", "name email avatar")
-    .populate("list", "title")
-    .populate("board", "name")
-    .sort("-updatedAt");
+  const cards = await Card.aggregate(pipeline);
+  const totalCount = await Card.aggregate([
+    {
+      $lookup: {
+        from: 'boards',
+        localField: 'board',
+        foreignField: '_id',
+        as: 'boardInfo'
+      }
+    },
+    {
+      $match: {
+        'boardInfo.department': new mongoose.Types.ObjectId(departmentId)
+      }
+    },
+    {
+      $count: "total"
+    }
+  ]);
+
+  const total = totalCount.length > 0 ? totalCount[0].total : 0;
 
   res.status(200).json({
     success: true,
-    count: cards.length,
+    count: total,
+    pagination: {
+      currentPage: parseInt(page, 10),
+      totalPages: Math.ceil(total / parseInt(limit, 10)),
+      hasNext: parseInt(page, 10) * parseInt(limit, 10) < total,
+      hasPrev: parseInt(page, 10) > 1
+    },
     data: cards,
   });
 });

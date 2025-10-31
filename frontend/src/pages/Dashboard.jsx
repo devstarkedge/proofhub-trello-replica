@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useContext, useMemo, Suspense, memo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -17,7 +17,7 @@ import { lazy } from 'react';
 const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
 import EditProjectModal from '../components/EditProjectModal';
 
-const Dashboard = () => {
+const Dashboard = memo(() => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
   const { currentTeam, currentDepartment, departments, loadDepartments } = useContext(TeamContext);
@@ -41,30 +41,32 @@ const Dashboard = () => {
   const projects = dashboardData?.data?.projects || [];
   const loading = isLoading;
 
-  const handleViewProject = (projectId) => {
+  const handleViewProject = useCallback((projectId) => {
     setSelectedProjectId(projectId);
     setViewModalOpen(true);
-  };
+  }, []);
 
-  const handleEditProject = (project) => {
+  const handleEditProject = useCallback((project) => {
     setSelectedProject(project);
     setEditModalOpen(true);
-  };
+  }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     refetch();
-  };
+  }, [refetch]);
 
-  const filteredProjects = projects.filter(p => {
-    const matchesDept = !selectedDepartment || p.departmentId === selectedDepartment;
-    const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
-    const matchesSearch = !searchQuery ||
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesDept && matchesStatus && matchesSearch;
-  });
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p => {
+      const matchesDept = !selectedDepartment || p.departmentId === selectedDepartment;
+      const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
+      const matchesSearch = !debouncedSearchQuery ||
+        p.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+        p.description.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
+      return matchesDept && matchesStatus && matchesSearch;
+    });
+  }, [projects, selectedDepartment, statusFilter, debouncedSearchQuery]);
 
-  const stats = [
+  const stats = useMemo(() => [
     {
       title: 'Total Projects',
       value: filteredProjects.length,
@@ -97,7 +99,7 @@ const Dashboard = () => {
       change: '+3',
       trend: 'up'
     }
-  ];
+  ], [filteredProjects, currentTeam?.members?.length]);
 
   if (loading) {
     return (
@@ -297,6 +299,6 @@ const Dashboard = () => {
       />
     </div>
   );
-};
+});
 
 export default Dashboard;
