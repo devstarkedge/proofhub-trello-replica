@@ -149,15 +149,6 @@ const Dashboard = memo(() => {
                 <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
                 Refresh
               </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/workflow')}
-                className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-500/30 transition-all"
-              >
-                <Plus size={18} />
-                New Project
-              </motion.button>
             </div>
           </motion.div>
 
@@ -249,13 +240,6 @@ const Dashboard = memo(() => {
                 <FolderKanban size={64} className="mx-auto text-gray-300 mb-4" />
                 <p className="text-gray-500 text-lg mb-2">No projects found</p>
                 <p className="text-gray-400 mb-6">Create your first project to get started</p>
-                <button
-                  onClick={() => navigate('/workflow')}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  <Plus size={20} />
-                  Create Project
-                </button>
               </motion.div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
