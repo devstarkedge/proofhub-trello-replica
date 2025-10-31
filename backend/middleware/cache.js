@@ -1,11 +1,28 @@
 import NodeCache from 'node-cache';
 
-const cache = new NodeCache({ stdTTL: 300 }); // 5 minutes default TTL
+const cache = new NodeCache({ stdTTL: 60 }); // 1 minute default TTL
 
-export const cacheMiddleware = (ttl = 300) => {
+// Define paths that should have shorter cache times or no cache
+const DYNAMIC_PATHS = [
+  '/api/cards/list/',
+  '/api/cards/board/',
+  '/api/boards/'
+];
+
+export const cacheMiddleware = (ttl = 60) => {
+  // Skip caching for specific endpoints that need real-time data
+  const skipPaths = [
+    '/api/cards/list/',
+    '/api/cards/board/'
+  ];
   return (req, res, next) => {
     // Skip caching for non-GET requests
     if (req.method !== 'GET') {
+      return next();
+    }
+
+    // Skip caching for specific endpoints that need real-time data
+    if (skipPaths.some(path => req.originalUrl.includes(path))) {
       return next();
     }
 

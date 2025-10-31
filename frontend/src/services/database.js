@@ -388,18 +388,36 @@ class DatabaseService {
     await fetch(`${baseURL}/api/cards/${cardId}`, { method: 'DELETE', headers });
   }
 
-  async moveCard(cardId, destinationListId, newPosition) {
+  async moveCard(cardId, destinationListId, newPosition, newStatus) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(`${baseURL}/api/cards/${cardId}/move`, {
+
+    // First, update the card's position and list
+    const moveRes = await fetch(`${baseURL}/api/cards/${cardId}/move`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({ destinationListId, newPosition })
     });
-    return await res.json();
+    
+    if (!moveRes.ok) {
+      throw new Error('Failed to move card');
+    }
+
+    // Then, update the card's status
+    const updateRes = await fetch(`${baseURL}/api/cards/${cardId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ status: newStatus })
+    });
+
+    if (!updateRes.ok) {
+      throw new Error('Failed to update card status');
+    }
+
+    return await updateRes.json();
   }
 
   async moveList(listId, newPosition) {

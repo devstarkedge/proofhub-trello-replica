@@ -96,6 +96,17 @@ io.on('connection', (socket) => {
 
   console.log(`User ${userId} connected`);
 
+  // Handle real-time updates for cards and related entities
+  socket.on('join-card', (cardId) => {
+    socket.join(`card-${cardId}`);
+    console.log(`User ${userId} joined card room: card-${cardId}`);
+  });
+
+  socket.on('leave-card', (cardId) => {
+    socket.leave(`card-${cardId}`);
+    console.log(`User ${userId} left card room: card-${cardId}`);
+  });
+
   // Handle joining teams and boards
   socket.on('join-team', (teamId) => {
     socket.join(`team-${teamId}`);

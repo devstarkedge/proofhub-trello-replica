@@ -91,7 +91,67 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     loadTeamMembers();
     loadProjectName();
     loadAvailableStatuses();
-  }, []);
+
+    // Setup real-time update listeners
+    const handleCardUpdate = (event) => {
+      const { cardId, updates } = event.detail;
+      if (cardId === card._id) {
+        if (updates.title) setTitle(updates.title);
+        if (updates.description) setDescription(updates.description);
+        if (updates.status) setStatus(updates.status);
+        if (updates.priority) setPriority(updates.priority);
+        if (updates.dueDate) setDueDate(new Date(updates.dueDate).toISOString().split('T')[0]);
+        if (updates.startDate) setStartDate(new Date(updates.startDate).toISOString().split('T')[0]);
+        if (updates.labels) setLabels(updates.labels);
+        if (updates.assignees) setAssignees(updates.assignees.map(a => a._id));
+        if (updates.subtasks) setSubtasks(updates.subtasks.map(s => ({
+          id: s._id || Date.now(),
+          text: s.title || s.text,
+          completed: s.completed
+        })));
+        if (updates.estimationTime) setEstimationEntries(updates.estimationTime);
+        if (updates.loggedTime) setLoggedTime(updates.loggedTime);
+        if (updates.attachments) setAttachments(updates.attachments);
+      }
+    };
+
+    const handleCommentAdded = (event) => {
+      const { cardId, comment } = event.detail;
+      if (cardId === card._id) {
+        setComments(prev => [...prev, comment]);
+      }
+    };
+
+    const handleCommentUpdated = (event) => {
+      const { cardId, commentId, updates } = event.detail;
+      if (cardId === card._id) {
+        setComments(prev => prev.map(c => 
+          c._id === commentId ? { ...c, ...updates } : c
+        ));
+      }
+    };
+
+    const handleCommentDeleted = (event) => {
+      const { cardId, commentId } = event.detail;
+      if (cardId === card._id) {
+        setComments(prev => prev.filter(c => c._id !== commentId));
+      }
+    };
+
+    // Subscribe to events
+    window.addEventListener('socket-card-updated', handleCardUpdate);
+    window.addEventListener('socket-comment-added', handleCommentAdded);
+    window.addEventListener('socket-comment-updated', handleCommentUpdated);
+    window.addEventListener('socket-comment-deleted', handleCommentDeleted);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('socket-card-updated', handleCardUpdate);
+      window.removeEventListener('socket-comment-added', handleCommentAdded);
+      window.removeEventListener('socket-comment-updated', handleCommentUpdated);
+      window.removeEventListener('socket-comment-deleted', handleCommentDeleted);
+    };
+  }, [card._id]);
 
   // Filter members based on search query
   useEffect(() => {

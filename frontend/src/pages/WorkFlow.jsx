@@ -154,8 +154,17 @@ const WorkFlow = () => {
   };
   
   const handleAddCard = async (listId, title) => {
-    await Database.createCard(listId, title, board._id);
-    loadData();
+    try {
+      const newCard = await Database.createCard(listId, title, board._id);
+      // Optimistic update
+      setCardsByList(prev => ({
+        ...prev,
+        [listId]: [...(prev[listId] || []), newCard.data || newCard]
+      }));
+    } catch (error) {
+      console.error('Error adding card:', error);
+      loadData(); // Revert on error
+    }
   };
 
   const handleDeleteCard = async (cardId) => {
@@ -175,13 +184,77 @@ const WorkFlow = () => {
   };
 
   const handleMoveCard = async (cardId, newListId, newPosition) => {
-    await Database.moveCard(cardId, newListId, newPosition);
-    loadData();
+    // Get the target list to determine new status
+    const targetList = lists.find(list => list._id === newListId);
+    if (!targetList) {
+      console.error('Target list not found');
+      return;
+    }
+
+    // Optimistic update
+    setCardsByList(prev => {
+      const newCardsByList = { ...prev };
+      let movedCard = null;
+
+      // Find and remove card from source list
+      Object.keys(newCardsByList).forEach(listId => {
+        const cardIndex = newCardsByList[listId].findIndex(card => card._id === cardId);
+        if (cardIndex !== -1) {
+          movedCard = { 
+            ...newCardsByList[listId][cardIndex], 
+            list: newListId, 
+            position: newPosition,
+            status: targetList.title // Update status to match the new list's title
+          };
+          newCardsByList[listId] = newCardsByList[listId].filter(card => card._id !== cardId);
+        }
+      });
+
+      if (movedCard) {
+        // Add to destination list
+        if (!newCardsByList[newListId]) {
+          newCardsByList[newListId] = [];
+        }
+        newCardsByList[newListId].splice(newPosition, 0, movedCard);
+
+        // Update positions in destination list
+        newCardsByList[newListId] = newCardsByList[newListId].map((card, index) => ({
+          ...card,
+          position: index
+        }));
+      }
+
+      return newCardsByList;
+    });
+
+    try {
+      await Database.moveCard(cardId, newListId, newPosition, targetList.title);
+      
+      // If the card is currently selected in the modal, update its status there too
+      if (selectedCard && selectedCard._id === cardId) {
+        setSelectedCard(prev => ({
+          ...prev,
+          list: newListId,
+          status: targetList.title
+        }));
+      }
+    } catch (error) {
+      console.error('Error moving card:', error);
+      // Revert optimistic update by reloading data
+      loadData();
+    }
   };
 
   const handleAddList = async (title) => {
-    await Database.createList(board._id, title);
-    loadData();
+    try {
+      const newList = await Database.createList(board._id, title);
+      // Optimistic update
+      setLists(prev => [...prev, newList.data || newList]);
+      setCardsByList(prev => ({ ...prev, [(newList.data || newList)._id]: [] }));
+    } catch (error) {
+      console.error('Error adding list:', error);
+      loadData(); // Revert on error
+    }
   };
 
   const handleDeleteList = async (listId) => {
@@ -197,8 +270,29 @@ const WorkFlow = () => {
   };
 
   const handleMoveList = async (listId, newPosition) => {
-    await Database.moveList(listId, newPosition);
-    loadData();
+    // Optimistic update
+    setLists(prev => {
+      const newLists = [...prev];
+      const listIndex = newLists.findIndex(list => list._id === listId);
+      if (listIndex !== -1) {
+        const [movedList] = newLists.splice(listIndex, 1);
+        movedList.position = newPosition;
+        newLists.splice(newPosition, 0, movedList);
+
+        // Update positions
+        newLists.forEach((list, index) => {
+          list.position = index;
+        });
+      }
+      return newLists;
+    });
+
+    try {
+      await Database.moveList(listId, newPosition);
+    } catch (error) {
+      console.error('Error moving list:', error);
+      loadData(); // Revert on error
+    }
   };
   
   if (loading || teamLoading) {

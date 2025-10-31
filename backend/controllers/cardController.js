@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitToBoard, emitNotification } from "../server.js";
+import { invalidateCache } from "../middleware/cache.js";
 
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
@@ -262,6 +263,10 @@ export const createCard = asyncHandler(async (req, res, next) => {
     list,
   });
 
+  // Invalidate relevant caches
+  invalidateCache(`/api/cards/list/${list}`);
+  invalidateCache(`/api/cards/board/${board}`);
+  
   // Emit real-time update to board
   emitToBoard(board, 'card-created', {
     card,
@@ -382,6 +387,15 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
   });
 
+  // Invalidate caches for both old and new lists
+  if (req.body.list && req.body.list !== card.list) {
+    invalidateCache(`/api/cards/list/${card.list}`);
+    invalidateCache(`/api/cards/list/${req.body.list}`);
+  }
+  
+  // Invalidate board cache
+  invalidateCache(`/api/cards/board/${card.board}`);
+  
   // Emit real-time update
   emitToBoard(card.board.toString(), 'card-updated', {
     cardId: card._id,
@@ -453,6 +467,9 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // Invalidate cache for the board
+  invalidateCache(`/api/boards/${card.board.toString()}`);
+
   res.status(200).json({
     success: true,
     data: card,
@@ -464,14 +481,25 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const moveCard = asyncHandler(async (req, res, next) => {
   const { destinationListId, newPosition } = req.body;
-  const card = await Card.findById(req.params.id);
+  const card = await Card.findById(req.params.id)
+    .populate('list', 'title')
+    .populate('board');
 
   if (!card) {
     return next(new ErrorResponse("Card not found", 404));
   }
 
-  const sourceListId = card.list;
+  const sourceListId = card.list._id;
   const oldPosition = card.position;
+  
+  // Get the destination list to update status
+  const destinationList = await List.findById(destinationListId);
+  if (!destinationList) {
+    return next(new ErrorResponse("Destination list not found", 404));
+  }
+
+  // Store old status for notifications
+  const oldStatus = card.status;
 
   // If moving within same list
   if (sourceListId.toString() === destinationListId) {
@@ -543,17 +571,39 @@ export const moveCard = asyncHandler(async (req, res, next) => {
     }
   });
 
-  // Emit real-time update
+  // Emit real-time updates for both move and status change
   emitToBoard(card.board.toString(), 'card-moved', {
     cardId: card._id,
     sourceListId,
     destinationListId,
     newPosition,
+    status: card.status,
     movedBy: {
       id: req.user.id,
       name: req.user.name
     }
   });
+
+  // Also emit a card-updated event for status change
+  emitToBoard(card.board.toString(), 'card-updated', {
+    cardId: card._id,
+    updates: {
+      list: destinationListId,
+      position: newPosition,
+      status: card.status
+    },
+    updatedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  // Invalidate all related caches
+  invalidateCache(`/api/boards/${card.board.toString()}`);
+  invalidateCache(`/api/cards/list/${sourceListId}`);
+  invalidateCache(`/api/cards/list/${destinationListId}`);
+  invalidateCache(`/api/cards/board/${card.board.toString()}`);
+  invalidateCache(`/api/cards/${card._id}`);
 
   res.status(200).json({
     success: true,

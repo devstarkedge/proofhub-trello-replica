@@ -95,6 +95,41 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-comment-added', { detail: data }));
     });
 
+    this.socket.on('comment-updated', (data) => {
+      console.log('Comment updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-comment-updated', { detail: data }));
+    });
+
+    this.socket.on('comment-deleted', (data) => {
+      console.log('Comment deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-comment-deleted', { detail: data }));
+    });
+
+    this.socket.on('subtask-updated', (data) => {
+      console.log('Subtask updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-subtask-updated', { detail: data }));
+    });
+
+    this.socket.on('attachment-added', (data) => {
+      console.log('Attachment added:', data);
+      window.dispatchEvent(new CustomEvent('socket-attachment-added', { detail: data }));
+    });
+
+    this.socket.on('attachment-deleted', (data) => {
+      console.log('Attachment deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-attachment-deleted', { detail: data }));
+    });
+
+    this.socket.on('time-logged', (data) => {
+      console.log('Time logged:', data);
+      window.dispatchEvent(new CustomEvent('socket-time-logged', { detail: data }));
+    });
+
+    this.socket.on('estimation-updated', (data) => {
+      console.log('Estimation updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-estimation-updated', { detail: data }));
+    });
+
     this.socket.on('list-created', (data) => {
       console.log('List created:', data);
       window.dispatchEvent(new CustomEvent('socket-list-created', { detail: data }));
