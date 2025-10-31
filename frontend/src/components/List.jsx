@@ -126,7 +126,7 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
   
   const listClass = `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit max-h-[calc(100vh-120px)] flex flex-col transition-all duration-200 ${
     dropTarget ? 'border-2 border-dashed border-blue-400' : ''
-  } ${isDragging ? 'opacity-75' : ''}`;
+  }`;
   
   return (
     <div
