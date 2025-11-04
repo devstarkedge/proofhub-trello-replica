@@ -207,6 +207,84 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Admin create user
+// @route   POST /api/auth/admin-create-user
+// @access  Private (Admin only)
+export const adminCreateUser = asyncHandler(async (req, res, next) => {
+  const { name, email, password, department, role } = req.body;
+
+  // Check if user exists
+  const userExists = await User.findOne({ email });
+  if (userExists) {
+    return next(new ErrorResponse('Email already exists. Please use a different email address.', 400));
+  }
+
+  // Validate department if provided
+  if (department) {
+    const deptExists = await Department.findById(department);
+    if (!deptExists) {
+      return next(new ErrorResponse('Invalid department selected', 400));
+    }
+  }
+
+  // Validate role
+  const validRoles = ['admin', 'manager', 'hr', 'employee'];
+  if (!validRoles.includes(role)) {
+    return next(new ErrorResponse('Invalid role selected', 400));
+  }
+
+  // Create user with admin-specified role and mark as verified
+  const user = await User.create({
+    name,
+    email,
+    password,
+    role,
+    department: department ? [department] : [],
+    isVerified: true, // Admin-created users are automatically verified
+    isActive: true
+  });
+
+  // If department is specified, add user to department members
+  if (department) {
+    await Department.findByIdAndUpdate(department, {
+      $addToSet: { members: user._id }
+    });
+  }
+
+  // Send welcome email
+  try {
+    const departmentName = department ?
+      (await Department.findById(department)).name : 'No department assigned';
+
+    await sendEmail({
+      to: email,
+      subject: 'Welcome to Project Management',
+      html: `
+        <h1>Welcome ${name}!</h1>
+        <p>Your account has been created by an administrator.</p>
+        <p><strong>Role:</strong> ${role}</p>
+        <p><strong>Department:</strong> ${departmentName}</p>
+        <p>You can now log in with your credentials.</p>
+      `
+    });
+  } catch (error) {
+    console.error('Email sending failed:', error);
+  }
+
+  res.status(201).json({
+    success: true,
+    message: 'User created successfully',
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      department: user.department,
+      isVerified: user.isVerified
+    }
+  });
+});
+
 // @desc    Refresh JWT token
 // @route   POST /api/auth/refresh
 // @access  Private

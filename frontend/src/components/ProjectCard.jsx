@@ -262,7 +262,7 @@ const ProjectCard = ({
                   stiffness: 300,
                   damping: 25
                 }}
-                className="absolute top-full left-0 mt-3 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl py-3 z-50 min-w-[180px] border border-white/20 overflow-hidden"
+                className="absolute top-0 left-full ml-2 mt-3 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl py-2 z-[9999] min-w-[160px] border border-white/20 overflow-hidden"
               >
                 <motion.button
                   whileHover={{
@@ -276,7 +276,7 @@ const ProjectCard = ({
                     setShowMenu(false);
                     onView && onView();
                   }}
-                  className="w-full px-5 py-3 text-left text-sm flex items-center gap-3 text-gray-700 hover:text-blue-600 transition-all duration-200 font-medium group"
+                  className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-gray-700 hover:text-blue-600 transition-all duration-200 font-medium group"
                 >
                   <motion.div
                     whileHover={{ rotate: 360 }}
@@ -306,7 +306,7 @@ const ProjectCard = ({
                     setShowMenu(false);
                     onEdit && onEdit();
                   }}
-                  className="w-full px-5 py-3 text-left text-sm flex items-center gap-3 text-gray-700 hover:text-indigo-600 transition-all duration-200 font-medium group"
+                  className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-gray-700 hover:text-indigo-600 transition-all duration-200 font-medium group"
                 >
                   <motion.div
                     whileHover={{ rotate: 15 }}
@@ -343,7 +343,7 @@ const ProjectCard = ({
                     setShowMenu(false);
                     onDelete && onDelete();
                   }}
-                  className="w-full px-5 py-3 text-left text-sm flex items-center gap-3 text-red-600 hover:text-red-700 transition-all duration-200 font-medium group"
+                  className="w-full px-2 py-1 text-left text-xs flex items-center gap-2 text-red-600 hover:text-red-700 transition-all duration-200 font-medium group"
                 >
                   <motion.div
                     whileHover={{

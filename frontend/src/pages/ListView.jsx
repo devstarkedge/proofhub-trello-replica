@@ -70,25 +70,38 @@ const ListView = () => {
     let filtered = cards;
 
     if (filters.status !== 'all') {
-      filtered = filtered.filter(card => card.list.title.toLowerCase().replace(' ', '-') === filters.status);
+      filtered = filtered.filter(card => card.list?.title?.toLowerCase().replace(' ', '-') === filters.status);
     }
 
     if (filters.priority !== 'all') {
-      filtered = filtered.filter(card => card.priority.toLowerCase() === filters.priority);
+      filtered = filtered.filter(card => card.priority?.toLowerCase() === filters.priority);
     }
 
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(card => 
-        card.title.toLowerCase().includes(searchLower) ||
-        card.board?.name.toLowerCase().includes(searchLower) ||
-        card.assignees?.some(a => a.name.toLowerCase().includes(searchLower))
+      filtered = filtered.filter(card =>
+        card.title?.toLowerCase().includes(searchLower) ||
+        card.board?.name?.toLowerCase().includes(searchLower) ||
+        card.assignees?.some(a => a.name?.toLowerCase().includes(searchLower))
       );
     }
 
     const sorted = [...filtered].sort((a, b) => {
-      const aValue = a[sorting.key];
-      const bValue = b[sorting.key];
+      let aValue, bValue;
+
+      if (sorting.key === 'board.name') {
+        aValue = a.board?.name;
+        bValue = b.board?.name;
+      } else if (sorting.key === 'assignees[0].name') {
+        aValue = a.assignees?.[0]?.name;
+        bValue = b.assignees?.[0]?.name;
+      } else if (sorting.key === 'list.title') {
+        aValue = a.list?.title;
+        bValue = b.list?.title;
+      } else {
+        aValue = a[sorting.key];
+        bValue = b[sorting.key];
+      }
 
       if (aValue === bValue) return 0;
 
@@ -127,8 +140,8 @@ const ListView = () => {
 
   const getStats = () => {
     const total = cards.length;
-    const completed = cards.filter(c => c.list?.title.toLowerCase() === 'done').length;
-    const inProgress = cards.filter(c => c.list?.title.toLowerCase() === 'in progress').length;
+    const completed = cards.filter(c => c.list?.title?.toLowerCase() === 'done').length;
+    const inProgress = cards.filter(c => c.list?.title?.toLowerCase() === 'in progress').length;
     const highPriority = cards.filter(c => c.priority === 'High').length;
     return { total, completed, inProgress, highPriority };
   };

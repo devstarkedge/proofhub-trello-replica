@@ -71,6 +71,7 @@ const TeamManagement = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [departmentToDelete, setDepartmentToDelete] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -79,6 +80,14 @@ const TeamManagement = () => {
     description: '',
     managers: []
   });
+  const [addMemberFormData, setAddMemberFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    department: '',
+    role: 'employee'
+  });
+  const [addMemberErrors, setAddMemberErrors] = useState({});
   const [stats, setStats] = useState({
     totalDepartments: 0,
     totalMembers: 0,
@@ -224,6 +233,77 @@ const TeamManagement = () => {
     }
   };
 
+  const handleAddMember = async (e) => {
+    e.preventDefault();
+    const errors = {};
+
+    if (!addMemberFormData.name.trim()) {
+      errors.name = 'Name is required';
+    }
+    if (!addMemberFormData.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(addMemberFormData.email)) {
+      errors.email = 'Email is invalid';
+    }
+    if (!addMemberFormData.password.trim()) {
+      errors.password = 'Password is required';
+    } else if (addMemberFormData.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setAddMemberErrors(errors);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // First, create the user
+      const userData = {
+        name: addMemberFormData.name,
+        email: addMemberFormData.email,
+        password: addMemberFormData.password,
+        role: addMemberFormData.role,
+        department: currentDepartment._id
+      };
+
+      // Assuming there's a register endpoint or createUser method
+      // For now, using a placeholder - you may need to adjust based on your backend
+      const createUserResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
+      });
+
+      if (!createUserResponse.ok) {
+        const errorData = await createUserResponse.json();
+        throw new Error(errorData.message || 'Failed to create user');
+      }
+
+      const newUser = await createUserResponse.json();
+
+      // Then assign to department
+      await assignUserToDepartment(newUser.user.id, currentDepartment._id);
+
+      setShowAddMemberModal(false);
+      setAddMemberFormData({
+        name: '',
+        email: '',
+        password: '',
+        department: '',
+        role: 'employee'
+      });
+      setAddMemberErrors({});
+      showToast('Member added successfully!', 'success');
+      loadUsers();
+    } catch (error) {
+      console.error('Error adding member:', error);
+      showToast(error.message || 'Failed to add member', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const openEditModal = (dept) => {
     setCurrentDepartment(dept);
     setFormData({
@@ -235,6 +315,7 @@ const TeamManagement = () => {
   };
 
   const isAdminOrManager = user && (user.role === 'admin' || user.role === 'manager');
+  const isAdmin = user && user.role === 'admin';
 
   const filteredEmployees = employees.filter(emp => {
     const matchesSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -482,11 +563,22 @@ const TeamManagement = () => {
                         </h2>
                         <p className="text-sm text-gray-600">Select employees to add to this department</p>
                       </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Award className="text-purple-600" size={20} />
-                        <span className="font-semibold text-gray-900">
-                          {currentDepartment.members?.length || 0} Members
-                        </span>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Award className="text-purple-600" size={20} />
+                          <span className="font-semibold text-gray-900">
+                            {currentDepartment.members?.length || 0} Members
+                          </span>
+                        </div>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setShowAddMemberModal(true)}
+                            className="px-4 py-2 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl hover:from-green-700 hover:to-blue-700 transition-all shadow-lg shadow-green-500/30 font-semibold flex items-center gap-2"
+                          >
+                            <UserPlus size={16} />
+                            Add Member
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -947,11 +1039,11 @@ const TeamManagement = () => {
               <div className="p-6">
                 <div className="flex items-center gap-4 mb-6">
                   <motion.div
-                    animate={{ 
+                    animate={{
                       scale: [1, 1.1, 1],
                       rotate: [0, -10, 10, -10, 0]
                     }}
-                    transition={{ 
+                    transition={{
                       duration: 0.5,
                       repeat: Infinity,
                       repeatDelay: 2
@@ -968,7 +1060,7 @@ const TeamManagement = () => {
 
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
                   <p className="text-gray-700 text-sm leading-relaxed">
-                    Are you sure you want to delete <span className="font-bold text-red-700">{departmentToDelete.name}</span>? 
+                    Are you sure you want to delete <span className="font-bold text-red-700">{departmentToDelete.name}</span>?
                     All members will be unassigned and associated data will be permanently removed.
                   </p>
                 </div>
@@ -1004,6 +1096,154 @@ const TeamManagement = () => {
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Member Modal */}
+      <AnimatePresence>
+        {showAddMemberModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => !isLoading && setShowAddMemberModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            >
+              <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 p-6 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
+                      <UserPlus className="text-white" size={24} />
+                    </div>
+                    <h3 className="text-2xl font-bold text-white">Add New Member</h3>
+                  </div>
+                  <button
+                    onClick={() => !isLoading && setShowAddMemberModal(false)}
+                    disabled={isLoading}
+                    className="p-2 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <X size={24} className="text-white" />
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleAddMember} className="p-6 space-y-6">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={addMemberFormData.name}
+                    onChange={(e) => setAddMemberFormData({ ...addMemberFormData, name: e.target.value })}
+                    placeholder="Enter full name"
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      addMemberErrors.name ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                    required
+                    disabled={isLoading}
+                  />
+                  {addMemberErrors.name && (
+                    <p className="text-red-500 text-sm mt-1">{addMemberErrors.name}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    value={addMemberFormData.email}
+                    onChange={(e) => setAddMemberFormData({ ...addMemberFormData, email: e.target.value })}
+                    placeholder="Enter email address"
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      addMemberErrors.email ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                    required
+                    disabled={isLoading}
+                  />
+                  {addMemberErrors.email && (
+                    <p className="text-red-500 text-sm mt-1">{addMemberErrors.email}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Password *
+                  </label>
+                  <input
+                    type="password"
+                    value={addMemberFormData.password}
+                    onChange={(e) => setAddMemberFormData({ ...addMemberFormData, password: e.target.value })}
+                    placeholder="Enter password (min 6 characters)"
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                      addMemberErrors.password ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                    required
+                    disabled={isLoading}
+                  />
+                  {addMemberErrors.password && (
+                    <p className="text-red-500 text-sm mt-1">{addMemberErrors.password}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Role
+                  </label>
+                  <select
+                    value={addMemberFormData.role}
+                    onChange={(e) => setAddMemberFormData({ ...addMemberFormData, role: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    disabled={isLoading}
+                  >
+                    <option value="employee">Employee</option>
+                    <option value="manager">Manager</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddMemberModal(false)}
+                    disabled={isLoading}
+                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl hover:from-green-700 hover:to-blue-700 transition-all shadow-lg shadow-green-500/30 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isLoading ? (
+                      <>
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
+                        />
+                        Adding...
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus size={20} />
+                        Add Member
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

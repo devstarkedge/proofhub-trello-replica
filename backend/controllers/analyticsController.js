@@ -5,80 +5,6 @@ import Department from '../models/Department.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 
-// @desc    Get team analytics
-// @route   GET /api/analytics/team/:teamId
-// @access  Private
-export const getTeamAnalytics = asyncHandler(async (req, res, next) => {
-  const team = await Team.findById(req.params.teamId);
-
-  if (!team) {
-    return next(new ErrorResponse('Team not found', 404));
-  }
-
-  // Get all boards for this team
-  const boards = await Board.find({ team: team._id });
-  const boardIds = boards.map(b => b._id);
-
-  // Get all cards for these boards
-  const cards = await Card.find({ board: { $in: boardIds } });
-
-  // Calculate statistics
-  const totalTasks = cards.length;
-  const completedTasks = cards.filter(c => c.status === 'done').length;
-  const inProgressTasks = cards.filter(c => c.status === 'in-progress').length;
-  const todoTasks = cards.filter(c => c.status === 'todo').length;
-  const reviewTasks = cards.filter(c => c.status === 'review').length;
-
-  // Overdue tasks
-  const now = new Date();
-  const overdueTasks = cards.filter(c => c.dueDate && new Date(c.dueDate) < now && c.status !== 'done');
-
-  // Priority breakdown
-  const priorityBreakdown = {
-    low: cards.filter(c => c.priority === 'low').length,
-    medium: cards.filter(c => c.priority === 'medium').length,
-    high: cards.filter(c => c.priority === 'high').length,
-    critical: cards.filter(c => c.priority === 'critical').length
-  };
-
-  // Completion rate
-  const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-  // Average completion time
-  const completedCards = cards.filter(c => c.status === 'done' && c.startDate);
-  let avgCompletionTime = 0;
-  if (completedCards.length > 0) {
-    const totalTime = completedCards.reduce((sum, card) => {
-      const start = new Date(card.startDate);
-      const end = new Date(card.updatedAt);
-      return sum + (end - start);
-    }, 0);
-    avgCompletionTime = Math.round(totalTime / completedCards.length / (1000 * 60 * 60 * 24)); // in days
-  }
-
-  res.status(200).json({
-    success: true,
-    data: {
-      teamId: req.params.teamId,
-      totalTasks,
-      completedTasks,
-      inProgressTasks,
-      todoTasks,
-      reviewTasks,
-      overdueTasks: overdueTasks.length,
-      completionRate,
-      priorityBreakdown,
-      avgCompletionTime,
-      overdueTasksList: overdueTasks.map(c => ({
-        id: c._id,
-        title: c.title,
-        dueDate: c.dueDate,
-        priority: c.priority
-      }))
-    }
-  });
-});
-
 // @desc    Get user analytics
 // @route   GET /api/analytics/user/:userId
 // @access  Private
@@ -212,6 +138,124 @@ export const getProjectsAnalytics = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: projects
+  });
+});
+
+// @desc    Get department analytics
+// @route   GET /api/analytics/department/:departmentId
+// @access  Private
+export const getDepartmentAnalytics = asyncHandler(async (req, res, next) => {
+  const department = await Department.findById(req.params.departmentId);
+
+  if (!department) {
+    return next(new ErrorResponse('Department not found', 404));
+  }
+
+  // Get all boards for this department
+  const boards = await Board.find({ department: department._id });
+  const boardIds = boards.map(b => b._id);
+
+  // Get all cards for these boards
+  const cards = await Card.find({ board: { $in: boardIds } });
+
+  // Calculate statistics
+  const totalTasks = cards.length;
+  const completedTasks = cards.filter(c => c.status === 'done').length;
+  const inProgressTasks = cards.filter(c => c.status === 'in-progress').length;
+  const todoTasks = cards.filter(c => c.status === 'todo').length;
+  const reviewTasks = cards.filter(c => c.status === 'review').length;
+
+  // Overdue tasks
+  const now = new Date();
+  const overdueTasks = cards.filter(c => c.dueDate && new Date(c.dueDate) < now && c.status !== 'done');
+
+  // Priority breakdown
+  const priorityBreakdown = {
+    low: cards.filter(c => c.priority === 'low').length,
+    medium: cards.filter(c => c.priority === 'medium').length,
+    high: cards.filter(c => c.priority === 'high').length,
+    critical: cards.filter(c => c.priority === 'critical').length
+  };
+
+  // Completion rate
+  const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+  // Average completion time
+  const completedCards = cards.filter(c => c.status === 'done' && c.startDate);
+  let avgCompletionTime = 0;
+  if (completedCards.length > 0) {
+    const totalTime = completedCards.reduce((sum, card) => {
+      const start = new Date(card.startDate);
+      const end = new Date(card.updatedAt);
+      return sum + (end - start);
+    }, 0);
+    avgCompletionTime = Math.round(totalTime / completedCards.length / (1000 * 60 * 60 * 24)); // in days
+  }
+
+  // Time tracking analytics
+  const timeAnalytics = {
+    totalEstimatedHours: 0,
+    totalLoggedHours: 0,
+    timeVariance: 0
+  };
+
+  cards.forEach(card => {
+    // Sum estimated time
+    if (card.estimationTime && card.estimationTime.length > 0) {
+      card.estimationTime.forEach(est => {
+        timeAnalytics.totalEstimatedHours += est.hours + (est.minutes / 60);
+      });
+    }
+
+    // Sum logged time
+    if (card.loggedTime && card.loggedTime.length > 0) {
+      card.loggedTime.forEach(log => {
+        timeAnalytics.totalLoggedHours += log.hours + (log.minutes / 60);
+      });
+    }
+  });
+
+  timeAnalytics.timeVariance = timeAnalytics.totalEstimatedHours - timeAnalytics.totalLoggedHours;
+
+  // Project breakdown
+  const projectBreakdown = await Promise.all(boards.map(async (board) => {
+    const projectCards = cards.filter(c => c.board.toString() === board._id.toString());
+    const projectCompleted = projectCards.filter(c => c.status === 'done').length;
+    const projectProgress = projectCards.length > 0 ? Math.round((projectCompleted / projectCards.length) * 100) : 0;
+
+    return {
+      id: board._id,
+      name: board.name,
+      totalTasks: projectCards.length,
+      completedTasks: projectCompleted,
+      progress: projectProgress,
+      status: board.status
+    };
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      departmentId: req.params.departmentId,
+      departmentName: department.name,
+      totalTasks,
+      completedTasks,
+      inProgressTasks,
+      todoTasks,
+      reviewTasks,
+      overdueTasks: overdueTasks.length,
+      completionRate,
+      priorityBreakdown,
+      avgCompletionTime,
+      timeAnalytics,
+      projectBreakdown,
+      overdueTasksList: overdueTasks.map(c => ({
+        id: c._id,
+        title: c.title,
+        dueDate: c.dueDate,
+        priority: c.priority
+      }))
+    }
   });
 });
 

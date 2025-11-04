@@ -825,13 +825,16 @@ class DatabaseService {
   }
 
   // Analytics operations
-  async getAnalytics(teamId) {
+  async getDepartmentAnalytics(departmentId) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(`${baseURL}/api/analytics/team/${teamId}`, { headers });
+    const res = await fetch(`${baseURL}/api/analytics/department/${departmentId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
     return await res.json();
   }
 

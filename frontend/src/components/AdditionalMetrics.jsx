@@ -42,6 +42,53 @@ const AdditionalMetrics = memo(({ analyticsData }) => {
         </div>
         <p className="text-sm text-gray-500 mt-2">Tasks currently in progress</p>
       </motion.div>
+
+      {analyticsData?.timeAnalytics && (
+        <>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="bg-white rounded-xl shadow-lg p-6"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Time Efficiency</h3>
+            <div className="text-3xl font-bold text-indigo-600">
+              {analyticsData.timeAnalytics.totalLoggedHours > 0
+                ? ((analyticsData.timeAnalytics.totalEstimatedHours / analyticsData.timeAnalytics.totalLoggedHours) * 100).toFixed(1)
+                : 0}%
+            </div>
+            <p className="text-sm text-gray-500 mt-2">Estimated vs actual time ratio</p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+            className="bg-white rounded-xl shadow-lg p-6"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Time Variance</h3>
+            <div className={`text-3xl font-bold ${analyticsData.timeAnalytics.timeVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {analyticsData.timeAnalytics.timeVariance >= 0 ? '+' : ''}{analyticsData.timeAnalytics.timeVariance.toFixed(1)}h
+            </div>
+            <p className="text-sm text-gray-500 mt-2">
+              {analyticsData.timeAnalytics.timeVariance >= 0 ? 'Under estimated time' : 'Over estimated time'}
+            </p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7 }}
+            className="bg-white rounded-xl shadow-lg p-6"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Project Count</h3>
+            <div className="text-3xl font-bold text-orange-600">
+              {analyticsData?.projectBreakdown?.length || 0}
+            </div>
+            <p className="text-sm text-gray-500 mt-2">Total projects in scope</p>
+          </motion.div>
+        </>
+      )}
     </div>
   );
 });
