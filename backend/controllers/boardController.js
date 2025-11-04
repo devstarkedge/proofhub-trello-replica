@@ -5,6 +5,7 @@ import Activity from "../models/Activity.js";
 import Department from "../models/Department.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import { invalidateCache } from "../middleware/cache.js";
 
 // @desc    Get all boards for user
 // @route   GET /api/boards
@@ -255,6 +256,10 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     await Notification.insertMany(notifications);
   }
 
+  // Invalidate relevant caches
+  invalidateCache(`/api/boards`);
+  invalidateCache(`/api/boards/department/${board.department}`);
+
   const populatedBoard = await Board.findById(board._id)
     .populate("owner", "name email avatar")
     .populate("team", "name")
@@ -288,6 +293,10 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   })
     .populate("owner", "name email avatar")
     .populate("members", "name email avatar");
+
+  // Invalidate relevant caches
+  invalidateCache(`/api/boards`);
+  invalidateCache(`/api/boards/${req.params.id}`);
 
   res.status(200).json({
     success: true,
@@ -326,6 +335,10 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   }
 
   await board.deleteOne();
+
+  // Invalidate relevant caches
+  invalidateCache(`/api/boards`);
+  invalidateCache(`/api/boards/department/${board.department}`);
 
   res.status(200).json({
     success: true,

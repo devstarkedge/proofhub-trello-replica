@@ -6,14 +6,21 @@ const cache = new NodeCache({ stdTTL: 60 }); // 1 minute default TTL
 const DYNAMIC_PATHS = [
   '/api/cards/list/',
   '/api/cards/board/',
-  '/api/boards/'
+  '/api/boards/',
+  '/api/departments/',
+  '/api/teams/',
+  '/api/users' // Skip caching for all user-related endpoints
 ];
 
 export const cacheMiddleware = (ttl = 60) => {
   // Skip caching for specific endpoints that need real-time data
   const skipPaths = [
     '/api/cards/list/',
-    '/api/cards/board/'
+    '/api/cards/board/',
+    '/api/departments/',
+    '/api/teams/',
+    '/api/users', // Skip all user endpoints for real-time updates
+    '/api/auth/me' // Skip user profile endpoint
   ];
   return (req, res, next) => {
     // Skip caching for non-GET requests

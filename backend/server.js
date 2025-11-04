@@ -94,6 +94,12 @@ io.on('connection', (socket) => {
   // Join user room for personal notifications
   socket.join(`user-${userId}`);
 
+  // Join admin room if user is admin
+  if (decodedUser.role === 'admin') {
+    socket.join('admin');
+    console.log(`Admin user ${userId} joined admin room`);
+  }
+
   console.log(`User ${userId} connected`);
 
   // Handle real-time updates for cards and related entities
@@ -147,6 +153,11 @@ io.on('connection', (socket) => {
 // Helper function to emit notification to user
 export const emitNotification = (userId, notification) => {
   io.to(`user-${userId}`).emit('notification', notification);
+};
+
+// Helper function to emit to specific user
+export const emitToUser = (userId, event, data) => {
+  io.to(`user-${userId}`).emit(event, data);
 };
 
 // Helper function to emit to team

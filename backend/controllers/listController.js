@@ -4,6 +4,7 @@ import Board from '../models/Board.js';
 import Activity from '../models/Activity.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import { invalidateCache } from '../middleware/cache.js';
 
 // @desc    Get lists for board
 // @route   GET /api/lists/board/:boardId
@@ -49,6 +50,9 @@ export const createList = asyncHandler(async (req, res, next) => {
     list: list._id
   });
 
+  // Invalidate relevant caches
+  invalidateCache(`/api/lists/board/${board}`);
+
   res.status(201).json({
     success: true,
     data: list
@@ -76,6 +80,9 @@ export const updateList = asyncHandler(async (req, res, next) => {
     board: list.board,
     list: list._id
   });
+
+  // Invalidate relevant caches
+  invalidateCache(`/api/lists/board/${list.board}`);
 
   res.status(200).json({
     success: true,
@@ -122,6 +129,9 @@ export const updateListPosition = asyncHandler(async (req, res, next) => {
   list.position = newPosition;
   await list.save();
 
+  // Invalidate relevant caches
+  invalidateCache(`/api/lists/board/${list.board}`);
+
   res.status(200).json({
     success: true,
     data: list
@@ -142,6 +152,9 @@ export const deleteList = asyncHandler(async (req, res, next) => {
   await Card.deleteMany({ list: list._id });
 
   await list.deleteOne();
+
+  // Invalidate relevant caches
+  invalidateCache(`/api/lists/board/${list.board}`);
 
   res.status(200).json({
     success: true,

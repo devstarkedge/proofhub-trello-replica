@@ -133,6 +133,30 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
 
   await user.save();
 
+  // Invalidate cache for user-related endpoints
+  const { invalidateCache } = await import('../middleware/cache.js');
+  invalidateCache('/api/users'); // Invalidate all user list caches
+  invalidateCache('/api/auth/me'); // Invalidate user profile cache
+
+  // Emit real-time update via socket to all connected admin users
+  const { emitToUser } = await import('../server.js');
+  emitToUser(user._id.toString(), 'user-verified', {
+    userId: user._id,
+    isVerified: true,
+    role: user.role,
+    department: user.department
+  });
+
+  // Also emit to admin users who might be viewing the HR panel
+  // This ensures all admin users see the update immediately
+  const { emitToTeam } = await import('../server.js');
+  emitToTeam('admin', 'user-verified', {
+    userId: user._id,
+    isVerified: true,
+    role: user.role,
+    department: user.department
+  });
+
   // Send verification email
   try {
     const { sendEmail } = await import('../utils/email.js');

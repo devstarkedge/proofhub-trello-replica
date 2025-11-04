@@ -3,6 +3,7 @@ import Card from '../models/Card.js';
 import Notification from '../models/Notification.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { emitNotification, emitToBoard } from '../server.js';
+import { invalidateCache } from '../middleware/cache.js';
 
 export const createComment = asyncHandler(async (req, res) => {
   const { text, card } = req.body;
@@ -49,6 +50,10 @@ export const createComment = asyncHandler(async (req, res) => {
     }
   }
 
+  // Invalidate relevant caches
+  invalidateCache(`/api/cards/${card}`);
+  invalidateCache(`/api/cards/${card}/comments`);
+
   res.status(201).json(populatedComment);
 });
 
@@ -78,6 +83,10 @@ export const updateComment = asyncHandler(async (req, res) => {
   comment.text = text;
   await comment.save();
 
+  // Invalidate relevant caches
+  invalidateCache(`/api/cards/${comment.card}`);
+  invalidateCache(`/api/cards/${comment.card}/comments`);
+
   res.status(200).json({
     success: true,
     data: comment,
@@ -95,6 +104,10 @@ export const deleteComment = asyncHandler(async (req, res) => {
 
   await Comment.findByIdAndDelete(req.params.id);
   await Card.findByIdAndUpdate(comment.card, { $pull: { comments: req.params.id } });
+
+  // Invalidate relevant caches
+  invalidateCache(`/api/cards/${comment.card}`);
+  invalidateCache(`/api/cards/${comment.card}/comments`);
 
   res.status(200).json({
     success: true,

@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useCallback } from "react";
 import api from "../services/api";
+import socketService from "../services/socket";
 
 const AuthContext = createContext();
 
@@ -15,6 +16,9 @@ export const AuthProvider = ({ children }) => {
     setToken(userToken);
     setUser(userData);
     setIsAuthenticated(true);
+
+    // Connect socket after authentication
+    socketService.connect(userData._id, userToken);
   };
 
   const logoutUser = useCallback(() => {
@@ -23,6 +27,9 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
+
+    // Disconnect socket on logout
+    socketService.disconnect();
   }, []);
 
   const restoreSession = useCallback(async () => {
@@ -38,6 +45,9 @@ export const AuthProvider = ({ children }) => {
         setToken(savedToken);
         setUser(userData);
         setIsAuthenticated(true);
+
+        // Connect socket after session restore
+        socketService.connect(userData._id, savedToken);
       } catch (error) {
         console.error("Session restore failed:", error);
         logoutUser();

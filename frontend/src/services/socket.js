@@ -160,6 +160,12 @@ class SocketService {
       console.log('Task assigned:', data);
       window.dispatchEvent(new CustomEvent('socket-task-assigned', { detail: data }));
     });
+
+    // User verification events
+    this.socket.on('user-verified', (data) => {
+      console.log('User verified:', data);
+      window.dispatchEvent(new CustomEvent('socket-user-verified', { detail: data }));
+    });
   }
 
   disconnect() {

@@ -39,6 +39,24 @@ const HRPanel = () => {
   useEffect(() => {
     loadUsers();
     loadDepartments();
+
+    // Listen for real-time user verification updates
+    const handleUserVerified = (event) => {
+      const { userId, isVerified, role, department } = event.detail;
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user._id === userId
+            ? { ...user, isVerified, role, department }
+            : user
+        )
+      );
+    };
+
+    window.addEventListener('socket-user-verified', handleUserVerified);
+
+    return () => {
+      window.removeEventListener('socket-user-verified', handleUserVerified);
+    };
   }, []);
 
   const loadUsers = async () => {
