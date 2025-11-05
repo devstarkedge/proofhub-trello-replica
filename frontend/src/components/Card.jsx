@@ -183,7 +183,7 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
             e.stopPropagation();
             onDelete(card._id);
           }}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+          className="transition-opacity p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
         >
           <Trash2 size={14} />
         </motion.button>

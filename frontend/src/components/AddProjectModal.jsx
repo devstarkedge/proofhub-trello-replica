@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, Plus, AlertCircle, Loader } from "lucide-react"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select"
+import { Badge } from "../components/ui/badge"
 import { toast } from "react-toastify"
 import Database from "../services/database"
 
@@ -38,16 +40,10 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
   }, [isOpen, departmentId])
 
   const fetchEmployees = async () => {
+    if (!departmentId) return;
     try {
-      const response = await Database.getUsers()
-      const deptEmployees = response.data.filter(
-        (user) =>
-          (user.role === "employee" || user.role === "manager") &&
-          user.isVerified &&
-          user.department &&
-          user.department._id === departmentId,
-      )
-      setEmployees(deptEmployees)
+      const response = await Database.getUsers(departmentId);
+      setEmployees(response)
     } catch (error) {
       console.error("Error fetching employees:", error)
       toast.error("Failed to load employees")
@@ -291,26 +287,40 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
               {/* Assignees */}
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Assignees *</label>
-                <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg p-3 bg-gray-50">
-                  {employees.map((employee) => (
-                    <label
-                      key={employee._id}
-                      className="flex items-center space-x-3 py-2 hover:bg-white px-2 rounded transition-colors cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={formData.assignees.includes(employee._id)}
-                        onChange={() => handleAssigneeChange(employee._id)}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                      />
-                      <span className="text-sm text-gray-900 font-medium">
-                        {employee.name?.name || employee.name || "Unknown"}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        ({employee.email?.email || employee.email || "No email"})
-                      </span>
-                    </label>
-                  ))}
+                <div className="space-y-3">
+                  <Select onValueChange={handleAssigneeChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select assignees..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {employees
+                        .filter(employee => !formData.assignees.includes(employee._id))
+                        .map((employee) => (
+                          <SelectItem key={employee._id} value={employee._id}>
+                            {employee.name?.name || employee.name || "Unknown"} ({employee.email?.email || employee.email || "No email"})
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {formData.assignees.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {formData.assignees.map((assigneeId) => {
+                        const employee = employees.find(emp => emp._id === assigneeId)
+                        return (
+                          <Badge key={assigneeId} variant="secondary" className="flex items-center gap-1">
+                            {employee?.name?.name || employee?.name || "Unknown"}
+                            <button
+                              type="button"
+                              onClick={() => handleAssigneeChange(assigneeId)}
+                              className="ml-1 text-gray-500 hover:text-gray-700"
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
                 {errors.assignees && (
                   <p className="text-red-600 text-sm mt-1 flex items-center gap-1">

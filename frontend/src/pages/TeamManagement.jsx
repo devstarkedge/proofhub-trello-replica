@@ -659,7 +659,7 @@ const TeamManagement = () => {
                                     </div>
                                   </div>
                                 </div>
-                                {employee.department?.name === currentDepartment.name && (
+                                {employee.department?.some(dept => dept._id === currentDepartment._id) && (
                                   <motion.div
                                     initial={{ scale: 0 }}
                                     animate={{ scale: 1 }}

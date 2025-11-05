@@ -26,11 +26,7 @@ export const getUsers = asyncHandler(async (req, res, next) => {
     .select('-password')
     .sort('name');
 
-  res.status(200).json({
-    success: true,
-    count: users.length,
-    data: users
-  });
+  res.status(200).json(users);
 });
 
 // @desc    Get single user

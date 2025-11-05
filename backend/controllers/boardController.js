@@ -259,6 +259,7 @@ export const createBoard = asyncHandler(async (req, res, next) => {
   // Invalidate relevant caches
   invalidateCache(`/api/boards`);
   invalidateCache(`/api/boards/department/${board.department}`);
+  invalidateCache("/api/departments");
 
   const populatedBoard = await Board.findById(board._id)
     .populate("owner", "name email avatar")

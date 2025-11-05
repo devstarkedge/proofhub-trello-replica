@@ -27,6 +27,7 @@ import {
 import Database from "../services/database";
 import AuthContext from "../context/AuthContext";
 import { toast } from "react-toastify";
+import RichTextEditor from "./RichTextEditor";
 
 const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const { user } = useContext(AuthContext);
@@ -762,26 +763,13 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                     </h4>
                   </div>
 
-                  {isEditingDescription || description ? (
-                    <div className="ml-8">
-                      <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        onFocus={() => setIsEditingDescription(true)}
-                        onBlur={() => setIsEditingDescription(false)}
-                        placeholder="Add a more detailed description..."
-                        className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-700 transition-shadow"
-                        rows="2"
-                      />
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setIsEditingDescription(true)}
-                      className="ml-8 w-full text-left p-4 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-600 transition-colors border border-dashed border-gray-300"
-                    >
-                      Add a more detailed description...
-                    </button>
-                  )}
+                  <div className="ml-8">
+                    <RichTextEditor
+                      content={description}
+                      onChange={setDescription}
+                      placeholder="Add a more detailed description..."
+                    />
+                  </div>
                 </div>
 
                 {/* Time Tracking Section */}

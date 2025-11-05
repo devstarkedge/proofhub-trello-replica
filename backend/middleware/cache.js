@@ -17,6 +17,8 @@ export const cacheMiddleware = (ttl = 60) => {
   const skipPaths = [
     '/api/cards/list/',
     '/api/cards/board/',
+    '/api/cards/', // Skip individual card endpoints for real-time updates
+    '/api/comments/', // Skip all comment endpoints for real-time updates
     '/api/departments/',
     '/api/teams/',
     '/api/users', // Skip all user endpoints for real-time updates

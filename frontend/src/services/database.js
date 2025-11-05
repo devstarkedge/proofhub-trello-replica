@@ -644,7 +644,7 @@ class DatabaseService {
     const res = await fetch(`${baseURL}/api/users/${userId}/assign`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ department: deptId })
+      body: JSON.stringify({ departments: [deptId] })
     });
     return await res.json();
   }
@@ -676,13 +676,17 @@ class DatabaseService {
     return await res.json();
   }
 
-  async getUsers() {
+  async getUsers(departmentId = null) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(`${baseURL}/api/users`, { headers });
+    let url = `${baseURL}/api/users`;
+    if (departmentId) {
+      url += `?department=${departmentId}`;
+    }
+    const res = await fetch(url, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
@@ -864,29 +868,9 @@ class DatabaseService {
     return await res.json();
   }
 
-  // Caching mechanism for dashboard data
-  async getCachedDashboardData() {
-    const cacheKey = 'dashboardData';
-    const cacheExpiryKey = 'dashboardDataExpiry';
-    const now = Date.now();
-    const cacheExpiry = localStorage.getItem(cacheExpiryKey);
-
-    // Check if cache is valid (5 minutes)
-    if (cacheExpiry && now < parseInt(cacheExpiry)) {
-      const cachedData = localStorage.getItem(cacheKey);
-      if (cachedData) {
-        return JSON.parse(cachedData);
-      }
-    }
-
-    // Fetch fresh data
-    const data = await this.getDashboardData();
-
-    // Cache the data
-    localStorage.setItem(cacheKey, JSON.stringify(data));
-    localStorage.setItem(cacheExpiryKey, (now + 5 * 60 * 1000).toString()); // 5 minutes
-
-    return data;
+  // Removed caching mechanism for real-time dashboard data
+  async getDashboardDataFresh() {
+    return await this.getDashboardData();
   }
 }
 
