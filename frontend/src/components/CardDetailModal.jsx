@@ -540,7 +540,9 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
 
 
   const handleAddComment = async () => {
-    if (!newComment.trim()) return;
+    // newComment may be HTML; check plain text
+    const plain = (newComment || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+    if (!plain) return;
     const cardId = card.id || card._id;
     if (!cardId) return;
 
@@ -763,12 +765,13 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                     </h4>
                   </div>
 
-                  <div className="ml-8">
-                    <RichTextEditor
-                      content={description}
-                      onChange={setDescription}
-                      placeholder="Add a more detailed description..."
-                    />
+                  <div className="ml-8 relative">
+                      <RichTextEditor
+                        content={description}
+                        onChange={setDescription}
+                        placeholder="Add a more detailed description..."
+                        users={teamMembers}
+                      />
                   </div>
                 </div>
 
@@ -1440,13 +1443,17 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                         {user?.name?.[0]?.toUpperCase() || "U"}
                       </div>
                       <div className="flex-1">
-                        <textarea
-                          value={newComment}
-                          onChange={(e) => setNewComment(e.target.value)}
-                          placeholder="Write a comment..."
-                          className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                          rows="3"
-                        />
+                        <div className="relative">
+                          <RichTextEditor
+                            content={newComment}
+                            onChange={setNewComment}
+                            placeholder="Write a comment..."
+                            users={teamMembers}
+                            startExpanded={true}
+                            allowMentions={true}
+                            className="min-h-[80px]"
+                          />
+                        </div>
                         <motion.button
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
@@ -1480,9 +1487,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                                   {new Date(comment.createdAt).toLocaleString()}
                                 </span>
                               </div>
-                              <p className="text-sm text-gray-700 leading-relaxed">
-                                {comment.text}
-                              </p>
+                              <div className="text-sm text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: comment.text }} />
                             </div>
                           </motion.div>
                         ))}

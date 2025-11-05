@@ -406,6 +406,36 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
   });
 
+  // If description was updated, detect mentions and notify mentioned users
+  if (req.body.description) {
+    try {
+      const text = req.body.description || '';
+      const mentionRegex = /data-id=[\"']([^\"']+)[\"']/g;
+      const mentionIds = new Set();
+      let m;
+      while ((m = mentionRegex.exec(text)) !== null) {
+        if (m[1]) mentionIds.add(m[1]);
+      }
+
+      for (const mentionedId of mentionIds) {
+        if (mentionedId === req.user.id) continue;
+        const notification = await Notification.create({
+          type: 'mentioned',
+          title: 'You were mentioned',
+          message: `${req.user.name || 'Someone'} mentioned you in the description of "${card.title}"`,
+          user: mentionedId,
+          sender: req.user.id,
+          relatedCard: card._id,
+          relatedBoard: card.board,
+        });
+
+        emitNotification(mentionedId.toString(), notification);
+      }
+    } catch (err) {
+      console.error('Error processing mentions in card description:', err);
+    }
+  }
+
   // Notify if assignees changed (only if actually changed)
   if (req.body.assignees !== undefined) {
     const newAssignees = req.body.assignees || [];

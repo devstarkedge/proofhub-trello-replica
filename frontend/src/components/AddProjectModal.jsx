@@ -43,7 +43,11 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
     if (!departmentId) return;
     try {
       const response = await Database.getUsers(departmentId);
-      setEmployees(response)
+      if (response.success) {
+        setEmployees(response.data)
+      } else {
+        throw new Error(response.message || "Failed to load employees")
+      }
     } catch (error) {
       console.error("Error fetching employees:", error)
       toast.error("Failed to load employees")

@@ -30,6 +30,32 @@ export const createComment = asyncHandler(async (req, res) => {
     });
   }
 
+  // Detect mentions in the comment HTML and notify mentioned users
+  try {
+    const mentionIds = new Set();
+    const mentionRegex = /data-id=["']([^"']+)["']/g;
+    let m;
+    while ((m = mentionRegex.exec(text || '')) !== null) {
+      if (m[1]) mentionIds.add(m[1]);
+    }
+
+    for (const mentionedId of mentionIds) {
+      if (mentionedId === req.user.id) continue; // don't notify self
+      const notification = new Notification({
+        type: 'mentioned',
+        title: 'You were mentioned',
+        message: `${req.user.name || 'Someone'} mentioned you in a comment on "${cardDoc.title}"`,
+        user: mentionedId,
+        sender: req.user.id,
+        relatedCard: card,
+      });
+      await notification.save();
+      emitNotification(mentionedId.toString(), notification);
+    }
+  } catch (err) {
+    console.error('Error processing mentions:', err);
+  }
+
   // Notify assignees if different from commenter
   if (cardDoc.assignees && cardDoc.assignees.length > 0) {
     for (const assignee of cardDoc.assignees) {
