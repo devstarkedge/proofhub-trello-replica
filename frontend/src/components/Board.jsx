@@ -71,7 +71,7 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
   };
   
   return (
-    <div className="p-4 overflow-x-auto h-[calc(100vh-64px)]">
+    <div className="p-4 h-[calc(100vh-64px)]">
       <div className="flex gap-3 pb-4 h-full">
         {/* Lists */}
         {lists.map(list => (

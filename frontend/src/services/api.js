@@ -2,7 +2,7 @@ import axios from 'axios';
 import { addMutation, processMutations } from './backgroundSync';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000',
+  baseURL: import.meta.env.VITE_BACKEND_URL,
   headers: {
     'Content-Type': 'application/json',
   },

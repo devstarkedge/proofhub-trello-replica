@@ -135,6 +135,7 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
       whileHover={{ y: -2, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}
       onClick={onClick}
       className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100"
+      key={card._id}
     >
       {/* Card Cover */}
       {card.cover && (

@@ -7,7 +7,7 @@ export default ({ mode }) => {
   // load env file based on `mode` (development, production, etc.)
   // the third parameter '' ensures we get raw keys (not only VITE_ prefix)
   const env = loadEnv(mode, process.cwd(), '')
-  const backend = env.VITE_BACKEND_URL || 'http://localhost:5000'
+  const backend = env.VITE_BACKEND_URL
 
   return defineConfig({
     plugins: [react(), tailwindcss()],

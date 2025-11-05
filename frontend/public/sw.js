@@ -1,20 +1,19 @@
 const CACHE_NAME = 'flowtask-cache-v1';
 const urlsToCache = [
   '/',
-  '/index.html',
-  '/manifest.json',
-  '/favicon.ico',
-  '/assets/logo.png',
-  '/assets/logo-192.png',
-  '/assets/logo-512.png'
+  '/index.html'
 ];
 
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
+      .then(async cache => {
         console.log('Opened cache');
-        return cache.addAll(urlsToCache);
+        try {
+          return await cache.addAll(urlsToCache);
+        } catch (error) {
+          console.error('Failed to cache some resources:', error);
+        }
       })
   );
 });

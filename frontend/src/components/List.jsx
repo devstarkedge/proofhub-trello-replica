@@ -124,8 +124,8 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
     return className;
   };
   
-  const listClass = `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit max-h-[calc(100vh-120px)] flex flex-col transition-all duration-200 ${
-    dropTarget ? 'border-2 border-dashed border-blue-400' : ''
+  const listClass = `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit max-h-[calc(100vh-120px)] flex flex-col overflow-hidden ${
+    dropTarget ? 'shadow-lg shadow-blue-400/50' : ''
   }`;
   
   return (
@@ -278,7 +278,7 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
       
       {/* Cards Container */}
       <div
-        className="space-y-2 mb-2 overflow-y-auto flex-1"
+        className="space-y-2 mb-2 flex-1"
         onDragOver={onDragOver}
         onDrop={handleListDrop}
         onDragLeave={() => setDropTarget(null)}
@@ -286,7 +286,7 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
         {cards.map(card => (
           <div
             key={card._id}
-            className={`transition-all duration-200 ${getCardClass(card)}`}
+            className={getCardClass(card)}
             draggable
             onDragStart={(e) => {
               handleCardDragStart(e, card);
