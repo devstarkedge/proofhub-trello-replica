@@ -1,5 +1,5 @@
 // API service for CRUD operations
-const baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const baseURL = import.meta.env.VITE_BACKEND_URL;
 
 class DatabaseService {
   // Board CRUD operations
@@ -641,21 +641,35 @@ class DatabaseService {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+
+    // First, get the current user's data to see existing departments
+    const userRes = await fetch(`${baseURL}/api/users/${userId}`, { headers });
+    if (!userRes.ok) {
+      throw new Error('Failed to fetch user data');
+    }
+    const userData = await userRes.json();
+    const currentDepartments = userData.data.department || [];
+
+    // Add the new department if not already assigned
+    const updatedDepartments = currentDepartments.includes(deptId)
+      ? currentDepartments
+      : [...currentDepartments, deptId];
+
     const res = await fetch(`${baseURL}/api/users/${userId}/assign`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ departments: [deptId] })
+      body: JSON.stringify({ departments: updatedDepartments })
     });
     return await res.json();
   }
 
-  async unassignUserFromDepartment(userId) {
+  async unassignUserFromDepartment(userId, deptId) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(`${baseURL}/api/departments/users/${userId}/unassign`, {
+    const res = await fetch(`${baseURL}/api/departments/${deptId}/users/${userId}/unassign`, {
       method: 'PUT',
       headers
     });

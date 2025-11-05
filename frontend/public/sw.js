@@ -1,5 +1,3 @@
-importScripts('./src/services/backgroundSync.js');
-
 const CACHE_NAME = 'flowtask-cache-v1';
 const urlsToCache = [
   '/',
@@ -31,10 +29,4 @@ self.addEventListener('fetch', event => {
         return fetch(event.request);
       })
   );
-});
-
-self.addEventListener('sync', event => {
-  if (event.tag === 'sync-mutations') {
-    event.waitUntil(processMutations());
-  }
 });

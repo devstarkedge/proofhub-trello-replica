@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Users, Plus, Edit2, Trash2, UserPlus, 
+import {
+  Users, Plus, Edit2, Trash2, UserPlus,
   Building2, Shield, Search, X, CheckCircle,
   AlertCircle, Info, Filter, Download, Upload,
   TrendingUp, Award, Clock, Mail
@@ -11,6 +11,7 @@ import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
+import ManagerSelector from '../components/ManagerSelector';
 
 // Toast Notification Component
 const Toast = ({ message, type, onClose }) => {
@@ -836,27 +837,12 @@ const TeamManagement = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Department Managers
-                  </label>
-                  <select
-                    multiple
-                    value={formData.managers}
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.selectedOptions, option => option.value);
-                      setFormData({ ...formData, managers: selected });
-                    }}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    disabled={isLoading}
-                  >
-                    {managers.map(manager => (
-                      <option key={manager._id} value={manager._id}>
-                        {manager.name} - {manager.email}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <ManagerSelector
+                  managers={managers}
+                  selectedManagers={formData.managers}
+                  onChange={(selected) => setFormData({ ...formData, managers: selected })}
+                  disabled={isLoading}
+                />
 
                 <div className="flex gap-3 pt-4">
                   <button
@@ -960,27 +946,12 @@ const TeamManagement = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Department Managers
-                  </label>
-                  <select
-                    multiple
-                    value={formData.managers}
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.selectedOptions, option => option.value);
-                      setFormData({ ...formData, managers: selected });
-                    }}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                    disabled={isLoading}
-                  >
-                    {managers.map(manager => (
-                      <option key={manager._id} value={manager._id}>
-                        {manager.name} - {manager.email}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <ManagerSelector
+                  managers={managers}
+                  selectedManagers={formData.managers}
+                  onChange={(selected) => setFormData({ ...formData, managers: selected })}
+                  disabled={isLoading}
+                />
 
                 <div className="flex gap-3 pt-4">
                   <button

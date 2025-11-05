@@ -213,44 +213,47 @@ export const removeMemberFromDepartment = asyncHandler(
 );
 
 // @desc    Unassign user from department
-// @route   PUT /api/users/:id/unassign
+// @route   PUT /api/departments/:deptId/users/:userId/unassign
 // @access  Private/Admin
 export const unassignUserFromDepartment = asyncHandler(
   async (req, res, next) => {
-    const user = await User.findById(req.params.id);
+    const { deptId, userId } = req.params;
+
+    const user = await User.findById(userId);
+    const department = await Department.findById(deptId);
 
     if (!user) {
       return next(new ErrorResponse("User not found", 404));
     }
 
-    if (!user.department) {
+    if (!department) {
+      return next(new ErrorResponse("Department not found", 404));
+    }
+
+    // Check if user is assigned to this department
+    if (!user.department || !user.department.includes(deptId)) {
       return res.status(400).json({
         success: false,
-        message: "User is not assigned to any department",
+        message: "User is not assigned to this department",
       });
     }
 
-    const department = await Department.findById(user.department);
-    if (department) {
-      department.members = department.members.filter(
-        (id) => id.toString() !== req.params.id
-      );
-      await department.save();
-    }
-
-    user.department = null;
+    // Remove department from user's department array
+    user.department = user.department.filter(id => id.toString() !== deptId);
     await user.save();
 
+    // Remove user from department's members array
+    department.members = department.members.filter(
+      (id) => id.toString() !== userId
+    );
+    await department.save();
+
     // Invalidate relevant caches
-    if (department) {
-      invalidateCache(`/api/departments/${department._id}`);
-    }
+    invalidateCache(`/api/departments/${deptId}`);
 
     res.status(200).json({
       success: true,
-      message: `Employee ${user.name} unassigned from ${
-        department?.name || "department"
-      } successfully`,
+      message: `Employee ${user.name} unassigned from ${department.name} successfully`,
     });
   }
 );

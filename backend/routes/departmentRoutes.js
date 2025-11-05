@@ -22,6 +22,6 @@ router.post('/:id/members', protect, authorize('admin', 'manager'), addMemberToD
 router.delete('/:id/members/:userId', protect, authorize('admin', 'manager'), removeMemberFromDepartment);
 
 // User unassign route
-router.put('/users/:id/unassign', protect, authorize('admin', 'manager'), unassignUserFromDepartment);
+router.put('/:deptId/users/:userId/unassign', protect, authorize('admin', 'manager'), unassignUserFromDepartment);
 
 export default router;

@@ -340,6 +340,7 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   // Invalidate relevant caches
   invalidateCache(`/api/boards`);
   invalidateCache(`/api/boards/department/${board.department}`);
+  invalidateCache("/api/departments");
 
   res.status(200).json({
     success: true,

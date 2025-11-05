@@ -1,21 +1,7 @@
-# Cache Removal and Real-time Updates Fix
+# TODO: Update Manager Selection in Edit Department Modal
 
-## Backend Cache Middleware Updates
-- [x] Update `backend/middleware/cache.js` to skip caching for individual card endpoints (`/api/cards/:id`)
-- [x] Add comment endpoints to skip list (`/api/comments/`)
-- [x] Ensure all real-time data endpoints are excluded from caching
-
-## Frontend Caching Removal
-- [x] Remove or disable `getCachedDashboardData()` method in `frontend/src/services/database.js`
-- [x] Ensure dashboard uses fresh data instead of cached data
-
-## Cache Invalidation Improvements
-- [x] Review and enhance cache invalidation in `backend/controllers/cardController.js`
-- [x] Review and enhance cache invalidation in `backend/controllers/commentController.js`
-- [x] Ensure all update operations properly invalidate relevant caches
-
-## Testing and Verification
-- [x] Test card details modal updates reflect instantly
-- [x] Test workflow page updates are real-time
-- [x] Test comment updates appear immediately
-- [x] Verify no performance degradation from cache removal
+## Tasks
+- [ ] Create ManagerSelector component with dropdown and chips
+- [ ] Update TeamManagement.jsx to use ManagerSelector in edit modal
+- [ ] Test the functionality: add/remove managers, UI responsiveness
+- [ ] Ensure proper state management for formData.managers array
