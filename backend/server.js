@@ -17,6 +17,7 @@ import searchRoutes from './routes/search.js';
 import analyticsRoutes from './routes/analytics.js';
 import usersRoutes from './routes/users.js';
 import adminRoutes from './routes/admin.js';
+import uploadsRoutes from './routes/uploads.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
@@ -67,6 +68,7 @@ app.use('/api/search', searchRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/uploads', uploadsRoutes);
 
 import jwt from 'jsonwebtoken';
 

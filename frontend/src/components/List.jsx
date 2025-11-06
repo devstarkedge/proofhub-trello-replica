@@ -124,7 +124,7 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
     return className;
   };
   
-  const listClass = `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit max-h-[calc(100vh-120px)] flex flex-col overflow-hidden ${
+  const listClass = `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit min-h-[100px] max-h-[calc(100vh-120px)] flex flex-col ${
     dropTarget ? 'shadow-lg shadow-blue-400/50' : ''
   }`;
   
@@ -142,7 +142,7 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
       <div className="flex items-center justify-between mb-3 cursor-move" style={{ cursor: 'grab' }}>
         <h3 className="font-semibold text-gray-800 text-sm px-2 flex-1">{list.title}</h3>
         <div className="flex items-center gap-1">
-          <div className="relative">
+          <div className="relative z-50">
             <button 
               onClick={(e) => {
                 e.stopPropagation();
@@ -162,7 +162,7 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
                     setShowColorPicker(false);
                   }}
                 />
-                <div className="absolute right-0 mt-1 bg-white rounded-lg shadow-xl py-2 w-64 z-20 max-h-[500px] overflow-y-auto">
+                <div className="fixed right-auto mt-1 bg-white rounded-lg shadow-xl py-2 w-64 z-50 max-h-[500px] overflow-y-auto" style={{ minWidth: '200px' }}>
                   <div className="px-4 py-2 border-b border-gray-200">
                     <h3 className="font-semibold text-sm text-gray-800">List actions</h3>
                     <button

@@ -758,11 +758,37 @@ class DatabaseService {
     const res = await fetch(`${baseURL}/api/comments`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ card: cardId, text })
+      body: JSON.stringify({ card: cardId, htmlContent: text })
     });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
+    return await res.json();
+  }
+
+  async uploadImage(cardId, formData, type = 'general', setCover = false) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const url = new URL(`${baseURL}/api/uploads/image`);
+    if (type) url.searchParams.append('type', type);
+    if (cardId) url.searchParams.append('cardId', cardId);
+    if (setCover) url.searchParams.append('setCover', 'true');
+
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Upload failed');
+    }
+
     return await res.json();
   }
 

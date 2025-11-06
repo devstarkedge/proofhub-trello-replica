@@ -412,9 +412,23 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       const text = req.body.description || '';
       const mentionRegex = /data-id=[\"']([^\"']+)[\"']/g;
       const mentionIds = new Set();
+      const mentionObjects = [];
       let m;
       while ((m = mentionRegex.exec(text)) !== null) {
-        if (m[1]) mentionIds.add(m[1]);
+        if (m[1]) {
+          mentionIds.add(m[1]);
+          mentionObjects.push({ userId: m[1], name: '', notified: false });
+        }
+      }
+
+      // Persist mention objects on card for later use
+      try {
+        if (mentionObjects.length > 0) {
+          card.descriptionMentions = mentionObjects;
+          await card.save();
+        }
+      } catch (err) {
+        console.error('Error saving description mentions on card:', err);
       }
 
       for (const mentionedId of mentionIds) {

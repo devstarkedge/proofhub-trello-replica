@@ -16,6 +16,21 @@ const subtaskSchema = new mongoose.Schema({
     default: Date.now
   }
 });
+const mentionSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  name: {
+    type: String,
+    required: true
+  },
+  notified: {
+    type: Boolean,
+    default: false
+  }
+});
 
 const attachmentSchema = new mongoose.Schema({
   filename: {
@@ -43,6 +58,10 @@ const attachmentSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  isCover: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -61,6 +80,7 @@ const cardSchema = new mongoose.Schema({
     trim: true,
     maxlength: [5000, 'Description cannot exceed 5000 characters']
   },
+  descriptionMentions: [mentionSchema],
   list: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'List',
@@ -96,6 +116,10 @@ const cardSchema = new mongoose.Schema({
   status: {
     type: String,
     default: 'todo'
+  },
+  isCover: {
+    type: Boolean,
+    default: false
   },
   dueDate: {
     type: Date

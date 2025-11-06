@@ -5,8 +5,13 @@ const commentSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Comment text is required'],
     trim: true,
-    maxlength: [2000, 'Comment cannot exceed 2000 characters']
+      maxlength: [10000, 'Comment cannot exceed 10000 characters']
   },
+    htmlContent: {
+      type: String,
+      required: true,
+      trim: true
+    },
   card: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Card',
@@ -17,10 +22,21 @@ const commentSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  mentions: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
+    mentions: [{
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+      },
+      name: {
+        type: String,
+        required: true
+      },
+      notified: {
+        type: Boolean,
+        default: false
+      }
+    }],
   isEdited: {
     type: Boolean,
     default: false
@@ -39,5 +55,25 @@ const commentSchema = new mongoose.Schema({
 // Indexes
 commentSchema.index({ card: 1, createdAt: -1 });
 commentSchema.index({ user: 1 });
+
+// Parse mentions from htmlContent into structured mentions array
+commentSchema.pre('save', function(next) {
+  if (!this.isModified('htmlContent')) return next();
+
+  const mentionRegex = /<a[^>]*?data-id=["']([^"']+)["'][^>]*?>(?:@)?([^<]*)<\/a>/g;
+  const mentions = [];
+  let m;
+
+  while ((m = mentionRegex.exec(this.htmlContent || '')) !== null) {
+    const userId = m[1];
+    const name = m[2] || '';
+    if (userId) {
+      mentions.push({ userId, name, notified: false });
+    }
+  }
+
+  this.mentions = mentions;
+  next();
+});
 
 export default mongoose.model('Comment', commentSchema);

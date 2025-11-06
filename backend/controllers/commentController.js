@@ -6,15 +6,20 @@ import { emitNotification, emitToBoard } from '../server.js';
 import { invalidateCache } from '../middleware/cache.js';
 
 export const createComment = asyncHandler(async (req, res) => {
-  const { text, card } = req.body;
+  // Expect htmlContent (rich HTML) and card id
+  const { htmlContent, card } = req.body;
 
   const cardDoc = await Card.findById(card).populate('assignees', 'name');
   if (!cardDoc) {
     return res.status(404).json({ message: 'Card not found' });
   }
 
+  // Create a plain-text excerpt for text field
+  const plain = (htmlContent || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+
   const comment = new Comment({
-    text,
+    text: plain || (req.body.text || ''),
+    htmlContent: htmlContent || req.body.text || '',
     user: req.user.id,
     card: card,
   });
@@ -35,14 +40,14 @@ export const createComment = asyncHandler(async (req, res) => {
     const mentionIds = new Set();
     const mentionRegex = /data-id=["']([^"']+)["']/g;
     let m;
-    while ((m = mentionRegex.exec(text || '')) !== null) {
+    while ((m = mentionRegex.exec(htmlContent || '')) !== null) {
       if (m[1]) mentionIds.add(m[1]);
     }
 
     for (const mentionedId of mentionIds) {
       if (mentionedId === req.user.id) continue; // don't notify self
       const notification = new Notification({
-        type: 'mentioned',
+        type: 'comment_mention',
         title: 'You were mentioned',
         message: `${req.user.name || 'Someone'} mentioned you in a comment on "${cardDoc.title}"`,
         user: mentionedId,
@@ -96,9 +101,9 @@ export const getCommentsByCard = asyncHandler(async (req, res) => {
 });
 
 export const updateComment = asyncHandler(async (req, res) => {
-  const { text } = req.body;
+  const { text, htmlContent } = req.body;
 
-  const comment = await Comment.findById(req.params.id);
+  const comment = await Comment.findById(req.params.id).populate('card');
   if (!comment) {
     return res.status(404).json({ message: 'Comment not found' });
   }
@@ -106,8 +111,42 @@ export const updateComment = asyncHandler(async (req, res) => {
     return res.status(403).json({ message: 'Not authorized' });
   }
 
-  comment.text = text;
+  if (htmlContent) {
+    comment.htmlContent = htmlContent;
+    comment.text = (htmlContent || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+  } else if (text) {
+    comment.text = text;
+  }
+
+  comment.isEdited = true;
+  comment.editedAt = new Date();
   await comment.save();
+
+  // Re-process mentions (notify new mentions)
+  try {
+    const mentionRegex = /data-id=["']([^"']+)["']/g;
+    const mentionIds = new Set();
+    let m;
+    while ((m = mentionRegex.exec(comment.htmlContent || '')) !== null) {
+      if (m[1]) mentionIds.add(m[1]);
+    }
+
+    for (const mentionedId of mentionIds) {
+      if (mentionedId === req.user.id) continue;
+      const notification = new Notification({
+        type: 'comment_mention',
+        title: 'You were mentioned',
+        message: `${req.user.name || 'Someone'} mentioned you in a comment`,
+        user: mentionedId,
+        sender: req.user.id,
+        relatedCard: comment.card
+      });
+      await notification.save();
+      emitNotification(mentionedId.toString(), notification);
+    }
+  } catch (err) {
+    console.error('Error processing mentions on comment update:', err);
+  }
 
   // Invalidate relevant caches
   invalidateCache(`/api/cards/${comment.card}`);

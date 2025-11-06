@@ -1,90 +1,119 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Mention from '@tiptap/extension-mention';
+import Image from '@tiptap/extension-image';
+import Link from '@tiptap/extension-link';
+import Underline from '@tiptap/extension-underline';
 import tippy from 'tippy.js';
-import { Bold, Italic, List, ListOrdered, Quote, Undo, Redo } from 'lucide-react';
+import {
+  Bold,
+  Italic,
+  Underline as UnderlineIcon,
+  List,
+  Link as LinkIcon,
+  ListOrdered,
+  Quote,
+  Image as ImageIcon,
+  Type,
+  Undo,
+  Redo
+} from 'lucide-react';
 import MentionList from './MentionList';
+import 'tippy.js/dist/tippy.css';
+
+const CustomImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: { default: null },
+      height: { default: null },
+      objectFit: { default: 'contain' },
+    };
+  },
+});
 
 const RichTextEditor = ({
   content,
   onChange,
   placeholder = "Add a more detailed description...",
   className = "",
-  users = [], // list of users to suggest for mentions
+  users = [],
   startExpanded = false,
   allowMentions = true,
+  onImageUpload = null, // Callback when image is uploaded
+  isComment = false, // Is this editor for comments?
+  mentionContainer = document.body, // Container for mention popup
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(startExpanded || isComment);
 
-  // Configure mention extension
-  const mentionExt = allowMentions
+  // keep a ref to the users so suggestion items can access latest list without
+  // re-creating the editor/extensions when users update asynchronously
+  const usersRef = useRef(users || []);
+  useEffect(() => {
+    usersRef.current = users || [];
+  }, [users]);
+
+  const mentionExtension = allowMentions
     ? Mention.configure({
         HTMLAttributes: { class: 'mention' },
-        renderHTML: (node, HTMLAttributes) => {
-          // Render mention as anchor with data-id for backend parsing
-          const id = HTMLAttributes.id || node.attrs.id || node.attrs.label;
+        renderHTML: ({ node, HTMLAttributes }) => {
+          const id = node.attrs.id || '';
           const label = node.attrs.label || '';
-          return [`a`, { class: 'mention text-blue-600 font-semibold', 'data-id': node.attrs.id, href: `#${node.attrs.id || ''}` }, `@${label}`];
+          return [
+            'a',
+            {
+              class: 'mention text-blue-600 font-semibold no-underline',
+              'data-id': id,
+              href: `#${id}`
+            },
+            `@${label}`
+          ];
         },
         suggestion: {
-          char: '@',
-          startOfLine: false,
-          command: ({ editor, range, props }) => {
-            editor.chain().focus().insertContentAt(range, [
-              {
-                type: 'mention',
-                attrs: props,
-              },
-              { type: 'text', text: ' ' },
-            ]).run();
-          },
           items: ({ query }) => {
-            if (!users || users.length === 0) return [];
-            const suggestions = users
-              .filter(u => u._id && u.name && (!query || u.name.toLowerCase().includes(query.toLowerCase())))
-              .map(u => ({ 
-                id: u._id.toString(), // Ensure ID is a string
-                label: u.name 
-              }))
-              .slice(0, 6);
-            return suggestions;
+            const q = (query || '').toLowerCase();
+            const list = usersRef.current || [];
+            return list
+              .filter(user => user && user.name && user.name.toLowerCase().includes(q))
+              .slice(0, 6)
+              .map(user => ({ id: String(user._id || user.id || ''), label: user.name }));
           },
           render: () => {
             let component;
             let popup;
 
             return {
-              onStart: (props) => {
-                component = new ReactRenderer(MentionList, { props });
+              onStart: props => {
+                component = new ReactRenderer(MentionList, {
+                  props,
+                  editor: props.editor,
+                });
+
                 popup = tippy('body', {
                   getReferenceClientRect: props.clientRect,
-                  appendTo: () => document.body,
+                  appendTo: () => mentionContainer,
                   content: component.element,
                   showOnCreate: true,
                   interactive: true,
+                  trigger: 'manual',
+                  placement: 'bottom-start',
+                  animation: 'shift-away',
                 });
-                // expose keyboard handler
-                if (component.ref) component.ref.onKeyDown = (event) => component.ref && component.ref.onKeyDown && component.ref.onKeyDown(event);
               },
               onUpdate(props) {
-                component.updateProps(props);
-                if (popup && popup[0]) popup[0].setProps({ getReferenceClientRect: props.clientRect });
+                component && component.updateProps && component.updateProps(props);
+                popup && popup[0] && popup[0].setProps({ getReferenceClientRect: props.clientRect });
               },
               onKeyDown(props) {
-                // forward keydown to component if exists
                 if (component && component.ref && component.ref.onKeyDown) {
                   return component.ref.onKeyDown(props.event);
                 }
                 return false;
               },
               onExit() {
-                if (popup) {
-                  popup.forEach(p => p.destroy && p.destroy());
-                }
-                if (component) {
-                  component.destroy();
-                }
+                if (popup) popup.forEach(p => p.destroy && p.destroy());
+                if (component) component.destroy();
               }
             };
           }
@@ -92,23 +121,35 @@ const RichTextEditor = ({
       })
     : null;
 
-  const extensions = mentionExt ? [StarterKit, mentionExt] : [StarterKit];
-
-  const editor = useEditor({
-    extensions,
-    content: content || '',
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
-    },
-    editorProps: {
-      attributes: {
-        class: `prose prose-sm sm:prose lg:prose-lg xl:prose-2xl mx-auto focus:outline-none min-h-[60px] p-3 border border-gray-300 rounded-lg transition-all duration-200 ${
-          isExpanded ? 'min-h-[200px]' : 'min-h-[60px]'
-        } ${className}`,
+    const editor = useEditor({
+      extensions: [
+        StarterKit,
+        Underline,
+        Link.configure({
+          openOnClick: false,
+          HTMLAttributes: {
+            class: 'text-blue-600 hover:text-blue-800 underline',
+          },
+        }),
+        CustomImage.configure({
+          allowBase64: true,
+          inline: true,
+        }),
+        ...(mentionExtension ? [mentionExtension] : []),
+      ],
+      content: content || '',
+      editorProps: {
+        attributes: {
+          class: `prose prose-sm max-w-none focus:outline-none ${
+            !isExpanded ? 'h-[120px]' : 'min-h-[200px]'
+          } ${isComment ? 'min-h-[80px]' : ''}`,
+        },
       },
-    },
-  });
-
+      onUpdate: ({ editor }) => {
+        const html = editor.getHTML();
+        onChange(html);
+      },
+    });
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
       editor.commands.setContent(content || '');
@@ -120,10 +161,7 @@ const RichTextEditor = ({
   };
 
   const handleBlur = () => {
-    // Only collapse if there's no content
-    if (!editor?.getText().trim()) {
-      setIsExpanded(false);
-    }
+    // Keep expanded once focused to allow formatting before typing
   };
 
   if (!editor) {
@@ -152,6 +190,85 @@ const RichTextEditor = ({
             title="Italic"
           >
             <Italic size={16} />
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            className={`p-2 rounded hover:bg-gray-200 transition-colors ${
+              editor.isActive('underline') ? 'bg-gray-200' : ''
+            }`}
+            title="Underline"
+          >
+            <UnderlineIcon size={16} />
+          </button>
+          <div className="w-px h-6 bg-gray-300 mx-1" />
+          <button
+            onClick={() => {
+              const previousUrl = editor.getAttributes('link').href;
+              const url = window.prompt('URL', previousUrl);
+
+              if (url === null) {
+                return;
+              }
+
+              if (url === '') {
+                editor.chain().focus().extendMarkRange('link').unsetLink().run();
+                return;
+              }
+
+              // If no text is selected, use the URL as the link text
+              if (editor.state.selection.empty) {
+                editor.chain().focus().insertContent(`<a href="${url}" target="_blank">${url}</a>`).run();
+              } else {
+                editor.chain().focus().extendMarkRange('link').setLink({ href: url, target: '_blank' }).run();
+              }
+            }}
+            className={`p-2 rounded hover:bg-gray-200 transition-colors ${
+              editor.isActive('link') ? 'bg-gray-200' : ''
+            }`}
+            title="Link"
+          >
+            <LinkIcon size={16} />
+          </button>
+          <button
+            onClick={async () => {
+              if (onImageUpload) {
+                // Use file input for upload
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = async (e) => {
+                  const file = e.target.files[0];
+                  if (file) {
+                    try {
+                      const formData = new FormData();
+                      formData.append('image', file);
+                      const imageUrl = await onImageUpload(formData);
+                      if (imageUrl) {
+                        editor.chain().focus().setImage({ src: imageUrl }).run();
+                      }
+                    } catch (error) {
+                      console.error('Image upload failed:', error);
+                      // Fallback to URL input
+                      const url = prompt('Enter image URL');
+                      if (url) {
+                        editor.chain().focus().setImage({ src: url }).run();
+                      }
+                    }
+                  }
+                };
+                input.click();
+              } else {
+                // Fallback to URL input
+                const url = prompt('Enter image URL');
+                if (url) {
+                  editor.chain().focus().setImage({ src: url }).run();
+                }
+              }
+            }}
+            className="p-2 rounded hover:bg-gray-200 transition-colors"
+            title="Image"
+          >
+            <ImageIcon size={16} />
           </button>
           <div className="w-px h-6 bg-gray-300 mx-1" />
           <button

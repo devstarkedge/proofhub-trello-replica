@@ -171,7 +171,7 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
 
       {/* Helper Text */}
       <p className="text-xs text-gray-500">
-        Select one or more managers for this department. Selected managers will appear as chips above.
+        Select one or more managers for this department.
       </p>
     </div>
   );

@@ -9,7 +9,7 @@ const router = express.Router();
 router.get('/card/:cardId', protect, getCommentsByCard);
 
 router.post('/', protect, [
-  body('text').trim().notEmpty().withMessage('Comment text is required'),
+  body('htmlContent').trim().notEmpty().withMessage('Comment content is required'),
   body('card').notEmpty().withMessage('Card ID is required'),
   validate
 ], createComment);

@@ -180,6 +180,29 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     }
   };
 
+  // Image upload helpers for editors
+  const uploadImageForDescription = async (formData) => {
+    try {
+      const res = await Database.uploadImage(card._id || card.id, formData, 'card-image', true);
+      return res.url;
+    } catch (err) {
+      console.error('Error uploading description image:', err);
+      toast.error('Failed to upload image');
+      throw err;
+    }
+  };
+
+  const uploadImageForComment = async (formData) => {
+    try {
+      const res = await Database.uploadImage(card._id || card.id, formData, 'comment-image', false);
+      return res.url;
+    } catch (err) {
+      console.error('Error uploading comment image:', err);
+      toast.error('Failed to upload image');
+      throw err;
+    }
+  };
+
   const loadAvailableStatuses = async () => {
     try {
       const boardId = card.board?._id || card.board;
@@ -765,12 +788,13 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                     </h4>
                   </div>
 
-                  <div className="ml-8 relative">
+                  <div className="ml-8 relative border border-gray-300 rounded-lg p-3">
                       <RichTextEditor
                         content={description}
                         onChange={setDescription}
                         placeholder="Add a more detailed description..."
                         users={teamMembers}
+                        onImageUpload={uploadImageForDescription}
                       />
                   </div>
                 </div>
@@ -1443,16 +1467,19 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                         {user?.name?.[0]?.toUpperCase() || "U"}
                       </div>
                       <div className="flex-1">
-                        <div className="relative">
-                          <RichTextEditor
-                            content={newComment}
-                            onChange={setNewComment}
-                            placeholder="Write a comment..."
-                            users={teamMembers}
-                            startExpanded={true}
-                            allowMentions={true}
-                            className="min-h-[80px]"
-                          />
+                        <div className="relative border border-gray-300 rounded-lg p-3">
+                        <RichTextEditor
+                          content={newComment}
+                          onChange={setNewComment}
+                          placeholder="Write a comment..."
+                          users={teamMembers}
+                          isComment={true}
+                          allowMentions={true}
+                          startExpanded={true}
+                          className="min-h-[80px]"
+                          onImageUpload={uploadImageForComment}
+                          mentionContainer={document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50.flex.items-start.justify-center.z-50')}
+                        />
                         </div>
                         <motion.button
                           whileHover={{ scale: 1.02 }}
@@ -1487,7 +1514,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                                   {new Date(comment.createdAt).toLocaleString()}
                                 </span>
                               </div>
-                              <div className="text-sm text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: comment.text }} />
+                              <div className="text-sm text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: comment.htmlContent || comment.text }} />
                             </div>
                           </motion.div>
                         ))}

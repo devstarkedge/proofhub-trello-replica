@@ -41,7 +41,7 @@ const MentionList = ({ items = [], command }) => {
             <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
               {item.label?.[0]?.toUpperCase() || '?'}
             </div>
-            <span className="flex-1 truncate">{item.label}</span>
+            <span className="flex-1 truncate text-black">{item.label}</span>
           </div>
         ))
       )}
