@@ -260,6 +260,7 @@ export const createBoard = asyncHandler(async (req, res, next) => {
   invalidateCache(`/api/boards`);
   invalidateCache(`/api/boards/department/${board.department}`);
   invalidateCache("/api/departments");
+  invalidateCache("/api/analytics/dashboard");
 
   const populatedBoard = await Board.findById(board._id)
     .populate("owner", "name email avatar")
@@ -298,6 +299,8 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   // Invalidate relevant caches
   invalidateCache(`/api/boards`);
   invalidateCache(`/api/boards/${req.params.id}`);
+  invalidateCache("/api/departments");
+  invalidateCache("/api/analytics/dashboard");
 
   res.status(200).json({
     success: true,

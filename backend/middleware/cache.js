@@ -19,10 +19,12 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/cards/board/',
     '/api/cards/', // Skip individual card endpoints for real-time updates
     '/api/comments/', // Skip all comment endpoints for real-time updates
+    '/api/departments',
     '/api/departments/',
     '/api/teams/',
     '/api/users', // Skip all user endpoints for real-time updates
-    '/api/auth/me' // Skip user profile endpoint
+    '/api/auth/me', // Skip user profile endpoint
+    '/api/analytics/dashboard' // Skip dashboard analytics for real-time updates
   ];
   return (req, res, next) => {
     // Skip caching for non-GET requests

@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  X, Save, AlertCircle, Loader, Calendar, Users, DollarSign,
+  Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
+  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock
+} from 'lucide-react';
 import Database from '../services/database';
 
 const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
@@ -11,7 +15,7 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
     startDate: '',
     projectSource: 'Direct',
     upworkId: '',
-    billingCycle: 'hr',
+    billingCycle: 'hourly',
     fixedPrice: '',
     hourlyPrice: '',
     dueDate: '',
@@ -22,7 +26,8 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
     assignees: [],
     estimatedTime: '',
     status: 'planning',
-    priority: 'medium'
+    priority: 'medium',
+    visibility: 'public'
   });
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -30,27 +35,37 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
 
   useEffect(() => {
     if (isOpen && project) {
-      setFormData({
-        title: project.name || '',
-        description: project.description || '',
-        projectUrl: project.projectUrl || '',
-        startDate: project.startDate ? new Date(project.startDate).toISOString().split('T')[0] : '',
-        projectSource: project.projectSource || 'Direct',
-        upworkId: project.upworkId || '',
-        billingCycle: project.billingCycle || 'hr',
-        fixedPrice: project.fixedPrice || '',
-        hourlyPrice: project.hourlyPrice || '',
-        dueDate: project.dueDate ? new Date(project.dueDate).toISOString().split('T')[0] : '',
-        clientName: project.clientName || '',
-        clientEmail: project.clientEmail || '',
-        clientWhatsappNumber: project.clientWhatsappNumber || '',
-        projectCategory: project.projectCategory || '',
-        assignees: project.members?.map(m => typeof m === 'string' ? m : m._id) || [],
-        estimatedTime: project.estimatedTime || '',
-        status: project.status || 'planning',
-        priority: project.priority || 'medium'
-      });
-      fetchEmployees();
+      const fetchFullProject = async () => {
+        try {
+          const response = await Database.getProject(project.id || project._id);
+          const fullProject = response.data;
+          setFormData({
+            title: fullProject.name || '',
+            description: fullProject.description || '',
+            projectUrl: fullProject.projectUrl || '',
+            startDate: fullProject.startDate ? new Date(fullProject.startDate).toISOString().split('T')[0] : '',
+            projectSource: fullProject.projectSource || 'Direct',
+            upworkId: fullProject.upworkId || '',
+            billingCycle: fullProject.billingCycle || 'hourly',
+            fixedPrice: fullProject.fixedPrice || '',
+            hourlyPrice: fullProject.hourlyPrice || '',
+            dueDate: fullProject.dueDate ? new Date(fullProject.dueDate).toISOString().split('T')[0] : '',
+            clientName: fullProject.clientDetails?.clientName || '',
+            clientEmail: fullProject.clientDetails?.clientEmail || '',
+            clientWhatsappNumber: fullProject.clientDetails?.clientWhatsappNumber || '',
+            projectCategory: fullProject.projectCategory || '',
+            assignees: fullProject.members?.map(m => typeof m === 'string' ? m : m._id) || [],
+            estimatedTime: fullProject.estimatedTime || '',
+            status: fullProject.status || 'planning',
+            priority: fullProject.priority || 'medium',
+            visibility: fullProject.visibility || 'public'
+          });
+          await fetchEmployees(fullProject);
+        } catch (error) {
+          console.error('Error fetching full project:', error);
+        }
+      };
+      fetchFullProject();
     }
   }, [isOpen, project]);
 
@@ -114,17 +129,20 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
         fixedPrice: formData.fixedPrice,
         hourlyPrice: formData.hourlyPrice,
         dueDate: formData.dueDate,
-        clientName: formData.clientName,
-        clientEmail: formData.clientEmail,
-        clientWhatsappNumber: formData.clientWhatsappNumber,
+        clientDetails: {
+          clientName: formData.clientName,
+          clientEmail: formData.clientEmail,
+          clientWhatsappNumber: formData.clientWhatsappNumber,
+        },
         projectCategory: formData.projectCategory,
         members: formData.assignees,
         estimatedTime: formData.estimatedTime,
         status: formData.status,
-        priority: formData.priority
+        priority: formData.priority,
+        visibility: formData.visibility
       };
 
-      const response = await Database.updateProject(project._id, updates);
+      const response = await Database.updateProject(project.id || project._id, updates);
 
       if (response.success) {
         onProjectUpdated(response.data);
@@ -143,323 +161,514 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
 
   if (!isOpen || !project) return null;
 
+  const modalVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: 20 },
+    visible: { 
+      opacity: 1, 
+      scale: 1, 
+      y: 0,
+      transition: { 
+        duration: 0.3,
+        ease: [0.4, 0, 0.2, 1]
+      } 
+    },
+    exit: { 
+      opacity: 0, 
+      scale: 0.95, 
+      y: 20,
+      transition: { duration: 0.2 } 
+    },
+  };
+
+  const fieldVariants = {
+    hidden: { opacity: 0, x: -20 },
+    visible: (i) => ({
+      opacity: 1,
+      x: 0,
+      transition: {
+        delay: i * 0.03,
+        duration: 0.3,
+        ease: "easeOut"
+      }
+    })
+  };
+
+  const statusColors = {
+    planning: 'from-gray-500 to-gray-600',
+    'in-progress': 'from-blue-500 to-blue-600',
+    completed: 'from-green-500 to-green-600',
+    'on-hold': 'from-yellow-500 to-yellow-600'
+  };
+
+  const priorityColors = {
+    low: 'from-green-500 to-emerald-600',
+    medium: 'from-yellow-500 to-orange-600',
+    high: 'from-orange-500 to-red-600',
+    urgent: 'from-red-500 to-pink-600'
+  };
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50"
-      onClick={onClose}
-    >
+    <AnimatePresence>
       <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-gradient-to-br from-black/60 to-black/40 backdrop-blur-md flex items-center justify-center z-60 p-4"
+        onClick={onClose}
       >
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">Edit Project</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
+        <motion.div
+          variants={modalVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-8 py-6 text-white">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <motion.div 
+                  initial={{ rotate: -180, opacity: 0 }}
+                  animate={{ rotate: 0, opacity: 1 }}
+                  transition={{ duration: 0.5 }}
+                  className="bg-white/20 backdrop-blur-sm p-2.5 rounded-xl"
+                >
+                  <Edit3 className="h-6 w-6" />
+                </motion.div>
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-bold">Edit Project</h2>
+                  <p className="text-indigo-100 text-sm mt-0.5">Update project details and settings</p>
+                </div>
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.1, rotate: 90 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={onClose}
+                className="text-white/80 hover:text-white hover:bg-white/20 p-2 rounded-xl transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </motion.button>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Title *
-              </label>
-              <input
-                type="text"
-                name="title"
-                value={formData.title}
-                onChange={handleInputChange}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  errors.title ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="Enter project title"
-              />
-              {errors.title && <p className="text-red-500 text-sm mt-1">{errors.title}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Description
-              </label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter project description"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Date *
+          {/* Form Content */}
+          <div className="overflow-y-auto max-h-[calc(90vh-200px)] px-8 py-6">
+            <form onSubmit={handleSubmit} className="space-y-6 pb-8">
+              {/* Title */}
+              <motion.div custom={0} variants={fieldVariants} initial="hidden" animate="visible">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <FileText className="h-4 w-4 text-indigo-600" />
+                  Project Title *
                 </label>
                 <input
-                  type="date"
-                  name="startDate"
-                  value={formData.startDate}
+                  type="text"
+                  name="title"
+                  value={formData.title}
                   onChange={handleInputChange}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.startDate ? 'border-red-500' : 'border-gray-300'
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
+                    errors.title ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-transparent hover:border-indigo-300'
                   }`}
+                  placeholder="Enter project title"
                 />
-                {errors.startDate && <p className="text-red-500 text-sm mt-1">{errors.startDate}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date *
+                <AnimatePresence>
+                  {errors.title && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="text-red-600 text-sm mt-2 flex items-center gap-1"
+                    >
+                      <AlertCircle size={14} /> {errors.title}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+
+              {/* Description */}
+              <motion.div custom={1} variants={fieldVariants} initial="hidden" animate="visible">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <FileText className="h-4 w-4 text-indigo-600" />
+                  Description
                 </label>
-                <input
-                  type="date"
-                  name="dueDate"
-                  value={formData.dueDate}
+                <textarea
+                  name="description"
+                  value={formData.description}
                   onChange={handleInputChange}
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.dueDate ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  rows={4}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all resize-none hover:border-indigo-300"
+                  placeholder="Describe the project..."
                 />
-                {errors.dueDate && <p className="text-red-500 text-sm mt-1">{errors.dueDate}</p>}
-              </div>
-            </div>
+              </motion.div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  name="status"
-                  value={formData.status}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="planning">Planning</option>
-                  <option value="in-progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="on-hold">On Hold</option>
-                </select>
+              {/* Status, Priority & Visibility */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <motion.div custom={2} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <TrendingUp className="h-4 w-4 text-blue-600" />
+                    Status
+                  </label>
+                  <div className="relative">
+                    <select
+                      name="status"
+                      value={formData.status}
+                      onChange={handleInputChange}
+                      className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all hover:border-indigo-300 bg-gradient-to-r ${statusColors[formData.status]} text-gray-700 font-semibold appearance-none cursor-pointer`}
+                    >
+                      <option value="planning">Planning</option>
+                      <option value="in-progress">In Progress</option>
+                      <option value="completed">Completed</option>
+                      <option value="on-hold">On Hold</option>
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white pointer-events-none" />
+                  </div>
+                </motion.div>
+                <motion.div custom={3} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <AlertCircle className="h-4 w-4 text-red-600" />
+                    Priority
+                  </label>
+                  <div className="relative">
+                    <select
+                      name="priority"
+                      value={formData.priority}
+                      onChange={handleInputChange}
+                      className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all hover:border-indigo-300 bg-gradient-to-r ${priorityColors[formData.priority]} text-gray-700 font-semibold appearance-none cursor-pointer`}
+                    >
+                      <option value="low">Low Priority</option>
+                      <option value="medium">Medium Priority</option>
+                      <option value="high">High Priority</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white pointer-events-none" />
+                  </div>
+                </motion.div>
+                <motion.div custom={4} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Globe className="h-4 w-4 text-green-600" />
+                    Visibility
+                  </label>
+                  <div className="relative">
+                    <select
+                      name="visibility"
+                      value={formData.visibility}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                    >
+                      <option value="public">Public</option>
+                      <option value="private">Private</option>
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
+                  </div>
+                </motion.div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Priority
-                </label>
-                <select
-                  name="priority"
-                  value={formData.priority}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
-              </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Project URL
-              </label>
-              <input
-                type="text"
-                name="projectUrl"
-                value={formData.projectUrl}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter project URL"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Project Source
-                </label>
-                <select
-                  name="projectSource"
-                  value={formData.projectSource}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Direct">Direct</option>
-                  <option value="Upwork">Upwork</option>
-                  <option value="Contra">Contra</option>
-                </select>
+              {/* Dates */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <motion.div custom={5} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Calendar className="h-4 w-4 text-green-600" />
+                    Start Date *
+                  </label>
+                  <input
+                    type="date"
+                    name="startDate"
+                    value={formData.startDate}
+                    onChange={handleInputChange}
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
+                      errors.startDate ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-transparent hover:border-indigo-300'
+                    }`}
+                  />
+                  {errors.startDate && <p className="text-red-600 text-sm mt-2">{errors.startDate}</p>}
+                </motion.div>
+                <motion.div custom={6} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Calendar className="h-4 w-4 text-red-600" />
+                    Due Date *
+                  </label>
+                  <input
+                    type="date"
+                    name="dueDate"
+                    value={formData.dueDate}
+                    onChange={handleInputChange}
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
+                      errors.dueDate ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-transparent hover:border-indigo-300'
+                    }`}
+                  />
+                  {errors.dueDate && <p className="text-red-600 text-sm mt-2">{errors.dueDate}</p>}
+                </motion.div>
               </div>
-              {formData.projectSource === 'Upwork' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Upwork ID
+
+              {/* Project URL & Estimated Time */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <motion.div custom={7} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Link2 className="h-4 w-4 text-blue-600" />
+                    Project URL
                   </label>
                   <input
                     type="text"
-                    name="upworkId"
-                    value={formData.upworkId}
+                    name="projectUrl"
+                    value={formData.projectUrl}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter Upwork ID"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                    placeholder="https://example.com"
+                  />
+                </motion.div>
+                <motion.div custom={8} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Clock className="h-4 w-4 text-orange-600" />
+                    Estimated Time
+                  </label>
+                  <input
+                    type="text"
+                    name="estimatedTime"
+                    value={formData.estimatedTime}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                    placeholder="e.g., 3 days, 40h"
+                  />
+                </motion.div>
+              </div>
+
+              {/* Project Source */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <motion.div custom={9} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <Briefcase className="h-4 w-4 text-indigo-600" />
+                    Project Source
+                  </label>
+                  <select
+                    name="projectSource"
+                    value={formData.projectSource}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                  >
+                    <option value="Direct">Direct Client</option>
+                    <option value="Upwork">Upwork</option>
+                    <option value="Contra">Contra</option>
+                  </select>
+                </motion.div>
+                <AnimatePresence>
+                  {formData.projectSource === 'Upwork' && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                    >
+                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                        <Tag className="h-4 w-4 text-green-600" />
+                        Upwork ID
+                      </label>
+                      <input
+                        type="text"
+                        name="upworkId"
+                        value={formData.upworkId}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                        placeholder="Enter Upwork ID"
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Billing */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <motion.div custom={10} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                    <DollarSign className="h-4 w-4 text-green-600" />
+                    Billing Type
+                  </label>
+                  <select
+                    name="billingCycle"
+                    value={formData.billingCycle}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                  >
+                    <option value="hourly">Hourly Rate</option>
+                    <option value="fixed">Fixed Price</option>
+                  </select>
+                </motion.div>
+                <AnimatePresence mode="wait">
+                  {formData.billingCycle === 'fixed' ? (
+                    <motion.div
+                      key="fixed"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                    >
+                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                        <DollarSign className="h-4 w-4 text-green-600" />
+                        Fixed Price
+                      </label>
+                      <input
+                        type="number"
+                        name="fixedPrice"
+                        value={formData.fixedPrice}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                        placeholder="$0.00"
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="hourly"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                    >
+                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                        <DollarSign className="h-4 w-4 text-green-600" />
+                        Hourly Rate
+                      </label>
+                      <input
+                        type="number"
+                        name="hourlyPrice"
+                        value={formData.hourlyPrice}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                        placeholder="$/hr"
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Client Details */}
+              <motion.div custom={11} variants={fieldVariants} initial="hidden" animate="visible" className="bg-gradient-to-br from-gray-50 to-indigo-50 p-6 rounded-2xl border border-gray-200">
+                <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
+                  <Mail className="h-5 w-5 text-indigo-600" />
+                  Client Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <input
+                    type="text"
+                    name="clientName"
+                    value={formData.clientName}
+                    onChange={handleInputChange}
+                    placeholder="Client Name"
+                    className="w-full px-4 py-3 border border-gray-300 bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                  />
+                  <input
+                    type="email"
+                    name="clientEmail"
+                    value={formData.clientEmail}
+                    onChange={handleInputChange}
+                    placeholder="client@email.com"
+                    className="w-full px-4 py-3 border border-gray-300 bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                  />
+                  <input
+                    type="text"
+                    name="clientWhatsappNumber"
+                    value={formData.clientWhatsappNumber}
+                    onChange={handleInputChange}
+                    placeholder="+1 234 567 8900"
+                    className="w-full px-4 py-3 border border-gray-300 bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
                   />
                 </div>
-              )}
-            </div>
+              </motion.div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Billing Cycle
+              {/* Project Category */}
+              <motion.div custom={12} variants={fieldVariants} initial="hidden" animate="visible">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <Tag className="h-4 w-4 text-pink-600" />
+                  Project Category
                 </label>
-                <select
-                  name="billingCycle"
-                  value={formData.billingCycle}
+                <input
+                  type="text"
+                  name="projectCategory"
+                  value={formData.projectCategory}
                   onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="hr">Hourly</option>
-                  <option value="fixed">Fixed</option>
-                </select>
-              </div>
-              {formData.billingCycle === 'fixed' ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Fixed Price
-                  </label>
-                  <input
-                    type="number"
-                    name="fixedPrice"
-                    value={formData.fixedPrice}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter fixed price"
-                  />
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
+                  placeholder="e.g., Web Development, Mobile App"
+                />
+              </motion.div>
+
+              {/* Assignees */}
+              <motion.div custom={13} variants={fieldVariants} initial="hidden" animate="visible">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <Users className="h-4 w-4 text-purple-600" />
+                  Team Members *
+                </label>
+                <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-xl p-4 bg-gradient-to-br from-white to-gray-50 space-y-2">
+                  {employees.map((employee, index) => (
+                    <motion.label
+                      key={employee._id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="flex items-center gap-3 p-3 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors group"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.assignees.includes(employee._id)}
+                        onChange={() => handleAssigneeChange(employee._id)}
+                        className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      />
+                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-sm font-bold group-hover:scale-110 transition-transform">
+                        {(employee.name || "U").charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900">{employee.name}</div>
+                        <div className="text-xs text-gray-500">{employee.email || "No email"}</div>
+                      </div>
+                      {formData.assignees.includes(employee._id) && (
+                        <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="text-indigo-600"
+                        >
+                          <CheckCircle2 className="h-5 w-5" />
+                        </motion.div>
+                      )}
+                    </motion.label>
+                  ))}
                 </div>
+                {errors.assignees && (
+                  <p className="text-red-600 text-sm mt-2 flex items-center gap-1">
+                    <AlertCircle size={14} /> {errors.assignees}
+                  </p>
+                )}
+              </motion.div>
+            </form>
+          </div>
+
+          {/* Footer */}
+          <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex justify-between items-center">
+            <motion.button
+              whileHover={{ scale: 1.02, x: -4 }}
+              whileTap={{ scale: 0.98 }}
+              type="button"
+              onClick={onClose}
+              className="px-6 py-3 text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 font-semibold transition-all shadow-sm"
+            >
+              Cancel
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
+              type="submit"
+              onClick={handleSubmit}
+              disabled={loading}
+              className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all shadow-lg shadow-indigo-500/30"
+            >
+              {loading ? (
+                <>
+                  <Loader size={20} className="animate-spin" />
+                  Saving Changes...
+                </>
               ) : (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Hourly Price
-                  </label>
-                  <input
-                    type="number"
-                    name="hourlyPrice"
-                    value={formData.hourlyPrice}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter hourly price"
-                  />
-                </div>
+                <>
+                  <Save size={20} />
+                  Save Changes
+                </>
               )}
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Client Details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <input
-                  type="text"
-                  name="clientName"
-                  value={formData.clientName}
-                  onChange={handleInputChange}
-                  placeholder="Client Name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="email"
-                  name="clientEmail"
-                  value={formData.clientEmail}
-                  onChange={handleInputChange}
-                  placeholder="Client Email"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  name="clientWhatsappNumber"
-                  value={formData.clientWhatsappNumber}
-                  onChange={handleInputChange}
-                  placeholder="Client WhatsApp Number"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Project Category
-              </label>
-              <input
-                type="text"
-                name="projectCategory"
-                value={formData.projectCategory}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter project category"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Assignees *
-              </label>
-              <div className="max-h-32 overflow-y-auto border border-gray-300 rounded-md p-2">
-                {employees.map(employee => (
-                  <label key={employee._id} className="flex items-center space-x-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={formData.assignees.includes(employee._id)}
-                      onChange={() => handleAssigneeChange(employee._id)}
-                      className="rounded"
-                    />
-                    <span className="text-sm">{employee.name}</span>
-                  </label>
-                ))}
-              </div>
-              {errors.assignees && <p className="text-red-500 text-sm mt-1">{errors.assignees}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Estimated Time
-              </label>
-              <input
-                type="text"
-                name="estimatedTime"
-                value={formData.estimatedTime}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., 3 days, 8h"
-              />
-            </div>
-
-            <div className="flex justify-between items-center pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-              >
-                {loading ? 'Updating...' : 'Update'}
-              </button>
-            </div>
-          </form>
-        </div>
+            </motion.button>
+          </div>
+        </motion.div>
       </motion.div>
-    </motion.div>
+    </AnimatePresence>
   );
 };
 

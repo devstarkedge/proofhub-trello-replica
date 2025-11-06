@@ -1,4 +1,6 @@
-- [x] Update List.jsx: Remove overflow-y-auto, set overflow-hidden, adjust height to prevent scrollbars
-- [x] Optimize drag state in Board.jsx: Ensure isDraggingCard and draggedCard are reset properly
-- [x] Update Card.jsx: Ensure card maintains UI state during and after drag operations
-- [ ] Test drag and drop functionality for smooth rendering and UI consistency
+# Fix Client Details in Project Modals
+
+## Tasks
+- [ ] Update ViewProjectModal.jsx to display client details from project.clientDetails subdocument
+- [ ] Update EditProjectModal.jsx to initialize form data from project.clientDetails
+- [ ] Update EditProjectModal.jsx handleSubmit to send clientDetails object instead of separate fields

@@ -139,6 +139,18 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
       }
     },
     {
+      $unwind: {
+        path: '$list',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $unwind: {
+        path: '$board',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
       $project: {
         title: 1,
         description: 1,
@@ -513,6 +525,8 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
   // Invalidate cache for the board
   invalidateCache(`/api/boards/${card.board.toString()}`);
+  invalidateCache("/api/departments");
+  invalidateCache("/api/analytics/dashboard");
 
   res.status(200).json({
     success: true,
@@ -648,6 +662,7 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   invalidateCache(`/api/cards/list/${destinationListId}`);
   invalidateCache(`/api/cards/board/${card.board.toString()}`);
   invalidateCache(`/api/cards/${card._id}`);
+  invalidateCache("/api/departments");
 
   res.status(200).json({
     success: true,

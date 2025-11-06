@@ -42,7 +42,7 @@ const ViewProjectModal = ({ isOpen, onClose, projectId }) => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 backdrop-blur-md bg-opacity-50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 backdrop-blur-md bg-opacity-50 flex items-center justify-center z-60 p-4"
       onClick={onClose}
     >
       <motion.div
@@ -214,20 +214,20 @@ const ViewProjectModal = ({ isOpen, onClose, projectId }) => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
-                    <p className="text-gray-900">{project.clientName || 'Not provided'}</p>
+                    <p className="text-gray-900">{project.clientDetails?.clientName || 'Not provided'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Client Email</label>
                     <div className="flex items-center gap-2">
                       <Mail size={16} className="text-gray-500" />
-                      <p className="text-gray-900">{project.clientEmail || 'Not provided'}</p>
+                      <p className="text-gray-900">{project.clientDetails?.clientEmail || 'Not provided'}</p>
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Client WhatsApp</label>
                     <div className="flex items-center gap-2">
                       <Phone size={16} className="text-gray-500" />
-                      <p className="text-gray-900">{project.clientWhatsappNumber || 'Not provided'}</p>
+                      <p className="text-gray-900">{project.clientDetails?.clientWhatsappNumber || 'Not provided'}</p>
                     </div>
                   </div>
                 </div>

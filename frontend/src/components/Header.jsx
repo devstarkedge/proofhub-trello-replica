@@ -1,6 +1,6 @@
 import React, { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { 
-  Search, Bell, Menu, Settings, LogOut, User,
+import {
+  Bell, Menu, Settings, LogOut, User,
   ChevronDown, Kanban, List, Calendar, BarChart3,
   Users, Building2
 } from 'lucide-react';
@@ -23,8 +23,6 @@ const Header = ({ boardName }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
   const [showDepartmentSelector, setShowDepartmentSelector] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
 
   const notificationRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -52,12 +50,7 @@ const Header = ({ boardName }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery)}`);
-    }
-  };
+
 
   const navItems = [
     { path: '/', icon: Kanban, label: 'Board' },
@@ -205,24 +198,6 @@ const Header = ({ boardName }) => {
               ))}
             </nav>
           </div>
-
-          {/* Center - Search */}
-          <motion.form
-            animate={{ width: searchFocused ? 400 : 300 }}
-            onSubmit={handleSearch}
-            className="relative hidden md:block"
-          >
-            <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search tasks, projects..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-            />
-          </motion.form>
 
           {/* Right Section */}
           <div className="flex items-center gap-2">

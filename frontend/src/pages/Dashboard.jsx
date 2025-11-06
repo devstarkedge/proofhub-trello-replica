@@ -10,6 +10,7 @@ import AuthContext from '../context/AuthContext';
 import TeamContext from '../context/TeamContext';
 import { useDashboardData } from '../hooks/useProjects';
 import { useDebounce } from '../hooks/useDebounce';
+import Database from '../services/database';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
@@ -47,9 +48,27 @@ const Dashboard = memo(() => {
   }, []);
 
   const handleEditProject = useCallback((project) => {
-    setSelectedProject(project);
+    // Normalize the project object to ensure consistent id field
+    const normalizedProject = {
+      ...project,
+      id: project.id || project._id,
+      _id: project._id || project.id
+    };
+    setSelectedProject(normalizedProject);
     setEditModalOpen(true);
   }, []);
+
+  const handleDeleteProject = useCallback(async (projectId) => {
+    if (window.confirm('Are you sure you want to delete this project?')) {
+      try {
+        await Database.deleteProject(projectId);
+        refetch();
+      } catch (error) {
+        console.error('Error deleting project:', error);
+        alert('Failed to delete project. Please try again.');
+      }
+    }
+  }, [refetch]);
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -257,6 +276,7 @@ const Dashboard = memo(() => {
                         project={project}
                         onView={() => handleViewProject(project.id)}
                         onEdit={() => handleEditProject(project)}
+                        onDelete={() => handleDeleteProject(project.id)}
                       />
                     </motion.div>
                   ))}
