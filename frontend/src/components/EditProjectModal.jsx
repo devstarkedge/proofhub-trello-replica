@@ -3,8 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Save, AlertCircle, Loader, Calendar, Users, DollarSign,
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
-  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock
+  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock, Plus
 } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select"
+import { Badge } from "../components/ui/badge"
+import { toast } from "react-toastify"
 import Database from '../services/database';
 
 const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
@@ -30,6 +33,7 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
     visibility: 'public'
   });
   const [employees, setEmployees] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
@@ -61,6 +65,7 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
             visibility: fullProject.visibility || 'public'
           });
           await fetchEmployees(fullProject);
+          await fetchCategories(fullProject);
         } catch (error) {
           console.error('Error fetching full project:', error);
         }
@@ -78,6 +83,15 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
       setEmployees(deptEmployees);
     } catch (error) {
       console.error('Error fetching employees:', error);
+    }
+  };
+
+  const fetchCategories = async (project) => {
+    try {
+      const response = await Database.getCategoriesByDepartment(project.department._id);
+      setCategories(response.data);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
     }
   };
 
@@ -575,14 +589,22 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
                   <Tag className="h-4 w-4 text-pink-600" />
                   Project Category
                 </label>
-                <input
-                  type="text"
-                  name="projectCategory"
-                  value={formData.projectCategory}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300"
-                  placeholder="e.g., Web Development, Mobile App"
-                />
+                <div className="relative">
+                  <select
+                    name="projectCategory"
+                    value={formData.projectCategory}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all hover:border-indigo-300 appearance-none cursor-pointer"
+                  >
+                    <option value="">Select a category</option>
+                    {categories.map((category) => (
+                      <option key={category._id} value={category.name}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
+                </div>
               </motion.div>
 
               {/* Assignees */}

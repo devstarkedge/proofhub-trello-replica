@@ -195,6 +195,21 @@ cardSchema.virtual('progress').get(function() {
   return Math.round((completed / this.subtasks.length) * 100);
 });
 
+// Calculate total logged time
+cardSchema.virtual('totalLoggedTime').get(function() {
+  if (!this.loggedTime || this.loggedTime.length === 0) return { hours: 0, minutes: 0 };
+
+  let totalMinutes = 0;
+  this.loggedTime.forEach(log => {
+    totalMinutes += (log.hours * 60) + log.minutes;
+  });
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return { hours, minutes };
+});
+
 // Add pagination plugin
 cardSchema.plugin(mongoosePaginate);
 

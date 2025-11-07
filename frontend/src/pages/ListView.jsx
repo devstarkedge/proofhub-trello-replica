@@ -16,14 +16,21 @@ import {
   Search,
   Download,
   RefreshCw,
-  X
+  X,
+  Eye,
+  Edit3,
+  MoreVertical,
+  Sparkles,
+  Zap,
+  Target,
+  Activity
 } from 'lucide-react';
 import TeamContext from '../context/TeamContext';
 import Database from '../services/database';
 import Header from '../components/Header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '../components/ui/dropdown-menu';
 import { Button } from '../components/ui/button';
 
 const ListView = () => {
@@ -37,6 +44,7 @@ const ListView = () => {
     search: ''
   });
   const [sorting, setSorting] = useState({ key: 'dueDate', order: 'asc' });
+  const [viewMode, setViewMode] = useState('comfortable'); // compact, comfortable, spacious
 
   useEffect(() => {
     if (currentDepartment) {
@@ -143,41 +151,48 @@ const ListView = () => {
     const completed = cards.filter(c => c.list?.title?.toLowerCase() === 'done').length;
     const inProgress = cards.filter(c => c.list?.title?.toLowerCase() === 'in progress').length;
     const highPriority = cards.filter(c => c.priority === 'High').length;
-    return { total, completed, inProgress, highPriority };
+    const overdue = cards.filter(c => {
+      if (!c.dueDate) return false;
+      const today = new Date();
+      const due = new Date(c.dueDate);
+      return due < today && c.list?.title?.toLowerCase() !== 'done';
+    }).length;
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, inProgress, highPriority, overdue, completionRate };
   };
 
   const stats = getStats();
 
   const getPriorityPill = (priority) => {
     const config = {
-      'High': { variant: 'destructive', icon: AlertCircle, color: 'text-red-600' },
-      'Medium': { variant: 'secondary', icon: TrendingUp, color: 'text-yellow-600' },
-      'Low': { variant: 'outline', icon: CheckCircle2, color: 'text-green-600' }
+      'High': { variant: 'destructive', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
+      'Medium': { variant: 'secondary', icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
+      'Low': { variant: 'outline', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
     };
-    const { variant, icon: Icon, color } = config[priority] || { variant: 'outline', icon: Tag, color: 'text-gray-600' };
+    const { icon: Icon, color, bg, border } = config[priority] || { icon: Tag, color: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-200' };
     
     return (
-      <Badge variant={variant} className="flex items-center gap-1 w-fit">
-        <Icon className={`w-3 h-3 ${variant === 'outline' ? color : ''}`} />
-        {priority}
-      </Badge>
+      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${bg} ${border} border transition-all duration-200 hover:scale-105 w-fit`}>
+        <Icon className={`w-3.5 h-3.5 ${color}`} />
+        <span className={`text-xs font-semibold ${color}`}>{priority}</span>
+      </div>
     );
   };
 
   const getStatusBadge = (status) => {
     const config = {
-      'To-Do': { color: 'bg-slate-100 text-slate-700 border-slate-300', icon: ClipboardList },
-      'In Progress': { color: 'bg-blue-100 text-blue-700 border-blue-300', icon: Clock },
-      'Review': { color: 'bg-purple-100 text-purple-700 border-purple-300', icon: Users },
-      'Done': { color: 'bg-green-100 text-green-700 border-green-300', icon: CheckCircle2 }
+      'To-Do': { color: 'bg-slate-50 text-slate-700 border-slate-300', icon: ClipboardList, glow: 'hover:shadow-slate-200' },
+      'In Progress': { color: 'bg-blue-50 text-blue-700 border-blue-300', icon: Activity, glow: 'hover:shadow-blue-200' },
+      'Review': { color: 'bg-purple-50 text-purple-700 border-purple-300', icon: Users, glow: 'hover:shadow-purple-200' },
+      'Done': { color: 'bg-emerald-50 text-emerald-700 border-emerald-300', icon: CheckCircle2, glow: 'hover:shadow-emerald-200' }
     };
-    const { color, icon: Icon } = config[status] || { color: 'bg-gray-100 text-gray-700 border-gray-300', icon: Tag };
+    const { color, icon: Icon, glow } = config[status] || { color: 'bg-gray-50 text-gray-700 border-gray-300', icon: Tag, glow: '' };
     
     return (
-      <Badge variant="secondary" className={`${color} border flex items-center gap-1 w-fit`}>
-        <Icon className="w-3 h-3" />
-        {status}
-      </Badge>
+      <div className={`${color} border flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200 hover:scale-105 ${glow} hover:shadow-md w-fit`}>
+        <Icon className="w-3.5 h-3.5" />
+        <span className="text-xs font-semibold">{status}</span>
+      </div>
     );
   };
 
@@ -189,7 +204,7 @@ const ListView = () => {
     
     if (diffDays < 0) return 'text-red-600 font-semibold';
     if (diffDays === 0) return 'text-orange-600 font-semibold';
-    if (diffDays <= 3) return 'text-yellow-600 font-semibold';
+    if (diffDays <= 3) return 'text-amber-600 font-semibold';
     return 'text-gray-600';
   };
 
@@ -198,122 +213,144 @@ const ListView = () => {
     const date = new Date(dueDate);
     const today = new Date();
     const diffDays = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays < 0) return `${Math.abs(diffDays)} days overdue`;
     if (diffDays === 0) return 'Due today';
     if (diffDays === 1) return 'Due tomorrow';
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const calculateTotalLoggedTime = (loggedTime) => {
+    if (!loggedTime || loggedTime.length === 0) return '0h 0m';
+
+    const totalMinutes = loggedTime.reduce((acc, entry) => {
+      return acc + (entry.hours * 60) + entry.minutes;
+    }, 0);
+
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    return `${hours}h ${minutes}m`;
+  };
+
   const renderSkeleton = () => (
     [...Array(8)].map((_, i) => (
       <TableRow key={i} className="animate-pulse">
-        <TableCell><div className="h-4 bg-gray-200 rounded w-3/4"></div></TableCell>
-        <TableCell><div className="h-4 bg-gray-200 rounded w-1/2"></div></TableCell>
-        <TableCell><div className="h-4 bg-gray-200 rounded w-1/2"></div></TableCell>
-        <TableCell><div className="h-4 bg-gray-200 rounded w-1/4"></div></TableCell>
-        <TableCell><div className="h-4 bg-gray-200 rounded w-1/3"></div></TableCell>
-        <TableCell><div className="h-4 bg-gray-200 rounded w-1/2"></div></TableCell>
+        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-3/4"></div></TableCell>
+        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2"></div></TableCell>
+        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2"></div></TableCell>
+        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/4"></div></TableCell>
+        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/3"></div></TableCell>
+        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2"></div></TableCell>
       </TableRow>
     ))
   );
 
+  const rowPaddingClass = viewMode === 'compact' ? 'py-2' : viewMode === 'comfortable' ? 'py-4' : 'py-6';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
-      <main className="max-w-screen-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      
+      {/* Decorative Background Elements */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-400/10 rounded-full blur-3xl animate-float"></div>
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl animate-float-delayed"></div>
+        <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-indigo-400/10 rounded-full blur-3xl animate-float-slow"></div>
+      </div>
+
+      <main className="max-w-screen-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Header Section */}
         <div className="mb-8 animate-fade-in">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-3 rounded-xl shadow-lg">
-              <ClipboardList className="w-8 h-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900">Task List View</h1>
-              <p className="text-gray-600 mt-1">
-                {currentDepartment ? (
-                  <span className="flex items-center gap-2">
-                    <FolderKanban className="w-4 h-4" />
-                    {currentDepartment.name}
-                  </span>
-                ) : (
-                  'Select a department to view tasks'
-                )}
-              </p>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-600 p-4 rounded-2xl shadow-xl shadow-blue-500/30 hover:shadow-2xl hover:shadow-blue-500/40 transition-all duration-300 hover:scale-105 relative overflow-hidden group">
+                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                <ClipboardList className="w-8 h-8 text-white relative z-10" />
+              </div>
+              <div>
+                <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
+                  Task List View
+                </h1>
+                <p className="text-gray-600 mt-1.5">
+                  {currentDepartment ? (
+                    <span className="flex items-center gap-2">
+                      <FolderKanban className="w-4 h-4 text-blue-600" />
+                      <span className="font-medium text-gray-700">{currentDepartment.name}</span>
+                      <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-700 border-blue-200">
+                        <Sparkles className="w-3 h-3 mr-1" />
+                        Active
+                      </Badge>
+                    </span>
+                  ) : (
+                    'Select a department to view tasks'
+                  )}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Stats Cards */}
+          {/* Enhanced Stats Cards */}
           {currentDepartment && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <div className="bg-white rounded-xl shadow-md p-4 hover:shadow-lg transition-shadow duration-300 border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">Total Tasks</p>
-                    <p className="text-3xl font-bold text-gray-900 mt-1">{stats.total}</p>
-                  </div>
-                  <div className="bg-blue-100 p-3 rounded-lg">
-                    <ClipboardList className="w-6 h-6 text-blue-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-md p-4 hover:shadow-lg transition-shadow duration-300 border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">In Progress</p>
-                    <p className="text-3xl font-bold text-blue-600 mt-1">{stats.inProgress}</p>
-                  </div>
-                  <div className="bg-blue-100 p-3 rounded-lg">
-                    <Clock className="w-6 h-6 text-blue-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-md p-4 hover:shadow-lg transition-shadow duration-300 border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">Completed</p>
-                    <p className="text-3xl font-bold text-green-600 mt-1">{stats.completed}</p>
-                  </div>
-                  <div className="bg-green-100 p-3 rounded-lg">
-                    <CheckCircle2 className="w-6 h-6 text-green-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-md p-4 hover:shadow-lg transition-shadow duration-300 border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">High Priority</p>
-                    <p className="text-3xl font-bold text-red-600 mt-1">{stats.highPriority}</p>
-                  </div>
-                  <div className="bg-red-100 p-3 rounded-lg">
-                    <AlertCircle className="w-6 h-6 text-red-600" />
-                  </div>
-                </div>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+              <StatCard
+                title="Total Tasks"
+                value={stats.total}
+                icon={ClipboardList}
+                color="blue"
+                delay="0ms"
+              />
+              <StatCard
+                title="In Progress"
+                value={stats.inProgress}
+                icon={Activity}
+                color="cyan"
+                delay="50ms"
+              />
+              <StatCard
+                title="Completed"
+                value={stats.completed}
+                icon={CheckCircle2}
+                color="emerald"
+                subtitle={`${stats.completionRate}% complete`}
+                delay="100ms"
+              />
+              <StatCard
+                title="High Priority"
+                value={stats.highPriority}
+                icon={AlertCircle}
+                color="red"
+                delay="150ms"
+              />
+              <StatCard
+                title="Overdue"
+                value={stats.overdue}
+                icon={Clock}
+                color="orange"
+                delay="200ms"
+                pulse={stats.overdue > 0}
+              />
             </div>
           )}
 
-          {/* Filters Bar */}
-          <div className="bg-white rounded-xl shadow-md p-4 border border-gray-200">
+          {/* Enhanced Filters Bar */}
+          <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 p-5 hover:shadow-2xl transition-all duration-300">
             <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
               <div className="flex flex-wrap items-center gap-3 flex-1">
-                {/* Search */}
-                <div className="relative flex-1 min-w-[200px] max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                {/* Enhanced Search */}
+                <div className="relative flex-1 min-w-[240px] max-w-md group">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
                   <input
                     type="text"
                     placeholder="Search tasks, projects, assignees..."
                     value={filters.search}
                     onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    className="w-full pl-11 pr-11 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white/50 hover:bg-white hover:border-gray-300"
                   />
                   {filters.search && (
                     <button
                       onClick={() => setFilters({ ...filters, search: '' })}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg p-1 transition-all"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -323,9 +360,9 @@ const ListView = () => {
                 {/* Filter Dropdowns */}
                 <FilterDropdown
                   label="Status"
-                  icon={ClipboardList}
+                  icon={Target}
                   options={[
-                    { value: 'all', label: 'All' },
+                    { value: 'all', label: 'All Statuses' },
                     { value: 'to-do', label: 'To-Do' },
                     { value: 'in-progress', label: 'In Progress' },
                     { value: 'review', label: 'Review' },
@@ -336,9 +373,9 @@ const ListView = () => {
                 />
                 <FilterDropdown
                   label="Priority"
-                  icon={AlertCircle}
+                  icon={Zap}
                   options={[
-                    { value: 'all', label: 'All' },
+                    { value: 'all', label: 'All Priorities' },
                     { value: 'low', label: 'Low' },
                     { value: 'medium', label: 'Medium' },
                     { value: 'high', label: 'High' },
@@ -352,7 +389,7 @@ const ListView = () => {
                     variant="outline"
                     size="sm"
                     onClick={clearFilters}
-                    className="flex items-center gap-2 border-red-300 text-red-600 hover:bg-red-50"
+                    className="flex items-center gap-2 border-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-all duration-200 rounded-xl"
                   >
                     <X size={14} />
                     Clear Filters
@@ -367,7 +404,7 @@ const ListView = () => {
                   size="sm"
                   onClick={handleRefresh}
                   disabled={refreshing}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 border-2 hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 rounded-xl"
                 >
                   <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
                   Refresh
@@ -375,7 +412,7 @@ const ListView = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 border-2 hover:bg-emerald-50 hover:border-emerald-300 transition-all duration-200 rounded-xl"
                 >
                   <Download size={14} />
                   Export
@@ -385,22 +422,22 @@ const ListView = () => {
 
             {/* Active Filters Display */}
             {hasActiveFilters && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <Filter className="w-4 h-4" />
-                  <span className="font-medium">Active filters:</span>
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center gap-2 text-sm text-gray-600 flex-wrap">
+                  <Filter className="w-4 h-4 text-blue-600" />
+                  <span className="font-semibold text-gray-700">Active filters:</span>
                   {filters.status !== 'all' && (
-                    <Badge variant="secondary" className="capitalize">
+                    <Badge variant="secondary" className="capitalize bg-blue-100 text-blue-700 border-blue-200">
                       Status: {filters.status.replace('-', ' ')}
                     </Badge>
                   )}
                   {filters.priority !== 'all' && (
-                    <Badge variant="secondary" className="capitalize">
+                    <Badge variant="secondary" className="capitalize bg-purple-100 text-purple-700 border-purple-200">
                       Priority: {filters.priority}
                     </Badge>
                   )}
                   {filters.search && (
-                    <Badge variant="secondary">
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200">
                       Search: "{filters.search}"
                     </Badge>
                   )}
@@ -410,18 +447,19 @@ const ListView = () => {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-shadow duration-300">
+        {/* Enhanced Table */}
+        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/50 overflow-hidden hover:shadow-3xl transition-all duration-300">
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader className="bg-gradient-to-r from-gray-50 to-gray-100">
+              <TableHeader className="bg-gradient-to-r from-slate-100 via-blue-50 to-indigo-50 border-b-2 border-blue-200/50">
                 <TableRow>
                   <SortableHeader title="Task" sortKey="title" sorting={sorting} onSort={handleSort} icon={Tag} />
                   <SortableHeader title="Project" sortKey="board.name" sorting={sorting} onSort={handleSort} icon={FolderKanban} />
                   <SortableHeader title="Assignee" sortKey="assignees[0].name" sorting={sorting} onSort={handleSort} icon={User} />
-                  <SortableHeader title="Priority" sortKey="priority" sorting={sorting} onSort={handleSort} icon={AlertCircle} />
-                  <SortableHeader title="Status" sortKey="list.title" sorting={sorting} onSort={handleSort} icon={ClipboardList} />
+                  <SortableHeader title="Priority" sortKey="priority" sorting={sorting} onSort={handleSort} icon={Zap} />
+                  <SortableHeader title="Status" sortKey="list.title" sorting={sorting} onSort={handleSort} icon={Target} />
                   <SortableHeader title="Due Date" sortKey="dueDate" sorting={sorting} onSort={handleSort} icon={Calendar} />
+                  <SortableHeader title="Total Logged Time" sortKey="loggedTime" sorting={sorting} onSort={handleSort} icon={Clock} />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -431,32 +469,38 @@ const ListView = () => {
                   filteredAndSortedCards.map((card, index) => (
                     <TableRow 
                       key={card._id} 
-                      className="hover:bg-blue-50/50 transition-all duration-200 cursor-pointer group animate-slide-in"
+                      className={`hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 transition-all duration-300 cursor-pointer group animate-slide-in border-b border-gray-100 ${rowPaddingClass}`}
                       style={{ animationDelay: `${index * 30}ms` }}
                     >
                       <TableCell className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1 h-8 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                          {card.title}
+                        <div className="flex items-center gap-3">
+                          <div className="w-1 h-10 bg-gradient-to-b from-blue-500 to-purple-500 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg shadow-blue-500/50"></div>
+                          <div className="flex-1">
+                            <div className="font-semibold">{card.title}</div>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <FolderKanban className="w-4 h-4 text-gray-400" />
-                          {card.board?.name || 'N/A'}
+                        <div className="flex items-center gap-2 text-gray-700 group-hover:text-gray-900 transition-colors">
+                          <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100 transition-colors">
+                            <FolderKanban className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
+                          </div>
+                          <span className="font-medium">{card.board?.name || 'N/A'}</span>
                         </div>
                       </TableCell>
                       <TableCell>
                         {card.assignees && card.assignees.length > 0 ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110">
                               {card.assignees[0].name.charAt(0).toUpperCase()}
                             </div>
-                            <span className="text-gray-700 font-medium">{card.assignees[0].name}</span>
+                            <span className="text-gray-700 font-medium group-hover:text-gray-900 transition-colors">{card.assignees[0].name}</span>
                           </div>
                         ) : (
                           <span className="text-gray-400 italic flex items-center gap-2">
-                            <User className="w-4 h-4" />
+                            <div className="p-1.5 bg-gray-100 rounded-lg">
+                              <User className="w-4 h-4" />
+                            </div>
                             Unassigned
                           </span>
                         )}
@@ -466,21 +510,27 @@ const ListView = () => {
                       <TableCell>
                         <div className={`flex items-center gap-2 ${getDueDateColor(card.dueDate)}`}>
                           <Calendar className="w-4 h-4" />
-                          {formatDueDate(card.dueDate)}
+                          <span className="font-medium">{formatDueDate(card.dueDate)}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 text-gray-700 group-hover:text-gray-900 transition-colors">
+                          <Clock className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
+                          <span className="font-medium">{calculateTotalLoggedTime(card.loggedTime)}</span>
                         </div>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-16">
+                    <TableCell colSpan={7} className="text-center py-20">
                       <div className="flex flex-col items-center gap-4 animate-fade-in">
-                        <div className="bg-gray-100 p-6 rounded-full">
-                          <Filter size={48} className="text-gray-400" />
+                        <div className="bg-gradient-to-br from-gray-100 to-gray-200 p-8 rounded-3xl shadow-inner">
+                          <Filter size={56} className="text-gray-400" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-semibold text-gray-900 mb-1">No tasks found</h3>
-                          <p className="text-sm text-gray-500">
+                          <h3 className="text-xl font-bold text-gray-900 mb-2">No tasks found</h3>
+                          <p className="text-sm text-gray-500 max-w-md">
                             {hasActiveFilters 
                               ? 'Try adjusting your filters to see more results' 
                               : currentDepartment 
@@ -493,7 +543,7 @@ const ListView = () => {
                           <Button
                             variant="outline"
                             onClick={clearFilters}
-                            className="flex items-center gap-2 mt-2"
+                            className="flex items-center gap-2 mt-2 border-2 hover:bg-blue-50 hover:border-blue-300 rounded-xl"
                           >
                             <X size={16} />
                             Clear All Filters
@@ -510,9 +560,11 @@ const ListView = () => {
 
         {/* Results Count */}
         {!loading && filteredAndSortedCards.length > 0 && (
-          <div className="mt-4 text-center text-sm text-gray-600">
-            Showing <span className="font-semibold text-gray-900">{filteredAndSortedCards.length}</span> of{' '}
-            <span className="font-semibold text-gray-900">{cards.length}</span> tasks
+          <div className="mt-6 text-center">
+            <Badge variant="secondary" className="text-sm py-2 px-4 bg-white/80 backdrop-blur-sm border-2 border-gray-200 hover:border-blue-300 transition-all">
+              Showing <span className="font-bold text-blue-600 mx-1">{filteredAndSortedCards.length}</span> of{' '}
+              <span className="font-bold text-gray-900 mx-1">{cards.length}</span> tasks
+            </Badge>
           </div>
         )}
       </main>
@@ -540,6 +592,42 @@ const ListView = () => {
           }
         }
 
+        @keyframes float {
+          0%, 100% {
+            transform: translateY(0) translateX(0);
+          }
+          50% {
+            transform: translateY(-20px) translateX(10px);
+          }
+        }
+
+        @keyframes float-delayed {
+          0%, 100% {
+            transform: translateY(0) translateX(0);
+          }
+          50% {
+            transform: translateY(20px) translateX(-10px);
+          }
+        }
+
+        @keyframes float-slow {
+          0%, 100% {
+            transform: translateY(0) translateX(0);
+          }
+          50% {
+            transform: translateY(-15px) translateX(15px);
+          }
+        }
+
+        @keyframes pulse-glow {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+          }
+          50% {
+            box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+          }
+        }
+
         .animate-fade-in {
           animation: fade-in 0.5s ease-out;
         }
@@ -548,7 +636,88 @@ const ListView = () => {
           animation: slide-in 0.3s ease-out forwards;
           opacity: 0;
         }
+
+        .animate-float {
+          animation: float 8s ease-in-out infinite;
+        }
+
+        .animate-float-delayed {
+          animation: float-delayed 10s ease-in-out infinite;
+        }
+
+        .animate-float-slow {
+          animation: float-slow 12s ease-in-out infinite;
+        }
+
+        .animate-pulse-glow {
+          animation: pulse-glow 2s ease-in-out infinite;
+        }
       `}</style>
+    </div>
+  );
+};
+
+const StatCard = ({ title, value, icon: Icon, color, subtitle, delay, pulse }) => {
+  const colorClasses = {
+    blue: {
+      bg: 'from-blue-500 to-cyan-500',
+      text: 'text-blue-600',
+      iconBg: 'bg-blue-100',
+      border: 'border-blue-200',
+      shadow: 'hover:shadow-blue-200'
+    },
+    cyan: {
+      bg: 'from-cyan-500 to-blue-500',
+      text: 'text-cyan-600',
+      iconBg: 'bg-cyan-100',
+      border: 'border-cyan-200',
+      shadow: 'hover:shadow-cyan-200'
+    },
+    emerald: {
+      bg: 'from-emerald-500 to-green-500',
+      text: 'text-emerald-600',
+      iconBg: 'bg-emerald-100',
+      border: 'border-emerald-200',
+      shadow: 'hover:shadow-emerald-200'
+    },
+    red: {
+      bg: 'from-red-500 to-rose-500',
+      text: 'text-red-600',
+      iconBg: 'bg-red-100',
+      border: 'border-red-200',
+      shadow: 'hover:shadow-red-200'
+    },
+    orange: {
+      bg: 'from-orange-500 to-amber-500',
+      text: 'text-orange-600',
+      iconBg: 'bg-orange-100',
+      border: 'border-orange-200',
+      shadow: 'hover:shadow-orange-200'
+    }
+  };
+
+  const colors = colorClasses[color] || colorClasses.blue;
+
+  return (
+    <div 
+      className={`bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 hover:shadow-xl transition-all duration-300 border-2 ${colors.border} ${colors.shadow} hover:scale-105 hover:-translate-y-1 animate-fade-in group ${pulse ? 'animate-pulse-glow' : ''}`}
+      style={{ animationDelay: delay }}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-1">{title}</p>
+          <p className={`text-4xl font-bold ${colors.text} transition-all duration-300 group-hover:scale-110 inline-block`}>
+            {value}
+          </p>
+          {subtitle && (
+            <p className="text-xs text-gray-500 mt-1 font-medium">{subtitle}</p>
+          )}
+        </div>
+        <div className={`${colors.iconBg} p-4 rounded-xl shadow-md group-hover:shadow-lg transition-all duration-300 group-hover:scale-110 relative overflow-hidden`}>
+          <div className={`absolute inset-0 bg-gradient-to-br ${colors.bg} opacity-0 group-hover:opacity-20 transition-opacity duration-300`}></div>
+          <Icon className={`w-7 h-7 ${colors.text} relative z-10`} />
+        </div>
+      </div>
     </div>
   );
 };
@@ -556,24 +725,29 @@ const ListView = () => {
 const FilterDropdown = ({ label, icon: Icon, options, value, onValueChange }) => (
   <DropdownMenu>
     <DropdownMenuTrigger asChild>
-      <Button variant="outline" className="flex items-center gap-2 hover:bg-gray-50 transition-colors">
-        {Icon && <Icon size={14} className="text-gray-500" />}
-        <span className="text-gray-700">{label}:</span>
-        <span className="font-semibold capitalize text-blue-600">
-          {value === 'all' ? 'All' : value.replace('-', ' ')}
+      <Button variant="outline" className="flex items-center gap-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 border-2 rounded-xl hover:border-blue-300 group">
+        {Icon && <Icon size={16} className="text-gray-500 group-hover:text-blue-600 transition-colors" />}
+        <span className="text-gray-700 font-medium">{label}:</span>
+        <span className="font-bold capitalize bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+          {value === 'all' ? options[0].label : options.find(o => o.value === value)?.label}
         </span>
-        <ChevronsUpDown size={14} className="text-gray-400" />
+        <ChevronsUpDown size={16} className="text-gray-400 group-hover:text-blue-500 transition-colors" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" className="w-48">
-      {options.map(option => (
-        <DropdownMenuItem 
-          key={option.value} 
-          onSelect={() => onValueChange(option.value)}
-          className={value === option.value ? 'bg-blue-50 text-blue-700 font-semibold' : ''}
-        >
-          {option.label}
-        </DropdownMenuItem>
+    <DropdownMenuContent align="end" className="w-52 bg-white/95 backdrop-blur-xl border-2 rounded-xl shadow-xl">
+      {options.map((option, index) => (
+        <React.Fragment key={option.value}>
+          <DropdownMenuItem 
+            onSelect={() => onValueChange(option.value)}
+            className={`${value === option.value ? 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 font-bold' : 'hover:bg-gray-50'} cursor-pointer transition-all duration-200 rounded-lg mx-1 my-0.5`}
+          >
+            <div className="flex items-center gap-2 w-full">
+              {value === option.value && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              <span className={value === option.value ? '' : 'ml-6'}>{option.label}</span>
+            </div>
+          </DropdownMenuItem>
+          {index === 0 && <DropdownMenuSeparator className="my-1" />}
+        </React.Fragment>
       ))}
     </DropdownMenuContent>
   </DropdownMenu>
@@ -581,19 +755,21 @@ const FilterDropdown = ({ label, icon: Icon, options, value, onValueChange }) =>
 
 const SortableHeader = ({ title, sortKey, sorting, onSort, icon: Icon }) => (
   <TableHead 
-    className="cursor-pointer select-none hover:bg-gray-100 transition-colors group"
+    className="cursor-pointer select-none hover:bg-gradient-to-r hover:from-blue-100/50 hover:to-indigo-100/50 transition-all duration-200 group"
     onClick={() => onSort(sortKey)}
   >
-    <div className="flex items-center gap-2 font-semibold text-gray-700">
-      {Icon && <Icon className="w-4 h-4 text-gray-500" />}
+    <div className="flex items-center gap-2 font-bold text-gray-700 group-hover:text-blue-700 transition-colors">
+      {Icon && <Icon className="w-4 h-4 text-gray-500 group-hover:text-blue-600 transition-colors" />}
       {title}
       {sorting.key === sortKey ? (
-        <ArrowUpDown 
-          size={14} 
-          className={`transition-transform text-blue-600 ${sorting.order === 'desc' ? 'rotate-180' : ''}`} 
-        />
+        <div className="p-1 bg-blue-100 rounded-lg">
+          <ArrowUpDown 
+            size={14} 
+            className={`transition-all duration-300 text-blue-600 ${sorting.order === 'desc' ? 'rotate-180' : ''}`} 
+          />
+        </div>
       ) : (
-        <ChevronsUpDown size={14} className="text-gray-300 group-hover:text-gray-500 transition-colors" />
+        <ChevronsUpDown size={14} className="text-gray-300 group-hover:text-blue-400 transition-colors" />
       )}
     </div>
   </TableHead>

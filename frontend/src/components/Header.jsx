@@ -62,122 +62,15 @@ const Header = ({ boardName }) => {
   const isActive = (path) => location.pathname === path;
   const isAdminOrManager = user && (user.role === 'admin' || user.role === 'manager');
 
+  // Show department selector only on specific pages
+  const shouldShowDepartmentSelector = ['/list-view', '/calendar', '/analytics'].includes(location.pathname);
+
   return (
     <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40">
       <div className="px-6 py-3">
         <div className="flex items-center justify-between gap-4">
           {/* Left Section */}
           <div className="flex items-center gap-4 flex-1">
-            {/* Department & Team Selectors */}
-            <div className="flex items-center gap-2">
-              {departments.length > 0 && (
-                <div ref={deptRef} className="relative">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setShowDepartmentSelector(!showDepartmentSelector)}
-                    className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 rounded-lg text-sm font-medium transition-all border border-blue-200"
-                  >
-                    <Building2 size={16} className="text-blue-600" />
-                    <span className="text-gray-700">{currentDepartment?.name || 'Department'}</span>
-                    <ChevronDown size={14} className="text-gray-500" />
-                  </motion.button>
-                  
-                  <AnimatePresence>
-                    {showDepartmentSelector && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden"
-                      >
-                        <div className="p-2 bg-gray-50 border-b border-gray-200">
-                          <p className="text-xs font-semibold text-gray-600 px-2">SELECT DEPARTMENT</p>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto">
-                          {departments.map(dept => (
-                            <button
-                              key={dept._id}
-                              onClick={() => {
-                                setCurrentDepartment(dept);
-                                setShowDepartmentSelector(false);
-                              }}
-                              className={`w-full text-left px-4 py-3 hover:bg-blue-50 text-sm transition-colors flex items-center gap-2 ${
-                                currentDepartment?._id === dept._id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
-                              }`}
-                            >
-                              <Building2 size={16} />
-                              {dept.name}
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-
-              {teams.length > 0 && (
-                <div ref={teamRef} className="relative">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setShowTeamSelector(!showTeamSelector)}
-                    className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 rounded-lg text-sm font-medium transition-all border border-purple-200"
-                  >
-                    <Users size={16} className="text-purple-600" />
-                    <span className="text-gray-700">{currentTeam?.name || 'Team'}</span>
-                    <ChevronDown size={14} className="text-gray-500" />
-                  </motion.button>
-                  
-                  <AnimatePresence>
-                    {showTeamSelector && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden"
-                      >
-                        <div className="p-2 bg-gray-50 border-b border-gray-200">
-                          <p className="text-xs font-semibold text-gray-600 px-2">SELECT TEAM</p>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto">
-                          {teams.map(team => (
-                            <button
-                              key={team._id}
-                              onClick={() => {
-                                setCurrentTeam(team);
-                                setShowTeamSelector(false);
-                              }}
-                              className={`w-full text-left px-4 py-3 hover:bg-purple-50 text-sm transition-colors flex items-center gap-2 ${
-                                currentTeam?._id === team._id ? 'bg-purple-50 text-purple-700 font-medium' : 'text-gray-700'
-                              }`}
-                            >
-                              <Users size={16} />
-                              {team.name}
-                            </button>
-                          ))}
-                          {isAdminOrManager && (
-                            <div className="border-t border-gray-200">
-                              <button
-                                onClick={() => {
-                                  navigate('/teams');
-                                  setShowTeamSelector(false);
-                                }}
-                                className="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-blue-600 font-medium"
-                              >
-                                + Manage Teams
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-            </div>
-
             {/* View Navigation */}
             <nav className="hidden lg:flex items-center gap-1 bg-gray-100 rounded-lg p-1">
               {navItems.map(({ path, icon: Icon, label }) => (
@@ -197,6 +90,115 @@ const Header = ({ boardName }) => {
                 </motion.button>
               ))}
             </nav>
+
+            {/* Department Selector */}
+            {departments.length > 0 && shouldShowDepartmentSelector && (
+              <div ref={deptRef} className="relative">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowDepartmentSelector(!showDepartmentSelector)}
+                  className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 rounded-lg text-sm font-medium transition-all border border-blue-200"
+                >
+                  <Building2 size={16} className="text-blue-600" />
+                  <span className="text-gray-700">{currentDepartment?.name || 'Department'}</span>
+                  <ChevronDown size={14} className="text-gray-500" />
+                </motion.button>
+
+                <AnimatePresence>
+                  {showDepartmentSelector && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden"
+                    >
+                      <div className="p-2 bg-gray-50 border-b border-gray-200">
+                        <p className="text-xs font-semibold text-gray-600 px-2">SELECT DEPARTMENT</p>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {departments.map(dept => (
+                          <button
+                            key={dept._id}
+                            onClick={() => {
+                              setCurrentDepartment(dept);
+                              setShowDepartmentSelector(false);
+                            }}
+                            className={`w-full text-left px-4 py-3 hover:bg-blue-50 text-sm transition-colors flex items-center gap-2 ${
+                              currentDepartment?._id === dept._id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                            }`}
+                          >
+                            <Building2 size={16} />
+                            {dept.name}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Team Selector */}
+            {teams.length > 0 && (
+              <div ref={teamRef} className="relative">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setShowTeamSelector(!showTeamSelector)}
+                  className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 rounded-lg text-sm font-medium transition-all border border-purple-200"
+                >
+                  <Users size={16} className="text-purple-600" />
+                  <span className="text-gray-700">{currentTeam?.name || 'Team'}</span>
+                  <ChevronDown size={14} className="text-gray-500" />
+                </motion.button>
+
+                <AnimatePresence>
+                  {showTeamSelector && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden"
+                    >
+                      {/* <div className="p-2 bg-gray-50 border-b border-gray-200">
+                        <p className="text-xs font-semibold text-gray-600 px-2">SELECT TEAM</p>
+                      </div> */}
+                      {/* <div className="max-h-64 overflow-y-auto">
+                        {teams.map(team => (
+                          <button
+                            key={team._id}
+                            onClick={() => {
+                              setCurrentTeam(team);
+                              setShowTeamSelector(false);
+                            }}
+                            className={`w-full text-left px-4 py-3 hover:bg-purple-50 text-sm transition-colors flex items-center gap-2 ${
+                              currentTeam?._id === team._id ? 'bg-purple-50 text-purple-700 font-medium' : 'text-gray-700'
+                            }`}
+                          >
+                            <Users size={16} />
+                            {team.name}
+                          </button>
+                        ))}
+                        {isAdminOrManager && (
+                          <div className="border-t border-gray-200">
+                            <button
+                              onClick={() => {
+                                navigate('/teams');
+                                setShowTeamSelector(false);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-blue-600 font-medium"
+                            >
+                              + Manage Teams
+                            </button>
+                          </div>
+                        )}
+                      </div> */}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
 
           {/* Right Section */}

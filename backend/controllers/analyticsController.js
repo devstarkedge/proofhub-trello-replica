@@ -345,22 +345,10 @@ export const getDashboardData = asyncHandler(async (req, res, next) => {
           }
         },
         dueDate: {
-          $ifNull: [
-            {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: {
-                  $max: {
-                    $filter: {
-                      input: '$cards.dueDate',
-                      cond: { $ne: ['$$this', null] }
-                    }
-                  }
-                }
-              }
-            },
-            null
-          ]
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$dueDate'
+          }
         }
       }
     },

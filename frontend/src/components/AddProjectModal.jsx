@@ -33,13 +33,19 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
     visibility: "public",
   })
   const [employees, setEmployees] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(false)
+  const [categoryLoading, setCategoryLoading] = useState(false)
   const [errors, setErrors] = useState({})
   const [isSaving, setIsSaving] = useState(false)
+  const [showAddCategory, setShowAddCategory] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [newCategoryDescription, setNewCategoryDescription] = useState("")
 
   useEffect(() => {
     if (isOpen) {
       fetchEmployees()
+      fetchCategories()
     }
   }, [isOpen, departmentId])
 
@@ -55,6 +61,58 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
     } catch (error) {
       console.error("Error fetching employees:", error)
       toast.error("Failed to load employees")
+    }
+  }
+
+  const fetchCategories = async () => {
+    if (!departmentId) return;
+    setCategoryLoading(true)
+    try {
+      const response = await Database.getCategoriesByDepartment(departmentId);
+      if (response.success) {
+        setCategories(response.data)
+      } else {
+        throw new Error(response.message || "Failed to load categories")
+      }
+    } catch (error) {
+      console.error("Error fetching categories:", error)
+      toast.error("Failed to load categories")
+    } finally {
+      setCategoryLoading(false)
+    }
+  }
+
+  const handleCategoryChange = (value) => {
+    if (value === "add-new") {
+      setShowAddCategory(true)
+    } else {
+      setFormData((prev) => ({ ...prev, projectCategory: value }))
+    }
+  }
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) {
+      toast.error("Category name is required")
+      return
+    }
+
+    try {
+      const response = await Database.createCategory(newCategoryName.trim(), newCategoryDescription.trim(), departmentId)
+
+      if (response.success) {
+        const newCategory = response.data
+        setCategories((prev) => [...prev, newCategory])
+        setFormData((prev) => ({ ...prev, projectCategory: newCategory.name }))
+        setShowAddCategory(false)
+        setNewCategoryName("")
+        setNewCategoryDescription("")
+        toast.success("Category created successfully!")
+      } else {
+        throw new Error(response.message || "Failed to create category")
+      }
+    } catch (error) {
+      console.error("Error creating category:", error)
+      toast.error(error.message || "Failed to create category")
     }
   }
 
@@ -607,14 +665,93 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
                   <Tag className="h-4 w-4 text-pink-600" />
                   Project Category
                 </label>
-                <input
-                  type="text"
-                  name="projectCategory"
-                  value={formData.projectCategory}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
-                  placeholder="e.g., Web Development, Mobile App, Design"
-                />
+                <div className="space-y-3">
+                  <Select onValueChange={handleCategoryChange} value={formData.projectCategory}>
+                    <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors">
+                      <SelectValue placeholder="Select or add a category..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((category) => (
+                        <SelectItem key={category._id} value={category.name}>
+                          <div className="flex items-center gap-2">
+                            <div className="h-6 w-6 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center text-white text-xs font-semibold">
+                              {category.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-medium">{category.name}</div>
+                              {category.description && (
+                                <div className="text-xs text-gray-500">{category.description}</div>
+                              )}
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="add-new">
+                        <div className="flex items-center gap-2">
+                          <Plus className="h-4 w-4 text-blue-600" />
+                          <span className="text-blue-600 font-medium">Add New Category</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Add New Category Form */}
+                  <AnimatePresence>
+                    {showAddCategory && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="bg-gradient-to-br from-pink-50 to-purple-50 p-4 rounded-xl border border-pink-200"
+                      >
+                        <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                          <Plus className="h-4 w-4 text-pink-600" />
+                          Add New Category
+                        </h4>
+                        <div className="space-y-3">
+                          <input
+                            type="text"
+                            placeholder="Category name"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
+                          />
+                          <textarea
+                            placeholder="Category description (optional)"
+                            value={newCategoryDescription}
+                            onChange={(e) => setNewCategoryDescription(e.target.value)}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all resize-none"
+                          />
+                          <div className="flex gap-2">
+                            <motion.button
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              type="button"
+                              onClick={handleCreateCategory}
+                              className="flex-1 px-4 py-2 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-lg hover:from-pink-700 hover:to-purple-700 font-medium transition-all"
+                            >
+                              Create Category
+                            </motion.button>
+                            <motion.button
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              type="button"
+                              onClick={() => {
+                                setShowAddCategory(false)
+                                setNewCategoryName("")
+                                setNewCategoryDescription("")
+                              }}
+                              className="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-all"
+                            >
+                              Cancel
+                            </motion.button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </motion.div>
             </form>
           </div>

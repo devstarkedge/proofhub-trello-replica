@@ -322,8 +322,8 @@ const HRPanel = () => {
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white transition-all duration-200"
                   >
                     <option value="">All Departments</option>
-                    {departments.map(dept => (
-                      <option key={dept._id} value={dept._id}>{dept.name}</option>
+                    {departments.map((dept, index) => (
+                      <option key={`${dept._id}-${index}`} value={dept._id}>{dept.name}</option>
                     ))}
                   </select>
                   <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -388,8 +388,8 @@ const HRPanel = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         {user.department && user.department.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            {user.department.map(dept => (
-                              <span key={dept._id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-medium">
+                            {user.department.map((dept, index) => (
+                              <span key={`${dept._id}-${index}`} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-medium">
                                 <Building2 className="w-3 h-3" />
                                 {dept.name}
                               </span>
@@ -491,9 +491,9 @@ const HRPanel = () => {
                         
                         {showDepartmentDropdown && getAvailableDepartments().length > 0 && (
                           <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                            {getAvailableDepartments().map(dept => (
+                            {getAvailableDepartments().map((dept, index) => (
                               <button
-                                key={dept._id}
+                                key={`${dept._id}-${index}`}
                                 onClick={() => {
                                   toggleDepartment(dept._id);
                                   setShowDepartmentDropdown(false);
@@ -516,9 +516,9 @@ const HRPanel = () => {
                           Selected Departments ({selectedDepartments.length})
                         </label>
                         <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 min-h-[60px]">
-                          {getSelectedDepartmentObjects().map(dept => (
+                          {getSelectedDepartmentObjects().map((dept, index) => (
                             <span
-                              key={dept._id}
+                              key={`${dept._id}-${index}`}
                               className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium shadow-sm hover:bg-blue-700 transition-colors duration-200 animate-scale-in"
                             >
                               <Building2 className="w-4 h-4" />

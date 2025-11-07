@@ -57,7 +57,8 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
       { path: "assignees", select: "name email avatar" },
       { path: "members", select: "name email avatar" },
       { path: "createdBy", select: "name email avatar" },
-      { path: "list", select: "title" }
+      { path: "list", select: "title" },
+      { path: "loggedTime.user", select: "name email avatar" }
     ]
   };
 
@@ -139,6 +140,41 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
       }
     },
     {
+      $lookup: {
+        from: 'users',
+        localField: 'loggedTime.user',
+        foreignField: '_id',
+        as: 'loggedTimeUsers'
+      }
+    },
+    {
+      $addFields: {
+        loggedTime: {
+          $map: {
+            input: '$loggedTime',
+            as: 'log',
+            in: {
+              hours: '$$log.hours',
+              minutes: '$$log.minutes',
+              description: '$$log.description',
+              date: '$$log.date',
+              user: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: '$loggedTimeUsers',
+                      cond: { $eq: ['$$this._id', '$$log.user'] }
+                    }
+                  },
+                  0
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       $unwind: {
         path: '$list',
         preserveNullAndEmptyArrays: true
@@ -163,6 +199,17 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
         createdBy: { name: 1, email: 1, avatar: 1 },
         list: { title: 1 },
         board: { name: 1 },
+        loggedTime: 1,
+        totalLoggedTime: {
+          $reduce: {
+            input: '$loggedTime',
+            initialValue: { hours: 0, minutes: 0 },
+            in: {
+              hours: { $add: ['$$value.hours', '$$this.hours'] },
+              minutes: { $add: ['$$value.minutes', '$$this.minutes'] }
+            }
+          }
+        },
         updatedAt: 1
       }
     },
@@ -221,7 +268,8 @@ export const getCard = asyncHandler(async (req, res, next) => {
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
     .populate("list", "title")
-    .populate("board", "name");
+    .populate("board", "name")
+    .populate("loggedTime.user", "name email avatar");
 
   if (!card) {
     return next(new ErrorResponse("Card not found", 404));

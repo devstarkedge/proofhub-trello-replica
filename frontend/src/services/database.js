@@ -912,6 +912,38 @@ class DatabaseService {
   async getDashboardDataFresh() {
     return await this.getDashboardData();
   }
+
+  // Category operations
+  async getCategoriesByDepartment(departmentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/categories/department/${departmentId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async createCategory(name, description, departmentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/categories`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name, description, department: departmentId })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to create category');
+    }
+    return await res.json();
+  }
 }
 
 // Create singleton instance

@@ -284,8 +284,8 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Board not found", 404));
   }
 
-  // Check ownership
-  if (board.owner.toString() !== req.user.id && req.user.role !== "admin") {
+  // Check ownership - allow admin and manager roles to update
+  if (board.owner.toString() !== req.user.id && req.user.role !== "admin" && req.user.role !== "manager") {
     return next(new ErrorResponse("Not authorized to update this board", 403));
   }
 

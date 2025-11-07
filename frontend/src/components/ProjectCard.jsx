@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, memo } from 'react';
+import React, { useState, useRef, useEffect, memo, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -8,23 +8,28 @@ import {
   Activity, Layers, Sparkles, ArrowRight,
   Briefcase, MapPin, Zap, Shield, Crown
 } from 'lucide-react';
+import AuthContext from '../context/AuthContext';
 
-const ProjectCard = ({ 
-  project, 
-  title, 
-  subtitle, 
-  color, 
-  image, 
-  deptId, 
-  projectId, 
-  onEdit, 
-  onDelete, 
-  onView 
+const ProjectCard = ({
+  project,
+  title,
+  subtitle,
+  color,
+  image,
+  deptId,
+  projectId,
+  onEdit,
+  onDelete,
+  onView
 }) => {
   const navigate = useNavigate();
+  const { user } = useContext(AuthContext);
   const [showMenu, setShowMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const menuRef = useRef(null);
+
+  // Check if user can edit/delete projects (admin or manager only)
+  const canEditProject = user && (user.role === 'admin' || user.role === 'manager');
 
   // Handle both formats: project object or individual props
   const projectData = project || {
@@ -224,149 +229,151 @@ const ProjectCard = ({
         )}
 
         {/* Actions Menu */}
-        <div
-          ref={menuRef}
-          className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 transition-all duration-500 z-40"
-        >
-          <motion.button
-            whileHover={{
-              scale: 1.15,
-              rotate: 180,
-              transition: { duration: 0.3, ease: "easeInOut" }
-            }}
-            whileTap={{ scale: 0.95 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu(!showMenu);
-            }}
-            className="p-2.5 bg-white/90 backdrop-blur-md rounded-2xl hover:bg-white transition-all duration-300 shadow-xl border border-white/20 hover:border-white/40"
+        {canEditProject && (
+          <div
+            ref={menuRef}
+            className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 transition-all duration-500 z-40"
           >
-            <motion.div
-              animate={{ rotate: showMenu ? 90 : 0 }}
-              transition={{ duration: 0.2 }}
+            <motion.button
+              whileHover={{
+                scale: 1.15,
+                rotate: 180,
+                transition: { duration: 0.3, ease: "easeInOut" }
+              }}
+              whileTap={{ scale: 0.95 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
+              className="p-2.5 bg-white/90 backdrop-blur-md rounded-2xl hover:bg-white transition-all duration-300 shadow-xl border border-white/20 hover:border-white/40"
             >
-              <MoreVertical size={20} className="text-gray-700" />
-            </motion.div>
-          </motion.button>
-
-          <AnimatePresence>
-            {showMenu && (
               <motion.div
-                initial={{ opacity: 0, y: 20, scale: 0.9, rotateX: -15 }}
-                animate={{ opacity: 1, y: 0, scale: 1, rotateX: 0 }}
-                exit={{ opacity: 0, y: 20, scale: 0.9, rotateX: -15 }}
-                transition={{
-                  duration: 0.3,
-                  ease: "easeOut",
-                  type: "spring",
-                  stiffness: 300,
-                  damping: 25
-                }}
-                className="absolute top-0 left-full ml-2 mt-3 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl py-2 z-[9999] min-w-[160px] border border-white/20 overflow-hidden"
+                animate={{ rotate: showMenu ? 90 : 0 }}
+                transition={{ duration: 0.2 }}
               >
-                <motion.button
-                  whileHover={{
-                    scale: 1.02,
-                    backgroundColor: "rgba(59, 130, 246, 0.1)",
-                    x: 4
-                  }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenu(false);
-                    onView && onView();
-                  }}
-                  className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-gray-700 hover:text-blue-600 transition-all duration-200 font-medium group"
-                >
-                  <motion.div
-                    whileHover={{ rotate: 360 }}
-                    transition={{ duration: 0.5 }}
-                  >
-                    <Eye size={18} className="group-hover:text-blue-500" />
-                  </motion.div>
-                  <span>View Details</span>
-                  <motion.div
-                    className="ml-auto opacity-0 group-hover:opacity-100"
-                    initial={{ x: -10 }}
-                    animate={{ x: 0 }}
-                  >
-                    <ArrowRight size={14} />
-                  </motion.div>
-                </motion.button>
-
-                <motion.button
-                  whileHover={{
-                    scale: 1.02,
-                    backgroundColor: "rgba(99, 102, 241, 0.1)",
-                    x: 4
-                  }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenu(false);
-                    onEdit && onEdit();
-                  }}
-                  className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-gray-700 hover:text-indigo-600 transition-all duration-200 font-medium group"
-                >
-                  <motion.div
-                    whileHover={{ rotate: 15 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <Edit size={18} className="group-hover:text-indigo-500" />
-                  </motion.div>
-                  <span>Edit Project</span>
-                  <motion.div
-                    className="ml-auto opacity-0 group-hover:opacity-100"
-                    initial={{ x: -10 }}
-                    animate={{ x: 0 }}
-                  >
-                    <Zap size={14} />
-                  </motion.div>
-                </motion.button>
-
-                <motion.div
-                  className="border-t border-gray-200/50 my-2 mx-3"
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: 1 }}
-                  transition={{ delay: 0.1 }}
-                />
-
-                <motion.button
-                  whileHover={{
-                    scale: 1.02,
-                    backgroundColor: "rgba(239, 68, 68, 0.1)",
-                    x: 4
-                  }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenu(false);
-                    onDelete && onDelete();
-                  }}
-                  className="w-full px-2 py-1 text-left text-xs flex items-center gap-2 text-red-600 hover:text-red-700 transition-all duration-200 font-medium group"
-                >
-                  <motion.div
-                    whileHover={{
-                      rotate: [0, -10, 10, 0],
-                      scale: 1.1
-                    }}
-                    transition={{ duration: 0.4 }}
-                  >
-                    <Trash2 size={18} className="group-hover:text-red-500" />
-                  </motion.div>
-                  <span>Delete Project</span>
-                  <motion.div
-                    className="ml-auto opacity-0 group-hover:opacity-100"
-                    initial={{ x: -10 }}
-                    animate={{ x: 0 }}
-                  >
-                    <AlertCircle size={14} />
-                  </motion.div>
-                </motion.button>
+                <MoreVertical size={20} className="text-gray-700" />
               </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+            </motion.button>
+
+            <AnimatePresence>
+              {showMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20, scale: 0.9, rotateX: -15 }}
+                  animate={{ opacity: 1, y: 0, scale: 1, rotateX: 0 }}
+                  exit={{ opacity: 0, y: 20, scale: 0.9, rotateX: -15 }}
+                  transition={{
+                    duration: 0.3,
+                    ease: "easeOut",
+                    type: "spring",
+                    stiffness: 300,
+                    damping: 25
+                  }}
+                  className="absolute top-0 left-full ml-2 mt-3 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl py-2 z-[9999] min-w-[160px] border border-white/20 overflow-hidden"
+                >
+                  <motion.button
+                    whileHover={{
+                      scale: 1.02,
+                      backgroundColor: "rgba(59, 130, 246, 0.1)",
+                      x: 4
+                    }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      onView && onView();
+                    }}
+                    className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-gray-700 hover:text-blue-600 transition-all duration-200 font-medium group"
+                  >
+                    <motion.div
+                      whileHover={{ rotate: 360 }}
+                      transition={{ duration: 0.5 }}
+                    >
+                      <Eye size={18} className="group-hover:text-blue-500" />
+                    </motion.div>
+                    <span>View Details</span>
+                    <motion.div
+                      className="ml-auto opacity-0 group-hover:opacity-100"
+                      initial={{ x: -10 }}
+                      animate={{ x: 0 }}
+                    >
+                      <ArrowRight size={14} />
+                    </motion.div>
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{
+                      scale: 1.02,
+                      backgroundColor: "rgba(99, 102, 241, 0.1)",
+                      x: 4
+                    }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      onEdit && onEdit();
+                    }}
+                    className="w-full px-4 py-2 text-left text-xs flex items-center gap-3 text-gray-700 hover:text-indigo-600 transition-all duration-200 font-medium group"
+                  >
+                    <motion.div
+                      whileHover={{ rotate: 15 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <Edit size={18} className="group-hover:text-indigo-500" />
+                    </motion.div>
+                    <span>Edit Project</span>
+                    <motion.div
+                      className="ml-auto opacity-0 group-hover:opacity-100"
+                      initial={{ x: -10 }}
+                      animate={{ x: 0 }}
+                    >
+                      <Zap size={14} />
+                    </motion.div>
+                  </motion.button>
+
+                  <motion.div
+                    className="border-t border-gray-200/50 my-2 mx-3"
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ delay: 0.1 }}
+                  />
+
+                  <motion.button
+                    whileHover={{
+                      scale: 1.02,
+                      backgroundColor: "rgba(239, 68, 68, 0.1)",
+                      x: 4
+                    }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      onDelete && onDelete();
+                    }}
+                    className="w-full px-2 py-1 text-left text-xs flex items-center gap-2 text-red-600 hover:text-red-700 transition-all duration-200 font-medium group"
+                  >
+                    <motion.div
+                      whileHover={{
+                        rotate: [0, -10, 10, 0],
+                        scale: 1.1
+                      }}
+                      transition={{ duration: 0.4 }}
+                    >
+                      <Trash2 size={18} className="group-hover:text-red-500" />
+                    </motion.div>
+                    <span>Delete Project</span>
+                    <motion.div
+                      className="ml-auto opacity-0 group-hover:opacity-100"
+                      initial={{ x: -10 }}
+                      animate={{ x: 0 }}
+                    >
+                      <AlertCircle size={14} />
+                    </motion.div>
+                  </motion.button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* Hover Overlay Effect */}
         <motion.div
@@ -449,7 +456,7 @@ const ProjectCard = ({
               >
                 <Calendar size={14} />
               </motion.div>
-              <span>{new Date(projectData.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              <span>Due Date: {new Date(projectData.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
             </motion.div>
           )}
 

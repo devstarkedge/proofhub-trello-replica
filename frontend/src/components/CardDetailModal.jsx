@@ -1755,9 +1755,9 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
 
                 {/* Actions section */}
                 <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                  <h4 className="text-xs font-semibold text-red-700 mb-3 uppercase tracking-wider">
+                  {/* <h4 className="text-xs font-semibold text-red-700 mb-3 uppercase tracking-wider">
                     Danger Zone
-                  </h4>
+                  </h4> */}
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}

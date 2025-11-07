@@ -19,7 +19,7 @@ const badgeVariants = cva(
 );
 
 const Badge = ({ className, variant, ...props }) => {
-  return <div className={badgeVariants({ variant, className })} {...props} />;
+  return <span className={badgeVariants({ variant, className })} {...props} />;
 };
 
 export { Badge, badgeVariants };

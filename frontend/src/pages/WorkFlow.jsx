@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2 } from 'lucide-react';
+import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Check, X } from 'lucide-react';
 import Database from '../services/database';
 import Header from '../components/Header';
 import Board from '../components/Board';
@@ -26,6 +26,11 @@ const WorkFlow = () => {
   const [priorityFilter, setPriorityFilter] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [tempName, setTempName] = useState('');
+  const [tempDescription, setTempDescription] = useState('');
+  const [updatingProject, setUpdatingProject] = useState(false);
 
   useEffect(() => {
     if (deptId && projectId && !teamLoading) {
@@ -294,6 +299,73 @@ const WorkFlow = () => {
       loadData(); // Revert on error
     }
   };
+
+  const handleStartEditingName = () => {
+    if (user && (user.role === 'admin' || user.role === 'manager')) {
+      setTempName(board.name);
+      setEditingName(true);
+    }
+  };
+
+  const handleStartEditingDescription = () => {
+    if (user && (user.role === 'admin' || user.role === 'manager')) {
+      setTempDescription(board.description || '');
+      setEditingDescription(true);
+    }
+  };
+
+  const handleSaveName = async () => {
+    if (tempName.trim() && tempName !== board.name) {
+      setUpdatingProject(true);
+      try {
+        const response = await Database.updateProject(board._id, { name: tempName.trim() });
+        if (response.success) {
+          setBoard(prev => ({ ...prev, name: tempName.trim() }));
+        } else {
+          throw new Error(response.message || 'Failed to update project name');
+        }
+      } catch (error) {
+        console.error('Error updating project name:', error);
+        alert('Failed to update project name. Please try again.');
+      } finally {
+        setUpdatingProject(false);
+      }
+    }
+    setEditingName(false);
+  };
+
+  const handleSaveDescription = async () => {
+    if (tempDescription !== board.description) {
+      setUpdatingProject(true);
+      try {
+        const response = await Database.updateProject(board._id, { description: tempDescription });
+        if (response.success) {
+          setBoard(prev => ({ ...prev, description: tempDescription }));
+        } else {
+          throw new Error(response.message || 'Failed to update project description');
+        }
+      } catch (error) {
+        console.error('Error updating project description:', error);
+        alert('Failed to update project description. Please try again.');
+      } finally {
+        setUpdatingProject(false);
+      }
+    }
+    setEditingDescription(false);
+  };
+
+  const handleCancelEditing = () => {
+    setEditingName(false);
+    setEditingDescription(false);
+  };
+
+  const handleKeyPress = (e, saveFunction) => {
+    if (e.key === 'Enter') {
+      saveFunction();
+    } else if (e.key === 'Escape') {
+      handleCancelEditing();
+    }
+  };
   
   if (loading || teamLoading) {
     return (
@@ -381,9 +453,98 @@ const WorkFlow = () => {
               >
                 <ArrowLeft size={24} />
               </motion.button>
-              <div>
-                <h1 className="text-2xl font-bold text-white">{board.name}</h1>
-                <p className="text-white/70 text-sm mt-1">{board.description || 'Project Board'}</p>
+              <div className="flex-1">
+                {editingName ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      onKeyDown={(e) => handleKeyPress(e, handleSaveName)}
+                      className="text-2xl font-bold bg-white/20 border border-white/30 rounded px-2 py-1 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50"
+                      placeholder="Project name"
+                      disabled={updatingProject}
+                    />
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={handleSaveName}
+                      disabled={updatingProject}
+                      className="p-1 hover:bg-white/20 rounded text-white disabled:opacity-50"
+                    >
+                      <Check size={16} />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={handleCancelEditing}
+                      disabled={updatingProject}
+                      className="p-1 hover:bg-white/20 rounded text-white disabled:opacity-50"
+                    >
+                      <X size={16} />
+                    </motion.button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-white">{board.name}</h1>
+                    {(user?.role === 'admin' || user?.role === 'manager') && (
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={handleStartEditingName}
+                        className="p-1 hover:bg-white/20 rounded text-white/70 hover:text-white"
+                      >
+                        <Pencil size={16} />
+                      </motion.button>
+                    )}
+                  </div>
+                )}
+
+                {editingDescription ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="text"
+                      value={tempDescription}
+                      onChange={(e) => setTempDescription(e.target.value)}
+                      onKeyDown={(e) => handleKeyPress(e, handleSaveDescription)}
+                      className="text-sm bg-white/20 border border-white/30 rounded px-2 py-1 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50"
+                      placeholder="Project description"
+                      disabled={updatingProject}
+                    />
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={handleSaveDescription}
+                      disabled={updatingProject}
+                      className="p-1 hover:bg-white/20 rounded text-white disabled:opacity-50"
+                    >
+                      <Check size={16} />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={handleCancelEditing}
+                      disabled={updatingProject}
+                      className="p-1 hover:bg-white/20 rounded text-white disabled:opacity-50"
+                    >
+                      <X size={16} />
+                    </motion.button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-white/70 text-sm">{board.description || 'Project Board'}</p>
+                    {(user?.role === 'admin' || user?.role === 'manager') && (
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={handleStartEditingDescription}
+                        className="p-1 hover:bg-white/20 rounded text-white/70 hover:text-white"
+                      >
+                        <Pencil size={16} />
+                      </motion.button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

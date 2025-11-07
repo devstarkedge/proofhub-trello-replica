@@ -6,23 +6,21 @@ import StatsGrid from '../components/StatsGrid';
 import AdditionalMetrics from '../components/AdditionalMetrics';
 import OverdueTasksList from '../components/OverdueTasksList';
 import Loading from '../components/Loading';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const ChartsSection = lazy(() => import('../components/ChartsSection'));
 const TimeAnalyticsChart = lazy(() => import('../components/TimeAnalyticsChart'));
 const DepartmentProjectsChart = lazy(() => import('../components/DepartmentProjectsChart'));
 
-const useAnalytics = (initialDepartmentId) => {
-  const { departments } = useContext(TeamContext);
+const useAnalytics = () => {
+  const { currentDepartment } = useContext(TeamContext);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedDepartment, setSelectedDepartment] = useState(initialDepartmentId);
 
   useEffect(() => {
     const loadAnalytics = async () => {
       try {
         setLoading(true);
-        const departmentId = selectedDepartment || initialDepartmentId;
+        const departmentId = currentDepartment?._id;
 
         if (departmentId) {
           const response = await Database.getDepartmentAnalytics(departmentId);
@@ -36,14 +34,11 @@ const useAnalytics = (initialDepartmentId) => {
     };
 
     loadAnalytics();
-  }, [selectedDepartment, initialDepartmentId]);
+  }, [currentDepartment]);
 
   return {
     analyticsData,
     loading,
-    selectedDepartment,
-    setSelectedDepartment,
-    departments,
   };
 };
 
@@ -53,10 +48,7 @@ const Analytics = memo(() => {
   const {
     analyticsData,
     loading,
-    selectedDepartment,
-    setSelectedDepartment,
-    departments,
-  } = useAnalytics(currentDepartment?._id || '');
+  } = useAnalytics();
 
   const priorityColors = {
     low: '#10B981',
@@ -131,23 +123,7 @@ const Analytics = memo(() => {
               </p>
             </div>
 
-            {/* Department Selector */}
-            {departments && departments.length > 1 && (
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departments.map(dept => (
-                      <SelectItem key={dept._id} value={dept._id}>
-                        {dept.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+
           </div>
         </div>
 

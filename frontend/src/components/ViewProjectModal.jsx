@@ -145,7 +145,6 @@ const ViewProjectModal = ({ isOpen, onClose, projectId }) => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Project Source</label>
                     <div className="flex items-center gap-2">
-                      <Tag size={16} className="text-gray-500" />
                       <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                         {project.projectSource || 'Direct'}
                       </span>
