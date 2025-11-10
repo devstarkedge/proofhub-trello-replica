@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
-import TeamContext from '../context/TeamContext';
+import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
 import Header from '../components/Header';
 
 const GanttView = () => {
-  const { currentTeam } = useContext(TeamContext);
+  const { currentTeam } = useContext(DepartmentContext);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 

@@ -4,13 +4,14 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import timeGridPlugin from '@fullcalendar/timegrid';
-import { 
-  X, 
-  Calendar, 
-  User, 
-  Clock, 
-  AlertCircle, 
-  FileText, 
+import * as XLSX from 'xlsx';
+import {
+  X,
+  Calendar,
+  User,
+  Clock,
+  AlertCircle,
+  FileText,
   Filter,
   Download,
   RefreshCw,
@@ -20,12 +21,12 @@ import {
   TrendingUp,
   BarChart3
 } from 'lucide-react';
-import TeamContext from '../context/TeamContext';
+import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
 import Header from '../components/Header';
 
 const CalendarView = () => {
-  const { currentDepartment } = useContext(TeamContext);
+  const { currentDepartment } = useContext(DepartmentContext);
   const [events, setEvents] = useState([]);
   const [filteredEvents, setFilteredEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -140,13 +141,115 @@ const CalendarView = () => {
   };
 
   const exportCalendar = () => {
-    const dataStr = JSON.stringify(events, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `calendar-export-${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
+    if (filteredEvents.length === 0) {
+      alert('No tasks to export');
+      return;
+    }
+
+    const exportData = filteredEvents.map(event => ({
+      'Task': event.title || '',
+      'Assignee': event.extendedProps.assignee || '',
+      'Priority': event.extendedProps.priority || '',
+      'Status': event.extendedProps.status || '',
+      'Due Date': event.start
+        ? new Date(event.start).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          })
+        : 'No due date',
+      'Description': event.extendedProps.description || ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+    // Add title row
+    XLSX.utils.sheet_add_aoa(worksheet, [['Calendar Tasks Export']], { origin: 'A1' });
+
+    // Move data down by one row
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = range.e.r; R >= 0; --R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R + 1, c: C });
+        const addr_old = XLSX.utils.encode_cell({ r: R, c: C });
+        if (worksheet[addr_old]) worksheet[addr] = worksheet[addr_old];
+        delete worksheet[addr_old];
+      }
+    }
+
+    // Update range
+    worksheet['!ref'] = XLSX.utils.encode_range({
+      s: { r: 0, c: 0 },
+      e: { r: range.e.r + 1, c: range.e.c }
+    });
+
+    // Set column widths
+    worksheet['!cols'] = [
+      { wch: 40 }, // Task
+      { wch: 25 }, // Assignee
+      { wch: 12 }, // Priority
+      { wch: 15 }, // Status
+      { wch: 15 }, // Due Date
+      { wch: 50 }  // Description
+    ];
+
+    // Style the title
+    const titleCell = worksheet['A1'];
+    if (titleCell) {
+      titleCell.s = {
+        font: { bold: true, sz: 16 },
+        alignment: { horizontal: 'center' },
+        fill: { fgColor: { rgb: 'FFE6F3FF' } }
+      };
+    }
+
+    // Style headers
+    const headers = ['A2', 'B2', 'C2', 'D2', 'E2', 'F2'];
+    headers.forEach(addr => {
+      if (worksheet[addr]) {
+        worksheet[addr].s = {
+          font: { bold: true, color: { rgb: 'FFFFFFFF' } },
+          fill: { fgColor: { rgb: 'FF4F81BD' } },
+          alignment: { horizontal: 'center' },
+          border: {
+            top: { style: 'thin', color: { rgb: 'FF000000' } },
+            bottom: { style: 'thin', color: { rgb: 'FF000000' } },
+            left: { style: 'thin', color: { rgb: 'FF000000' } },
+            right: { style: 'thin', color: { rgb: 'FF000000' } }
+          }
+        };
+      }
+    });
+
+    // Style data cells
+    const dataRange = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = 2; R <= dataRange.e.r; ++R) {
+      for (let C = 0; C <= dataRange.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (worksheet[addr]) {
+          worksheet[addr].s = {
+            border: {
+              top: { style: 'thin', color: { rgb: 'FFD3D3D3' } },
+              bottom: { style: 'thin', color: { rgb: 'FFD3D3D3' } },
+              left: { style: 'thin', color: { rgb: 'FFD3D3D3' } },
+              right: { style: 'thin', color: { rgb: 'FFD3D3D3' } }
+            },
+            alignment: C === 0 || C === 5 ? { horizontal: 'left' } : { horizontal: 'center' }
+          };
+        }
+      }
+    }
+
+    // Merge title cells
+    worksheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Calendar Tasks');
+
+    const fileName = `calendar_tasks_export_${currentDepartment?.name || 'all'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
   };
 
   const uniqueStatuses = [...new Set(events.map(e => e.extendedProps.status))];

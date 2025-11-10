@@ -15,6 +15,13 @@ const Select = ({ children, value, onValueChange, ...props }) => {
     setIsOpen(false);
   };
 
+  let placeholder = 'Select...';
+  React.Children.forEach(children, (child) => {
+    if (child.type === SelectValue) {
+      placeholder = child.props.placeholder || placeholder;
+    }
+  });
+
   return (
     <div className="relative" {...props}>
       {React.Children.map(children, (child) => {
@@ -22,7 +29,8 @@ const Select = ({ children, value, onValueChange, ...props }) => {
           return React.cloneElement(child, {
             onClick: () => setIsOpen(!isOpen),
             isOpen,
-            selectedValue
+            selectedValue,
+            placeholder
           });
         }
         if (child.type === SelectContent) {
@@ -38,7 +46,7 @@ const Select = ({ children, value, onValueChange, ...props }) => {
 };
 
 const SelectTrigger = forwardRef(({ className = '', children, onClick, isOpen, selectedValue, placeholder, ...props }, ref) => {
-  const displayValue = selectedValue || placeholder || 'Select...';
+  const displayValue = placeholder || 'Select...';
 
   return (
     <button

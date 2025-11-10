@@ -1,50 +1,89 @@
-import React, { useState, useEffect, useContext, memo, lazy, Suspense, useMemo } from 'react';
+import React, { useState, useEffect, useContext, memo, lazy, Suspense, useMemo, useCallback } from 'react';
 import Header from '../components/Header';
-import TeamContext from '../context/TeamContext';
+import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
 import StatsGrid from '../components/StatsGrid';
 import AdditionalMetrics from '../components/AdditionalMetrics';
 import OverdueTasksList from '../components/OverdueTasksList';
 import Loading from '../components/Loading';
+import socketService from '../services/socket';
 
 const ChartsSection = lazy(() => import('../components/ChartsSection'));
 const TimeAnalyticsChart = lazy(() => import('../components/TimeAnalyticsChart'));
 const DepartmentProjectsChart = lazy(() => import('../components/DepartmentProjectsChart'));
 
 const useAnalytics = () => {
-  const { currentDepartment } = useContext(TeamContext);
+  const { currentDepartment } = useContext(DepartmentContext);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const loadAnalytics = async () => {
-      try {
-        setLoading(true);
-        const departmentId = currentDepartment?._id;
+  const loadAnalytics = useCallback(async () => {
+    try {
+      setLoading(true);
+      const departmentId = currentDepartment?._id;
 
-        if (departmentId) {
-          const response = await Database.getDepartmentAnalytics(departmentId);
-          setAnalyticsData(response.data);
-        }
-      } catch (error) {
-        console.error('Error loading analytics:', error);
-      } finally {
-        setLoading(false);
+      if (departmentId) {
+        const response = await Database.getDepartmentAnalytics(departmentId);
+        setAnalyticsData(response.data);
       }
+    } catch (error) {
+      console.error('Error loading analytics:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentDepartment]);
+
+  useEffect(() => {
+    loadAnalytics();
+  }, [loadAnalytics]);
+
+  // Listen for real-time updates
+  useEffect(() => {
+    const handleCardUpdate = (event) => {
+      console.log('Analytics: Card updated, refreshing data');
+      loadAnalytics();
     };
 
-    loadAnalytics();
-  }, [currentDepartment]);
+    const handleCardCreated = (event) => {
+      console.log('Analytics: Card created, refreshing data');
+      loadAnalytics();
+    };
+
+    const handleCardDeleted = (event) => {
+      console.log('Analytics: Card deleted, refreshing data');
+      loadAnalytics();
+    };
+
+    const handleCardMoved = (event) => {
+      console.log('Analytics: Card moved, refreshing data');
+      loadAnalytics();
+    };
+
+    // Add event listeners
+    window.addEventListener('socket-card-updated', handleCardUpdate);
+    window.addEventListener('socket-card-created', handleCardCreated);
+    window.addEventListener('socket-card-deleted', handleCardDeleted);
+    window.addEventListener('socket-card-moved', handleCardMoved);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('socket-card-updated', handleCardUpdate);
+      window.removeEventListener('socket-card-created', handleCardCreated);
+      window.removeEventListener('socket-card-deleted', handleCardDeleted);
+      window.removeEventListener('socket-card-moved', handleCardMoved);
+    };
+  }, [loadAnalytics]);
 
   return {
     analyticsData,
     loading,
+    refreshAnalytics: loadAnalytics,
   };
 };
 
 
 const Analytics = memo(() => {
-  const { currentDepartment } = useContext(TeamContext);
+  const { currentDepartment } = useContext(DepartmentContext);
   const {
     analyticsData,
     loading,

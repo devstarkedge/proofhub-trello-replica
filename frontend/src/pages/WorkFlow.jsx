@@ -7,14 +7,14 @@ import Header from '../components/Header';
 import Board from '../components/Board';
 import { lazy } from 'react';
 const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
-import TeamContext from '../context/TeamContext';
+import DepartmentContext from '../context/DepartmentContext';
 import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';
 
 const WorkFlow = () => {
   const { deptId, projectId } = useParams();
   const navigate = useNavigate();
-  const { currentTeam, loading: teamLoading } = useContext(TeamContext);
+  const { currentTeam, loading: teamLoading } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
   const [board, setBoard] = useState(null);
   const [lists, setLists] = useState([]);

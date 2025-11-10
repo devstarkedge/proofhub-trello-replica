@@ -83,6 +83,24 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
 export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
   const { departmentId } = req.params;
   const { page = 1, limit = 200 } = req.query;
+  const user = req.user;
+
+  let departmentMatch = {};
+  if (departmentId === 'all') {
+    // Get all departments user has access to
+    const Department = mongoose.model('Department');
+    let departmentQuery = {};
+    if (user.role === 'manager') {
+      departmentQuery._id = user.department;
+    } else if (user.role !== 'admin') {
+      departmentQuery.members = user._id;
+    }
+    const accessibleDepartments = await Department.find(departmentQuery);
+    const departmentIds = accessibleDepartments.map(d => d._id);
+    departmentMatch = { 'boardInfo.department': { $in: departmentIds } };
+  } else {
+    departmentMatch = { 'boardInfo.department': new mongoose.Types.ObjectId(departmentId) };
+  }
 
   // Use aggregation pipeline for better performance
   const pipeline = [
@@ -95,9 +113,7 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
       }
     },
     {
-      $match: {
-        'boardInfo.department': new mongoose.Types.ObjectId(departmentId)
-      }
+      $match: departmentMatch
     },
     {
       $lookup: {
@@ -235,9 +251,7 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
       }
     },
     {
-      $match: {
-        'boardInfo.department': new mongoose.Types.ObjectId(departmentId)
-      }
+      $match: departmentMatch
     },
     {
       $count: "total"
@@ -326,6 +340,8 @@ export const createCard = asyncHandler(async (req, res, next) => {
   // Invalidate relevant caches
   invalidateCache(`/api/cards/list/${list}`);
   invalidateCache(`/api/cards/board/${board}`);
+  invalidateCache("/api/analytics/dashboard");
+  invalidateCache(`/api/analytics/department/`);
   
   // Emit real-time update to board
   emitToBoard(board, 'card-created', {
@@ -575,6 +591,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   invalidateCache(`/api/boards/${card.board.toString()}`);
   invalidateCache("/api/departments");
   invalidateCache("/api/analytics/dashboard");
+  invalidateCache(`/api/analytics/department/`);
 
   res.status(200).json({
     success: true,
@@ -711,6 +728,8 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   invalidateCache(`/api/cards/board/${card.board.toString()}`);
   invalidateCache(`/api/cards/${card._id}`);
   invalidateCache("/api/departments");
+  invalidateCache("/api/analytics/dashboard");
+  invalidateCache(`/api/analytics/department/`);
 
   res.status(200).json({
     success: true,
@@ -750,6 +769,15 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   });
 
   await card.deleteOne();
+
+  // Invalidate caches after deletion
+  invalidateCache(`/api/boards/${boardId.toString()}`);
+  invalidateCache(`/api/cards/list/${card.list}`);
+  invalidateCache(`/api/cards/board/${boardId.toString()}`);
+  invalidateCache(`/api/cards/${card._id}`);
+  invalidateCache("/api/departments");
+  invalidateCache("/api/analytics/dashboard");
+  invalidateCache(`/api/analytics/department/`);
 
   res.status(200).json({
     success: true,

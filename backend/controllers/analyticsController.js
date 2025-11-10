@@ -105,7 +105,23 @@ export const getBoardAnalytics = asyncHandler(async (req, res, next) => {
 export const getProjectsAnalytics = asyncHandler(async (req, res, next) => {
   const { departmentId } = req.params;
 
-  const boards = await Board.find({ department: departmentId }).populate('team', 'name');
+  let boardQuery = {};
+  if (departmentId === 'all') {
+    // Get all departments user has access to
+    const user = req.user;
+    let departmentQuery = {};
+    if (user.role === 'manager') {
+      departmentQuery._id = user.department;
+    } else if (user.role !== 'admin') {
+      departmentQuery.members = user._id;
+    }
+    const departments = await Department.find(departmentQuery);
+    boardQuery.department = { $in: departments.map(d => d._id) };
+  } else {
+    boardQuery.department = departmentId;
+  }
+
+  const boards = await Board.find(boardQuery).populate('team', 'name');
 
   const projects = await Promise.all(boards.map(async (board) => {
     const cards = await Card.find({ board: board._id });
@@ -145,14 +161,32 @@ export const getProjectsAnalytics = asyncHandler(async (req, res, next) => {
 // @route   GET /api/analytics/department/:departmentId
 // @access  Private
 export const getDepartmentAnalytics = asyncHandler(async (req, res, next) => {
-  const department = await Department.findById(req.params.departmentId);
+  let departments = [];
+  let departmentName = '';
 
-  if (!department) {
-    return next(new ErrorResponse('Department not found', 404));
+  if (req.params.departmentId === 'all') {
+    // Get all departments user has access to
+    const user = req.user;
+    let departmentQuery = {};
+    if (user.role === 'manager') {
+      departmentQuery._id = user.department;
+    } else if (user.role !== 'admin') {
+      departmentQuery.members = user._id;
+    }
+    departments = await Department.find(departmentQuery);
+    departmentName = 'All Departments';
+  } else {
+    const department = await Department.findById(req.params.departmentId);
+    if (!department) {
+      return next(new ErrorResponse('Department not found', 404));
+    }
+    departments = [department];
+    departmentName = department.name;
   }
 
-  // Get all boards for this department
-  const boards = await Board.find({ department: department._id });
+  // Get all boards for these departments
+  const departmentIds = departments.map(d => d._id);
+  const boards = await Board.find({ department: { $in: departmentIds } });
   const boardIds = boards.map(b => b._id);
 
   // Get all cards for these boards
@@ -237,7 +271,7 @@ export const getDepartmentAnalytics = asyncHandler(async (req, res, next) => {
     success: true,
     data: {
       departmentId: req.params.departmentId,
-      departmentName: department.name,
+      departmentName,
       totalTasks,
       completedTasks,
       inProgressTasks,

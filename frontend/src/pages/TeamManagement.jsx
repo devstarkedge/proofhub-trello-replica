@@ -6,7 +6,7 @@ import {
   AlertCircle, Info, Filter, Download, Upload,
   TrendingUp, Award, Clock, Mail
 } from 'lucide-react';
-import TeamContext from '../context/TeamContext';
+import DepartmentContext from '../context/DepartmentContext';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import Header from '../components/Header';
@@ -61,7 +61,7 @@ const TeamManagement = () => {
     deleteDepartment,
     assignUserToDepartment,
     unassignUserFromDepartment
-  } = useContext(TeamContext);
+  } = useContext(DepartmentContext);
 
   const [users, setUsers] = useState([]);
   const [managers, setManagers] = useState([]);

@@ -2,7 +2,7 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import AuthContext from './AuthContext';
 import Database from '../services/database';
 
-const TeamContext = createContext();
+const DepartmentContext = createContext();
 
 export const TeamProvider = ({ children }) => {
   const { isAuthenticated, user } = useContext(AuthContext);
@@ -34,14 +34,17 @@ export const TeamProvider = ({ children }) => {
   const loadDepartments = async () => {
     try {
       const userDepartments = await Database.getDepartments();
-      setDepartments(userDepartments.data || []);
-      if (userDepartments.data && userDepartments.data.length > 0) {
+      const depts = userDepartments.data || [];
+      // Add "All Departments" option at the top
+      const allDepartmentsOption = { _id: 'all', name: 'All Departments' };
+      setDepartments([allDepartmentsOption, ...depts]);
+      if (depts.length > 0) {
         // Only set currentDepartment if not already set or if current one no longer exists
-        if (!currentDepartment || !userDepartments.data.find(d => d._id === currentDepartment._id)) {
-          setCurrentDepartment(userDepartments.data[0]);
+        if (!currentDepartment || (!userDepartments.data.find(d => d._id === currentDepartment._id) && currentDepartment._id !== 'all')) {
+          setCurrentDepartment(allDepartmentsOption);
         }
       } else {
-        setCurrentDepartment(null);
+        setCurrentDepartment(allDepartmentsOption);
       }
     } catch (error) {
       console.error('Error loading departments:', error);
@@ -51,12 +54,18 @@ export const TeamProvider = ({ children }) => {
   const loadTeams = async () => {
     try {
       setLoading(true);
-      const userTeams = await Database.getTeams(currentDepartment?._id);
-      setTeams(userTeams.data || []);
-      if (userTeams.data && userTeams.data.length > 0) {
-        setCurrentTeam(userTeams.data[0]); // Default to first team
+      // Only load teams if a specific department is selected (not "all")
+      if (currentDepartment && currentDepartment._id !== 'all') {
+        const userTeams = await Database.getTeams(currentDepartment._id);
+        setTeams(userTeams.data || []);
+        if (userTeams.data && userTeams.data.length > 0) {
+          setCurrentTeam(userTeams.data[0]); // Default to first team
+        } else {
+          setCurrentTeam(null); // No teams in this department
+        }
       } else {
-        setCurrentTeam(null); // No teams in this department
+        setTeams([]);
+        setCurrentTeam(null);
       }
     } catch (error) {
       console.error('Error loading teams:', error);
@@ -194,7 +203,7 @@ export const TeamProvider = ({ children }) => {
   };
 
   return (
-    <TeamContext.Provider value={{
+    <DepartmentContext.Provider value={{
       teams,
       departments,
       currentTeam,
@@ -217,8 +226,8 @@ export const TeamProvider = ({ children }) => {
       joinTeam
     }}>
       {children}
-    </TeamContext.Provider>
+    </DepartmentContext.Provider>
   );
 };
 
-export default TeamContext;
+export default DepartmentContext;

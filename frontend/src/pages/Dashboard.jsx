@@ -7,7 +7,7 @@ import {
   Calendar, BarChart3, ArrowUpRight, Plus, RefreshCw
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
-import TeamContext from '../context/TeamContext';
+import DepartmentContext from '../context/DepartmentContext';
 import { useDashboardData } from '../hooks/useProjects';
 import { useDebounce } from '../hooks/useDebounce';
 import Database from '../services/database';
@@ -21,7 +21,7 @@ import EditProjectModal from '../components/EditProjectModal';
 const Dashboard = memo(() => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
-  const { currentTeam, currentDepartment, departments, loadDepartments } = useContext(TeamContext);
+  const { currentTeam, currentDepartment, departments, loadDepartments } = useContext(DepartmentContext);
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery] = useDebounce(searchQuery, 300);

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useContext, useMemo } from 'react';
-import { 
-  Filter, 
-  Calendar, 
-  User, 
-  Tag, 
-  ChevronsUpDown, 
+import {
+  Filter,
+  Calendar,
+  User,
+  Tag,
+  ChevronsUpDown,
   ArrowUpDown,
   ClipboardList,
   FolderKanban,
@@ -25,7 +25,8 @@ import {
   Target,
   Activity
 } from 'lucide-react';
-import TeamContext from '../context/TeamContext';
+import * as XLSX from 'xlsx';
+import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
 import Header from '../components/Header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
@@ -34,7 +35,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Button } from '../components/ui/button';
 
 const ListView = () => {
-  const { currentDepartment } = useContext(TeamContext);
+  const { currentDepartment, departments, setCurrentDepartment } = useContext(DepartmentContext);
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,6 +55,16 @@ const ListView = () => {
       setLoading(false);
     }
   }, [currentDepartment]);
+
+  // Set default department to "All Departments" if not set
+  useEffect(() => {
+    if (!currentDepartment && departments.length > 0) {
+      const allDeptsOption = departments.find(d => d._id === 'all');
+      if (allDeptsOption) {
+        setCurrentDepartment(allDeptsOption);
+      }
+    }
+  }, [departments, currentDepartment, setCurrentDepartment]);
 
   const loadCards = async () => {
     try {
@@ -233,6 +244,122 @@ const ListView = () => {
     return `${hours}h ${minutes}m`;
   };
 
+  const handleExport = () => {
+    if (filteredAndSortedCards.length === 0) {
+      alert('No tasks to export');
+      return;
+    }
+
+    const exportData = filteredAndSortedCards.map(card => ({
+      'Task': card.title || '',
+      'Project': card.board?.name || 'N/A',
+      'Assignee': card.assignees && card.assignees.length > 0
+        ? card.assignees.map(a => a.name).join(', ')
+        : 'Unassigned',
+      'Priority': card.priority || '',
+      'Status': card.list?.title || 'N/A',
+      'Due Date': card.dueDate
+        ? new Date(card.dueDate).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          })
+        : 'No due date',
+      'Total Logged Time': calculateTotalLoggedTime(card.loggedTime)
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+    // Add title row
+    XLSX.utils.sheet_add_aoa(worksheet, [['Task Management Export']], { origin: 'A1' });
+
+    // Move data down by one row
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = range.e.r; R >= 0; --R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R + 1, c: C });
+        const addr_old = XLSX.utils.encode_cell({ r: R, c: C });
+        if (worksheet[addr_old]) worksheet[addr] = worksheet[addr_old];
+        delete worksheet[addr_old];
+      }
+    }
+
+    // Update range
+    worksheet['!ref'] = XLSX.utils.encode_range({
+      s: { r: 0, c: 0 },
+      e: { r: range.e.r + 1, c: range.e.c }
+    });
+
+    // Set column widths
+    worksheet['!cols'] = [
+      { wch: 40 }, // Task
+      { wch: 25 }, // Project
+      { wch: 30 }, // Assignee
+      { wch: 12 }, // Priority
+      { wch: 15 }, // Status
+      { wch: 15 }, // Due Date
+      { wch: 18 }  // Total Logged Time
+    ];
+
+    // Style the title
+    const titleCell = worksheet['A1'];
+    if (titleCell) {
+      titleCell.s = {
+        font: { bold: true, sz: 16 },
+        alignment: { horizontal: 'center' },
+        fill: { fgColor: { rgb: 'FFE6F3FF' } }
+      };
+    }
+
+    // Style headers
+    const headers = ['A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2'];
+    headers.forEach(addr => {
+      if (worksheet[addr]) {
+        worksheet[addr].s = {
+          font: { bold: true, color: { rgb: 'FFFFFFFF' } },
+          fill: { fgColor: { rgb: 'FF4F81BD' } },
+          alignment: { horizontal: 'center' },
+          border: {
+            top: { style: 'thin', color: { rgb: 'FF000000' } },
+            bottom: { style: 'thin', color: { rgb: 'FF000000' } },
+            left: { style: 'thin', color: { rgb: 'FF000000' } },
+            right: { style: 'thin', color: { rgb: 'FF000000' } }
+          }
+        };
+      }
+    });
+
+    // Style data cells
+    const dataRange = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = 2; R <= dataRange.e.r; ++R) {
+      for (let C = 0; C <= dataRange.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (worksheet[addr]) {
+          worksheet[addr].s = {
+            border: {
+              top: { style: 'thin', color: { rgb: 'FFD3D3D3' } },
+              bottom: { style: 'thin', color: { rgb: 'FFD3D3D3' } },
+              left: { style: 'thin', color: { rgb: 'FFD3D3D3' } },
+              right: { style: 'thin', color: { rgb: 'FFD3D3D3' } }
+            },
+            alignment: C === 0 ? { horizontal: 'left' } : { horizontal: 'center' }
+          };
+        }
+      }
+    }
+
+    // Merge title cells
+    worksheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Tasks');
+
+    const fileName = `tasks_export_${currentDepartment?.name || 'all'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
   const renderSkeleton = () => (
     [...Array(8)].map((_, i) => (
       <TableRow key={i} className="animate-pulse">
@@ -362,7 +489,7 @@ const ListView = () => {
                   label="Status"
                   icon={Target}
                   options={[
-                    { value: 'all', label: 'All Statuses' },
+                    { value: 'all', label: 'All' },
                     { value: 'to-do', label: 'To-Do' },
                     { value: 'in-progress', label: 'In Progress' },
                     { value: 'review', label: 'Review' },
@@ -375,7 +502,7 @@ const ListView = () => {
                   label="Priority"
                   icon={Zap}
                   options={[
-                    { value: 'all', label: 'All Priorities' },
+                    { value: 'all', label: 'All' },
                     { value: 'low', label: 'Low' },
                     { value: 'medium', label: 'Medium' },
                     { value: 'high', label: 'High' },
@@ -412,6 +539,7 @@ const ListView = () => {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={handleExport}
                   className="flex items-center gap-2 border-2 hover:bg-emerald-50 hover:border-emerald-300 transition-all duration-200 rounded-xl"
                 >
                   <Download size={14} />

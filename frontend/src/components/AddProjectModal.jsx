@@ -152,8 +152,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
     if (!formData.title.trim()) newErrors.title = "Title is required"
     if (formData.title.length < 3) newErrors.title = "Title must be at least 3 characters"
     if (!formData.startDate) newErrors.startDate = "Start date is required"
-    if (!formData.dueDate) newErrors.dueDate = "Due date is required"
-    if (new Date(formData.startDate) >= new Date(formData.dueDate)) {
+    if (formData.dueDate && new Date(formData.startDate) >= new Date(formData.dueDate)) {
       newErrors.dueDate = "Due date must be after start date"
     }
     if (formData.assignees.length === 0) newErrors.assignees = "At least one assignee is required"
@@ -398,7 +397,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
                 <motion.div custom={3} variants={fieldVariants} initial="hidden" animate="visible">
                   <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                     <Calendar className="h-4 w-4 text-red-600" />
-                    Due Date *
+                    Due Date
                   </label>
                   <input
                     type="date"

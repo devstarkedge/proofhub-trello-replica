@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from "react";
 import { Routes, Route } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from "./context/AuthContext";
-import { TeamProvider } from "./context/TeamContext";
+import { TeamProvider } from "./context/DepartmentContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import Loading from "./components/Loading";
 import "./App.css";

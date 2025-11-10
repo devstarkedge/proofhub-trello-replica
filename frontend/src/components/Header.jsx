@@ -7,7 +7,7 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
-import TeamContext from '../context/TeamContext';
+import DepartmentContext from '../context/DepartmentContext';
 import NotificationContext from '../context/NotificationContext';
 
 const UserVerificationModal = lazy(() => import('./UserVerificationModal'));
@@ -16,7 +16,7 @@ const Header = ({ boardName }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logoutUser } = useContext(AuthContext);
-  const { currentTeam, currentDepartment, teams, departments, setCurrentTeam, setCurrentDepartment } = useContext(TeamContext);
+  const { currentTeam, currentDepartment, teams, departments, setCurrentTeam, setCurrentDepartment } = useContext(DepartmentContext);
   const { notifications, unreadCount, markAsRead, deleteNotification, handleNotificationClick, verificationModal, handleVerificationAction, closeVerificationModal } = useContext(NotificationContext);
   
   const [showNotifications, setShowNotifications] = useState(false);
