@@ -175,13 +175,22 @@ const ListView = () => {
   const stats = getStats();
 
   const getPriorityPill = (priority) => {
+    if (!priority) {
+      return (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 transition-all duration-200 hover:scale-105 w-fit">
+          <Tag className="w-3.5 h-3.5 text-gray-500" />
+          <span className="text-xs font-semibold text-gray-600">No Priority</span>
+        </div>
+      );
+    }
+
     const config = {
       'High': { variant: 'destructive', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
       'Medium': { variant: 'secondary', icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
       'Low': { variant: 'outline', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
     };
     const { icon: Icon, color, bg, border } = config[priority] || { icon: Tag, color: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-200' };
-    
+
     return (
       <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${bg} ${border} border transition-all duration-200 hover:scale-105 w-fit`}>
         <Icon className={`w-3.5 h-3.5 ${color}`} />

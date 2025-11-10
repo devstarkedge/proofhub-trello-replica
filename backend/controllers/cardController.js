@@ -312,6 +312,12 @@ export const createCard = asyncHandler(async (req, res, next) => {
     startDate,
   } = req.body;
 
+  // Get the list to determine the status
+  const cardList = await List.findById(list);
+  if (!cardList) {
+    return next(new ErrorResponse("List not found", 404));
+  }
+
   const card = await Card.create({
     title,
     description,
@@ -320,9 +326,10 @@ export const createCard = asyncHandler(async (req, res, next) => {
     assignee,
     members: members || [],
     labels: labels || [],
-    priority: priority || "medium",
+    priority,
     dueDate,
     startDate,
+    status: cardList.title.toLowerCase().replace(/\s+/g, '-'),
     position: await Card.countDocuments({ list }),
     createdBy: req.user.id,
   });

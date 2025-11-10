@@ -59,44 +59,48 @@ const ProjectCard = ({
   }, [showMenu]);
 
   const getStatusConfig = (status) => {
+    // Normalize status to handle both formats (database vs display)
+    const normalizedStatus = status?.toLowerCase().replace(/\s+/g, '-');
+
     const configs = {
-      'In Progress': {
-        bg: 'bg-blue-500/10',
-        text: 'text-orange-400',
-        border: 'border-blue-300',
-        icon: <Clock size={14} />,
-        gradient: 'from-blue-500 to-cyan-500'
+      'planning': {
+        bg: 'bg-gradient-to-r from-amber-50 to-yellow-50',
+        text: 'text-amber-700',
+        border: 'border-amber-200',
+        icon: <Target size={14} className="text-amber-600" />,
+        gradient: 'from-amber-500 to-yellow-500',
+        label: 'Planning',
+        description: 'Project is in planning phase'
       },
-      'Planning': {
-        bg: 'bg-yellow-500/10',
-        text: 'text-white',
-        border: 'border-yellow-300',
-        icon: <Target size={14} />,
-        gradient: 'from-yellow-500 to-orange-500'
+      'in-progress': {
+        bg: 'bg-gradient-to-r from-blue-50 to-cyan-50',
+        text: 'text-blue-700',
+        border: 'border-blue-200',
+        icon: <Clock size={14} className="text-blue-600" />,
+        gradient: 'from-blue-500 to-cyan-500',
+        label: 'In Progress',
+        description: 'Project is actively being worked on'
       },
-      'Review': {
-        bg: 'bg-purple-500/10',
-        text: 'text-gray-500',
-        border: 'border-purple-300',
-        icon: <Eye size={14} />,
-        gradient: 'from-purple-500 to-pink-500'
+      'completed': {
+        bg: 'bg-gradient-to-r from-emerald-50 to-green-50',
+        text: 'text-emerald-700',
+        border: 'border-emerald-200',
+        icon: <CheckCircle2 size={14} className="text-emerald-600" />,
+        gradient: 'from-emerald-500 to-green-500',
+        label: 'Completed',
+        description: 'Project has been finished'
       },
-      'Completed': {
-        bg: 'bg-green-500/10',
-        text: 'text-green-400',
-        border: 'border-green-300',
-        icon: <CheckCircle2 size={14} />,
-        gradient: 'from-green-500 to-emerald-500'
-      },
-      'On Hold': {
-        bg: 'bg-gray-500/10',
-        text: 'text-gray-700',
-        border: 'border-gray-300',
-        icon: <AlertCircle size={14} />,
-        gradient: 'from-gray-500 to-slate-500'
+      'on-hold': {
+        bg: 'bg-gradient-to-r from-slate-50 to-gray-50',
+        text: 'text-slate-700',
+        border: 'border-slate-200',
+        icon: <AlertCircle size={14} className="text-slate-600" />,
+        gradient: 'from-slate-500 to-gray-500',
+        label: 'On Hold',
+        description: 'Project is temporarily paused'
       }
     };
-    return configs[status] || configs['In Progress'];
+    return configs[normalizedStatus] || configs['planning'];
   };
 
   const getProgressColor = (progress) => {
@@ -208,7 +212,7 @@ const ProjectCard = ({
           >
             <div className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border backdrop-blur-md ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border} shadow-lg`}>
               {statusConfig.icon}
-              <span>{projectData.status}</span>
+              <span>{statusConfig.label}</span>
             </div>
           </motion.div>
         )}

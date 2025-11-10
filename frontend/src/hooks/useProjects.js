@@ -73,6 +73,8 @@ export function useUpdateProject() {
       queryClient.setQueryData(['project', variables.projectId], data);
       // Invalidate dashboard data
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      // Invalidate department projects
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });
 }

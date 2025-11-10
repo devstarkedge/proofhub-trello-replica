@@ -163,7 +163,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!validateForm()) {
-      toast.error("Please fix the errors in the form")
+      toast.error("Please fill all required details in the form")
       return
     }
 
@@ -538,29 +538,126 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
                     <option value="Contra">Contra</option>
                   </select>
                 </motion.div>
-                <AnimatePresence>
-                  {formData.projectSource === "Upwork" && (
-                    <motion.div
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20 }}
-                    >
-                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                        <Tag className="h-4 w-4 text-green-600" />
-                        Upwork ID
-                      </label>
+                <motion.div custom={8} variants={fieldVariants} initial="hidden" animate="visible">
+                  <label className="flex items-center justify-between text-sm font-semibold text-gray-700 mb-2">
+                    <div className="flex items-center gap-2">
+                      <Tag className="h-4 w-4 text-pink-600" />
+                      Project Category
+                    </div>
+                    {formData.projectCategory && (
+                      <Badge className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-3 py-1 text-sm">
+                        {formData.projectCategory}
+                      </Badge>
+                    )}
+                  </label>
+                  <div className="space-y-3">
+                    <Select onValueChange={handleCategoryChange} value={formData.projectCategory}>
+                      <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors">
+                        <SelectValue placeholder="Select or add a category..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category._id} value={category.name}>
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center text-white text-xs font-semibold">
+                                {category.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-medium">{category.name}</div>
+                                {category.description && (
+                                  <div className="text-xs text-gray-500">{category.description}</div>
+                                )}
+                              </div>
+                            </div>
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="add-new">
+                          <div className="flex items-center gap-2">
+                            <Plus className="h-4 w-4 text-blue-600" />
+                            <span className="text-blue-600 font-medium">Add New Category</span>
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </motion.div>
+              </div>
+              {/* Add New Category Form */}
+              <AnimatePresence>
+                {showAddCategory && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-gradient-to-br from-pink-50 to-purple-50 p-4 rounded-xl border border-pink-200"
+                  >
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                      <Plus className="h-4 w-4 text-pink-600" />
+                      Add New Category
+                    </h4>
+                    <div className="space-y-3">
                       <input
                         type="text"
-                        name="upworkId"
-                        value={formData.upworkId}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
-                        placeholder="Enter Upwork ID"
+                        placeholder="Category name"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
                       />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                      <textarea
+                        placeholder="Category description (optional)"
+                        value={newCategoryDescription}
+                        onChange={(e) => setNewCategoryDescription(e.target.value)}
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all resize-none"
+                      />
+                      <div className="flex gap-2">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          type="button"
+                          onClick={handleCreateCategory}
+                          className="flex-1 px-4 py-2 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-lg hover:from-pink-700 hover:to-purple-700 font-medium transition-all"
+                        >
+                          Create Category
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          type="button"
+                          onClick={() => {
+                            setShowAddCategory(false)
+                            setNewCategoryName("")
+                            setNewCategoryDescription("")
+                          }}
+                          className="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-all"
+                        >
+                          Cancel
+                        </motion.button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <AnimatePresence>
+                {formData.projectSource === "Upwork" && (
+                  <motion.div custom={9} variants={fieldVariants} initial="hidden" animate="visible">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                      <Tag className="h-4 w-4 text-green-600" />
+                      Upwork ID
+                    </label>
+                    <input
+                      type="text"
+                      name="upworkId"
+                      value={formData.upworkId}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
+                      placeholder="Enter Upwork ID"
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              
 
               {/* Billing */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -658,100 +755,7 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
                 </div>
               </motion.div>
 
-              {/* Project Category */}
-              <motion.div custom={10} variants={fieldVariants} initial="hidden" animate="visible">
-                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                  <Tag className="h-4 w-4 text-pink-600" />
-                  Project Category
-                </label>
-                <div className="space-y-3">
-                  <Select onValueChange={handleCategoryChange} value={formData.projectCategory}>
-                    <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors">
-                      <SelectValue placeholder="Select or add a category..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem key={category._id} value={category.name}>
-                          <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center text-white text-xs font-semibold">
-                              {category.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="font-medium">{category.name}</div>
-                              {category.description && (
-                                <div className="text-xs text-gray-500">{category.description}</div>
-                              )}
-                            </div>
-                          </div>
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="add-new">
-                        <div className="flex items-center gap-2">
-                          <Plus className="h-4 w-4 text-blue-600" />
-                          <span className="text-blue-600 font-medium">Add New Category</span>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
 
-                  {/* Add New Category Form */}
-                  <AnimatePresence>
-                    {showAddCategory && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="bg-gradient-to-br from-pink-50 to-purple-50 p-4 rounded-xl border border-pink-200"
-                      >
-                        <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                          <Plus className="h-4 w-4 text-pink-600" />
-                          Add New Category
-                        </h4>
-                        <div className="space-y-3">
-                          <input
-                            type="text"
-                            placeholder="Category name"
-                            value={newCategoryName}
-                            onChange={(e) => setNewCategoryName(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
-                          />
-                          <textarea
-                            placeholder="Category description (optional)"
-                            value={newCategoryDescription}
-                            onChange={(e) => setNewCategoryDescription(e.target.value)}
-                            rows={2}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all resize-none"
-                          />
-                          <div className="flex gap-2">
-                            <motion.button
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
-                              type="button"
-                              onClick={handleCreateCategory}
-                              className="flex-1 px-4 py-2 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-lg hover:from-pink-700 hover:to-purple-700 font-medium transition-all"
-                            >
-                              Create Category
-                            </motion.button>
-                            <motion.button
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
-                              type="button"
-                              onClick={() => {
-                                setShowAddCategory(false)
-                                setNewCategoryName("")
-                                setNewCategoryDescription("")
-                              }}
-                              className="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-all"
-                            >
-                              Cancel
-                            </motion.button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </motion.div>
             </form>
           </div>
 

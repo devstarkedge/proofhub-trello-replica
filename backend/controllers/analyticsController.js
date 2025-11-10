@@ -369,6 +369,7 @@ export const getDashboardData = asyncHandler(async (req, res, next) => {
         departmentId: { $arrayElemAt: ['$departmentInfo._id', 0] },
         team: { $ifNull: [{ $arrayElemAt: ['$teamInfo.name', 0] }, 'General'] },
         members: 1,
+        status: 1, // Include the actual status field from Board model
         totalCards: { $size: '$cards' },
         completedCards: {
           $size: {
@@ -395,11 +396,14 @@ export const getDashboardData = asyncHandler(async (req, res, next) => {
             else: 0
           }
         },
+        // Map the status enum values to display-friendly names
         status: {
           $switch: {
             branches: [
-              { case: { $eq: ['$progress', 100] }, then: 'Completed' },
-              { case: { $gt: ['$progress', 0] }, then: 'In Progress' }
+              { case: { $eq: ['$status', 'planning'] }, then: 'Planning' },
+              { case: { $eq: ['$status', 'in-progress'] }, then: 'In Progress' },
+              { case: { $eq: ['$status', 'completed'] }, then: 'Completed' },
+              { case: { $eq: ['$status', 'on-hold'] }, then: 'On Hold' }
             ],
             default: 'Planning'
           }

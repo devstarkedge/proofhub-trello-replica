@@ -71,7 +71,7 @@ const Dashboard = memo(() => {
   }, [refetch]);
 
   const handleRefresh = useCallback(() => {
-    refetch();
+    refetch({ queryKey: ['dashboard', Date.now()] });
   }, [refetch]);
 
   const filteredProjects = useMemo(() => {
@@ -84,6 +84,17 @@ const Dashboard = memo(() => {
       return matchesDept && matchesStatus && matchesSearch;
     });
   }, [projects, selectedDepartment, statusFilter, debouncedSearchQuery]);
+
+  const teamMembersCount = useMemo(() => {
+    if (!selectedDepartment) {
+      // All departments - sum all department members
+      return departments.reduce((total, dept) => total + (dept.members?.length || 0), 0);
+    } else {
+      // Specific department - get members of selected department
+      const selectedDept = departments.find(dept => dept._id === selectedDepartment);
+      return selectedDept?.members?.length || 0;
+    }
+  }, [selectedDepartment, departments]);
 
   const stats = useMemo(() => [
     {
@@ -112,13 +123,13 @@ const Dashboard = memo(() => {
     },
     {
       title: 'Team Members',
-      value: currentTeam?.members?.length || 0,
+      value: teamMembersCount,
       icon: Users,
       color: 'bg-purple-500',
       change: '+3',
       trend: 'up'
     }
-  ], [filteredProjects, currentTeam?.members?.length]);
+  ], [filteredProjects, teamMembersCount]);
 
   if (loading) {
     return (
@@ -233,6 +244,7 @@ const Dashboard = memo(() => {
                 <option value="Planning">Planning</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Completed">Completed</option>
+                <option value="On Hold">On Hold</option>
               </select>
             </div>
           </motion.div>

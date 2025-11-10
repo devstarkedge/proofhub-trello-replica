@@ -110,12 +110,10 @@ const cardSchema = new mongoose.Schema({
   }],
   priority: {
     type: String,
-    enum: ['low', 'medium', 'high', 'critical'],
-    default: 'medium'
+    enum: ['low', 'medium', 'high', 'critical']
   },
   status: {
-    type: String,
-    default: 'todo'
+    type: String
   },
   isCover: {
     type: Boolean,
