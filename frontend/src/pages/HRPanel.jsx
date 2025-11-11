@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { 
-  Users, 
-  Filter, 
-  Search, 
-  UserCheck, 
-  UserX, 
-  UserCog, 
+import {
+  Users,
+  Filter,
+  Search,
+  UserCheck,
+  UserX,
+  UserCog,
   X,
   CheckCircle,
   XCircle,
@@ -18,16 +18,17 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
+import useDepartmentStore from '../store/departmentStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 
 const HRPanel = () => {
   const { user } = useContext(AuthContext);
+  const departmentStore = useDepartmentStore();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [departments, setDepartments] = useState([]);
   const [selectedDepartments, setSelectedDepartments] = useState([]);
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
   const [filters, setFilters] = useState({
@@ -37,8 +38,10 @@ const HRPanel = () => {
   });
 
   useEffect(() => {
-    loadUsers();
-    loadDepartments();
+    loadData();
+
+    // Initialize socket listeners for department assignments
+    const cleanup = departmentStore.initializeSocketListeners();
 
     // Listen for real-time user verification updates
     const handleUserVerified = (event) => {
@@ -55,29 +58,29 @@ const HRPanel = () => {
     window.addEventListener('socket-user-verified', handleUserVerified);
 
     return () => {
+      cleanup();
       window.removeEventListener('socket-user-verified', handleUserVerified);
     };
   }, []);
 
-  const loadUsers = async () => {
+  const loadData = async () => {
     try {
+      setLoading(true);
+      await Promise.all([
+        departmentStore.loadDepartments(),
+        departmentStore.loadUsers()
+      ]);
+      // Load users for local state management
       const res = await api.get('/api/users');
       setUsers(res.data.data);
     } catch (error) {
-      console.error('Error loading users:', error);
+      console.error('Error loading data:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadDepartments = async () => {
-    try {
-      const res = await api.get('/api/departments');
-      setDepartments(res.data.data);
-    } catch (error) {
-      console.error('Error loading departments:', error);
-    }
-  };
+
 
   const handleVerifyUser = async (userId) => {
     try {
@@ -85,7 +88,7 @@ const HRPanel = () => {
         role: 'employee',
         department: null
       });
-      loadUsers();
+      loadData();
     } catch (error) {
       console.error('Error verifying user:', error);
     }
@@ -94,7 +97,7 @@ const HRPanel = () => {
   const handleDeclineUser = async (userId) => {
     try {
       await api.delete(`/api/users/${userId}/decline`);
-      loadUsers();
+      loadData();
     } catch (error) {
       console.error('Error declining user:', error);
     }
@@ -106,7 +109,7 @@ const HRPanel = () => {
         departments: departmentIds,
         team: null
       });
-      loadUsers();
+      loadData();
       setShowModal(false);
       setSelectedDepartments([]);
     } catch (error) {
@@ -136,11 +139,11 @@ const HRPanel = () => {
   };
 
   const getAvailableDepartments = () => {
-    return departments.filter(dept => !selectedDepartments.includes(dept._id));
+    return departmentStore.departments.filter(dept => !selectedDepartments.includes(dept._id));
   };
 
   const getSelectedDepartmentObjects = () => {
-    return departments.filter(dept => selectedDepartments.includes(dept._id));
+    return departmentStore.departments.filter(dept => selectedDepartments.includes(dept._id));
   };
 
   const filteredUsers = users.filter(user => {
@@ -278,7 +281,7 @@ const HRPanel = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm font-medium">Departments</p>
-                  <p className="text-3xl font-bold text-purple-600 mt-1">{departments.length}</p>
+                  <p className="text-3xl font-bold text-purple-600 mt-1">{departmentStore.departments.length}</p>
                 </div>
                 <div className="bg-purple-100 p-3 rounded-lg">
                   <Building2 className="w-6 h-6 text-purple-600" />
@@ -322,7 +325,7 @@ const HRPanel = () => {
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white transition-all duration-200"
                   >
                     <option value="">All Departments</option>
-                    {departments.map((dept, index) => (
+                    {departmentStore.departments.map((dept, index) => (
                       <option key={`${dept._id}-${index}`} value={dept._id}>{dept.name}</option>
                     ))}
                   </select>

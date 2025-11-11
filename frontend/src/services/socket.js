@@ -166,6 +166,17 @@ class SocketService {
       console.log('User verified:', data);
       window.dispatchEvent(new CustomEvent('socket-user-verified', { detail: data }));
     });
+
+    // Department assignment events
+    this.socket.on('user-assigned', (data) => {
+      console.log('User assigned to department:', data);
+      window.dispatchEvent(new CustomEvent('socket-user-assigned', { detail: data }));
+    });
+
+    this.socket.on('user-unassigned', (data) => {
+      console.log('User unassigned from department:', data);
+      window.dispatchEvent(new CustomEvent('socket-user-unassigned', { detail: data }));
+    });
   }
 
   disconnect() {

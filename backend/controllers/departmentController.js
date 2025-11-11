@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
+import { emitUserAssigned, emitUserUnassigned } from "../utils/socketEmitter.js";
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -61,8 +62,16 @@ export const createDepartment = asyncHandler(async (req, res, next) => {
     name,
     description,
     managers: managers || [],
-    members: managers ? managers : [],
+    members: [],
   });
+
+  // Update managers' department field to include this department
+  if (managers && managers.length > 0) {
+    await User.updateMany(
+      { _id: { $in: managers } },
+      { $addToSet: { department: department._id } }
+    );
+  }
 
   // Invalidate relevant caches
   invalidateCache("/api/departments");
@@ -85,6 +94,9 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Department not found", 404));
   }
 
+  // Store old managers for cleanup
+  const oldManagers = department.managers || [];
+
   // Update fields
   if (name) department.name = name;
   if (description !== undefined) department.description = description;
@@ -93,6 +105,29 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
   if (isActive !== undefined) department.isActive = isActive;
 
   await department.save();
+
+  // Update managers' department field
+  if (managers !== undefined) {
+    const newManagers = managers || [];
+    const managersToAdd = newManagers.filter(id => !oldManagers.includes(id));
+    const managersToRemove = oldManagers.filter(id => !newManagers.includes(id));
+
+    // Add department to new managers
+    if (managersToAdd.length > 0) {
+      await User.updateMany(
+        { _id: { $in: managersToAdd } },
+        { $addToSet: { department: department._id } }
+      );
+    }
+
+    // Remove department from old managers (only if they have no other roles in this department)
+    if (managersToRemove.length > 0) {
+      await User.updateMany(
+        { _id: { $in: managersToRemove } },
+        { $pull: { department: department._id } }
+      );
+    }
+  }
 
   // Populate managers data before returning
   await department.populate("managers", "name email");
@@ -117,15 +152,14 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Department not found", 404));
   }
 
-  // Soft delete - mark as inactive
-  department.isActive = false;
-  await department.save();
-
-  // Remove department from users
+  // Remove department from users (use $pull for array field)
   await User.updateMany(
     { department: req.params.id },
-    { $unset: { department: 1 } }
+    { $pull: { department: req.params.id } }
   );
+
+  // Actually delete the department from database
+  await Department.findByIdAndDelete(req.params.id);
 
   // Invalidate relevant caches
   invalidateCache("/api/departments");
@@ -133,7 +167,7 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    message: "Department deactivated successfully",
+    message: "Department deleted successfully",
   });
 });
 
@@ -165,16 +199,21 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
     });
   }
 
-  if (!department.members.includes(userId)) {
-    department.members.push(userId);
-    await department.save();
-  }
+  // Use $addToSet to avoid duplicates
+  await Department.findByIdAndUpdate(req.params.id, {
+    $addToSet: { members: userId }
+  });
 
+  // Update user's department field
   user.department = req.params.id;
   await user.save();
 
   // Invalidate relevant caches
   invalidateCache(`/api/departments/${req.params.id}`);
+  invalidateCache('/api/users');
+
+  // Emit socket event for real-time updates
+  emitUserAssigned(userId, req.params.id);
 
   res.status(200).json({
     success: true,
@@ -193,17 +232,22 @@ export const removeMemberFromDepartment = asyncHandler(
       return next(new ErrorResponse("Department not found", 404));
     }
 
-    department.members = department.members.filter(
-      (id) => id.toString() !== req.params.userId
-    );
-    await department.save();
+    // Use $pull to remove from array
+    await Department.findByIdAndUpdate(req.params.id, {
+      $pull: { members: req.params.userId }
+    });
 
+    // Update user's department field
     await User.findByIdAndUpdate(req.params.userId, {
       $unset: { department: 1 },
     });
 
     // Invalidate relevant caches
     invalidateCache(`/api/departments/${req.params.id}`);
+    invalidateCache('/api/users');
+
+    // Emit socket event for real-time updates
+    emitUserUnassigned(req.params.userId, req.params.id);
 
     res.status(200).json({
       success: true,
@@ -250,6 +294,10 @@ export const unassignUserFromDepartment = asyncHandler(
 
     // Invalidate relevant caches
     invalidateCache(`/api/departments/${deptId}`);
+    invalidateCache('/api/users');
+
+    // Emit socket event for real-time updates
+    emitUserUnassigned(userId, deptId);
 
     res.status(200).json({
       success: true,

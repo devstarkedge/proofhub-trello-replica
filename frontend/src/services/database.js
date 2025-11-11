@@ -650,8 +650,8 @@ class DatabaseService {
     const userData = await userRes.json();
     const currentDepartments = userData.data.department || [];
 
-    // Add the new department if not already assigned
-    const updatedDepartments = currentDepartments.includes(deptId)
+    // Add the new department if not already assigned (use IDs for comparison)
+    const updatedDepartments = currentDepartments.some(dept => dept._id === deptId || dept === deptId)
       ? currentDepartments
       : [...currentDepartments, deptId];
 

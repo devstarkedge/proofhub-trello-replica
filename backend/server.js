@@ -174,6 +174,9 @@ export const emitToBoard = (boardId, event, data) => {
   io.to(`board-${boardId}`).emit(event, data);
 };
 
+// Export io for use in other modules
+export { io };
+
 import seedAdmin from './utils/seed.js';
 
 // MongoDB connection with connection pooling

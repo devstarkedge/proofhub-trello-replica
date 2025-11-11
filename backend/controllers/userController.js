@@ -216,13 +216,27 @@ export const assignUser = asyncHandler(async (req, res, next) => {
   if (departments !== undefined) {
     user.department = departments; // Assign the array of department IDs
 
-    // Also add user to department's members array for each department
+    // Add user to appropriate department array based on role
     if (departments && departments.length > 0) {
       const Department = (await import('../models/Department.js')).default;
       for (const deptId of departments) {
         const dept = await Department.findById(deptId);
-        if (dept && !dept.members.includes(req.params.id)) {
-          dept.members.push(req.params.id);
+        if (dept) {
+          // Determine which array to add user to based on role
+          const isManagerRole = user.role === 'admin' || user.role === 'manager';
+          const targetArray = isManagerRole ? 'managers' : 'members';
+          const oppositeArray = isManagerRole ? 'members' : 'managers';
+
+          // Remove from opposite array if present
+          if (dept[oppositeArray].includes(req.params.id)) {
+            dept[oppositeArray] = dept[oppositeArray].filter(id => id.toString() !== req.params.id);
+          }
+
+          // Add to target array if not already present
+          if (!dept[targetArray].includes(req.params.id)) {
+            dept[targetArray].push(req.params.id);
+          }
+
           await dept.save();
         }
       }

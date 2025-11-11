@@ -39,3 +39,11 @@ export const emitTimeLogged = (boardId, cardId, timeEntry) => {
 export const emitEstimationUpdated = (boardId, cardId, estimationEntry) => {
   io.to(`board-${boardId}`).emit('estimation-updated', { cardId, estimationEntry });
 };
+
+export const emitUserAssigned = (userId, departmentId) => {
+  io.emit('user-assigned', { userId, departmentId });
+};
+
+export const emitUserUnassigned = (userId, departmentId) => {
+  io.emit('user-unassigned', { userId, departmentId });
+};

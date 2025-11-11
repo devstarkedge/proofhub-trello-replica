@@ -6,9 +6,9 @@ import {
   AlertCircle, Info, Filter, Download, Upload,
   TrendingUp, Award, Clock, Mail
 } from 'lucide-react';
-import DepartmentContext from '../context/DepartmentContext';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
+import useDepartmentStore from '../store/departmentStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ManagerSelector from '../components/ManagerSelector';
@@ -61,7 +61,7 @@ const TeamManagement = () => {
     deleteDepartment,
     assignUserToDepartment,
     unassignUserFromDepartment
-  } = useContext(DepartmentContext);
+  } = useDepartmentStore();
 
   const [users, setUsers] = useState([]);
   const [managers, setManagers] = useState([]);
@@ -69,6 +69,7 @@ const TeamManagement = () => {
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('all');
+  const [activeTab, setActiveTab] = useState('assigned'); // 'assigned' or 'all'
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -95,13 +96,51 @@ const TeamManagement = () => {
     avgMembersPerDept: 0
   });
 
+  // Computed values for assigned and available employees
+  const assignedEmployees = employees.filter(emp =>
+    currentDepartment?.members?.some(member => member._id === emp._id)
+  );
+  const availableEmployees = employees.filter(emp =>
+    !currentDepartment?.members?.some(member => member._id === emp._id)
+  );
+
   useEffect(() => {
-    loadUsers();
+    loadData();
   }, []);
 
   useEffect(() => {
     calculateStats();
   }, [departments]);
+
+  // Initialize socket listeners for real-time updates
+  useEffect(() => {
+    const cleanup = useDepartmentStore.getState().initializeSocketListeners();
+    return cleanup;
+  }, []);
+
+  // Auto-select department on first load and persist selection
+  useEffect(() => {
+    if (departments.length > 0 && !currentDepartment) {
+      // Check localStorage for previously selected department
+      const savedDepartmentId = localStorage.getItem('selectedDepartmentId');
+      const savedDepartment = savedDepartmentId ?
+        departments.find(dept => dept._id === savedDepartmentId) : null;
+
+      if (savedDepartment) {
+        setCurrentDepartment(savedDepartment);
+      } else {
+        // Auto-select first department if no saved selection
+        setCurrentDepartment(departments[0]);
+      }
+    }
+  }, [departments, currentDepartment, setCurrentDepartment]);
+
+  // Persist selected department to localStorage
+  useEffect(() => {
+    if (currentDepartment && currentDepartment._id) {
+      localStorage.setItem('selectedDepartmentId', currentDepartment._id);
+    }
+  }, [currentDepartment]);
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
@@ -130,6 +169,11 @@ const TeamManagement = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const loadData = async () => {
+    await loadUsers();
+    await useDepartmentStore.getState().loadDepartments();
   };
 
   const handleCreateDepartment = async (e) => {
@@ -177,14 +221,36 @@ const TeamManagement = () => {
     }
     setIsLoading(true);
     try {
+      // Optimistically update employees state for instant UI feedback
+      setEmployees(prev => prev.map(emp =>
+        selectedUsers.includes(emp._id)
+          ? { ...emp, department: [...(emp.department || []), currentDepartment._id] }
+          : emp
+      ));
+      // Optimistically update currentDepartment members
+      setCurrentDepartment(prev => prev ? {
+        ...prev,
+        members: [...(prev.members || []), ...selectedUsers.map(id => ({ _id: id }))]
+      } : prev);
+      setSelectedUsers([]);
+      showToast(`${selectedUsers.length} employee(s) assigned successfully!`, 'success');
+      // Perform API calls
       for (const userId of selectedUsers) {
         await assignUserToDepartment(userId, currentDepartment._id);
       }
-      setSelectedUsers([]);
-      showToast(`${selectedUsers.length} employee(s) assigned successfully!`, 'success');
-      loadUsers();
+      loadUsers(); // Sync with backend
     } catch (error) {
       showToast('Failed to assign users', 'error');
+      // Revert optimistic updates on error
+      setEmployees(prev => prev.map(emp =>
+        selectedUsers.includes(emp._id)
+          ? { ...emp, department: (emp.department || []).filter(deptId => deptId !== currentDepartment._id) }
+          : emp
+      ));
+      setCurrentDepartment(prev => prev ? {
+        ...prev,
+        members: (prev.members || []).filter(member => !selectedUsers.includes(member._id))
+      } : prev);
     } finally {
       setIsLoading(false);
     }
@@ -199,10 +265,11 @@ const TeamManagement = () => {
   };
 
   const handleSelectAll = () => {
-    if (selectedUsers.length === filteredEmployees.length) {
+    const currentEmployees = activeTab === 'assigned' ? assignedEmployees : availableEmployees;
+    if (selectedUsers.length === currentEmployees.length) {
       setSelectedUsers([]);
     } else {
-      setSelectedUsers(filteredEmployees.map(emp => emp._id));
+      setSelectedUsers(currentEmployees.map(emp => emp._id));
     }
   };
 
@@ -222,13 +289,37 @@ const TeamManagement = () => {
   };
 
   const handleUnassignUser = async (userId) => {
+    if (!currentDepartment) {
+      showToast('No department selected', 'warning');
+      return;
+    }
     setIsLoading(true);
     try {
-      await unassignUserFromDepartment(userId);
+      await unassignUserFromDepartment(userId, currentDepartment._id);
       showToast('User unassigned successfully', 'success');
       loadUsers();
     } catch (error) {
       showToast('Failed to unassign user', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUnassignUsers = async () => {
+    if (!selectedUsers.length || !currentDepartment) {
+      showToast('Please select at least one employee', 'warning');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      for (const userId of selectedUsers) {
+        await unassignUserFromDepartment(userId, currentDepartment._id);
+      }
+      setSelectedUsers([]);
+      showToast(`${selectedUsers.length} employee(s) unassigned successfully!`, 'success');
+      loadUsers();
+    } catch (error) {
+      showToast('Failed to unassign users', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -585,6 +676,36 @@ const TeamManagement = () => {
                   </div>
 
                   <div className="p-6">
+                    {/* Tabs */}
+                    <div className="flex border-b border-gray-200 mb-6">
+                      <button
+                        onClick={() => {
+                          setActiveTab('assigned');
+                          setSelectedUsers([]);
+                        }}
+                        className={`px-6 py-3 font-semibold transition-all ${
+                          activeTab === 'assigned'
+                            ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        Assigned Employees ({currentDepartment.members?.length || 0})
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveTab('all');
+                          setSelectedUsers([]);
+                        }}
+                        className={`px-6 py-3 font-semibold transition-all ${
+                          activeTab === 'all'
+                            ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        All Employees ({employees.length - (currentDepartment.members?.length || 0)})
+                      </button>
+                    </div>
+
                     {/* Search and Filter */}
                     <div className="flex flex-col sm:flex-row gap-3 mb-6">
                       <div className="flex-1 relative">
@@ -601,7 +722,7 @@ const TeamManagement = () => {
                         onClick={handleSelectAll}
                         className="px-4 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium whitespace-nowrap"
                       >
-                        {selectedUsers.length === filteredEmployees.length && filteredEmployees.length > 0
+                        {selectedUsers.length === (activeTab === 'assigned' ? assignedEmployees.length : availableEmployees.length) && (activeTab === 'assigned' ? assignedEmployees.length : availableEmployees.length) > 0
                           ? 'Deselect All'
                           : 'Select All'}
                       </button>
@@ -619,15 +740,22 @@ const TeamManagement = () => {
                             />
                             <p className="text-gray-600">Loading employees...</p>
                           </div>
-                        ) : filteredEmployees.length === 0 ? (
+                        ) : (activeTab === 'assigned' ? assignedEmployees : availableEmployees).length === 0 ? (
                           <div className="p-12 text-center text-gray-500">
                             <Users size={48} className="mx-auto mb-4 text-gray-300" />
-                            <p className="font-semibold mb-2">No employees found</p>
-                            <p className="text-sm">Try adjusting your search criteria</p>
+                            <p className="font-semibold mb-2">
+                              {activeTab === 'assigned' ? 'No assigned employees' : 'No available employees'}
+                            </p>
+                            <p className="text-sm">
+                              {activeTab === 'assigned'
+                                ? 'Employees assigned to this department will appear here'
+                                : 'All employees not assigned to this department will appear here'
+                              }
+                            </p>
                           </div>
                         ) : (
                           <AnimatePresence>
-                            {filteredEmployees.map((employee, index) => (
+                            {(activeTab === 'assigned' ? assignedEmployees : availableEmployees).map((employee, index) => (
                               <motion.label
                                 key={employee._id}
                                 initial={{ opacity: 0, y: 10 }}
@@ -660,7 +788,7 @@ const TeamManagement = () => {
                                     </div>
                                   </div>
                                 </div>
-                                {employee.department?.some(dept => dept._id === currentDepartment._id) && (
+                                {activeTab === 'assigned' && (
                                   <motion.div
                                     initial={{ scale: 0 }}
                                     animate={{ scale: 1 }}
@@ -670,16 +798,6 @@ const TeamManagement = () => {
                                       <CheckCircle size={14} />
                                       Assigned
                                     </span>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUnassignUser(employee._id);
-                                      }}
-                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                      title="Unassign from department"
-                                    >
-                                      <UserPlus size={14} className="rotate-45" />
-                                    </button>
                                   </motion.div>
                                 )}
                               </motion.label>
@@ -689,13 +807,17 @@ const TeamManagement = () => {
                       </div>
                     </div>
 
-                    {/* Assign Button */}
+                    {/* Action Button */}
                     <motion.button
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={handleAssignUsers}
+                      onClick={activeTab === 'assigned' ? handleUnassignUsers : handleAssignUsers}
                       disabled={selectedUsers.length === 0 || isLoading}
-                      className="w-full mt-6 py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2"
+                      className={`w-full mt-6 py-4 rounded-xl font-semibold transition-all shadow-xl flex items-center justify-center gap-2 ${
+                        activeTab === 'assigned'
+                          ? 'bg-gradient-to-r from-red-600 to-red-700 text-white hover:from-red-700 hover:to-red-800 shadow-red-500/30'
+                          : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 shadow-blue-500/30'
+                      } disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
                     >
                       {isLoading ? (
                         <>
@@ -708,8 +830,8 @@ const TeamManagement = () => {
                         </>
                       ) : (
                         <>
-                          <UserPlus size={20} />
-                          Assign {selectedUsers.length > 0 && `(${selectedUsers.length})`} Employee{selectedUsers.length !== 1 ? 's' : ''}
+                          <UserPlus size={20} className={activeTab === 'assigned' ? 'rotate-45' : ''} />
+                          {activeTab === 'assigned' ? 'Unassign' : 'Assign'} {selectedUsers.length > 0 && `(${selectedUsers.length})`} Employee{selectedUsers.length !== 1 ? 's' : ''}
                         </>
                       )}
                     </motion.button>

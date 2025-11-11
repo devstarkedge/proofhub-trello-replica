@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AuthContext from './AuthContext';
 import Database from '../services/database';
+import socketService from '../services/socket';
 
 const DepartmentContext = createContext();
 
@@ -29,6 +30,55 @@ export const TeamProvider = ({ children }) => {
     if (isAuthenticated && user && currentDepartment) {
       loadTeams();
     }
+  }, [currentDepartment]);
+
+  // Socket event listeners for real-time updates
+  useEffect(() => {
+    const handleUserAssigned = (event) => {
+      const { userId, departmentId } = event.detail;
+      console.log('User assigned to department:', userId, departmentId);
+      // Update local state immediately
+      setDepartments(prev => prev.map(dept =>
+        dept._id === departmentId
+          ? { ...dept, members: [...(dept.members || []), userId] }
+          : dept
+      ));
+      // Also update currentDepartment if it's the one being modified
+      if (currentDepartment && currentDepartment._id === departmentId) {
+        setCurrentDepartment(prev => ({
+          ...prev,
+          members: [...(prev.members || []), userId]
+        }));
+      }
+    };
+
+    const handleUserUnassigned = (event) => {
+      const { userId, departmentId } = event.detail;
+      console.log('User unassigned from department:', userId, departmentId);
+      // Update local state immediately
+      setDepartments(prev => prev.map(dept =>
+        dept._id === departmentId
+          ? { ...dept, members: (dept.members || []).filter(id => id !== userId) }
+          : dept
+      ));
+      // Also update currentDepartment if it's the one being modified
+      if (currentDepartment && currentDepartment._id === departmentId) {
+        setCurrentDepartment(prev => ({
+          ...prev,
+          members: (prev.members || []).filter(id => id !== userId)
+        }));
+      }
+    };
+
+    // Add event listeners
+    window.addEventListener('socket-user-assigned', handleUserAssigned);
+    window.addEventListener('socket-user-unassigned', handleUserUnassigned);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('socket-user-assigned', handleUserAssigned);
+      window.removeEventListener('socket-user-unassigned', handleUserUnassigned);
+    };
   }, [currentDepartment]);
 
   const loadDepartments = async () => {
@@ -155,17 +205,41 @@ export const TeamProvider = ({ children }) => {
   const assignUserToDepartment = async (userId, deptId) => {
     try {
       await Database.assignUserToDepartment(userId, deptId);
-      await loadDepartments(); // Reload to get updated members
+      // Update local state immediately instead of reloading
+      setDepartments(prev => prev.map(dept =>
+        dept._id === deptId
+          ? { ...dept, members: [...(dept.members || []), userId] }
+          : dept
+      ));
+      // Also update currentDepartment if it's the one being modified
+      if (currentDepartment && currentDepartment._id === deptId) {
+        setCurrentDepartment(prev => ({
+          ...prev,
+          members: [...(prev.members || []), userId]
+        }));
+      }
     } catch (error) {
       console.error('Error assigning user to department:', error);
       throw error;
     }
   };
 
-  const unassignUserFromDepartment = async (userId) => {
+  const unassignUserFromDepartment = async (userId, deptId) => {
     try {
-      await Database.unassignUserFromDepartment(userId);
-      await loadDepartments(); // Reload to get updated members
+      await Database.unassignUserFromDepartment(userId, deptId);
+      // Update local state immediately instead of reloading
+      setDepartments(prev => prev.map(dept =>
+        dept._id === deptId
+          ? { ...dept, members: (dept.members || []).filter(id => id !== userId) }
+          : dept
+      ));
+      // Also update currentDepartment if it's the one being modified
+      if (currentDepartment && currentDepartment._id === deptId) {
+        setCurrentDepartment(prev => ({
+          ...prev,
+          members: (prev.members || []).filter(id => id !== userId)
+        }));
+      }
     } catch (error) {
       console.error('Error unassigning user from department:', error);
       throw error;
