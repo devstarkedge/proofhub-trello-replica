@@ -2,7 +2,8 @@ import React, { useContext, useState, useRef, useEffect, lazy, Suspense } from '
 import {
   Bell, Menu, Settings, LogOut, User,
   ChevronDown, Kanban, List, Calendar, BarChart3,
-  Users, Building2
+  Users, Building2, CheckCircle, AlertCircle, UserPlus,
+  FolderPlus, Folder, ArrowRight, Trash2
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,6 +24,8 @@ const Header = ({ boardName }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
   const [showDepartmentSelector, setShowDepartmentSelector] = useState(false);
+  const [showNotificationExpand, setShowNotificationExpand] = useState(false);
+  const [visibleNotifications, setVisibleNotifications] = useState(5);
 
   const notificationRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -219,7 +222,14 @@ const Header = ({ boardName }) => {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setShowNotifications(!showNotifications)}
+                onClick={() => {
+                  const nextShow = !showNotifications;
+                  setShowNotifications(nextShow);
+                  if (!nextShow) {
+                    setShowNotificationExpand(false);
+                    setVisibleNotifications(5);
+                  }
+                }}
                 className="relative p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <Bell size={20} />
@@ -241,8 +251,9 @@ const Header = ({ boardName }) => {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
                     className="absolute right-0 top-full mt-2 w-96 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 overflow-hidden"
+                    layout
                   >
-                    <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <motion.div layout="position" className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
                       <div className="flex items-center justify-between">
                         <h3 className="font-semibold text-gray-900">Notifications</h3>
                         {unreadCount > 0 && (
@@ -251,62 +262,166 @@ const Header = ({ boardName }) => {
                           </span>
                         )}
                       </div>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto">
+                    </motion.div>
+                    <motion.div
+                      layout
+                      className="max-h-[450px] overflow-y-auto"
+                      animate={{ height: 'auto' }}
+                      transition={{ type: 'spring', duration: 0.8, bounce: 0.3 }}
+                    >
                       {notifications.length === 0 ? (
                         <div className="p-8 text-center text-gray-500">
                           <Bell size={48} className="mx-auto mb-3 text-gray-300" />
                           <p>No notifications</p>
                         </div>
                       ) : (
-                        notifications.slice(0, 5).map(notification => (
-                          <motion.div
-                            key={notification._id}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
-                              !notification.isRead ? 'bg-blue-50' : ''
-                            }`}
-                            onClick={() => handleNotificationClick(notification)}
-                          >
-                            <p className="text-sm text-gray-900">{notification.message}</p>
-                            <div className="flex items-center justify-between mt-2">
-                              <p className="text-xs text-gray-500">
-                                {new Date(notification.createdAt).toLocaleString()}
-                              </p>
-                              <div className="flex gap-2">
-                                {!notification.isRead && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      markAsRead(notification._id);
-                                    }}
-                                    className="text-xs text-blue-600 hover:text-blue-800"
-                                  >
-                                    Mark read
-                                  </button>
-                                )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    deleteNotification(notification._id);
-                                  }}
-                                  className="text-xs text-red-600 hover:text-red-800"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        ))
+                        <AnimatePresence initial={false}>
+                          {notifications.slice(0, visibleNotifications).map((notification, index) => {
+                            const getNotificationIcon = (type) => {
+                              switch (type) {
+                                case 'task_created':
+                                case 'project_created':
+                                  return <FolderPlus size={16} className="text-green-600" />;
+                                case 'task_deleted':
+                                case 'project_deleted':
+                                  return <Trash2 size={16} className="text-red-600" />;
+                                case 'task_moved':
+                                  return <ArrowRight size={16} className="text-blue-600" />;
+                                case 'task_assigned':
+                                  return <UserPlus size={16} className="text-purple-600" />;
+                                case 'task_updated':
+                                  return <CheckCircle size={16} className="text-orange-600" />;
+                                case 'comment_added':
+                                case 'comment_mention':
+                                  return <AlertCircle size={16} className="text-yellow-600" />;
+                                case 'board_shared':
+                                  return <Folder size={16} className="text-indigo-600" />;
+                                default:
+                                  return <Bell size={16} className="text-gray-600" />;
+                              }
+                            };
+
+                            const getNotificationColor = (type) => {
+                              switch (type) {
+                                case 'task_created':
+                                case 'project_created':
+                                  return 'border-l-green-500';
+                                case 'task_deleted':
+                                case 'project_deleted':
+                                  return 'border-l-red-500';
+                                case 'task_moved':
+                                  return 'border-l-blue-500';
+                                case 'task_assigned':
+                                  return 'border-l-purple-500';
+                                case 'task_updated':
+                                  return 'border-l-orange-500';
+                                case 'comment_added':
+                                case 'comment_mention':
+                                  return 'border-l-yellow-500';
+                                case 'board_shared':
+                                  return 'border-l-indigo-500';
+                                default:
+                                  return 'border-l-gray-500';
+                              }
+                            };
+
+                            return (
+                              <motion.div
+                                key={notification._id}
+                                layout
+                                initial={{ opacity: 0, y: -20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, transition: { duration: 0.2 } }}
+                                transition={{
+                                  type: 'spring',
+                                  stiffness: 300,
+                                  damping: 30,
+                                  delay: index > 4 ? (index - 4) * 0.05 : 0,
+                                }}
+                                className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors border-l-4 ${
+                                  !notification.isRead ? 'bg-blue-50' : ''
+                                } ${getNotificationColor(notification.type)}`}
+                                onClick={() => handleNotificationClick(notification)}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className="flex-shrink-0 mt-0.5">
+                                    {getNotificationIcon(notification.type)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between">
+                                      <p className="text-sm font-medium text-gray-900 mb-1">
+                                        {notification.title}
+                                      </p>
+                                      {!notification.isRead && (
+                                        <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 ml-2"></div>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-gray-700 leading-relaxed">
+                                      {notification.message}
+                                    </p>
+                                    <div className="flex items-center justify-between mt-2">
+                                      <p className="text-xs text-gray-500">
+                                        {new Date(notification.createdAt).toLocaleString()}
+                                      </p>
+                                      <div className="flex gap-2">
+                                        {!notification.isRead && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              markAsRead(notification._id);
+                                            }}
+                                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                          >
+                                            Mark read
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            deleteNotification(notification._id);
+                                          }}
+                                          className="text-xs text-red-600 hover:text-red-800 font-medium"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
                       )}
-                    </div>
+                    </motion.div>
                     {notifications.length > 5 && (
-                      <div className="p-3 text-center border-t border-gray-200">
-                        <button className="text-sm text-blue-600 hover:text-blue-800 font-medium">
-                          View all notifications
-                        </button>
-                      </div>
+                      <motion.div layout className="p-2 text-center border-t border-gray-200 bg-gray-50">
+                        <motion.button
+                          onClick={() => {
+                            setShowNotificationExpand(!showNotificationExpand);
+                            setVisibleNotifications(showNotificationExpand ? 5 : 11);
+                          }}
+                          className="p-2 rounded-full hover:bg-gray-200 transition-colors"
+                          whileHover={{ scale: 1.1, y: -2, transition: { type: 'spring', stiffness: 300 } }}
+                          animate={{ rotate: showNotificationExpand ? 180 : 0 }}
+                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                        >
+                          <motion.div
+                            animate={{
+                              scale: [1, 1.2, 1],
+                              filter: ['brightness(1)', 'brightness(1.5)', 'brightness(1)'],
+                            }}
+                            transition={{
+                              duration: 1.5,
+                              repeat: Infinity,
+                              repeatType: 'mirror',
+                              ease: 'easeInOut',
+                            }}
+                          >
+                            <ChevronDown size={20} className="text-gray-500" />
+                          </motion.div>
+                        </motion.button>
+                      </motion.div>
                     )}
                   </motion.div>
                 )}

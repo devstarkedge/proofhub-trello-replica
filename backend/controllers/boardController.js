@@ -3,9 +3,11 @@ import List from "../models/List.js";
 import Card from "../models/Card.js";
 import Activity from "../models/Activity.js";
 import Department from "../models/Department.js";
+import Notification from "../models/Notification.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
+import { emitNotification } from "../server.js";
 
 // @desc    Get all boards for user
 // @route   GET /api/boards
@@ -242,18 +244,48 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     board: board._id,
   });
 
-  // Send notifications to assigned members if project is public
-  if (board.visibility === 'public' && board.members && board.members.length > 0) {
-    const Notification = (await import('../models/Notification.js')).default;
-    const notifications = board.members.map(memberId => ({
-      type: 'board_shared',
-      title: 'New Project Assigned',
-      message: `You have been assigned to the project "${name}"`,
-      user: memberId,
-      sender: req.user.id,
-      relatedBoard: board._id
-    }));
-    await Notification.insertMany(notifications);
+  // Send notifications to assigned members and department managers
+  const notifications = [];
+
+  // Notify assigned members
+  if (board.members && board.members.length > 0) {
+    board.members.forEach(memberId => {
+      if (memberId.toString() !== req.user.id) { // Don't notify the creator
+        notifications.push({
+          type: 'project_created',
+          title: 'New Project Created',
+          message: `You have been assigned to the project "${name}"`,
+          user: memberId,
+          sender: req.user.id,
+          relatedBoard: board._id
+        });
+      }
+    });
+  }
+
+  // Notify department managers
+  const deptManagers = await Department.findById(board.department).populate('managers', '_id');
+  if (deptManagers && deptManagers.managers && deptManagers.managers.length > 0) {
+    deptManagers.managers.forEach(manager => {
+      if (manager._id.toString() !== req.user.id) { // Don't notify the creator if they're a manager
+        notifications.push({
+          type: 'project_created',
+          title: 'New Project Created',
+          message: `A new project "${name}" has been created in your department`,
+          user: manager._id,
+          sender: req.user.id,
+          relatedBoard: board._id
+        });
+      }
+    });
+  }
+
+  // Create and emit notifications
+  if (notifications.length > 0) {
+    const createdNotifications = await Notification.insertMany(notifications);
+    createdNotifications.forEach(notification => {
+      emitNotification(notification.user.toString(), notification);
+    });
   }
 
   // Invalidate relevant caches
@@ -321,6 +353,50 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   // Check ownership
   if (board.owner.toString() !== req.user.id && req.user.role !== "admin") {
     return next(new ErrorResponse("Not authorized to delete this board", 403));
+  }
+
+  // Send notifications before deletion
+  const notifications = [];
+
+  // Notify assigned members
+  if (board.members && board.members.length > 0) {
+    board.members.forEach(memberId => {
+      if (memberId.toString() !== req.user.id) { // Don't notify the deleter
+        notifications.push({
+          type: 'project_deleted',
+          title: 'Project Deleted',
+          message: `The project "${board.name}" has been deleted`,
+          user: memberId,
+          sender: req.user.id,
+          relatedBoard: board._id
+        });
+      }
+    });
+  }
+
+  // Notify department managers
+  const deptManagersDel = await Department.findById(board.department).populate('managers', '_id');
+  if (deptManagersDel && deptManagersDel.managers && deptManagersDel.managers.length > 0) {
+    deptManagersDel.managers.forEach(manager => {
+      if (manager._id.toString() !== req.user.id) { // Don't notify the deleter if they're a manager
+        notifications.push({
+          type: 'project_deleted',
+          title: 'Project Deleted',
+          message: `The project "${board.name}" has been deleted from your department`,
+          user: manager._id,
+          sender: req.user.id,
+          relatedBoard: board._id
+        });
+      }
+    });
+  }
+
+  // Create and emit notifications
+  if (notifications.length > 0) {
+    const createdNotifications = await Notification.insertMany(notifications);
+    createdNotifications.forEach(notification => {
+      emitNotification(notification.user.toString(), notification);
+    });
   }
 
   // Delete all lists and cards

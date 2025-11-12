@@ -6,7 +6,7 @@ import {
   CheckCircle2, AlertCircle, MoreVertical,
   Edit, Trash2, Eye, Target, Star,
   Activity, Layers, Sparkles, ArrowRight,
-  Briefcase, MapPin, Zap, Shield, Crown
+  Briefcase, MapPin, Zap, Shield, Crown, Building2
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 
@@ -18,6 +18,9 @@ const ProjectCard = ({
   image,
   deptId,
   projectId,
+  departmentManager,
+  departmentName,
+  showManager = false,
   onEdit,
   onDelete,
   onView
@@ -506,14 +509,23 @@ const ProjectCard = ({
         </div>
 
         {/* Department Badge */}
-        {projectData.department && (
+        {(projectData.department || departmentManager || departmentName) && (
           <div className="pt-4 border-t border-gray-100">
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500 font-medium flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-blue-500" />
-                {projectData.department?.name || projectData.department}
+                {showManager ? (
+                  <>
+                    <Crown size={12} className="text-purple-500" />
+                    <span>Manager: {departmentManager || projectData.department?.name || projectData.department}</span>
+                  </>
+                ) : (
+                  <>
+                    <Building2 size={12} className="text-blue-500" />
+                    <span>Department: {departmentName || projectData.department?.name || projectData.department}</span>
+                  </>
+                )}
               </span>
-              
+
               {/* View Project Arrow */}
               <motion.div
                 animate={{ x: isHovered ? 5 : 0 }}

@@ -1,15 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, X, User } from 'lucide-react';
 
-const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = false }) => {
+const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = false, currentDepartment }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Filter managers based on search term and exclude already selected ones
+  // Filter managers based on search term, exclude already selected ones, and exclude managers already assigned to this department
   const availableManagers = managers.filter(manager =>
     !selectedManagers.includes(manager._id) &&
+    (!currentDepartment || !currentDepartment.managers?.includes(manager._id)) &&
     (manager.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
      manager.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
@@ -122,7 +123,7 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
 
         {/* Dropdown Content */}
         {isOpen && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-hidden">
+          <div className="absolute z-[70] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-hidden">
             {/* Search Input */}
             <div className="p-3 border-b border-gray-200">
               <input

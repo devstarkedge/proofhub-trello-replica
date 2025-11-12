@@ -455,6 +455,8 @@ const HomePage = () => {
                                     project={project}
                                     deptId={department._id}
                                     projectId={project._id}
+                                    departmentManager={department.managers?.map(manager => manager.name).join(', ') || 'No Manager'}
+                                    showManager={true}
                                     onEdit={() => handleEditProject(project, department._id)}
                                     onDelete={() => handleDeleteProject(project, department._id)}
                                     onView={() => handleViewProject(project._id)}

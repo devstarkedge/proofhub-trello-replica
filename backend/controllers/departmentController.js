@@ -12,7 +12,7 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
   const departments = await Department.find({ isActive: true })
     .populate("managers", "name email")
     .populate("members", "name email")
-    .populate("projects", "name description background members")
+    .populate("projects", "name description background members status")
     .sort("name");
 
   // Add projects count to each department

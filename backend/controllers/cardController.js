@@ -1,6 +1,7 @@
 import Card from "../models/Card.js";
 import List from "../models/List.js";
 import Board from "../models/Board.js";
+import Department from "../models/Department.js";
 import Activity from "../models/Activity.js";
 import Notification from "../models/Notification.js";
 import mongoose from "mongoose";
@@ -349,7 +350,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
   invalidateCache(`/api/cards/board/${board}`);
   invalidateCache("/api/analytics/dashboard");
   invalidateCache(`/api/analytics/department/`);
-  
+
   // Emit real-time update to board
   emitToBoard(board, 'card-created', {
     card,
@@ -359,6 +360,56 @@ export const createCard = asyncHandler(async (req, res, next) => {
       name: req.user.name
     }
   });
+
+  // Send notifications for task creation
+  const notifications = [];
+
+  // Get board and department info for notifications
+  const boardInfo = await Board.findById(board).populate('department');
+  if (boardInfo) {
+    // Notify assigned users
+    if (card.assignees && card.assignees.length > 0) {
+      card.assignees.forEach(assigneeId => {
+        if (assigneeId.toString() !== req.user.id) {
+          notifications.push({
+            type: 'task_created',
+            title: 'New Task Created',
+            message: `You have been assigned to the task "${title}"`,
+            user: assigneeId,
+            sender: req.user.id,
+            relatedCard: card._id,
+            relatedBoard: board,
+          });
+        }
+      });
+    }
+
+    // Notify department managers
+    const department = await Department.findById(boardInfo.department).populate('managers', '_id');
+    if (department && department.managers && department.managers.length > 0) {
+      department.managers.forEach(manager => {
+        if (manager._id.toString() !== req.user.id) {
+          notifications.push({
+            type: 'task_created',
+            title: 'New Task Created',
+            message: `A new task "${title}" has been created in your department`,
+            user: manager._id,
+            sender: req.user.id,
+            relatedCard: card._id,
+            relatedBoard: board,
+          });
+        }
+      });
+    }
+
+    // Create and emit notifications
+    if (notifications.length > 0) {
+      const createdNotifications = await Notification.insertMany(notifications);
+      createdNotifications.forEach(notification => {
+        emitNotification(notification.user.toString(), notification);
+      });
+    }
+  }
 
   // Notify assignee if different from creator
   if (assignee && assignee.toString() !== req.user.id) {
@@ -728,6 +779,58 @@ export const moveCard = asyncHandler(async (req, res, next) => {
     }
   });
 
+  // Send notifications for task movement
+  if (sourceListId.toString() !== destinationListId) {
+    const notifications = [];
+
+    // Get board and department info for notifications
+    const boardInfo = await Board.findById(card.board).populate('department');
+    if (boardInfo) {
+      // Notify assigned users
+      if (card.assignees && card.assignees.length > 0) {
+        card.assignees.forEach(assigneeId => {
+          if (assigneeId.toString() !== req.user.id) {
+            notifications.push({
+              type: 'task_moved',
+              title: 'Task Moved',
+              message: `Task "${card.title}" has been moved from "${card.list.title}" to "${destinationList.title}"`,
+              user: assigneeId,
+              sender: req.user.id,
+              relatedCard: card._id,
+              relatedBoard: card.board,
+            });
+          }
+        });
+      }
+
+      // Notify department managers
+      const department = await Department.findById(boardInfo.department).populate('managers', '_id');
+      if (department && department.managers && department.managers.length > 0) {
+        department.managers.forEach(manager => {
+          if (manager._id.toString() !== req.user.id) {
+            notifications.push({
+              type: 'task_moved',
+              title: 'Task Moved',
+              message: `Task "${card.title}" has been moved from "${card.list.title}" to "${destinationList.title}" in your department`,
+              user: manager._id,
+              sender: req.user.id,
+              relatedCard: card._id,
+              relatedBoard: card.board,
+            });
+          }
+        });
+      }
+
+      // Create and emit notifications
+      if (notifications.length > 0) {
+        const createdNotifications = await Notification.insertMany(notifications);
+        createdNotifications.forEach(notification => {
+          emitNotification(notification.user.toString(), notification);
+        });
+      }
+    }
+  }
+
   // Invalidate all related caches
   invalidateCache(`/api/boards/${card.board.toString()}`);
   invalidateCache(`/api/cards/list/${sourceListId}`);
@@ -755,6 +858,56 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   }
 
   const boardId = card.board;
+
+  // Send notifications before deletion
+  const notifications = [];
+
+  // Get board and department info for notifications
+  const boardInfo = await Board.findById(card.board).populate('department');
+  if (boardInfo) {
+    // Notify assigned users
+    if (card.assignees && card.assignees.length > 0) {
+      card.assignees.forEach(assigneeId => {
+        if (assigneeId.toString() !== req.user.id) {
+          notifications.push({
+            type: 'task_deleted',
+            title: 'Task Deleted',
+            message: `The task "${card.title}" has been deleted`,
+            user: assigneeId,
+            sender: req.user.id,
+            relatedCard: card._id,
+            relatedBoard: card.board,
+          });
+        }
+      });
+    }
+
+    // Notify department managers
+    const department = await Department.findById(boardInfo.department).populate('managers', '_id');
+    if (department && department.managers && department.managers.length > 0) {
+      department.managers.forEach(manager => {
+        if (manager._id.toString() !== req.user.id) {
+          notifications.push({
+            type: 'task_deleted',
+            title: 'Task Deleted',
+            message: `The task "${card.title}" has been deleted from your department`,
+            user: manager._id,
+            sender: req.user.id,
+            relatedCard: card._id,
+            relatedBoard: card.board,
+          });
+        }
+      });
+    }
+
+    // Create and emit notifications
+    if (notifications.length > 0) {
+      const createdNotifications = await Notification.insertMany(notifications);
+      createdNotifications.forEach(notification => {
+        emitNotification(notification.user.toString(), notification);
+      });
+    }
+  }
 
   // Log activity before deletion
   await Activity.create({

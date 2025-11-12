@@ -286,6 +286,8 @@ const Dashboard = memo(() => {
                     >
                       <ProjectCard
                         project={project}
+                        departmentName={project.department}
+                        showManager={false}
                         onView={() => handleViewProject(project.id)}
                         onEdit={() => handleEditProject(project)}
                         onDelete={() => handleDeleteProject(project.id)}

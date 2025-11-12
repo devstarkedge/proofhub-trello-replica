@@ -12,6 +12,7 @@ import useDepartmentStore from '../store/departmentStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ManagerSelector from '../components/ManagerSelector';
+import EditDepartmentModal from '../components/EditDepartmentModal';
 
 // Toast Notification Component
 const Toast = ({ message, type, onClose }) => {
@@ -74,6 +75,8 @@ const TeamManagement = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [reassignData, setReassignData] = useState(null);
   const [departmentToDelete, setDepartmentToDelete] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -93,6 +96,7 @@ const TeamManagement = () => {
   const [stats, setStats] = useState({
     totalDepartments: 0,
     totalMembers: 0,
+    totalManagers: 0,
     avgMembersPerDept: 0
   });
 
@@ -110,7 +114,7 @@ const TeamManagement = () => {
 
   useEffect(() => {
     calculateStats();
-  }, [departments]);
+  }, [departments, employees, managers]);
 
   // Initialize socket listeners for real-time updates
   useEffect(() => {
@@ -148,9 +152,15 @@ const TeamManagement = () => {
 
   const calculateStats = () => {
     const totalMembers = departments.reduce((acc, dept) => acc + (dept.members?.length || 0), 0);
+    // Count only users with 'employee' role for Total Employees
+    const totalEmployees = employees.length;
+    // Count only users with 'manager' role for Total Managers
+    const totalManagers = managers.filter(m => m.role === 'manager').length;
+    
     setStats({
       totalDepartments: departments.length,
-      totalMembers,
+      totalMembers: totalEmployees,
+      totalManagers: totalManagers,
       avgMembersPerDept: departments.length > 0 ? Math.round(totalMembers / departments.length) : 0
     });
   };
@@ -162,6 +172,7 @@ const TeamManagement = () => {
       const allUsers = userList.data || [];
       setUsers(allUsers);
       setManagers(allUsers.filter(u => u.role === 'manager' || u.role === 'admin'));
+      // Filter only verified employees with role 'employee'
       setEmployees(allUsers.filter(u => u.isVerified && u.role === 'employee'));
     } catch (error) {
       console.error('Error loading users:', error);
@@ -219,41 +230,98 @@ const TeamManagement = () => {
       showToast('Please select at least one employee', 'warning');
       return;
     }
+
+    // Check if any selected employees are already assigned to other departments
+    const employeesToCheck = employees.filter(emp => selectedUsers.includes(emp._id));
+    const employeesWithOtherAssignments = employeesToCheck.filter(emp =>
+      emp.department && emp.department.length > 0 &&
+      !emp.department.some(dept => (typeof dept === 'string' ? dept : dept._id || dept) === currentDepartment._id)
+    );
+
+    if (employeesWithOtherAssignments.length > 0) {
+      // Show reassign confirmation modal
+      const employee = employeesWithOtherAssignments[0];
+      const otherDepartments = employee.department.filter(dept =>
+        (typeof dept === 'string' ? dept : dept._id || dept) !== currentDepartment._id
+      );
+      const otherDeptNames = departments
+        .filter(dept => otherDepartments.some(otherDept =>
+          (typeof otherDept === 'string' ? otherDept : otherDept._id || otherDept) === dept._id
+        ))
+        .map(dept => dept.name)
+        .join(', ');
+
+      setReassignData({
+        employee,
+        otherDeptNames,
+        selectedDepartment: currentDepartment.name,
+        selectedUsers,
+        currentDepartment
+      });
+      setShowReassignModal(true);
+      return;
+    }
+
+    // No conflicts, proceed with assignment
+    await performAssignment(selectedUsers, currentDepartment);
+  };
+
+  const performAssignment = async (userIds, department) => {
     setIsLoading(true);
     try {
       // Optimistically update employees state for instant UI feedback
       setEmployees(prev => prev.map(emp =>
-        selectedUsers.includes(emp._id)
-          ? { ...emp, department: [...(emp.department || []), currentDepartment._id] }
+        userIds.includes(emp._id)
+          ? { ...emp, department: [...(emp.department || []), department._id] }
           : emp
       ));
       // Optimistically update currentDepartment members
       setCurrentDepartment(prev => prev ? {
         ...prev,
-        members: [...(prev.members || []), ...selectedUsers.map(id => ({ _id: id }))]
+        members: [...(prev.members || []), ...userIds.map(id => ({ _id: id }))]
       } : prev);
       setSelectedUsers([]);
-      showToast(`${selectedUsers.length} employee(s) assigned successfully!`, 'success');
+      // Show success toast with proper message format
+      const employeeNames = employees.filter(emp => userIds.includes(emp._id)).map(emp => emp.name).join(', ');
+      showToast(`Employee ${employeeNames} successfully assigned to ${department.name}.`, 'success');
       // Perform API calls
-      for (const userId of selectedUsers) {
-        await assignUserToDepartment(userId, currentDepartment._id);
+      for (const userId of userIds) {
+        await assignUserToDepartment(userId, department._id);
       }
       loadUsers(); // Sync with backend
+      // Ensure department remains selected after assignment
+      setCurrentDepartment(department);
+      // Switch to assigned tab to show the newly assigned employees
+      setActiveTab('assigned');
     } catch (error) {
       showToast('Failed to assign users', 'error');
       // Revert optimistic updates on error
       setEmployees(prev => prev.map(emp =>
-        selectedUsers.includes(emp._id)
-          ? { ...emp, department: (emp.department || []).filter(deptId => deptId !== currentDepartment._id) }
+        userIds.includes(emp._id)
+          ? { ...emp, department: (emp.department || []).filter(deptId => deptId !== department._id) }
           : emp
       ));
       setCurrentDepartment(prev => prev ? {
         ...prev,
-        members: (prev.members || []).filter(member => !selectedUsers.includes(member._id))
+        members: (prev.members || []).filter(member => !userIds.includes(member._id))
       } : prev);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleReassignConfirm = async () => {
+    if (!reassignData) return;
+
+    setShowReassignModal(false);
+    await performAssignment(reassignData.selectedUsers, reassignData.currentDepartment);
+    setReassignData(null);
+  };
+
+  const handleReassignCancel = () => {
+    setShowReassignModal(false);
+    setReassignData(null);
+    setSelectedUsers([]);
   };
 
   const handleUserSelection = (userId) => {
@@ -483,6 +551,21 @@ const TeamManagement = () => {
                     <div>
                       <p className="text-2xl font-bold text-gray-900">{stats.totalDepartments}</p>
                       <p className="text-xs text-gray-600">Departments</p>
+                    </div>
+                  </div>
+                </motion.div>
+                
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  className="bg-white rounded-xl shadow-sm p-4 border border-gray-100"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Shield className="text-purple-600" size={20} />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">{stats.totalManagers}</p>
+                      <p className="text-xs text-gray-600">Total Managers</p>
                     </div>
                   </div>
                 </motion.div>
@@ -785,10 +868,26 @@ const TeamManagement = () => {
                                         <Mail size={12} className="text-gray-400" />
                                         <p className="text-sm text-gray-600 truncate">{employee.email}</p>
                                       </div>
+                                      {/* Show assigned department names for employees with multiple assignments */}
+                                      {activeTab === 'assigned' && employee.department && employee.department.length > 1 && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                          {departments
+                                            .filter(dept => employee.department.includes(dept._id))
+                                            .map(dept => (
+                                              <span
+                                                key={dept._id}
+                                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full font-medium"
+                                              >
+                                                {dept.name}
+                                              </span>
+                                            ))}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
-                                {activeTab === 'assigned' && (
+                                {/* Show "Assigned" tag only in total employee list for employees with any department assignment */}
+                                {activeTab === 'all' && employee.department && employee.department.length > 0 && (
                                   <motion.div
                                     initial={{ scale: 0 }}
                                     animate={{ scale: 1 }}
@@ -800,6 +899,7 @@ const TeamManagement = () => {
                                     </span>
                                   </motion.div>
                                 )}
+                                {/* Show "Assigned" tag in assigned employees list - removed as per requirements */}
                               </motion.label>
                             ))}
                           </AnimatePresence>
@@ -1004,113 +1104,26 @@ const TeamManagement = () => {
       </AnimatePresence>
 
       {/* Edit Department Modal */}
-      <AnimatePresence>
-        {showEditModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => !isLoading && setShowEditModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
-            >
-              <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-t-2xl">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
-                      <Edit2 className="text-white" size={24} />
-                    </div>
-                    <h3 className="text-2xl font-bold text-white">Edit Department</h3>
-                  </div>
-                  <button
-                    onClick={() => !isLoading && setShowEditModal(false)}
-                    disabled={isLoading}
-                    className="p-2 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    <X size={24} className="text-white" />
-                  </button>
-                </div>
-              </div>
-
-              <form onSubmit={handleEditDepartment} className="p-6 space-y-6">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Department Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Engineering, Marketing, Sales"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                    required
-                    disabled={isLoading}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Description
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Brief description of the department's role and responsibilities"
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none transition-all"
-                    disabled={isLoading}
-                  />
-                </div>
-
-                <ManagerSelector
-                  managers={managers}
-                  selectedManagers={formData.managers}
-                  onChange={(selected) => setFormData({ ...formData, managers: selected })}
-                  disabled={isLoading}
-                />
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowEditModal(false)}
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg shadow-indigo-500/30 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {isLoading ? (
-                      <>
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                        />
-                        Updating...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle size={20} />
-                        Update Department
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <EditDepartmentModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        department={currentDepartment}
+        onDepartmentUpdated={async (updatedData) => {
+          setIsLoading(true);
+          try {
+            await updateDepartment(currentDepartment._id, updatedData);
+            setShowEditModal(false);
+            setFormData({ name: '', description: '', managers: [] });
+            showToast('Department updated successfully!', 'success');
+          } catch (error) {
+            showToast('Failed to update department', 'error');
+          } finally {
+            setIsLoading(false);
+          }
+        }}
+        managers={managers}
+        isLoading={isLoading}
+      />
 
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
@@ -1337,6 +1350,90 @@ const TeamManagement = () => {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Reassign Confirmation Modal */}
+      <AnimatePresence>
+        {showReassignModal && reassignData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => !isLoading && handleReassignCancel()}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full"
+            >
+              <div className="p-6">
+                <div className="flex items-center gap-4 mb-6">
+                  <motion.div
+                    animate={{
+                      scale: [1, 1.1, 1],
+                      rotate: [0, -10, 10, -10, 0]
+                    }}
+                    transition={{
+                      duration: 0.5,
+                      repeat: Infinity,
+                      repeatDelay: 2
+                    }}
+                    className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center flex-shrink-0"
+                  >
+                    <AlertCircle size={32} className="text-orange-600" />
+                  </motion.div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900 mb-1">Reassign Employee?</h3>
+                    <p className="text-sm text-gray-600">This employee is already assigned to other departments</p>
+                  </div>
+                </div>
+
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
+                  <p className="text-gray-700 text-sm leading-relaxed mb-3">
+                    <span className="font-bold text-orange-700">{reassignData.employee.name}</span> is already assigned in <span className="font-bold text-orange-700">{reassignData.otherDeptNames}</span>.
+                  </p>
+                  <p className="text-gray-700 text-sm leading-relaxed">
+                    Do you want to re-assign the same user to another department (<span className="font-bold text-orange-700">{reassignData.selectedDepartment}</span>)?
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleReassignCancel}
+                    disabled={isLoading}
+                    className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleReassignConfirm}
+                    disabled={isLoading}
+                    className="flex-1 px-6 py-3 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isLoading ? (
+                      <>
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
+                        />
+                        Reassigning...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle size={20} />
+                        Confirm Reassign
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}
