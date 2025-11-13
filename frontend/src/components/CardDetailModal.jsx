@@ -28,6 +28,7 @@ import Database from "../services/database";
 import AuthContext from "../context/AuthContext";
 import { toast } from "react-toastify";
 import RichTextEditor from "./RichTextEditor";
+import useWorkflowStore from "../store/workflowStore";
 
 const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const { user } = useContext(AuthContext);
@@ -35,7 +36,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [description, setDescription] = useState(card.description || "");
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [assignees, setAssignees] = useState(
-    card.assignees ? card.assignees.map((a) => a._id) : []
+    card.assignees ? card.assignees.map((a) => typeof a === 'object' ? a._id : a) : []
   );
   const [priority, setPriority] = useState(card.priority || "");
   const [status, setStatus] = useState(card.status || "");
@@ -63,6 +64,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [attachments, setAttachments] = useState(card.attachments || []);
   const [teamMembers, setTeamMembers] = useState([]);
   const [saving, setSaving] = useState(false);
+
   const [projectName, setProjectName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredMembers, setFilteredMembers] = useState([]);
@@ -88,6 +90,34 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [editLoggedDescription, setEditLoggedDescription] = useState("");
 
   useEffect(() => {
+    // Load fresh card data from server when modal opens
+    const loadFreshCardData = async () => {
+      try {
+        const freshCard = await useWorkflowStore.getState().getFreshCard(card._id);
+        if (freshCard) {
+          setTitle(freshCard.title);
+          setDescription(freshCard.description || "");
+          setAssignees(freshCard.assignees ? freshCard.assignees.map((a) => typeof a === 'object' ? a._id : a) : []);
+          setPriority(freshCard.priority || "");
+          setStatus(freshCard.status || "");
+          setDueDate(freshCard.dueDate ? new Date(freshCard.dueDate).toISOString().split("T")[0] : "");
+          setStartDate(freshCard.startDate ? new Date(freshCard.startDate).toISOString().split("T")[0] : "");
+          setLabels(freshCard.labels || []);
+          setSubtasks(freshCard.subtasks ? freshCard.subtasks.map((s) => ({
+            id: s._id || Date.now(),
+            text: s.title || s.text,
+            completed: s.completed,
+          })) : []);
+          setEstimationEntries(freshCard.estimationTime || []);
+          setLoggedTime(freshCard.loggedTime || []);
+          setAttachments(freshCard.attachments || []);
+        }
+      } catch (error) {
+        console.error("Error loading fresh card data:", error);
+      }
+    };
+
+    loadFreshCardData();
     loadComments();
     loadTeamMembers();
     loadProjectName();
@@ -126,7 +156,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     const handleCommentUpdated = (event) => {
       const { cardId, commentId, updates } = event.detail;
       if (cardId === card._id) {
-        setComments(prev => prev.map(c => 
+        setComments(prev => prev.map(c =>
           c._id === commentId ? { ...c, ...updates } : c
         ));
       }
@@ -653,7 +683,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-60 p-4 overflow-y-auto backdrop-blur-sm"
+        className="fixed inset-0  bg-opacity-50 flex items-start justify-center z-60 p-4 overflow-y-auto backdrop-blur-sm"
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <motion.div
@@ -1557,9 +1587,8 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                         <div className="mb-3">
                           <div className="flex flex-wrap gap-2">
                             {assignees.map((assigneeId) => {
-                              const member = teamMembers.find(
-                                (m) => m._id === assigneeId
-                              );
+                              // Find assignee in team members
+                              const assignee = teamMembers.find(m => m._id === assigneeId);
                               return (
                                 <motion.div
                                   key={assigneeId}
@@ -1569,9 +1598,9 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                                   className="flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-2 rounded-full text-sm font-medium"
                                 >
                                   <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                                    {member?.name?.[0]?.toUpperCase() || "U"}
+                                    {assignee?.name?.[0]?.toUpperCase() || assignee?.email?.[0]?.toUpperCase() || "U"}
                                   </div>
-                                  <span>{member?.name || "Unknown"}</span>
+                                  <span>{assignee?.name || assignee?.email || "Unknown"}</span>
                                   <button
                                     onClick={() =>
                                       setAssignees(

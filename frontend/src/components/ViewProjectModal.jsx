@@ -232,23 +232,19 @@ const ViewProjectModal = ({ isOpen, onClose, projectId }) => {
                 </div>
               </div>
 
-              {/* Team & Members */}
+              {/* Department & Members */}
               <div className="bg-gray-50 rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                   <Users size={20} className="text-blue-600" />
-                  Team & Members
+                  Department & Members
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
                     <div className="flex items-center gap-2">
                       <Building size={16} className="text-gray-500" />
                       <p className="text-gray-900">{project.department?.name || 'Not assigned'}</p>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
-                    <p className="text-gray-900">{project.team?.name || 'Not assigned'}</p>
                   </div>
                 </div>
                 {project.members && project.members.length > 0 && (

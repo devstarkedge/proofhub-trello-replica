@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { 
-  X, Plus, AlertCircle, Loader, Calendar, Users, DollarSign, 
+import {
+  X, Plus, AlertCircle, Loader, Calendar, Users, DollarSign,
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
-  CheckCircle2, ChevronDown
+  CheckCircle2, ChevronDown, Shield, User, Crown
 } from "lucide-react"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select"
 import { Badge } from "../components/ui/badge"
@@ -423,22 +423,50 @@ const AddProjectModal = ({ isOpen, onClose, departmentId, onProjectAdded }) => {
                     <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors">
                       <SelectValue placeholder="Select team members..." />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-64">
                       {employees
                         .filter(employee => !formData.assignees.includes(employee._id))
-                        .map((employee) => (
-                          <SelectItem key={employee._id} value={employee._id}>
-                            <div className="flex items-center gap-2">
-                              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs font-semibold">
-                                {(employee.name?.name || employee.name || "U").charAt(0).toUpperCase()}
+                        .map((employee) => {
+                          const getRoleIcon = (role) => {
+                            switch (role) {
+                              case 'admin':
+                                return <Crown size={14} className="text-yellow-500" />;
+                              case 'manager':
+                                return <Shield size={14} className="text-blue-500" />;
+                              default:
+                                return <User size={14} className="text-gray-500" />;
+                            }
+                          };
+
+                          const getRoleLabel = (role) => {
+                            switch (role) {
+                              case 'admin':
+                                return 'Admin';
+                              case 'manager':
+                                return 'Manager';
+                              default:
+                                return 'Member';
+                            }
+                          };
+
+                          return (
+                            <SelectItem key={employee._id} value={employee._id} className="py-3">
+                              <div className="flex items-center gap-3 w-full">
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                                  {(employee.name?.name || employee.name || "U").charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex flex-col flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-gray-900 truncate">{employee.name?.name || employee.name || "Unknown"}</span>
+                                    {getRoleIcon(employee.role)}
+                                  </div>
+                                  <span className="text-xs text-gray-500 truncate">{employee.email?.email || employee.email || "No email"}</span>
+                                  <span className="text-xs text-blue-600 font-medium">{getRoleLabel(employee.role)}</span>
+                                </div>
                               </div>
-                              <div>
-                                <div className="font-medium">{employee.name?.name || employee.name || "Unknown"}</div>
-                                <div className="text-xs text-gray-500">{employee.email?.email || employee.email || "No email"}</div>
-                              </div>
-                            </div>
-                          </SelectItem>
-                        ))}
+                            </SelectItem>
+                          );
+                        })}
                     </SelectContent>
                   </Select>
                   <AnimatePresence>

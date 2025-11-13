@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { Plus, MoreHorizontal, X, Copy, Move, Eye, Palette, Zap, Archive, Trash2, Edit3 } from 'lucide-react';
 import Card from './Card';
 import AddCardForm from './AddCardForm';
 import Database from '../services/database';
 
-const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
+const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -194,15 +194,10 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
                         e.stopPropagation();
                         const newTitle = prompt('Enter new list name:', list.title);
                         if (newTitle && newTitle.trim() && newTitle.trim() !== list.title) {
-                          Database.updateList(list._id, { title: newTitle.trim() })
-                            .then(() => {
-                              // Refresh the page or emit event to update UI
-                              window.location.reload();
-                            })
-                            .catch((error) => {
-                              console.error('Error renaming list:', error);
-                              alert('Failed to rename list. Please try again.');
-                            });
+                          // Use the onUpdateListTitle prop instead of direct API call
+                          if (onUpdateListTitle) {
+                            onUpdateListTitle(list._id, newTitle.trim());
+                          }
                         }
                         setShowMenu(false);
                       }}
@@ -327,6 +322,8 @@ const KanbanList = ({ list, cards, onAddCard, onDeleteCard, onCardClick, onDelet
       )}
     </div>
   );
-};
+}
+
+);
 
 export default KanbanList;

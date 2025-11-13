@@ -69,10 +69,10 @@ export const getWorkflowData = asyncHandler(async (req, res, next) => {
   const { departmentId, projectId } = req.params;
 
   const board = await Board.findById(projectId)
-    .populate("owner", "name email avatar")
+    .populate("owner", "name email avatar role")
     .populate("team", "name")
     .populate("department", "name")
-    .populate("members", "name email avatar");
+    .populate("members", "name email avatar role");
 
   if (!board) {
     return next(new ErrorResponse("Project not found", 404));

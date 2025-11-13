@@ -525,16 +525,6 @@ const ProjectCard = ({
                   </>
                 )}
               </span>
-
-              {/* View Project Arrow */}
-              <motion.div
-                animate={{ x: isHovered ? 5 : 0 }}
-                transition={{ duration: 0.3 }}
-                className="flex items-center gap-1 text-blue-600 text-xs font-semibold"
-              >
-                <span>View</span>
-                <ArrowRight size={14} />
-              </motion.div>
             </div>
           </div>
         )}

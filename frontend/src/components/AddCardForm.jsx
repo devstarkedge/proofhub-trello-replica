@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { X } from 'lucide-react';
 
-const AddCardForm = ({ listId, onAdd, onCancel }) => {
+const AddCardForm = memo(({ listId, onAdd, onCancel }) => {
   const [title, setTitle] = useState('');
   
   const handleSubmit = (e) => {
@@ -46,6 +46,8 @@ const AddCardForm = ({ listId, onAdd, onCancel }) => {
       </div>
     </div>
   );
-};
+}
+
+);
 
 export default AddCardForm;

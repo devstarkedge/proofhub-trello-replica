@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { motion } from "framer-motion";
 import {
   Trash2,
@@ -13,7 +13,7 @@ import {
   Eye,
 } from "lucide-react";
 
-const Card = ({ card, onClick, onDelete, compact = false }) => {
+const Card = memo(({ card, onClick, onDelete, compact = false }) => {
   const hasDetails =
     card.description ||
     card.labels?.length > 0 ||
@@ -312,6 +312,8 @@ const Card = ({ card, onClick, onDelete, compact = false }) => {
       )}
     </motion.div>
   );
-};
+}
+
+);
 
 export default Card;

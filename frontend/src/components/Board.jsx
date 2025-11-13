@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import KanbanList from './List';
 
-const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onMoveCard, onMoveList }) => {
+const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onUpdateListTitle, onMoveCard, onMoveList }) => {
   const [isAddingList, setIsAddingList] = useState(false);
   const [newListTitle, setNewListTitle] = useState('');
   const [draggedList, setDraggedList] = useState(null);
@@ -89,6 +89,7 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
               onCardClick={onCardClick}
               onDeleteList={onDeleteList}
               onUpdateListColor={onUpdateListColor}
+              onUpdateListTitle={onUpdateListTitle}
               onMoveCard={onMoveCard}
               onDragStart={handleListDragStart}
               onDragOver={handleListDragOver}

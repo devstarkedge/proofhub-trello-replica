@@ -1,240 +1,149 @@
-import React, { useState, useEffect, useContext, Suspense } from 'react';
+import React, { useState, useEffect, useContext, Suspense, memo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Check, X } from 'lucide-react';
+import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown } from 'lucide-react';
 import Database from '../services/database';
 import Header from '../components/Header';
 import Board from '../components/Board';
 import { lazy } from 'react';
 const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
+const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
 import DepartmentContext from '../context/DepartmentContext';
 import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';
+import useWorkflowStore from '../store/workflowStore';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
 
-const WorkFlow = () => {
+const WorkFlow = memo(() => {
   const { deptId, projectId } = useParams();
   const navigate = useNavigate();
   const { currentTeam, loading: teamLoading } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
-  const [board, setBoard] = useState(null);
-  const [lists, setLists] = useState([]);
-  const [cardsByList, setCardsByList] = useState({});
+
+  // Use workflow store
+  const {
+    board,
+    lists,
+    cardsByList,
+    loading,
+    error,
+    initializeWorkflow,
+    updateBoard,
+    addCard,
+    deleteCard,
+    updateCard,
+    moveCard,
+    addList,
+    deleteList,
+    updateListColor,
+    updateListTitle,
+    moveList,
+    getCard
+  } = useWorkflowStore();
+
   const [selectedCard, setSelectedCard] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('All');
   const [priorityFilter, setPriorityFilter] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingName, setEditingName] = useState(false);
-  const [editingDescription, setEditingDescription] = useState(false);
-  const [tempName, setTempName] = useState('');
-  const [tempDescription, setTempDescription] = useState('');
-  const [updatingProject, setUpdatingProject] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [fullProjectData, setFullProjectData] = useState(null);
 
   useEffect(() => {
     if (deptId && projectId && !teamLoading) {
       loadData();
     }
-  }, [deptId, projectId, teamLoading]);
+  }, [deptId, projectId, teamLoading, initializeWorkflow]);
 
   useEffect(() => {
     if (user && board) {
       socketService.connect(user.id);
       socketService.joinBoard(board._id);
 
-      const handleCardUpdate = (event) => {
-        const { cardId, updates } = event.detail;
-        setCardsByList(prev => {
-          const newCardsByList = { ...prev };
-          Object.keys(newCardsByList).forEach(listId => {
-            newCardsByList[listId] = newCardsByList[listId].map(card =>
-              card._id === cardId ? { ...card, ...updates } : card
-            );
-          });
-          return newCardsByList;
-        });
-      };
-
-      const handleCommentAdded = (event) => {
-        const { cardId, comment } = event.detail;
-        setCardsByList(prev => {
-          const newCardsByList = { ...prev };
-          Object.keys(newCardsByList).forEach(listId => {
-            newCardsByList[listId] = newCardsByList[listId].map(card =>
-              card._id === cardId ? { ...card, comments: [...(card.comments || []), comment._id] } : card
-            );
-          });
-          return newCardsByList;
-        });
-      };
-
-      const handleCardMoved = (event) => {
-        const { cardId, sourceListId, destinationListId, newPosition } = event.detail;
-        setCardsByList(prev => {
-          const newCardsByList = { ...prev };
-
-          // Find the card being moved
-          let movedCard = null;
-          Object.keys(newCardsByList).forEach(listId => {
-            const cardIndex = newCardsByList[listId].findIndex(card => card._id === cardId);
-            if (cardIndex !== -1) {
-              movedCard = newCardsByList[listId][cardIndex];
-              // Remove from source list
-              newCardsByList[listId] = newCardsByList[listId].filter(card => card._id !== cardId);
-            }
-          });
-
-          if (movedCard) {
-            // Update card's listId
-            movedCard = { ...movedCard, list: destinationListId, position: newPosition };
-
-            // Add to destination list at the correct position
-            if (!newCardsByList[destinationListId]) {
-              newCardsByList[destinationListId] = [];
-            }
-            newCardsByList[destinationListId].splice(newPosition, 0, movedCard);
-
-            // Update positions in destination list
-            newCardsByList[destinationListId] = newCardsByList[destinationListId].map((card, index) => ({
-              ...card,
-              position: index
-            }));
-          }
-
-          return newCardsByList;
-        });
-      };
-
-      window.addEventListener('socket-card-updated', handleCardUpdate);
-      window.addEventListener('socket-comment-added', handleCommentAdded);
-      window.addEventListener('socket-card-moved', handleCardMoved);
-
       return () => {
-        window.removeEventListener('socket-card-updated', handleCardUpdate);
-        window.removeEventListener('socket-comment-added', handleCommentAdded);
-        window.removeEventListener('socket-card-moved', handleCardMoved);
         socketService.leaveBoard(board._id);
       };
     }
   }, [user, board]);
 
+  // Update selected card when it changes in the store
+  useEffect(() => {
+    if (selectedCard && selectedCard._id) {
+      const updatedCard = getCard(selectedCard._id);
+      if (updatedCard && JSON.stringify(updatedCard) !== JSON.stringify(selectedCard)) {
+        setSelectedCard(updatedCard);
+      }
+    }
+  }, [cardsByList, selectedCard?._id, getCard]);
+
   const loadData = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      
+      // Check department access first
       const response = await Database.getProject(projectId);
-      
+
       if (!response.success) {
         throw new Error(response.message || 'Failed to load project');
       }
-      
+
       const projectBoard = response.data;
-      
+
       if (projectBoard.department._id !== deptId && projectBoard.department !== deptId) {
-        setError('This project does not belong to the specified department.');
-        setLoading(false);
-        return;
+        throw new Error('This project does not belong to the specified department.');
       }
-      
-      setBoard(projectBoard);
 
-      const listsResponse = await Database.getLists(projectBoard._id);
-      const boardLists = listsResponse.data || listsResponse;
-      setLists(boardLists);
-
-      const cardsMap = {};
-      for (const list of boardLists) {
-        const cardsResponse = await Database.getCards(list._id);
-        cardsMap[list._id] = cardsResponse.data || cardsResponse;
-      }
-      setCardsByList(cardsMap);
+      // Initialize workflow store with project data
+      await initializeWorkflow(projectId);
     } catch (error) {
       console.error('Error loading project data:', error);
-      setError(error.message || 'Failed to load project. You may not have permission to access this project.');
-    } finally {
-      setLoading(false);
+      throw error; // Let the store handle error state
     }
   };
   
   const handleAddCard = async (listId, title) => {
     try {
-      const newCard = await Database.createCard(listId, title, board._id);
-      // Optimistic update
-      setCardsByList(prev => ({
-        ...prev,
-        [listId]: [...(prev[listId] || []), newCard.data || newCard]
-      }));
+      await addCard(listId, title, board._id);
     } catch (error) {
       console.error('Error adding card:', error);
-      loadData(); // Revert on error
     }
   };
 
   const handleDeleteCard = async (cardId) => {
     if (window.confirm('Are you sure you want to delete this card?')) {
-      await Database.deleteCard(cardId);
-      loadData();
+      try {
+        await deleteCard(cardId);
+      } catch (error) {
+        console.error('Error deleting card:', error);
+      }
     }
   };
 
   const handleUpdateCard = async (cardId, updates) => {
-    await Database.updateCard(cardId, updates);
-    loadData();
-    if (selectedCard && selectedCard._id === cardId) {
-      const updatedCard = await Database.getCard(cardId);
-      setSelectedCard(updatedCard);
+    try {
+      await updateCard(cardId, updates);
+      // Update selected card if it's the one being updated
+      if (selectedCard && selectedCard._id === cardId) {
+        const updatedCard = getCard(cardId);
+        if (updatedCard) {
+          setSelectedCard(updatedCard);
+        }
+      }
+    } catch (error) {
+      console.error('Error updating card:', error);
     }
   };
 
   const handleMoveCard = async (cardId, newListId, newPosition) => {
-    // Get the target list to determine new status
-    const targetList = lists.find(list => list._id === newListId);
-    if (!targetList) {
-      console.error('Target list not found');
-      return;
-    }
-
-    // Optimistic update
-    setCardsByList(prev => {
-      const newCardsByList = { ...prev };
-      let movedCard = null;
-
-      // Find and remove card from source list
-      Object.keys(newCardsByList).forEach(listId => {
-        const cardIndex = newCardsByList[listId].findIndex(card => card._id === cardId);
-        if (cardIndex !== -1) {
-          movedCard = { 
-            ...newCardsByList[listId][cardIndex], 
-            list: newListId, 
-            position: newPosition,
-            status: targetList.title // Update status to match the new list's title
-          };
-          newCardsByList[listId] = newCardsByList[listId].filter(card => card._id !== cardId);
-        }
-      });
-
-      if (movedCard) {
-        // Add to destination list
-        if (!newCardsByList[newListId]) {
-          newCardsByList[newListId] = [];
-        }
-        newCardsByList[newListId].splice(newPosition, 0, movedCard);
-
-        // Update positions in destination list
-        newCardsByList[newListId] = newCardsByList[newListId].map((card, index) => ({
-          ...card,
-          position: index
-        }));
+    try {
+      // Get the target list to determine new status
+      const targetList = lists.find(list => list._id === newListId);
+      if (!targetList) {
+        console.error('Target list not found');
+        return;
       }
 
-      return newCardsByList;
-    });
+      await moveCard(cardId, newListId, newPosition, targetList.title);
 
-    try {
-      await Database.moveCard(cardId, newListId, newPosition, targetList.title);
-      
       // If the card is currently selected in the modal, update its status there too
       if (selectedCard && selectedCard._id === cardId) {
         setSelectedCard(prev => ({
@@ -245,126 +154,64 @@ const WorkFlow = () => {
       }
     } catch (error) {
       console.error('Error moving card:', error);
-      // Revert optimistic update by reloading data
-      loadData();
     }
   };
 
   const handleAddList = async (title) => {
     try {
-      const newList = await Database.createList(board._id, title);
-      // Optimistic update
-      setLists(prev => [...prev, newList.data || newList]);
-      setCardsByList(prev => ({ ...prev, [(newList.data || newList)._id]: [] }));
+      await addList(board._id, title);
     } catch (error) {
       console.error('Error adding list:', error);
-      loadData(); // Revert on error
     }
   };
 
   const handleDeleteList = async (listId) => {
     if (window.confirm('Are you sure you want to delete this list and all its cards?')) {
-      await Database.deleteList(listId);
-      loadData();
+      try {
+        await deleteList(listId);
+      } catch (error) {
+        console.error('Error deleting list:', error);
+      }
     }
   };
 
   const handleUpdateListColor = async (listId, color) => {
-    await Database.updateList(listId, { color });
-    loadData();
+    try {
+      await updateListColor(listId, color);
+    } catch (error) {
+      console.error('Error updating list color:', error);
+    }
   };
 
   const handleMoveList = async (listId, newPosition) => {
-    // Optimistic update
-    setLists(prev => {
-      const newLists = [...prev];
-      const listIndex = newLists.findIndex(list => list._id === listId);
-      if (listIndex !== -1) {
-        const [movedList] = newLists.splice(listIndex, 1);
-        movedList.position = newPosition;
-        newLists.splice(newPosition, 0, movedList);
-
-        // Update positions
-        newLists.forEach((list, index) => {
-          list.position = index;
-        });
-      }
-      return newLists;
-    });
-
     try {
-      await Database.moveList(listId, newPosition);
+      await moveList(listId, newPosition);
     } catch (error) {
       console.error('Error moving list:', error);
-      loadData(); // Revert on error
     }
   };
 
-  const handleStartEditingName = () => {
+  const handleOpenEditModal = async () => {
     if (user && (user.role === 'admin' || user.role === 'manager')) {
-      setTempName(board.name);
-      setEditingName(true);
-    }
-  };
-
-  const handleStartEditingDescription = () => {
-    if (user && (user.role === 'admin' || user.role === 'manager')) {
-      setTempDescription(board.description || '');
-      setEditingDescription(true);
-    }
-  };
-
-  const handleSaveName = async () => {
-    if (tempName.trim() && tempName !== board.name) {
-      setUpdatingProject(true);
       try {
-        const response = await Database.updateProject(board._id, { name: tempName.trim() });
+        // Fetch full project data to ensure team members are loaded
+        const response = await Database.getProject(projectId);
         if (response.success) {
-          setBoard(prev => ({ ...prev, name: tempName.trim() }));
-        } else {
-          throw new Error(response.message || 'Failed to update project name');
+          setFullProjectData(response.data);
+          setSelectedProject(response.data);
+          setEditModalOpen(true);
         }
       } catch (error) {
-        console.error('Error updating project name:', error);
-        alert('Failed to update project name. Please try again.');
-      } finally {
-        setUpdatingProject(false);
+        console.error('Error fetching full project data:', error);
       }
     }
-    setEditingName(false);
   };
 
-  const handleSaveDescription = async () => {
-    if (tempDescription !== board.description) {
-      setUpdatingProject(true);
-      try {
-        const response = await Database.updateProject(board._id, { description: tempDescription });
-        if (response.success) {
-          setBoard(prev => ({ ...prev, description: tempDescription }));
-        } else {
-          throw new Error(response.message || 'Failed to update project description');
-        }
-      } catch (error) {
-        console.error('Error updating project description:', error);
-        alert('Failed to update project description. Please try again.');
-      } finally {
-        setUpdatingProject(false);
-      }
-    }
-    setEditingDescription(false);
-  };
-
-  const handleCancelEditing = () => {
-    setEditingName(false);
-    setEditingDescription(false);
-  };
-
-  const handleKeyPress = (e, saveFunction) => {
-    if (e.key === 'Enter') {
-      saveFunction();
-    } else if (e.key === 'Escape') {
-      handleCancelEditing();
-    }
+  const handleProjectUpdated = (updatedProject) => {
+    updateBoard({
+      name: updatedProject.name,
+      description: updatedProject.description
+    });
   };
   
   if (loading || teamLoading) {
@@ -454,97 +301,22 @@ const WorkFlow = () => {
                 <ArrowLeft size={24} />
               </motion.button>
               <div className="flex-1">
-                {editingName ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={tempName}
-                      onChange={(e) => setTempName(e.target.value)}
-                      onKeyDown={(e) => handleKeyPress(e, handleSaveName)}
-                      className="text-2xl font-bold bg-white/20 border border-white/30 rounded px-2 py-1 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50"
-                      placeholder="Project name"
-                      disabled={updatingProject}
-                    />
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold text-white">{board.name}</h1>
+                  {(user?.role === 'admin' || user?.role === 'manager') && (
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
-                      onClick={handleSaveName}
-                      disabled={updatingProject}
-                      className="p-1 hover:bg-white/20 rounded text-white disabled:opacity-50"
+                      onClick={handleOpenEditModal}
+                      className="p-1 hover:bg-white/20 rounded text-white/70 hover:text-white"
                     >
-                      <Check size={16} />
+                      <Pencil size={16} />
                     </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={handleCancelEditing}
-                      disabled={updatingProject}
-                      className="p-1 hover:bg-white/20 rounded text-white disabled:opacity-50"
-                    >
-                      <X size={16} />
-                    </motion.button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-2xl font-bold text-white">{board.name}</h1>
-                    {(user?.role === 'admin' || user?.role === 'manager') && (
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={handleStartEditingName}
-                        className="p-1 hover:bg-white/20 rounded text-white/70 hover:text-white"
-                      >
-                        <Pencil size={16} />
-                      </motion.button>
-                    )}
-                  </div>
-                )}
-
-                {editingDescription ? (
-                  <div className="flex items-center gap-2 mt-1">
-                    <input
-                      type="text"
-                      value={tempDescription}
-                      onChange={(e) => setTempDescription(e.target.value)}
-                      onKeyDown={(e) => handleKeyPress(e, handleSaveDescription)}
-                      className="text-sm bg-white/20 border border-white/30 rounded px-2 py-1 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50"
-                      placeholder="Project description"
-                      disabled={updatingProject}
-                    />
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={handleSaveDescription}
-                      disabled={updatingProject}
-                      className="p-1 hover:bg-white/20 rounded text-white disabled:opacity-50"
-                    >
-                      <Check size={16} />
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={handleCancelEditing}
-                      disabled={updatingProject}
-                      className="p-1 hover:bg-white/20 rounded text-white disabled:opacity-50"
-                    >
-                      <X size={16} />
-                    </motion.button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-white/70 text-sm">{board.description || 'Project Board'}</p>
-                    {(user?.role === 'admin' || user?.role === 'manager') && (
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={handleStartEditingDescription}
-                        className="p-1 hover:bg-white/20 rounded text-white/70 hover:text-white"
-                      >
-                        <Pencil size={16} />
-                      </motion.button>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-white/70 text-sm">{board.description || 'Project Board'}</p>
+                </div>
               </div>
             </div>
 
@@ -573,10 +345,65 @@ const WorkFlow = () => {
               </motion.button>
 
               {/* Team Members */}
-              <div className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-lg backdrop-blur-lg border border-white/20">
-                <Users size={18} className="text-white" />
-                <span className="text-white font-medium">{board.members?.length || 0}</span>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg backdrop-blur-lg border border-white/20 transition-colors"
+                  >
+                    <Users size={18} className="text-white" />
+                    <span className="text-white font-medium">{board.members?.length || 0}</span>
+                  </motion.button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-64 bg-white/95 backdrop-blur-lg border border-white/20">
+                  {board.members && board.members.length > 0 ? (
+                    board.members.map((member) => {
+                      const getRoleIcon = (role) => {
+                        switch (role) {
+                          case 'admin':
+                            return <Crown size={14} className="text-yellow-500" />;
+                          case 'manager':
+                            return <Shield size={14} className="text-blue-500" />;
+                          default:
+                            return <User size={14} className="text-gray-500" />;
+                        }
+                      };
+
+                      const getRoleLabel = (role) => {
+                        switch (role) {
+                          case 'admin':
+                            return 'Admin';
+                          case 'manager':
+                            return 'Manager';
+                          default:
+                            return 'Member';
+                        }
+                      };
+
+                      return (
+                        <DropdownMenuItem key={member._id} className="flex items-center gap-3 px-3 py-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                            {member.name ? member.name.charAt(0).toUpperCase() : 'U'}
+                          </div>
+                          <div className="flex flex-col flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-900">{member.name || 'Unknown'}</span>
+                              {getRoleIcon(member.role)}
+                            </div>
+                            <span className="text-xs text-gray-500">{member.email || ''}</span>
+                            <span className="text-xs text-blue-600 font-medium">{getRoleLabel(member.role)}</span>
+                          </div>
+                        </DropdownMenuItem>
+                      );
+                    })
+                  ) : (
+                    <DropdownMenuItem disabled className="text-center text-gray-500">
+                      No members assigned
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Add List Button */}
               <motion.button
@@ -665,6 +492,7 @@ const WorkFlow = () => {
           onAddList={handleAddList}
           onDeleteList={handleDeleteList}
           onUpdateListColor={handleUpdateListColor}
+          onUpdateListTitle={updateListTitle}
           onMoveCard={handleMoveCard}
           onMoveList={handleMoveList}
         />
@@ -681,8 +509,19 @@ const WorkFlow = () => {
           />
         </Suspense>
       )}
+
+      {editModalOpen && (
+        <Suspense fallback={<div>Loading...</div>}>
+          <EditProjectModal
+            isOpen={editModalOpen}
+            onClose={() => setEditModalOpen(false)}
+            project={selectedProject}
+            onProjectUpdated={handleProjectUpdated}
+          />
+        </Suspense>
+      )}
     </div>
   );
-};
+});
 
 export default WorkFlow;

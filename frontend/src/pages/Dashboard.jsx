@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FolderKanban, TrendingUp, Users,
   Clock, CheckCircle2, AlertCircle, Filter, Search,
-  Calendar, BarChart3, ArrowUpRight, Plus, RefreshCw
+  Calendar, BarChart3, ArrowUpRight, Plus
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
@@ -70,9 +70,7 @@ const Dashboard = memo(() => {
     }
   }, [refetch]);
 
-  const handleRefresh = useCallback(() => {
-    refetch({ queryKey: ['dashboard', Date.now()] });
-  }, [refetch]);
+
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
@@ -169,16 +167,6 @@ const Dashboard = memo(() => {
               <p className="text-gray-600 mt-1">Welcome, {user?.name}! 👋</p>
             </div>
             <div className="flex items-center gap-3">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleRefresh}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
-                Refresh
-              </motion.button>
             </div>
           </motion.div>
 
