@@ -4,6 +4,7 @@ import Notification from '../models/Notification.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { emitNotification, emitToBoard } from '../server.js';
 import { invalidateCache } from '../middleware/cache.js';
+import notificationService from '../utils/notificationService.js';
 
 export const createComment = asyncHandler(async (req, res) => {
   // Expect htmlContent (rich HTML) and card id
@@ -35,51 +36,8 @@ export const createComment = asyncHandler(async (req, res) => {
     });
   }
 
-  // Detect mentions in the comment HTML and notify mentioned users
-  try {
-    const mentionIds = new Set();
-    const mentionRegex = /data-id=["']([^"']+)["']/g;
-    let m;
-    while ((m = mentionRegex.exec(htmlContent || '')) !== null) {
-      if (m[1]) mentionIds.add(m[1]);
-    }
-
-    for (const mentionedId of mentionIds) {
-      if (mentionedId === req.user.id) continue; // don't notify self
-      const notification = new Notification({
-        type: 'comment_mention',
-        title: 'You were mentioned',
-        message: `${req.user.name || 'Someone'} mentioned you in a comment on "${cardDoc.title}"`,
-        user: mentionedId,
-        sender: req.user.id,
-        relatedCard: card,
-      });
-      await notification.save();
-      emitNotification(mentionedId.toString(), notification);
-    }
-  } catch (err) {
-    console.error('Error processing mentions:', err);
-  }
-
-  // Notify assignees if different from commenter
-  if (cardDoc.assignees && cardDoc.assignees.length > 0) {
-    for (const assignee of cardDoc.assignees) {
-      if (assignee._id.toString() !== req.user.id) {
-        const notification = new Notification({
-          type: 'comment_added',
-          title: 'New Comment',
-          message: `${req.user.name || 'Someone'} commented on "${cardDoc.title}"`,
-          user: assignee._id,
-          sender: req.user.id,
-          relatedCard: card,
-        });
-        await notification.save();
-
-        // Emit real-time notification
-        emitNotification(assignee._id.toString(), notification);
-      }
-    }
-  }
+  // Send notifications using the notification service
+  await notificationService.notifyCommentAdded(cardDoc, populatedComment, req.user.id);
 
   // Invalidate relevant caches
   invalidateCache(`/api/cards/${card}`);
@@ -124,26 +82,7 @@ export const updateComment = asyncHandler(async (req, res) => {
 
   // Re-process mentions (notify new mentions)
   try {
-    const mentionRegex = /data-id=["']([^"']+)["']/g;
-    const mentionIds = new Set();
-    let m;
-    while ((m = mentionRegex.exec(comment.htmlContent || '')) !== null) {
-      if (m[1]) mentionIds.add(m[1]);
-    }
-
-    for (const mentionedId of mentionIds) {
-      if (mentionedId === req.user.id) continue;
-      const notification = new Notification({
-        type: 'comment_mention',
-        title: 'You were mentioned',
-        message: `${req.user.name || 'Someone'} mentioned you in a comment`,
-        user: mentionedId,
-        sender: req.user.id,
-        relatedCard: comment.card
-      });
-      await notification.save();
-      emitNotification(mentionedId.toString(), notification);
-    }
+    await notificationService.processMentions(comment.htmlContent || '', comment.card, req.user.id);
   } catch (err) {
     console.error('Error processing mentions on comment update:', err);
   }

@@ -1,6 +1,8 @@
 import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import { sendWelcomeEmail, sendVerificationEmail } from '../utils/email.js';
+import notificationService from '../utils/notificationService.js';
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -113,6 +115,89 @@ export const getProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Update current user profile
+// @route   PUT /api/users/profile
+// @access  Private
+export const updateProfile = asyncHandler(async (req, res, next) => {
+  const { name, email, title } = req.body;
+
+  const user = await User.findById(req.user.id);
+
+  if (!user) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  // Check if email is being changed and if it's already taken
+  if (email && email !== user.email) {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return next(new ErrorResponse('Email already in use', 400));
+    }
+  }
+
+  // Update fields
+  if (name !== undefined) user.name = name;
+  if (email !== undefined) user.email = email;
+  if (title !== undefined) user.title = title;
+
+  await user.save();
+
+  // Populate department and team for response
+  await user.populate('department', 'name');
+  await user.populate('team', 'name');
+
+  res.status(200).json({
+    success: true,
+    data: user
+  });
+});
+
+// @desc    Update current user settings
+// @route   PUT /api/users/settings
+// @access  Private
+export const updateSettings = asyncHandler(async (req, res, next) => {
+  const { notifications, privacy, currentPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user.id).select('+password');
+
+  if (!user) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  // If changing password, verify current password
+  if (newPassword) {
+    if (!currentPassword) {
+      return next(new ErrorResponse('Current password is required to change password', 400));
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return next(new ErrorResponse('Current password is incorrect', 400));
+    }
+
+    user.password = newPassword;
+  }
+
+  // Update settings
+  if (notifications !== undefined) {
+    user.settings.notifications = { ...user.settings.notifications, ...notifications };
+  }
+  if (privacy !== undefined) {
+    user.settings.privacy = { ...user.settings.privacy, ...privacy };
+  }
+
+  await user.save();
+
+  // Remove password from response
+  const userResponse = user.toObject();
+  delete userResponse.password;
+
+  res.status(200).json({
+    success: true,
+    data: userResponse
+  });
+});
+
 // @desc    Verify user (Admin only)
 // @route   PUT /api/users/:id/verify
 // @access  Private/Admin
@@ -158,18 +243,18 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
 
   // Send verification email
   try {
-    const { sendEmail } = await import('../utils/email.js');
-    await sendEmail({
-      to: user.email,
-      subject: 'Account Verified',
-      html: `
-        <h1>Account Verified!</h1>
-        <p>Your account has been verified by an administrator.</p>
-        <p>You can now access all features.</p>
-      `
-    });
+    await sendVerificationEmail(user);
   } catch (error) {
     console.error('Email sending failed:', error);
+  }
+
+  // Notify admins about new user verification
+  try {
+    const adminUsers = await User.find({ role: 'admin' }).select('_id');
+    const adminIds = adminUsers.map(admin => admin._id);
+    await notificationService.notifyUserRegistered(user, adminIds);
+  } catch (error) {
+    console.error('Admin notification failed:', error);
   }
 
   res.status(200).json({

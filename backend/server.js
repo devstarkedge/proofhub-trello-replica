@@ -149,6 +149,31 @@ io.on('connection', (socket) => {
     console.log(`User ${userId} left board ${boardId}`);
   });
 
+  // Push notification subscription management
+  socket.on('subscribe-push', async (subscription) => {
+    try {
+      const User = (await import('./models/User.js')).default;
+      await User.findByIdAndUpdate(userId, {
+        pushSubscription: subscription
+      });
+      console.log(`User ${userId} subscribed to push notifications`);
+    } catch (error) {
+      console.error('Error saving push subscription:', error);
+    }
+  });
+
+  socket.on('unsubscribe-push', async () => {
+    try {
+      const User = (await import('./models/User.js')).default;
+      await User.findByIdAndUpdate(userId, {
+        $unset: { pushSubscription: 1 }
+      });
+      console.log(`User ${userId} unsubscribed from push notifications`);
+    } catch (error) {
+      console.error('Error removing push subscription:', error);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log(`User ${userId} disconnected`);
   });

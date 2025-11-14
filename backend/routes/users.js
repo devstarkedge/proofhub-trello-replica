@@ -1,11 +1,55 @@
 import express from 'express';
-import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, assignUser, declineUser } from '../controllers/userController.js';
+import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser } from '../controllers/userController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
+import { getVapidKeys } from '../utils/pushNotification.js';
 
 const router = express.Router();
 
 router.get('/profile', protect, getProfile);
+router.put('/profile', protect, updateProfile);
+router.put('/settings', protect, updateSettings);
+
+// Push notification routes (must come before parameterized routes)
+router.get('/push-key', protect, (req, res) => {
+  try {
+    const vapidKeys = getVapidKeys();
+    if (!vapidKeys) {
+      return res.status(500).json({ message: 'VAPID keys not configured' });
+    }
+    res.json({ vapidPublicKey: vapidKeys.publicKey });
+  } catch (error) {
+    console.error('Error getting VAPID keys:', error);
+    res.status(500).json({ message: 'Failed to get push keys' });
+  }
+});
+
+router.post('/push-subscription', protect, async (req, res) => {
+  try {
+    const { subscription } = req.body;
+    const User = (await import('../models/User.js')).default;
+    await User.findByIdAndUpdate(req.user.id, {
+      pushSubscription: subscription
+    });
+    res.json({ message: 'Push subscription saved' });
+  } catch (error) {
+    console.error('Error saving push subscription:', error);
+    res.status(500).json({ message: 'Failed to save push subscription' });
+  }
+});
+
+router.delete('/push-subscription', protect, async (req, res) => {
+  try {
+    const User = (await import('../models/User.js')).default;
+    await User.findByIdAndUpdate(req.user.id, {
+      $unset: { pushSubscription: 1 }
+    });
+    res.json({ message: 'Push subscription removed' });
+  } catch (error) {
+    console.error('Error removing push subscription:', error);
+    res.status(500).json({ message: 'Failed to remove push subscription' });
+  }
+});
 
 // Admin and HR can view all users, Manager can view users in their department/team
 router.get('/', protect, hrOrAdmin, getUsers);

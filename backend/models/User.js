@@ -39,6 +39,40 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  title: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'Title cannot exceed 100 characters'],
+    default: ''
+  },
+  settings: {
+    notifications: {
+      email: { type: Boolean, default: true },
+      push: { type: Boolean, default: true },
+      taskAssigned: { type: Boolean, default: true },
+      taskUpdated: { type: Boolean, default: true },
+      commentMention: { type: Boolean, default: true },
+      projectUpdates: { type: Boolean, default: true },
+      taskDeleted: { type: Boolean, default: true },
+      userCreated: { type: Boolean, default: true }
+    },
+    privacy: {
+      profileVisibility: {
+        type: String,
+        enum: ['public', 'team', 'private'],
+        default: 'team'
+      },
+      showEmail: { type: Boolean, default: false },
+      showActivity: { type: Boolean, default: true }
+    }
+  },
+  pushSubscription: {
+    endpoint: { type: String },
+    keys: {
+      p256dh: { type: String },
+      auth: { type: String }
+    }
+  },
   isVerified: {
     type: Boolean,
     default: false

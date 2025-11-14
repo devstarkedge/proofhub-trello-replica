@@ -8,6 +8,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
 import { emitNotification } from "../server.js";
+import notificationService from "../utils/notificationService.js";
 
 // @desc    Get all boards for user
 // @route   GET /api/boards
@@ -244,49 +245,8 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     board: board._id,
   });
 
-  // Send notifications to assigned members and department managers
-  const notifications = [];
-
-  // Notify assigned members
-  if (board.members && board.members.length > 0) {
-    board.members.forEach(memberId => {
-      if (memberId.toString() !== req.user.id) { // Don't notify the creator
-        notifications.push({
-          type: 'project_created',
-          title: 'New Project Created',
-          message: `You have been assigned to the project "${name}"`,
-          user: memberId,
-          sender: req.user.id,
-          relatedBoard: board._id
-        });
-      }
-    });
-  }
-
-  // Notify department managers
-  const deptManagers = await Department.findById(board.department).populate('managers', '_id');
-  if (deptManagers && deptManagers.managers && deptManagers.managers.length > 0) {
-    deptManagers.managers.forEach(manager => {
-      if (manager._id.toString() !== req.user.id) { // Don't notify the creator if they're a manager
-        notifications.push({
-          type: 'project_created',
-          title: 'New Project Created',
-          message: `A new project "${name}" has been created in your department`,
-          user: manager._id,
-          sender: req.user.id,
-          relatedBoard: board._id
-        });
-      }
-    });
-  }
-
-  // Create and emit notifications
-  if (notifications.length > 0) {
-    const createdNotifications = await Notification.insertMany(notifications);
-    createdNotifications.forEach(notification => {
-      emitNotification(notification.user.toString(), notification);
-    });
-  }
+  // Send notifications using the notification service
+  await notificationService.notifyProjectCreated(board, req.user.id);
 
   // Invalidate relevant caches
   invalidateCache(`/api/boards`);
@@ -356,48 +316,7 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   }
 
   // Send notifications before deletion
-  const notifications = [];
-
-  // Notify assigned members
-  if (board.members && board.members.length > 0) {
-    board.members.forEach(memberId => {
-      if (memberId.toString() !== req.user.id) { // Don't notify the deleter
-        notifications.push({
-          type: 'project_deleted',
-          title: 'Project Deleted',
-          message: `The project "${board.name}" has been deleted`,
-          user: memberId,
-          sender: req.user.id,
-          relatedBoard: board._id
-        });
-      }
-    });
-  }
-
-  // Notify department managers
-  const deptManagersDel = await Department.findById(board.department).populate('managers', '_id');
-  if (deptManagersDel && deptManagersDel.managers && deptManagersDel.managers.length > 0) {
-    deptManagersDel.managers.forEach(manager => {
-      if (manager._id.toString() !== req.user.id) { // Don't notify the deleter if they're a manager
-        notifications.push({
-          type: 'project_deleted',
-          title: 'Project Deleted',
-          message: `The project "${board.name}" has been deleted from your department`,
-          user: manager._id,
-          sender: req.user.id,
-          relatedBoard: board._id
-        });
-      }
-    });
-  }
-
-  // Create and emit notifications
-  if (notifications.length > 0) {
-    const createdNotifications = await Notification.insertMany(notifications);
-    createdNotifications.forEach(notification => {
-      emitNotification(notification.user.toString(), notification);
-    });
-  }
+  await notificationService.notifyTaskDeleted(board, req.user.id, true); // true for project deletion
 
   // Delete all lists and cards
   const lists = await List.find({ board: board._id });

@@ -1,5 +1,7 @@
 import Notification from '../models/Notification.js';
+import User from '../models/User.js';
 import { emitNotification } from '../server.js';
+import notificationService from '../utils/notificationService.js';
 
 export const getNotifications = async (req, res) => {
   try {
@@ -51,5 +53,26 @@ export const deleteNotification = async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');
+  }
+};
+
+// Test notification endpoint for settings verification
+export const sendTestNotification = async (req, res) => {
+  try {
+    // Get user with email for email notification
+    const user = await User.findById(req.user.id).select('email name settings pushSubscription');
+
+    await notificationService.createNotification({
+      type: 'test_notification',
+      title: 'Test Notification',
+      message: 'This is a test notification to verify your notification settings are working correctly.',
+      user: req.user.id,
+      sender: req.user.id,
+    }, { user });
+
+    res.json({ message: 'Test notification sent successfully' });
+  } catch (error) {
+    console.error('Error sending test notification:', error);
+    res.status(500).json({ message: 'Failed to send test notification' });
   }
 };

@@ -22,6 +22,8 @@ const AdminSettings = lazy(() => import("./pages/AdminSettings"));
 const HRPanel = lazy(() => import("./pages/HRPanel"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const HomePage = lazy(() => import("./pages/HomePage"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Settings = lazy(() => import("./pages/Settings"));
 const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
 
 function App() {
@@ -127,6 +129,22 @@ function App() {
               element={
                 <PrivateRoute>
                   <Analytics />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <PrivateRoute>
+                  <Profile />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <PrivateRoute>
+                  <Settings />
                 </PrivateRoute>
               }
             />

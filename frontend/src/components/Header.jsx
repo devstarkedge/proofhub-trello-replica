@@ -3,7 +3,7 @@ import {
   Bell, Menu, Settings, LogOut, User,
   ChevronDown, Kanban, List, Calendar, BarChart3,
   Users, Building2, CheckCircle, AlertCircle, UserPlus,
-  FolderPlus, Folder, ArrowRight, Trash2
+  FolderPlus, Folder, ArrowRight, Trash2, ArrowLeft
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -74,6 +74,19 @@ const Header = ({ boardName }) => {
         <div className="flex items-center justify-between gap-4">
           {/* Left Section */}
           <div className="flex items-center gap-4 flex-1">
+            {/* Back Button */}
+            {['/list-view', '/calendar', '/analytics'].includes(location.pathname) && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => navigate('/')}
+                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ArrowLeft size={16} />
+                <span className="hidden sm:inline">Back</span>
+              </motion.button>
+            )}
+
             {/* View Navigation */}
             <nav className="hidden lg:flex items-center gap-1 bg-gray-100 rounded-lg p-1">
               {navItems.map(({ path, icon: Icon, label }) => (

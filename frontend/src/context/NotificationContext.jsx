@@ -4,6 +4,7 @@ import AuthContext from './AuthContext';
 import Database from '../services/database';
 import socketService from '../services/socket';
 import { Bell } from 'lucide-react';
+import api from '../services/api';
 
 const NotificationContext = createContext();
 
@@ -13,11 +14,14 @@ export const NotificationProvider = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [verificationModal, setVerificationModal] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
 
   useEffect(() => {
     if (user) {
       loadNotifications();
       setupRealtimeListeners();
+      checkPushSupport();
     }
 
     return () => {
@@ -204,6 +208,55 @@ export const NotificationProvider = ({ children }) => {
     setVerificationModal(null);
   };
 
+  const checkPushSupport = () => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      setPushSupported(true);
+      // Check if already subscribed
+      navigator.serviceWorker.ready.then(registration => {
+        registration.pushManager.getSubscription().then(subscription => {
+          setPushEnabled(!!subscription);
+        });
+      });
+    }
+  };
+
+  const enablePushNotifications = async () => {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const response = await api.get('/api/users/push-key');
+      const vapidKey = response.data.vapidPublicKey;
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: vapidKey
+      });
+
+      // Send subscription to backend
+      await api.post('/api/users/push-subscription', { subscription });
+      setPushEnabled(true);
+      toast.success('Push notifications enabled');
+    } catch (error) {
+      console.error('Error enabling push notifications:', error);
+      toast.error('Failed to enable push notifications');
+    }
+  };
+
+  const disablePushNotifications = async () => {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await subscription.unsubscribe();
+        await api.delete('/api/users/push-subscription');
+        setPushEnabled(false);
+        toast.success('Push notifications disabled');
+      }
+    } catch (error) {
+      console.error('Error disabling push notifications:', error);
+      toast.error('Failed to disable push notifications');
+    }
+  };
+
   return (
     <NotificationContext.Provider
       value={{
@@ -220,6 +273,10 @@ export const NotificationProvider = ({ children }) => {
         verificationModal,
         handleVerificationAction,
         closeVerificationModal,
+        pushSupported,
+        pushEnabled,
+        enablePushNotifications,
+        disablePushNotifications,
       }}
     >
       {children}

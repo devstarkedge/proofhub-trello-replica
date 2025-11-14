@@ -17,7 +17,8 @@ const notificationSchema = new mongoose.Schema({
       'comment_mention',
       'team_invite',
       'board_shared',
-      'user_registered'
+      'user_registered',
+      'test_notification'
     ],
     required: true
   },

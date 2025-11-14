@@ -9,6 +9,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitToBoard, emitNotification } from "../server.js";
 import { invalidateCache } from "../middleware/cache.js";
+import notificationService from "../utils/notificationService.js";
 
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
@@ -361,77 +362,14 @@ export const createCard = asyncHandler(async (req, res, next) => {
     }
   });
 
-  // Send notifications for task creation
-  const notifications = [];
-
-  // Get board and department info for notifications
-  const boardInfo = await Board.findById(board).populate('department');
-  if (boardInfo) {
-    // Notify assigned users
-    if (card.assignees && card.assignees.length > 0) {
-      card.assignees.forEach(assigneeId => {
-        if (assigneeId.toString() !== req.user.id) {
-          notifications.push({
-            type: 'task_created',
-            title: 'New Task Created',
-            message: `You have been assigned to the task "${title}"`,
-            user: assigneeId,
-            sender: req.user.id,
-            relatedCard: card._id,
-            relatedBoard: board,
-          });
-        }
-      });
-    }
-
-    // Notify department managers
-    const department = await Department.findById(boardInfo.department).populate('managers', '_id');
-    if (department && department.managers && department.managers.length > 0) {
-      department.managers.forEach(manager => {
-        if (manager._id.toString() !== req.user.id) {
-          notifications.push({
-            type: 'task_created',
-            title: 'New Task Created',
-            message: `A new task "${title}" has been created in your department`,
-            user: manager._id,
-            sender: req.user.id,
-            relatedCard: card._id,
-            relatedBoard: board,
-          });
-        }
-      });
-    }
-
-    // Create and emit notifications
-    if (notifications.length > 0) {
-      const createdNotifications = await Notification.insertMany(notifications);
-      createdNotifications.forEach(notification => {
-        emitNotification(notification.user.toString(), notification);
-      });
-    }
-  }
-
-  // Notify assignee if different from creator
-  if (assignee && assignee.toString() !== req.user.id) {
-    const notification = await Notification.create({
-      type: "task_assigned",
-      title: "New Task Assigned",
-      message: `${req.user.name} assigned you to "${title}"`,
-      user: assignee,
-      sender: req.user.id,
-      relatedCard: card._id,
-      relatedBoard: board,
-    });
-
-    // Send real-time notification
-    emitNotification(assignee.toString(), notification);
-  }
+  // Send notifications using the notification service
+  await notificationService.notifyTaskAssigned(card, assignee, req.user.id);
 
   // Notify all members
   if (members && members.length > 0) {
     for (const memberId of members) {
       if (memberId.toString() !== req.user.id && memberId.toString() !== assignee?.toString()) {
-        const notification = await Notification.create({
+        await notificationService.createNotification({
           type: "member_added",
           title: "Added to Task",
           message: `${req.user.name} added you to "${title}"`,
@@ -440,8 +378,6 @@ export const createCard = asyncHandler(async (req, res, next) => {
           relatedCard: card._id,
           relatedBoard: board,
         });
-
-        emitNotification(memberId.toString(), notification);
       }
     }
   }
@@ -542,107 +478,28 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
   // If description was updated, detect mentions and notify mentioned users
   if (req.body.description) {
-    try {
-      const text = req.body.description || '';
-      const mentionRegex = /data-id=[\"']([^\"']+)[\"']/g;
-      const mentionIds = new Set();
-      const mentionObjects = [];
-      let m;
-      while ((m = mentionRegex.exec(text)) !== null) {
-        if (m[1]) {
-          mentionIds.add(m[1]);
-          mentionObjects.push({ userId: m[1], name: '', notified: false });
-        }
-      }
-
-      // Persist mention objects on card for later use
-      try {
-        if (mentionObjects.length > 0) {
-          card.descriptionMentions = mentionObjects;
-          await card.save();
-        }
-      } catch (err) {
-        console.error('Error saving description mentions on card:', err);
-      }
-
-      for (const mentionedId of mentionIds) {
-        if (mentionedId === req.user.id) continue;
-        const notification = await Notification.create({
-          type: 'mentioned',
-          title: 'You were mentioned',
-          message: `${req.user.name || 'Someone'} mentioned you in the description of "${card.title}"`,
-          user: mentionedId,
-          sender: req.user.id,
-          relatedCard: card._id,
-          relatedBoard: card.board,
-        });
-
-        emitNotification(mentionedId.toString(), notification);
-      }
-    } catch (err) {
-      console.error('Error processing mentions in card description:', err);
-    }
+    await notificationService.processMentions(req.body.description, card, req.user.id);
   }
 
   // Notify if assignees changed (only if actually changed)
   if (req.body.assignees !== undefined) {
     const newAssignees = req.body.assignees || [];
     const addedAssignees = newAssignees.filter(id => !oldAssignees.includes(id.toString()));
-    const removedAssignees = oldAssignees.filter(id => !newAssignees.map(a => a.toString()).includes(id));
 
     // Notify added assignees
-    for (const assigneeId of addedAssignees) {
-      if (assigneeId.toString() !== req.user.id) {
-        const notification = await Notification.create({
-          type: "task_assigned",
-          title: "Task Assigned",
-          message: `${req.user.name} assigned you to "${card.title}"`,
-          user: assigneeId,
-          sender: req.user.id,
-          relatedCard: card._id,
-          relatedBoard: card.board,
-        });
-
-        emitNotification(assigneeId.toString(), notification);
-      }
+    if (addedAssignees.length > 0) {
+      await notificationService.notifyTaskAssigned(card, addedAssignees, req.user.id);
     }
-
-    // Notify removed assignees if needed (optional)
-    // For now, we'll skip notifications for removals to avoid spam
   }
 
   // Notify if due date changed (only if actually changed)
   if (req.body.dueDate !== undefined && req.body.dueDate !== oldDueDate && card.assignees && card.assignees.length > 0) {
-    for (const assignee of card.assignees) {
-      const notification = await Notification.create({
-        type: "task_updated",
-        title: "Due Date Changed",
-        message: `Due date for "${card.title}" has been updated to ${new Date(req.body.dueDate).toLocaleDateString()}`,
-        user: assignee._id,
-        sender: req.user.id,
-        relatedCard: card._id,
-        relatedBoard: card.board,
-      });
-
-      emitNotification(assignee._id.toString(), notification);
-    }
+    await notificationService.notifyTaskUpdated(card, req.user.id, { dueDate: req.body.dueDate });
   }
 
   // Notify if status changed to done (only if actually changed)
   if (req.body.status !== undefined && req.body.status === 'done' && oldStatus !== 'done' && card.assignees && card.assignees.length > 0) {
-    for (const assignee of card.assignees) {
-      const notification = await Notification.create({
-        type: "task_updated",
-        title: "Task Completed",
-        message: `"${card.title}" has been marked as complete`,
-        user: assignee._id,
-        sender: req.user.id,
-        relatedCard: card._id,
-        relatedBoard: card.board,
-      });
-
-      emitNotification(assignee._id.toString(), notification);
-    }
+    await notificationService.notifyTaskUpdated(card, req.user.id, { status: 'done' });
   }
 
   // Invalidate cache for the board
@@ -781,54 +638,11 @@ export const moveCard = asyncHandler(async (req, res, next) => {
 
   // Send notifications for task movement
   if (sourceListId.toString() !== destinationListId) {
-    const notifications = [];
-
-    // Get board and department info for notifications
-    const boardInfo = await Board.findById(card.board).populate('department');
-    if (boardInfo) {
-      // Notify assigned users
-      if (card.assignees && card.assignees.length > 0) {
-        card.assignees.forEach(assigneeId => {
-          if (assigneeId.toString() !== req.user.id) {
-            notifications.push({
-              type: 'task_moved',
-              title: 'Task Moved',
-              message: `Task "${card.title}" has been moved from "${card.list.title}" to "${destinationList.title}"`,
-              user: assigneeId,
-              sender: req.user.id,
-              relatedCard: card._id,
-              relatedBoard: card.board,
-            });
-          }
-        });
-      }
-
-      // Notify department managers
-      const department = await Department.findById(boardInfo.department).populate('managers', '_id');
-      if (department && department.managers && department.managers.length > 0) {
-        department.managers.forEach(manager => {
-          if (manager._id.toString() !== req.user.id) {
-            notifications.push({
-              type: 'task_moved',
-              title: 'Task Moved',
-              message: `Task "${card.title}" has been moved from "${card.list.title}" to "${destinationList.title}" in your department`,
-              user: manager._id,
-              sender: req.user.id,
-              relatedCard: card._id,
-              relatedBoard: card.board,
-            });
-          }
-        });
-      }
-
-      // Create and emit notifications
-      if (notifications.length > 0) {
-        const createdNotifications = await Notification.insertMany(notifications);
-        createdNotifications.forEach(notification => {
-          emitNotification(notification.user.toString(), notification);
-        });
-      }
-    }
+    await notificationService.notifyTaskUpdated(card, req.user.id, {
+      moved: true,
+      fromList: card.list.title,
+      toList: destinationList.title
+    });
   }
 
   // Invalidate all related caches
@@ -860,54 +674,7 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   const boardId = card.board;
 
   // Send notifications before deletion
-  const notifications = [];
-
-  // Get board and department info for notifications
-  const boardInfo = await Board.findById(card.board).populate('department');
-  if (boardInfo) {
-    // Notify assigned users
-    if (card.assignees && card.assignees.length > 0) {
-      card.assignees.forEach(assigneeId => {
-        if (assigneeId.toString() !== req.user.id) {
-          notifications.push({
-            type: 'task_deleted',
-            title: 'Task Deleted',
-            message: `The task "${card.title}" has been deleted`,
-            user: assigneeId,
-            sender: req.user.id,
-            relatedCard: card._id,
-            relatedBoard: card.board,
-          });
-        }
-      });
-    }
-
-    // Notify department managers
-    const department = await Department.findById(boardInfo.department).populate('managers', '_id');
-    if (department && department.managers && department.managers.length > 0) {
-      department.managers.forEach(manager => {
-        if (manager._id.toString() !== req.user.id) {
-          notifications.push({
-            type: 'task_deleted',
-            title: 'Task Deleted',
-            message: `The task "${card.title}" has been deleted from your department`,
-            user: manager._id,
-            sender: req.user.id,
-            relatedCard: card._id,
-            relatedBoard: card.board,
-          });
-        }
-      });
-    }
-
-    // Create and emit notifications
-    if (notifications.length > 0) {
-      const createdNotifications = await Notification.insertMany(notifications);
-      createdNotifications.forEach(notification => {
-        emitNotification(notification.user.toString(), notification);
-      });
-    }
-  }
+  await notificationService.notifyTaskDeleted(card, req.user.id);
 
   // Log activity before deletion
   await Activity.create({
