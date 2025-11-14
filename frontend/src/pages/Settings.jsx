@@ -301,14 +301,14 @@ const Settings = () => {
               <div className="space-y-4">
                 {[
                   { key: 'email', label: 'Email Notifications', desc: 'Receive notifications via email' },
-                  { key: 'push', label: 'Push Notifications', desc: pushSupported ? (pushEnabled ? 'Push notifications are enabled' : 'Click to enable push notifications') : 'Push notifications not supported in this browser', action: pushSupported ? (pushEnabled ? disablePushNotifications : enablePushNotifications) : null },
+                  { key: 'push', label: 'Push Notifications', desc: pushSupported ? (pushEnabled ? 'Push notifications are enabled' : 'Click to enable push notifications') : 'Push notifications not supported in this browser', action: pushSupported ? (pushEnabled ? disablePushNotifications : enablePushNotifications) : null, state: pushEnabled },
                   { key: 'taskAssigned', label: 'Task Assignments', desc: 'When tasks are assigned to you' },
                   { key: 'taskUpdated', label: 'Task Updates', desc: 'When assigned tasks are updated' },
                   { key: 'taskDeleted', label: 'Task Deletions', desc: 'When tasks are deleted' },
                   { key: 'userCreated', label: 'New User Creations', desc: 'When new users are created' },
                   { key: 'commentMention', label: 'Mentions', desc: 'When someone mentions you in comments' },
                   { key: 'projectUpdates', label: 'Project Updates', desc: 'Updates on projects you\'re involved in' }
-                ].map(({ key, label, desc, action }) => (
+                ].map(({ key, label, desc, action, state }) => (
                   <div key={key} className="flex items-center justify-between">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">{label}</p>
@@ -319,12 +319,12 @@ const Settings = () => {
                       whileTap={{ scale: 0.95 }}
                       onClick={action || (() => handleSettingChange('notifications', key, !settingsData.notifications[key]))}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settingsData.notifications[key] ? 'bg-blue-600' : 'bg-gray-200'
+                        (state !== undefined ? state : settingsData.notifications[key]) ? 'bg-blue-600' : 'bg-gray-200'
                       }`}
                     >
                       <span
                         className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settingsData.notifications[key] ? 'translate-x-6' : 'translate-x-1'
+                          (state !== undefined ? state : settingsData.notifications[key]) ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
                     </motion.button>
