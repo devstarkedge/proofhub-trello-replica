@@ -38,7 +38,8 @@ export const AuthProvider = ({ children }) => {
 
     if (savedToken && savedUser) {
       try {
-        const response = await api.get("/api/auth/verify");
+        // Add cache-busting parameter to ensure fresh data
+        const response = await api.get(`/api/auth/verify?_t=${Date.now()}`);
         const userData = response.data.data;
 
         // Re-hydrate state from verified data

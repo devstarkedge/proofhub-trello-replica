@@ -80,7 +80,7 @@ export const sendWelcomeEmail = async (user) => {
               <li>Customize your notification preferences</li>
             </ul>
             <div style="text-align: center;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" class="button">Get Started</a>
+              <a href="${process.env.FRONTEND_URL }/" class="button">Get Started</a>
             </div>
             <p>If you have any questions, feel free to reach out to our support team.</p>
           </div>
@@ -131,7 +131,7 @@ export const sendVerificationEmail = async (user) => {
               <li>Receive real-time notifications</li>
             </ul>
             <div style="text-align: center;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" class="button">Start Exploring</a>
+              <a href="${process.env.FRONTEND_URL}/" class="button">Start Exploring</a>
             </div>
           </div>
         </div>

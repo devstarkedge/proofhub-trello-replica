@@ -130,6 +130,12 @@ export const login = asyncHandler(async (req, res, next) => {
   user.lastLogin = Date.now();
   await user.save();
 
+  // Invalidate any cached user data for this user to ensure fresh session
+  const { invalidateCache } = await import('../middleware/cache.js');
+  invalidateCache('/api/auth/me');
+  invalidateCache('/api/auth/verify');
+  invalidateCache('/api/notifications');
+
   // Generate token
   const token = generateToken(user._id);
 
@@ -179,6 +185,11 @@ export const updateDetails = asyncHandler(async (req, res, next) => {
     runValidators: true
   });
 
+  // Invalidate cached user data after profile update
+  const { invalidateCache } = await import('../middleware/cache.js');
+  invalidateCache('/api/auth/me');
+  invalidateCache('/api/auth/verify');
+
   res.status(200).json({
     success: true,
     data: user
@@ -198,6 +209,11 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
 
   user.password = req.body.newPassword;
   await user.save();
+
+  // Invalidate cached user data after password change
+  const { invalidateCache } = await import('../middleware/cache.js');
+  invalidateCache('/api/auth/me');
+  invalidateCache('/api/auth/verify');
 
   const token = generateToken(user._id);
 

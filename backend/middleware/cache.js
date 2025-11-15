@@ -24,6 +24,8 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/teams/',
     '/api/users', // Skip all user endpoints for real-time updates
     '/api/auth/me', // Skip user profile endpoint
+    '/api/auth/verify', // Skip session verification endpoint for user-specific data
+    '/api/notifications', // Skip notifications endpoint for user-specific data
     '/api/analytics/dashboard' // Skip dashboard analytics for real-time updates
   ];
   return (req, res, next) => {

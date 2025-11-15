@@ -221,6 +221,8 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
   const { invalidateCache } = await import('../middleware/cache.js');
   invalidateCache('/api/users'); // Invalidate all user list caches
   invalidateCache('/api/auth/me'); // Invalidate user profile cache
+  invalidateCache('/api/auth/verify'); // Invalidate session verification cache
+  invalidateCache('/api/notifications'); // Invalidate notifications cache for the user
 
   // Emit real-time update via socket to all connected admin users
   const { emitToUser } = await import('../server.js');
