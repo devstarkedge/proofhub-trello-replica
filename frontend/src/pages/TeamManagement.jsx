@@ -13,6 +13,7 @@ import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ManagerSelector from '../components/ManagerSelector';
 import EditDepartmentModal from '../components/EditDepartmentModal';
+import Loading from '../components/Loading';
 
 // Toast Notification Component
 const Toast = ({ message, type, onClose }) => {
@@ -61,7 +62,8 @@ const TeamManagement = () => {
     updateDepartment,
     deleteDepartment,
     assignUserToDepartment,
-    unassignUserFromDepartment
+    unassignUserFromDepartment,
+    loading: departmentsLoading
   } = useDepartmentStore();
 
   const [users, setUsers] = useState([]);
@@ -634,7 +636,15 @@ const TeamManagement = () => {
                 </div>
                 <div className="max-h-[600px] overflow-y-auto">
                   <AnimatePresence>
-                    {departments.length === 0 ? (
+                    {departmentsLoading ? (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="p-12 text-center"
+                      >
+                        <Loading size="lg" text="Loading departments..." />
+                      </motion.div>
+                    ) : departments.length === 0 ? (
                       <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -816,12 +826,7 @@ const TeamManagement = () => {
                       <div className="max-h-96 overflow-y-auto">
                         {isLoading ? (
                           <div className="p-12 text-center">
-                            <motion.div
-                              animate={{ rotate: 360 }}
-                              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                              className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"
-                            />
-                            <p className="text-gray-600">Loading employees...</p>
+                            <Loading size="lg" text="Loading employees..." />
                           </div>
                         ) : (activeTab === 'assigned' ? assignedEmployees : availableEmployees).length === 0 ? (
                           <div className="p-12 text-center text-gray-500">

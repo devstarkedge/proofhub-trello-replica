@@ -15,7 +15,6 @@ import {
 
 const Card = memo(({ card, onClick, onDelete, compact = false }) => {
   const hasDetails =
-    card.description ||
     card.labels?.length > 0 ||
     card.dueDate ||
     card.subtasks?.length > 0 ||
@@ -259,16 +258,6 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
             </motion.div>
           )}
 
-          {card.description && (
-            <div
-              key="description"
-              className="flex items-center gap-1 text-xs text-gray-600"
-            >
-              <MessageSquare size={12} />
-              <span>Description</span>
-            </div>
-          )}
-
           {card.subtasks && card.subtasks.length > 0 && (
             <motion.div
               key="subtasks"
@@ -302,10 +291,24 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
             <motion.div
               key="comments"
               whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-1 text-xs text-gray-600"
+              className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md font-medium"
             >
               <MessageSquare size={12} />
               <span>{card.comments.length}</span>
+            </motion.div>
+          )}
+
+          {card.loggedTime && card.loggedTime.length > 0 && (
+            <motion.div
+              key="logged-time"
+              whileHover={{ scale: 1.05 }}
+              className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md font-medium"
+            >
+              <Clock size={12} />
+              <span>
+                {card.loggedTime.reduce((total, log) => total + log.hours, 0)}h{' '}
+                {card.loggedTime.reduce((total, log) => total + log.minutes, 0)}m
+              </span>
             </motion.div>
           )}
         </div>

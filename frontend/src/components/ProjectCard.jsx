@@ -463,27 +463,27 @@ const ProjectCard = ({
               >
                 <Calendar size={14} />
               </motion.div>
-              <span>Due Date: {new Date(projectData.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              <span>Due:{new Date(projectData.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
             </motion.div>
           )}
 
-          {projectData.team && (
+          {projectData.totalLoggedTime && (projectData.totalLoggedTime.hours > 0 || projectData.totalLoggedTime.minutes > 0) && (
             <motion.div
               whileHover={{
                 scale: 1.08,
                 y: -2,
-                boxShadow: "0 8px 25px rgba(147, 51, 234, 0.15)"
+                boxShadow: "0 8px 25px rgba(34, 197, 94, 0.15)"
               }}
               whileTap={{ scale: 0.95 }}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-purple-50 to-pink-50 px-3 py-1.5 rounded-lg text-xs font-medium text-purple-700 border border-purple-100 hover:border-purple-200 transition-all duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-green-50 to-emerald-50 px-3 py-1.5 rounded-lg text-xs font-medium text-green-700 border border-green-100 hover:border-green-200 transition-all duration-200 cursor-pointer"
             >
               <motion.div
                 whileHover={{ scale: 1.2 }}
                 transition={{ duration: 0.3 }}
               >
-                <Users size={14} />
+                <Clock size={14} />
               </motion.div>
-              <span>{projectData.team}</span>
+              <span>{projectData.totalLoggedTime.hours}h {projectData.totalLoggedTime.minutes}m</span>
             </motion.div>
           )}
 

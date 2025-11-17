@@ -353,6 +353,7 @@ export const getDashboardData = asyncHandler(async (req, res, next) => {
             $project: {
               status: 1,
               dueDate: 1,
+              loggedTime: 1,
               _id: 0 // Exclude _id to reduce data transfer
             }
           }
@@ -367,7 +368,6 @@ export const getDashboardData = asyncHandler(async (req, res, next) => {
         description: 1,
         department: { $arrayElemAt: ['$departmentInfo.name', 0] },
         departmentId: { $arrayElemAt: ['$departmentInfo._id', 0] },
-        team: { $ifNull: [{ $arrayElemAt: ['$teamInfo.name', 0] }, 'General'] },
         members: 1,
         status: 1, // Include the actual status field from Board model
         totalCards: { $size: '$cards' },
@@ -376,6 +376,38 @@ export const getDashboardData = asyncHandler(async (req, res, next) => {
             $filter: {
               input: '$cards',
               cond: { $eq: ['$$this.status', 'done'] }
+            }
+          }
+        },
+        totalLoggedTime: {
+          $reduce: {
+            input: '$cards',
+            initialValue: { hours: 0, minutes: 0 },
+            in: {
+              hours: {
+                $add: [
+                  '$$value.hours',
+                  {
+                    $reduce: {
+                      input: '$$this.loggedTime',
+                      initialValue: 0,
+                      in: { $add: ['$$value', '$$this.hours'] }
+                    }
+                  }
+                ]
+              },
+              minutes: {
+                $add: [
+                  '$$value.minutes',
+                  {
+                    $reduce: {
+                      input: '$$this.loggedTime',
+                      initialValue: 0,
+                      in: { $add: ['$$value', '$$this.minutes'] }
+                    }
+                  }
+                ]
+              }
             }
           }
         },

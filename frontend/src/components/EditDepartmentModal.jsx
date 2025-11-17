@@ -1,11 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  X, Edit2, CheckCircle, AlertCircle, Loader,
-  Building2, Users, Shield
-} from 'lucide-react';
-import ManagerSelector from './ManagerSelector';
-import useDepartmentStore from '../store/departmentStore';
+  X,
+  Edit2,
+  CheckCircle,
+  AlertCircle,
+  Loader,
+  Building2,
+  Users,
+  Shield,
+} from "lucide-react";
+import ManagerSelector from "./ManagerSelector";
+import useDepartmentStore from "../store/departmentStore";
 
 const EditDepartmentModal = ({
   isOpen,
@@ -13,13 +19,13 @@ const EditDepartmentModal = ({
   department,
   onDepartmentUpdated,
   managers,
-  isLoading
+  isLoading,
 }) => {
   const { departments } = useDepartmentStore();
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    managers: []
+    name: "",
+    description: "",
+    managers: [],
   });
   const [errors, setErrors] = useState({});
   const [toast, setToast] = useState(null);
@@ -29,9 +35,9 @@ const EditDepartmentModal = ({
   useEffect(() => {
     if (isOpen && department) {
       setFormData({
-        name: department.name || '',
-        description: department.description || '',
-        managers: department.managers || []
+        name: department.name || "",
+        description: department.description || "",
+        managers: department.managers || [],
       });
       setErrors({});
     }
@@ -39,57 +45,72 @@ const EditDepartmentModal = ({
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+      setErrors((prev) => ({ ...prev, [name]: "" }));
     }
   };
 
   const handleManagerChange = (selectedManagers) => {
     // Check if any newly selected managers are already assigned to other departments
-    const newManagers = selectedManagers.filter(id => !formData.managers.includes(id));
-    const managersToCheck = managers.filter(manager => newManagers.includes(manager._id));
+    const newManagers = selectedManagers.filter(
+      (id) => !formData.managers.includes(id)
+    );
+    const managersToCheck = managers.filter((manager) =>
+      newManagers.includes(manager._id)
+    );
 
-    const managersWithOtherAssignments = managersToCheck.filter(manager =>
-      manager.department && manager.department.length > 0 &&
-      !manager.department.some(dept => dept === department._id || dept._id === department._id)
+    const managersWithOtherAssignments = managersToCheck.filter(
+      (manager) =>
+        manager.department &&
+        manager.department.length > 0 &&
+        !manager.department.some(
+          (dept) => dept === department._id || dept._id === department._id
+        )
     );
 
     if (managersWithOtherAssignments.length > 0) {
       // Show reassign confirmation modal
       const manager = managersWithOtherAssignments[0];
-      const otherDepartments = manager.department.filter(dept =>
-        (typeof dept === 'string' ? dept : dept._id || dept) !== department._id
+      const otherDepartments = manager.department.filter(
+        (dept) =>
+          (typeof dept === "string" ? dept : dept._id || dept) !==
+          department._id
       );
       const otherDeptNames = departments
-        .filter(dept => otherDepartments.some(otherDept =>
-          (typeof otherDept === 'string' ? otherDept : otherDept._id || otherDept) === dept._id
-        ))
-        .map(dept => dept.name)
-        .join(', ');
+        .filter((dept) =>
+          otherDepartments.some(
+            (otherDept) =>
+              (typeof otherDept === "string"
+                ? otherDept
+                : otherDept._id || otherDept) === dept._id
+          )
+        )
+        .map((dept) => dept.name)
+        .join(", ");
 
       setReassignData({
         manager,
         otherDeptNames,
         selectedDepartment: department.name,
         selectedManagers,
-        currentDepartment: department
+        currentDepartment: department,
       });
       setShowReassignModal(true);
       return;
     }
 
     // No conflicts, proceed with selection
-    setFormData(prev => ({ ...prev, managers: selectedManagers }));
+    setFormData((prev) => ({ ...prev, managers: selectedManagers }));
   };
 
   const validateForm = () => {
     const newErrors = {};
     if (!formData.name.trim()) {
-      newErrors.name = 'Department name is required';
+      newErrors.name = "Department name is required";
     }
     if (formData.name.trim().length < 2) {
-      newErrors.name = 'Department name must be at least 2 characters';
+      newErrors.name = "Department name must be at least 2 characters";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -101,13 +122,13 @@ const EditDepartmentModal = ({
 
     try {
       await onDepartmentUpdated(formData);
-      showToast('Department updated successfully!', 'success');
+      showToast("Department updated successfully!", "success");
     } catch (error) {
-      showToast('Failed to update department', 'error');
+      showToast("Failed to update department", "error");
     }
   };
 
-  const showToast = (message, type = 'info') => {
+  const showToast = (message, type = "info") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
@@ -116,7 +137,10 @@ const EditDepartmentModal = ({
     if (!reassignData) return;
 
     setShowReassignModal(false);
-    setFormData(prev => ({ ...prev, managers: reassignData.selectedManagers }));
+    setFormData((prev) => ({
+      ...prev,
+      managers: reassignData.selectedManagers,
+    }));
     setReassignData(null);
   };
 
@@ -135,14 +159,14 @@ const EditDepartmentModal = ({
       y: 0,
       transition: {
         duration: 0.3,
-        ease: [0.4, 0, 0.2, 1]
-      }
+        ease: [0.4, 0, 0.2, 1],
+      },
     },
     exit: {
       opacity: 0,
       scale: 0.95,
       y: 20,
-      transition: { duration: 0.2 }
+      transition: { duration: 0.2 },
     },
   };
 
@@ -154,9 +178,9 @@ const EditDepartmentModal = ({
       transition: {
         delay: i * 0.05,
         duration: 0.3,
-        ease: "easeOut"
-      }
-    })
+        ease: "easeOut",
+      },
+    }),
   };
 
   return (
@@ -189,15 +213,17 @@ const EditDepartmentModal = ({
                   <Edit2 className="h-6 w-6" />
                 </motion.div>
                 <div>
-  <h2 className="text-2xl sm:text-3xl font-bold">
-    Edit Department <span className="text-orange-500">{department?.name}</span>
-  </h2>
-  
-  <p className="text-indigo-100 text-sm mt-0.5">
-    Update <span className="text-orange-400">{department?.name}</span> department details and managers
-  </p>
-</div>
+                  <h2 className="text-2xl sm:text-3xl font-bold">
+                    Edit Department{" "}
+                    <span className="text-orange-500">{department?.name}</span>
+                  </h2>
 
+                  <p className="text-indigo-100 text-sm mt-0.5">
+                    Update{" "}
+                    <span className="text-orange-400">{department?.name}</span>{" "}
+                    department details and managers
+                  </p>
+                </div>
               </div>
               <motion.button
                 whileHover={{ scale: 1.1, rotate: 90 }}
@@ -212,7 +238,7 @@ const EditDepartmentModal = ({
           </div>
 
           {/* Form Content */}
-           <div className="overflow-y-auto max-h-[calc(95vh-180px)] px-8 py-6">
+          <div className="overflow-y-auto max-h-[calc(95vh-180px)] px-8 py-6">
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Manager Selection Section */}
               <motion.div
@@ -261,7 +287,9 @@ const EditDepartmentModal = ({
                       value={formData.name}
                       onChange={handleInputChange}
                       className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
-                        errors.name ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-transparent hover:border-indigo-300'
+                        errors.name
+                          ? "border-red-500 bg-red-50"
+                          : "border-gray-300 focus:border-transparent hover:border-indigo-300"
                       }`}
                       placeholder="Enter department name"
                       disabled={isLoading}
@@ -297,8 +325,6 @@ const EditDepartmentModal = ({
                   </div>
                 </div>
               </motion.div>
-
-              
             </form>
           </div>
 
@@ -358,29 +384,48 @@ const EditDepartmentModal = ({
                       <motion.div
                         animate={{
                           scale: [1, 1.1, 1],
-                          rotate: [0, -10, 10, -10, 0]
+                          rotate: [0, -10, 10, -10, 0],
                         }}
                         transition={{
                           duration: 0.5,
                           repeat: Infinity,
-                          repeatDelay: 2
+                          repeatDelay: 2,
                         }}
                         className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center flex-shrink-0"
                       >
                         <AlertCircle size={32} className="text-orange-600" />
                       </motion.div>
                       <div>
-                        <h3 className="text-xl font-bold text-gray-900 mb-1">Reassign Manager?</h3>
-                        <p className="text-sm text-gray-600">This manager is already assigned to other departments</p>
+                        <h3 className="text-xl font-bold text-gray-900 mb-1">
+                          Reassign Manager?
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          This manager is already assigned to other departments
+                        </p>
                       </div>
                     </div>
 
                     <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
                       <p className="text-gray-700 text-sm leading-relaxed mb-3">
-                        <span className="font-bold text-orange-700">{reassignData.manager.name}</span> is already assigned in <span className="font-bold text-orange-700">{reassignData.otherDeptNames}</span>.
+                        <span className="font-bold text-orange-700">
+                          {reassignData.manager.name}
+                        </span>{" "}
+                        is already assigned in{" "}
+                        <span className="font-bold text-orange-700">
+                          {reassignData.otherDeptNames}
+                        </span>
+                        .
                       </p>
                       <p className="text-gray-700 text-sm leading-relaxed">
-                        Do you want to re-assign <span className="font-bold text-orange-700">{reassignData.manager.name}</span> to <span className="font-bold text-orange-700">{reassignData.selectedDepartment}</span>?
+                        Do you want to re-assign{" "}
+                        <span className="font-bold text-orange-700">
+                          {reassignData.manager.name}
+                        </span>{" "}
+                        to{" "}
+                        <span className="font-bold text-orange-700">
+                          {reassignData.selectedDepartment}
+                        </span>
+                        ?
                       </p>
                     </div>
 
@@ -401,7 +446,11 @@ const EditDepartmentModal = ({
                           <>
                             <motion.div
                               animate={{ rotate: 360 }}
-                              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                              transition={{
+                                duration: 1,
+                                repeat: Infinity,
+                                ease: "linear",
+                              }}
                               className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
                             />
                             Reassigning...
@@ -429,16 +478,16 @@ const EditDepartmentModal = ({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -20, scale: 0.9 }}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-sm ${
-                    toast.type === 'success'
-                      ? 'bg-green-50 border-green-200 text-green-800'
-                      : toast.type === 'error'
-                      ? 'bg-red-50 border-red-200 text-red-800'
-                      : 'bg-blue-50 border-blue-200 text-blue-800'
+                    toast.type === "success"
+                      ? "bg-green-50 border-green-200 text-green-800"
+                      : toast.type === "error"
+                      ? "bg-red-50 border-red-200 text-red-800"
+                      : "bg-blue-50 border-blue-200 text-blue-800"
                   }`}
                 >
-                  {toast.type === 'success' ? (
+                  {toast.type === "success" ? (
                     <CheckCircle className="text-green-500" size={20} />
-                  ) : toast.type === 'error' ? (
+                  ) : toast.type === "error" ? (
                     <AlertCircle className="text-red-500" size={20} />
                   ) : (
                     <AlertCircle className="text-blue-500" size={20} />

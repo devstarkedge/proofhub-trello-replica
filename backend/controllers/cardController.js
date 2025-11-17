@@ -25,7 +25,8 @@ export const getCards = asyncHandler(async (req, res, next) => {
     populate: [
       { path: "assignees", select: "name email avatar" },
       { path: "members", select: "name email avatar" },
-      { path: "createdBy", select: "name email avatar" }
+      { path: "createdBy", select: "name email avatar" },
+      { path: "comments", select: "text htmlContent user createdAt" }
     ]
   };
 
@@ -60,7 +61,8 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
       { path: "members", select: "name email avatar" },
       { path: "createdBy", select: "name email avatar" },
       { path: "list", select: "title" },
-      { path: "loggedTime.user", select: "name email avatar" }
+      { path: "loggedTime.user", select: "name email avatar" },
+      { path: "comments", select: "text htmlContent user createdAt" }
     ]
   };
 
