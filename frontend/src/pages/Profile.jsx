@@ -9,6 +9,7 @@ import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import Header from '../components/Header';
 import Loading from '../components/Loading';
+import { validateField, validateForm, debouncedEmailCheck, validationRules } from '../utils/validationUtils';
 
 
 const Profile = () => {
@@ -21,6 +22,8 @@ const Profile = () => {
     title: ''
   });
   const [errors, setErrors] = useState({});
+  const [emailAvailable, setEmailAvailable] = useState(true);
+  const [checkingEmail, setCheckingEmail] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
@@ -45,32 +48,35 @@ const Profile = () => {
   };
 
   const validateForm = () => {
-    const newErrors = {};
+    const fieldsToValidate = ['name', 'email', 'title'];
+    const { isValid, errors: validationErrors } = validateForm(profileData, fieldsToValidate);
 
-    if (!profileData.name.trim()) {
-      newErrors.name = 'Name is required';
-    } else if (profileData.name.length > 50) {
-      newErrors.name = 'Name cannot exceed 50 characters';
+    // Additional email uniqueness check
+    if (profileData.email && !emailAvailable) {
+      validationErrors.email = validationRules.email.messages.unique;
     }
 
-    if (!profileData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileData.email)) {
-      newErrors.email = 'Please enter a valid email address';
-    }
-
-    if (profileData.title && profileData.title.length > 100) {
-      newErrors.title = 'Title cannot exceed 100 characters';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setErrors(validationErrors);
+    return isValid && Object.keys(validationErrors).length === 0;
   };
 
   const handleInputChange = (field, value) => {
     setProfileData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+
+    // Real-time validation
+    const error = validateField(field, value);
+    setErrors(prev => ({ ...prev, [field]: error }));
+
+    // Email uniqueness check with debouncing
+    if (field === 'email') {
+      setCheckingEmail(true);
+      debouncedEmailCheck(value, user?._id, (isAvailable) => {
+        setEmailAvailable(isAvailable);
+        setCheckingEmail(false);
+        if (!isAvailable) {
+          setErrors(prev => ({ ...prev, email: validationRules.email.messages.unique }));
+        }
+      });
     }
   };
 
@@ -110,7 +116,7 @@ const Profile = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100">
       <Header />
 
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -130,7 +136,11 @@ const Profile = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
+            className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden"
+            style={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.8) 100%)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+            }}
           >
             {/* Avatar Section */}
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-8 text-white">
@@ -204,11 +214,21 @@ const Profile = () => {
                       type="email"
                       value={profileData.email}
                       onChange={(e) => handleInputChange('email', e.target.value)}
-                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
+                      className={`w-full pl-10 pr-12 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                         errors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
                       }`}
                       placeholder="Enter your email"
                     />
+                    {checkingEmail && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <Loader2 size={16} className="animate-spin text-gray-400" />
+                      </div>
+                    )}
+                    {!checkingEmail && profileData.email && !errors.email && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <CheckCircle size={16} className="text-green-500" />
+                      </div>
+                    )}
                   </div>
                   {errors.email && (
                     <motion.p

@@ -11,6 +11,7 @@ import AuthContext from '../context/AuthContext';
 import NotificationContext from '../context/NotificationContext';
 import Header from '../components/Header';
 import Loading from '../components/Loading';
+import { validateField, validatePasswordMatch, validateForm, validationRules } from '../utils/validationUtils';
 
 const Settings = () => {
   const { user, setUser } = useContext(AuthContext);
@@ -68,22 +69,19 @@ const Settings = () => {
   };
 
   const validatePasswordForm = () => {
-    const newErrors = {};
+    const fieldsToValidate = ['currentPassword', 'newPassword', 'confirmPassword'];
+    const { isValid, errors: validationErrors } = validateForm(settingsData, fieldsToValidate);
 
-    if (settingsData.newPassword) {
-      if (!settingsData.currentPassword) {
-        newErrors.currentPassword = 'Current password is required';
-      }
-      if (settingsData.newPassword.length < 6) {
-        newErrors.newPassword = 'New password must be at least 6 characters';
-      }
-      if (settingsData.newPassword !== settingsData.confirmPassword) {
-        newErrors.confirmPassword = 'Passwords do not match';
+    // Additional validation for password matching
+    if (settingsData.newPassword && settingsData.confirmPassword) {
+      const matchError = validatePasswordMatch(settingsData.newPassword, settingsData.confirmPassword);
+      if (matchError) {
+        validationErrors.confirmPassword = matchError;
       }
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setErrors(validationErrors);
+    return isValid && Object.keys(validationErrors).length === 0;
   };
 
   const handleSettingChange = (category, field, value) => {
@@ -101,8 +99,19 @@ const Settings = () => {
 
   const handlePasswordChange = (field, value) => {
     setSettingsData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+
+    // Real-time validation
+    const error = validateField(field, value);
+    setErrors(prev => ({ ...prev, [field]: error }));
+
+    // Additional real-time password matching validation
+    if (field === 'confirmPassword' || field === 'newPassword') {
+      const newPassword = field === 'newPassword' ? value : settingsData.newPassword;
+      const confirmPassword = field === 'confirmPassword' ? value : settingsData.confirmPassword;
+      if (newPassword && confirmPassword) {
+        const matchError = validatePasswordMatch(newPassword, confirmPassword);
+        setErrors(prev => ({ ...prev, confirmPassword: matchError }));
+      }
     }
   };
 

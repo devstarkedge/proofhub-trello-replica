@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Users, Plus, Edit2, Trash2, UserPlus,
+  Users, Plus, Edit2, Trash2, UserPlus, User,
   Building2, Shield, Search, X, CheckCircle,
   AlertCircle, Info, Filter, Download, Upload,
   TrendingUp, Award, Clock, Mail
@@ -14,6 +14,7 @@ import Sidebar from '../components/Sidebar';
 import ManagerSelector from '../components/ManagerSelector';
 import EditDepartmentModal from '../components/EditDepartmentModal';
 import Loading from '../components/Loading';
+import { validateField, validateForm, validationRules } from '../utils/validationUtils';
 
 // Toast Notification Component
 const Toast = ({ message, type, onClose }) => {
@@ -397,24 +398,13 @@ const TeamManagement = () => {
 
   const handleAddMember = async (e) => {
     e.preventDefault();
-    const errors = {};
 
-    if (!addMemberFormData.name.trim()) {
-      errors.name = 'Name is required';
-    }
-    if (!addMemberFormData.email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(addMemberFormData.email)) {
-      errors.email = 'Email is invalid';
-    }
-    if (!addMemberFormData.password.trim()) {
-      errors.password = 'Password is required';
-    } else if (addMemberFormData.password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
-    }
+    // Use shared validation utilities
+    const fieldsToValidate = ['name', 'email', 'password'];
+    const { isValid, errors: validationErrors } = validateForm(addMemberFormData, fieldsToValidate);
 
-    if (Object.keys(errors).length > 0) {
-      setAddMemberErrors(errors);
+    if (!isValid) {
+      setAddMemberErrors(validationErrors);
       return;
     }
 
@@ -1227,9 +1217,13 @@ const TeamManagement = () => {
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+              className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-white/20"
+              style={{
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.8) 100%)',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+              }}
             >
-              <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 p-6 rounded-t-2xl">
+              <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 p-6 rounded-t-3xl">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
@@ -1252,19 +1246,29 @@ const TeamManagement = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Full Name *
                   </label>
-                  <input
-                    type="text"
-                    value={addMemberFormData.name}
-                    onChange={(e) => setAddMemberFormData({ ...addMemberFormData, name: e.target.value })}
-                    placeholder="Enter full name"
-                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      addMemberErrors.name ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    required
-                    disabled={isLoading}
-                  />
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="text"
+                      value={addMemberFormData.name}
+                      onChange={(e) => setAddMemberFormData({ ...addMemberFormData, name: e.target.value })}
+                      placeholder="Enter full name"
+                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                        addMemberErrors.name ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
                   {addMemberErrors.name && (
-                    <p className="text-red-500 text-sm mt-1">{addMemberErrors.name}</p>
+                    <motion.p
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-sm text-red-600 flex items-center gap-1"
+                    >
+                      <XCircle size={14} />
+                      {addMemberErrors.name}
+                    </motion.p>
                   )}
                 </div>
 
@@ -1272,19 +1276,29 @@ const TeamManagement = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Email Address *
                   </label>
-                  <input
-                    type="email"
-                    value={addMemberFormData.email}
-                    onChange={(e) => setAddMemberFormData({ ...addMemberFormData, email: e.target.value })}
-                    placeholder="Enter email address"
-                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      addMemberErrors.email ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    required
-                    disabled={isLoading}
-                  />
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="email"
+                      value={addMemberFormData.email}
+                      onChange={(e) => setAddMemberFormData({ ...addMemberFormData, email: e.target.value })}
+                      placeholder="Enter email address"
+                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                        addMemberErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
                   {addMemberErrors.email && (
-                    <p className="text-red-500 text-sm mt-1">{addMemberErrors.email}</p>
+                    <motion.p
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-sm text-red-600 flex items-center gap-1"
+                    >
+                      <XCircle size={14} />
+                      {addMemberErrors.email}
+                    </motion.p>
                   )}
                 </div>
 
@@ -1292,19 +1306,28 @@ const TeamManagement = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Password *
                   </label>
-                  <input
-                    type="password"
-                    value={addMemberFormData.password}
-                    onChange={(e) => setAddMemberFormData({ ...addMemberFormData, password: e.target.value })}
-                    placeholder="Enter password (min 6 characters)"
-                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                      addMemberErrors.password ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    required
-                    disabled={isLoading}
-                  />
+                  <div className="relative">
+                    <input
+                      type="password"
+                      value={addMemberFormData.password}
+                      onChange={(e) => setAddMemberFormData({ ...addMemberFormData, password: e.target.value })}
+                      placeholder="Enter password (min 6 characters)"
+                      className={`w-full pl-4 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                        addMemberErrors.password ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
                   {addMemberErrors.password && (
-                    <p className="text-red-500 text-sm mt-1">{addMemberErrors.password}</p>
+                    <motion.p
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-sm text-red-600 flex items-center gap-1"
+                    >
+                      <XCircle size={14} />
+                      {addMemberErrors.password}
+                    </motion.p>
                   )}
                 </div>
 
@@ -1315,7 +1338,7 @@ const TeamManagement = () => {
                   <select
                     value={addMemberFormData.role}
                     onChange={(e) => setAddMemberFormData({ ...addMemberFormData, role: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     disabled={isLoading}
                   >
                     <option value="employee">Employee</option>
@@ -1328,14 +1351,14 @@ const TeamManagement = () => {
                     type="button"
                     onClick={() => setShowAddMemberModal(false)}
                     disabled={isLoading}
-                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
+                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl hover:from-green-700 hover:to-blue-700 transition-all shadow-lg shadow-green-500/30 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg hover:from-green-700 hover:to-blue-700 transition-all shadow-lg shadow-green-500/30 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {isLoading ? (
                       <>
