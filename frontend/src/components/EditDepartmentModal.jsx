@@ -5,6 +5,7 @@ import {
   Building2, Users, Shield
 } from 'lucide-react';
 import ManagerSelector from './ManagerSelector';
+import useDepartmentStore from '../store/departmentStore';
 
 const EditDepartmentModal = ({
   isOpen,
@@ -14,12 +15,16 @@ const EditDepartmentModal = ({
   managers,
   isLoading
 }) => {
+  const { departments } = useDepartmentStore();
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     managers: []
   });
   const [errors, setErrors] = useState({});
+  const [toast, setToast] = useState(null);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [reassignData, setReassignData] = useState(null);
 
   useEffect(() => {
     if (isOpen && department) {
@@ -41,6 +46,40 @@ const EditDepartmentModal = ({
   };
 
   const handleManagerChange = (selectedManagers) => {
+    // Check if any newly selected managers are already assigned to other departments
+    const newManagers = selectedManagers.filter(id => !formData.managers.includes(id));
+    const managersToCheck = managers.filter(manager => newManagers.includes(manager._id));
+
+    const managersWithOtherAssignments = managersToCheck.filter(manager =>
+      manager.department && manager.department.length > 0 &&
+      !manager.department.some(dept => dept === department._id || dept._id === department._id)
+    );
+
+    if (managersWithOtherAssignments.length > 0) {
+      // Show reassign confirmation modal
+      const manager = managersWithOtherAssignments[0];
+      const otherDepartments = manager.department.filter(dept =>
+        (typeof dept === 'string' ? dept : dept._id || dept) !== department._id
+      );
+      const otherDeptNames = departments
+        .filter(dept => otherDepartments.some(otherDept =>
+          (typeof otherDept === 'string' ? otherDept : otherDept._id || otherDept) === dept._id
+        ))
+        .map(dept => dept.name)
+        .join(', ');
+
+      setReassignData({
+        manager,
+        otherDeptNames,
+        selectedDepartment: department.name,
+        selectedManagers,
+        currentDepartment: department
+      });
+      setShowReassignModal(true);
+      return;
+    }
+
+    // No conflicts, proceed with selection
     setFormData(prev => ({ ...prev, managers: selectedManagers }));
   };
 
@@ -60,7 +99,30 @@ const EditDepartmentModal = ({
     e.preventDefault();
     if (!validateForm()) return;
 
-    onDepartmentUpdated(formData);
+    try {
+      await onDepartmentUpdated(formData);
+      showToast('Department updated successfully!', 'success');
+    } catch (error) {
+      showToast('Failed to update department', 'error');
+    }
+  };
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleReassignConfirm = () => {
+    if (!reassignData) return;
+
+    setShowReassignModal(false);
+    setFormData(prev => ({ ...prev, managers: reassignData.selectedManagers }));
+    setReassignData(null);
+  };
+
+  const handleReassignCancel = () => {
+    setShowReassignModal(false);
+    setReassignData(null);
   };
 
   if (!isOpen || !department) return null;
@@ -127,9 +189,15 @@ const EditDepartmentModal = ({
                   <Edit2 className="h-6 w-6" />
                 </motion.div>
                 <div>
-                  <h2 className="text-2xl sm:text-3xl font-bold">Edit Department</h2>
-                  <p className="text-indigo-100 text-sm mt-0.5">Update department details and managers</p>
-                </div>
+  <h2 className="text-2xl sm:text-3xl font-bold">
+    Edit Department <span className="text-orange-500">{department?.name}</span>
+  </h2>
+  
+  <p className="text-indigo-100 text-sm mt-0.5">
+    Update <span className="text-orange-400">{department?.name}</span> department details and managers
+  </p>
+</div>
+
               </div>
               <motion.button
                 whileHover={{ scale: 1.1, rotate: 90 }}
@@ -144,8 +212,30 @@ const EditDepartmentModal = ({
           </div>
 
           {/* Form Content */}
-          <div className="overflow-y-auto max-h-[calc(95vh-200px)] px-8 py-6">
+           <div className="overflow-y-auto max-h-[calc(95vh-180px)] px-8 py-6">
             <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Manager Selection Section */}
+              <motion.div
+                custom={1}
+                variants={fieldVariants}
+                initial="hidden"
+                animate="visible"
+                className="bg-gradient-to-br from-gray-50 to-purple-50 p-6 rounded-2xl border border-gray-200"
+              >
+                <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
+                  <Shield className="h-5 w-5 text-purple-600" />
+                  Department Managers
+                </h3>
+
+                <ManagerSelector
+                  managers={managers}
+                  selectedManagers={formData.managers}
+                  onChange={handleManagerChange}
+                  disabled={isLoading}
+                  currentDepartment={department}
+                  departments={departments}
+                />
+              </motion.div>
               {/* Department Info Section */}
               <motion.div
                 custom={0}
@@ -208,27 +298,7 @@ const EditDepartmentModal = ({
                 </div>
               </motion.div>
 
-              {/* Manager Selection Section */}
-              <motion.div
-                custom={1}
-                variants={fieldVariants}
-                initial="hidden"
-                animate="visible"
-                className="bg-gradient-to-br from-gray-50 to-purple-50 p-6 rounded-2xl border border-gray-200"
-              >
-                <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
-                  <Shield className="h-5 w-5 text-purple-600" />
-                  Department Managers
-                </h3>
-
-                <ManagerSelector
-                  managers={managers}
-                  selectedManagers={formData.managers}
-                  onChange={handleManagerChange}
-                  disabled={isLoading}
-                  currentDepartment={department}
-                />
-              </motion.div>
+              
             </form>
           </div>
 
@@ -264,6 +334,125 @@ const EditDepartmentModal = ({
                 </>
               )}
             </motion.button>
+          </div>
+
+          {/* Reassign Confirmation Modal */}
+          <AnimatePresence>
+            {showReassignModal && reassignData && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4"
+                onClick={() => !isLoading && handleReassignCancel()}
+              >
+                <motion.div
+                  initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white rounded-2xl shadow-2xl max-w-md w-full"
+                >
+                  <div className="p-6">
+                    <div className="flex items-center gap-4 mb-6">
+                      <motion.div
+                        animate={{
+                          scale: [1, 1.1, 1],
+                          rotate: [0, -10, 10, -10, 0]
+                        }}
+                        transition={{
+                          duration: 0.5,
+                          repeat: Infinity,
+                          repeatDelay: 2
+                        }}
+                        className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center flex-shrink-0"
+                      >
+                        <AlertCircle size={32} className="text-orange-600" />
+                      </motion.div>
+                      <div>
+                        <h3 className="text-xl font-bold text-gray-900 mb-1">Reassign Manager?</h3>
+                        <p className="text-sm text-gray-600">This manager is already assigned to other departments</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
+                      <p className="text-gray-700 text-sm leading-relaxed mb-3">
+                        <span className="font-bold text-orange-700">{reassignData.manager.name}</span> is already assigned in <span className="font-bold text-orange-700">{reassignData.otherDeptNames}</span>.
+                      </p>
+                      <p className="text-gray-700 text-sm leading-relaxed">
+                        Do you want to re-assign <span className="font-bold text-orange-700">{reassignData.manager.name}</span> to <span className="font-bold text-orange-700">{reassignData.selectedDepartment}</span>?
+                      </p>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleReassignCancel}
+                        disabled={isLoading}
+                        className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleReassignConfirm}
+                        disabled={isLoading}
+                        className="flex-1 px-6 py-3 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isLoading ? (
+                          <>
+                            <motion.div
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                              className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
+                            />
+                            Reassigning...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle size={20} />
+                            Confirm Reassign
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Toast Notifications */}
+          <div className="fixed top-4 right-4 z-[100] space-y-2">
+            <AnimatePresence>
+              {toast && (
+                <motion.div
+                  initial={{ opacity: 0, y: -50, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -20, scale: 0.9 }}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-sm ${
+                    toast.type === 'success'
+                      ? 'bg-green-50 border-green-200 text-green-800'
+                      : toast.type === 'error'
+                      ? 'bg-red-50 border-red-200 text-red-800'
+                      : 'bg-blue-50 border-blue-200 text-blue-800'
+                  }`}
+                >
+                  {toast.type === 'success' ? (
+                    <CheckCircle className="text-green-500" size={20} />
+                  ) : toast.type === 'error' ? (
+                    <AlertCircle className="text-red-500" size={20} />
+                  ) : (
+                    <AlertCircle className="text-blue-500" size={20} />
+                  )}
+                  <p className="font-medium flex-1">{toast.message}</p>
+                  <button
+                    onClick={() => setToast(null)}
+                    className="hover:opacity-70 transition-opacity"
+                  >
+                    <X size={16} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
       </motion.div>

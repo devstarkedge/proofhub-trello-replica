@@ -73,8 +73,9 @@ export const createDepartment = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Invalidate relevant caches
+  // Invalidate relevant caches for real-time updates
   invalidateCache("/api/departments");
+  invalidateCache("/api/users"); // Invalidate users cache to update manager assignments
 
   res.status(201).json({
     success: true,
@@ -132,9 +133,10 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
   // Populate managers data before returning
   await department.populate("managers", "name email");
 
-  // Invalidate relevant caches
+  // Invalidate relevant caches for real-time updates
   invalidateCache("/api/departments");
   invalidateCache(`/api/departments/${req.params.id}`);
+  invalidateCache("/api/users"); // Invalidate users cache to update manager assignments
 
   res.status(200).json({
     success: true,

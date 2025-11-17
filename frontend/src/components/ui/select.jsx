@@ -16,9 +16,14 @@ const Select = ({ children, value, onValueChange, ...props }) => {
   };
 
   let placeholder = 'Select...';
+  let displayValue = placeholder;
   React.Children.forEach(children, (child) => {
     if (child.type === SelectValue) {
       placeholder = child.props.placeholder || placeholder;
+      displayValue = placeholder;
+    }
+    if (child.type === SelectItem && child.props.value === selectedValue) {
+      displayValue = child.props.children;
     }
   });
 
@@ -30,7 +35,7 @@ const Select = ({ children, value, onValueChange, ...props }) => {
             onClick: () => setIsOpen(!isOpen),
             isOpen,
             selectedValue,
-            placeholder
+            displayValue
           });
         }
         if (child.type === SelectContent) {
@@ -45,19 +50,16 @@ const Select = ({ children, value, onValueChange, ...props }) => {
   );
 };
 
-const SelectTrigger = forwardRef(({ className = '', children, onClick, isOpen, selectedValue, placeholder, ...props }, ref) => {
-  const displayValue = placeholder || 'Select...';
-
+const SelectTrigger = forwardRef(({ className = '', children, onClick, isOpen, selectedValue, displayValue, ...props }, ref) => {
   return (
     <button
       type="button"
       className={`flex h-10 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-      onClick={onClick}
       ref={ref}
       {...props}
     >
-      <span className="truncate">{displayValue}</span>
-      <ChevronDown className={`h-4 w-4 opacity-50 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      <span className="truncate pointer-events-none">{displayValue}</span>
+      <ChevronDown className={`h-4 w-4 opacity-50 transition-transform cursor-pointer ${isOpen ? 'rotate-180' : ''}`} onClick={onClick} />
     </button>
   );
 });

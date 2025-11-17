@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Plus, Eye, EyeOff, Building2, FolderKanban, 
+import {
+  Plus, Eye, EyeOff, Building2, FolderKanban,
   TrendingUp, Users, AlertCircle, Search, Filter,
-  Grid, List as ListIcon, ChevronDown, Sparkles
+  Grid, List as ListIcon, ChevronDown, Sparkles, User
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
@@ -31,9 +31,34 @@ const HomePage = () => {
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedMembers, setSelectedMembers] = useState({});
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [memberDropdownOpen, setMemberDropdownOpen] = useState({});
+  const statusDropdownRef = useRef(null);
+  const memberDropdownRefs = useRef({});
 
   useEffect(() => {
     fetchDepartments();
+  }, []);
+
+  // Handle outside click to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
+        setStatusDropdownOpen(false);
+      }
+
+      // Close member dropdowns when clicking outside
+      Object.keys(memberDropdownRefs.current).forEach(deptId => {
+        if (memberDropdownRefs.current[deptId] && !memberDropdownRefs.current[deptId].contains(event.target)) {
+          setMemberDropdownOpen(prev => ({ ...prev, [deptId]: false }));
+        }
+      });
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const fetchDepartments = async () => {
@@ -150,6 +175,22 @@ const HomePage = () => {
   };
 
   const canAddProject = user?.role === 'admin' || user?.role === 'manager';
+
+  const getStatusLabel = (status) => {
+    const statusMap = {
+      'all': 'All Status',
+      'planning': 'Planning',
+      'in-progress': 'In Progress',
+      'completed': 'Completed',
+      'on-hold': 'On Hold'
+    };
+    return statusMap[status] || 'All Status';
+  };
+
+  const handleStatusSelect = (status) => {
+    setFilterStatus(status);
+    setStatusDropdownOpen(false);
+  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -288,20 +329,54 @@ const HomePage = () => {
               {/* Filters and View Mode */}
               <div className="flex items-center gap-3">
                 {/* Status Filter */}
-                <div className="relative">
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="appearance-none pl-10 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-all"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="planning">Planning</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="on-hold">On Hold</option>
-                  </select>
-                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <div className="relative" ref={statusDropdownRef}>
+                  <div className="flex items-center justify-between pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl transition-all hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div className="flex items-center gap-2">
+                      <Filter className="text-gray-400" size={18} />
+                      <span className="text-gray-700 font-medium">{getStatusLabel(filterStatus)}</span>
+                    </div>
+                    <ChevronDown
+                      className={`text-gray-400 transition-transform duration-200 cursor-pointer ${statusDropdownOpen ? 'rotate-180' : ''}`}
+                      size={18}
+                      onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                    />
+                  </div>
+                  <AnimatePresence>
+                    {statusDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
+                      >
+                        <div className="py-1">
+                          {[
+                            { value: 'all', label: 'All Status' },
+                            { value: 'planning', label: 'Planning' },
+                            { value: 'in-progress', label: 'In Progress' },
+                            { value: 'completed', label: 'Completed' },
+                            { value: 'on-hold', label: 'On Hold' }
+                          ].map((option) => (
+                            <div
+                              key={option.value}
+                              className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 ${
+                                filterStatus === option.value ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                              }`}
+                              onClick={() => handleStatusSelect(option.value)}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium">{option.label}</span>
+                                {filterStatus === option.value && (
+                                  <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 {/* View Mode Toggle */}
@@ -395,23 +470,69 @@ const HomePage = () => {
                         </div>
                         <div className="flex items-center gap-3">
                           {/* Member Filter Dropdown */}
-                          <div className="relative">
-                            <select
-                              value={selectedMembers[department._id] || 'all'}
-                              onChange={(e) => setSelectedMembers(prev => ({
-                                ...prev,
-                                [department._id]: e.target.value
-                              }))}
-                              className="appearance-none pl-3 pr-8 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer text-sm transition-all"
-                            >
-                              <option value="all">All Members</option>
-                              {departmentMembers.map((member) => (
-                                <option key={member._id} value={member._id}>
-                                  {member.name}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                          <div className="relative" ref={(el) => (memberDropdownRefs.current[department._id] = el)}>
+                            <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all">
+                              <User className="text-gray-400" size={16} />
+                              <span className="text-sm font-medium text-gray-700 flex-1 pointer-events-none">
+                                {selectedMembers[department._id] === 'all' || !selectedMembers[department._id]
+                                  ? 'All Members'
+                                  : departmentMembers.find(m => m._id === selectedMembers[department._id])?.name || 'All Members'}
+                              </span>
+                              <ChevronDown
+                                className={`text-gray-400 transition-transform duration-200 cursor-pointer ${memberDropdownOpen[department._id] ? 'rotate-180' : ''}`}
+                                size={16}
+                                onClick={() => setMemberDropdownOpen(prev => ({ ...prev, [department._id]: !prev[department._id] }))}
+                              />
+                            </div>
+                            <AnimatePresence>
+                              {memberDropdownOpen[department._id] && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                  transition={{ duration: 0.15 }}
+                                  className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
+                                >
+                                  <div className="py-1">
+                                    <div
+                                      className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 ${
+                                        (selectedMembers[department._id] || 'all') === 'all' ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                                      }`}
+                                      onClick={() => {
+                                        setSelectedMembers(prev => ({ ...prev, [department._id]: 'all' }));
+                                        setMemberDropdownOpen(prev => ({ ...prev, [department._id]: false }));
+                                      }}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium">All Members</span>
+                                        {(selectedMembers[department._id] || 'all') === 'all' && (
+                                          <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {departmentMembers.map((member) => (
+                                      <div
+                                        key={member._id}
+                                        className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 ${
+                                          selectedMembers[department._id] === member._id ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                                        }`}
+                                        onClick={() => {
+                                          setSelectedMembers(prev => ({ ...prev, [department._id]: member._id }));
+                                          setMemberDropdownOpen(prev => ({ ...prev, [department._id]: false }));
+                                        }}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium">{member.name}</span>
+                                          {selectedMembers[department._id] === member._id && (
+                                            <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
                           </div>
                           {canAddProject && (
                             <motion.button

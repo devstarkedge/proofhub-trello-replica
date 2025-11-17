@@ -15,7 +15,6 @@ const RegisterPage = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const { register } = useContext(AuthContext);
-  const navigate = useNavigate();
 
   const { name, email, password, department } = formData;
 
