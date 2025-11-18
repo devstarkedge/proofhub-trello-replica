@@ -46,6 +46,7 @@ const RichTextEditor = ({
   mentionContainer = document.body, // Container for mention popup
 }) => {
   const [isExpanded, setIsExpanded] = useState(startExpanded || isComment);
+  const editorRef = useRef(null);
 
   // keep a ref to the users so suggestion items can access latest list without
   // re-creating the editor/extensions when users update asynchronously
@@ -53,6 +54,23 @@ const RichTextEditor = ({
   useEffect(() => {
     usersRef.current = users || [];
   }, [users]);
+
+  // Handle clicking outside to collapse
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (editorRef.current && !editorRef.current.contains(event.target)) {
+        setIsExpanded(false);
+      }
+    };
+
+    if (isExpanded) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isExpanded]);
 
   const mentionExtension = allowMentions
     ? Mention.configure({
@@ -144,8 +162,8 @@ const RichTextEditor = ({
       editorProps: {
         attributes: {
           class: `prose prose-sm max-w-none focus:outline-none ${
-            !isExpanded ? 'h-[120px]' : 'min-h-[200px]'
-          } ${isComment ? 'min-h-[80px]' : ''}`,
+            !isExpanded ? (isComment ? 'h-[60px]' : 'h-[120px]') : 'min-h-[200px]'
+          }`,
         },
       },
       onUpdate: ({ editor }) => {
@@ -172,7 +190,7 @@ const RichTextEditor = ({
   }
 
   return (
-    <div className="w-full relative">
+    <div ref={editorRef} className="w-full relative">
       {/* Toolbar - only show when expanded */}
       {isExpanded && (
         <div className="flex items-center gap-1 mb-2 p-2 bg-gray-50 rounded-lg border border-gray-200">

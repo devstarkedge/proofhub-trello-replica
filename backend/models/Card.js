@@ -110,7 +110,7 @@ const cardSchema = new mongoose.Schema({
   }],
   priority: {
     type: String,
-    enum: ['low', 'medium', 'high', 'critical']
+    enum: ['low', 'medium', 'high', 'critical', null]
   },
   status: {
     type: String

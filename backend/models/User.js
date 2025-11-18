@@ -55,15 +55,6 @@ const userSchema = new mongoose.Schema({
       projectUpdates: { type: Boolean, default: true },
       taskDeleted: { type: Boolean, default: true },
       userCreated: { type: Boolean, default: true }
-    },
-    privacy: {
-      profileVisibility: {
-        type: String,
-        enum: ['public', 'team', 'private'],
-        default: 'team'
-      },
-      showEmail: { type: Boolean, default: false },
-      showActivity: { type: Boolean, default: true }
     }
   },
   pushSubscription: {

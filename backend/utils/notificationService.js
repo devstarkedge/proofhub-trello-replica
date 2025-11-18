@@ -104,7 +104,11 @@ class NotificationService {
   // Send push notification
   async sendPushNotification(notification, user) {
     try {
-      await sendPushNotification(notification, user.pushSubscription);
+      if (user.pushSubscription && user.pushSubscription.endpoint) {
+        await sendPushNotification(notification, user.pushSubscription);
+      } else {
+        console.log('No valid push subscription found for user, skipping push notification');
+      }
     } catch (error) {
       console.error('Error sending push notification:', error);
     }

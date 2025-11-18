@@ -3,7 +3,8 @@ import {
   Bell, Menu, Settings, LogOut, User,
   ChevronDown, Kanban, List, Calendar, BarChart3,
   Users, Building2, CheckCircle, AlertCircle, UserPlus,
-  FolderPlus, Folder, ArrowRight, Trash2, ArrowLeft
+  FolderPlus, Folder, ArrowRight, Trash2, ArrowLeft,
+  CreditCard, HelpCircle
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -493,6 +494,26 @@ const Header = ({ boardName }) => {
                       >
                         <Settings size={16} />
                         Settings
+                      </button>
+                      <button
+                        onClick={() => {
+                          navigate('/billing');
+                          setShowUserMenu(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-3 text-gray-700"
+                      >
+                        <CreditCard size={16} />
+                        Billing
+                      </button>
+                      <button
+                        onClick={() => {
+                          navigate('/help-center');
+                          setShowUserMenu(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-3 text-gray-700"
+                      >
+                        <HelpCircle size={16} />
+                        Help Center
                       </button>
                     </div>
                     <div className="border-t border-gray-200">

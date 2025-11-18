@@ -29,11 +29,6 @@ const Settings = () => {
       taskDeleted: true,
       userCreated: true
     },
-    privacy: {
-      profileVisibility: 'team',
-      showEmail: false,
-      showActivity: true
-    },
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
@@ -56,8 +51,7 @@ const Settings = () => {
       if (userData.settings) {
         setSettingsData(prev => ({
           ...prev,
-          notifications: { ...prev.notifications, ...userData.settings.notifications },
-          privacy: { ...prev.privacy, ...userData.settings.privacy }
+          notifications: { ...prev.notifications, ...userData.settings.notifications }
         }));
       }
     } catch (error) {
@@ -121,8 +115,7 @@ const Settings = () => {
     setSaving(true);
     try {
       const updateData = {
-        notifications: settingsData.notifications,
-        privacy: settingsData.privacy
+        notifications: settingsData.notifications
       };
 
       if (settingsData.newPassword) {
@@ -362,103 +355,7 @@ const Settings = () => {
               </div>
             </motion.div>
 
-            {/* Privacy Settings */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-            >
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Shield className="text-green-600" size={20} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Privacy</h3>
-                  <p className="text-sm text-gray-600">Control your privacy and visibility settings</p>
-                </div>
-              </div>
 
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Profile Visibility
-                  </label>
-                  <div className="space-y-2">
-                    {[
-                      { value: 'public', label: 'Public', desc: 'Visible to everyone' },
-                      { value: 'team', label: 'Team Only', desc: 'Visible to team members' },
-                      { value: 'private', label: 'Private', desc: 'Only visible to you' }
-                    ].map(({ value, label, desc }) => (
-                      <motion.button
-                        key={value}
-                        whileHover={{ scale: 1.01 }}
-                        onClick={() => handleSettingChange('privacy', 'profileVisibility', value)}
-                        className={`w-full text-left p-3 rounded-lg border transition-all ${
-                          settingsData.privacy.profileVisibility === value
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{label}</p>
-                            <p className="text-sm opacity-75">{desc}</p>
-                          </div>
-                          {settingsData.privacy.profileVisibility === value && (
-                            <CheckCircle size={16} className="text-blue-600" />
-                          )}
-                        </div>
-                      </motion.button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-900">Show Email Address</p>
-                      <p className="text-sm text-gray-600">Display your email in your public profile</p>
-                    </div>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => handleSettingChange('privacy', 'showEmail', !settingsData.privacy.showEmail)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settingsData.privacy.showEmail ? 'bg-blue-600' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settingsData.privacy.showEmail ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </motion.button>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-900">Show Activity Status</p>
-                      <p className="text-sm text-gray-600">Let others see when you're active</p>
-                    </div>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => handleSettingChange('privacy', 'showActivity', !settingsData.privacy.showActivity)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settingsData.privacy.showActivity ? 'bg-blue-600' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settingsData.privacy.showActivity ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </motion.button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
 
             {/* Save Button */}
             <motion.div

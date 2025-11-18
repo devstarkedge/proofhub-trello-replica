@@ -156,7 +156,7 @@ export const updateProfile = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/users/settings
 // @access  Private
 export const updateSettings = asyncHandler(async (req, res, next) => {
-  const { notifications, privacy, currentPassword, newPassword } = req.body;
+  const { notifications, currentPassword, newPassword } = req.body;
 
   const user = await User.findById(req.user.id).select('+password');
 
@@ -181,9 +181,6 @@ export const updateSettings = asyncHandler(async (req, res, next) => {
   // Update settings
   if (notifications !== undefined) {
     user.settings.notifications = { ...user.settings.notifications, ...notifications };
-  }
-  if (privacy !== undefined) {
-    user.settings.privacy = { ...user.settings.privacy, ...privacy };
   }
 
   await user.save();

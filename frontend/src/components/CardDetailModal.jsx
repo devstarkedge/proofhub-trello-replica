@@ -23,12 +23,15 @@ import {
   Target,
   Edit2,
   PlusCircle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import Database from "../services/database";
 import AuthContext from "../context/AuthContext";
 import { toast } from "react-toastify";
 import RichTextEditor from "./RichTextEditor";
 import useWorkflowStore from "../store/workflowStore";
+import useDepartmentStore from "../store/departmentStore";
 
 const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const { user } = useContext(AuthContext);
@@ -68,6 +71,10 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [projectName, setProjectName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredMembers, setFilteredMembers] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
+  const [expandedDepartments, setExpandedDepartments] = useState({});
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Time Tracking States
   const [estimationEntries, setEstimationEntries] = useState(
@@ -120,6 +127,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     loadFreshCardData();
     loadComments();
     loadTeamMembers();
+    loadDepartments();
     loadProjectName();
     loadAvailableStatuses();
 
@@ -184,18 +192,61 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     };
   }, [card._id]);
 
-  // Filter members based on search query
+  // Filter members based on search query and group by department
   useEffect(() => {
-    if (searchQuery.length >= 3) {
+    if (searchQuery.length >= 2) {
       const filtered = teamMembers.filter(member =>
         member.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         member.email?.toLowerCase().includes(searchQuery.toLowerCase())
       );
-      setFilteredMembers(filtered);
+
+      // Group filtered members by department
+      const grouped = {};
+      filtered.forEach(member => {
+         const deptId = member.department?._id || member.department || 'Unassigned';
+         const deptName = member.department?.name || 'Unassigned';
+
+        if (!grouped[deptId]) {
+          grouped[deptId] = {
+            department: { _id: deptId, name: deptName },
+            members: []
+          };
+        }
+        grouped[deptId].members.push(member);
+      });
+
+      setGroupedFilteredMembers(grouped);
+      setIsDropdownOpen(true);
+
+      // Initialize expanded departments
+      const initialExpanded = {};
+      Object.keys(grouped).forEach(deptId => {
+        initialExpanded[deptId] = true; // Expand all by default
+      });
+      setExpandedDepartments(initialExpanded);
     } else {
       setFilteredMembers([]);
+      setGroupedFilteredMembers({});
+      setIsDropdownOpen(false);
     }
   }, [searchQuery, teamMembers]);
+
+  const handleSelectMember = (memberId) => {
+    if (!assignees.includes(memberId)) {
+      setAssignees([...assignees, memberId]);
+    }
+  };
+
+  const handleRemoveAssignee = (memberId) => {
+    setAssignees(assignees.filter(id => id !== memberId));
+  };
+
+  const toggleDepartment = (deptId) => {
+    setExpandedDepartments(prev => ({
+      ...prev,
+      [deptId]: !prev[deptId]
+    }));
+  };
 
   const loadProjectName = async () => {
     try {
@@ -274,6 +325,16 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     } catch (error) {
       console.error("Error loading team members:", error);
       setTeamMembers([]);
+    }
+  };
+
+  const loadDepartments = async () => {
+    try {
+      const response = await useDepartmentStore.getState().loadDepartments();
+      setDepartments(response || []);
+    } catch (error) {
+      console.error("Error loading departments:", error);
+      setDepartments([]);
     }
   };
 
@@ -532,7 +593,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
         title,
         description,
         assignees: assignees.length > 0 ? assignees : null,
-        priority,
+        priority: priority || null,
         status,
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
         startDate: startDate ? new Date(startDate).toISOString() : null,
@@ -1621,7 +1682,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                       )}
 
                       {/* Search Bar */}
-                      <div className="mb-3">
+                      <div className="mb-3 relative">
                         <input
                           type="text"
                           value={searchQuery}
@@ -1629,61 +1690,99 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                           placeholder="Search members by name or email..."
                           className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                         />
+
+                        {/* Search Results */}
+                        {isDropdownOpen && (
+                          <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto z-50 custom-scrollbar">
+                            {Object.keys(groupedFilteredMembers).length > 0 ? (
+                              Object.entries(groupedFilteredMembers).map(([deptId, group]) => (
+                                <div key={deptId} className="border-b border-gray-100 last:border-b-0">
+                                  {/* Department Header */}
+                                  <div
+                                    className="flex items-center justify-between p-4 bg-gray-100 hover:bg-gray-200 cursor-pointer transition-all duration-200 border-l-4 border-blue-500 shadow-sm rounded-t-xl"
+                                    onClick={() => toggleDepartment(deptId)}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <motion.div
+                                        animate={{ rotate: expandedDepartments[deptId] ? 0 : -90 }}
+                                        transition={{ duration: 0.2 }}
+                                      >
+                                        <ChevronDown size={16} className="text-gray-600" />
+                                      </motion.div>
+                                      <span className="font-bold text-gray-800 text-sm uppercase tracking-wide">
+                                        {group.department.name}
+                                      </span>
+                                      <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full font-medium border border-blue-200">
+                                        {group.members.length}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Department Members */}
+                                  <AnimatePresence>
+                                    {expandedDepartments[deptId] && (
+                                      <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: "auto", opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="overflow-hidden"
+                                      >
+                                        {group.members.map((member) => {
+                                          const isAssigned = assignees.includes(member._id);
+                                          return (
+                                            <motion.button
+                                              key={member._id}
+                                              whileHover={{ scale: 1.01, backgroundColor: "#f9fafb" }}
+                                              whileTap={{ scale: 0.99 }}
+                                              onClick={() => handleSelectMember(member._id)}
+                                              disabled={isAssigned}
+                                              className={`w-full flex items-center gap-4 p-4 text-left hover:bg-gray-50 transition-all duration-200 ${
+                                                isAssigned ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'cursor-pointer'
+                                              }`}
+                                            >
+                                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center text-sm font-bold shadow-md">
+                                                {member.name?.[0]?.toUpperCase() || "U"}
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-semibold text-gray-900 truncate">
+                                                  {member.name}
+                                                </div>
+                                                <div className="text-xs text-gray-500 truncate">
+                                                  {member.email}
+                                                </div>
+                                              </div>
+                                              {isAssigned ? (
+                                                <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded-full border border-green-200">
+                                                  Assigned
+                                                </span>
+                                              ) : (
+                                                <div className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 flex items-center justify-center transition-colors">
+                                                  <Plus size={16} className="text-white" />
+                                                </div>
+                                              )}
+                                            </motion.button>
+                                          );
+                                        })}
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-center text-gray-500 text-sm py-8">
+                                No members found
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {searchQuery.length < 2 && searchQuery.length > 0 && (
+                          <div className="text-center text-gray-500 text-sm py-4">
+                            Type at least 2 characters to search
+                          </div>
+                        )}
                       </div>
-
-                      {/* Search Results */}
-                      {searchQuery.length >= 3 && (
-                        <div className="border border-gray-200 rounded-lg bg-white max-h-48 overflow-y-auto">
-                          {filteredMembers.length > 0 ? (
-                            filteredMembers.map((member) => {
-                              const isAssigned = assignees.includes(member._id);
-                              return (
-                                <motion.button
-                                  key={member._id}
-                                  whileHover={{ scale: 1.02 }}
-                                  whileTap={{ scale: 0.98 }}
-                                  onClick={() => {
-                                    if (!isAssigned) {
-                                      setAssignees([...assignees, member._id]);
-                                    }
-                                  }}
-                                  disabled={isAssigned}
-                                  className={`w-full flex items-center gap-3 p-3 text-left border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-all ${
-                                    isAssigned ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                                  }`}
-                                >
-                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center text-sm font-bold">
-                                    {member.name?.[0]?.toUpperCase() || "U"}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium text-gray-900 truncate">
-                                      {member.name}
-                                    </div>
-                                    <div className="text-xs text-gray-500 truncate">
-                                      {member.email}
-                                    </div>
-                                  </div>
-                                  {isAssigned ? (
-                                    <span className="text-xs text-green-600 font-medium">Assigned</span>
-                                  ) : (
-                                    <Plus size={16} className="text-blue-500 flex-shrink-0" />
-                                  )}
-                                </motion.button>
-                              );
-                            })
-                          ) : (
-                            <div className="text-center text-gray-500 text-sm py-4">
-                              No members found
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {searchQuery.length < 3 && searchQuery.length > 0 && (
-                        <div className="text-center text-gray-500 text-sm py-4">
-                          Type at least 3 characters to search
-                        </div>
-                      )}
                     </div>
 
                     {/* Priority */}
