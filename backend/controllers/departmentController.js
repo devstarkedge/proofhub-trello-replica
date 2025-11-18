@@ -1,5 +1,7 @@
 import Department from "../models/Department.js";
 import User from "../models/User.js";
+import Board from "../models/Board.js";
+import Card from "../models/Card.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
@@ -257,6 +259,132 @@ export const removeMemberFromDepartment = asyncHandler(
     });
   }
 );
+
+// @desc    Get members with project assignments for department
+// @route   GET /api/departments/:id/members-with-assignments
+// @access  Private
+export const getMembersWithAssignments = asyncHandler(async (req, res, next) => {
+  const department = await Department.findById(req.params.id);
+
+  if (!department) {
+    return next(new ErrorResponse("Department not found", 404));
+  }
+
+  // Get all projects in this department
+  const projects = await Board.find({ department: req.params.id, isArchived: false })
+    .populate('members', 'name email')
+    .select('_id name members');
+
+  // Get all cards (tasks) in these projects
+  const projectIds = projects.map(p => p._id);
+  const cards = await Card.find({ board: { $in: projectIds } })
+    .populate('assignees', 'name email')
+    .populate('members', 'name email')
+    .select('_id board assignees members subtasks');
+
+  // Collect all unique members who have assignments
+  const assignedMembers = new Set();
+
+  // Add members directly assigned to projects
+  if (projects && projects.length > 0) {
+    projects.forEach(project => {
+      if (project.members && project.members.length > 0) {
+        project.members.forEach(member => {
+          assignedMembers.add(member._id.toString());
+        });
+      }
+    });
+  }
+
+  // Add members assigned to tasks/cards
+  if (cards && cards.length > 0) {
+    cards.forEach(card => {
+      if (card.assignees && card.assignees.length > 0) {
+        card.assignees.forEach(assignee => {
+          assignedMembers.add(assignee._id.toString());
+        });
+      }
+      if (card.members && card.members.length > 0) {
+        card.members.forEach(member => {
+          assignedMembers.add(member._id.toString());
+        });
+      }
+    });
+  }
+
+  // Add members assigned to subtasks
+  if (cards && cards.length > 0) {
+    cards.forEach(card => {
+      if (card.subtasks && card.subtasks.length > 0) {
+        // Note: Subtasks don't have direct assignees in the schema, but we can extend this if needed
+      }
+    });
+  }
+
+  // Filter department members to only include those with assignments
+  const membersWithAssignments = department.members.filter(memberId =>
+    assignedMembers.has(memberId.toString())
+  );
+
+  // Populate the member details
+  const populatedMembers = await User.find({
+    _id: { $in: membersWithAssignments }
+  }).select('name email');
+
+  res.status(200).json({
+    success: true,
+    data: populatedMembers,
+  });
+});
+
+// @desc    Get projects where a member has assignments for department
+// @route   GET /api/departments/:id/projects-with-member/:memberId
+// @access  Private
+export const getProjectsWithMemberAssignments = asyncHandler(async (req, res, next) => {
+  const { id: departmentId, memberId } = req.params;
+
+  const department = await Department.findById(departmentId);
+  if (!department) {
+    return next(new ErrorResponse("Department not found", 404));
+  }
+
+  // Get all projects in this department
+  const allProjects = await Board.find({
+    department: departmentId,
+    isArchived: false
+  }).select('_id name description background members status');
+
+  // Get projects where member is directly assigned
+  const directlyAssignedProjects = allProjects.filter(project =>
+    project.members && project.members.some(member => member.toString() === memberId)
+  );
+
+  // Get projects where member is assigned to tasks/cards
+  const projectIds = allProjects.map(p => p._id);
+  const cardsWithMember = await Card.find({
+    board: { $in: projectIds },
+    $or: [
+      { assignees: memberId },
+      { members: memberId }
+    ]
+  }).select('board').distinct('board');
+
+  // Combine all project IDs
+  const assignedProjectIds = new Set([
+    ...directlyAssignedProjects.map(p => p._id.toString()),
+    ...cardsWithMember.map(id => id.toString())
+  ]);
+
+  // Get the actual projects
+  const assignedProjects = allProjects.filter(project =>
+    assignedProjectIds.has(project._id.toString())
+  );
+
+  res.status(200).json({
+    success: true,
+    data: assignedProjects,
+  });
+});
 
 // @desc    Unassign user from department
 // @route   PUT /api/departments/:deptId/users/:userId/unassign

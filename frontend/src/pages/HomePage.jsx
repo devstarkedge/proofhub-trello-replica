@@ -33,6 +33,8 @@ const HomePage = () => {
   const [selectedMembers, setSelectedMembers] = useState({});
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [memberDropdownOpen, setMemberDropdownOpen] = useState({});
+  const [membersWithAssignments, setMembersWithAssignments] = useState({});
+  const [projectsWithMemberAssignments, setProjectsWithMemberAssignments] = useState({});
   const statusDropdownRef = useRef(null);
   const memberDropdownRefs = useRef({});
 
@@ -67,6 +69,48 @@ const HomePage = () => {
       const response = await Database.getDepartments();
       setDepartments(response.data || []);
       setError(null);
+
+      // Fetch members with assignments for each department
+      const membersPromises = response.data.map(async (dept) => {
+        try {
+          const membersResponse = await Database.getMembersWithAssignments(dept._id);
+          return { deptId: dept._id, members: membersResponse.data || [] };
+        } catch (error) {
+          console.error(`Error fetching members for department ${dept._id}:`, error);
+          return { deptId: dept._id, members: [] };
+        }
+      });
+
+      const membersResults = await Promise.all(membersPromises);
+      const membersMap = {};
+      membersResults.forEach(result => {
+        membersMap[result.deptId] = result.members;
+      });
+      setMembersWithAssignments(membersMap);
+
+      // Fetch projects with member assignments for each department
+      const projectsPromises = response.data.map(async (dept) => {
+        try {
+          const projectsMap = {};
+          // For each member in this department, fetch their assigned projects
+          for (const member of membersMap[dept._id] || []) {
+            const projectsResponse = await Database.getProjectsWithMemberAssignments(dept._id, member._id);
+            projectsMap[member._id] = projectsResponse.data || [];
+          }
+          return { deptId: dept._id, projectsMap };
+        } catch (error) {
+          console.error(`Error fetching projects for department ${dept._id}:`, error);
+          return { deptId: dept._id, projectsMap: {} };
+        }
+      });
+
+      const projectsResults = await Promise.all(projectsPromises);
+      const projectsMap = {};
+      projectsResults.forEach(result => {
+        projectsMap[result.deptId] = result.projectsMap;
+      });
+      setProjectsWithMemberAssignments(projectsMap);
+
     } catch (err) {
       console.error('Error fetching departments:', err);
       setError('Failed to load departments');
@@ -163,12 +207,13 @@ const HomePage = () => {
       );
     }
 
-    // Member filter
+    // Member filter - now filters projects where the member has assignments
     const selectedMember = selectedMembers[departmentId];
     if (selectedMember && selectedMember !== 'all') {
-      filtered = filtered.filter(project =>
-        project.members && project.members.some(member => member._id === selectedMember)
-      );
+      // Get projects where this member has assignments (direct or through tasks)
+      const memberProjects = projectsWithMemberAssignments[departmentId]?.[selectedMember] || [];
+      const memberProjectIds = new Set(memberProjects.map(p => p._id));
+      filtered = filtered.filter(project => memberProjectIds.has(project._id));
     }
 
     return filtered;
@@ -510,7 +555,7 @@ const HomePage = () => {
                                         )}
                                       </div>
                                     </div>
-                                    {departmentMembers.map((member) => (
+                                    {(membersWithAssignments[department._id] || []).map((member) => (
                                       <div
                                         key={member._id}
                                         className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 ${

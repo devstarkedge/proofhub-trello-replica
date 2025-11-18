@@ -507,6 +507,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   // Invalidate cache for the board
   invalidateCache(`/api/boards/${card.board.toString()}`);
   invalidateCache("/api/departments");
+  invalidateCache(`/api/departments/${card.board.department}/members-with-assignments`);
   invalidateCache("/api/analytics/dashboard");
   invalidateCache(`/api/analytics/department/`);
 
@@ -654,6 +655,7 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   invalidateCache(`/api/cards/board/${card.board.toString()}`);
   invalidateCache(`/api/cards/${card._id}`);
   invalidateCache("/api/departments");
+  invalidateCache(`/api/departments/${card.board.department}/members-with-assignments`);
   invalidateCache("/api/analytics/dashboard");
   invalidateCache(`/api/analytics/department/`);
 
@@ -705,6 +707,7 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   invalidateCache(`/api/cards/board/${boardId.toString()}`);
   invalidateCache(`/api/cards/${card._id}`);
   invalidateCache("/api/departments");
+  invalidateCache(`/api/departments/${card.board?.department}/members-with-assignments`);
   invalidateCache("/api/analytics/dashboard");
   invalidateCache(`/api/analytics/department/`);
 

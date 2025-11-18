@@ -292,6 +292,7 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   invalidateCache(`/api/boards`);
   invalidateCache(`/api/boards/${req.params.id}`);
   invalidateCache("/api/departments");
+  invalidateCache(`/api/departments/${board.department}/members-with-assignments`);
   invalidateCache("/api/analytics/dashboard");
 
   res.status(200).json({

@@ -1,6 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, unassignUserFromDepartment } from '../controllers/departmentController.js';
+import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment } from '../controllers/departmentController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 
@@ -20,6 +20,12 @@ router.delete('/:id', protect, authorize('admin', 'manager'), deleteDepartment);
 // Member management routes
 router.post('/:id/members', protect, authorize('admin', 'manager'), addMemberToDepartment);
 router.delete('/:id/members/:userId', protect, authorize('admin', 'manager'), removeMemberFromDepartment);
+
+// Get members with assignments for filtering
+router.get('/:id/members-with-assignments', protect, getMembersWithAssignments);
+
+// Get projects where a member has assignments
+router.get('/:id/projects-with-member/:memberId', protect, getProjectsWithMemberAssignments);
 
 // User unassign route
 router.put('/:deptId/users/:userId/unassign', protect, authorize('admin', 'manager'), unassignUserFromDepartment);

@@ -538,6 +538,32 @@ class DatabaseService {
     });
   }
 
+  async getMembersWithAssignments(deptId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments/${deptId}/members-with-assignments`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async getProjectsWithMemberAssignments(deptId, memberId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments/${deptId}/projects-with-member/${memberId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
   // Team operations
   async getTeams(departmentId = null) {
     const token = localStorage.getItem('token');
