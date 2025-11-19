@@ -5,8 +5,8 @@ let transporter;
 // Initialize transporter
 const initTransporter = () => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.log('Email service not configured - emails will not be sent');
-    return null;
+    // Throw an error if email service is not configured
+    throw new Error('Email service not configured. Please set EMAIL_USER and EMAIL_PASS environment variables.');
   }
 
   return nodemailer.createTransport({
@@ -21,27 +21,23 @@ const initTransporter = () => {
 };
 
 export const sendEmail = async (options) => {
-  if (!transporter) {
-    transporter = initTransporter();
-  }
-
-  if (!transporter) {
-    console.log('Email not sent - transporter not configured');
-    return;
-  }
-
-  const message = {
-    from: `${process.env.EMAIL_USER || 'FlowTask'} <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
-    to: options.to,
-    subject: options.subject,
-    html: options.html
-  };
-
   try {
+    if (!transporter) {
+      transporter = initTransporter();
+    }
+
+    const message = {
+      from: `${process.env.EMAIL_USER || 'FlowTask'} <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
+      to: options.to,
+      subject: options.subject,
+      html: options.html
+    };
+
     await transporter.sendMail(message);
-    console.log('Email sent successfully to:', options.to);
+    if (process.env.NODE_ENV !== 'production') console.log('Email sent successfully to:', options.to);
   } catch (error) {
     console.error('Email sending failed:', error.message);
+    // We re-throw the error to let the caller handle it.
     throw error;
   }
 };

@@ -18,6 +18,10 @@ const notificationSchema = new mongoose.Schema({
       'team_invite',
       'board_shared',
       'user_registered',
+      'account_created',
+      'user_created',
+      'user_assigned',
+      'user_unassigned',
       'test_notification'
     ],
     required: true
@@ -72,5 +76,6 @@ const notificationSchema = new mongoose.Schema({
 notificationSchema.index({ user: 1, createdAt: -1 });
 notificationSchema.index({ isRead: 1 });
 notificationSchema.index({ type: 1 });
+notificationSchema.index({ user: 1, isRead: 1 });
 
 export default mongoose.model('Notification', notificationSchema);

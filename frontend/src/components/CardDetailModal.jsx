@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -75,6 +75,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
 
   // Time Tracking States
   const [estimationEntries, setEstimationEntries] = useState(
@@ -203,8 +204,10 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
       // Group filtered members by department
       const grouped = {};
       filtered.forEach(member => {
-         const deptId = member.department?._id || member.department || 'Unassigned';
-         const deptName = member.department?.name || 'Unassigned';
+         // Handle department as array - take first department for grouping
+         const dept = member.department && Array.isArray(member.department) && member.department.length > 0 ? member.department[0] : null;
+         const deptId = dept?._id || dept || 'Unassigned';
+         const deptName = dept?.name || 'Unassigned';
 
         if (!grouped[deptId]) {
           grouped[deptId] = {
@@ -230,6 +233,23 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
       setIsDropdownOpen(false);
     }
   }, [searchQuery, teamMembers]);
+
+  // Handle clicks outside dropdown to close it
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDropdownOpen]);
 
   const handleSelectMember = (memberId) => {
     if (!assignees.includes(memberId)) {
@@ -1461,9 +1481,9 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
 
                   <div className="ml-8 space-y-2">
                     <AnimatePresence>
-                      {subtasks.map((subtask) => (
+                      {subtasks.map((subtask, index) => (
                         <motion.div
-                          key={subtask.id}
+                          key={subtask.id || `subtask-${index}`}
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: 20 }}
@@ -1586,9 +1606,9 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                     {/* Comments List with Scrollbar */}
                     <div className="max-h-96 overflow-y-auto pr-2 custom-scrollbar">
                       <AnimatePresence>
-                        {comments.map((comment) => (
+                        {comments.map((comment, index) => (
                           <motion.div
-                            key={comment._id}
+                            key={comment._id || `comment-${index}`}
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             className="flex gap-3 mb-4"
@@ -1650,6 +1670,10 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                             {assignees.map((assigneeId) => {
                               // Find assignee in team members
                               const assignee = teamMembers.find(m => m._id === assigneeId);
+                              // Handle department as array (take first department name or 'Unassigned')
+                              const departmentName = assignee?.department && Array.isArray(assignee.department) && assignee.department.length > 0
+                                ? assignee.department[0].name || 'Unassigned'
+                                : 'Unassigned';
                               return (
                                 <motion.div
                                   key={assigneeId}
@@ -1661,7 +1685,10 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                                   <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
                                     {assignee?.name?.[0]?.toUpperCase() || assignee?.email?.[0]?.toUpperCase() || "U"}
                                   </div>
-                                  <span>{assignee?.name || assignee?.email || "Unknown"}</span>
+                                  <div className="flex flex-col items-start">
+                                    <span>{assignee?.name || assignee?.email || "Unknown"}</span>
+                                    <span className="text-xs text-blue-600 font-normal">{departmentName}</span>
+                                  </div>
                                   <button
                                     onClick={() =>
                                       setAssignees(
@@ -1693,9 +1720,17 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
 
                         {/* Search Results */}
                         {isDropdownOpen && (
-                          <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto z-50 custom-scrollbar">
+                          <div ref={dropdownRef} className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto z-50 custom-scrollbar">
                             {Object.keys(groupedFilteredMembers).length > 0 ? (
-                              Object.entries(groupedFilteredMembers).map(([deptId, group]) => (
+                              Object.entries(groupedFilteredMembers)
+                                .sort(([aId, aGroup], [bId, bGroup]) => {
+                                  // Put "Unassigned" last
+                                  if (aGroup.department.name === 'Unassigned') return 1;
+                                  if (bGroup.department.name === 'Unassigned') return -1;
+                                  // Otherwise sort alphabetically
+                                  return aGroup.department.name.localeCompare(bGroup.department.name);
+                                })
+                                .map(([deptId, group]) => (
                                 <div key={deptId} className="border-b border-gray-100 last:border-b-0">
                                   {/* Department Header */}
                                   <div

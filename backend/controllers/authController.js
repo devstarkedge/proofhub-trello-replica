@@ -5,6 +5,7 @@ import Notification from '../models/Notification.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { sendEmail } from '../utils/email.js';
+import notificationService from '../utils/notificationService.js';
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -267,25 +268,68 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Send welcome email
+  // Send welcome email with different content for admin-created users
   try {
     const departmentName = department ?
       (await Department.findById(department)).name : 'No department assigned';
 
     await sendEmail({
       to: email,
-      subject: 'Welcome to Project Management',
+      subject: 'Welcome to FlowTask - Your Account is Ready',
       html: `
-        <h1>Welcome ${name}!</h1>
-        <p>Your account has been created by an administrator.</p>
+        <h1>Welcome to FlowTask, ${name}!</h1>
+        <p>Your account has been created by an administrator and is ready to use.</p>
         <p><strong>Role:</strong> ${role}</p>
         <p><strong>Department:</strong> ${departmentName}</p>
-        <p>You can now log in with your credentials.</p>
+        <p>You can now log in to your account and start collaborating with your team.</p>
+        <p>If you have any questions, please contact your administrator.</p>
       `
     });
   } catch (error) {
     console.error('Email sending failed:', error);
   }
+
+  // Create notification for the new user
+  try {
+    await notificationService.createNotification({
+      type: 'account_created',
+      title: 'Welcome to FlowTask',
+      message: 'Your account has been created by an administrator. You can now log in with your credentials.',
+      user: user._id,
+      sender: req.user._id
+    });
+  } catch (error) {
+    console.error('User notification failed:', error);
+  }
+
+  // Notify all admins about the new user creation
+  try {
+    const admins = await User.find({ role: 'admin', isActive: true });
+    const departmentName = department ?
+      (await Department.findById(department)).name : 'No department assigned';
+
+    for (const admin of admins) {
+      await notificationService.createNotification({
+        type: 'user_created',
+        title: 'New User Created',
+        message: `A new user ${name} (${email}) has been created and assigned to ${departmentName}.`,
+        user: admin._id,
+        sender: req.user._id
+      });
+    }
+  } catch (error) {
+    console.error('Admin notification failed:', error);
+  }
+
+  // Emit real-time update
+  const { emitToTeam } = await import('../server.js');
+  emitToTeam('admin', 'user-created', {
+    userId: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    department: user.department
+  });
 
   res.status(201).json({
     success: true,

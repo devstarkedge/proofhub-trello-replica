@@ -12,11 +12,11 @@ class SocketService {
 
   connect(userId, token) {
     if (this.connected && this.socket) {
-      console.log('Socket already connected');
+      if (import.meta.env.DEV) console.log('Socket already connected');
       return;
     }
 
-    console.log('Connecting to socket server...');
+    if (import.meta.env.DEV) console.log('Connecting to socket server...');
     
     this.socket = io(baseURL, {
       auth: {
@@ -38,34 +38,34 @@ class SocketService {
 
     // Connection events
     this.socket.on('connect', () => {
-      console.log('Socket connected successfully');
+      if (import.meta.env.DEV) console.log('Socket connected successfully');
       this.connected = true;
       this.reconnectAttempts = 0;
-      
+
       // Dispatch custom event for connection
       window.dispatchEvent(new CustomEvent('socket-connected'));
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('Socket disconnected:', reason);
+      if (import.meta.env.DEV) console.log('Socket disconnected:', reason);
       this.connected = false;
-      
+
       // Dispatch custom event for disconnection
       window.dispatchEvent(new CustomEvent('socket-disconnected', { detail: reason }));
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
+      if (import.meta.env.DEV) console.error('Socket connection error:', error);
       this.reconnectAttempts++;
-      
+
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.error('Max reconnection attempts reached');
+        if (import.meta.env.DEV) console.error('Max reconnection attempts reached');
         window.dispatchEvent(new CustomEvent('socket-connection-failed'));
       }
     });
 
     this.socket.on('reconnect', (attemptNumber) => {
-      console.log('Socket reconnected after', attemptNumber, 'attempts');
+      if (import.meta.env.DEV) console.log('Socket reconnected after', attemptNumber, 'attempts');
       this.reconnectAttempts = 0;
     });
 
@@ -181,7 +181,7 @@ class SocketService {
 
   disconnect() {
     if (this.socket) {
-      console.log('Disconnecting socket...');
+      if (import.meta.env.DEV) console.log('Disconnecting socket...');
       this.socket.disconnect();
       this.socket = null;
       this.connected = false;

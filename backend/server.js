@@ -32,8 +32,17 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL ,
+    origin: process.env.FRONTEND_URL,
     methods: ['GET', 'POST']
+  },
+  // Socket.IO optimizations for high concurrency
+  transports: ['websocket', 'polling'], // Prefer WebSocket, fallback to polling
+  pingTimeout: 60000, // 60 seconds ping timeout
+  pingInterval: 25000, // 25 seconds ping interval
+  maxHttpBufferSize: 1e6, // 1MB max buffer size
+  allowEIO3: true, // Allow Engine.IO v3 clients
+  perMessageDeflate: {
+    threshold: 1024, // Compress messages over 1KB
   }
 });
 
@@ -51,6 +60,7 @@ app.use('/uploads', express.static('uploads'));
 // Compression middleware
 import compression from 'compression';
 app.use(compression());
+
 
 // Caching middleware
 import { cacheMiddleware } from './middleware/cache.js';
@@ -76,8 +86,8 @@ import jwt from 'jsonwebtoken';
 
 // Socket.IO connection
 io.on('connection', (socket) => {
-  console.log('New socket connection attempt:', socket.id);
-  console.log('Handshake auth:', socket.handshake.auth);
+  if (process.env.NODE_ENV !== 'production') console.log('New socket connection attempt:', socket.id);
+  if (process.env.NODE_ENV !== 'production') console.log('Handshake auth:', socket.handshake.auth);
   const { userId, token } = socket.handshake.auth;
 
   if (!userId) {
@@ -91,7 +101,7 @@ io.on('connection', (socket) => {
     try {
       decodedUser = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
-      console.log('Invalid token');
+      if (process.env.NODE_ENV !== 'production') console.log('Invalid token');
     }
   }
 
@@ -109,23 +119,23 @@ io.on('connection', (socket) => {
   // Handle real-time updates for cards and related entities
   socket.on('join-card', (cardId) => {
     socket.join(`card-${cardId}`);
-    console.log(`User ${userId} joined card room: card-${cardId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined card room: card-${cardId}`);
   });
 
   socket.on('leave-card', (cardId) => {
     socket.leave(`card-${cardId}`);
-    console.log(`User ${userId} left card room: card-${cardId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left card room: card-${cardId}`);
   });
 
   // Handle joining teams and boards
   socket.on('join-team', (teamId) => {
     socket.join(`team-${teamId}`);
-    console.log(`User ${userId} joined team ${teamId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined team ${teamId}`);
   });
 
   socket.on('leave-team', (teamId) => {
     socket.leave(`team-${teamId}`);
-    console.log(`User ${userId} left team ${teamId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left team ${teamId}`);
   });
 
   // Handle real-time events (optional, can be emitted from controllers)
@@ -141,12 +151,12 @@ io.on('connection', (socket) => {
 
   socket.on('join-board', (boardId) => {
     socket.join(`board-${boardId}`);
-    console.log(`User ${userId} joined board ${boardId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined board ${boardId}`);
   });
 
   socket.on('leave-board', (boardId) => {
     socket.leave(`board-${boardId}`);
-    console.log(`User ${userId} left board ${boardId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left board ${boardId}`);
   });
 
   // Push notification subscription management
@@ -156,9 +166,9 @@ io.on('connection', (socket) => {
       await User.findByIdAndUpdate(userId, {
         pushSubscription: subscription
       });
-      console.log(`User ${userId} subscribed to push notifications`);
+      if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} subscribed to push notifications`);
     } catch (error) {
-      console.error('Error saving push subscription:', error);
+      if (process.env.NODE_ENV !== 'production') console.error('Error saving push subscription:', error);
     }
   });
 
@@ -168,14 +178,14 @@ io.on('connection', (socket) => {
       await User.findByIdAndUpdate(userId, {
         $unset: { pushSubscription: 1 }
       });
-      console.log(`User ${userId} unsubscribed from push notifications`);
+      if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} unsubscribed from push notifications`);
     } catch (error) {
-      console.error('Error removing push subscription:', error);
+      if (process.env.NODE_ENV !== 'production') console.error('Error removing push subscription:', error);
     }
   });
 
   socket.on('disconnect', () => {
-    console.log(`User ${userId} disconnected`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} disconnected`);
   });
 });
 
@@ -206,16 +216,16 @@ import seedAdmin from './utils/seed.js';
 
 // MongoDB connection with connection pooling
 mongoose.connect(process.env.MONGO_URI, {
-  maxPoolSize: 10, // Maintain up to 10 socket connections
+  maxPoolSize: 100, // Maintain up to 10 socket connections
   serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
   socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
 })
   .then(() => {
-    console.log('Connected to MongoDB with connection pooling');
+    if (process.env.NODE_ENV !== 'production') console.log('Connected to MongoDB with connection pooling');
     // Seed the admin user
     seedAdmin();
     server.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      if (process.env.NODE_ENV !== 'production') console.log(`Server running on port ${PORT}`);
     });
   })
   .catch((error) => {

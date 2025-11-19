@@ -419,11 +419,14 @@ const TeamManagement = () => {
         department: currentDepartment._id
       };
 
-      // Assuming there's a register endpoint or createUser method
-      // For now, using a placeholder - you may need to adjust based on your backend
-      const createUserResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/register`, {
+      // Use admin-create-user endpoint for admin-created users
+      const token = localStorage.getItem('token');
+      const createUserResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/admin-create-user`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
         body: JSON.stringify(userData)
       });
 

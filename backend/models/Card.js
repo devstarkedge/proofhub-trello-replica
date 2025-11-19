@@ -179,6 +179,16 @@ cardSchema.index({ startDate: 1 });
 cardSchema.index({ 'estimationTime.user': 1 });
 cardSchema.index({ 'loggedTime.user': 1 });
 
+// Additional optimized indexes for common query patterns
+cardSchema.index({ assignees: 1, status: 1 }); // For user task filtering by status
+cardSchema.index({ assignees: 1, dueDate: 1 }); // For user overdue tasks
+cardSchema.index({ assignees: 1, priority: 1 }); // For user priority filtering
+cardSchema.index({ members: 1, status: 1 }); // For member task filtering
+cardSchema.index({ board: 1, isArchived: 1 }); // For active board cards
+cardSchema.index({ dueDate: 1, status: 1 }); // For overdue task queries
+cardSchema.index({ priority: 1, dueDate: 1 }); // For priority + deadline sorting
+cardSchema.index({ createdBy: 1, createdAt: -1 }); // For user-created tasks timeline
+
 // Virtual for comments
 cardSchema.virtual('comments', {
   ref: 'Comment',

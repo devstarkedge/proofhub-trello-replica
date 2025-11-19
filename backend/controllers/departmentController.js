@@ -212,6 +212,20 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
   user.department = req.params.id;
   await user.save();
 
+  // Send real-time notification to the user
+  try {
+    const notificationService = (await import('../utils/notificationService.js')).default;
+    await notificationService.createNotification({
+      type: 'user_assigned',
+      title: 'Department Assignment',
+      message: `You have been assigned to the department: ${department.name}`,
+      user: userId,
+      sender: req.user._id
+    });
+  } catch (error) {
+    console.error('Assignment notification failed:', error);
+  }
+
   // Invalidate relevant caches
   invalidateCache(`/api/departments/${req.params.id}`);
   invalidateCache('/api/users');
@@ -421,6 +435,20 @@ export const unassignUserFromDepartment = asyncHandler(
       (id) => id.toString() !== userId
     );
     await department.save();
+
+    // Send real-time notification to the user
+    try {
+      const notificationService = (await import('../utils/notificationService.js')).default;
+      await notificationService.createNotification({
+        type: 'user_unassigned',
+        title: 'Department Assignment Updated',
+        message: `You have been unassigned from the department: ${department.name}`,
+        user: user._id,
+        sender: req.user._id
+      });
+    } catch (error) {
+      console.error('Unassignment notification failed:', error);
+    }
 
     // Invalidate relevant caches
     invalidateCache(`/api/departments/${deptId}`);

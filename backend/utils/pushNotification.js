@@ -1,11 +1,12 @@
 import webpush from 'web-push';
+import User from '../models/User.js';
 
 let vapidKeys = null;
 
 // Initialize VAPID keys
 const initVapidKeys = () => {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
-    console.log('VAPID keys not configured - push notifications will not be sent');
+    if (process.env.NODE_ENV !== 'production') console.log('VAPID keys not configured - push notifications will not be sent');
     return null;
   }
 
@@ -51,6 +52,10 @@ export const sendPushNotification = async (notification, pushSubscription) => {
           title: 'View'
         },
         {
+          action: 'reply',
+          title: 'Reply'
+        },
+        {
           action: 'dismiss',
           title: 'Dismiss'
         }
@@ -58,14 +63,18 @@ export const sendPushNotification = async (notification, pushSubscription) => {
     });
 
     await webpush.sendNotification(pushSubscription, payload);
-    console.log('Push notification sent successfully');
+    if (process.env.NODE_ENV !== 'production') console.log('Push notification sent successfully');
   } catch (error) {
     console.error('Error sending push notification:', error);
 
-    // If subscription is invalid, we might want to remove it from the database
+    // If subscription is invalid, remove it from the database
     if (error.statusCode === 410) {
-      console.log('Push subscription expired, should be removed from database');
-      // TODO: Implement subscription cleanup
+      if (process.env.NODE_ENV !== 'production') console.log('Push subscription expired, removing from database');
+      try {
+        await User.findByIdAndUpdate(notification.user, { $unset: { pushSubscription: 1 } });
+      } catch (cleanupError) {
+        if (process.env.NODE_ENV !== 'production') console.error('Error removing expired push subscription:', cleanupError);
+      }
     }
   }
 };
@@ -80,7 +89,7 @@ const getNotificationUrl = (notification) => {
     case 'task_deleted':
     case 'comment_added':
     case 'comment_mention':
-      return `${baseUrl}/board/${notification.relatedBoard}`;
+      return `${baseUrl}/board/${notification.relatedBoard}?card=${notification.relatedCard}`;
     case 'project_created':
     case 'project_deleted':
     case 'project_updates':

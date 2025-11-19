@@ -17,7 +17,7 @@ class NotificationService {
       const { type, title, message, user, sender, relatedCard, relatedBoard, relatedTeam } = notificationData;
 
       // Check user settings before creating notification
-      const userDoc = await User.findById(user).select('settings role department team pushSubscription');
+      const userDoc = await User.findById(user).select('settings role department team pushSubscription email name');
       if (!userDoc) return null;
 
       // Check if user has enabled this notification type
@@ -63,22 +63,20 @@ class NotificationService {
 
     const notificationSettings = settings.notifications;
 
-    switch (type) {
-      case 'task_assigned':
-        return notificationSettings.taskAssigned;
-      case 'task_updated':
-        return notificationSettings.taskUpdated;
-      case 'task_deleted':
-        return notificationSettings.taskDeleted;
-      case 'comment_mention':
-        return notificationSettings.commentMention;
-      case 'project_updates':
-        return notificationSettings.projectUpdates;
-      case 'user_registered':
-        return notificationSettings.userCreated;
-      default:
-        return true;
-    }
+    const notificationPreferences = {
+      task_assigned: notificationSettings.taskAssigned,
+      task_updated: notificationSettings.taskUpdated,
+      task_deleted: notificationSettings.taskDeleted,
+      comment_mention: notificationSettings.commentMention,
+      project_updates: notificationSettings.projectUpdates,
+      user_registered: notificationSettings.userCreated,
+      account_created: true, // Always send account creation notifications
+      user_created: notificationSettings.userCreated,
+      user_assigned: true, // Always send assignment notifications
+      user_unassigned: true, // Always send unassignment notifications
+    };
+
+    return notificationPreferences[type] !== undefined ? notificationPreferences[type] : true;
   }
 
   // Send email notification
@@ -98,6 +96,7 @@ class NotificationService {
       await sendEmail(emailData);
     } catch (error) {
       console.error('Error sending email notification:', error);
+      throw error; // Re-throw to allow caller to handle
     }
   }
 
@@ -107,15 +106,40 @@ class NotificationService {
       if (user.pushSubscription && user.pushSubscription.endpoint) {
         await sendPushNotification(notification, user.pushSubscription);
       } else {
-        console.log('No valid push subscription found for user, skipping push notification');
+        if (process.env.NODE_ENV !== 'production') console.log('No valid push subscription found for user, skipping push notification');
       }
     } catch (error) {
       console.error('Error sending push notification:', error);
+      throw error; // Re-throw to allow caller to handle
     }
   }
 
   // Generate email HTML template
   generateEmailTemplate(notification, user) {
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    let specificUrl = baseUrl;
+
+    // Generate specific URL based on notification type
+    switch (notification.type) {
+      case 'task_assigned':
+      case 'task_updated':
+      case 'task_deleted':
+      case 'comment_added':
+      case 'comment_mention':
+        specificUrl = `${baseUrl}/board/${notification.relatedBoard}?card=${notification.relatedCard}`;
+        break;
+      case 'project_created':
+      case 'project_deleted':
+      case 'project_updates':
+        specificUrl = `${baseUrl}/board/${notification.relatedBoard}`;
+        break;
+      case 'user_registered':
+        specificUrl = `${baseUrl}/admin/users`;
+        break;
+      default:
+        specificUrl = baseUrl;
+    }
+
     return `
       <!DOCTYPE html>
       <html>
@@ -123,11 +147,17 @@ class NotificationService {
           <meta charset="utf-8">
           <title>${notification.title}</title>
           <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #6366f1; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
-            .content { background: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px; }
-            .button { display: inline-block; background: #6366f1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 15px; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+            .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 20px; text-align: center; }
+            .header h1 { margin: 0; font-size: 24px; font-weight: 300; }
+            .header h2 { margin: 10px 0 0 0; font-size: 18px; font-weight: 500; }
+            .content { padding: 30px 20px; background: #ffffff; }
+            .content p { margin: 0 0 15px 0; font-size: 16px; }
+            .highlight { background: #f8f9fa; padding: 15px; border-left: 4px solid #667eea; margin: 20px 0; border-radius: 4px; }
+            .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: 600; margin: 20px 0; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
+            .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e9ecef; }
+            .footer a { color: #667eea; text-decoration: none; }
           </style>
         </head>
         <body>
@@ -138,12 +168,18 @@ class NotificationService {
             </div>
             <div class="content">
               <p>Hello ${user.name},</p>
-              <p>${notification.message}</p>
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}" class="button">View in FlowTask</a>
-              <p style="margin-top: 20px; font-size: 12px; color: #666;">
-                You're receiving this email because you have notifications enabled in your FlowTask settings.
-                You can change your notification preferences in your <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings">settings</a>.
-              </p>
+              <div class="highlight">
+                <p><strong>${notification.message}</strong></p>
+              </div>
+              <div style="text-align: center;">
+                <a href="${specificUrl}" class="button">View Details</a>
+              </div>
+              <p>This notification is related to your recent activity in FlowTask. Click the button above to see more details and take action if needed.</p>
+            </div>
+            <div class="footer">
+              <p>You're receiving this email because you have notifications enabled in your FlowTask settings.</p>
+              <p>You can change your notification preferences in your <a href="${baseUrl}/settings">settings</a>.</p>
+              <p>&copy; 2024 FlowTask. All rights reserved.</p>
             </div>
           </div>
         </body>

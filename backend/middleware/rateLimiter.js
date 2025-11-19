@@ -10,7 +10,7 @@ export const rateLimiter = (options = {}) => {
   return (req, res, next) => {
     const key = req.ip || req.connection.remoteAddress;
     const now = Date.now();
-    
+
     if (!rateLimitStore.has(key)) {
       rateLimitStore.set(key, { count: 1, resetTime: now + windowMs });
       return next();
@@ -35,6 +35,7 @@ export const rateLimiter = (options = {}) => {
     next();
   };
 };
+
 
 // Clean up old entries periodically
 setInterval(() => {

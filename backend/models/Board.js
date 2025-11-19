@@ -150,4 +150,13 @@ boardSchema.index({ department: 1, isArchived: 1 });
 boardSchema.index({ department: 1, team: 1 });
 boardSchema.index({ department: 1, createdAt: -1 });
 
+// Additional optimized indexes for common query patterns
+boardSchema.index({ status: 1 }); // For status-based filtering
+boardSchema.index({ priority: 1 }); // For priority-based filtering
+boardSchema.index({ dueDate: 1 }); // For deadline-based queries
+boardSchema.index({ department: 1, status: 1 }); // For department status filtering
+boardSchema.index({ department: 1, priority: 1 }); // For department priority filtering
+boardSchema.index({ owner: 1, createdAt: -1 }); // For user-owned boards timeline
+boardSchema.index({ members: 1, updatedAt: -1 }); // For member boards with recent activity
+
 export default mongoose.model('Board', boardSchema);
