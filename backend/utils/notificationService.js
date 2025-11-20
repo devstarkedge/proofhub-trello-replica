@@ -70,6 +70,7 @@ class NotificationService {
       comment_mention: notificationSettings.commentMention,
       project_updates: notificationSettings.projectUpdates,
       user_registered: notificationSettings.userCreated,
+      user_verified: notificationSettings.userCreated,
       account_created: true, // Always send account creation notifications
       user_created: notificationSettings.userCreated,
       user_assigned: true, // Always send assignment notifications
@@ -134,6 +135,7 @@ class NotificationService {
         specificUrl = `${baseUrl}/board/${notification.relatedBoard}`;
         break;
       case 'user_registered':
+      case 'user_verified':
         specificUrl = `${baseUrl}/admin/users`;
         break;
       default:
@@ -179,7 +181,7 @@ class NotificationService {
             <div class="footer">
               <p>You're receiving this email because you have notifications enabled in your FlowTask settings.</p>
               <p>You can change your notification preferences in your <a href="${baseUrl}/settings">settings</a>.</p>
-              <p>&copy; 2024 FlowTask. All rights reserved.</p>
+              <p>&copy; 2025 FlowTask. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -379,6 +381,24 @@ class NotificationService {
         type: 'user_registered',
         title: 'New User Registration',
         message: `${user.name} has registered and is waiting for verification`,
+        user: adminId,
+        sender: user._id,
+        relatedTeam: user.team
+      });
+    });
+
+    return this.createBulkNotifications(notifications);
+  }
+
+  // User verification notifications (for admins)
+  async notifyUserVerified(user, adminUsers) {
+    const notifications = [];
+
+    adminUsers.forEach(adminId => {
+      notifications.push({
+        type: 'user_verified',
+        title: 'User Verification Complete',
+        message: `${user.name} has been verified and can now access the system`,
         user: adminId,
         sender: user._id,
         relatedTeam: user.team

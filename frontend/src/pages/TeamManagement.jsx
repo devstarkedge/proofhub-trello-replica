@@ -1,58 +1,39 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Users, Plus, Edit2, Trash2, UserPlus, User,
-  Building2, Shield, Search, X, CheckCircle,
-  AlertCircle, Info, Filter, Download, Upload,
-  TrendingUp, Award, Clock, Mail
-} from 'lucide-react';
+import { Building2, Shield } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import useDepartmentStore from '../store/departmentStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
-import ManagerSelector from '../components/ManagerSelector';
+import DepartmentList from '../components/TeamManagement/DepartmentList';
+import EmployeeAssignment from '../components/TeamManagement/EmployeeAssignment';
+import TeamStats from '../components/TeamManagement/TeamStats';
+import Toast from '../components/TeamManagement/Toast';
+import ErrorBoundary from '../components/TeamManagement/ErrorBoundary';
+import { teamManagementReducer, initialState, ACTION_TYPES } from '../components/TeamManagement/teamManagementReducer';
+import { validateForm } from '../utils/validationUtils';
 import EditDepartmentModal from '../components/EditDepartmentModal';
-import Loading from '../components/Loading';
-import { validateField, validateForm, validationRules } from '../utils/validationUtils';
 
-// Toast Notification Component
-const Toast = ({ message, type, onClose }) => {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 4000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
+// Lazy load modals
+const CreateDepartmentModal = lazy(() => import('../components/TeamManagement/modals/CreateDepartmentModal'));
+const AddMemberModal = lazy(() => import('../components/TeamManagement/modals/AddMemberModal'));
+const ReassignModal = lazy(() => import('../components/TeamManagement/modals/ReassignModal'));
+const DeleteConfirmationModal = lazy(() => import('../components/TeamManagement/modals/DeleteConfirmationModal'));
 
-  const icons = {
-    success: <CheckCircle className="text-green-500" size={20} />,
-    error: <AlertCircle className="text-red-500" size={20} />,
-    info: <Info className="text-blue-500" size={20} />,
-    warning: <AlertCircle className="text-yellow-500" size={20} />
-  };
 
-  const colors = {
-    success: 'bg-green-50 border-green-200 text-green-800',
-    error: 'bg-red-50 border-red-200 text-red-800',
-    info: 'bg-blue-50 border-blue-200 text-blue-800',
-    warning: 'bg-yellow-50 border-yellow-200 text-yellow-800'
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -50, scale: 0.9 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -20, scale: 0.9 }}
-      className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg ${colors[type]} backdrop-blur-sm`}
-    >
-      {icons[type]}
-      <p className="font-medium flex-1">{message}</p>
-      <button onClick={onClose} className="hover:opacity-70 transition-opacity">
-        <X size={16} />
-      </button>
-    </motion.div>
-  );
-};
-
+/**
+ * Main TeamManagement Page Component
+ * Optimized container that manages state, data, and layout
+ * Features:
+ * - useReducer for consolidated state management
+ * - useMemo for computed values
+ * - useCallback for memoized event handlers
+ * - Lazy-loaded modals for code splitting
+ * - React.memo on child components
+ * - Error boundary for crash handling
+ * - Debounced search
+ */
 const TeamManagement = () => {
   const { user } = useContext(AuthContext);
   const {
@@ -67,185 +48,200 @@ const TeamManagement = () => {
     loading: departmentsLoading
   } = useDepartmentStore();
 
-  const [users, setUsers] = useState([]);
-  const [managers, setManagers] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [selectedUsers, setSelectedUsers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterRole, setFilterRole] = useState('all');
-  const [activeTab, setActiveTab] = useState('assigned'); // 'assigned' or 'all'
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
-  const [showReassignModal, setShowReassignModal] = useState(false);
-  const [reassignData, setReassignData] = useState(null);
-  const [departmentToDelete, setDepartmentToDelete] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    managers: []
-  });
-  const [addMemberFormData, setAddMemberFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    department: '',
-    role: 'employee'
-  });
-  const [addMemberErrors, setAddMemberErrors] = useState({});
-  const [stats, setStats] = useState({
-    totalDepartments: 0,
-    totalMembers: 0,
-    totalManagers: 0,
-    avgMembersPerDept: 0
-  });
+  // Consolidated state management with useReducer
+  const [state, dispatch] = useReducer(teamManagementReducer, initialState);
 
-  // Computed values for assigned and available employees
-  const assignedEmployees = employees.filter(emp =>
-    currentDepartment?.members?.some(member => member._id === emp._id)
-  );
-  const availableEmployees = employees.filter(emp =>
-    !currentDepartment?.members?.some(member => member._id === emp._id)
-  );
-
+  // Track departments loading
   useEffect(() => {
-    loadData();
+    if (departmentsLoading) {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    } else {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [departmentsLoading]);
+
+  // Compute assigned and available employees with useMemo
+  const { assignedEmployees, availableEmployees } = useMemo(() => {
+    if (!state.currentDepartment) return { assignedEmployees: [], availableEmployees: [] };
+
+    const assigned = state.employees.filter(emp =>
+      state.currentDepartment?.members?.some(member => member._id === emp._id)
+    );
+
+    const available = state.employees.filter(emp =>
+      !state.currentDepartment?.members?.some(member => member._id === emp._id)
+    );
+
+    return { assignedEmployees: assigned, availableEmployees: available };
+  }, [state.employees, state.currentDepartment]);
+
+  // Filter employees based on search
+  const filteredAssignedEmployees = useMemo(() => {
+    return assignedEmployees.filter(emp => {
+      const matchesSearch = emp.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+        emp.email.toLowerCase().includes(state.searchQuery.toLowerCase());
+      return matchesSearch;
+    });
+  }, [assignedEmployees, state.searchQuery]);
+
+  const filteredAvailableEmployees = useMemo(() => {
+    return availableEmployees.filter(emp => {
+      const matchesSearch = emp.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+        emp.email.toLowerCase().includes(state.searchQuery.toLowerCase());
+      return matchesSearch;
+    });
+  }, [availableEmployees, state.searchQuery]);
+
+  // Toast notification handler
+  const showToast = useCallback((message, type = 'info') => {
+    dispatch({ type: ACTION_TYPES.SHOW_TOAST, payload: { message, type } });
   }, []);
 
-  useEffect(() => {
-    calculateStats();
-  }, [departments, employees, managers]);
+  // Load users from API
+  const loadUsers = useCallback(async () => {
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    try {
+      const userList = await Database.getUsers();
+      const allUsers = userList.data || [];
+      dispatch({ type: ACTION_TYPES.SET_USERS, payload: allUsers });
+      dispatch({ type: ACTION_TYPES.SET_MANAGERS, payload: allUsers.filter(u => u.role === 'manager' || u.role === 'admin') });
+      dispatch({ type: ACTION_TYPES.SET_EMPLOYEES, payload: allUsers.filter(u => u.isVerified && u.role === 'employee') });
+    } catch (error) {
+      console.error('Error loading users:', error);
+      showToast('Failed to load users', 'error');
+    } finally {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [showToast]);
 
-  // Initialize socket listeners for real-time updates
+  // Load initial data
+  useEffect(() => {
+    loadUsers();
+    useDepartmentStore.getState().loadDepartments();
+  }, [loadUsers]);
+
+  // Initialize socket listeners
   useEffect(() => {
     const cleanup = useDepartmentStore.getState().initializeSocketListeners();
     return cleanup;
   }, []);
 
-  // Auto-select department on first load and persist selection
+  // Auto-select and persist department
   useEffect(() => {
-    if (departments.length > 0 && !currentDepartment) {
-      // Check localStorage for previously selected department
+    if (departments.length > 0 && !state.currentDepartment) {
       const savedDepartmentId = localStorage.getItem('selectedDepartmentId');
       const savedDepartment = savedDepartmentId ?
         departments.find(dept => dept._id === savedDepartmentId) : null;
 
-      if (savedDepartment) {
-        setCurrentDepartment(savedDepartment);
-      } else {
-        // Auto-select first department if no saved selection
-        setCurrentDepartment(departments[0]);
-      }
+      const dept = savedDepartment || departments[0];
+      dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
+      setCurrentDepartment(dept);
     }
-  }, [departments, currentDepartment, setCurrentDepartment]);
+  }, [departments, state.currentDepartment, setCurrentDepartment]);
 
-  // Persist selected department to localStorage
   useEffect(() => {
-    if (currentDepartment && currentDepartment._id) {
-      localStorage.setItem('selectedDepartmentId', currentDepartment._id);
+    if (state.currentDepartment) {
+      localStorage.setItem('selectedDepartmentId', state.currentDepartment._id);
     }
-  }, [currentDepartment]);
+  }, [state.currentDepartment]);
 
-  const showToast = (message, type = 'info') => {
-    setToast({ message, type });
-  };
-
-  const calculateStats = () => {
+  // Calculate stats with useMemo
+  const stats = useMemo(() => {
     const totalMembers = departments.reduce((acc, dept) => acc + (dept.members?.length || 0), 0);
-    // Count only users with 'employee' role for Total Employees
-    const totalEmployees = employees.length;
-    // Count only users with 'manager' role for Total Managers
-    const totalManagers = managers.filter(m => m.role === 'manager').length;
-    
-    setStats({
+    const totalManagers = state.managers.filter(m => m.role === 'manager').length;
+    return {
       totalDepartments: departments.length,
-      totalMembers: totalEmployees,
+      totalMembers: state.employees.length,
       totalManagers: totalManagers,
       avgMembersPerDept: departments.length > 0 ? Math.round(totalMembers / departments.length) : 0
-    });
-  };
+    };
+  }, [departments, state.employees, state.managers]);
 
-  const loadUsers = async () => {
-    setIsLoading(true);
-    try {
-      const userList = await Database.getUsers();
-      const allUsers = userList.data || [];
-      setUsers(allUsers);
-      setManagers(allUsers.filter(u => u.role === 'manager' || u.role === 'admin'));
-      // Filter only verified employees with role 'employee'
-      setEmployees(allUsers.filter(u => u.isVerified && u.role === 'employee'));
-    } catch (error) {
-      console.error('Error loading users:', error);
-      showToast('Failed to load users', 'error');
-    } finally {
-      setIsLoading(false);
+  // Memoized event handlers
+  const handleSelectDepartment = useCallback((dept) => {
+    dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
+    setCurrentDepartment(dept);
+  }, [setCurrentDepartment]);
+
+  const handleSelectUser = useCallback((userId) => {
+    if (state.selectedUsers.includes(userId)) {
+      dispatch({ type: ACTION_TYPES.DESELECT_USER, payload: userId });
+    } else {
+      dispatch({ type: ACTION_TYPES.SELECT_USER, payload: userId });
     }
-  };
+  }, [state.selectedUsers]);
 
-  const loadData = async () => {
-    await loadUsers();
-    await useDepartmentStore.getState().loadDepartments();
-  };
+  const handleSelectAll = useCallback(() => {
+    const currentEmployees = state.activeTab === 'assigned' ? filteredAssignedEmployees : filteredAvailableEmployees;
+    if (state.selectedUsers.length === currentEmployees.length && currentEmployees.length > 0) {
+      dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+    } else {
+      dispatch({ type: ACTION_TYPES.SELECT_ALL_USERS, payload: currentEmployees.map(emp => emp._id) });
+    }
+  }, [state.activeTab, state.selectedUsers, filteredAssignedEmployees, filteredAvailableEmployees]);
 
-  const handleCreateDepartment = async (e) => {
+  const handleSearchChange = useCallback((query) => {
+    dispatch({ type: ACTION_TYPES.SET_SEARCH_QUERY, payload: query });
+  }, []);
+
+  const handleTabChange = useCallback((tab) => {
+    dispatch({ type: ACTION_TYPES.SET_ACTIVE_TAB, payload: tab });
+  }, []);
+
+  const handleCreateDepartment = useCallback(async (e) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
+    if (!state.formData.name.trim()) {
       showToast('Department name is required', 'warning');
       return;
     }
-    setIsLoading(true);
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
     try {
-      await createDepartment(formData.name, formData.description, formData.managers.length > 0 ? formData.managers : [user._id]);
-      setShowCreateModal(false);
-      setFormData({ name: '', description: '', managers: [] });
+      await createDepartment(state.formData.name, state.formData.description, state.formData.managers.length > 0 ? state.formData.managers : [user._id]);
+      dispatch({ type: ACTION_TYPES.CLOSE_CREATE_MODAL });
+      dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
       showToast('Department created successfully!', 'success');
     } catch (error) {
       showToast('Failed to create department', 'error');
     } finally {
-      setIsLoading(false);
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
-  };
+  }, [state.formData, user, createDepartment, showToast]);
 
-  const handleEditDepartment = async (e) => {
+  const handleEditDepartment = useCallback(async (e) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
+    if (!state.formData.name.trim()) {
       showToast('Department name is required', 'warning');
       return;
     }
-    setIsLoading(true);
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
     try {
-      await updateDepartment(currentDepartment._id, formData);
-      setShowEditModal(false);
-      setFormData({ name: '', description: '', managers: [] });
+      await updateDepartment(state.currentDepartment._id, state.formData);
+      dispatch({ type: ACTION_TYPES.CLOSE_EDIT_MODAL });
+      dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
       showToast('Department updated successfully!', 'success');
     } catch (error) {
       showToast('Failed to update department', 'error');
     } finally {
-      setIsLoading(false);
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
-  };
+  }, [state.formData, state.currentDepartment, updateDepartment, showToast]);
 
-  const handleAssignUsers = async () => {
-    if (!selectedUsers.length || !currentDepartment) {
+  const handleAssignUsers = useCallback(async () => {
+    if (!state.selectedUsers.length || !state.currentDepartment) {
       showToast('Please select at least one employee', 'warning');
       return;
     }
 
-    // Check if any selected employees are already assigned to other departments
-    const employeesToCheck = employees.filter(emp => selectedUsers.includes(emp._id));
+    const employeesToCheck = state.employees.filter(emp => state.selectedUsers.includes(emp._id));
     const employeesWithOtherAssignments = employeesToCheck.filter(emp =>
       emp.department && emp.department.length > 0 &&
-      !emp.department.some(dept => (typeof dept === 'string' ? dept : dept._id || dept) === currentDepartment._id)
+      !emp.department.some(dept => (typeof dept === 'string' ? dept : dept._id || dept) === state.currentDepartment._id)
     );
 
     if (employeesWithOtherAssignments.length > 0) {
-      // Show reassign confirmation modal
       const employee = employeesWithOtherAssignments[0];
       const otherDepartments = employee.department.filter(dept =>
-        (typeof dept === 'string' ? dept : dept._id || dept) !== currentDepartment._id
+        (typeof dept === 'string' ? dept : dept._id || dept) !== state.currentDepartment._id
       );
       const otherDeptNames = departments
         .filter(dept => otherDepartments.some(otherDept =>
@@ -254,172 +250,136 @@ const TeamManagement = () => {
         .map(dept => dept.name)
         .join(', ');
 
-      setReassignData({
-        employee,
-        otherDeptNames,
-        selectedDepartment: currentDepartment.name,
-        selectedUsers,
-        currentDepartment
+      dispatch({
+        type: ACTION_TYPES.SET_REASSIGN_DATA,
+        payload: {
+          employee,
+          otherDeptNames,
+          selectedDepartment: state.currentDepartment.name,
+          selectedUsers: state.selectedUsers,
+          currentDepartment: state.currentDepartment
+        }
       });
-      setShowReassignModal(true);
+      dispatch({ type: ACTION_TYPES.OPEN_REASSIGN_MODAL });
       return;
     }
 
-    // No conflicts, proceed with assignment
-    await performAssignment(selectedUsers, currentDepartment);
-  };
+    await performAssignment(state.selectedUsers, state.currentDepartment);
+  }, [state.selectedUsers, state.currentDepartment, state.employees, departments, showToast]);
 
-  const performAssignment = async (userIds, department) => {
-    setIsLoading(true);
+  const performAssignment = useCallback(async (userIds, department) => {
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
     try {
-      // Optimistically update employees state for instant UI feedback
-      setEmployees(prev => prev.map(emp =>
-        userIds.includes(emp._id)
-          ? { ...emp, department: [...(emp.department || []), department._id] }
-          : emp
-      ));
-      // Optimistically update currentDepartment members
-      setCurrentDepartment(prev => prev ? {
-        ...prev,
-        members: [...(prev.members || []), ...userIds.map(id => ({ _id: id }))]
-      } : prev);
-      setSelectedUsers([]);
-      // Show success toast with proper message format
-      const employeeNames = employees.filter(emp => userIds.includes(emp._id)).map(emp => emp.name).join(', ');
-      showToast(`Employee ${employeeNames} successfully assigned to ${department.name}.`, 'success');
-      // Perform API calls
+      // Optimistic update
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds, departmentId: department._id, assign: true }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds, assign: true }
+      });
+
+      // API calls
       for (const userId of userIds) {
         await assignUserToDepartment(userId, department._id);
       }
-      loadUsers(); // Sync with backend
-      // Ensure department remains selected after assignment
-      setCurrentDepartment(department);
-      // Switch to assigned tab to show the newly assigned employees
-      setActiveTab('assigned');
+
+      dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+      const employeeNames = state.employees.filter(emp => userIds.includes(emp._id)).map(emp => emp.name).join(', ');
+      showToast(`Employees ${employeeNames} successfully assigned to ${department.name}.`, 'success');
+      
+      await loadUsers();
+      dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: department });
+      dispatch({ type: ACTION_TYPES.SET_ACTIVE_TAB, payload: 'assigned' });
     } catch (error) {
       showToast('Failed to assign users', 'error');
-      // Revert optimistic updates on error
-      setEmployees(prev => prev.map(emp =>
-        userIds.includes(emp._id)
-          ? { ...emp, department: (emp.department || []).filter(deptId => deptId !== department._id) }
-          : emp
-      ));
-      setCurrentDepartment(prev => prev ? {
-        ...prev,
-        members: (prev.members || []).filter(member => !userIds.includes(member._id))
-      } : prev);
+      // Revert optimistic updates
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds, departmentId: department._id, assign: false }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds, departmentId: department._id, assign: false }
+      });
     } finally {
-      setIsLoading(false);
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
-  };
+  }, [state.employees, assignUserToDepartment, loadUsers, showToast]);
 
-  const handleReassignConfirm = async () => {
-    if (!reassignData) return;
+  const handleReassignConfirm = useCallback(async () => {
+    if (!state.reassignData) return;
+    dispatch({ type: ACTION_TYPES.CLOSE_REASSIGN_MODAL });
+    await performAssignment(state.reassignData.selectedUsers, state.reassignData.currentDepartment);
+    dispatch({ type: ACTION_TYPES.SET_REASSIGN_DATA, payload: null });
+  }, [state.reassignData, performAssignment]);
 
-    setShowReassignModal(false);
-    await performAssignment(reassignData.selectedUsers, reassignData.currentDepartment);
-    setReassignData(null);
-  };
+  const handleReassignCancel = useCallback(() => {
+    dispatch({ type: ACTION_TYPES.CLOSE_REASSIGN_MODAL });
+    dispatch({ type: ACTION_TYPES.SET_REASSIGN_DATA, payload: null });
+    dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+  }, []);
 
-  const handleReassignCancel = () => {
-    setShowReassignModal(false);
-    setReassignData(null);
-    setSelectedUsers([]);
-  };
-
-  const handleUserSelection = (userId) => {
-    setSelectedUsers(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
-    );
-  };
-
-  const handleSelectAll = () => {
-    const currentEmployees = activeTab === 'assigned' ? assignedEmployees : availableEmployees;
-    if (selectedUsers.length === currentEmployees.length) {
-      setSelectedUsers([]);
-    } else {
-      setSelectedUsers(currentEmployees.map(emp => emp._id));
-    }
-  };
-
-  const handleDeleteDepartment = async () => {
-    if (!departmentToDelete) return;
-    setIsLoading(true);
-    try {
-      await deleteDepartment(departmentToDelete._id);
-      setShowDeleteModal(false);
-      setDepartmentToDelete(null);
-      showToast('Department deleted successfully', 'success');
-    } catch (error) {
-      showToast('Failed to delete department', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleUnassignUser = async (userId) => {
-    if (!currentDepartment) {
-      showToast('No department selected', 'warning');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await unassignUserFromDepartment(userId, currentDepartment._id);
-      showToast('User unassigned successfully', 'success');
-      loadUsers();
-    } catch (error) {
-      showToast('Failed to unassign user', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleUnassignUsers = async () => {
-    if (!selectedUsers.length || !currentDepartment) {
+  const handleUnassignUsers = useCallback(async () => {
+    if (!state.selectedUsers.length || !state.currentDepartment) {
       showToast('Please select at least one employee', 'warning');
       return;
     }
-    setIsLoading(true);
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
     try {
-      for (const userId of selectedUsers) {
-        await unassignUserFromDepartment(userId, currentDepartment._id);
+      // Optimistic update
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds: state.selectedUsers, departmentId: state.currentDepartment._id, assign: false }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds: state.selectedUsers, assign: false }
+      });
+
+      for (const userId of state.selectedUsers) {
+        await unassignUserFromDepartment(userId, state.currentDepartment._id);
       }
-      setSelectedUsers([]);
-      showToast(`${selectedUsers.length} employee(s) unassigned successfully!`, 'success');
-      loadUsers();
+      dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+      showToast(`${state.selectedUsers.length} employee(s) unassigned successfully!`, 'success');
+      await loadUsers();
     } catch (error) {
       showToast('Failed to unassign users', 'error');
+      // Revert optimistic updates
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds: state.selectedUsers, departmentId: state.currentDepartment._id, assign: true }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds: state.selectedUsers, assign: true }
+      });
     } finally {
-      setIsLoading(false);
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
-  };
+  }, [state.selectedUsers, state.currentDepartment, unassignUserFromDepartment, loadUsers, showToast]);
 
-  const handleAddMember = async (e) => {
+  const handleAddMember = useCallback(async (e) => {
     e.preventDefault();
-
-    // Use shared validation utilities
     const fieldsToValidate = ['name', 'email', 'password'];
-    const { isValid, errors: validationErrors } = validateForm(addMemberFormData, fieldsToValidate);
+    const { isValid, errors: validationErrors } = validateForm(state.addMemberFormData, fieldsToValidate);
 
     if (!isValid) {
-      setAddMemberErrors(validationErrors);
+      dispatch({ type: ACTION_TYPES.SET_ADD_MEMBER_ERRORS, payload: validationErrors });
       return;
     }
 
-    setIsLoading(true);
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
     try {
-      // First, create the user
       const userData = {
-        name: addMemberFormData.name,
-        email: addMemberFormData.email,
-        password: addMemberFormData.password,
-        role: addMemberFormData.role,
-        department: currentDepartment._id
+        name: state.addMemberFormData.name,
+        email: state.addMemberFormData.email,
+        password: state.addMemberFormData.password,
+        role: state.addMemberFormData.role,
+        department: state.currentDepartment._id
       };
 
-      // Use admin-create-user endpoint for admin-created users
       const token = localStorage.getItem('token');
       const createUserResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/admin-create-user`, {
         method: 'POST',
@@ -432,52 +392,78 @@ const TeamManagement = () => {
 
       if (!createUserResponse.ok) {
         const errorData = await createUserResponse.json();
+        dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false }); // Stop loading immediately on error
         throw new Error(errorData.message || 'Failed to create user');
       }
 
       const newUser = await createUserResponse.json();
-
-      // Then assign to department
-      await assignUserToDepartment(newUser.user.id, currentDepartment._id);
-
-      setShowAddMemberModal(false);
-      setAddMemberFormData({
-        name: '',
-        email: '',
-        password: '',
-        department: '',
-        role: 'employee'
-      });
-      setAddMemberErrors({});
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false }); // Stop loading immediately after successful response
+      
+      // Close modal and reset form immediately
+      dispatch({ type: ACTION_TYPES.CLOSE_ADD_MEMBER_MODAL });
+      dispatch({ type: ACTION_TYPES.RESET_ADD_MEMBER_FORM });
+      dispatch({ type: ACTION_TYPES.SET_ADD_MEMBER_ERRORS, payload: {} });
+      
+      // Show success toast immediately
       showToast('Member added successfully!', 'success');
-      loadUsers();
+      
+      // Assign user and load users in background without blocking UI
+      try {
+        await assignUserToDepartment(newUser.user.id, state.currentDepartment._id);
+        await loadUsers();
+      } catch (backgroundError) {
+        console.error('Error during background operations:', backgroundError);
+      }
     } catch (error) {
       console.error('Error adding member:', error);
-      showToast(error.message || 'Failed to add member', 'error');
-    } finally {
-      setIsLoading(false);
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false }); // Ensure loading is stopped
+      
+      // Provide user-friendly error messages
+      let errorMessage = 'Failed to add member. Please try again.';
+      
+      if (error.message?.includes('already exists')) {
+        errorMessage = 'Email already registered. Please use a different email.';
+      } else if (error.message?.includes('password')) {
+        errorMessage = 'Password must be at least 6 characters with uppercase, lowercase, and number.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      showToast(errorMessage, 'error');
     }
-  };
+  }, [state.addMemberFormData, state.currentDepartment, assignUserToDepartment, loadUsers, showToast]);
 
-  const openEditModal = (dept) => {
+  const handleOpenEditModal = useCallback((dept) => {
+    dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
     setCurrentDepartment(dept);
-    setFormData({
-      name: dept.name,
-      description: dept.description || '',
-      managers: dept.managers || []
+    dispatch({
+      type: ACTION_TYPES.UPDATE_FORM_DATA,
+      payload: {
+        name: dept.name,
+        description: dept.description || '',
+        managers: dept.managers || []
+      }
     });
-    setShowEditModal(true);
-  };
+    dispatch({ type: ACTION_TYPES.OPEN_EDIT_MODAL });
+  }, [setCurrentDepartment]);
+
+  const handleDeleteDepartment = useCallback(async () => {
+    if (!state.departmentToDelete) return;
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    try {
+      await deleteDepartment(state.departmentToDelete._id);
+      dispatch({ type: ACTION_TYPES.CLOSE_DELETE_MODAL });
+      dispatch({ type: ACTION_TYPES.SET_DEPARTMENT_TO_DELETE, payload: null });
+      showToast('Department deleted successfully', 'success');
+    } catch (error) {
+      showToast('Failed to delete department', 'error');
+    } finally {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [state.departmentToDelete, deleteDepartment, showToast]);
 
   const isAdminOrManager = user && (user.role === 'admin' || user.role === 'manager');
   const isAdmin = user && user.role === 'admin';
-
-  const filteredEmployees = employees.filter(emp => {
-    const matchesSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = filterRole === 'all' || emp.role === filterRole;
-    return matchesSearch && matchesRole;
-  });
 
   if (!isAdminOrManager) {
     return (
@@ -515,969 +501,159 @@ const TeamManagement = () => {
       <Sidebar />
       <div className="flex-1 lg:ml-64">
         <Header />
-        <main className="p-4 sm:p-6 lg:p-8">
-          {/* Header Section */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8"
-          >
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
-                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 flex items-center gap-3 mb-2">
-                  <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
-                    <Building2 className="text-white" size={32} />
-                  </div>
-                  Department Management
-                </h1>
-                <p className="text-gray-600">Create, manage, and organize your teams efficiently</p>
-              </div>
-              
-              {/* Quick Stats */}
-              <div className="flex gap-3">
-                <motion.div
-                  whileHover={{ scale: 1.05 }}
-                  className="bg-white rounded-xl shadow-sm p-4 border border-gray-100"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Building2 className="text-blue-600" size={20} />
+        <main className="p-3 sm:p-4 md:p-6 lg:p-8 min-h-[calc(100vh-80px)]">
+          <ErrorBoundary>
+            {/* Header Section */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 md:mb-8"
+            >
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 flex items-center gap-2 sm:gap-3 mb-2">
+                    <div className="p-1.5 sm:p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg sm:rounded-xl shadow-lg">
+                      <Building2 className="text-white" size={24} />
                     </div>
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">{stats.totalDepartments}</p>
-                      <p className="text-xs text-gray-600">Departments</p>
-                    </div>
-                  </div>
-                </motion.div>
+                    <span>Department Management</span>
+                  </h1>
+                  <p className="text-sm sm:text-base text-gray-600 ml-10 sm:ml-11">Manage teams and organize your workforce efficiently</p>
+                </div>
                 
-                <motion.div
-                  whileHover={{ scale: 1.05 }}
-                  className="bg-white rounded-xl shadow-sm p-4 border border-gray-100"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-100 rounded-lg">
-                      <Shield className="text-purple-600" size={20} />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">{stats.totalManagers}</p>
-                      <p className="text-xs text-gray-600">Total Managers</p>
-                    </div>
-                  </div>
-                </motion.div>
-                
-                <motion.div
-                  whileHover={{ scale: 1.05 }}
-                  className="bg-white rounded-xl shadow-sm p-4 border border-gray-100"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <Users className="text-green-600" size={20} />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">{stats.totalMembers}</p>
-                      <p className="text-xs text-gray-600">Total Employees</p>
-                    </div>
-                  </div>
-                </motion.div>
+                {/* Quick Stats - Hidden on mobile, visible on tablet+ */}
+                <div className="hidden md:block">
+                  <TeamStats stats={stats} isLoading={state.isLoading} />
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Show Stats on mobile in simplified form */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="md:hidden mb-6"
+            >
+              <TeamStats stats={stats} isLoading={state.isLoading} />
+            </motion.div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+              {/* Left Column - Department List */}
+              <div className="md:col-span-1">
+                <DepartmentList
+                  departments={departments}
+                  currentDepartment={state.currentDepartment}
+                  isLoading={state.isLoading}
+                  onSelectDepartment={handleSelectDepartment}
+                  onCreateClick={() => dispatch({ type: ACTION_TYPES.OPEN_CREATE_MODAL })}
+                  onEditClick={handleOpenEditModal}
+                  onDeleteClick={(dept) => {
+                    dispatch({ type: ACTION_TYPES.SET_DEPARTMENT_TO_DELETE, payload: dept });
+                    dispatch({ type: ACTION_TYPES.OPEN_DELETE_MODAL });
+                  }}
+                />
+              </div>
+
+              {/* Right Column - Assign Members */}
+              <div className="md:col-span-1 lg:col-span-2">
+                <EmployeeAssignment
+                currentDepartment={state.currentDepartment}
+                assignedEmployees={filteredAssignedEmployees}
+                availableEmployees={filteredAvailableEmployees}
+                selectedUsers={state.selectedUsers}
+                searchQuery={state.searchQuery}
+                activeTab={state.activeTab}
+                isLoading={state.isLoading}
+                isAdmin={isAdmin}
+                departments={departments}
+                currentPage={state.currentPage}
+                itemsPerPage={state.itemsPerPage}
+                onSelectUser={handleSelectUser}
+                onSelectAll={handleSelectAll}
+                onSearchChange={handleSearchChange}
+                onTabChange={handleTabChange}
+                onAddMemberClick={() => dispatch({ type: ACTION_TYPES.OPEN_ADD_MEMBER_MODAL })}
+                onAssignClick={handleAssignUsers}
+                onUnassignClick={handleUnassignUsers}
+                onClearSelection={() => dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS })}
+                onPageChange={(page) => dispatch({ type: ACTION_TYPES.SET_CURRENT_PAGE, payload: page })}
+                onItemsPerPageChange={(count) => dispatch({ type: ACTION_TYPES.SET_ITEMS_PER_PAGE, payload: count })}
+                />
               </div>
             </div>
-          </motion.div>
-
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* Left Column - Department List */}
-            <div className="xl:col-span-1 space-y-6">
-              {/* Create Department Card */}
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl shadow-xl p-6 text-white"
-              >
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-                    <Plus size={24} />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-semibold">New Department</h2>
-                    <p className="text-sm text-blue-100">Create a new team</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="w-full py-3 bg-white text-blue-600 rounded-xl font-semibold hover:bg-blue-50 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                >
-                  Create Department
-                </button>
-              </motion.div>
-
-              {/* Departments List */}
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 }}
-                className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
-              >
-                <div className="p-5 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                      <Building2 size={20} className="text-blue-600" />
-                      Departments
-                    </h2>
-                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
-                      {departments.length}
-                    </span>
-                  </div>
-                </div>
-                <div className="max-h-[600px] overflow-y-auto">
-                  <AnimatePresence>
-                    {departmentsLoading ? (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="p-12 text-center"
-                      >
-                        <Loading size="lg" text="Loading departments..." />
-                      </motion.div>
-                    ) : departments.length === 0 ? (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="p-12 text-center text-gray-500"
-                      >
-                        <Building2 size={48} className="mx-auto mb-3 text-gray-300" />
-                        <p className="font-medium">No departments yet</p>
-                        <p className="text-sm mt-1">Create your first department to get started</p>
-                      </motion.div>
-                    ) : (
-                      departments.map((dept, index) => (
-                        <motion.div
-                          key={dept._id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, x: -20 }}
-                          transition={{ delay: index * 0.05 }}
-                          onClick={() => setCurrentDepartment(dept)}
-                          className={`p-5 border-b border-gray-100 cursor-pointer transition-all hover:bg-gray-50 ${
-                            currentDepartment?._id === dept._id
-                              ? 'bg-blue-50 border-l-4 border-l-blue-600 shadow-sm'
-                              : ''
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-2">
-                                <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg">
-                                  <Building2 size={16} className="text-white" />
-                                </div>
-                                <h3 className="font-semibold text-gray-900 truncate">
-                                  {dept.name}
-                                </h3>
-                              </div>
-                              {dept.description && (
-                                <p className="text-sm text-gray-600 mb-3 line-clamp-2">{dept.description}</p>
-                              )}
-                              <div className="flex flex-wrap items-center gap-3 text-xs">
-                                <span className="flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-lg font-medium">
-                                  <Shield size={12} />
-                                  {dept.managers?.length ? `${dept.managers.length} manager${dept.managers.length > 1 ? 's' : ''}` : 'No manager'}
-                                </span>
-                                <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg font-medium">
-                                  <Users size={12} />
-                                  {dept.members?.length || 0} employees
-                                </span>
-                                <span className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg font-medium">
-                                  <Building2 size={12} />
-                                  {dept.projectsCount || 0} projects
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEditModal(dept);
-                                }}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Edit"
-                              >
-                                <Edit2 size={16} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDepartmentToDelete(dept);
-                                  setShowDeleteModal(true);
-                                }}
-                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))
-                    )}
-                  </AnimatePresence>
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Right Column - Assign Members */}
-            <div className="xl:col-span-2">
-              {currentDepartment ? (
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
-                >
-                  <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                      <div>
-                        <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3 mb-2">
-                          <div className="p-2 bg-blue-600 rounded-xl shadow-lg">
-                            <UserPlus className="text-white" size={24} />
-                          </div>
-                          {currentDepartment.name}
-                        </h2>
-                        <p className="text-sm text-gray-600">Select employees to add to this department</p>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Award className="text-purple-600" size={20} />
-                          <span className="font-semibold text-gray-900">
-                            {currentDepartment.members?.length || 0} Members
-                          </span>
-                        </div>
-                        {isAdmin && (
-                          <button
-                            onClick={() => setShowAddMemberModal(true)}
-                            className="px-4 py-2 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl hover:from-green-700 hover:to-blue-700 transition-all shadow-lg shadow-green-500/30 font-semibold flex items-center gap-2"
-                          >
-                            <UserPlus size={16} />
-                            Add Member
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-6">
-                    {/* Tabs */}
-                    <div className="flex border-b border-gray-200 mb-6">
-                      <button
-                        onClick={() => {
-                          setActiveTab('assigned');
-                          setSelectedUsers([]);
-                        }}
-                        className={`px-6 py-3 font-semibold transition-all ${
-                          activeTab === 'assigned'
-                            ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                        }`}
-                      >
-                        Assigned Employees ({currentDepartment.members?.length || 0})
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActiveTab('all');
-                          setSelectedUsers([]);
-                        }}
-                        className={`px-6 py-3 font-semibold transition-all ${
-                          activeTab === 'all'
-                            ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                        }`}
-                      >
-                        All Employees ({employees.length - (currentDepartment.members?.length || 0)})
-                      </button>
-                    </div>
-
-                    {/* Search and Filter */}
-                    <div className="flex flex-col sm:flex-row gap-3 mb-6">
-                      <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                        <input
-                          type="text"
-                          placeholder="Search by name or email..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                        />
-                      </div>
-                      <button
-                        onClick={handleSelectAll}
-                        className="px-4 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium whitespace-nowrap"
-                      >
-                        {selectedUsers.length === (activeTab === 'assigned' ? assignedEmployees.length : availableEmployees.length) && (activeTab === 'assigned' ? assignedEmployees.length : availableEmployees.length) > 0
-                          ? 'Deselect All'
-                          : 'Select All'}
-                      </button>
-                    </div>
-
-                    {/* Employee List */}
-                    <div className="border border-gray-200 rounded-xl overflow-hidden">
-                      <div className="max-h-96 overflow-y-auto">
-                        {isLoading ? (
-                          <div className="p-12 text-center">
-                            <Loading size="lg" text="Loading employees..." />
-                          </div>
-                        ) : (activeTab === 'assigned' ? assignedEmployees : availableEmployees).length === 0 ? (
-                          <div className="p-12 text-center text-gray-500">
-                            <Users size={48} className="mx-auto mb-4 text-gray-300" />
-                            <p className="font-semibold mb-2">
-                              {activeTab === 'assigned' ? 'No assigned employees' : 'No available employees'}
-                            </p>
-                            <p className="text-sm">
-                              {activeTab === 'assigned'
-                                ? 'Employees assigned to this department will appear here'
-                                : 'All employees not assigned to this department will appear here'
-                              }
-                            </p>
-                          </div>
-                        ) : (
-                          <AnimatePresence>
-                            {(activeTab === 'assigned' ? assignedEmployees : availableEmployees).map((employee, index) => (
-                              <motion.label
-                                key={employee._id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                transition={{ delay: index * 0.03 }}
-                                className={`flex items-center p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-all ${
-                                  selectedUsers.includes(employee._id) ? 'bg-blue-50' : ''
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedUsers.includes(employee._id)}
-                                  onChange={() => handleUserSelection(employee._id)}
-                                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                                />
-                                <div className="ml-4 flex-1">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
-                                      <span className="text-white font-bold text-lg">
-                                        {employee.name?.[0]?.toUpperCase()}
-                                      </span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="font-semibold text-gray-900 truncate">{employee.name}</p>
-                                      <div className="flex items-center gap-2 mt-1">
-                                        <Mail size={12} className="text-gray-400" />
-                                        <p className="text-sm text-gray-600 truncate">{employee.email}</p>
-                                      </div>
-                                      {/* Show assigned department names for employees with multiple assignments */}
-                                      {activeTab === 'assigned' && employee.department && employee.department.length > 1 && (
-                                        <div className="mt-2 flex flex-wrap gap-1">
-                                          {departments
-                                            .filter(dept => employee.department.includes(dept._id))
-                                            .map(dept => (
-                                              <span
-                                                key={dept._id}
-                                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full font-medium"
-                                              >
-                                                {dept.name}
-                                              </span>
-                                            ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                                {/* Show "Assigned" tag only in total employee list for employees with any department assignment */}
-                                {activeTab === 'all' && employee.department && employee.department.length > 0 && (
-                                  <motion.div
-                                    initial={{ scale: 0 }}
-                                    animate={{ scale: 1 }}
-                                    className="flex items-center gap-2"
-                                  >
-                                    <span className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-full font-semibold shadow-sm">
-                                      <CheckCircle size={14} />
-                                      Assigned
-                                    </span>
-                                  </motion.div>
-                                )}
-                                {/* Show "Assigned" tag in assigned employees list - removed as per requirements */}
-                              </motion.label>
-                            ))}
-                          </AnimatePresence>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action Button */}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={activeTab === 'assigned' ? handleUnassignUsers : handleAssignUsers}
-                      disabled={selectedUsers.length === 0 || isLoading}
-                      className={`w-full mt-6 py-4 rounded-xl font-semibold transition-all shadow-xl flex items-center justify-center gap-2 ${
-                        activeTab === 'assigned'
-                          ? 'bg-gradient-to-r from-red-600 to-red-700 text-white hover:from-red-700 hover:to-red-800 shadow-red-500/30'
-                          : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 shadow-blue-500/30'
-                      } disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
-                    >
-                      {isLoading ? (
-                        <>
-                          <motion.div
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                            className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                          />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus size={20} className={activeTab === 'assigned' ? 'rotate-45' : ''} />
-                          {activeTab === 'assigned' ? 'Unassign' : 'Assign'} {selectedUsers.length > 0 && `(${selectedUsers.length})`} Employee{selectedUsers.length !== 1 ? 's' : ''}
-                        </>
-                      )}
-                    </motion.button>
-
-                    {/* Selected Count */}
-                    <AnimatePresence>
-                      {selectedUsers.length > 0 && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-blue-600 rounded-lg">
-                              <CheckCircle className="text-white" size={20} />
-                            </div>
-                            <span className="font-semibold text-blue-900">
-                              {selectedUsers.length} employee{selectedUsers.length !== 1 ? 's' : ''} selected
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => setSelectedUsers([])}
-                            className="text-sm text-blue-600 hover:text-blue-800 font-semibold hover:underline"
-                          >
-                            Clear Selection
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-white rounded-2xl shadow-sm p-16 text-center border border-gray-100"
-                >
-                  <motion.div
-                    animate={{ 
-                      y: [0, -10, 0],
-                      rotate: [0, 5, -5, 0]
-                    }}
-                    transition={{ 
-                      duration: 3,
-                      repeat: Infinity,
-                      ease: "easeInOut"
-                    }}
-                  >
-                    <Building2 size={80} className="mx-auto mb-6 text-gray-300" />
-                  </motion.div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Select a Department</h3>
-                  <p className="text-gray-600 max-w-md mx-auto">
-                    Choose a department from the list to view and manage its members
-                  </p>
-                </motion.div>
-              )}
-            </div>
-          </div>
+          </ErrorBoundary>
         </main>
       </div>
 
-      {/* Create Department Modal */}
-      <AnimatePresence>
-        {showCreateModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => !isLoading && setShowCreateModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
-            >
-              <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 p-6 rounded-t-2xl">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
-                      <Plus className="text-white" size={24} />
-                    </div>
-                    <h3 className="text-2xl font-bold text-white">Create New Department</h3>
-                  </div>
-                  <button
-                    onClick={() => !isLoading && setShowCreateModal(false)}
-                    disabled={isLoading}
-                    className="p-2 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    <X size={24} className="text-white" />
-                  </button>
-                </div>
-              </div>
+      {/* Lazy-loaded Modals */}
+      <Suspense fallback={null}>
+        <CreateDepartmentModal
+          isOpen={state.showCreateModal}
+          isLoading={state.isLoading}
+          formData={state.formData}
+          managers={state.managers}
+          onFormDataChange={(data) => dispatch({ type: ACTION_TYPES.UPDATE_FORM_DATA, payload: data })}
+          onSubmit={handleCreateDepartment}
+          onClose={() => dispatch({ type: ACTION_TYPES.CLOSE_CREATE_MODAL })}
+        />
 
-              <form onSubmit={handleCreateDepartment} className="p-6 space-y-6">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Department Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Engineering, Marketing, Sales"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    required
-                    disabled={isLoading}
-                  />
-                </div>
+        <EditDepartmentModal
+          isOpen={state.showEditModal}
+          onClose={() => dispatch({ type: ACTION_TYPES.CLOSE_EDIT_MODAL })}
+          department={state.currentDepartment}
+          onDepartmentUpdated={async (updatedData) => {
+            dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+            try {
+              await updateDepartment(state.currentDepartment._id, updatedData);
+              dispatch({ type: ACTION_TYPES.CLOSE_EDIT_MODAL });
+              dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
+              showToast('Department updated successfully!', 'success');
+            } catch (error) {
+              showToast('Failed to update department', 'error');
+            } finally {
+              dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+            }
+          }}
+          managers={state.managers}
+          isLoading={state.isLoading}
+        />
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Description
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Brief description of the department's role and responsibilities"
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all"
-                    disabled={isLoading}
-                  />
-                </div>
+        <AddMemberModal
+          isOpen={state.showAddMemberModal}
+          isLoading={state.isLoading}
+          formData={state.addMemberFormData}
+          errors={state.addMemberErrors}
+          showPassword={state.showPassword}
+          onFormDataChange={(data) => dispatch({ type: ACTION_TYPES.UPDATE_ADD_MEMBER_FORM, payload: data })}
+          onShowPasswordToggle={() => dispatch({ type: ACTION_TYPES.TOGGLE_PASSWORD_VISIBILITY })}
+          onSubmit={handleAddMember}
+          onClose={() => dispatch({ type: ACTION_TYPES.CLOSE_ADD_MEMBER_MODAL })}
+        />
 
-                <ManagerSelector
-                  managers={managers}
-                  selectedManagers={formData.managers}
-                  onChange={(selected) => setFormData({ ...formData, managers: selected })}
-                  disabled={isLoading}
-                />
+        <ReassignModal
+          isOpen={state.showReassignModal}
+          isLoading={state.isLoading}
+          reassignData={state.reassignData}
+          onConfirm={handleReassignConfirm}
+          onCancel={handleReassignCancel}
+        />
 
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/30 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {isLoading ? (
-                      <>
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                        />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <Plus size={20} />
-                        Create Department
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Edit Department Modal */}
-      <EditDepartmentModal
-        isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        department={currentDepartment}
-        onDepartmentUpdated={async (updatedData) => {
-          setIsLoading(true);
-          try {
-            await updateDepartment(currentDepartment._id, updatedData);
-            setShowEditModal(false);
-            setFormData({ name: '', description: '', managers: [] });
-            showToast('Department updated successfully!', 'success');
-          } catch (error) {
-            showToast('Failed to update department', 'error');
-          } finally {
-            setIsLoading(false);
-          }
-        }}
-        managers={managers}
-        isLoading={isLoading}
-      />
-
-      {/* Delete Confirmation Modal */}
-      <AnimatePresence>
-        {showDeleteModal && departmentToDelete && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => !isLoading && setShowDeleteModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl max-w-md w-full"
-            >
-              <div className="p-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <motion.div
-                    animate={{
-                      scale: [1, 1.1, 1],
-                      rotate: [0, -10, 10, -10, 0]
-                    }}
-                    transition={{
-                      duration: 0.5,
-                      repeat: Infinity,
-                      repeatDelay: 2
-                    }}
-                    className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center flex-shrink-0"
-                  >
-                    <Trash2 size={32} className="text-red-600" />
-                  </motion.div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-1">Delete Department?</h3>
-                    <p className="text-sm text-gray-600">This action cannot be undone</p>
-                  </div>
-                </div>
-
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-                  <p className="text-gray-700 text-sm leading-relaxed">
-                    Are you sure you want to delete <span className="font-bold text-red-700">{departmentToDelete.name}</span>?
-                    All members will be unassigned and associated data will be permanently removed.
-                  </p>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowDeleteModal(false)}
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleDeleteDepartment}
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {isLoading ? (
-                      <>
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                        />
-                        Deleting...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 size={20} />
-                        Delete Department
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Add Member Modal */}
-      <AnimatePresence>
-        {showAddMemberModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => !isLoading && setShowAddMemberModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-white/20"
-              style={{
-                background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.8) 100%)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05)'
-              }}
-            >
-              <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 p-6 rounded-t-3xl">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
-                      <UserPlus className="text-white" size={24} />
-                    </div>
-                    <h3 className="text-2xl font-bold text-white">Add New Member</h3>
-                  </div>
-                  <button
-                    onClick={() => !isLoading && setShowAddMemberModal(false)}
-                    disabled={isLoading}
-                    className="p-2 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    <X size={24} className="text-white" />
-                  </button>
-                </div>
-              </div>
-
-              <form onSubmit={handleAddMember} className="p-6 space-y-6">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Full Name *
-                  </label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                    <input
-                      type="text"
-                      value={addMemberFormData.name}
-                      onChange={(e) => setAddMemberFormData({ ...addMemberFormData, name: e.target.value })}
-                      placeholder="Enter full name"
-                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                        addMemberErrors.name ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                      }`}
-                      required
-                      disabled={isLoading}
-                    />
-                  </div>
-                  {addMemberErrors.name && (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-sm text-red-600 flex items-center gap-1"
-                    >
-                      <XCircle size={14} />
-                      {addMemberErrors.name}
-                    </motion.p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Email Address *
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                    <input
-                      type="email"
-                      value={addMemberFormData.email}
-                      onChange={(e) => setAddMemberFormData({ ...addMemberFormData, email: e.target.value })}
-                      placeholder="Enter email address"
-                      className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                        addMemberErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                      }`}
-                      required
-                      disabled={isLoading}
-                    />
-                  </div>
-                  {addMemberErrors.email && (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-sm text-red-600 flex items-center gap-1"
-                    >
-                      <XCircle size={14} />
-                      {addMemberErrors.email}
-                    </motion.p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Password *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="password"
-                      value={addMemberFormData.password}
-                      onChange={(e) => setAddMemberFormData({ ...addMemberFormData, password: e.target.value })}
-                      placeholder="Enter password (min 6 characters)"
-                      className={`w-full pl-4 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                        addMemberErrors.password ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                      }`}
-                      required
-                      disabled={isLoading}
-                    />
-                  </div>
-                  {addMemberErrors.password && (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-sm text-red-600 flex items-center gap-1"
-                    >
-                      <XCircle size={14} />
-                      {addMemberErrors.password}
-                    </motion.p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Role
-                  </label>
-                  <select
-                    value={addMemberFormData.role}
-                    onChange={(e) => setAddMemberFormData({ ...addMemberFormData, role: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    disabled={isLoading}
-                  >
-                    <option value="employee">Employee</option>
-                    <option value="manager">Manager</option>
-                  </select>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddMemberModal(false)}
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg hover:from-green-700 hover:to-blue-700 transition-all shadow-lg shadow-green-500/30 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {isLoading ? (
-                      <>
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                        />
-                        Adding...
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus size={20} />
-                        Add Member
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Reassign Confirmation Modal */}
-      <AnimatePresence>
-        {showReassignModal && reassignData && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => !isLoading && handleReassignCancel()}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl max-w-md w-full"
-            >
-              <div className="p-6">
-                <div className="flex items-center gap-4 mb-6">
-                  <motion.div
-                    animate={{
-                      scale: [1, 1.1, 1],
-                      rotate: [0, -10, 10, -10, 0]
-                    }}
-                    transition={{
-                      duration: 0.5,
-                      repeat: Infinity,
-                      repeatDelay: 2
-                    }}
-                    className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center flex-shrink-0"
-                  >
-                    <AlertCircle size={32} className="text-orange-600" />
-                  </motion.div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-1">Reassign Employee?</h3>
-                    <p className="text-sm text-gray-600">This employee is already assigned to other departments</p>
-                  </div>
-                </div>
-
-                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
-                  <p className="text-gray-700 text-sm leading-relaxed mb-3">
-                    <span className="font-bold text-orange-700">{reassignData.employee.name}</span> is already assigned in <span className="font-bold text-orange-700">{reassignData.otherDeptNames}</span>.
-                  </p>
-                  <p className="text-gray-700 text-sm leading-relaxed">
-                    Do you want to re-assign the same user to another department (<span className="font-bold text-orange-700">{reassignData.selectedDepartment}</span>)?
-                  </p>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleReassignCancel}
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleReassignConfirm}
-                    disabled={isLoading}
-                    className="flex-1 px-6 py-3 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {isLoading ? (
-                      <>
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                        />
-                        Reassigning...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle size={20} />
-                        Confirm Reassign
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        <DeleteConfirmationModal
+          isOpen={state.showDeleteModal}
+          isLoading={state.isLoading}
+          department={state.departmentToDelete}
+          onConfirm={handleDeleteDepartment}
+          onCancel={() => dispatch({ type: ACTION_TYPES.CLOSE_DELETE_MODAL })}
+        />
+      </Suspense>
 
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-[100] space-y-2">
         <AnimatePresence>
-          {toast && (
+          {state.toast && (
             <Toast
-              message={toast.message}
-              type={toast.type}
-              onClose={() => setToast(null)}
+              message={state.toast.message}
+              type={state.toast.type}
+              onClose={() => dispatch({ type: ACTION_TYPES.HIDE_TOAST })}
             />
           )}
         </AnimatePresence>

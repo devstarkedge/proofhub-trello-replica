@@ -457,6 +457,80 @@ const useDepartmentStore = create((set, get) => ({
     }));
   },
 
+  // Handle bulk assignment socket events
+  handleBulkUsersAssigned: (data) => {
+    const { userIds, departmentId } = data;
+
+    set((state) => {
+      const updatedDepartments = state.departments.map((dept) => {
+        if (dept._id === departmentId) {
+          const newMembers = [...(dept.members || []), ...userIds.map(id => ({ _id: id }))];
+          return { ...dept, members: newMembers };
+        }
+        return dept;
+      });
+
+      const updatedUsers = state.users.map((user) => {
+        if (userIds.includes(user._id)) {
+          const deptArray = Array.isArray(user.department) ? user.department : [];
+          const deptExists = deptArray.some(d => (typeof d === 'string' ? d : d._id) === departmentId);
+          if (!deptExists) {
+            return { ...user, department: [...deptArray, { _id: departmentId }] };
+          }
+        }
+        return user;
+      });
+
+      const updatedCurrentDept = state.currentDepartment?._id === departmentId
+        ? updatedDepartments.find(d => d._id === departmentId)
+        : state.currentDepartment;
+
+      return {
+        departments: updatedDepartments,
+        users: updatedUsers,
+        currentDepartment: updatedCurrentDept,
+      };
+    });
+  },
+
+  // Handle bulk unassignment socket events
+  handleBulkUsersUnassigned: (data) => {
+    const { userIds, departmentId } = data;
+
+    set((state) => {
+      const updatedDepartments = state.departments.map((dept) => {
+        if (dept._id === departmentId) {
+          return {
+            ...dept,
+            members: (dept.members || []).filter(m => !userIds.includes(typeof m === 'string' ? m : m._id))
+          };
+        }
+        return dept;
+      });
+
+      const updatedUsers = state.users.map((user) => {
+        if (userIds.includes(user._id)) {
+          const deptArray = Array.isArray(user.department) ? user.department : [];
+          return {
+            ...user,
+            department: deptArray.filter(d => (typeof d === 'string' ? d : d._id) !== departmentId)
+          };
+        }
+        return user;
+      });
+
+      const updatedCurrentDept = state.currentDepartment?._id === departmentId
+        ? updatedDepartments.find(d => d._id === departmentId)
+        : state.currentDepartment;
+
+      return {
+        departments: updatedDepartments,
+        users: updatedUsers,
+        currentDepartment: updatedCurrentDept,
+      };
+    });
+  },
+
   // Initialize socket listeners
   initializeSocketListeners: () => {
     const handleUserAssigned = (event) => {
@@ -474,19 +548,30 @@ const useDepartmentStore = create((set, get) => ({
       get().handleUserVerified(data);
     };
 
+    const handleBulkUsersAssigned = (event) => {
+      const data = event.detail;
+      get().handleBulkUsersAssigned(data);
+    };
+
+    const handleBulkUsersUnassigned = (event) => {
+      const data = event.detail;
+      get().handleBulkUsersUnassigned(data);
+    };
+
     // Add event listeners
     window.addEventListener("socket-user-assigned", handleUserAssigned);
     window.addEventListener("socket-user-unassigned", handleUserUnassigned);
     window.addEventListener("socket-user-verified", handleUserVerified);
+    window.addEventListener("socket-department-bulk-assigned", handleBulkUsersAssigned);
+    window.addEventListener("socket-department-bulk-unassigned", handleBulkUsersUnassigned);
 
     // Return cleanup function
     return () => {
       window.removeEventListener("socket-user-assigned", handleUserAssigned);
-      window.removeEventListener(
-        "socket-user-unassigned",
-        handleUserUnassigned
-      );
+      window.removeEventListener("socket-user-unassigned", handleUserUnassigned);
       window.removeEventListener("socket-user-verified", handleUserVerified);
+      window.removeEventListener("socket-department-bulk-assigned", handleBulkUsersAssigned);
+      window.removeEventListener("socket-department-bulk-unassigned", handleBulkUsersUnassigned);
     };
   },
 }));

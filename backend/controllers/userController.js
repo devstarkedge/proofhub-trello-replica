@@ -92,6 +92,59 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('User not found', 404));
   }
 
+  // Permission check: only admins can delete users
+  if (req.user.role !== 'admin') {
+    return next(new ErrorResponse('Only admins can delete users', 403));
+  }
+
+  // Prevent deletion of admin users
+  if (user.role === 'admin') {
+    return next(new ErrorResponse('Cannot delete admin users', 400));
+  }
+
+  // Import required models
+  const Department = (await import('../models/Department.js')).default;
+  const Team = (await import('../models/Team.js')).default;
+  const Board = (await import('../models/Board.js')).default;
+  const Card = (await import('../models/Card.js')).default;
+  const Comment = (await import('../models/Comment.js')).default;
+  const Notification = (await import('../models/Notification.js')).default;
+  const Activity = (await import('../models/Activity.js')).default;
+
+  // Remove user references from departments
+  await Department.updateMany(
+    { $or: [{ managers: req.params.id }, { members: req.params.id }] },
+    { $pull: { managers: req.params.id, members: req.params.id } }
+  );
+
+  // Remove user references from teams
+  await Team.updateMany(
+    { $or: [{ owner: req.params.id }, { members: req.params.id }] },
+    { $unset: { owner: null }, $pull: { members: req.params.id } }
+  );
+
+  // Remove user references from boards
+  await Board.updateMany(
+    { $or: [{ owner: req.params.id }, { members: req.params.id }] },
+    { $unset: { owner: null }, $pull: { members: req.params.id } }
+  );
+
+  // Remove user references from cards
+  await Card.updateMany(
+    { assignees: req.params.id },
+    { $pull: { assignees: req.params.id } }
+  );
+
+  // Delete comments by the user
+  await Comment.deleteMany({ user: req.params.id });
+
+  // Delete notifications involving the user
+  await Notification.deleteMany({ $or: [{ user: req.params.id }, { sender: req.params.id }] });
+
+  // Delete activities by the user
+  await Activity.deleteMany({ user: req.params.id });
+
+  // Finally, delete the user
   await user.deleteOne();
 
   res.status(200).json({
@@ -249,9 +302,9 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
 
   // Notify admins about new user verification
   try {
-    const adminUsers = await User.find({ role: 'admin' }).select('_id');
+    const adminUsers = await User.find({ role: 'admin', isActive: true }).select('_id');
     const adminIds = adminUsers.map(admin => admin._id);
-    await notificationService.notifyUserRegistered(user, adminIds);
+    await notificationService.notifyUserVerified(user, adminIds);
   } catch (error) {
     console.error('Admin notification failed:', error);
   }

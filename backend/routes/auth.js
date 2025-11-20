@@ -1,6 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { register, login, getMe, updateDetails, updatePassword, refreshToken, adminCreateUser } from '../controllers/authController.js';
+import { register, login, getMe, updateDetails, updatePassword, refreshToken, adminCreateUser, checkEmail } from '../controllers/authController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 
@@ -18,6 +18,12 @@ router.post('/login', [
   body('password').notEmpty().withMessage('Password is required'),
   validate
 ], login);
+
+// Email uniqueness check (public)
+router.post('/check-email', [
+  body('email').isEmail().withMessage('Valid email is required'),
+  validate
+], checkEmail);
 
 router.post('/admin-create-user', protect, authorize('admin'), [
   body('name').trim().notEmpty().withMessage('Name is required'),

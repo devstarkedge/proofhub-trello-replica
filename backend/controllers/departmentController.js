@@ -5,7 +5,8 @@ import Card from "../models/Card.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
-import { emitUserAssigned, emitUserUnassigned } from "../utils/socketEmitter.js";
+import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUsersUnassigned } from "../utils/socketEmitter.js";
+import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -212,20 +213,6 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
   user.department = req.params.id;
   await user.save();
 
-  // Send real-time notification to the user
-  try {
-    const notificationService = (await import('../utils/notificationService.js')).default;
-    await notificationService.createNotification({
-      type: 'user_assigned',
-      title: 'Department Assignment',
-      message: `You have been assigned to the department: ${department.name}`,
-      user: userId,
-      sender: req.user._id
-    });
-  } catch (error) {
-    console.error('Assignment notification failed:', error);
-  }
-
   // Invalidate relevant caches
   invalidateCache(`/api/departments/${req.params.id}`);
   invalidateCache('/api/users');
@@ -236,6 +223,21 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: department,
+  });
+
+  // Create notification and push in background (non-blocking)
+  runBackground(async () => {
+    try {
+      await createNotificationInBackground({
+        type: 'user_assigned',
+        title: 'Department Assignment',
+        message: `You have been assigned to the department: ${department.name}`,
+        user: userId,
+        sender: req.user._id
+      });
+    } catch (err) {
+      console.error('Background assignment notification failed:', err);
+    }
   });
 });
 
@@ -463,3 +465,217 @@ export const unassignUserFromDepartment = asyncHandler(
     });
   }
 );
+
+// @desc    Bulk assign users to department
+// @route   POST /api/departments/:id/bulk-assign
+// @access  Private/Admin
+export const bulkAssignUsersToDepartment = asyncHandler(async (req, res, next) => {
+  const { userIds } = req.body;
+  const departmentId = req.params.id;
+
+  if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    return next(new ErrorResponse("User IDs array is required", 400));
+  }
+
+  const department = await Department.findById(departmentId);
+  if (!department) {
+    return next(new ErrorResponse("Department not found", 404));
+  }
+
+  // Get users to assign
+  const users = await User.find({ _id: { $in: userIds } });
+  if (users.length !== userIds.length) {
+    return next(new ErrorResponse("Some users not found", 404));
+  }
+
+  const results = [];
+  const errors = [];
+
+  // Process each user assignment
+  for (const user of users) {
+    try {
+      // Check if user is already assigned to another department
+      if (user.department && user.department.length > 0 &&
+          !user.department.some(dept => (typeof dept === 'string' ? dept : dept._id || dept) === departmentId)) {
+        const currentDept = await Department.findById(user.department[0]);
+        errors.push({
+          userId: user._id,
+          name: user.name,
+          error: `Already assigned to ${currentDept?.name || 'another department'}`
+        });
+        continue;
+      }
+
+      // Add department to user's department array if not already present
+      const deptArray = Array.isArray(user.department) ? user.department : [];
+      const deptExists = deptArray.some(dept =>
+        (typeof dept === 'string' ? dept : dept._id || dept) === departmentId
+      );
+
+      if (!deptExists) {
+        user.department = [...deptArray, departmentId];
+        await user.save();
+      }
+
+      // Add user to department's members array if not already present
+      const memberExists = department.members.some(member =>
+        (typeof member === 'string' ? member : member._id || member) === user._id.toString()
+      );
+
+      if (!memberExists) {
+        department.members = [...department.members, user._id];
+      }
+
+      // Send notification
+      try {
+        const notificationService = (await import('../utils/notificationService.js')).default;
+        await notificationService.createNotification({
+          type: 'user_assigned',
+          title: 'Department Assignment',
+          message: `You have been assigned to the department: ${department.name}`,
+          user: user._id,
+          sender: req.user._id
+        });
+      } catch (notificationError) {
+        console.error('Assignment notification failed:', notificationError);
+      }
+
+      results.push({
+        userId: user._id,
+        name: user.name,
+        status: 'assigned'
+      });
+
+      // Emit socket event
+      emitUserAssigned(user._id, departmentId);
+
+    } catch (error) {
+      console.error(`Error assigning user ${user._id}:`, error);
+      errors.push({
+        userId: user._id,
+        name: user.name,
+        error: error.message
+      });
+    }
+  }
+
+  // Save department changes
+  await department.save();
+
+  // Invalidate caches
+  invalidateCache(`/api/departments/${departmentId}`);
+  invalidateCache('/api/users');
+
+  res.status(200).json({
+    success: true,
+    data: {
+      assigned: results,
+      errors: errors,
+      totalAttempted: userIds.length,
+      totalAssigned: results.length,
+      totalErrors: errors.length
+    }
+  });
+});
+
+// @desc    Bulk unassign users from department
+// @route   POST /api/departments/:id/bulk-unassign
+// @access  Private/Admin
+export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, next) => {
+  const { userIds } = req.body;
+  const departmentId = req.params.id;
+
+  if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    return next(new ErrorResponse("User IDs array is required", 400));
+  }
+
+  const department = await Department.findById(departmentId);
+  if (!department) {
+    return next(new ErrorResponse("Department not found", 404));
+  }
+
+  // Get users to unassign
+  const users = await User.find({ _id: { $in: userIds } });
+  if (users.length !== userIds.length) {
+    return next(new ErrorResponse("Some users not found", 404));
+  }
+
+  const results = [];
+  const errors = [];
+
+  // Process each user unassignment
+  for (const user of users) {
+    try {
+      // Check if user is assigned to this department
+      if (!user.department || !user.department.includes(departmentId)) {
+        errors.push({
+          userId: user._id,
+          name: user.name,
+          error: 'Not assigned to this department'
+        });
+        continue;
+      }
+
+      // Remove department from user's department array
+      user.department = user.department.filter(id => id.toString() !== departmentId);
+      await user.save();
+
+      // Remove user from department's members array
+      department.members = department.members.filter(
+        (id) => id.toString() !== user._id.toString()
+      );
+
+      // Send notification
+      try {
+        const notificationService = (await import('../utils/notificationService.js')).default;
+        await notificationService.createNotification({
+          type: 'user_unassigned',
+          title: 'Department Assignment Updated',
+          message: `You have been unassigned from the department: ${department.name}`,
+          user: user._id,
+          sender: req.user._id
+        });
+      } catch (notificationError) {
+        console.error('Unassignment notification failed:', notificationError);
+      }
+
+      results.push({
+        userId: user._id,
+        name: user.name,
+        status: 'unassigned'
+      });
+
+      // Emit socket event
+      // emitUserUnassigned(user._id, departmentId); // Individual events disabled for bulk operations
+
+    } catch (error) {
+      console.error(`Error unassigning user ${user._id}:`, error);
+      errors.push({
+        userId: user._id,
+        name: user.name,
+        error: error.message
+      });
+    }
+  }
+
+  // Save department changes
+  await department.save();
+
+  // Emit bulk socket event for real-time updates
+  emitBulkUsersUnassigned(results.map(r => r.userId), departmentId);
+
+  // Invalidate caches
+  invalidateCache(`/api/departments/${departmentId}`);
+  invalidateCache('/api/users');
+
+  res.status(200).json({
+    success: true,
+    data: {
+      unassigned: results,
+      errors: errors,
+      totalAttempted: userIds.length,
+      totalUnassigned: results.length,
+      totalErrors: errors.length
+    }
+  });
+});

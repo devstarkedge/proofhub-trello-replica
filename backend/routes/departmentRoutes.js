@@ -1,6 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment } from '../controllers/departmentController.js';
+import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment } from '../controllers/departmentController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 
@@ -29,5 +29,18 @@ router.get('/:id/projects-with-member/:memberId', protect, getProjectsWithMember
 
 // User unassign route
 router.put('/:deptId/users/:userId/unassign', protect, authorize('admin', 'manager'), unassignUserFromDepartment);
+
+// Bulk operations routes
+router.post('/:id/bulk-assign', protect, authorize('admin', 'manager'), [
+  body('userIds').isArray({ min: 1 }).withMessage('User IDs array is required'),
+  body('userIds.*').isMongoId().withMessage('Valid user ID required'),
+  validate
+], bulkAssignUsersToDepartment);
+
+router.post('/:id/bulk-unassign', protect, authorize('admin', 'manager'), [
+  body('userIds').isArray({ min: 1 }).withMessage('User IDs array is required'),
+  body('userIds.*').isMongoId().withMessage('Valid user ID required'),
+  validate
+], bulkUnassignUsersFromDepartment);
 
 export default router;

@@ -14,7 +14,8 @@ import {
   Briefcase,
   User,
   ChevronDown,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
@@ -36,6 +37,10 @@ const HRPanel = () => {
     department: '',
     search: ''
   });
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [loadingStates, setLoadingStates] = useState({});
 
   useEffect(() => {
     loadData();
@@ -83,23 +88,45 @@ const HRPanel = () => {
 
 
   const handleVerifyUser = async (userId) => {
+    setLoadingStates(prev => ({ ...prev, [userId]: true }));
+
     try {
       await api.put(`/api/users/${userId}/verify`, {
         role: 'employee',
         department: null
       });
-      loadData();
+
+      // Update local state immediately for instant UI feedback
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user._id === userId
+            ? { ...user, isVerified: true, role: 'employee', department: [] }
+            : user
+        )
+      );
     } catch (error) {
       console.error('Error verifying user:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to verify user' });
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [userId]: false }));
     }
   };
 
   const handleDeclineUser = async (userId) => {
+    setLoadingStates(prev => ({ ...prev, [userId]: true }));
+
     try {
       await api.delete(`/api/users/${userId}/decline`);
-      loadData();
+
+      // Remove user from local state immediately
+      setUsers(prevUsers => prevUsers.filter(user => user._id !== userId));
     } catch (error) {
       console.error('Error declining user:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to decline user' });
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [userId]: false }));
     }
   };
 
@@ -115,6 +142,29 @@ const HRPanel = () => {
     } catch (error) {
       console.error('Error assigning user:', error);
     }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    try {
+      await api.delete(`/api/users/${userToDelete._id}`);
+      setUsers(prevUsers => prevUsers.filter(u => u._id !== userToDelete._id));
+      setToast({ type: 'success', message: 'User deleted successfully' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to delete user' });
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setShowDeleteModal(false);
+      setUserToDelete(null);
+    }
+  };
+
+  const openDeleteModal = (user) => {
+    setUserToDelete(user);
+    setShowDeleteModal(true);
   };
 
   const openAssignModal = (user) => {
@@ -411,28 +461,49 @@ const HRPanel = () => {
                             <>
                               <button
                                 onClick={() => handleVerifyUser(user._id)}
-                                className="inline-flex items-center gap-1 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors duration-200 font-semibold"
+                                disabled={loadingStates[user._id]}
+                                className="inline-flex items-center gap-1 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                <CheckCircle className="w-4 h-4" />
-                                Verify
+                                {loadingStates[user._id] ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <CheckCircle className="w-4 h-4" />
+                                )}
+                                {loadingStates[user._id] ? 'Verifying...' : 'Verify'}
                               </button>
                               <button
                                 onClick={() => handleDeclineUser(user._id)}
-                                className="inline-flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold"
+                                disabled={loadingStates[user._id]}
+                                className="inline-flex items-center gap-1 px-3 py-2 bg-red-300 text-red-800 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                <XCircle className="w-4 h-4" />
-                                Decline
+                                {loadingStates[user._id] ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <XCircle className="w-4 h-4" />
+                                )}
+                                {loadingStates[user._id] ? 'Declining...' : 'Decline'}
                               </button>
                             </>
                           )}
                           {user.isVerified && (
-                            <button
-                              onClick={() => openAssignModal(user)}
-                              className="inline-flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200 font-semibold"
-                            >
-                              <UserCog className="w-4 h-4" />
-                              Assign
-                            </button>
+                            <>
+                              <button
+                                onClick={() => openAssignModal(user)}
+                                className="inline-flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200 font-semibold"
+                              >
+                                <UserCog className="w-4 h-4" />
+                                Assign
+                              </button>
+                              {(user.role === 'manager' || user.role === 'employee') && (
+                                <button
+                                  onClick={() => openDeleteModal(user)}
+                                  className="inline-flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  Delete
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -558,6 +629,92 @@ const HRPanel = () => {
                     Assign Departments
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Confirmation Modal */}
+          {showDeleteModal && userToDelete && (
+            <div className="fixed inset-0 backdrop-blur-sm bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center animate-fade-in">
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 animate-slide-up">
+                {/* Modal Header */}
+                <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-6 rounded-t-2xl">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-lg">
+                        <Trash2 className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold">Delete User</h3>
+                        <p className="text-red-100 text-sm">{userToDelete.name}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowDeleteModal(false);
+                        setUserToDelete(null);
+                      }}
+                      className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-colors duration-200"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6">
+                  <div className="text-center">
+                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                      <Trash2 className="h-6 w-6 text-red-600" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Are you sure you want to delete this user?</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Are you sure you want to permanently delete <strong>{userToDelete.name}</strong>? This action cannot be undone.
+                    </p>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                      <p className="text-sm text-red-800">
+                        <strong>Warning:</strong> This will remove the user from all departments, teams, projects, and delete all associated data including comments, notifications, and activity logs.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="flex justify-end gap-3 p-6 bg-gray-50 rounded-b-2xl border-t border-gray-200">
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setUserToDelete(null);
+                    }}
+                    className="px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors duration-200 font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteUser}
+                    className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 font-semibold shadow-md hover:shadow-lg transform hover:scale-105"
+                  >
+                    Delete Anyway
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Toast Notification */}
+          {toast && (
+            <div className={`fixed top-4 right-4 z-50 animate-fade-in`}>
+              <div className={`px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 ${
+                toast.type === 'success'
+                  ? 'bg-green-100 border border-green-200 text-green-800'
+                  : 'bg-red-100 border border-red-200 text-red-800'
+              }`}>
+                {toast.type === 'success' ? (
+                  <CheckCircle className="w-5 h-5" />
+                ) : (
+                  <XCircle className="w-5 h-5" />
+                )}
+                <span className="font-semibold">{toast.message}</span>
               </div>
             </div>
           )}

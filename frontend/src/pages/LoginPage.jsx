@@ -51,25 +51,49 @@ const LoginPage = () => {
     setLoading(true);
     try {
       const { user } = await login(email, password);
+      setLoading(false); // Stop loading immediately after response
+      
       toast.success('Login successful! Welcome back.', {
-        icon: <CheckCircle className="text-green-500" size={20} />
+        icon: <CheckCircle className="text-green-500" size={20} />,
+        autoClose: 2000
       });
 
-      // Small delay for better UX
+      // Navigate after showing toast (delayed to let toast display)
       setTimeout(() => {
         if (user.role === 'admin' || user.isVerified) {
           navigate('/');
         } else {
           navigate('/verify-pending');
         }
-      }, 500);
+      }, 1500);
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Login failed. Please try again.';
+      setLoading(false); // Stop loading immediately on error
+      
+      // Provide user-friendly error messages
+      let errorMessage = 'Invalid email or password. Please try again.';
+      
+      // Check for server error message first
+      if (err.response?.data?.message) {
+        const serverMessage = err.response.data.message.toLowerCase();
+        
+        // Map server messages to friendly messages
+        if (serverMessage.includes('invalid credentials') || serverMessage.includes('no account found') || serverMessage.includes('password')) {
+          errorMessage = 'Invalid email or password. Please try again.';
+        } else if (serverMessage.includes('deactivated')) {
+          errorMessage = 'Your account has been deactivated. Please contact support.';
+        } else {
+          errorMessage = err.response.data.message;
+        }
+      } else if (err.response?.status === 401) {
+        errorMessage = 'Invalid email or password. Please try again.';
+      } else if (err.response?.status === 400) {
+        errorMessage = 'Please provide valid email and password.';
+      }
+      
       toast.error(errorMessage, {
-        icon: <AlertCircle className="text-red-500" size={20} />
+        icon: <AlertCircle className="text-red-500" size={20} />,
+        autoClose: 4000
       });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -77,9 +101,9 @@ const LoginPage = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
-        <div className="absolute top-40 left-40 w-80 h-80 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
+        <div className="absolute -top-40 -right-40 w-60 h-60 sm:w-80 sm:h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
+        <div className="absolute -bottom-40 -left-40 w-60 h-60 sm:w-80 sm:h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
+        <div className="absolute top-40 left-40 w-60 h-60 sm:w-80 sm:h-80 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
       </div>
 
       <motion.div
@@ -89,7 +113,7 @@ const LoginPage = () => {
         className="relative w-full max-w-md"
       >
         {/* Glassmorphism card */}
-        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl shadow-2xl p-8">
+        <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl shadow-2xl p-6 sm:p-8">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -100,11 +124,11 @@ const LoginPage = () => {
             <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
               <LogIn className="text-white" size={28} />
             </div>
-            <h2 className="text-3xl font-bold text-white mb-2">Welcome Back</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Welcome Back</h2>
             <p className="text-white/70">Sign in to your account</p>
           </motion.div>
 
-          <form onSubmit={onSubmit} className="space-y-6">
+          <form onSubmit={onSubmit} className="space-y-4 sm:space-y-6">
             {/* Email Field */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
@@ -161,7 +185,7 @@ const LoginPage = () => {
                   value={password}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('password')}
-                  className={`w-full pl-12 pr-12 py-4 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent backdrop-blur-sm transition-all ${
+                  className={`w-full pl-12 pr-12 py-3 sm:py-4 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent backdrop-blur-sm transition-all ${
                     errors.password ? 'border-red-400 bg-red-500/10' : 'border-white/20'
                   }`}
                   placeholder="Enter your password"

@@ -9,7 +9,8 @@ const DYNAMIC_PATHS = [
   '/api/boards/',
   '/api/departments/',
   '/api/teams/',
-  '/api/users' // Skip caching for all user-related endpoints
+  '/api/users', // Skip caching for all user-related endpoints
+  '/api/auth/admin-create-user' // Skip caching for admin user creation
 ];
 
 export const cacheMiddleware = (ttl = 60) => {
@@ -25,6 +26,7 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/users', // Skip all user endpoints for real-time updates
     '/api/auth/me', // Skip user profile endpoint
     '/api/auth/verify', // Skip session verification endpoint for user-specific data
+    '/api/auth/admin-create-user', // Skip admin user creation for real-time updates
     '/api/notifications', // Skip notifications endpoint for user-specific data
     '/api/analytics/dashboard' // Skip dashboard analytics for real-time updates
   ];

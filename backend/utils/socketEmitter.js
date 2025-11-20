@@ -47,3 +47,21 @@ export const emitUserAssigned = (userId, departmentId) => {
 export const emitUserUnassigned = (userId, departmentId) => {
   io.emit('user-unassigned', { userId, departmentId });
 };
+
+export const emitBulkUsersAssigned = (userIds, departmentId) => {
+  io.emit('department-bulk-assigned', {
+    userIds,
+    departmentId,
+    members: userIds,
+    count: userIds.length
+  });
+};
+
+export const emitBulkUsersUnassigned = (userIds, departmentId) => {
+  io.emit('department-bulk-unassigned', {
+    userIds,
+    departmentId,
+    members: userIds,
+    count: userIds.length
+  });
+};

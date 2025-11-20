@@ -177,6 +177,17 @@ class SocketService {
       console.log('User unassigned from department:', data);
       window.dispatchEvent(new CustomEvent('socket-user-unassigned', { detail: data }));
     });
+
+    // Bulk department assignment events
+    this.socket.on('department-bulk-assigned', (data) => {
+      console.log('Bulk users assigned to department:', data);
+      window.dispatchEvent(new CustomEvent('socket-department-bulk-assigned', { detail: data }));
+    });
+
+    this.socket.on('department-bulk-unassigned', (data) => {
+      console.log('Bulk users unassigned from department:', data);
+      window.dispatchEvent(new CustomEvent('socket-department-bulk-unassigned', { detail: data }));
+    });
   }
 
   disconnect() {

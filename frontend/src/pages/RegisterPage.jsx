@@ -122,8 +122,11 @@ const RegisterPage = () => {
 
     try {
       await register(name, email, password, department);
+      setLoading(false); // Stop loading immediately after response
+      
       toast.success('Registration successful! Please wait for an administrator to verify your account.', {
-        icon: <CheckCircle className="text-green-500" size={20} />
+        icon: <CheckCircle className="text-green-500" size={20} />,
+        autoClose: 3000
       });
 
       // Clear form on success
@@ -138,17 +141,26 @@ const RegisterPage = () => {
       setErrors({});
       setEmailAvailable(null);
 
-      // Navigate to login after short delay
+      // Navigate to login after shorter delay
       setTimeout(() => {
         navigate('/login');
-      }, 2000);
+      }, 1000);
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Registration failed. Please try again.';
+      setLoading(false); // Stop loading immediately on error
+      
+      // Provide user-friendly error messages
+      let errorMessage = 'Registration failed. Please try again.';
+      
+      if (err.response?.status === 409 || err.response?.status === 400) {
+        errorMessage = err.response?.data?.message || 'Email already registered. Please use a different email.';
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      }
+      
       toast.error(errorMessage, {
-        icon: <AlertCircle className="text-red-500" size={20} />
+        icon: <AlertCircle className="text-red-500" size={20} />,
+        autoClose: 3000
       });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -179,11 +191,11 @@ const RegisterPage = () => {
             <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
               <UserPlus className="text-white" size={28} />
             </div>
-            <h2 className="text-3xl font-bold text-white mb-2">Create Account</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Create Account</h2>
             <p className="text-white/70">Join your team and start collaborating</p>
           </motion.div>
 
-          <form onSubmit={onSubmit} className="space-y-4">
+          <form onSubmit={onSubmit} className="space-y-3 sm:space-y-4">
             {/* Name Field */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}

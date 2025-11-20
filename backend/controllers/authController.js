@@ -6,6 +6,12 @@ import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { sendEmail } from '../utils/email.js';
 import notificationService from '../utils/notificationService.js';
+import {
+  runBackground,
+  sendEmailInBackground,
+  createNotificationInBackground,
+  notifyAdminsUserCreatedInBackground
+} from '../utils/backgroundTasks.js';
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -51,38 +57,8 @@ export const register = asyncHandler(async (req, res, next) => {
     departmentName = dept ? dept.name : 'Unknown department';
   }
 
-  // Notify all admins about new registration
-  const admins = await User.find({ role: 'admin', isActive: true });
-
-  for (const admin of admins) {
-    await Notification.create({
-      type: 'user_registered',
-      title: 'New User Registration',
-      message: `${name} (${email}) has registered for department: ${departmentName} and needs verification`,
-      user: admin._id,
-      sender: user._id
-    });
-  }
-
-  // Send welcome email with department info
-  try {
-    await sendEmail({
-      to: email,
-      subject: 'Welcome to Project Management',
-      html: `
-        <h1>Welcome ${name}!</h1>
-        <p>Your account has been created successfully.</p>
-        <p><strong>Department:</strong> ${departmentName}</p>
-        <p>An administrator will verify your account shortly.</p>
-      `
-    });
-  } catch (error) {
-    console.error('Email sending failed:', error);
-  }
-
   // Generate token
   const token = generateToken(user._id);
-
   res.status(201).json({
     success: true,
     token,
@@ -93,6 +69,38 @@ export const register = asyncHandler(async (req, res, next) => {
       role: user.role,
       department: user.department,
       isVerified: user.isVerified
+    }
+  });
+
+  // Run non-blocking background tasks: notify admins and send welcome email
+  runBackground(async () => {
+    try {
+      const adminUsers = await User.find({ role: 'admin', isActive: true }).select('_id');
+      const adminIds = adminUsers.map(admin => admin._id);
+
+      // Notify admins about registration
+      await notificationService.notifyUserRegistered(user, adminIds);
+
+      // Compute department name inside background task to avoid blocking response
+      let deptName = 'No department selected';
+      if (department) {
+        const dept = await Department.findById(department);
+        deptName = dept ? dept.name : 'Unknown department';
+      }
+
+      // Send welcome email
+      await sendEmail({
+        to: email,
+        subject: 'Welcome to Project Management',
+        html: `
+          <h1>Welcome ${name}!</h1>
+          <p>Your account has been created successfully.</p>
+          <p><strong>Department:</strong> ${deptName}</p>
+          <p>An administrator will verify your account shortly.</p>
+        `
+      });
+    } catch (error) {
+      console.error('Post-registration background failed:', error);
     }
   });
 });
@@ -266,61 +274,10 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
     await Department.findByIdAndUpdate(department, {
       $addToSet: { members: user._id }
     });
+    // Invalidate department cache as well
+    const { invalidateCache } = await import('../middleware/cache.js');
+    invalidateCache(`/api/departments/${department}`);
   }
-
-  // Send welcome email with different content for admin-created users
-  try {
-    const departmentName = department ?
-      (await Department.findById(department)).name : 'No department assigned';
-
-    await sendEmail({
-      to: email,
-      subject: 'Welcome to FlowTask - Your Account is Ready',
-      html: `
-        <h1>Welcome to FlowTask, ${name}!</h1>
-        <p>Your account has been created by an administrator and is ready to use.</p>
-        <p><strong>Role:</strong> ${role}</p>
-        <p><strong>Department:</strong> ${departmentName}</p>
-        <p>You can now log in to your account and start collaborating with your team.</p>
-        <p>If you have any questions, please contact your administrator.</p>
-      `
-    });
-  } catch (error) {
-    console.error('Email sending failed:', error);
-  }
-
-  // Create notification for the new user
-  try {
-    await notificationService.createNotification({
-      type: 'account_created',
-      title: 'Welcome to FlowTask',
-      message: 'Your account has been created by an administrator. You can now log in with your credentials.',
-      user: user._id,
-      sender: req.user._id
-    });
-  } catch (error) {
-    console.error('User notification failed:', error);
-  }
-
-  // Notify all admins about the new user creation
-  try {
-    const admins = await User.find({ role: 'admin', isActive: true });
-    const departmentName = department ?
-      (await Department.findById(department)).name : 'No department assigned';
-
-    for (const admin of admins) {
-      await notificationService.createNotification({
-        type: 'user_created',
-        title: 'New User Created',
-        message: `A new user ${name} (${email}) has been created and assigned to ${departmentName}.`,
-        user: admin._id,
-        sender: req.user._id
-      });
-    }
-  } catch (error) {
-    console.error('Admin notification failed:', error);
-  }
-
   // Emit real-time update
   const { emitToTeam } = await import('../server.js');
   emitToTeam('admin', 'user-created', {
@@ -343,6 +300,60 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
       isVerified: user.isVerified
     }
   });
+
+  // Background tasks: send admin-specific welcome email and notifications
+  runBackground(async () => {
+    try {
+      // Send welcome email for admin-created users (different template)
+      const departmentName = department ? (await Department.findById(department)).name : 'No department assigned';
+      await sendEmail({
+        to: email,
+        subject: 'Welcome to FlowTask - Your Account is Ready',
+        html: `
+          <h1>Welcome to FlowTask, ${name}!</h1>
+          <p>Your account has been created by an administrator and is ready to use.</p>
+          <p><strong>Role:</strong> ${role}</p>
+          <p><strong>Department:</strong> ${departmentName}</p>
+          <p>You can now log in to your account and start collaborating with your team.</p>
+          <p>If you have any questions, please contact your administrator.</p>
+        `
+      });
+
+      // Create notification for the new user
+      await notificationService.createNotification({
+        type: 'account_created',
+        title: 'Welcome to FlowTask',
+        message: 'Your account has been created by an administrator. You can now log in with your credentials.',
+        user: user._id,
+        sender: req.user._id
+      });
+
+      // Notify all admins about the new user creation
+      const admins = await User.find({ role: 'admin', isActive: true });
+      await notifyAdminsUserCreatedInBackground(user, admins, { departmentName, creatorId: req.user._id });
+    } catch (error) {
+      console.error('Post-admin-create background failed:', error);
+    }
+  });
+});
+
+// @desc    Check email uniqueness
+// @route   POST /api/auth/check-email
+// @access  Public
+export const checkEmail = asyncHandler(async (req, res, next) => {
+  const { email, excludeUserId } = req.body;
+
+  if (!email) {
+    return next(new ErrorResponse('Email is required', 400));
+  }
+
+  // Search for a user with the provided email
+  const existing = await User.findOne({ email }).select('_id');
+
+  // If found and it's not the excluded user, it's not available
+  const available = !(existing && (!excludeUserId || existing._id.toString() !== excludeUserId));
+
+  res.status(200).json({ success: true, available });
 });
 
 // @desc    Refresh JWT token

@@ -67,7 +67,11 @@ export const AuthProvider = ({ children }) => {
       (response) => response,
       async (error) => {
         const originalRequest = error.config;
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        // Prevent retry on refresh endpoint to avoid infinite loops
+        if (originalRequest.url && originalRequest.url.includes('/api/auth/refresh')) {
+          return Promise.reject(error);
+        }
+        if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url.includes('/api/auth/login')) {
           originalRequest._retry = true;
           try {
             const refreshResponse = await api.post("/api/auth/refresh");
