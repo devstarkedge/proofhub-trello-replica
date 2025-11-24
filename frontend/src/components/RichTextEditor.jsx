@@ -17,7 +17,10 @@ import {
   Image as ImageIcon,
   Type,
   Undo,
-  Redo
+  Redo,
+  Loader,
+  AlertCircle,
+  Check
 } from 'lucide-react';
 import MentionList from './MentionList';
 import 'tippy.js/dist/tippy.css';
@@ -46,7 +49,11 @@ const RichTextEditor = ({
   mentionContainer = document.body, // Container for mention popup
 }) => {
   const [isExpanded, setIsExpanded] = useState(startExpanded || isComment);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const editorRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // keep a ref to the users so suggestion items can access latest list without
   // re-creating the editor/extensions when users update asynchronously
@@ -251,46 +258,83 @@ const RichTextEditor = ({
             <LinkIcon size={16} />
           </button>
           <button
-            onClick={async () => {
-              if (onImageUpload) {
-                // Use file input for upload
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = 'image/*';
-                input.onchange = async (e) => {
-                  const file = e.target.files[0];
-                  if (file) {
-                    try {
-                      const formData = new FormData();
-                      formData.append('image', file);
-                      const imageUrl = await onImageUpload(formData);
-                      if (imageUrl) {
-                        editor.chain().focus().setImage({ src: imageUrl }).run();
-                      }
-                    } catch (error) {
-                      console.error('Image upload failed:', error);
-                      // Fallback to URL input
-                      const url = prompt('Enter image URL');
-                      if (url) {
-                        editor.chain().focus().setImage({ src: url }).run();
-                      }
-                    }
+            onClick={() => {
+              if (fileInputRef.current) {
+                fileInputRef.current.click();
+              }
+            }}
+            disabled={uploadingImage}
+            className="p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative"
+            title="Upload Image"
+          >
+            {uploadingImage ? (
+              <Loader size={16} className="animate-spin" />
+            ) : uploadSuccess ? (
+              <Check size={16} className="text-green-600" />
+            ) : uploadError ? (
+              <AlertCircle size={16} className="text-red-600" />
+            ) : (
+              <ImageIcon size={16} />
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+
+              // Validate file
+              if (!file.type.startsWith('image/')) {
+                setUploadError('Please select a valid image file');
+                setTimeout(() => setUploadError(null), 3000);
+                return;
+              }
+
+              if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                setUploadError('Image must be less than 5MB');
+                setTimeout(() => setUploadError(null), 3000);
+                return;
+              }
+
+              setUploadingImage(true);
+              setUploadError(null);
+              setUploadSuccess(false);
+
+              try {
+                if (onImageUpload) {
+                  const formData = new FormData();
+                  formData.append('image', file);
+                  const imageUrl = await onImageUpload(formData);
+                  if (imageUrl) {
+                    editor.chain().focus().setImage({ src: imageUrl }).run();
+                    setUploadSuccess(true);
+                    setTimeout(() => setUploadSuccess(false), 2000);
                   }
-                };
-                input.click();
-              } else {
-                // Fallback to URL input
-                const url = prompt('Enter image URL');
-                if (url) {
-                  editor.chain().focus().setImage({ src: url }).run();
+                } else {
+                  // Fallback to URL input
+                  const url = prompt('Enter image URL');
+                  if (url) {
+                    editor.chain().focus().setImage({ src: url }).run();
+                    setUploadSuccess(true);
+                    setTimeout(() => setUploadSuccess(false), 2000);
+                  }
+                }
+              } catch (error) {
+                console.error('Image upload failed:', error);
+                setUploadError('Failed to upload image');
+                setTimeout(() => setUploadError(null), 3000);
+              } finally {
+                setUploadingImage(false);
+                // Reset file input
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
                 }
               }
             }}
-            className="p-2 rounded hover:bg-gray-200 transition-colors"
-            title="Image"
-          >
-            <ImageIcon size={16} />
-          </button>
+          />
           <div className="w-px h-6 bg-gray-300 mx-1" />
           <button
             onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -364,6 +408,90 @@ const RichTextEditor = ({
           {placeholder}
         </div>
       )}
+
+      {/* Upload Status Messages */}
+      {uploadError && (
+        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">
+          <AlertCircle size={16} className="flex-shrink-0" />
+          <span>{uploadError}</span>
+        </div>
+      )}
+      {uploadSuccess && (
+        <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700 text-sm">
+          <Check size={16} className="flex-shrink-0" />
+          <span>Image uploaded successfully</span>
+        </div>
+      )}
+
+      <style>{`
+        .ProseMirror {
+          padding: 12px;
+        }
+        .ProseMirror img {
+          max-width: 100%;
+          height: auto;
+          border-radius: 8px;
+          display: block;
+          margin: 16px 0;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+          transition: box-shadow 0.3s ease;
+        }
+        .ProseMirror img:hover {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .ProseMirror p {
+          margin: 8px 0;
+        }
+        .ProseMirror ul, .ProseMirror ol {
+          padding-left: 24px;
+          margin: 8px 0;
+        }
+        .ProseMirror li {
+          margin: 4px 0;
+        }
+        .ProseMirror blockquote {
+          border-left: 4px solid #cbd5e1;
+          padding-left: 12px;
+          margin: 8px 0;
+          color: #64748b;
+          font-style: italic;
+        }
+        .ProseMirror a {
+          color: #0066cc;
+          text-decoration: underline;
+        }
+        .ProseMirror a:hover {
+          color: #0052a3;
+        }
+        .ProseMirror code {
+          background-color: #f3f4f6;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-family: 'Courier New', monospace;
+          font-size: 0.9em;
+        }
+        .ProseMirror pre {
+          background-color: #1f2937;
+          color: #f3f4f6;
+          padding: 12px;
+          border-radius: 6px;
+          overflow-x: auto;
+          margin: 8px 0;
+        }
+        .ProseMirror pre code {
+          background-color: transparent;
+          color: inherit;
+          padding: 0;
+        }
+        .mention {
+          background-color: #dbeafe;
+          color: #0066cc;
+          padding: 0 4px;
+          border-radius: 3px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+      `}</style>
     </div>
   );
 };

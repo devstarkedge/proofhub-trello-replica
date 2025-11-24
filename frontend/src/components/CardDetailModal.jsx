@@ -1,45 +1,24 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  X,
-  AlignLeft,
-  Users,
-  Tag,
-  CheckSquare,
-  Calendar,
-  Trash2,
-  Clock,
-  Paperclip,
-  MessageSquare,
-  AlertCircle,
-  User,
-  Save,
-  Plus,
-  TrendingUp,
-  FileText,
-  Pencil,
-  Timer,
-  PlayCircle,
-  Target,
-  Edit2,
-  PlusCircle,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+import { X, AlignLeft, Tag, AlertCircle, FileText } from "lucide-react";
 import Database from "../services/database";
 import AuthContext from "../context/AuthContext";
 import { toast } from "react-toastify";
-import RichTextEditor from "./RichTextEditor";
 import useWorkflowStore from "../store/workflowStore";
 import useDepartmentStore from "../store/departmentStore";
+import CardDescription from "./CardDetailModal/CardDescription";
+import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
+import SubtasksSection from "./CardDetailModal/SubtasksSection";
+import AttachmentsSection from "./CardDetailModal/AttachmentsSection";
+import CommentsSection from "./CardDetailModal/CommentsSection";
+import CardSidebar from "./CardDetailModal/CardSidebar";
 
 const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const { user } = useContext(AuthContext);
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || "");
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [assignees, setAssignees] = useState(
-    card.assignees ? card.assignees.map((a) => typeof a === 'object' ? a._id : a) : []
+    card.assignees ? card.assignees.map((a) => (typeof a === 'object' ? a._id : a)).filter(Boolean) : []
   );
   const [priority, setPriority] = useState(card.priority || "");
   const [status, setStatus] = useState(card.status || "");
@@ -67,7 +46,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [attachments, setAttachments] = useState(card.attachments || []);
   const [teamMembers, setTeamMembers] = useState([]);
   const [saving, setSaving] = useState(false);
-
   const [projectName, setProjectName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredMembers, setFilteredMembers] = useState([]);
@@ -75,13 +53,20 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef(null);
 
   // Time Tracking States
   const [estimationEntries, setEstimationEntries] = useState(
-    card.estimationTime || []
+    (card.estimationTime || []).map((entry, idx) => {
+      const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
+      return { ...entry, id };
+    })
   );
-  const [loggedTime, setLoggedTime] = useState(card.loggedTime || []);
+  const [loggedTime, setLoggedTime] = useState(
+    (card.loggedTime || []).map((entry, idx) => {
+      const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
+      return { ...entry, id };
+    })
+  );
   const [newEstimationHours, setNewEstimationHours] = useState("");
   const [newEstimationMinutes, setNewEstimationMinutes] = useState("");
   const [newEstimationReason, setNewEstimationReason] = useState("");
@@ -105,7 +90,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
         if (freshCard) {
           setTitle(freshCard.title);
           setDescription(freshCard.description || "");
-          setAssignees(freshCard.assignees ? freshCard.assignees.map((a) => typeof a === 'object' ? a._id : a) : []);
+          setAssignees(freshCard.assignees ? freshCard.assignees.map((a) => (typeof a === 'object' ? a._id : a)).filter(Boolean) : []);
           setPriority(freshCard.priority || "");
           setStatus(freshCard.status || "");
           setDueDate(freshCard.dueDate ? new Date(freshCard.dueDate).toISOString().split("T")[0] : "");
@@ -116,8 +101,14 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
             text: s.title || s.text,
             completed: s.completed,
           })) : []);
-          setEstimationEntries(freshCard.estimationTime || []);
-          setLoggedTime(freshCard.loggedTime || []);
+          setEstimationEntries((freshCard.estimationTime || []).map((entry, idx) => {
+            const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
+            return { ...entry, id };
+          }));
+          setLoggedTime((freshCard.loggedTime || []).map((entry, idx) => {
+            const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
+            return { ...entry, id };
+          }));
           setAttachments(freshCard.attachments || []);
         }
       } catch (error) {
@@ -143,14 +134,20 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
         if (updates.dueDate) setDueDate(new Date(updates.dueDate).toISOString().split('T')[0]);
         if (updates.startDate) setStartDate(new Date(updates.startDate).toISOString().split('T')[0]);
         if (updates.labels) setLabels(updates.labels);
-        if (updates.assignees) setAssignees(updates.assignees.map(a => a._id));
+        if (updates.assignees) setAssignees(updates.assignees.map(a => a._id).filter(Boolean));
         if (updates.subtasks) setSubtasks(updates.subtasks.map(s => ({
           id: s._id || Date.now(),
           text: s.title || s.text,
           completed: s.completed
         })));
-        if (updates.estimationTime) setEstimationEntries(updates.estimationTime);
-        if (updates.loggedTime) setLoggedTime(updates.loggedTime);
+        if (updates.estimationTime) setEstimationEntries((updates.estimationTime || []).map((entry, idx) => {
+          const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
+          return { ...entry, id };
+        }));
+        if (updates.loggedTime) setLoggedTime((updates.loggedTime || []).map((entry, idx) => {
+          const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
+          return { ...entry, id };
+        }));
         if (updates.attachments) setAttachments(updates.attachments);
       }
     };
@@ -206,7 +203,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
       filtered.forEach(member => {
          // Handle department as array - take first department for grouping
          const dept = member.department && Array.isArray(member.department) && member.department.length > 0 ? member.department[0] : null;
-         const deptId = dept?._id || dept || 'Unassigned';
+         const deptId = (dept?._id || dept || 'Unassigned') || 'Unassigned'; // Ensure deptId is never falsy
          const deptName = dept?.name || 'Unassigned';
 
         if (!grouped[deptId]) {
@@ -234,24 +231,8 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     }
   }, [searchQuery, teamMembers]);
 
-  // Handle clicks outside dropdown to close it
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsDropdownOpen(false);
-      }
-    };
-
-    if (isDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isDropdownOpen]);
-
   const handleSelectMember = (memberId) => {
+    if (!memberId) return;
     if (!assignees.includes(memberId)) {
       setAssignees([...assignees, memberId]);
     }
@@ -366,50 +347,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     };
   };
 
-  const formatTime = (hours, minutes) => {
-    const parts = [];
-    if (hours > 0) parts.push(`${hours}h`);
-    if (minutes > 0) parts.push(`${minutes}m`);
-    return parts.length > 0 ? parts.join(" ") : "0m";
-  };
-
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
-  const calculateTotalEstimation = () => {
-    const total = estimationEntries.reduce((acc, entry) => {
-      return acc + entry.hours * 60 + entry.minutes;
-    }, 0);
-    return normalizeTime(Math.floor(total / 60), total % 60);
-  };
-
-  const calculateTotalLoggedTime = () => {
-    const total = loggedTime.reduce((acc, entry) => {
-      return acc + entry.hours * 60 + entry.minutes;
-    }, 0);
-    return normalizeTime(Math.floor(total / 60), total % 60);
-  };
-
-  const getTimeProgress = () => {
-    const totalLogged = loggedTime.reduce(
-      (acc, entry) => acc + entry.hours * 60 + entry.minutes,
-      0
-    );
-    const totalEstimated = estimationEntries.reduce(
-      (acc, entry) => acc + entry.hours * 60 + entry.minutes,
-      0
-    );
-
-    if (totalEstimated === 0) return 0;
-    return Math.round((totalLogged / totalEstimated) * 100);
-  };
-
   const handleAddEstimation = () => {
     const hours = parseInt(newEstimationHours || 0);
     const minutes = parseInt(newEstimationMinutes || 0);
@@ -436,24 +373,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     toast.success("Estimation added successfully!");
   };
 
-  const handleUpdateEstimation = (id, hours, minutes) => {
-    const normalized = normalizeTime(hours, minutes);
-    setEstimationEntries(
-      estimationEntries.map((entry) =>
-        entry.id === id
-          ? { ...entry, hours: normalized.hours, minutes: normalized.minutes }
-          : entry
-      )
-    );
-    setEditingEstimation(null);
-    toast.success("Estimation updated!");
-  };
-
-  const handleDeleteEstimation = (id) => {
-    setEstimationEntries(estimationEntries.filter((entry) => entry.id !== id));
-    toast.info("Estimation entry removed");
-  };
-
   const handleAddLoggedTime = () => {
     const hours = parseInt(newLoggedHours || 0);
     const minutes = parseInt(newLoggedMinutes || 0);
@@ -478,24 +397,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     setNewLoggedMinutes("");
     setNewLoggedDescription("");
     toast.success("Time logged successfully!");
-  };
-
-  const handleUpdateLoggedTime = (id, hours, minutes) => {
-    const normalized = normalizeTime(hours, minutes);
-    setLoggedTime(
-      loggedTime.map((entry) =>
-        entry.id === id
-          ? { ...entry, hours: normalized.hours, minutes: normalized.minutes }
-          : entry
-      )
-    );
-    setEditingLogged(null);
-    toast.success("Logged time updated!");
-  };
-
-  const handleDeleteLoggedTime = (id) => {
-    setLoggedTime(loggedTime.filter((entry) => entry.id !== id));
-    toast.info("Time entry removed");
   };
 
   const startEditingEstimation = (entry) => {
@@ -585,18 +486,16 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   };
 
   const confirmDeleteEstimation = (id) => {
-    if (
-      window.confirm("Are you sure you want to delete this estimation entry?")
-    ) {
-      handleDeleteEstimation(id);
+    if (window.confirm("Are you sure you want to delete this estimation entry?")) {
+      setEstimationEntries(estimationEntries.filter((entry) => entry.id !== id));
+      toast.info("Estimation entry removed");
     }
   };
 
   const confirmDeleteLoggedTime = (id) => {
-    if (
-      window.confirm("Are you sure you want to delete this logged time entry?")
-    ) {
-      handleDeleteLoggedTime(id);
+    if (window.confirm("Are you sure you want to delete this logged time entry?")) {
+      setLoggedTime(loggedTime.filter((entry) => entry.id !== id));
+      toast.info("Time entry removed");
     }
   };
 
@@ -618,6 +517,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
         startDate: startDate ? new Date(startDate).toISOString() : null,
         labels,
+        attachments: attachments.length > 0 ? attachments : [],
         subtasks: subtasks.map((s) => ({
           title: s.text || "",
           completed: Boolean(s.completed),
@@ -671,8 +571,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     }
   };
 
-
-
   const handleAddComment = async () => {
     // newComment may be HTML; check plain text
     const plain = (newComment || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
@@ -718,10 +616,17 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     setLabels(labels.filter((l) => l !== label));
   };
 
-  const calculateProgress = () => {
-    if (subtasks.length === 0) return 0;
-    const completed = subtasks.filter((s) => s.completed).length;
-    return Math.round((completed / subtasks.length) * 100);
+  const handleDeleteAttachment = (attachmentIdOrIndex) => {
+    // Remove attachment by comparing with both _id and index
+    const filteredAttachments = attachments.filter((a, idx) => {
+      const attachmentId = a._id || a.id;
+      // Return true to keep, false to remove
+      if (attachmentIdOrIndex === idx) return false; // If passed index
+      if (attachmentId === attachmentIdOrIndex) return false; // If passed ID
+      return true;
+    });
+    setAttachments(filteredAttachments);
+    toast.info("Attachment removed");
   };
 
   const getPriorityColor = (priority) => {
@@ -753,18 +658,13 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     exit: { opacity: 0, scale: 0.95 },
   };
 
-  const totalEstimation = calculateTotalEstimation();
-  const totalLogged = calculateTotalLoggedTime();
-  const timeProgress = getTimeProgress();
-  const isOvertime = timeProgress > 100;
-
   return (
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0  bg-opacity-50 flex items-start justify-center z-60 p-4 overflow-y-auto backdrop-blur-sm"
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-60 p-4 overflow-y-auto backdrop-blur-sm"
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <motion.div
@@ -846,23 +746,26 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                 {/* Labels */}
                 {labels.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {labels.map((label, index) => (
-                      <motion.span
-                        key={index}
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
-                      >
-                        <Tag size={14} />
-                        {label}
-                        <button
-                          onClick={() => removeLabel(label)}
-                          className="hover:bg-white hover:bg-opacity-20 rounded-full p-0.5 transition-colors"
+                    {labels.map((label, index) => {
+                      const safeKey = String(label || `label-${index}`).trim() || `label-${index}`;
+                      return (
+                        <motion.span
+                          key={safeKey}
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
                         >
-                          <X size={12} />
-                        </button>
-                      </motion.span>
-                    ))}
+                          <Tag size={14} />
+                          {label}
+                          <button
+                            onClick={() => removeLabel(label)}
+                            className="hover:bg-white hover:bg-opacity-20 rounded-full p-0.5 transition-colors"
+                          >
+                            <X size={12} />
+                          </button>
+                        </motion.span>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -871,7 +774,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                   <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
                     {startDate && (
                       <div className="flex items-center gap-2 text-sm">
-                        <Calendar size={16} className="text-gray-500" />
+                        <AlertCircle size={16} className="text-gray-500" style={{ transform: 'rotate(180deg)' }} />
                         <span className="text-gray-600">Start:</span>
                         <span className="font-medium text-gray-900">
                           {new Date(startDate).toLocaleDateString()}
@@ -880,7 +783,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                     )}
                     {dueDate && (
                       <div className="flex items-center gap-2 text-sm">
-                        <Calendar size={16} className="text-gray-500" />
+                        <AlertCircle size={16} className="text-gray-500" style={{ transform: 'rotate(180deg)' }} />
                         <span className="text-gray-600">Due:</span>
                         <span className="font-medium text-gray-900">
                           {new Date(dueDate).toLocaleDateString()}
@@ -890,1080 +793,130 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                   </div>
                 )}
 
-                {/* Description */}
-                <div>
-                  <div className="flex items-center gap-3 mb-3">
-                    <AlignLeft size={20} className="text-gray-600" />
-                    <h4 className="font-semibold text-gray-800 text-lg">
-                      Description
-                    </h4>
-                  </div>
+                {/* Card Description Component */}
+                <CardDescription
+                  description={description}
+                  teamMembers={teamMembers}
+                  onChange={setDescription}
+                  onImageUpload={uploadImageForDescription}
+                />
 
-                  <div className="ml-8 relative border border-gray-300 rounded-lg p-3">
-                      <RichTextEditor
-                        content={description}
-                        onChange={setDescription}
-                        placeholder="Add a more detailed description..."
-                        users={teamMembers}
-                        onImageUpload={uploadImageForDescription}
-                      />
-                  </div>
-                </div>
+                {/* Time Tracking Component */}
+                <TimeTrackingSection
+                  estimationEntries={estimationEntries}
+                  loggedTime={loggedTime}
+                  newEstimationHours={newEstimationHours}
+                  newEstimationMinutes={newEstimationMinutes}
+                  newEstimationReason={newEstimationReason}
+                  newLoggedHours={newLoggedHours}
+                  newLoggedMinutes={newLoggedMinutes}
+                  newLoggedDescription={newLoggedDescription}
+                  editingEstimation={editingEstimation}
+                  editingLogged={editingLogged}
+                  editEstimationHours={editEstimationHours}
+                  editEstimationMinutes={editEstimationMinutes}
+                  editEstimationReason={editEstimationReason}
+                  editLoggedHours={editLoggedHours}
+                  editLoggedMinutes={editLoggedMinutes}
+                  editLoggedDescription={editLoggedDescription}
+                  onEstimationHoursChange={setNewEstimationHours}
+                  onEstimationMinutesChange={setNewEstimationMinutes}
+                  onEstimationReasonChange={setNewEstimationReason}
+                  onLoggedHoursChange={setNewLoggedHours}
+                  onLoggedMinutesChange={setNewLoggedMinutes}
+                  onLoggedDescriptionChange={setNewLoggedDescription}
+                  onEditEstimationHoursChange={setEditEstimationHours}
+                  onEditEstimationMinutesChange={setEditEstimationMinutes}
+                  onEditEstimationReasonChange={setEditEstimationReason}
+                  onEditLoggedHoursChange={setEditLoggedHours}
+                  onEditLoggedMinutesChange={setEditLoggedMinutes}
+                  onEditLoggedDescriptionChange={setEditLoggedDescription}
+                  onAddEstimation={handleAddEstimation}
+                  onAddLoggedTime={handleAddLoggedTime}
+                  onStartEditingEstimation={startEditingEstimation}
+                  onStartEditingLogged={startEditingLogged}
+                  onSaveEstimationEdit={saveEstimationEdit}
+                  onSaveLoggedEdit={saveLoggedEdit}
+                  onCancelEstimationEdit={cancelEstimationEdit}
+                  onCancelLoggedEdit={cancelLoggedEdit}
+                  onConfirmDeleteEstimation={confirmDeleteEstimation}
+                  onConfirmDeleteLoggedTime={confirmDeleteLoggedTime}
+                  card={card}
+                />
 
-                {/* Time Tracking Section */}
-                <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-xl p-4 border-2 border-indigo-200 shadow-lg">
-                  <div className="flex items-center gap-3 mb-4">
-                    <motion.div
-                      whileHover={{ rotate: 360 }}
-                      transition={{ duration: 2, ease: "linear" }}
-                      className="p-2 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-lg shadow-md"
-                    >
-                      <Timer size={20} className="text-white" />
-                    </motion.div>
+                {/* Subtasks Component */}
+                <SubtasksSection
+                  subtasks={subtasks}
+                  newSubtask={newSubtask}
+                  onNewSubtaskChange={setNewSubtask}
+                  onAddSubtask={handleAddSubtask}
+                  onToggleSubtask={toggleSubtask}
+                  onDeleteSubtask={deleteSubtask}
+                  onKeyPress={(e) => e.key === "Enter" && handleAddSubtask()}
+                />
 
-                    <div>
-                      <h4 className="font-bold text-gray-800 text-lg">
-                        Time Tracking
-                      </h4>
-                      <p className="text-xs text-gray-600">
-                        Manage estimates and log your work time
-                      </p>
-                    </div>
-                  </div>
+                {/* Attachments Component */}
+                <AttachmentsSection 
+                  attachments={attachments}
+                  onDeleteAttachment={handleDeleteAttachment}
+                />
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* Estimation Time */}
-                    <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-100">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Target size={16} className="text-indigo-600" />
-                        <h5 className="font-semibold text-gray-800">
-                          Estimated Time
-                        </h5>
-                      </div>
-
-                      {/* Add Estimation Input */}
-                      <div className="flex flex-col gap-2 mb-3">
-                        <div className="flex gap-2">
-                          <div className="relative flex-1">
-                            <input
-                              type="number"
-                              min="0"
-                              value={newEstimationHours}
-                              onChange={(e) =>
-                                setNewEstimationHours(e.target.value)
-                              }
-                              placeholder="0"
-                              className="w-full p-2 pr-7 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                              h
-                            </span>
-                          </div>
-                          <div className="relative flex-1">
-                            <input
-                              type="number"
-                              min="0"
-                              value={newEstimationMinutes}
-                              onChange={(e) =>
-                                setNewEstimationMinutes(e.target.value)
-                              }
-                              placeholder="0"
-                              className="w-full p-2 pr-7 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                              m
-                            </span>
-                          </div>
-                        </div>
-                        <textarea
-                          value={newEstimationReason}
-                          onChange={(e) =>
-                            setNewEstimationReason(e.target.value)
-                          }
-                          placeholder="Reason for estimation (mandatory)"
-                          className="w-full p-2 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                          rows="2"
-                        />
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={handleAddEstimation}
-                          className="px-3 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-md text-sm font-semibold"
-                        >
-                          Add Estimate
-                        </motion.button>
-                      </div>
-
-                      {/* Estimation Entries */}
-                      {estimationEntries.length > 0 && (
-                        <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
-                          <AnimatePresence>
-                            {estimationEntries.map((entry, index) => (
-                              <motion.div
-                                key={entry.id || index}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 20 }}
-                                className="group relative bg-indigo-50 rounded-lg p-3 border border-indigo-200 hover:border-indigo-300 transition-all text-xs"
-                              >
-                                {editingEstimation === entry.id ? (
-                                  <div className="space-y-2">
-                                    <div className="flex gap-2">
-                                      <div className="relative flex-1">
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={editEstimationHours}
-                                          onChange={(e) =>
-                                            setEditEstimationHours(
-                                              e.target.value
-                                            )
-                                          }
-                                          placeholder="0"
-                                          className="w-full p-1 pr-5 border border-indigo-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                        />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          h
-                                        </span>
-                                      </div>
-                                      <div className="relative flex-1">
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={editEstimationMinutes}
-                                          onChange={(e) =>
-                                            setEditEstimationMinutes(
-                                              e.target.value
-                                            )
-                                          }
-                                          placeholder="0"
-                                          className="w-full p-1 pr-5 border border-indigo-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                        />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          m
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <textarea
-                                      value={editEstimationReason}
-                                      onChange={(e) =>
-                                        setEditEstimationReason(e.target.value)
-                                      }
-                                      placeholder="Reason for estimation"
-                                      className="w-full p-1 border border-indigo-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                      rows="2"
-                                    />
-                                    <div className="flex gap-1">
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={() =>
-                                          saveEstimationEdit(entry.id)
-                                        }
-                                        className="px-2 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 transition-colors"
-                                      >
-                                        Save
-                                      </motion.button>
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={cancelEstimationEdit}
-                                        className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors"
-                                      >
-                                        Cancel
-                                      </motion.button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-indigo-700 text-base">
-                                          {formatTime(
-                                            entry.hours,
-                                            entry.minutes
-                                          )}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            startEditingEstimation(entry)
-                                          }
-                                          className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-md transition-all duration-200 border border-indigo-200 hover:border-indigo-300"
-                                          title="Edit estimation"
-                                        >
-                                          <Pencil size={14} />
-                                        </motion.button>
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            confirmDeleteEstimation(entry.id)
-                                          }
-                                          className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
-                                          title="Delete estimation"
-                                        >
-                                          <Trash2 size={14} />
-                                        </motion.button>
-                                      </div>
-                                    </div>
-                                    <p className="text-gray-700 mb-1 p-1 bg-indigo-100 rounded">
-                                      Reason: {entry.reason}
-                                    </p>
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-1 text-gray-500">
-                                        <User size={12} />
-                                        <span>
-                                          {card.createdBy?.name || "Unknown"}
-                                        </span>
-                                      </div>
-                                      <span className="text-gray-600">
-                                        {formatDate(entry.date)}
-                                      </span>
-                                    </div>
-                                  </>
-                                )}
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      )}
-
-                      {/* Total Estimation */}
-                      {estimationEntries.length > 0 && (
-                        <div className="pt-2 border-t-2 border-indigo-200">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-gray-700">
-                              Total Estimate:
-                            </span>
-                            <span className="text-lg font-bold text-indigo-600">
-                              {formatTime(
-                                totalEstimation.hours,
-                                totalEstimation.minutes
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Logged Time */}
-                    <div className="bg-white rounded-lg p-4 shadow-sm border border-green-100">
-                      <div className="flex items-center gap-2 mb-3">
-                        <PlayCircle size={16} className="text-green-600" />
-                        <h5 className="font-semibold text-gray-800">
-                          Logged Time
-                        </h5>
-                      </div>
-
-                      {/* Add Logged Time Input */}
-                      <div className="flex flex-col gap-2 mb-3">
-                        <div className="flex gap-2">
-                          <div className="relative flex-1">
-                            <input
-                              type="number"
-                              min="0"
-                              value={newLoggedHours}
-                              onChange={(e) =>
-                                setNewLoggedHours(e.target.value)
-                              }
-                              placeholder="0"
-                              className="w-full p-2 pr-7 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                              h
-                            </span>
-                          </div>
-                          <div className="relative flex-1">
-                            <input
-                              type="number"
-                              min="0"
-                              value={newLoggedMinutes}
-                              onChange={(e) =>
-                                setNewLoggedMinutes(e.target.value)
-                              }
-                              placeholder="0"
-                              className="w-full p-2 pr-7 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                              m
-                            </span>
-                          </div>
-                        </div>
-                        <textarea
-                          value={newLoggedDescription}
-                          onChange={(e) =>
-                            setNewLoggedDescription(e.target.value)
-                          }
-                          placeholder="Description of work (mandatory)"
-                          className="w-full p-2 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                          rows="2"
-                        />
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={handleAddLoggedTime}
-                          className="px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 shadow-md text-sm font-semibold"
-                        >
-                          Log Time
-                        </motion.button>
-                      </div>
-
-                      {/* Logged Time Entries */}
-                      {loggedTime.length > 0 && (
-                        <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
-                          <AnimatePresence>
-                            {loggedTime.map((entry, index) => (
-                              <motion.div
-                                key={entry.id || index}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 20 }}
-                                className="group relative bg-green-50 rounded-lg p-3 border border-green-200 hover:border-green-300 transition-all text-xs"
-                              >
-                                {editingLogged === entry.id ? (
-                                  <div className="space-y-2">
-                                    <div className="flex gap-2">
-                                      <div className="relative flex-1">
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={editLoggedHours}
-                                          onChange={(e) =>
-                                            setEditLoggedHours(e.target.value)
-                                          }
-                                          placeholder="0"
-                                          className="w-full p-1 pr-5 border border-green-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
-                                        />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          h
-                                        </span>
-                                      </div>
-                                      <div className="relative flex-1">
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={editLoggedMinutes}
-                                          onChange={(e) =>
-                                            setEditLoggedMinutes(e.target.value)
-                                          }
-                                          placeholder="0"
-                                          className="w-full p-1 pr-5 border border-green-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
-                                        />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          m
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <textarea
-                                      value={editLoggedDescription}
-                                      onChange={(e) =>
-                                        setEditLoggedDescription(e.target.value)
-                                      }
-                                      placeholder="Description of work"
-                                      className="w-full p-1 border border-green-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
-                                      rows="2"
-                                    />
-                                    <div className="flex gap-1">
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={() => saveLoggedEdit(entry.id)}
-                                        className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors"
-                                      >
-                                        Save
-                                      </motion.button>
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={cancelLoggedEdit}
-                                        className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors"
-                                      >
-                                        Cancel
-                                      </motion.button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <div className="flex items-center gap-2">
-                                        <Clock
-                                          size={12}
-                                          className="text-green-600"
-                                        />
-                                        <span className="font-bold text-green-700 text-base">
-                                          {formatTime(
-                                            entry.hours,
-                                            entry.minutes
-                                          )}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            startEditingLogged(entry)
-                                          }
-                                          className="p-1.5 text-green-600 hover:bg-green-100 rounded-md transition-all duration-200 border border-green-200 hover:border-green-300"
-                                          title="Edit logged time"
-                                        >
-                                          <Pencil size={14} />
-                                        </motion.button>
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            confirmDeleteLoggedTime(entry.id)
-                                          }
-                                          className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
-                                          title="Delete logged time"
-                                        >
-                                          <Trash2 size={14} />
-                                        </motion.button>
-                                      </div>
-                                    </div>
-                                    <p className="text-gray-700 mb-1 p-1 bg-green-100 rounded">
-                                      Desc: {entry.description}
-                                    </p>
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-1 text-gray-500">
-                                        <User size={12} />
-                                        <span>
-                                          {card.createdBy?.name || "Unknown"}
-                                        </span>
-                                      </div>
-                                      <span className="text-gray-600">
-                                        {formatDate(entry.date)}
-                                      </span>
-                                    </div>
-                                  </>
-                                )}
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      )}
-
-                      {/* Total Logged Time */}
-                      {loggedTime.length > 0 && (
-                        <div className="pt-2 border-t-2 border-green-200">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-gray-700">
-                              Total Logged:
-                            </span>
-                            <span
-                              className={`text-lg font-bold ${
-                                isOvertime ? "text-red-600" : "text-green-600"
-                              }`}
-                            >
-                              {formatTime(
-                                totalLogged.hours,
-                                totalLogged.minutes
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  {estimationEntries.length > 0 && loggedTime.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-4 bg-white rounded-lg p-4 shadow-sm border border-gray-200"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <h5 className="font-semibold text-gray-800 text-xs mb-1">
-                            Overall Progress
-                          </h5>
-                          <p className="text-xs text-gray-600">
-                            {formatTime(totalLogged.hours, totalLogged.minutes)}{" "}
-                            of{" "}
-                            {formatTime(
-                              totalEstimation.hours,
-                              totalEstimation.minutes
-                            )}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <span
-                            className={`text-xl font-bold ${
-                              isOvertime ? "text-red-600" : "text-blue-600"
-                            }`}
-                          >
-                            {timeProgress}%
-                          </span>
-                          {isOvertime && (
-                            <p className="text-xs text-red-600 font-medium">
-                              Over estimate!
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden shadow-inner">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(timeProgress, 100)}%` }}
-                          className={`h-full ${
-                            isOvertime
-                              ? "bg-gradient-to-r from-red-500 via-orange-500 to-red-600"
-                              : "bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600"
-                          } shadow-md`}
-                          transition={{ duration: 0.8, ease: "easeOut" }}
-                        />
-                      </div>
-                      {isOvertime && (
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="mt-2 flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded-lg border border-red-200"
-                        >
-                          <AlertCircle size={14} />
-                          <span className="font-medium">
-                            Exceeded estimate by{" "}
-                            {formatTime(
-                              Math.floor(
-                                (totalLogged.hours * 60 +
-                                  totalLogged.minutes -
-                                  totalEstimation.hours * 60 -
-                                  totalEstimation.minutes) /
-                                  60
-                              ),
-                              (totalLogged.hours * 60 +
-                                totalLogged.minutes -
-                                totalEstimation.hours * 60 -
-                                totalEstimation.minutes) %
-                                60
-                            )}
-                          </span>
-                        </motion.div>
-                      )}
-                    </motion.div>
-                  )}
-                </div>
-
-                {/* Subtasks with Progress */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <CheckSquare size={20} className="text-gray-600" />
-                      <h4 className="font-semibold text-gray-800 text-lg">
-                        Subtasks
-                      </h4>
-                      <span className="text-sm text-gray-500">
-                        ({subtasks.filter((s) => s.completed).length}/
-                        {subtasks.length})
-                      </span>
-                    </div>
-                    {subtasks.length > 0 && (
-                      <div className="flex items-center gap-2">
-                        <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${calculateProgress()}%` }}
-                            className="h-full bg-gradient-to-r from-green-400 to-green-600"
-                            transition={{ duration: 0.3 }}
-                          />
-                        </div>
-                        <span className="text-sm font-medium text-gray-700">
-                          {calculateProgress()}%
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="ml-8 space-y-2">
-                    <AnimatePresence>
-                      {subtasks.map((subtask, index) => (
-                        <motion.div
-                          key={subtask.id || `subtask-${index}`}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: 20 }}
-                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={subtask.completed}
-                            onChange={() => toggleSubtask(subtask.id)}
-                            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                          <span
-                            className={`flex-1 text-sm ${
-                              subtask.completed
-                                ? "line-through text-gray-500"
-                                : "text-gray-700"
-                            }`}
-                          >
-                            {subtask.text}
-                          </span>
-                          <button
-                            onClick={() => deleteSubtask(subtask.id)}
-                            className="opacity-0 group-hover:opacity-100 text-red-500 hover:bg-red-50 p-1 rounded transition-all"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-
-                    <div className="flex gap-2 mt-3">
-                      <input
-                        type="text"
-                        value={newSubtask}
-                        onChange={(e) => setNewSubtask(e.target.value)}
-                        onKeyPress={(e) =>
-                          e.key === "Enter" && handleAddSubtask()
-                        }
-                        placeholder="Add a subtask..."
-                        className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      />
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleAddSubtask}
-                        className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
-                      >
-                        <Plus size={18} />
-                      </motion.button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Attachments */}
-                {attachments.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <Paperclip size={20} className="text-gray-600" />
-                      <h4 className="font-semibold text-gray-800 text-lg">
-                        Attachments
-                      </h4>
-                    </div>
-                    <div className="ml-8 space-y-2">
-                      {attachments.map((attachment, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors bg-white"
-                        >
-                          <Paperclip size={16} className="text-gray-500" />
-                          <span className="text-sm text-gray-700">
-                            {attachment.name}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Comments */}
-                <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <MessageSquare size={20} className="text-gray-600" />
-                    <h4 className="font-semibold text-gray-800 text-lg">
-                      Activity
-                    </h4>
-                  </div>
-
-                  <div className="ml-8 space-y-4">
-                    {/* Add Comment */}
-                    <div className="flex gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold shadow-sm flex-shrink-0">
-                        {user?.name?.[0]?.toUpperCase() || "U"}
-                      </div>
-                      <div className="flex-1">
-                        <div className="relative border border-gray-300 rounded-lg p-3">
-                        <RichTextEditor
-                          content={newComment}
-                          onChange={setNewComment}
-                          placeholder="Write a comment..."
-                          users={teamMembers}
-                          isComment={true}
-                          allowMentions={true}
-                          startExpanded={true}
-                          className="min-h-[80px]"
-                          onImageUpload={uploadImageForComment}
-                          mentionContainer={document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50.flex.items-start.justify-center.z-60')}
-                        />
-                        </div>
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={handleAddComment}
-                          className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
-                        >
-                          Comment
-                        </motion.button>
-                      </div>
-                    </div>
-
-                    {/* Comments List with Scrollbar */}
-                    <div className="max-h-96 overflow-y-auto pr-2 custom-scrollbar">
-                      <AnimatePresence>
-                        {comments.map((comment, index) => (
-                          <motion.div
-                            key={comment._id || `comment-${index}`}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="flex gap-3 mb-4"
-                          >
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white font-semibold shadow-sm flex-shrink-0">
-                              {comment.user?.name?.[0]?.toUpperCase() || "U"}
-                            </div>
-                            <div className="flex-1 bg-gray-50 rounded-lg p-4 border border-gray-200">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="font-semibold text-sm text-gray-900">
-                                  {comment.user?.name || "User"}
-                                </span>
-                                <span className="text-xs text-gray-500">
-                                  {new Date(comment.createdAt).toLocaleString()}
-                                </span>
-                              </div>
-                              <div className="text-sm text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: comment.htmlContent || comment.text }} />
-                            </div>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-                </div>
+                {/* Comments Component */}
+                <CommentsSection
+                  comments={comments}
+                  newComment={newComment}
+                  teamMembers={teamMembers}
+                  onCommentChange={setNewComment}
+                  onAddComment={handleAddComment}
+                  onImageUpload={uploadImageForComment}
+                />
               </div>
 
-              {/* Sidebar - 1 column */}
-              <div className="lg:col-span-1 space-y-4 lg:space-y-6">
-                {/* Save Button */}
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex items-center justify-center gap-2 w-full p-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg disabled:opacity-50 font-medium"
-                >
-                  <Save size={18} />
-                  {saving ? "Saving..." : "Save Changes"}
-                </motion.button>
-
-                {/* Add to card section */}
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                  <h4 className="text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wider">
-                    Add to card
-                  </h4>
-
-                  <div className="space-y-3">
-                    {/* Assignees */}
-                    <div>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 mb-3 font-medium">
-                        <Users size={14} />
-                        Assignees
-                      </label>
-
-                      {/* Assigned Users Display */}
-                      {assignees.length > 0 && (
-                        <div className="mb-3">
-                          <div className="flex flex-wrap gap-2">
-                            {assignees.map((assigneeId) => {
-                              // Find assignee in team members
-                              const assignee = teamMembers.find(m => m._id === assigneeId);
-                              // Handle department as array (take first department name or 'Unassigned')
-                              const departmentName = assignee?.department && Array.isArray(assignee.department) && assignee.department.length > 0
-                                ? assignee.department[0].name || 'Unassigned'
-                                : 'Unassigned';
-                              return (
-                                <motion.div
-                                  key={assigneeId}
-                                  initial={{ scale: 0 }}
-                                  animate={{ scale: 1 }}
-                                  exit={{ scale: 0 }}
-                                  className="flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-2 rounded-full text-sm font-medium"
-                                >
-                                  <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                                    {assignee?.name?.[0]?.toUpperCase() || assignee?.email?.[0]?.toUpperCase() || "U"}
-                                  </div>
-                                  <div className="flex flex-col items-start">
-                                    <span>{assignee?.name || assignee?.email || "Unknown"}</span>
-                                    <span className="text-xs text-blue-600 font-normal">{departmentName}</span>
-                                  </div>
-                                  <button
-                                    onClick={() =>
-                                      setAssignees(
-                                        assignees.filter(
-                                          (id) => id !== assigneeId
-                                        )
-                                      )
-                                    }
-                                    className="text-blue-600 hover:text-blue-800 ml-1"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </motion.div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Search Bar */}
-                      <div className="mb-3 relative">
-                        <input
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="Search members by name or email..."
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        />
-
-                        {/* Search Results */}
-                        {isDropdownOpen && (
-                          <div ref={dropdownRef} className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto z-50 custom-scrollbar">
-                            {Object.keys(groupedFilteredMembers).length > 0 ? (
-                              Object.entries(groupedFilteredMembers)
-                                .sort(([aId, aGroup], [bId, bGroup]) => {
-                                  // Put "Unassigned" last
-                                  if (aGroup.department.name === 'Unassigned') return 1;
-                                  if (bGroup.department.name === 'Unassigned') return -1;
-                                  // Otherwise sort alphabetically
-                                  return aGroup.department.name.localeCompare(bGroup.department.name);
-                                })
-                                .map(([deptId, group]) => (
-                                <div key={deptId} className="border-b border-gray-100 last:border-b-0">
-                                  {/* Department Header */}
-                                  <div
-                                    className="flex items-center justify-between p-4 bg-gray-100 hover:bg-gray-200 cursor-pointer transition-all duration-200 border-l-4 border-blue-500 shadow-sm rounded-t-xl"
-                                    onClick={() => toggleDepartment(deptId)}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <motion.div
-                                        animate={{ rotate: expandedDepartments[deptId] ? 0 : -90 }}
-                                        transition={{ duration: 0.2 }}
-                                      >
-                                        <ChevronDown size={16} className="text-gray-600" />
-                                      </motion.div>
-                                      <span className="font-bold text-gray-800 text-sm uppercase tracking-wide">
-                                        {group.department.name}
-                                      </span>
-                                      <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full font-medium border border-blue-200">
-                                        {group.members.length}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  {/* Department Members */}
-                                  <AnimatePresence>
-                                    {expandedDepartments[deptId] && (
-                                      <motion.div
-                                        initial={{ height: 0, opacity: 0 }}
-                                        animate={{ height: "auto", opacity: 1 }}
-                                        exit={{ height: 0, opacity: 0 }}
-                                        transition={{ duration: 0.2 }}
-                                        className="overflow-hidden"
-                                      >
-                                        {group.members.map((member) => {
-                                          const isAssigned = assignees.includes(member._id);
-                                          return (
-                                            <motion.button
-                                              key={member._id}
-                                              whileHover={{ scale: 1.01, backgroundColor: "#f9fafb" }}
-                                              whileTap={{ scale: 0.99 }}
-                                              onClick={() => handleSelectMember(member._id)}
-                                              disabled={isAssigned}
-                                              className={`w-full flex items-center gap-4 p-4 text-left hover:bg-gray-50 transition-all duration-200 ${
-                                                isAssigned ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'cursor-pointer'
-                                              }`}
-                                            >
-                                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center text-sm font-bold shadow-md">
-                                                {member.name?.[0]?.toUpperCase() || "U"}
-                                              </div>
-                                              <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-semibold text-gray-900 truncate">
-                                                  {member.name}
-                                                </div>
-                                                <div className="text-xs text-gray-500 truncate">
-                                                  {member.email}
-                                                </div>
-                                              </div>
-                                              {isAssigned ? (
-                                                <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded-full border border-green-200">
-                                                  Assigned
-                                                </span>
-                                              ) : (
-                                                <div className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 flex items-center justify-center transition-colors">
-                                                  <Plus size={16} className="text-white" />
-                                                </div>
-                                              )}
-                                            </motion.button>
-                                          );
-                                        })}
-                                      </motion.div>
-                                    )}
-                                  </AnimatePresence>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="text-center text-gray-500 text-sm py-8">
-                                No members found
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {searchQuery.length < 2 && searchQuery.length > 0 && (
-                          <div className="text-center text-gray-500 text-sm py-4">
-                            Type at least 2 characters to search
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Priority */}
-                    <div>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-                        <AlertCircle size={14} />
-                        Priority
-                      </label>
-                      <select
-                        value={priority}
-                        onChange={(e) => setPriority(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      >
-                        <option value="">No Priority</option>
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                        <option value="critical">Critical</option>
-                      </select>
-                    </div>
-
-                    {/* Status */}
-                    <div>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-                        <TrendingUp size={14} />
-                        Status
-                      </label>
-                      <select
-                        value={status}
-                        onChange={(e) => setStatus(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      >
-                        <option value="">Select status</option>
-                        {availableStatuses.map((statusOption) => (
-                          <option key={statusOption.value} value={statusOption.value}>
-                            {statusOption.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Dates */}
-                    <div>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-                        <Calendar size={14} />
-                        Start Date
-                      </label>
-                      <input
-                        type="date"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-                        <Calendar size={14} />
-                        Due Date
-                      </label>
-                      <input
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-
-                    {/* Add Label */}
-                    <div>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-                        <Tag size={14} />
-                        Add Label
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={newLabel}
-                          onChange={(e) => setNewLabel(e.target.value)}
-                          onKeyPress={(e) =>
-                            e.key === "Enter" && handleAddLabel()
-                          }
-                          placeholder="Label name..."
-                          className="flex-1 p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={handleAddLabel}
-                          className="px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          <Plus size={16} />
-                        </motion.button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Actions section */}
-                <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                  {/* <h4 className="text-xs font-semibold text-red-700 mb-3 uppercase tracking-wider">
-                    Danger Zone
-                  </h4> */}
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "Are you sure you want to delete this task? This action cannot be undone."
-                        )
-                      ) {
-                        onDelete(card._id);
-                        onClose();
-                      }
-                    }}
-                    className="flex items-center justify-center gap-2 w-full p-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium shadow-sm"
-                  >
-                    <Trash2 size={16} />
-                    Delete Task
-                  </motion.button>
-                </div>
-              </div>
+              {/* Sidebar Component */}
+              <CardSidebar
+                saving={saving}
+                onSave={handleSave}
+                assignees={assignees}
+                teamMembers={teamMembers}
+                priority={priority}
+                status={status}
+                dueDate={dueDate}
+                startDate={startDate}
+                labels={labels}
+                newLabel={newLabel}
+                availableStatuses={availableStatuses}
+                searchQuery={searchQuery}
+                isDropdownOpen={isDropdownOpen}
+                groupedFilteredMembers={groupedFilteredMembers}
+                expandedDepartments={expandedDepartments}
+                onPriorityChange={setPriority}
+                onStatusChange={setStatus}
+                onDueDateChange={setDueDate}
+                onStartDateChange={setStartDate}
+                onLabelChange={setNewLabel}
+                onAddLabel={handleAddLabel}
+                onRemoveLabel={removeLabel}
+                onSelectMember={handleSelectMember}
+                onRemoveAssignee={handleRemoveAssignee}
+                onToggleDepartment={toggleDepartment}
+                onSearchQueryChange={setSearchQuery}
+                onIsDropdownOpenChange={setIsDropdownOpen}
+                onDeleteCard={() => {
+                  if (
+                    window.confirm(
+                      "Are you sure you want to delete this task? This action cannot be undone."
+                    )
+                  ) {
+                    onDelete(card._id);
+                    onClose();
+                  }
+                }}
+                card={card}
+              />
             </div>
           </div>
         </motion.div>
       </motion.div>
-
-      {/* Custom Scrollbar Styles */}
-      <style jsx="true">{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #888;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #555;
-        }
-      `}</style>
     </AnimatePresence>
   );
 };

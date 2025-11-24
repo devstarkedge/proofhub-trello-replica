@@ -21,8 +21,7 @@ import EditProjectModal from '../components/EditProjectModal';
 const Dashboard = memo(() => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
-  const { currentTeam, currentDepartment, departments, loadDepartments } = useContext(DepartmentContext);
-  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const { currentTeam, currentDepartment, departments, loadDepartments, setCurrentDepartment } = useContext(DepartmentContext);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery] = useDebounce(searchQuery, 300);
   const [statusFilter, setStatusFilter] = useState('All');
@@ -36,8 +35,10 @@ const Dashboard = memo(() => {
   const { data: dashboardData, isLoading, refetch } = useDashboardData();
 
   useEffect(() => {
-    loadDepartments();
-  }, []);
+    if (departments.length === 0) {
+      loadDepartments();
+    }
+  }, [departments, loadDepartments]);
 
   const projects = dashboardData?.data?.projects || [];
   const loading = isLoading;
@@ -74,25 +75,25 @@ const Dashboard = memo(() => {
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      const matchesDept = !selectedDepartment || p.departmentId === selectedDepartment;
+      const matchesDept = !currentDepartment || currentDepartment._id === 'all' || p.departmentId === currentDepartment._id;
       const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
       const matchesSearch = !debouncedSearchQuery ||
         p.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
         p.description.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
       return matchesDept && matchesStatus && matchesSearch;
     });
-  }, [projects, selectedDepartment, statusFilter, debouncedSearchQuery]);
+  }, [projects, currentDepartment, statusFilter, debouncedSearchQuery]);
 
   const teamMembersCount = useMemo(() => {
-    if (!selectedDepartment) {
+    if (!currentDepartment || currentDepartment._id === 'all') {
       // All departments - sum all department members
       return departments.reduce((total, dept) => total + (dept.members?.length || 0), 0);
     } else {
       // Specific department - get members of selected department
-      const selectedDept = departments.find(dept => dept._id === selectedDepartment);
+      const selectedDept = departments.find(dept => dept._id === currentDepartment._id);
       return selectedDept?.members?.length || 0;
     }
-  }, [selectedDepartment, departments]);
+  }, [currentDepartment, departments]);
 
   const stats = useMemo(() => [
     {
@@ -214,11 +215,13 @@ const Dashboard = memo(() => {
                 />
               </div>
               <select
-                value={selectedDepartment}
-                onChange={(e) => setSelectedDepartment(e.target.value)}
+                value={currentDepartment?._id || 'all'}
+                onChange={(e) => {
+                  const selected = departments.find(d => d._id === e.target.value);
+                  setCurrentDepartment(selected);
+                }}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">All Departments</option>
                 {departments.map(dept => (
                   <option key={dept._id} value={dept._id}>{dept.name}</option>
                 ))}

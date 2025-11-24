@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useMemo, lazy, Suspense, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Filter,
   Calendar,
@@ -34,8 +36,15 @@ import { Badge } from '../components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '../components/ui/dropdown-menu';
 import { Button } from '../components/ui/button';
 
+const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
+
 const ListView = () => {
   const { currentDepartment, departments, setCurrentDepartment } = useContext(DepartmentContext);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  // Simple in-memory caches for fast reuse and freshness checks
+  const projectCache = useRef(new Map());
+  const taskCache = useRef(new Map());
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -55,6 +64,18 @@ const ListView = () => {
       setLoading(false);
     }
   }, [currentDepartment]);
+
+  // Optional: prefetch workflow data for unique projects when cards load
+  useEffect(() => {
+    if (!loading && cards && currentDepartment) {
+      const uniqueProjects = Array.from(new Set(cards.map(c => c.board?._id).filter(Boolean)));
+      // Prefetch up to first 5 projects to avoid spamming network
+      uniqueProjects.slice(0, 5).forEach(projectId => {
+        const key = ['workflow', currentDepartment._id, projectId];
+        queryClient.prefetchQuery(key, () => Database.getWorkflowData(currentDepartment._id, projectId)).catch(() => {});
+      });
+    }
+  }, [loading, cards, currentDepartment, queryClient]);
 
   // Set default department to "All Departments" if not set
   useEffect(() => {
@@ -83,6 +104,53 @@ const ListView = () => {
     setRefreshing(true);
     await loadCards();
     setTimeout(() => setRefreshing(false), 500);
+  };
+
+  // Navigate to project's workflow page, prefetching workflow data first
+  const handleProjectClick = async (projectId) => {
+    if (!currentDepartment || !projectId) return;
+    const deptId = currentDepartment._id;
+    const key = ['workflow', deptId, projectId];
+    try {
+      // If cached in our small cache, skip prefetch
+      if (!projectCache.current.has(projectId)) {
+        const res = await queryClient.prefetchQuery(key, () => Database.getWorkflowData(deptId, projectId));
+        if (res && res.data) projectCache.current.set(projectId, res.data);
+      }
+    } catch (err) {
+      // ignore prefetch errors; navigation can still proceed and WorkFlow will load
+      console.warn('Prefetch workflow failed', err);
+    } finally {
+      navigate(`/workflow/${deptId}/${projectId}`);
+    }
+  };
+
+  // Modal handling for card details
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalCard, setModalCard] = useState(null);
+  const [modalLoading, setModalLoading] = useState(false);
+
+  const openCardModal = async (card) => {
+    if (!card) return;
+    setModalLoading(true);
+    try {
+      const cached = taskCache.current.get(card._id);
+      // If cached and timestamps match, reuse; otherwise fetch fresh
+      if (cached && card.updatedAt && cached.updatedAt === card.updatedAt) {
+        setModalCard(cached);
+      } else {
+        // Fetch single card details (single API call)
+        const resp = await Database.getCard(card._id);
+        const fresh = resp.data || resp;
+        taskCache.current.set(card._id, fresh);
+        setModalCard(fresh);
+      }
+      setModalOpen(true);
+    } catch (err) {
+      console.error('Failed to load card details', err);
+    } finally {
+      setModalLoading(false);
+    }
   };
 
   const filteredAndSortedCards = useMemo(() => {
@@ -613,7 +681,13 @@ const ListView = () => {
                         <div className="flex items-center gap-3">
                           <div className="w-1 h-10 bg-gradient-to-b from-blue-500 to-purple-500 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg shadow-blue-500/50"></div>
                           <div className="flex-1">
-                            <div className="font-semibold">{card.title}</div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openCardModal(card); }}
+                              className="text-left font-semibold hover:text-blue-600 transition-colors"
+                              aria-label={`Open details for ${card.title}`}
+                            >
+                              {card.title}
+                            </button>
                           </div>
                         </div>
                       </TableCell>
@@ -622,7 +696,17 @@ const ListView = () => {
                           <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100 transition-colors">
                             <FolderKanban className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
                           </div>
-                          <span className="font-medium">{card.board?.name || 'N/A'}</span>
+                          {card.board && card.board._id ? (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleProjectClick(card.board._id); }}
+                              className="font-medium text-left hover:text-blue-700 transition-colors"
+                              aria-label={`Open project ${card.board?.name}`}
+                            >
+                              {card.board?.name || 'N/A'}
+                            </button>
+                          ) : (
+                            <span className="font-medium">{card.board?.name || 'N/A'}</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -705,6 +789,39 @@ const ListView = () => {
           </div>
         )}
       </main>
+
+      {/* Card Detail Modal (lazy loaded) */}
+      {modalOpen && (
+        <Suspense fallback={<div />}> 
+          <CardDetailModal
+            card={modalCard}
+            onClose={() => setModalOpen(false)}
+            onUpdate={async (updates) => {
+              try {
+                // Update in-memory cache
+                const existing = taskCache.current.get(modalCard._id) || modalCard;
+                const merged = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+                taskCache.current.set(modalCard._id, merged);
+                // Update list state
+                setCards(prev => prev.map(c => c._id === modalCard._id ? { ...c, ...updates } : c));
+                setModalCard(merged);
+              } catch (err) {
+                console.error('Error applying update to modal card', err);
+              }
+            }}
+            onDelete={async () => {
+              try {
+                // Remove from UI and cache
+                setCards(prev => prev.filter(c => c._id !== modalCard._id));
+                taskCache.current.delete(modalCard._id);
+                setModalOpen(false);
+              } catch (err) {
+                console.error('Error removing card locally', err);
+              }
+            }}
+          />
+        </Suspense>
+      )}
 
       <style jsx="true">{`
         @keyframes fade-in {
