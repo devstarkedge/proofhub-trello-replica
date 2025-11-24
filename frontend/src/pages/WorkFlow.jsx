@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, Suspense, memo } from 'react';
+import React, { useState, useEffect, useContext, Suspense, memo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown } from 'lucide-react';
@@ -6,13 +6,13 @@ import Database from '../services/database';
 import Header from '../components/Header';
 import Board from '../components/Board';
 import { lazy } from 'react';
-const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
 const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
 import DepartmentContext from '../context/DepartmentContext';
 import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';
 import useWorkflowStore from '../store/workflowStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
+import HierarchyModalStack from '../components/hierarchy/HierarchyModalStack';
 
 const WorkFlow = memo(() => {
   const { deptId, projectId } = useParams();
@@ -41,7 +41,6 @@ const WorkFlow = memo(() => {
     getCard
   } = useWorkflowStore();
 
-  const [selectedCard, setSelectedCard] = useState(null);
   const [statusFilter, setStatusFilter] = useState('All');
   const [priorityFilter, setPriorityFilter] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
@@ -49,6 +48,7 @@ const WorkFlow = memo(() => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [fullProjectData, setFullProjectData] = useState(null);
+  const [modalStack, setModalStack] = useState([]);
 
   useEffect(() => {
     if (deptId && projectId && !teamLoading) {
@@ -66,16 +66,6 @@ const WorkFlow = memo(() => {
       };
     }
   }, [user, board]);
-
-  // Update selected card when it changes in the store
-  useEffect(() => {
-    if (selectedCard && selectedCard._id) {
-      const updatedCard = getCard(selectedCard._id);
-      if (updatedCard && JSON.stringify(updatedCard) !== JSON.stringify(selectedCard)) {
-        setSelectedCard(updatedCard);
-      }
-    }
-  }, [cardsByList, selectedCard?._id, getCard]);
 
   const loadData = async () => {
     try {
@@ -112,6 +102,7 @@ const WorkFlow = memo(() => {
     if (window.confirm('Are you sure you want to delete this card?')) {
       try {
         await deleteCard(cardId);
+        closeAllModals();
       } catch (error) {
         console.error('Error deleting card:', error);
       }
@@ -121,13 +112,6 @@ const WorkFlow = memo(() => {
   const handleUpdateCard = async (cardId, updates) => {
     try {
       await updateCard(cardId, updates);
-      // Update selected card if it's the one being updated
-      if (selectedCard && selectedCard._id === cardId) {
-        const updatedCard = getCard(cardId);
-        if (updatedCard) {
-          setSelectedCard(updatedCard);
-        }
-      }
     } catch (error) {
       console.error('Error updating card:', error);
     }
@@ -144,14 +128,6 @@ const WorkFlow = memo(() => {
 
       await moveCard(cardId, newListId, newPosition, targetList.title);
 
-      // If the card is currently selected in the modal, update its status there too
-      if (selectedCard && selectedCard._id === cardId) {
-        setSelectedCard(prev => ({
-          ...prev,
-          list: newListId,
-          status: targetList.title
-        }));
-      }
     } catch (error) {
       console.error('Error moving card:', error);
     }
@@ -213,6 +189,51 @@ const WorkFlow = memo(() => {
       description: updatedProject.description
     });
   };
+
+  const handleOpenCardModal = (card) => {
+    if (!card) return;
+    setModalStack([{
+      type: 'task',
+      entityId: card._id,
+      initialData: card,
+      label: card.title || 'Task'
+    }]);
+  };
+
+  const closeAllModals = () => setModalStack([]);
+
+  const closeModalToDepth = (depth) => {
+    if (depth < 0) {
+      setModalStack([]);
+      return;
+    }
+    setModalStack(prev => prev.slice(0, depth + 1));
+  };
+
+  const handleOpenChildEntity = (child, parentDepth) => {
+    if (!child?.entityId || !child?.type) return;
+    setModalStack(prev => {
+      const next = prev.slice(0, parentDepth + 1);
+      next.push({
+        type: child.type,
+        entityId: child.entityId,
+        initialData: child.initialData || {},
+        label: child.label || child.initialData?.title || 'Untitled'
+      });
+      return next;
+    });
+  };
+
+  const handleStackLabelUpdate = useCallback((item, label) => {
+    if (!item?.entityId) return;
+    setModalStack(prev =>
+      prev.map(entry =>
+        entry.entityId === item.entityId && entry.type === item.type
+          ? { ...entry, label }
+          : entry
+      )
+    );
+  }, []);
   
   if (loading || teamLoading) {
     return (
@@ -488,7 +509,7 @@ const WorkFlow = memo(() => {
           cardsByList={cardsByList}
           onAddCard={handleAddCard}
           onDeleteCard={handleDeleteCard}
-          onCardClick={setSelectedCard}
+          onCardClick={handleOpenCardModal}
           onAddList={handleAddList}
           onDeleteList={handleDeleteList}
           onUpdateListColor={handleUpdateListColor}
@@ -498,17 +519,16 @@ const WorkFlow = memo(() => {
         />
       )}
 
-      {selectedCard && (
-        <Suspense fallback={<div>Loading...</div>}>
-          <CardDetailModal
-            card={selectedCard}
-            onClose={() => setSelectedCard(null)}
-            onUpdate={(updates) => handleUpdateCard(selectedCard._id, updates)}
-            onDelete={() => handleDeleteCard(selectedCard._id)}
-            onMoveCard={handleMoveCard}
-          />
-        </Suspense>
-      )}
+      <HierarchyModalStack
+        stack={modalStack}
+        onCloseAll={closeAllModals}
+        onCloseToDepth={closeModalToDepth}
+        onOpenChild={handleOpenChildEntity}
+        onUpdateTask={handleUpdateCard}
+        onDeleteTask={handleDeleteCard}
+        onMoveTask={handleMoveCard}
+        onLabelUpdate={handleStackLabelUpdate}
+      />
 
       {editModalOpen && (
         <Suspense fallback={<div>Loading...</div>}>

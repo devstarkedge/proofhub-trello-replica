@@ -19,6 +19,8 @@ import analyticsRoutes from './routes/analytics.js';
 import usersRoutes from './routes/users.js';
 import adminRoutes from './routes/admin.js';
 import uploadsRoutes from './routes/uploads.js';
+import subtaskRoutes from './routes/subtasks.js';
+import subtaskNanoRoutes from './routes/subtaskNanos.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
@@ -81,6 +83,8 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadsRoutes);
+app.use('/api/subtasks', subtaskRoutes);
+app.use('/api/subtask-nanos', subtaskNanoRoutes);
 
 import jwt from 'jsonwebtoken';
 

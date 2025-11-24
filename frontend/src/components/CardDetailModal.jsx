@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, AlignLeft, Tag, AlertCircle, FileText } from "lucide-react";
+import { X, AlignLeft, Tag, AlertCircle, FileText, MessageSquare, Activity } from "lucide-react";
 import Database from "../services/database";
 import AuthContext from "../context/AuthContext";
 import { toast } from "react-toastify";
@@ -11,9 +11,30 @@ import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
 import SubtasksSection from "./CardDetailModal/SubtasksSection";
 import AttachmentsSection from "./CardDetailModal/AttachmentsSection";
 import CommentsSection from "./CardDetailModal/CommentsSection";
+import ActivitySection from "./CardDetailModal/ActivitySection";
+import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
+import HierarchyBreadcrumbs from "./hierarchy/HierarchyBreadcrumbs";
 
-const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
+const themeOverlay = {
+  blue: 'bg-blue-950/60',
+  purple: 'bg-purple-950/50',
+  pink: 'bg-pink-950/50'
+};
+
+const CardDetailModal = ({
+  card,
+  onClose,
+  onUpdate,
+  onDelete,
+  onMoveCard,
+  breadcrumbs = [],
+  onBreadcrumbNavigate,
+  onOpenChild,
+  depth = 0,
+  theme = 'blue',
+  onLabelUpdate
+}) => {
   const { user } = useContext(AuthContext);
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || "");
@@ -33,16 +54,12 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [newLabel, setNewLabel] = useState("");
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
-  const [subtasks, setSubtasks] = useState(
-    card.subtasks
-      ? card.subtasks.map((s) => ({
-          id: s._id || Date.now(),
-          text: s.title || s.text,
-          completed: s.completed,
-        }))
-      : []
-  );
-  const [newSubtask, setNewSubtask] = useState("");
+  const [activities, setActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("comments");
+  const [subtasks, setSubtasks] = useState([]);
+  const [subtasksLoading, setSubtasksLoading] = useState(false);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [attachments, setAttachments] = useState(card.attachments || []);
   const [teamMembers, setTeamMembers] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -53,6 +70,17 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
   const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const labelUpdateRef = React.useRef(onLabelUpdate);
+  useEffect(() => {
+    labelUpdateRef.current = onLabelUpdate;
+  }, [onLabelUpdate]);
+
+  useEffect(() => {
+    if (card?.title && labelUpdateRef.current) {
+      labelUpdateRef.current(card.title);
+    }
+  }, [card?.title]);
 
   // Time Tracking States
   const [estimationEntries, setEstimationEntries] = useState(
@@ -96,11 +124,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
           setDueDate(freshCard.dueDate ? new Date(freshCard.dueDate).toISOString().split("T")[0] : "");
           setStartDate(freshCard.startDate ? new Date(freshCard.startDate).toISOString().split("T")[0] : "");
           setLabels(freshCard.labels || []);
-          setSubtasks(freshCard.subtasks ? freshCard.subtasks.map((s) => ({
-            id: s._id || Date.now(),
-            text: s.title || s.text,
-            completed: s.completed,
-          })) : []);
           setEstimationEntries((freshCard.estimationTime || []).map((entry, idx) => {
             const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
             return { ...entry, id };
@@ -118,6 +141,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
 
     loadFreshCardData();
     loadComments();
+    loadActivities();
     loadTeamMembers();
     loadDepartments();
     loadProjectName();
@@ -135,11 +159,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
         if (updates.startDate) setStartDate(new Date(updates.startDate).toISOString().split('T')[0]);
         if (updates.labels) setLabels(updates.labels);
         if (updates.assignees) setAssignees(updates.assignees.map(a => a._id).filter(Boolean));
-        if (updates.subtasks) setSubtasks(updates.subtasks.map(s => ({
-          id: s._id || Date.now(),
-          text: s.title || s.text,
-          completed: s.completed
-        })));
         if (updates.estimationTime) setEstimationEntries((updates.estimationTime || []).map((entry, idx) => {
           const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
           return { ...entry, id };
@@ -175,11 +194,19 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
       }
     };
 
+    const handleActivityAdded = (event) => {
+      const { cardId, activity } = event.detail;
+      if (cardId === card._id) {
+        setActivities(prev => [activity, ...prev]);
+      }
+    };
+
     // Subscribe to events
     window.addEventListener('socket-card-updated', handleCardUpdate);
     window.addEventListener('socket-comment-added', handleCommentAdded);
     window.addEventListener('socket-comment-updated', handleCommentUpdated);
     window.addEventListener('socket-comment-deleted', handleCommentDeleted);
+    window.addEventListener('socket-activity-added', handleActivityAdded);
 
     // Cleanup
     return () => {
@@ -187,8 +214,29 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
       window.removeEventListener('socket-comment-added', handleCommentAdded);
       window.removeEventListener('socket-comment-updated', handleCommentUpdated);
       window.removeEventListener('socket-comment-deleted', handleCommentDeleted);
+      window.removeEventListener('socket-activity-added', handleActivityAdded);
     };
   }, [card._id]);
+
+  useEffect(() => {
+    if (card?._id) {
+      fetchSubtasks();
+    }
+  }, [card?._id]);
+
+  useEffect(() => {
+    const handler = (event) => {
+      const { taskId, subtasks: incoming } = event.detail || {};
+      if (!taskId || taskId !== (card?._id || card?.id)) return;
+      if (Array.isArray(incoming)) {
+        setSubtasks(incoming);
+      } else {
+        fetchSubtasks();
+      }
+    };
+    window.addEventListener('socket-subtask-hierarchy', handler);
+    return () => window.removeEventListener('socket-subtask-hierarchy', handler);
+  }, [card?._id]);
 
   // Filter members based on search query and group by department
   useEffect(() => {
@@ -316,6 +364,21 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
       setComments(cardComments);
     } catch (error) {
       console.error("Error loading comments:", error);
+    }
+  };
+
+  const loadActivities = async () => {
+    const cardId = card.id || card._id;
+    if (!cardId) return;
+    setActivitiesLoading(true);
+    try {
+      const response = await Database.getCardActivity(cardId, 100, 1);
+      setActivities(response.data || []);
+    } catch (error) {
+      console.error("Error loading activities:", error);
+      setActivities([]);
+    } finally {
+      setActivitiesLoading(false);
     }
   };
 
@@ -518,10 +581,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
         startDate: startDate ? new Date(startDate).toISOString() : null,
         labels,
         attachments: attachments.length > 0 ? attachments : [],
-        subtasks: subtasks.map((s) => ({
-          title: s.text || "",
-          completed: Boolean(s.completed),
-        })),
         estimationTime: estimationEntries.map((entry) => ({
           hours: entry.hours,
           minutes: entry.minutes,
@@ -579,7 +638,7 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     if (!cardId) return;
 
     try {
-      await Database.createComment(cardId, newComment);
+      await Database.createComment({ cardId, htmlContent: newComment });
       setNewComment("");
       loadComments();
       toast.success("Comment added!");
@@ -587,23 +646,6 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
       console.error("Error adding comment:", error);
       toast.error("Failed to add comment");
     }
-  };
-
-  const handleAddSubtask = () => {
-    if (!newSubtask.trim()) return;
-    const subtask = { id: Date.now(), text: newSubtask, completed: false };
-    setSubtasks([...subtasks, subtask]);
-    setNewSubtask("");
-  };
-
-  const toggleSubtask = (id) => {
-    setSubtasks(
-      subtasks.map((s) => (s.id === id ? { ...s, completed: !s.completed } : s))
-    );
-  };
-
-  const deleteSubtask = (id) => {
-    setSubtasks(subtasks.filter((s) => s.id !== id));
   };
 
   const handleAddLabel = () => {
@@ -627,6 +669,67 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     });
     setAttachments(filteredAttachments);
     toast.info("Attachment removed");
+  };
+
+  const fetchSubtasks = async () => {
+    if (!card?._id) return;
+    setSubtasksLoading(true);
+    try {
+      const response = await Database.getSubtasks(card._id);
+      setSubtasks(response.data || []);
+    } catch (error) {
+      console.error("Error loading subtasks:", error);
+    } finally {
+      setSubtasksLoading(false);
+    }
+  };
+
+  const handleCreateSubtask = async () => {
+    if (!newSubtaskTitle.trim() || !card?._id) return;
+    try {
+      await Database.createSubtask(card._id, { title: newSubtaskTitle.trim() });
+      setNewSubtaskTitle("");
+      fetchSubtasks();
+    } catch (error) {
+      console.error("Error creating subtask:", error);
+      toast.error("Failed to create subtask");
+    }
+  };
+
+  const handleToggleSubtask = async (subtask) => {
+    if (!subtask?._id) return;
+    try {
+      await Database.updateSubtask(subtask._id, {
+        status: subtask.status === 'done' || subtask.completed ? 'todo' : 'done'
+      });
+      fetchSubtasks();
+    } catch (error) {
+      console.error("Error updating subtask:", error);
+      toast.error("Failed to update subtask");
+    }
+  };
+
+  const handleDeleteSubtask = async (subtask) => {
+    if (!subtask?._id) return;
+    if (!window.confirm("Delete this subtask?")) return;
+    try {
+      await Database.deleteSubtask(subtask._id);
+      fetchSubtasks();
+    } catch (error) {
+      console.error("Error deleting subtask:", error);
+      toast.error("Failed to delete subtask");
+    }
+  };
+
+  const handleOpenSubtask = (subtask) => {
+    if (!subtask?._id) return;
+    onOpenChild?.({
+      type: 'subtask',
+      entityId: subtask._id,
+      label: subtask.title,
+      initialData: subtask,
+      parentId: card._id
+    });
   };
 
   const getPriorityColor = (priority) => {
@@ -658,13 +761,20 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
     exit: { opacity: 0, scale: 0.95 },
   };
 
+  const overlayClass = themeOverlay[theme] || themeOverlay.blue;
+
+  const handleBreadcrumbClick = (index) => {
+    onBreadcrumbNavigate?.(index);
+  };
+
   return (
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-60 p-4 overflow-y-auto backdrop-blur-sm"
+        className={`fixed inset-0 flex items-start justify-center p-4 overflow-y-auto backdrop-blur-sm ${overlayClass}`}
+        style={{ zIndex: 60 + depth }}
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <motion.div
@@ -679,6 +789,9 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
             {/* Header */}
             <div className="flex items-start justify-between mb-6 border-b border-gray-200 pb-4">
               <div className="flex-1">
+                <div className="mb-3">
+                  <HierarchyBreadcrumbs items={breadcrumbs} onNavigate={handleBreadcrumbClick} />
+                </div>
                 <div className="flex items-center gap-2 mb-2">
                   <FileText size={20} className="text-gray-400" />
                   <span className="text-sm font-semibold text-gray-900">
@@ -846,13 +959,15 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
 
                 {/* Subtasks Component */}
                 <SubtasksSection
-                  subtasks={subtasks}
-                  newSubtask={newSubtask}
-                  onNewSubtaskChange={setNewSubtask}
-                  onAddSubtask={handleAddSubtask}
-                  onToggleSubtask={toggleSubtask}
-                  onDeleteSubtask={deleteSubtask}
-                  onKeyPress={(e) => e.key === "Enter" && handleAddSubtask()}
+                  items={subtasks}
+                  loading={subtasksLoading}
+                  newItemTitle={newSubtaskTitle}
+                  onNewItemTitleChange={setNewSubtaskTitle}
+                  onCreateItem={handleCreateSubtask}
+                  onToggleComplete={handleToggleSubtask}
+                  onDeleteItem={handleDeleteSubtask}
+                  onOpenItem={handleOpenSubtask}
+                  theme={theme}
                 />
 
                 {/* Attachments Component */}
@@ -861,15 +976,52 @@ const CardDetailModal = ({ card, onClose, onUpdate, onDelete, onMoveCard }) => {
                   onDeleteAttachment={handleDeleteAttachment}
                 />
 
-                {/* Comments Component */}
-                <CommentsSection
-                  comments={comments}
-                  newComment={newComment}
-                  teamMembers={teamMembers}
-                  onCommentChange={setNewComment}
-                  onAddComment={handleAddComment}
-                  onImageUpload={uploadImageForComment}
-                />
+                {/* Comments & Activity Section with Tabs */}
+                <div className="mt-8">
+                  <TabsContainer 
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                    tabs={[
+                      { 
+                        id: "comments", 
+                        label: "Comments", 
+                        icon: MessageSquare,
+                        badge: comments.length
+                      },
+                      { 
+                        id: "activity", 
+                        label: "Activity", 
+                        icon: Activity,
+                        badge: activities.length
+                      }
+                    ]}
+                  />
+                  
+                  <motion.div
+                    key={activeTab}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {activeTab === "comments" ? (
+                      <CommentsSection
+                        comments={comments}
+                        newComment={newComment}
+                        teamMembers={teamMembers}
+                        onCommentChange={setNewComment}
+                        onAddComment={handleAddComment}
+                        onImageUpload={uploadImageForComment}
+                      />
+                    ) : (
+                      <ActivitySection
+                        activities={activities}
+                        loading={activitiesLoading}
+                        teamMembers={teamMembers}
+                      />
+                    )}
+                  </motion.div>
+                </div>
               </div>
 
               {/* Sidebar Component */}

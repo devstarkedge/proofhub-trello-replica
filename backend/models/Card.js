@@ -1,21 +1,5 @@
 import mongoose from 'mongoose';
 import mongoosePaginate from 'mongoose-paginate-v2';
-
-const subtaskSchema = new mongoose.Schema({
-  title: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  completed: {
-    type: Boolean,
-    default: false
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
 const mentionSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -125,7 +109,12 @@ const cardSchema = new mongoose.Schema({
   startDate: {
     type: Date
   },
-  subtasks: [subtaskSchema],
+  subtaskStats: {
+    total: { type: Number, default: 0 },
+    completed: { type: Number, default: 0 },
+    nanoTotal: { type: Number, default: 0 },
+    nanoCompleted: { type: Number, default: 0 }
+  },
   attachments: [attachmentSchema],
   estimationTime: [{
     hours: { type: Number, required: true, min: 0 },
@@ -196,10 +185,19 @@ cardSchema.virtual('comments', {
   foreignField: 'card'
 });
 
+cardSchema.virtual('subtasks', {
+  ref: 'Subtask',
+  localField: '_id',
+  foreignField: 'task'
+});
+
 // Calculate progress based on subtasks
 cardSchema.virtual('progress').get(function() {
+  if (this.subtaskStats && this.subtaskStats.total > 0) {
+    return Math.round((this.subtaskStats.completed / this.subtaskStats.total) * 100);
+  }
   if (!this.subtasks || this.subtasks.length === 0) return 0;
-  const completed = this.subtasks.filter(st => st.completed).length;
+  const completed = this.subtasks.filter(st => st.completed || st.status === 'done').length;
   return Math.round((completed / this.subtasks.length) * 100);
 });
 

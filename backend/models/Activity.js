@@ -18,7 +18,14 @@ const activitySchema = new mongoose.Schema({
       'list_updated',
       'board_created',
       'estimation_updated',
-      'time_logged'
+      'time_logged',
+      'title_changed',
+      'description_changed',
+      'status_changed',
+      'priority_changed',
+      'subtask_created',
+      'subtask_completed',
+      'subtask_deleted'
     ],
     required: true
   },

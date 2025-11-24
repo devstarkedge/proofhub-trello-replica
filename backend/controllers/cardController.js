@@ -10,6 +10,7 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitToBoard, emitNotification } from "../server.js";
 import { invalidateCache } from "../middleware/cache.js";
 import notificationService from "../utils/notificationService.js";
+import { invalidateHierarchyCache } from "../utils/cacheInvalidation.js";
 
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
@@ -349,8 +350,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
   });
 
   // Invalidate relevant caches
-  invalidateCache(`/api/cards/list/${list}`);
-  invalidateCache(`/api/cards/board/${board}`);
+  invalidateHierarchyCache({ boardId: board, listId: list, cardId: card._id });
   invalidateCache("/api/analytics/dashboard");
   invalidateCache(`/api/analytics/department/`);
 
@@ -405,6 +405,9 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Card not found", 404));
   }
 
+  const originalBoardId = card.board;
+  const originalListId = card.list;
+
   const oldAssignees = card.assignees?.map(a => a.toString()) || [];
   const oldDueDate = card.dueDate;
   const oldStatus = card.status;
@@ -446,7 +449,125 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     .populate("estimationTime.user", "name email avatar")
     .populate("loggedTime.user", "name email avatar");
 
-  // Log activity
+  // Log specific activity types based on what changed
+  if (req.body.title && req.body.title !== card.title) {
+    await Activity.create({
+      type: "title_changed",
+      description: `Changed title from "${card.title}" to "${req.body.title}"`,
+      user: req.user.id,
+      board: card.board,
+      card: card._id,
+      metadata: {
+        oldTitle: card.title,
+        newTitle: req.body.title
+      }
+    });
+  }
+
+  if (req.body.description !== undefined && req.body.description !== card.description) {
+    await Activity.create({
+      type: "description_changed",
+      description: `Updated the task description`,
+      user: req.user.id,
+      board: card.board,
+      card: card._id,
+      metadata: {
+        hasDescription: !!req.body.description
+      }
+    });
+  }
+
+  if (req.body.status && req.body.status !== card.status) {
+    await Activity.create({
+      type: "status_changed",
+      description: `Changed status from "${card.status}" to "${req.body.status}"`,
+      user: req.user.id,
+      board: card.board,
+      card: card._id,
+      metadata: {
+        oldStatus: card.status,
+        newStatus: req.body.status
+      }
+    });
+  }
+
+  if (req.body.priority && req.body.priority !== card.priority) {
+    await Activity.create({
+      type: "priority_changed",
+      description: `Changed priority from "${card.priority || 'None'}" to "${req.body.priority}"`,
+      user: req.user.id,
+      board: card.board,
+      card: card._id,
+      metadata: {
+        oldPriority: card.priority || 'None',
+        newPriority: req.body.priority
+      }
+    });
+  }
+
+  if (req.body.dueDate && req.body.dueDate !== card.dueDate) {
+    await Activity.create({
+      type: "due_date_changed",
+      description: `Changed due date to ${new Date(req.body.dueDate).toLocaleDateString()}`,
+      user: req.user.id,
+      board: card.board,
+      card: card._id,
+      metadata: {
+        oldDate: card.dueDate,
+        newDate: req.body.dueDate
+      }
+    });
+  }
+
+  if (req.body.estimationTime) {
+    const newEstimations = req.body.estimationTime || [];
+    const oldEstimations = card.estimationTime || [];
+    
+    // Check for new estimations
+    if (newEstimations.length > oldEstimations.length) {
+      const lastEntry = newEstimations[newEstimations.length - 1];
+      if (!lastEntry._id) {
+        await Activity.create({
+          type: "estimation_updated",
+          description: `Updated estimation to ${lastEntry.hours}h ${lastEntry.minutes}m`,
+          user: req.user.id,
+          board: card.board,
+          card: card._id,
+          metadata: {
+            hours: lastEntry.hours,
+            minutes: lastEntry.minutes,
+            reason: lastEntry.reason
+          }
+        });
+      }
+    }
+  }
+
+  if (req.body.loggedTime) {
+    const newLogged = req.body.loggedTime || [];
+    const oldLogged = card.loggedTime || [];
+    
+    // Check for new logged time
+    if (newLogged.length > oldLogged.length) {
+      const lastEntry = newLogged[newLogged.length - 1];
+      if (!lastEntry._id) {
+        await Activity.create({
+          type: "time_logged",
+          description: `Logged ${lastEntry.hours}h ${lastEntry.minutes}m of work`,
+          user: req.user.id,
+          board: card.board,
+          card: card._id,
+          metadata: {
+            hours: lastEntry.hours,
+            minutes: lastEntry.minutes,
+            description: lastEntry.description
+          }
+        });
+      }
+    }
+  }
+
+  // General activity log
   await Activity.create({
     type: "card_updated",
     description: `Updated card "${card.title}"`,
@@ -459,14 +580,18 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
   });
 
-  // Invalidate caches for both old and new lists
-  if (req.body.list && req.body.list !== card.list) {
-    invalidateCache(`/api/cards/list/${card.list}`);
-    invalidateCache(`/api/cards/list/${req.body.list}`);
+  // Invalidate caches for hierarchy
+  invalidateHierarchyCache({
+    boardId: card.board,
+    listId: card.list,
+    cardId: card._id
+  });
+  if (originalListId && originalListId.toString() !== card.list.toString()) {
+    invalidateHierarchyCache({
+      boardId: originalBoardId,
+      listId: originalListId
+    });
   }
-  
-  // Invalidate board cache
-  invalidateCache(`/api/cards/board/${card.board}`);
   
   // Emit real-time update
   emitToBoard(card.board.toString(), 'card-updated', {
@@ -505,7 +630,6 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   }
 
   // Invalidate cache for the board
-  invalidateCache(`/api/boards/${card.board.toString()}`);
   invalidateCache("/api/departments");
   invalidateCache(`/api/departments/${card.board.department}/members-with-assignments`);
   invalidateCache("/api/analytics/dashboard");
@@ -648,12 +772,16 @@ export const moveCard = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Invalidate all related caches
-  invalidateCache(`/api/boards/${card.board.toString()}`);
-  invalidateCache(`/api/cards/list/${sourceListId}`);
-  invalidateCache(`/api/cards/list/${destinationListId}`);
-  invalidateCache(`/api/cards/board/${card.board.toString()}`);
-  invalidateCache(`/api/cards/${card._id}`);
+  // Invalidate caches
+  invalidateHierarchyCache({
+    boardId: card.board,
+    listId: destinationListId,
+    cardId: card._id
+  });
+  invalidateHierarchyCache({
+    boardId: card.board,
+    listId: sourceListId
+  });
   invalidateCache("/api/departments");
   invalidateCache(`/api/departments/${card.board.department}/members-with-assignments`);
   invalidateCache("/api/analytics/dashboard");
@@ -702,10 +830,11 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   await card.deleteOne();
 
   // Invalidate caches after deletion
-  invalidateCache(`/api/boards/${boardId.toString()}`);
-  invalidateCache(`/api/cards/list/${card.list}`);
-  invalidateCache(`/api/cards/board/${boardId.toString()}`);
-  invalidateCache(`/api/cards/${card._id}`);
+  invalidateHierarchyCache({
+    boardId: boardId,
+    listId: card.list,
+    cardId: card._id
+  });
   invalidateCache("/api/departments");
   invalidateCache(`/api/departments/${card.board?.department}/members-with-assignments`);
   invalidateCache("/api/analytics/dashboard");
@@ -714,5 +843,37 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: "Card deleted successfully",
+  });
+});
+
+// @desc    Get card activity logs
+// @route   GET /api/cards/:id/activity
+// @access  Private
+export const getCardActivity = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  const { limit = 100, page = 1 } = req.query;
+
+  // Verify card exists and user has access
+  const card = await Card.findById(id);
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  // Get all activities for this card
+  const activities = await Activity.find({ card: id })
+    .populate("user", "name email avatar")
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit))
+    .skip((parseInt(page) - 1) * parseInt(limit));
+
+  const total = await Activity.countDocuments({ card: id });
+
+  res.status(200).json({
+    success: true,
+    count: activities.length,
+    total,
+    page: parseInt(page),
+    pages: Math.ceil(total / parseInt(limit)),
+    data: activities,
   });
 });

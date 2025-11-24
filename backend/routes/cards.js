@@ -1,6 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getCards, getCardsByBoard, getCardsByDepartment, getCard, createCard, updateCard, moveCard, deleteCard } from '../controllers/cardController.js';
+import { getCards, getCardsByBoard, getCardsByDepartment, getCard, createCard, updateCard, moveCard, deleteCard, getCardActivity } from '../controllers/cardController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import upload from '../middleware/upload.js';
@@ -10,6 +10,7 @@ const router = express.Router();
 router.get('/list/:listId', protect, getCards);
 router.get('/board/:boardId', protect, getCardsByBoard);
 router.get('/department/:departmentId', protect, getCardsByDepartment);
+router.get('/:id/activity', protect, getCardActivity);
 router.get('/:id', protect, getCard);
 
 router.post('/', protect, [

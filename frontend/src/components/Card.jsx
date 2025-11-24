@@ -14,10 +14,19 @@ import {
 } from "lucide-react";
 
 const Card = memo(({ card, onClick, onDelete, compact = false }) => {
+  const subtaskStats = card.subtaskStats
+    ? card.subtaskStats
+    : card.subtasks
+      ? {
+          total: card.subtasks.length,
+          completed: card.subtasks.filter((s) => s.completed).length
+        }
+      : null;
+
   const hasDetails =
     card.labels?.length > 0 ||
     card.dueDate ||
-    card.subtasks?.length > 0 ||
+    (subtaskStats?.total > 0) ||
     card.attachments?.length > 0 ||
     card.comments?.length > 0;
 
@@ -258,20 +267,32 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
             </motion.div>
           )}
 
-          {card.subtasks && card.subtasks.length > 0 && (
+          {subtaskStats?.total > 0 && (
             <motion.div
               key="subtasks"
               whileHover={{ scale: 1.05 }}
               className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md ${
-                card.subtasks.every((s) => s.completed)
+                subtaskStats.completed === subtaskStats.total
                   ? "bg-green-50 text-green-700"
                   : "bg-gray-100 text-gray-700"
               }`}
             >
               <CheckSquare size={12} />
               <span>
-                {card.subtasks.filter((s) => s.completed).length}/
-                {card.subtasks.length}
+                {subtaskStats.completed}/{subtaskStats.total}
+              </span>
+            </motion.div>
+          )}
+
+          {subtaskStats?.nanoTotal > 0 && (
+            <motion.div
+              key="nano"
+              whileHover={{ scale: 1.05 }}
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-pink-50 text-pink-600"
+            >
+              <CheckSquare size={12} />
+              <span>
+                {subtaskStats.nanoCompleted || 0}/{subtaskStats.nanoTotal} nanos
               </span>
             </motion.div>
           )}

@@ -296,7 +296,7 @@ export const getMembersWithAssignments = asyncHandler(async (req, res, next) => 
   const cards = await Card.find({ board: { $in: projectIds } })
     .populate('assignees', 'name email')
     .populate('members', 'name email')
-    .select('_id board assignees members subtasks');
+    .select('_id board assignees members subtaskStats');
 
   // Collect all unique members who have assignments
   const assignedMembers = new Set();
@@ -324,15 +324,6 @@ export const getMembersWithAssignments = asyncHandler(async (req, res, next) => 
         card.members.forEach(member => {
           assignedMembers.add(member._id.toString());
         });
-      }
-    });
-  }
-
-  // Add members assigned to subtasks
-  if (cards && cards.length > 0) {
-    cards.forEach(card => {
-      if (card.subtasks && card.subtasks.length > 0) {
-        // Note: Subtasks don't have direct assignees in the schema, but we can extend this if needed
       }
     });
   }

@@ -1,16 +1,62 @@
 import Comment from '../models/Comment.js';
 import Card from '../models/Card.js';
+import Subtask from '../models/Subtask.js';
+import SubtaskNano from '../models/SubtaskNano.js';
 import Notification from '../models/Notification.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { emitNotification, emitToBoard } from '../server.js';
 import { invalidateCache } from '../middleware/cache.js';
 import notificationService from '../utils/notificationService.js';
+import { ErrorResponse } from '../middleware/errorHandler.js';
+
+const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
+  if (nanoId) {
+    const nano = await SubtaskNano.findById(nanoId).populate('subtask task');
+    if (!nano) throw new ErrorResponse('Subtask-Nano not found', 404);
+    const subtask = await Subtask.findById(nano.subtask);
+    return {
+      cardId: nano.task.toString(),
+      subtaskId: subtask?._id,
+      nanoId,
+      contextType: 'subtaskNano',
+      contextRef: nanoId,
+    };
+  }
+
+  if (subtaskId) {
+    const subtask = await Subtask.findById(subtaskId);
+    if (!subtask) throw new ErrorResponse('Subtask not found', 404);
+    return {
+      cardId: subtask.task.toString(),
+      subtaskId,
+      contextType: 'subtask',
+      contextRef: subtaskId,
+    };
+  }
+
+  if (!cardId) {
+    throw new ErrorResponse('Card context is required', 400);
+  }
+
+  return {
+    cardId,
+    subtaskId: null,
+    nanoId: null,
+    contextType: 'card',
+    contextRef: cardId,
+  };
+};
 
 export const createComment = asyncHandler(async (req, res) => {
-  // Expect htmlContent (rich HTML) and card id
-  const { htmlContent, card } = req.body;
+  const { htmlContent, card, subtask, subtaskNano } = req.body;
 
-  const cardDoc = await Card.findById(card).populate('assignees', 'name');
+  const { cardId, subtaskId, nanoId, contextType, contextRef } = await getContextDetails({
+    cardId: card,
+    subtaskId: subtask,
+    nanoId: subtaskNano
+  });
+
+  const cardDoc = await Card.findById(cardId).populate('assignees', 'name');
   if (!cardDoc) {
     return res.status(404).json({ message: 'Card not found' });
   }
@@ -22,7 +68,11 @@ export const createComment = asyncHandler(async (req, res) => {
     text: plain || (req.body.text || ''),
     htmlContent: htmlContent || req.body.text || '',
     user: req.user.id,
-    card: card,
+    card: cardId,
+    subtask: subtaskId,
+    subtaskNano: nanoId,
+    contextType,
+    contextRef,
   });
   await comment.save();
 
@@ -31,7 +81,9 @@ export const createComment = asyncHandler(async (req, res) => {
   // Emit real-time comment added to board
   if (cardDoc.board) {
     emitToBoard(cardDoc.board.toString(), 'comment-added', {
-      cardId: card,
+      cardId: cardId,
+      contextType,
+      contextRef,
       comment: populatedComment
     });
   }
@@ -40,8 +92,8 @@ export const createComment = asyncHandler(async (req, res) => {
   await notificationService.notifyCommentAdded(cardDoc, populatedComment, req.user.id);
 
   // Invalidate relevant caches
-  invalidateCache(`/api/cards/${card}`);
-  invalidateCache(`/api/cards/${card}/comments`);
+  invalidateCache(`/api/cards/${cardId}`);
+  invalidateCache(`/api/cards/${cardId}/comments`);
 
   res.status(201).json(populatedComment);
 });
@@ -49,7 +101,37 @@ export const createComment = asyncHandler(async (req, res) => {
 export const getCommentsByCard = asyncHandler(async (req, res) => {
   const { cardId } = req.params;
 
-  const comments = await Comment.find({ card: cardId }).populate('user', 'name avatar').sort({ createdAt: -1 });
+  const comments = await Comment.find({ card: cardId, contextType: 'card' })
+    .populate('user', 'name avatar')
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    success: true,
+    count: comments.length,
+    data: comments,
+  });
+});
+
+export const getCommentsBySubtask = asyncHandler(async (req, res) => {
+  const { subtaskId } = req.params;
+
+  const comments = await Comment.find({ subtask: subtaskId, contextType: 'subtask' })
+    .populate('user', 'name avatar')
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    success: true,
+    count: comments.length,
+    data: comments,
+  });
+});
+
+export const getCommentsByNano = asyncHandler(async (req, res) => {
+  const { nanoId } = req.params;
+
+  const comments = await Comment.find({ subtaskNano: nanoId, contextType: 'subtaskNano' })
+    .populate('user', 'name avatar')
+    .sort({ createdAt: -1 });
 
   res.status(200).json({
     success: true,

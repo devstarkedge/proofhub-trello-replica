@@ -1,20 +1,44 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckSquare, Trash2, Plus } from "lucide-react";
+import { CheckSquare, Trash2, Plus, Clock } from "lucide-react";
+
+const themeProgress = {
+  blue: 'from-blue-400 to-cyan-400',
+  purple: 'from-purple-400 to-pink-400',
+  pink: 'from-pink-400 to-rose-400'
+};
 
 const SubtasksSection = ({
-  subtasks,
-  newSubtask,
-  onNewSubtaskChange,
-  onAddSubtask,
-  onToggleSubtask,
-  onDeleteSubtask,
-  onKeyPress,
+  title = "Subtasks",
+  items = [],
+  loading = false,
+  newItemTitle,
+  onNewItemTitleChange,
+  onCreateItem,
+  onToggleComplete,
+  onDeleteItem,
+  onOpenItem,
+  emptyLabel = "No items yet",
+  theme = 'blue'
 }) => {
   const calculateProgress = () => {
-    if (subtasks.length === 0) return 0;
-    const completed = subtasks.filter((s) => s.completed).length;
-    return Math.round((completed / subtasks.length) * 100);
+    if (items.length === 0) return 0;
+    const completed = items.filter((s) => s.status === 'done' || s.completed).length;
+    return Math.round((completed / items.length) * 100);
+  };
+
+  const renderStatus = (status) => {
+    const statusMap = {
+      done: 'text-green-600 bg-green-50',
+      'in-progress': 'text-blue-600 bg-blue-50',
+      blocked: 'text-red-600 bg-red-50',
+      todo: 'text-gray-600 bg-gray-100'
+    };
+    return (
+      <span className={`text-xs px-2 py-1 rounded-full capitalize ${statusMap[status] || statusMap.todo}`}>
+        {status || 'todo'}
+      </span>
+    );
   };
 
   return (
@@ -23,20 +47,20 @@ const SubtasksSection = ({
         <div className="flex items-center gap-3">
           <CheckSquare size={20} className="text-gray-600" />
           <h4 className="font-semibold text-gray-800 text-lg">
-            Subtasks
+            {title}
           </h4>
           <span className="text-sm text-gray-500">
-            ({subtasks.filter((s) => s.completed).length}/
-            {subtasks.length})
+            ({items.filter((s) => s.status === 'done' || s.completed).length}/
+            {items.length})
           </span>
         </div>
-        {subtasks.length > 0 && (
+        {items.length > 0 && (
           <div className="flex items-center gap-2">
             <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${calculateProgress()}%` }}
-                className="h-full bg-gradient-to-r from-green-400 to-green-600"
+                className={`h-full bg-gradient-to-r ${themeProgress[theme] || themeProgress.blue}`}
                 transition={{ duration: 0.3 }}
               />
             </div>
@@ -47,35 +71,49 @@ const SubtasksSection = ({
         )}
       </div>
 
-      <div className="ml-8 space-y-2">
+      <div className="ml-1 space-y-2">
         <AnimatePresence>
-          {subtasks.map((subtask, index) => {
-            const safeKey = String(subtask.id || `subtask-${index}`).trim() || `subtask-${index}`;
+          {items.map((item, index) => {
+            const safeKey = String(item._id || item.id || `subtask-${index}`).trim() || `subtask-${index}`;
+            const completed = item.status === 'done' || item.completed;
             return (
               <motion.div
                 key={safeKey}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
-                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
+                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-white transition-colors group border border-gray-100 shadow-sm"
               >
                 <input
                   type="checkbox"
-                  checked={subtask.completed}
-                  onChange={() => onToggleSubtask(subtask.id)}
+                  checked={completed}
+                  onChange={() => onToggleComplete(item)}
                   className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
-                <span
-                  className={`flex-1 text-sm ${
-                    subtask.completed
-                      ? "line-through text-gray-500"
-                      : "text-gray-700"
-                  }`}
+                <div
+                  className="flex-1 cursor-pointer"
+                  onClick={() => onOpenItem && onOpenItem(item)}
                 >
-                  {subtask.text}
-                </span>
+                  <p className={`text-sm font-medium ${completed ? "line-through text-gray-400" : "text-gray-800"}`}>
+                    {item.title || item.text}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                    {renderStatus(item.status)}
+                    {item.dueDate && (
+                      <span className="flex items-center gap-1">
+                        <Clock size={12} />
+                        {new Date(item.dueDate).toLocaleDateString()}
+                      </span>
+                    )}
+                    {item.nanoCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-gray-200 text-gray-700">
+                        {item.nanoCount} nanos
+                      </span>
+                    )}
+                  </div>
+                </div>
                 <button
-                  onClick={() => onDeleteSubtask(subtask.id)}
+                  onClick={() => onDeleteItem(item)}
                   className="opacity-0 group-hover:opacity-100 text-red-500 hover:bg-red-50 p-1 rounded transition-all"
                 >
                   <Trash2 size={14} />
@@ -85,19 +123,33 @@ const SubtasksSection = ({
           })}
         </AnimatePresence>
 
+        {loading && (
+          <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500 text-sm">
+            Loading...
+          </div>
+        )}
+
+        {!items.length && !loading && (
+          <div className="p-4 bg-white rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">
+            {emptyLabel}
+          </div>
+        )}
+
         <div className="flex gap-2 mt-3">
           <input
             type="text"
-            value={newSubtask}
-            onChange={(e) => onNewSubtaskChange(e.target.value)}
-            onKeyPress={onKeyPress}
-            placeholder="Add a subtask..."
+            value={newItemTitle}
+            onChange={(e) => onNewItemTitleChange(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === "Enter") onCreateItem();
+            }}
+            placeholder={`Add a ${title.toLowerCase().slice(0, -1)}...`}
             className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={onAddSubtask}
+            onClick={onCreateItem}
             className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
           >
             <Plus size={18} />

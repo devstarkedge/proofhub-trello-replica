@@ -420,6 +420,201 @@ class DatabaseService {
     return await updateRes.json();
   }
 
+  // Subtask hierarchy operations
+  async getSubtasks(taskId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtasks/task/${taskId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`Failed to load subtasks (${res.status})`);
+    }
+    return await res.json();
+  }
+
+  async getSubtask(subtaskId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`Failed to load subtask (${res.status})`);
+    }
+    return await res.json();
+  }
+
+  async createSubtask(taskId, payload) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtasks/task/${taskId}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to create subtask');
+    }
+    return await res.json();
+  }
+
+  async updateSubtask(subtaskId, updates) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to update subtask');
+    }
+    return await res.json();
+  }
+
+  async deleteSubtask(subtaskId) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to delete subtask');
+    }
+    return await res.json();
+  }
+
+  async reorderSubtasks(taskId, orderedIds) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtasks/task/${taskId}/reorder`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ orderedIds })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to reorder subtasks');
+    }
+    return await res.json();
+  }
+
+  async getNanoSubtasks(subtaskId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtask-nanos/subtask/${subtaskId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`Failed to load subtask-nanos (${res.status})`);
+    }
+    return await res.json();
+  }
+
+  async getNano(subtaskNanoId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtask-nanos/${subtaskNanoId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`Failed to load subtask-nano (${res.status})`);
+    }
+    return await res.json();
+  }
+
+  async createNano(subtaskId, payload) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtask-nanos/subtask/${subtaskId}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to create subtask-nano');
+    }
+    return await res.json();
+  }
+
+  async updateNano(subtaskNanoId, updates) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtask-nanos/${subtaskNanoId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to update subtask-nano');
+    }
+    return await res.json();
+  }
+
+  async deleteNano(subtaskNanoId) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtask-nanos/${subtaskNanoId}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to delete subtask-nano');
+    }
+    return await res.json();
+  }
+
+  async reorderNanos(subtaskId, orderedIds) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtask-nanos/subtask/${subtaskId}/reorder`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ orderedIds })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to reorder subtask-nanos');
+    }
+    return await res.json();
+  }
+
   async moveList(listId, newPosition) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
@@ -775,16 +970,50 @@ class DatabaseService {
     return data.data;
   }
 
-  async createComment(cardId, text) {
+  async getSubtaskComments(subtaskId) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    const res = await fetch(`${baseURL}/api/comments/subtask/${subtaskId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.data;
+  }
+
+  async getNanoComments(nanoId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/comments/nano/${nanoId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.data;
+  }
+
+  async createComment({ cardId, subtaskId, nanoId, htmlContent }) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const payload = {
+      htmlContent,
+      card: cardId,
+      subtask: subtaskId,
+      subtaskNano: nanoId
+    };
     const res = await fetch(`${baseURL}/api/comments`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ card: cardId, htmlContent: text })
+      body: JSON.stringify(payload)
     });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -967,6 +1196,20 @@ class DatabaseService {
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.message || 'Failed to create category');
+    }
+    return await res.json();
+  }
+
+  // Card Activity operations
+  async getCardActivity(cardId, limit = 100, page = 1) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/activity?limit=${limit}&page=${page}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
     }
     return await res.json();
   }

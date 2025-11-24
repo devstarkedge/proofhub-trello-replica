@@ -17,6 +17,23 @@ const commentSchema = new mongoose.Schema({
     ref: 'Card',
     required: true
   },
+  subtask: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subtask'
+  },
+  subtaskNano: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SubtaskNano'
+  },
+  contextType: {
+    type: String,
+    enum: ['card', 'subtask', 'subtaskNano'],
+    default: 'card'
+  },
+  contextRef: {
+    type: mongoose.Schema.Types.ObjectId,
+    index: true
+  },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -54,6 +71,7 @@ const commentSchema = new mongoose.Schema({
 
 // Indexes
 commentSchema.index({ card: 1, createdAt: -1 });
+commentSchema.index({ contextRef: 1, createdAt: -1 });
 commentSchema.index({ user: 1 });
 
 // Parse mentions from htmlContent into structured mentions array

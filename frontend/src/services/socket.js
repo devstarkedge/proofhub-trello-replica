@@ -105,9 +105,14 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-comment-deleted', { detail: data }));
     });
 
-    this.socket.on('subtask-updated', (data) => {
-      console.log('Subtask updated:', data);
-      window.dispatchEvent(new CustomEvent('socket-subtask-updated', { detail: data }));
+    this.socket.on('hierarchy-subtask-changed', (data) => {
+      console.log('Subtask hierarchy changed:', data);
+      window.dispatchEvent(new CustomEvent('socket-subtask-hierarchy', { detail: data }));
+    });
+
+    this.socket.on('hierarchy-nano-changed', (data) => {
+      console.log('Subtask-Nano hierarchy changed:', data);
+      window.dispatchEvent(new CustomEvent('socket-nano-hierarchy', { detail: data }));
     });
 
     this.socket.on('attachment-added', (data) => {
