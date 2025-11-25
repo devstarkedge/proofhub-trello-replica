@@ -280,23 +280,14 @@ useEffect(() => {
   }, [searchQuery]);
 
   // Map friendly UI filter values to actual data values
-  const mapStatusValue = (val) => {
-    if (!val || val === 'All') return null;
-    const map = {
-      'To-Do': 'todo',
-      'In Progress': 'in-progress',
-      'Done': 'done'
-    };
-    return map[val] || val.toLowerCase();
-  };
-
   const mapPriorityValue = (val) => {
     if (!val || val === 'All') return null;
     const map = { 'Low': 'low', 'Medium': 'medium', 'High': 'high' };
     return map[val] || val.toLowerCase();
   };
-
-  const activeStatus = mapStatusValue(statusFilter);
+  // Normalize status by trimming and lowercasing for comparison
+  const normalize = (s) => (s || '').toString().trim().toLowerCase();
+  const activeStatus = statusFilter && statusFilter !== 'All' ? normalize(statusFilter) : null;
   const activePriority = mapPriorityValue(priorityFilter);
 
   // Compute filtered cards per list while keeping lists intact
@@ -313,12 +304,12 @@ useEffect(() => {
       const filtered = cards.filter(card => {
         // status filter
         if (activeStatus) {
-          const cstatus = (card.status || '').toLowerCase();
+          const cstatus = normalize(card.status);
           if (cstatus !== activeStatus) return false;
         }
         // priority filter
         if (activePriority) {
-          const cprio = (card.priority || '').toLowerCase();
+          const cprio = normalize(card.priority);
           if (cprio !== activePriority) return false;
         }
         // project filter (if selectedProject is set)
@@ -623,9 +614,9 @@ useEffect(() => {
                   className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white backdrop-blur-lg focus:outline-none focus:ring-2 focus:ring-white/30"
                 >
                   <option className="bg-white text-gray-900" value="All">All Status</option>
-                  <option className="bg-white text-gray-900" value="To-Do">To-Do</option>
-                  <option className="bg-white text-gray-900" value="In Progress">In Progress</option>
-                  <option className="bg-white text-gray-900" value="Done">Done</option>
+                  {lists && lists.length > 0 && Array.from(new Set(lists.map(l => l.title))).map((title) => (
+                    <option key={title} className="bg-white text-gray-900" value={title}>{title}</option>
+                  ))}
                 </select>
                 <select
                   value={priorityFilter}
