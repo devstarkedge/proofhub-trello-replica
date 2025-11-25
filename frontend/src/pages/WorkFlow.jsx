@@ -47,6 +47,7 @@ const WorkFlow = memo(() => {
   const [priorityFilter, setPriorityFilter] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [fullProjectData, setFullProjectData] = useState(null);
@@ -113,6 +114,10 @@ useEffect(() => {
       console.error('Error adding card:', error);
     }
   };
+
+  const handleSearchChange = useCallback((e) => setSearchQuery(e.target.value), []);
+  const handleStatusChange = useCallback((e) => setStatusFilter(e.target.value), []);
+  const handlePriorityChange = useCallback((e) => setPriorityFilter(e.target.value), []);
 
   const handleDeleteCard = async (cardId, options = {}) => {
     if (!cardId) return;
@@ -267,6 +272,76 @@ useEffect(() => {
   useEffect(() => {
     setShareAutoOpened(false);
   }, [shareKey]);
+
+  // Debounced search to avoid frequent re-computation and improve responsiveness
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 250);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Map friendly UI filter values to actual data values
+  const mapStatusValue = (val) => {
+    if (!val || val === 'All') return null;
+    const map = {
+      'To-Do': 'todo',
+      'In Progress': 'in-progress',
+      'Done': 'done'
+    };
+    return map[val] || val.toLowerCase();
+  };
+
+  const mapPriorityValue = (val) => {
+    if (!val || val === 'All') return null;
+    const map = { 'Low': 'low', 'Medium': 'medium', 'High': 'high' };
+    return map[val] || val.toLowerCase();
+  };
+
+  const activeStatus = mapStatusValue(statusFilter);
+  const activePriority = mapPriorityValue(priorityFilter);
+
+  // Compute filtered cards per list while keeping lists intact
+  const { filteredCardsByList, totalFilteredCount } = React.useMemo(() => {
+    // Use defensive copy and ensure we have an object
+    const result = {};
+    let total = 0;
+
+    const search = debouncedSearch ? debouncedSearch.toLowerCase() : '';
+
+    for (const list of lists) {
+      const listId = list._id;
+      const cards = cardsByList[listId] || [];
+      const filtered = cards.filter(card => {
+        // status filter
+        if (activeStatus) {
+          const cstatus = (card.status || '').toLowerCase();
+          if (cstatus !== activeStatus) return false;
+        }
+        // priority filter
+        if (activePriority) {
+          const cprio = (card.priority || '').toLowerCase();
+          if (cprio !== activePriority) return false;
+        }
+        // project filter (if selectedProject is set)
+        if (selectedProject) {
+          // card.board could be id or object
+          const cardBoardId = typeof card.board === 'string' ? card.board : (card.board?._id || card.board);
+          const selBoardId = selectedProject._id || selectedProject;
+          if (cardBoardId !== selBoardId) return false;
+        }
+        // search filter
+        if (search) {
+          const matchTitle = (card.title || '').toLowerCase().includes(search);
+          const matchDesc = (card.description || '').toLowerCase().includes(search);
+          const matchLabels = (card.labels || []).some(l => ('' + l).toLowerCase().includes(search));
+          if (!(matchTitle || matchDesc || matchLabels)) return false;
+        }
+        return true;
+      });
+      result[listId] = filtered;
+      total += filtered.length;
+    }
+    return { filteredCardsByList: result, totalFilteredCount: total };
+  }, [lists, cardsByList, activeStatus, activePriority, selectedProject, debouncedSearch]);
 
   const autoOpenSharedPath = useCallback(async () => {
     if (!taskId || !board) return;
@@ -440,7 +515,7 @@ useEffect(() => {
                   type="text"
                   placeholder="Search cards..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={handleSearchChange}
                   className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 backdrop-blur-lg"
                 />
               </div>
@@ -544,23 +619,23 @@ useEffect(() => {
               >
                 <select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={handleStatusChange}
                   className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white backdrop-blur-lg focus:outline-none focus:ring-2 focus:ring-white/30"
                 >
-                  <option value="All">All Status</option>
-                  <option value="To-Do">To-Do</option>
-                  <option value="In Progress">In Progress</option>
-                  <option value="Done">Done</option>
+                  <option className="bg-white text-gray-900" value="All">All Status</option>
+                  <option className="bg-white text-gray-900" value="To-Do">To-Do</option>
+                  <option className="bg-white text-gray-900" value="In Progress">In Progress</option>
+                  <option className="bg-white text-gray-900" value="Done">Done</option>
                 </select>
                 <select
                   value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value)}
+                  onChange={handlePriorityChange}
                   className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white backdrop-blur-lg focus:outline-none focus:ring-2 focus:ring-white/30"
                 >
-                  <option value="All">All Priority</option>
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
+                  <option className="bg-white text-gray-900" value="All">All Priority</option>
+                  <option className="bg-white text-gray-900" value="Low">Low</option>
+                  <option className="bg-white text-gray-900" value="Medium">Medium</option>
+                  <option className="bg-white text-gray-900" value="High">High</option>
                 </select>
               </motion.div>
             )}
@@ -594,10 +669,24 @@ useEffect(() => {
             </div>
           </motion.div>
         </div>
+      ) : totalFilteredCount === 0 ? (
+        <div className="flex items-center justify-center" style={{ height: 'calc(100vh - 120px)' }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center text-white max-w-md mx-4"
+          >
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+              <div className="mx-auto mb-4 text-white/50">🔍</div>
+              <h2 className="text-3xl font-bold mb-4">No tasks found</h2>
+              <p className="text-xl mb-8 text-white/70">Try adjusting your filters or search term.</p>
+            </div>
+          </motion.div>
+        </div>
       ) : (
         <Board
           lists={lists}
-          cardsByList={cardsByList}
+          cardsByList={filteredCardsByList}
           onAddCard={handleAddCard}
           onDeleteCard={handleDeleteCard}
           onCardClick={handleOpenCardModal}

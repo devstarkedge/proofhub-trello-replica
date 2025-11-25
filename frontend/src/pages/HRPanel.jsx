@@ -146,19 +146,28 @@ const HRPanel = () => {
 
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
+    const uid = userToDelete._id;
+
+    // set loading state for this user to disable button and show spinner
+    setLoadingStates(prev => ({ ...prev, [uid]: true }));
 
     try {
       await api.delete(`/api/users/${userToDelete._id}`);
-      setUsers(prevUsers => prevUsers.filter(u => u._id !== userToDelete._id));
+      setUsers(prevUsers => prevUsers.filter(u => u._id !== uid));
       setToast({ type: 'success', message: 'User deleted successfully' });
       setTimeout(() => setToast(null), 3000);
+
+      // Close the modal on success and reset userToDelete
+      setShowDeleteModal(false);
+      setUserToDelete(null);
     } catch (error) {
       console.error('Error deleting user:', error);
       setToast({ type: 'error', message: error.response?.data?.message || 'Failed to delete user' });
       setTimeout(() => setToast(null), 3000);
+      // Keep the modal open in case user wants to retry or cancel
     } finally {
-      setShowDeleteModal(false);
-      setUserToDelete(null);
+      // reset loading state for this user
+      setLoadingStates(prev => ({ ...prev, [uid]: false }));
     }
   };
 
@@ -692,9 +701,20 @@ const HRPanel = () => {
                   </button>
                   <button
                     onClick={handleDeleteUser}
-                    className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 font-semibold shadow-md hover:shadow-lg transform hover:scale-105"
+                    disabled={loadingStates[userToDelete._id]}
+                    aria-disabled={loadingStates[userToDelete._id] ? 'true' : 'false'}
+                    aria-busy={loadingStates[userToDelete._id] ? 'true' : 'false'}
+                    className={`px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 font-semibold shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2`}
+                    title={loadingStates[userToDelete._id] ? 'Deleting...' : 'Delete Anyway'}
                   >
-                    Delete Anyway
+                    {loadingStates[userToDelete._id] ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Deleting...</span>
+                      </>
+                    ) : (
+                      'Delete Anyway'
+                    )}
                   </button>
                 </div>
               </div>
