@@ -11,6 +11,7 @@ import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
 import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import useModalHierarchyStore from "../store/modalHierarchyStore";
+import CardActionMenu from "./CardDetailModal/CardActionMenu";
 
 const overlayMap = {
   pink: "bg-pink-950/50"
@@ -59,7 +60,9 @@ const SubtaskNanoModal = ({
   const [activeTab, setActiveTab] = useState("comments");
   const [parentTaskId, setParentTaskId] = useState(initialData.task || null);
   const [parentSubtaskId, setParentSubtaskId] = useState(initialData.subtask || null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
+  const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
   const overlayClass = overlayMap[theme] || overlayMap.pink;
 
@@ -179,16 +182,26 @@ const SubtaskNanoModal = ({
     }
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm("Delete this subtask-nano?")) return;
+  const runDelete = async () => {
+    if (!entityId) return;
+    setDeleteLoading(true);
     try {
       await Database.deleteNano(entityId);
-      toast.success("Subtask-Nano deleted");
-      onClose();
+      toast.success("Deleted successfully");
+      onClose?.();
     } catch (error) {
       console.error("Error deleting nano subtask:", error);
       toast.error("Failed to delete subtask-nano");
+    } finally {
+      setDeleteLoading(false);
     }
+  };
+
+  const handleSidebarDelete = async () => {
+    if (!window.confirm("Are you sure you want to delete this Neno-Subtask? This action cannot be undone.")) {
+      return;
+    }
+    await runDelete();
   };
 
   const handleAddTag = () => {
@@ -246,6 +259,22 @@ const SubtaskNanoModal = ({
     }
   };
 
+  const resolvedProjectId =
+    currentProject?._id ||
+    (typeof initialData.project === "object"
+      ? initialData.project?._id
+      : initialData.project) ||
+    (typeof initialData.board === "object" ? initialData.board?._id : initialData.board) ||
+    null;
+  const resolvedTaskId =
+    parentTaskId ||
+    (typeof initialData.task === "object" ? initialData.task?._id : initialData.task) ||
+    null;
+  const resolvedSubtaskId =
+    parentSubtaskId ||
+    (typeof initialData.subtask === "object" ? initialData.subtask?._id : initialData.subtask) ||
+    null;
+
   return (
     <AnimatePresence>
       <motion.div
@@ -293,14 +322,28 @@ const SubtaskNanoModal = ({
                   </div>
                 </div>
               </div>
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 ml-4 hover:bg-gray-100 p-2 rounded-lg transition-colors"
-              >
-                <X size={24} />
-              </motion.button>
+              <div className="flex items-center gap-2 ml-4">
+                <CardActionMenu
+                  entityType="subtaskNano"
+                  ids={{
+                    projectId: resolvedProjectId,
+                    taskId: resolvedTaskId,
+                    subtaskId: resolvedSubtaskId,
+                    nenoId: entityId,
+                  }}
+                  onDelete={runDelete}
+                  isDeleting={deleteLoading}
+                  disabled={!entityId}
+                />
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={onClose}
+                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors"
+                >
+                  <X size={24} />
+                </motion.button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
@@ -375,7 +418,7 @@ const SubtaskNanoModal = ({
                 onToggleDepartment={handleToggleDepartment}
                 onSearchQueryChange={setSearchQuery}
                 onIsDropdownOpenChange={setIsDropdownOpen}
-                onDeleteCard={handleDelete}
+                onDeleteCard={handleSidebarDelete}
                 card={{ _id: entityId }}
               />
             </div>

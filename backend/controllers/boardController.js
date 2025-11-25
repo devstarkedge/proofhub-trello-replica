@@ -80,14 +80,18 @@ export const getWorkflowData = asyncHandler(async (req, res, next) => {
   }
 
   // Verify the project belongs to the specified department
-  if (board.department._id.toString() !== departmentId) {
+  const boardDepartmentId =
+    (typeof board.department === "object" && board.department?._id) ||
+    board.department;
+
+  if (!boardDepartmentId || boardDepartmentId.toString() !== departmentId) {
     return next(new ErrorResponse("This project does not belong to the specified department", 403));
   }
 
   // Check access
   const hasAccess =
-    board.owner._id.toString() === req.user.id ||
-    board.members.some((m) => m._id.toString() === req.user.id) ||
+    board.owner?._id?.toString() === req.user.id ||
+    board.members?.some((m) => m?._id?.toString() === req.user.id) ||
     board.visibility === "public" ||
     req.user.role === "admin" ||
     (req.user.department && req.user.department.toString() === departmentId);
@@ -117,9 +121,12 @@ export const getBoard = asyncHandler(async (req, res, next) => {
   }
 
   // Check access
+  const ownerId =
+    (typeof board.owner === "object" && board.owner?._id) ||
+    board.owner;
   const hasAccess =
-    board.owner._id.toString() === req.user.id ||
-    board.members.some((m) => m._id.toString() === req.user.id) ||
+    ownerId?.toString() === req.user.id ||
+    board.members?.some((m) => m?._id?.toString() === req.user.id) ||
     board.visibility === "public";
 
   if (!hasAccess) {

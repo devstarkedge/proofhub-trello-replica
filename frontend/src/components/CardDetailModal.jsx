@@ -16,6 +16,7 @@ import ActivitySection from "./CardDetailModal/ActivitySection";
 import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
 import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
+import CardActionMenu from "./CardDetailModal/CardActionMenu";
 
 const themeOverlay = {
   blue: 'bg-blue-950/60',
@@ -68,11 +69,13 @@ const CardDetailModal = ({
   const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
   const initializeHierarchyTask = useModalHierarchyStore((state) => state.initializeTaskStack);
   const closeHierarchy = useModalHierarchyStore((state) => state.closeAll);
   const hierarchyStackLength = useModalHierarchyStore((state) => state.stack.length);
+  const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
   const labelUpdateRef = React.useRef(onLabelUpdate);
   const managedHierarchyRef = React.useRef(false);
@@ -805,6 +808,37 @@ const CardDetailModal = ({
 
   const overlayClass = themeOverlay[theme] || themeOverlay.blue;
 
+  const resolvedProjectId =
+    (typeof card?.board === "object" && card?.board?._id) ||
+    (typeof card?.board === "string" && card.board) ||
+    currentProject?._id ||
+    null;
+
+  const taskId = card?._id || card?.id;
+
+  const executeDelete = async () => {
+    if (!taskId || !onDelete) return;
+    setDeleteLoading(true);
+    try {
+      await onDelete(taskId, { skipConfirm: true, showToast: false, closeModals: true });
+      toast.success("Deleted successfully");
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      toast.error("Failed to delete task");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleSidebarDelete = async () => {
+    if (!taskId) return;
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this task? This action cannot be undone."
+    );
+    if (!confirmed) return;
+    await executeDelete();
+  };
+
   return (
     <AnimatePresence>
       <motion.div
@@ -846,15 +880,26 @@ const CardDetailModal = ({
                   </div>
                 </div>
               </div>
-
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 ml-4 hover:bg-gray-100 p-2 rounded-lg transition-colors"
-              >
-                <X size={24} />
-              </motion.button>
+              <div className="flex items-center gap-2 ml-4">
+                <CardActionMenu
+                  entityType="task"
+                  ids={{
+                    projectId: resolvedProjectId,
+                    taskId,
+                  }}
+                  onDelete={executeDelete}
+                  isDeleting={deleteLoading}
+                  disabled={!taskId}
+                />
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={onClose}
+                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors"
+                >
+                  <X size={24} />
+                </motion.button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
@@ -1080,16 +1125,7 @@ const CardDetailModal = ({
                 onToggleDepartment={toggleDepartment}
                 onSearchQueryChange={setSearchQuery}
                 onIsDropdownOpenChange={setIsDropdownOpen}
-                onDeleteCard={() => {
-                  if (
-                    window.confirm(
-                      "Are you sure you want to delete this task? This action cannot be undone."
-                    )
-                  ) {
-                    onDelete(card._id);
-                    onClose();
-                  }
-                }}
+                onDeleteCard={handleSidebarDelete}
                 card={card}
               />
             </div>

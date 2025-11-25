@@ -44,7 +44,7 @@ const HierarchyModalStack = ({
           key={`task-${item.entityId}`}
           card={item.initialData}
           onUpdate={(updates) => onUpdateTask(item.entityId, updates)}
-          onDelete={() => onDeleteTask(item.entityId)}
+          onDelete={onDeleteTask}
           onMoveCard={onMoveTask}
           onOpenChild={(child) => onOpenChild(child, index)}
           {...commonProps}

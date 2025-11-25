@@ -14,9 +14,10 @@ import useWorkflowStore from '../store/workflowStore';
 import useModalHierarchyStore from '../store/modalHierarchyStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
 import HierarchyModalStack from '../components/hierarchy/HierarchyModalStack';
+import { toast } from 'react-toastify';
 
 const WorkFlow = memo(() => {
-  const { deptId, projectId } = useParams();
+  const { deptId, projectId, taskId, subtaskId, nenoId } = useParams();
   const navigate = useNavigate();
   const { currentTeam, loading: teamLoading } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
@@ -49,6 +50,8 @@ const WorkFlow = memo(() => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [fullProjectData, setFullProjectData] = useState(null);
+  const [shareAutoOpened, setShareAutoOpened] = useState(false);
+  const shareKey = `${taskId || ''}-${subtaskId || ''}-${nenoId || ''}`;
   const modalStack = useModalHierarchyStore((state) => state.stack);
   const openHierarchyModal = useModalHierarchyStore((state) => state.openModalByType);
   const closeHierarchy = useModalHierarchyStore((state) => state.closeAll);
@@ -57,7 +60,7 @@ const WorkFlow = memo(() => {
   const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
 
   useEffect(() => {
-    if (deptId && projectId && !teamLoading) {
+    if (projectId && !teamLoading) {
       loadData();
     }
   }, [deptId, projectId, teamLoading, initializeWorkflow]);
@@ -89,8 +92,9 @@ useEffect(() => {
       }
 
       const projectBoard = response.data;
+      const boardDeptId = projectBoard.department?._id || projectBoard.department;
 
-      if (projectBoard.department._id !== deptId && projectBoard.department !== deptId) {
+      if (deptId && boardDeptId !== deptId) {
         throw new Error('This project does not belong to the specified department.');
       }
 
@@ -110,14 +114,35 @@ useEffect(() => {
     }
   };
 
-  const handleDeleteCard = async (cardId) => {
-    if (window.confirm('Are you sure you want to delete this card?')) {
-      try {
-        await deleteCard(cardId);
-        closeAllModals();
-      } catch (error) {
-        console.error('Error deleting card:', error);
+  const handleDeleteCard = async (cardId, options = {}) => {
+    if (!cardId) return;
+    const {
+      skipConfirm = false,
+      showToast = true,
+      closeModals = true,
+    } = options;
+
+    if (!skipConfirm) {
+      const confirmed = window.confirm('Are you sure you want to delete this card?');
+      if (!confirmed) {
+        return;
       }
+    }
+
+    try {
+      await deleteCard(cardId);
+      if (showToast) {
+        toast.success('Deleted successfully');
+      }
+      if (closeModals) {
+        closeAllModals();
+      }
+    } catch (error) {
+      console.error('Error deleting card:', error);
+      if (showToast) {
+        toast.error('Failed to delete card');
+      }
+      throw error;
     }
   };
 
@@ -238,6 +263,68 @@ useEffect(() => {
     if (!item?.entityId) return;
     updateHierarchyLabel(item.entityId, item.type, label);
   }, [updateHierarchyLabel]);
+
+  useEffect(() => {
+    setShareAutoOpened(false);
+  }, [shareKey]);
+
+  const autoOpenSharedPath = useCallback(async () => {
+    if (!taskId || !board) return;
+    try {
+      closeHierarchy();
+
+      const taskResponse = await Database.getCard(taskId);
+      const taskData = taskResponse.data || taskResponse;
+      if (!taskData?._id) {
+        throw new Error('Task not found');
+      }
+
+      openHierarchyModal({
+        type: 'task',
+        entity: taskData,
+        project: board,
+      });
+
+      if (subtaskId) {
+        const subtaskResponse = await Database.getSubtask(subtaskId);
+        const subtaskData = subtaskResponse.data || subtaskResponse;
+        if (!subtaskData?._id) {
+          throw new Error('Subtask not found');
+        }
+        openHierarchyModal({
+          type: 'subtask',
+          entity: subtaskData,
+          parentDepth: 0,
+        });
+
+        if (nenoId) {
+          const nanoResponse = await Database.getNano(nenoId);
+          const nanoData = nanoResponse.data || nanoResponse;
+          if (!nanoData?._id) {
+            throw new Error('Neno subtask not found');
+          }
+          openHierarchyModal({
+            type: 'subtaskNano',
+            entity: nanoData,
+            parentDepth: 1,
+          });
+        }
+      }
+
+      setShareAutoOpened(true);
+    } catch (error) {
+      console.error('Error auto-opening shared card:', error);
+      toast.error('Unable to open the shared item. It may have been removed.');
+      setShareAutoOpened(true);
+    }
+  }, [taskId, subtaskId, nenoId, board, closeHierarchy, openHierarchyModal]);
+
+  useEffect(() => {
+    if (!taskId || loading || shareAutoOpened || !board) {
+      return;
+    }
+    autoOpenSharedPath();
+  }, [taskId, loading, shareAutoOpened, board, autoOpenSharedPath]);
   
   if (loading || teamLoading) {
     return (

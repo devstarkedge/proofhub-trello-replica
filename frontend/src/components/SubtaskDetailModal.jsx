@@ -12,6 +12,7 @@ import CardSidebar from "./CardDetailModal/CardSidebar";
 import SubtasksSection from "./CardDetailModal/SubtasksSection";
 import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import useModalHierarchyStore from "../store/modalHierarchyStore";
+import CardActionMenu from "./CardDetailModal/CardActionMenu";
 
 const overlayMap = {
   purple: "bg-purple-950/50",
@@ -64,7 +65,9 @@ const SubtaskDetailModal = ({
   const [nanoLoading, setNanoLoading] = useState(false);
   const [newNanoTitle, setNewNanoTitle] = useState("");
   const [parentTaskId, setParentTaskId] = useState(initialData.task || null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
+  const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
   const overlayClass = overlayMap[theme] || overlayMap.purple;
 
@@ -210,16 +213,26 @@ const SubtaskDetailModal = ({
     }
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm("Delete this subtask?")) return;
+  const runDelete = async () => {
+    if (!entityId) return;
+    setDeleteLoading(true);
     try {
       await Database.deleteSubtask(entityId);
-      toast.success("Subtask deleted");
-      onClose();
+      toast.success("Deleted successfully");
+      onClose?.();
     } catch (error) {
       console.error("Error deleting subtask:", error);
       toast.error("Failed to delete subtask");
+    } finally {
+      setDeleteLoading(false);
     }
+  };
+
+  const handleSidebarDelete = async () => {
+    if (!window.confirm("Are you sure you want to delete this subtask? This action cannot be undone.")) {
+      return;
+    }
+    await runDelete();
   };
 
   const handleAddTag = () => {
@@ -325,6 +338,17 @@ const SubtaskDetailModal = ({
     }
   };
 
+  const resolvedProjectId =
+    currentProject?._id ||
+    (typeof (initialData.board || initialData.project) === "object"
+      ? initialData.board?._id || initialData.project?._id
+      : initialData.board || initialData.project) ||
+    null;
+  const resolvedTaskId =
+    parentTaskId ||
+    (typeof initialData.task === "object" ? initialData.task?._id : initialData.task) ||
+    null;
+
   return (
     <AnimatePresence>
       <motion.div
@@ -372,14 +396,27 @@ const SubtaskDetailModal = ({
                   </div>
                 </div>
               </div>
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 ml-4 hover:bg-gray-100 p-2 rounded-lg transition-colors"
-              >
-                <X size={24} />
-              </motion.button>
+              <div className="flex items-center gap-2 ml-4">
+                <CardActionMenu
+                  entityType="subtask"
+                  ids={{
+                    projectId: resolvedProjectId,
+                    taskId: resolvedTaskId,
+                    subtaskId: entityId,
+                  }}
+                  onDelete={runDelete}
+                  isDeleting={deleteLoading}
+                  disabled={!entityId}
+                />
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={onClose}
+                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors"
+                >
+                  <X size={24} />
+                </motion.button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
@@ -468,7 +505,7 @@ const SubtaskDetailModal = ({
                 onToggleDepartment={handleToggleDepartment}
                 onSearchQueryChange={setSearchQuery}
                 onIsDropdownOpenChange={setIsDropdownOpen}
-                onDeleteCard={handleDelete}
+                onDeleteCard={handleSidebarDelete}
                 card={{ _id: entityId }}
               />
             </div>

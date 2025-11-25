@@ -53,6 +53,30 @@ function App() {
               }
             />
             <Route
+              path="/project/:projectId/task/:taskId"
+              element={
+                <PrivateRoute>
+                  <WorkFlow />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/project/:projectId/task/:taskId/subtask/:subtaskId"
+              element={
+                <PrivateRoute>
+                  <WorkFlow />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/project/:projectId/task/:taskId/subtask/:subtaskId/neno/:nenoId"
+              element={
+                <PrivateRoute>
+                  <WorkFlow />
+                </PrivateRoute>
+              }
+            />
+            <Route
               path="/teams"
               element={
                 <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>

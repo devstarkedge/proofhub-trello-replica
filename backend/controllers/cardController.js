@@ -655,6 +655,7 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   }
 
   const sourceListId = card.list._id;
+  const sourceListTitle = card.list.title;
   const oldPosition = card.position;
   
   // Get the destination list to update status
@@ -730,8 +731,8 @@ export const moveCard = asyncHandler(async (req, res, next) => {
     card: card._id,
     list: card.list,
     metadata: {
-      sourceListId,
-      destinationListId,
+      fromList: sourceListTitle,
+      toList: destinationList.title,
       newPosition
     }
   });
@@ -767,7 +768,7 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   if (sourceListId.toString() !== destinationListId) {
     await notificationService.notifyTaskUpdated(card, req.user.id, {
       moved: true,
-      fromList: card.list.title,
+      fromList: sourceListTitle,
       toList: destinationList.title
     });
   }
