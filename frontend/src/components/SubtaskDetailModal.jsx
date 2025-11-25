@@ -10,7 +10,8 @@ import CommentsSection from "./CardDetailModal/CommentsSection";
 import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
 import SubtasksSection from "./CardDetailModal/SubtasksSection";
-import HierarchyBreadcrumbs from "./hierarchy/HierarchyBreadcrumbs";
+import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
+import useModalHierarchyStore from "../store/modalHierarchyStore";
 
 const overlayMap = {
   purple: "bg-purple-950/50",
@@ -28,8 +29,6 @@ const SubtaskDetailModal = ({
   entityId,
   initialData = {},
   onClose,
-  breadcrumbs = [],
-  onBreadcrumbNavigate,
   onOpenChild,
   depth = 1,
   theme = "purple",
@@ -65,6 +64,7 @@ const SubtaskDetailModal = ({
   const [nanoLoading, setNanoLoading] = useState(false);
   const [newNanoTitle, setNewNanoTitle] = useState("");
   const [parentTaskId, setParentTaskId] = useState(initialData.task || null);
+  const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
 
   const overlayClass = overlayMap[theme] || overlayMap.purple;
 
@@ -147,6 +147,7 @@ const SubtaskDetailModal = ({
       setTags(data.tags || []);
       setAttachments(data.attachments || []);
       setParentTaskId(data.task);
+      setHierarchyActiveItem("subtask", data);
     } catch (error) {
       console.error("Error loading subtask:", error);
       toast.error("Failed to load subtask");
@@ -350,7 +351,7 @@ const SubtaskDetailModal = ({
             <div className="flex items-start justify-between mb-6 border-b border-gray-200 pb-4">
               <div className="flex-1">
                 <div className="mb-3">
-                  <HierarchyBreadcrumbs items={breadcrumbs} onNavigate={onBreadcrumbNavigate} />
+                  <BreadcrumbNavigation />
                 </div>
                 <div className="flex items-center gap-2 mb-2">
                   <FileText size={20} className="text-gray-400" />

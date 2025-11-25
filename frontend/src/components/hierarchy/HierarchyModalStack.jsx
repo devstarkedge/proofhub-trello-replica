@@ -23,12 +23,6 @@ const HierarchyModalStack = ({
   if (!stack.length) return null;
 
   const renderModal = (item, index) => {
-    const breadcrumbs = stack.slice(0, index + 1).map((entry) => ({
-      id: entry.entityId,
-      type: entry.type,
-      label: entry.label || entry.initialData?.title || entry.initialData?.name || "Untitled"
-    }));
-
     const handleClose = () => {
       if (index === 0) {
         onCloseAll();
@@ -39,8 +33,6 @@ const HierarchyModalStack = ({
 
     const commonProps = {
       depth: index,
-      breadcrumbs,
-      onBreadcrumbNavigate: (targetIndex) => onCloseToDepth(targetIndex),
       onClose: handleClose,
       onLabelUpdate: (label) => onLabelUpdate(item, label),
       theme: themeByType[item.type],

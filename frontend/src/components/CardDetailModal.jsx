@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, AlignLeft, Tag, AlertCircle, FileText, MessageSquare, Activity } from "lucide-react";
+import { X, AlignLeft, Tag, AlertCircle, MessageSquare, Activity } from "lucide-react";
 import Database from "../services/database";
 import AuthContext from "../context/AuthContext";
 import { toast } from "react-toastify";
 import useWorkflowStore from "../store/workflowStore";
 import useDepartmentStore from "../store/departmentStore";
+import useModalHierarchyStore from "../store/modalHierarchyStore";
 import CardDescription from "./CardDetailModal/CardDescription";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
 import SubtasksSection from "./CardDetailModal/SubtasksSection";
@@ -14,7 +15,7 @@ import CommentsSection from "./CardDetailModal/CommentsSection";
 import ActivitySection from "./CardDetailModal/ActivitySection";
 import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
-import HierarchyBreadcrumbs from "./hierarchy/HierarchyBreadcrumbs";
+import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 
 const themeOverlay = {
   blue: 'bg-blue-950/60',
@@ -28,8 +29,6 @@ const CardDetailModal = ({
   onUpdate,
   onDelete,
   onMoveCard,
-  breadcrumbs = [],
-  onBreadcrumbNavigate,
   onOpenChild,
   depth = 0,
   theme = 'blue',
@@ -63,15 +62,20 @@ const CardDetailModal = ({
   const [attachments, setAttachments] = useState(card.attachments || []);
   const [teamMembers, setTeamMembers] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [projectName, setProjectName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredMembers, setFilteredMembers] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
+  const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
+  const initializeHierarchyTask = useModalHierarchyStore((state) => state.initializeTaskStack);
+  const closeHierarchy = useModalHierarchyStore((state) => state.closeAll);
+  const hierarchyStackLength = useModalHierarchyStore((state) => state.stack.length);
 
   const labelUpdateRef = React.useRef(onLabelUpdate);
+  const managedHierarchyRef = React.useRef(false);
   useEffect(() => {
     labelUpdateRef.current = onLabelUpdate;
   }, [onLabelUpdate]);
@@ -81,6 +85,37 @@ const CardDetailModal = ({
       labelUpdateRef.current(card.title);
     }
   }, [card?.title]);
+
+  useEffect(() => {
+    if (!card?._id || managedHierarchyRef.current) return;
+    if (hierarchyStackLength === 0) {
+      const projectPayload =
+        typeof card?.board === "object" && card.board
+          ? card.board
+          : card?.board
+            ? { _id: card.board, name: "Project" }
+            : null;
+      initializeHierarchyTask({
+        project: projectPayload,
+        task: card,
+      });
+      managedHierarchyRef.current = true;
+    }
+  }, [card, hierarchyStackLength, initializeHierarchyTask]);
+
+  useEffect(() => {
+    return () => {
+      if (managedHierarchyRef.current) {
+        closeHierarchy();
+      }
+    };
+  }, [closeHierarchy]);
+
+  useEffect(() => {
+    if (typeof card?.board === "object" && card.board) {
+      setHierarchyProject(card.board);
+    }
+  }, [card?.board, setHierarchyProject]);
 
   // Time Tracking States
   const [estimationEntries, setEstimationEntries] = useState(
@@ -133,6 +168,9 @@ const CardDetailModal = ({
             return { ...entry, id };
           }));
           setAttachments(freshCard.attachments || []);
+          setHierarchyActiveItem("task", freshCard);
+        } else if (card) {
+          setHierarchyActiveItem("task", card);
         }
       } catch (error) {
         console.error("Error loading fresh card data:", error);
@@ -298,15 +336,19 @@ const CardDetailModal = ({
   };
 
   const loadProjectName = async () => {
+    const boardId = card.board?._id || card.board;
+    if (!boardId) {
+      setHierarchyProject({ _id: null, name: "Project" });
+      return;
+    }
     try {
-      const boardId = card.board?._id || card.board;
-      if (boardId) {
-        const response = await Database.getProject(boardId);
-        setProjectName(response.data?.name || "Unknown Project");
-      }
+      const response = await Database.getProject(boardId);
+      const projectData = response.data;
+      const fallbackName = projectData?.name || "Unknown Project";
+      setHierarchyProject(projectData || { _id: boardId, name: fallbackName });
     } catch (error) {
       console.error("Error loading project name:", error);
-      setProjectName("Project");
+      setHierarchyProject({ _id: boardId, name: "Project" });
     }
   };
 
@@ -763,10 +805,6 @@ const CardDetailModal = ({
 
   const overlayClass = themeOverlay[theme] || themeOverlay.blue;
 
-  const handleBreadcrumbClick = (index) => {
-    onBreadcrumbNavigate?.(index);
-  };
-
   return (
     <AnimatePresence>
       <motion.div
@@ -790,19 +828,8 @@ const CardDetailModal = ({
             <div className="flex items-start justify-between mb-6 border-b border-gray-200 pb-4">
               <div className="flex-1">
                 <div className="mb-3">
-                  <HierarchyBreadcrumbs items={breadcrumbs} onNavigate={handleBreadcrumbClick} />
+                  <BreadcrumbNavigation />
                 </div>
-                <div className="flex items-center gap-2 mb-2">
-                  <FileText size={20} className="text-gray-400" />
-                  <span className="text-sm font-semibold text-gray-900">
-                    {projectName}
-                  </span>
-                  <span className="text-sm text-gray-400">›</span>
-                  <span className="text-sm text-gray-600">
-                    {card.list?.title || "List"}
-                  </span>
-                </div>
-
                 <div className="flex items-start gap-3">
                   <AlignLeft
                     size={24}

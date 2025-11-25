@@ -9,7 +9,8 @@ import AttachmentsSection from "./CardDetailModal/AttachmentsSection";
 import CommentsSection from "./CardDetailModal/CommentsSection";
 import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
-import HierarchyBreadcrumbs from "./hierarchy/HierarchyBreadcrumbs";
+import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
+import useModalHierarchyStore from "../store/modalHierarchyStore";
 
 const overlayMap = {
   pink: "bg-pink-950/50"
@@ -26,8 +27,6 @@ const SubtaskNanoModal = ({
   entityId,
   initialData = {},
   onClose,
-  breadcrumbs = [],
-  onBreadcrumbNavigate,
   depth = 2,
   theme = "pink",
   onLabelUpdate
@@ -60,6 +59,7 @@ const SubtaskNanoModal = ({
   const [activeTab, setActiveTab] = useState("comments");
   const [parentTaskId, setParentTaskId] = useState(initialData.task || null);
   const [parentSubtaskId, setParentSubtaskId] = useState(initialData.subtask || null);
+  const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
 
   const overlayClass = overlayMap[theme] || overlayMap.pink;
 
@@ -126,8 +126,9 @@ const SubtaskNanoModal = ({
       setAssignees(data.assignees ? data.assignees.map(a => (typeof a === "object" ? a._id : a)).filter(Boolean) : []);
       setTags(data.tags || []);
       setAttachments(data.attachments || []);
-      setParentTaskId(data.task);
-      setParentSubtaskId(data.subtask);
+      setParentTaskId(typeof data.task === 'object' ? data.task._id : data.task);
+      setParentSubtaskId(typeof data.subtask === 'object' ? data.subtask._id : data.subtask);
+      setHierarchyActiveItem("subtaskNano", data);
     } catch (error) {
       console.error("Error loading nano subtask:", error);
       toast.error("Failed to load nano subtask");
@@ -271,7 +272,7 @@ const SubtaskNanoModal = ({
             <div className="flex items-start justify-between mb-6 border-b border-gray-200 pb-4">
               <div className="flex-1">
                 <div className="mb-3">
-                  <HierarchyBreadcrumbs items={breadcrumbs} onNavigate={onBreadcrumbNavigate} />
+                  <BreadcrumbNavigation />
                 </div>
                 <div className="flex items-center gap-2 mb-2">
                   <FileText size={20} className="text-gray-400" />

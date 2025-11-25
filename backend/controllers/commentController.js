@@ -15,7 +15,7 @@ const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
     if (!nano) throw new ErrorResponse('Subtask-Nano not found', 404);
     const subtask = await Subtask.findById(nano.subtask);
     return {
-      cardId: nano.task.toString(),
+      cardId: nano.task._id.toString(),
       subtaskId: subtask?._id,
       nanoId,
       contextType: 'subtaskNano',
@@ -27,7 +27,7 @@ const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
     const subtask = await Subtask.findById(subtaskId);
     if (!subtask) throw new ErrorResponse('Subtask not found', 404);
     return {
-      cardId: subtask.task.toString(),
+      cardId: subtask.task._id.toString(),
       subtaskId,
       contextType: 'subtask',
       contextRef: subtaskId,

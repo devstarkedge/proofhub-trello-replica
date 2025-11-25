@@ -11,6 +11,7 @@ import DepartmentContext from '../context/DepartmentContext';
 import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';
 import useWorkflowStore from '../store/workflowStore';
+import useModalHierarchyStore from '../store/modalHierarchyStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
 import HierarchyModalStack from '../components/hierarchy/HierarchyModalStack';
 
@@ -48,7 +49,12 @@ const WorkFlow = memo(() => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [fullProjectData, setFullProjectData] = useState(null);
-  const [modalStack, setModalStack] = useState([]);
+  const modalStack = useModalHierarchyStore((state) => state.stack);
+  const openHierarchyModal = useModalHierarchyStore((state) => state.openModalByType);
+  const closeHierarchy = useModalHierarchyStore((state) => state.closeAll);
+  const closeHierarchyToDepth = useModalHierarchyStore((state) => state.closeToDepth);
+  const updateHierarchyLabel = useModalHierarchyStore((state) => state.updateItemLabel);
+  const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
 
   useEffect(() => {
     if (deptId && projectId && !teamLoading) {
@@ -66,6 +72,12 @@ const WorkFlow = memo(() => {
       };
     }
   }, [user, board]);
+
+useEffect(() => {
+  if (board) {
+    setHierarchyProject(board);
+  }
+}, [board, setHierarchyProject]);
 
   const loadData = async () => {
     try {
@@ -192,48 +204,40 @@ const WorkFlow = memo(() => {
 
   const handleOpenCardModal = (card) => {
     if (!card) return;
-    setModalStack([{
+    openHierarchyModal({
       type: 'task',
-      entityId: card._id,
-      initialData: card,
-      label: card.title || 'Task'
-    }]);
+      entity: card,
+      project: board
+    });
   };
 
-  const closeAllModals = () => setModalStack([]);
+  const closeAllModals = () => closeHierarchy();
 
   const closeModalToDepth = (depth) => {
-    if (depth < 0) {
-      setModalStack([]);
-      return;
-    }
-    setModalStack(prev => prev.slice(0, depth + 1));
+    closeHierarchyToDepth(depth);
   };
 
   const handleOpenChildEntity = (child, parentDepth) => {
     if (!child?.entityId || !child?.type) return;
-    setModalStack(prev => {
-      const next = prev.slice(0, parentDepth + 1);
-      next.push({
-        type: child.type,
-        entityId: child.entityId,
-        initialData: child.initialData || {},
-        label: child.label || child.initialData?.title || 'Untitled'
-      });
-      return next;
+    const entity =
+      child.initialData ||
+      {
+        _id: child.entityId,
+        id: child.entityId,
+        title: child.label || 'Untitled',
+        name: child.label || 'Untitled'
+      };
+    openHierarchyModal({
+      type: child.type,
+      entity,
+      parentDepth
     });
   };
 
   const handleStackLabelUpdate = useCallback((item, label) => {
     if (!item?.entityId) return;
-    setModalStack(prev =>
-      prev.map(entry =>
-        entry.entityId === item.entityId && entry.type === item.type
-          ? { ...entry, label }
-          : entry
-      )
-    );
-  }, []);
+    updateHierarchyLabel(item.entityId, item.type, label);
+  }, [updateHierarchyLabel]);
   
   if (loading || teamLoading) {
     return (
