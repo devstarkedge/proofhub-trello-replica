@@ -24,69 +24,9 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
       : null;
 
   const hasDetails =
-    card.labels?.length > 0 ||
-    card.dueDate ||
     (subtaskStats?.total > 0) ||
     card.attachments?.length > 0 ||
     card.comments?.length > 0;
-
-  const getPriorityConfig = (priority) => {
-    switch (priority) {
-      case "High":
-        return {
-          bg: "bg-red-50",
-          text: "text-red-700",
-          border: "border-red-200",
-          icon: "text-red-500",
-        };
-      case "Medium":
-        return {
-          bg: "bg-yellow-50",
-          text: "text-yellow-700",
-          border: "border-yellow-200",
-          icon: "text-yellow-500",
-        };
-      case "Low":
-        return {
-          bg: "bg-green-50",
-          text: "text-green-700",
-          border: "border-green-200",
-          icon: "text-green-500",
-        };
-      default:
-        return {
-          bg: "bg-gray-50",
-          text: "text-gray-700",
-          border: "border-gray-200",
-          icon: "text-gray-500",
-        };
-    }
-  };
-
-  const getStatusConfig = (status) => {
-    switch (status) {
-      case "done":
-        return {
-          bg: "bg-green-100",
-          text: "text-green-800",
-          icon: CheckSquare,
-        };
-      case "in-progress":
-        return { bg: "bg-blue-100", text: "text-blue-800", icon: Clock };
-      case "review":
-        return { bg: "bg-purple-100", text: "text-purple-800", icon: Eye };
-      case "todo":
-        return { bg: "bg-gray-100", text: "text-gray-800", icon: AlertCircle };
-      default:
-        // For custom statuses, use a neutral style and capitalize the status
-        return {
-          bg: "bg-indigo-100",
-          text: "text-indigo-800",
-          icon: Tag,
-          displayText: status.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-        };
-    }
-  };
 
   const isOverdue =
     card.dueDate &&
@@ -112,15 +52,6 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
               </span>
             </div>
           )}
-          {card.priority && (
-            <span
-              className={`px-2 py-0.5 rounded-full ${
-                getPriorityConfig(card.priority).bg
-              } ${getPriorityConfig(card.priority).text}`}
-            >
-              {card.priority}
-            </span>
-          )}
           {card.dueDate && (
             <div className="flex items-center gap-1">
               <Calendar size={12} />
@@ -132,91 +63,85 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
     );
   }
 
-  const priorityConfig = card.priority
-    ? getPriorityConfig(card.priority)
-    : null;
-  const statusConfig = card.status ? getStatusConfig(card.status) : null;
-  const StatusIcon = statusConfig?.icon;
-
   return (
     <motion.div
       whileHover={{ y: -2, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}
       onClick={onClick}
-      className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100"
+      className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100 relative"
       key={card._id}
     >
-      {/* Card Cover */}
-      {card.cover && (
-        <div
-          className="h-24 rounded-lg mx-4 -mt-4 mb-4"
-          style={{
-            background:
-              card.cover.type === "color"
-                ? card.cover.value
-                : `url(${card.cover.value})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
-        />
-      )}
-
-      {/* Labels */}
-      {card.labels && card.labels.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          {card.labels.slice(0, 3).map((label, idx) => (
-            <motion.span
-              key={idx}
-              whileHover={{ scale: 1.05 }}
-              className="px-2 py-1 text-xs bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-md font-medium"
-            >
-              {label}
-            </motion.span>
-          ))}
-          {card.labels.length > 3 && (
-            <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md font-medium">
-              +{card.labels.length - 3}
-            </span>
+      {/* Header: Labels, with Date and Delete Button on hover */}
+      <div className="flex justify-between items-center mb-3 pt-1 relative">
+        <div className="flex flex-wrap gap-1 items-center">
+          {card.labels && card.labels.length > 0 && (
+            <>
+              {card.labels.slice(0, 3).map((label, idx) => (
+                <motion.span
+                  key={idx}
+                  whileHover={{ scale: 1.05 }}
+                  className="px-2 py-1 text-xs bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-md font-medium"
+                >
+                  {label}
+                </motion.span>
+              ))}
+              {card.labels.length > 3 && (
+                <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md font-medium">
+                  +{card.labels.length - 3}
+                </span>
+              )}
+            </>
           )}
+        </div>
+        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          {card.dueDate && (
+            <motion.div
+              key="due-date"
+              whileHover={{ scale: 1.05 }}
+              className={`flex items-center gap-1 text-xs ${
+                isOverdue
+                  ? "text-red-600 bg-red-50 px-2 py-1 rounded-md font-medium"
+                  : "text-gray-600 bg-white px-2 py-1 rounded-md shadow-sm"
+              }`}
+            >
+              <Calendar size={12} />
+              <span>{new Date(card.dueDate).toLocaleDateString()}</span>
+            </motion.div>
+          )}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(card._id);
+            }}
+            className="transition-opacity p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+          >
+            <Trash2 size={14} />
+          </motion.button>
+        </div>
+      </div>
+
+      {/* Cover Image - Mid Area */}
+      {card.cover && (
+        <div className="mb-4 mx-0">
+          <div
+            className="h-32 sm:h-28 rounded-lg w-full"
+            style={{
+              background:
+                card.cover.type === "color"
+                  ? card.cover.value
+                  : `url(${card.cover.value})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          />
         </div>
       )}
 
-      {/* Card Title */}
-      <div className="flex justify-between items-start gap-2 mb-3">
-        <h4 className="text-sm font-semibold text-gray-900 flex-1 line-clamp-2 leading-relaxed">
-          {card.title}
-        </h4>
-        <motion.button
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(card._id);
-          }}
-          className="transition-opacity p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-        >
-          <Trash2 size={14} />
-        </motion.button>
-      </div>
-
-      {/* Status & Priority */}
-      <div className="flex items-center gap-2 mb-3">
-        {statusConfig && (
-          <span
-            className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md font-medium ${statusConfig.bg} ${statusConfig.text}`}
-          >
-            {StatusIcon && <StatusIcon size={12} />}
-            {statusConfig.displayText || card.status}
-          </span>
-        )}
-        {priorityConfig && (
-          <span
-            className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border font-medium ${priorityConfig.bg} ${priorityConfig.text} ${priorityConfig.border}`}
-          >
-            <AlertCircle size={12} className={priorityConfig.icon} />
-            {card.priority}
-          </span>
-        )}
-      </div>
+      {/* Card Title - Slightly Lower */}
+      <h4 className="text-sm font-semibold text-gray-900 mb-3 line-clamp-2 leading-relaxed">
+        {card.title}
+      </h4>
 
       {/* Assignees */}
       {card.assignees && card.assignees.length > 0 && (
@@ -249,24 +174,9 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
         </div>
       )}
 
-      {/* Card Badges */}
+      {/* Card Badges - Without Status/Priority/Nano */}
       {hasDetails && (
         <div className="flex items-center flex-wrap gap-3 pt-3 border-t border-gray-100">
-          {card.dueDate && (
-            <motion.div
-              key="due-date"
-              whileHover={{ scale: 1.05 }}
-              className={`flex items-center gap-1 text-xs ${
-                isOverdue
-                  ? "text-red-600 bg-red-50 px-2 py-1 rounded-md font-medium"
-                  : "text-gray-600"
-              }`}
-            >
-              <Calendar size={12} />
-              <span>{new Date(card.dueDate).toLocaleDateString()}</span>
-            </motion.div>
-          )}
-
           {subtaskStats?.total > 0 && (
             <motion.div
               key="subtasks"
@@ -280,19 +190,6 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
               <CheckSquare size={12} />
               <span>
                 {subtaskStats.completed}/{subtaskStats.total}
-              </span>
-            </motion.div>
-          )}
-
-          {subtaskStats?.nanoTotal > 0 && (
-            <motion.div
-              key="nano"
-              whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-pink-50 text-pink-600"
-            >
-              <CheckSquare size={12} />
-              <span>
-                {subtaskStats.nanoCompleted || 0}/{subtaskStats.nanoTotal} nanos
               </span>
             </motion.div>
           )}
@@ -323,7 +220,7 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
             <motion.div
               key="logged-time"
               whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md font-medium"
+              className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md font-medium "
             >
               <Clock size={12} />
               <span>
@@ -334,6 +231,8 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
           )}
         </div>
       )}
+
+
     </motion.div>
   );
 }

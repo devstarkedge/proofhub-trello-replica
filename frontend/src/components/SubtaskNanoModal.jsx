@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, AlignLeft, FileText } from "lucide-react";
 import { toast } from "react-toastify";
 import Database from "../services/database";
+import commentService from "../services/commentService";
 import AuthContext from "../context/AuthContext";
 import CardDescription from "./CardDetailModal/CardDescription";
 import AttachmentsSection from "./CardDetailModal/AttachmentsSection";
@@ -12,6 +13,7 @@ import CardSidebar from "./CardDetailModal/CardSidebar";
 import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import useModalHierarchyStore from "../store/modalHierarchyStore";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
+import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
 
 const overlayMap = {
   pink: "bg-pink-950/50"
@@ -58,11 +60,54 @@ const SubtaskNanoModal = ({
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [activeTab, setActiveTab] = useState("comments");
+  const [activities, setActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [parentTaskId, setParentTaskId] = useState(initialData.task || null);
   const [parentSubtaskId, setParentSubtaskId] = useState(initialData.subtask || null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
+
+  // Time Tracking States
+  const [estimationEntries, setEstimationEntries] = useState(
+    (initialData.estimationTime || []).map((entry, idx) => {
+      const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
+      return { ...entry, id };
+    })
+  );
+  const [loggedTime, setLoggedTime] = useState(
+    (initialData.loggedTime || []).map((entry, idx) => {
+      const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
+      return { ...entry, id };
+    })
+  );
+  const [billedTime, setBilledTime] = useState(
+    (initialData.billedTime || []).map((entry, idx) => {
+      const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
+      return { ...entry, id };
+    })
+  );
+  const [newEstimationHours, setNewEstimationHours] = useState("");
+  const [newEstimationMinutes, setNewEstimationMinutes] = useState("");
+  const [newEstimationReason, setNewEstimationReason] = useState("");
+  const [newLoggedHours, setNewLoggedHours] = useState("");
+  const [newLoggedMinutes, setNewLoggedMinutes] = useState("");
+  const [newLoggedDescription, setNewLoggedDescription] = useState("");
+  const [newBilledHours, setNewBilledHours] = useState("");
+  const [newBilledMinutes, setNewBilledMinutes] = useState("");
+  const [newBilledDescription, setNewBilledDescription] = useState("");
+  const [editingEstimation, setEditingEstimation] = useState(null);
+  const [editingLogged, setEditingLogged] = useState(null);
+  const [editingBilled, setEditingBilled] = useState(null);
+  const [editEstimationHours, setEditEstimationHours] = useState("");
+  const [editEstimationMinutes, setEditEstimationMinutes] = useState("");
+  const [editEstimationReason, setEditEstimationReason] = useState("");
+  const [editLoggedHours, setEditLoggedHours] = useState("");
+  const [editLoggedMinutes, setEditLoggedMinutes] = useState("");
+  const [editLoggedDescription, setEditLoggedDescription] = useState("");
+  const [editBilledHours, setEditBilledHours] = useState("");
+  const [editBilledMinutes, setEditBilledMinutes] = useState("");
+  const [editBilledDescription, setEditBilledDescription] = useState("");
 
   const overlayClass = overlayMap[theme] || overlayMap.pink;
 
@@ -70,6 +115,24 @@ const SubtaskNanoModal = ({
     loadNano();
     loadTeamMembers();
     loadComments();
+  }, [entityId]);
+
+  // Subscribe to comment service updates for real-time UI synchronization
+  useEffect(() => {
+    if (!entityId) return;
+
+    // Subscribe to comment updates from the service
+    const unsubscribe = commentService.onCommentsUpdated('nano', entityId, (updatedComments, error) => {
+      if (error) {
+        console.error("Error updating comments:", error);
+      } else {
+        setComments(updatedComments);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [entityId]);
 
   const labelUpdateRef = useRef(onLabelUpdate);
@@ -131,6 +194,18 @@ const SubtaskNanoModal = ({
       setAttachments(data.attachments || []);
       setParentTaskId(typeof data.task === 'object' ? data.task._id : data.task);
       setParentSubtaskId(typeof data.subtask === 'object' ? data.subtask._id : data.subtask);
+      setEstimationEntries((data.estimationTime || []).map((entry, idx) => {
+        const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
+        return { ...entry, id };
+      }));
+      setLoggedTime((data.loggedTime || []).map((entry, idx) => {
+        const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
+        return { ...entry, id };
+      }));
+      setBilledTime((data.billedTime || []).map((entry, idx) => {
+        const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
+        return { ...entry, id };
+      }));
       setHierarchyActiveItem("subtaskNano", data);
     } catch (error) {
       console.error("Error loading nano subtask:", error);
@@ -150,7 +225,7 @@ const SubtaskNanoModal = ({
 
   const loadComments = async () => {
     try {
-      const data = await Database.getNanoComments(entityId);
+      const data = await commentService.fetchComments('nano', entityId);
       setComments(data || []);
     } catch (error) {
       console.error("Error loading comments:", error);
@@ -169,7 +244,10 @@ const SubtaskNanoModal = ({
         startDate: startDate ? new Date(startDate).toISOString() : null,
         assignees,
         tags,
-        attachments
+        attachments,
+        estimationTime: estimationEntries,
+        loggedTime: loggedTime,
+        billedTime: billedTime
       };
       await Database.updateNano(entityId, payload);
       toast.success("Subtask-Nano updated");
@@ -244,18 +322,254 @@ const SubtaskNanoModal = ({
       return;
     }
     try {
-      await Database.createComment({
-        cardId: parentTaskId,
-        subtaskId: parentSubtaskId,
-        nanoId: entityId,
-        htmlContent: newComment
+      // Use optimistic update
+      const { promise } = await commentService.addCommentOptimistic({
+        type: 'nano',
+        entityId,
+        htmlContent: newComment,
+        user,
+        parentTaskId,
+        parentSubtaskId
       });
+
+      // Clear input immediately
       setNewComment("");
-      loadComments();
+      
+      // Show success toast immediately
       toast.success("Comment added");
+
+      // Wait for server save in background
+      try {
+        await promise;
+      } catch (error) {
+        toast.error("Failed to save comment to server");
+      }
     } catch (error) {
       console.error("Error adding comment:", error);
       toast.error("Failed to add comment");
+    }
+  };
+
+  // Time Tracking Handlers
+  const handleAddEstimation = async () => {
+    if (!newEstimationHours && !newEstimationMinutes) return;
+    try {
+      const hours = parseInt(newEstimationHours) || 0;
+      const minutes = parseInt(newEstimationMinutes) || 0;
+      const totalMinutes = hours * 60 + minutes;
+      const newEntry = {
+        id: `estimation-${Date.now()}`,
+        hours,
+        minutes,
+        reason: newEstimationReason,
+        totalMinutes,
+        createdAt: new Date().toISOString(),
+        user: user?._id
+      };
+      const updatedEntries = [...estimationEntries, newEntry];
+      setEstimationEntries(updatedEntries);
+      setNewEstimationHours("");
+      setNewEstimationMinutes("");
+      setNewEstimationReason("");
+      toast.success("Estimation added");
+    } catch (error) {
+      console.error("Error adding estimation:", error);
+      toast.error("Failed to add estimation");
+    }
+  };
+
+  const handleEditEstimation = (entry) => {
+    setEditingEstimation(entry.id);
+    setEditEstimationHours(entry.hours || 0);
+    setEditEstimationMinutes(entry.minutes || 0);
+    setEditEstimationReason(entry.reason || "");
+  };
+
+  const handleSaveEstimationEdit = async () => {
+    try {
+      const hours = parseInt(editEstimationHours) || 0;
+      const minutes = parseInt(editEstimationMinutes) || 0;
+      const totalMinutes = hours * 60 + minutes;
+      const updatedEntries = estimationEntries.map(entry =>
+        entry.id === editingEstimation
+          ? { ...entry, hours, minutes, reason: editEstimationReason, totalMinutes }
+          : entry
+      );
+      setEstimationEntries(updatedEntries);
+      setEditingEstimation(null);
+      setEditEstimationHours("");
+      setEditEstimationMinutes("");
+      setEditEstimationReason("");
+      toast.success("Estimation updated");
+    } catch (error) {
+      console.error("Error updating estimation:", error);
+      toast.error("Failed to update estimation");
+    }
+  };
+
+  const handleCancelEstimationEdit = () => {
+    setEditingEstimation(null);
+    setEditEstimationHours("");
+    setEditEstimationMinutes("");
+    setEditEstimationReason("");
+  };
+
+  const handleDeleteEstimation = async (entryId) => {
+    try {
+      const updatedEntries = estimationEntries.filter(entry => entry.id !== entryId);
+      setEstimationEntries(updatedEntries);
+      toast.success("Estimation deleted");
+    } catch (error) {
+      console.error("Error deleting estimation:", error);
+      toast.error("Failed to delete estimation");
+    }
+  };
+
+  const handleAddLoggedTime = async () => {
+    if (!newLoggedHours && !newLoggedMinutes) return;
+    try {
+      const hours = parseInt(newLoggedHours) || 0;
+      const minutes = parseInt(newLoggedMinutes) || 0;
+      const totalMinutes = hours * 60 + minutes;
+      const newEntry = {
+        id: `logged-${Date.now()}`,
+        hours,
+        minutes,
+        description: newLoggedDescription,
+        totalMinutes,
+        createdAt: new Date().toISOString(),
+        user: user?._id
+      };
+      const updatedEntries = [...loggedTime, newEntry];
+      setLoggedTime(updatedEntries);
+      setNewLoggedHours("");
+      setNewLoggedMinutes("");
+      setNewLoggedDescription("");
+      toast.success("Logged time added");
+    } catch (error) {
+      console.error("Error adding logged time:", error);
+      toast.error("Failed to add logged time");
+    }
+  };
+
+  const handleEditLoggedTime = (entry) => {
+    setEditingLogged(entry.id);
+    setEditLoggedHours(entry.hours || 0);
+    setEditLoggedMinutes(entry.minutes || 0);
+    setEditLoggedDescription(entry.description || "");
+  };
+
+  const handleSaveLoggedTimeEdit = async () => {
+    try {
+      const hours = parseInt(editLoggedHours) || 0;
+      const minutes = parseInt(editLoggedMinutes) || 0;
+      const totalMinutes = hours * 60 + minutes;
+      const updatedEntries = loggedTime.map(entry =>
+        entry.id === editingLogged
+          ? { ...entry, hours, minutes, description: editLoggedDescription, totalMinutes }
+          : entry
+      );
+      setLoggedTime(updatedEntries);
+      setEditingLogged(null);
+      setEditLoggedHours("");
+      setEditLoggedMinutes("");
+      setEditLoggedDescription("");
+      toast.success("Logged time updated");
+    } catch (error) {
+      console.error("Error updating logged time:", error);
+      toast.error("Failed to update logged time");
+    }
+  };
+
+  const handleCancelLoggedTimeEdit = () => {
+    setEditingLogged(null);
+    setEditLoggedHours("");
+    setEditLoggedMinutes("");
+    setEditLoggedDescription("");
+  };
+
+  const handleDeleteLoggedTime = async (entryId) => {
+    try {
+      const updatedEntries = loggedTime.filter(entry => entry.id !== entryId);
+      setLoggedTime(updatedEntries);
+      toast.success("Logged time deleted");
+    } catch (error) {
+      console.error("Error deleting logged time:", error);
+      toast.error("Failed to delete logged time");
+    }
+  };
+
+  const handleAddBilledTime = async () => {
+    if (!newBilledHours && !newBilledMinutes) return;
+    try {
+      const hours = parseInt(newBilledHours) || 0;
+      const minutes = parseInt(newBilledMinutes) || 0;
+      const totalMinutes = hours * 60 + minutes;
+      const newEntry = {
+        id: `billed-${Date.now()}`,
+        hours,
+        minutes,
+        description: newBilledDescription,
+        totalMinutes,
+        createdAt: new Date().toISOString(),
+        user: user?._id
+      };
+      const updatedEntries = [...billedTime, newEntry];
+      setBilledTime(updatedEntries);
+      setNewBilledHours("");
+      setNewBilledMinutes("");
+      setNewBilledDescription("");
+      toast.success("Billed time added");
+    } catch (error) {
+      console.error("Error adding billed time:", error);
+      toast.error("Failed to add billed time");
+    }
+  };
+
+  const handleEditBilledTime = (entry) => {
+    setEditingBilled(entry.id);
+    setEditBilledHours(entry.hours || 0);
+    setEditBilledMinutes(entry.minutes || 0);
+    setEditBilledDescription(entry.description || "");
+  };
+
+  const handleSaveBilledTimeEdit = async () => {
+    try {
+      const hours = parseInt(editBilledHours) || 0;
+      const minutes = parseInt(editBilledMinutes) || 0;
+      const totalMinutes = hours * 60 + minutes;
+      const updatedEntries = billedTime.map(entry =>
+        entry.id === editingBilled
+          ? { ...entry, hours, minutes, description: editBilledDescription, totalMinutes }
+          : entry
+      );
+      setBilledTime(updatedEntries);
+      setEditingBilled(null);
+      setEditBilledHours("");
+      setEditBilledMinutes("");
+      setEditBilledDescription("");
+      toast.success("Billed time updated");
+    } catch (error) {
+      console.error("Error updating billed time:", error);
+      toast.error("Failed to update billed time");
+    }
+  };
+
+  const handleCancelBilledTimeEdit = () => {
+    setEditingBilled(null);
+    setEditBilledHours("");
+    setEditBilledMinutes("");
+    setEditBilledDescription("");
+  };
+
+  const handleDeleteBilledTime = async (entryId) => {
+    try {
+      const updatedEntries = billedTime.filter(entry => entry.id !== entryId);
+      setBilledTime(updatedEntries);
+      toast.success("Billed time deleted");
+    } catch (error) {
+      console.error("Error deleting billed time:", error);
+      toast.error("Failed to delete billed time");
     }
   };
 
@@ -357,6 +671,67 @@ const SubtaskNanoModal = ({
                 <AttachmentsSection
                   attachments={attachments}
                   onDeleteAttachment={handleDeleteAttachment}
+                />
+
+                <TimeTrackingSection
+                  estimationEntries={estimationEntries}
+                  loggedTime={loggedTime}
+                  billedTime={billedTime}
+                  newEstimationHours={newEstimationHours}
+                  newEstimationMinutes={newEstimationMinutes}
+                  newEstimationReason={newEstimationReason}
+                  newLoggedHours={newLoggedHours}
+                  newLoggedMinutes={newLoggedMinutes}
+                  newLoggedDescription={newLoggedDescription}
+                  newBilledHours={newBilledHours}
+                  newBilledMinutes={newBilledMinutes}
+                  newBilledDescription={newBilledDescription}
+                  editingEstimation={editingEstimation}
+                  editingLogged={editingLogged}
+                  editingBilled={editingBilled}
+                  editEstimationHours={editEstimationHours}
+                  editEstimationMinutes={editEstimationMinutes}
+                  editEstimationReason={editEstimationReason}
+                  editLoggedHours={editLoggedHours}
+                  editLoggedMinutes={editLoggedMinutes}
+                  editLoggedDescription={editLoggedDescription}
+                  editBilledHours={editBilledHours}
+                  editBilledMinutes={editBilledMinutes}
+                  editBilledDescription={editBilledDescription}
+                  onEstimationHoursChange={setNewEstimationHours}
+                  onEstimationMinutesChange={setNewEstimationMinutes}
+                  onEstimationReasonChange={setNewEstimationReason}
+                  onLoggedHoursChange={setNewLoggedHours}
+                  onLoggedMinutesChange={setNewLoggedMinutes}
+                  onLoggedDescriptionChange={setNewLoggedDescription}
+                  onBilledHoursChange={setNewBilledHours}
+                  onBilledMinutesChange={setNewBilledMinutes}
+                  onBilledDescriptionChange={setNewBilledDescription}
+                  onEditEstimationHoursChange={setEditEstimationHours}
+                  onEditEstimationMinutesChange={setEditEstimationMinutes}
+                  onEditEstimationReasonChange={setEditEstimationReason}
+                  onEditLoggedHoursChange={setEditLoggedHours}
+                  onEditLoggedMinutesChange={setEditLoggedMinutes}
+                  onEditLoggedDescriptionChange={setEditLoggedDescription}
+                  onEditBilledHoursChange={setEditBilledHours}
+                  onEditBilledMinutesChange={setEditBilledMinutes}
+                  onEditBilledDescriptionChange={setEditBilledDescription}
+                  onAddEstimation={handleAddEstimation}
+                  onAddLoggedTime={handleAddLoggedTime}
+                  onAddBilledTime={handleAddBilledTime}
+                  onStartEditingEstimation={handleEditEstimation}
+                  onStartEditingLogged={handleEditLoggedTime}
+                  onStartEditingBilled={handleEditBilledTime}
+                  onSaveEstimationEdit={handleSaveEstimationEdit}
+                  onSaveLoggedEdit={handleSaveLoggedTimeEdit}
+                  onSaveBilledEdit={handleSaveBilledTimeEdit}
+                  onCancelEstimationEdit={handleCancelEstimationEdit}
+                  onCancelLoggedEdit={handleCancelLoggedTimeEdit}
+                  onCancelBilledEdit={handleCancelBilledTimeEdit}
+                  onConfirmDeleteEstimation={handleDeleteEstimation}
+                  onConfirmDeleteLoggedTime={handleDeleteLoggedTime}
+                  onConfirmDeleteBilledTime={handleDeleteBilledTime}
+                  card={{ _id: entityId }}
                 />
 
                 <div className="mt-8">

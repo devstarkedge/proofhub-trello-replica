@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlignLeft, Tag, AlertCircle, MessageSquare, Activity } from "lucide-react";
 import Database from "../services/database";
+import commentService from "../services/commentService";
 import AuthContext from "../context/AuthContext";
 import { toast } from "react-toastify";
 import useWorkflowStore from "../store/workflowStore";
@@ -133,20 +134,33 @@ const CardDetailModal = ({
       return { ...entry, id };
     })
   );
+  const [billedTime, setBilledTime] = useState(
+    (card.billedTime || []).map((entry, idx) => {
+      const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
+      return { ...entry, id };
+    })
+  );
   const [newEstimationHours, setNewEstimationHours] = useState("");
   const [newEstimationMinutes, setNewEstimationMinutes] = useState("");
   const [newEstimationReason, setNewEstimationReason] = useState("");
   const [newLoggedHours, setNewLoggedHours] = useState("");
   const [newLoggedMinutes, setNewLoggedMinutes] = useState("");
   const [newLoggedDescription, setNewLoggedDescription] = useState("");
+  const [newBilledHours, setNewBilledHours] = useState("");
+  const [newBilledMinutes, setNewBilledMinutes] = useState("");
+  const [newBilledDescription, setNewBilledDescription] = useState("");
   const [editingEstimation, setEditingEstimation] = useState(null);
   const [editingLogged, setEditingLogged] = useState(null);
+  const [editingBilled, setEditingBilled] = useState(null);
   const [editEstimationHours, setEditEstimationHours] = useState("");
   const [editEstimationMinutes, setEditEstimationMinutes] = useState("");
   const [editEstimationReason, setEditEstimationReason] = useState("");
   const [editLoggedHours, setEditLoggedHours] = useState("");
   const [editLoggedMinutes, setEditLoggedMinutes] = useState("");
   const [editLoggedDescription, setEditLoggedDescription] = useState("");
+  const [editBilledHours, setEditBilledHours] = useState("");
+  const [editBilledMinutes, setEditBilledMinutes] = useState("");
+  const [editBilledDescription, setEditBilledDescription] = useState("");
 
   useEffect(() => {
     // Load fresh card data from server when modal opens
@@ -168,6 +182,10 @@ const CardDetailModal = ({
           }));
           setLoggedTime((freshCard.loggedTime || []).map((entry, idx) => {
             const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
+            return { ...entry, id };
+          }));
+          setBilledTime((freshCard.billedTime || []).map((entry, idx) => {
+            const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
             return { ...entry, id };
           }));
           setAttachments(freshCard.attachments || []);
@@ -206,6 +224,10 @@ const CardDetailModal = ({
         }));
         if (updates.loggedTime) setLoggedTime((updates.loggedTime || []).map((entry, idx) => {
           const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
+          return { ...entry, id };
+        }));
+        if (updates.billedTime) setBilledTime((updates.billedTime || []).map((entry, idx) => {
+          const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
           return { ...entry, id };
         }));
         if (updates.attachments) setAttachments(updates.attachments);
@@ -258,6 +280,25 @@ const CardDetailModal = ({
       window.removeEventListener('socket-activity-added', handleActivityAdded);
     };
   }, [card._id]);
+
+  // Subscribe to comment service updates for real-time UI synchronization
+  useEffect(() => {
+    const cardId = card.id || card._id;
+    if (!cardId) return;
+
+    // Subscribe to comment updates from the service
+    const unsubscribe = commentService.onCommentsUpdated('card', cardId, (updatedComments, error) => {
+      if (error) {
+        console.error("Error updating comments:", error);
+      } else {
+        setComments(updatedComments);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [card._id, card.id]);
 
   useEffect(() => {
     if (card?._id) {
@@ -405,7 +446,7 @@ const CardDetailModal = ({
     const cardId = card.id || card._id;
     if (!cardId) return;
     try {
-      const cardComments = await Database.getComments(cardId);
+      const cardComments = await commentService.fetchComments('card', cardId);
       setComments(cardComments);
     } catch (error) {
       console.error("Error loading comments:", error);
@@ -507,6 +548,32 @@ const CardDetailModal = ({
     toast.success("Time logged successfully!");
   };
 
+  const handleAddBilledTime = () => {
+    const hours = parseInt(newBilledHours || 0);
+    const minutes = parseInt(newBilledMinutes || 0);
+
+    if ((hours === 0 && minutes === 0) || !newBilledDescription.trim()) {
+      toast.error("Please enter valid time and a description.");
+      return;
+    }
+
+    const normalized = normalizeTime(hours, minutes);
+    const newEntry = {
+      id: Date.now(),
+      hours: normalized.hours,
+      minutes: normalized.minutes,
+      description: newBilledDescription,
+      user: user._id,
+      date: new Date().toISOString(),
+    };
+
+    setBilledTime([...billedTime, newEntry]);
+    setNewBilledHours("");
+    setNewBilledMinutes("");
+    setNewBilledDescription("");
+    toast.success("Billed time added successfully!");
+  };
+
   const startEditingEstimation = (entry) => {
     setEditingEstimation(entry.id);
     setEditEstimationHours(entry.hours.toString());
@@ -593,6 +660,49 @@ const CardDetailModal = ({
     setEditLoggedDescription("");
   };
 
+  const startEditingBilled = (entry) => {
+    setEditingBilled(entry.id);
+    setEditBilledHours(entry.hours.toString());
+    setEditBilledMinutes(entry.minutes.toString());
+    setEditBilledDescription(entry.description);
+  };
+
+  const saveBilledEdit = (id) => {
+    const hours = parseInt(editBilledHours || 0);
+    const minutes = parseInt(editBilledMinutes || 0);
+
+    if ((hours === 0 && minutes === 0) || !editBilledDescription.trim()) {
+      toast.error("Please enter valid time and a description.");
+      return;
+    }
+
+    const normalized = normalizeTime(hours, minutes);
+    setBilledTime(
+      billedTime.map((entry) =>
+        entry.id === id
+          ? {
+              ...entry,
+              hours: normalized.hours,
+              minutes: normalized.minutes,
+              description: editBilledDescription,
+            }
+          : entry
+      )
+    );
+    setEditingBilled(null);
+    setEditBilledHours("");
+    setEditBilledMinutes("");
+    setEditBilledDescription("");
+    toast.success("Billed time updated successfully!");
+  };
+
+  const cancelBilledEdit = () => {
+    setEditingBilled(null);
+    setEditBilledHours("");
+    setEditBilledMinutes("");
+    setEditBilledDescription("");
+  };
+
   const confirmDeleteEstimation = (id) => {
     if (window.confirm("Are you sure you want to delete this estimation entry?")) {
       setEstimationEntries(estimationEntries.filter((entry) => entry.id !== id));
@@ -607,6 +717,13 @@ const CardDetailModal = ({
     }
   };
 
+  const confirmDeleteBilledTime = (id) => {
+    if (window.confirm("Are you sure you want to delete this billed time entry?")) {
+      setBilledTime(billedTime.filter((entry) => entry.id !== id));
+      toast.info("Billed time entry removed");
+    }
+  };
+
   const handleSave = async () => {
     const cardId = card._id || card.id;
     if (!cardId) {
@@ -616,31 +733,38 @@ const CardDetailModal = ({
 
     setSaving(true);
     try {
-      const updates = {
-        title,
-        description,
-        assignees: assignees.length > 0 ? assignees : null,
-        priority: priority || null,
-        status,
-        dueDate: dueDate ? new Date(dueDate).toISOString() : null,
-        startDate: startDate ? new Date(startDate).toISOString() : null,
-        labels,
-        attachments: attachments.length > 0 ? attachments : [],
-        estimationTime: estimationEntries.map((entry) => ({
-          hours: entry.hours,
-          minutes: entry.minutes,
-          reason: entry.reason,
-          user: entry.user,
-          date: entry.date,
-        })),
-        loggedTime: loggedTime.map((entry) => ({
-          hours: entry.hours,
-          minutes: entry.minutes,
-          description: entry.description,
-          user: entry.user,
-          date: entry.date,
-        })),
-      };
+    const updates = {
+      title,
+      description,
+      assignees: assignees.length > 0 ? assignees : null,
+      priority: priority || null,
+      status,
+      dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+      startDate: startDate ? new Date(startDate).toISOString() : null,
+      labels,
+      attachments: attachments.length > 0 ? attachments : [],
+      estimationTime: estimationEntries.map((entry) => ({
+        hours: entry.hours,
+        minutes: entry.minutes,
+        reason: entry.reason,
+        user: entry.user,
+        date: entry.date,
+      })),
+      loggedTime: loggedTime.map((entry) => ({
+        hours: entry.hours,
+        minutes: entry.minutes,
+        description: entry.description,
+        user: entry.user,
+        date: entry.date,
+      })),
+      billedTime: billedTime.map((entry) => ({
+        hours: entry.hours,
+        minutes: entry.minutes,
+        description: entry.description,
+        user: entry.user,
+        date: entry.date,
+      })),
+    };
 
       // Check if status has changed and move card if needed
       if (status !== card.status) {
@@ -683,10 +807,26 @@ const CardDetailModal = ({
     if (!cardId) return;
 
     try {
-      await Database.createComment({ cardId, htmlContent: newComment });
+      // Use optimistic update
+      const { promise } = await commentService.addCommentOptimistic({
+        type: 'card',
+        entityId: cardId,
+        htmlContent: newComment,
+        user
+      });
+
+      // Clear input immediately
       setNewComment("");
-      loadComments();
+      
+      // Show success toast immediately
       toast.success("Comment added!");
+
+      // Wait for server save in background
+      try {
+        await promise;
+      } catch (error) {
+        toast.error("Failed to save comment to server");
+      }
     } catch (error) {
       console.error("Error adding comment:", error);
       toast.error("Failed to add comment");
@@ -990,42 +1130,61 @@ const CardDetailModal = ({
                 <TimeTrackingSection
                   estimationEntries={estimationEntries}
                   loggedTime={loggedTime}
+                  billedTime={billedTime}
                   newEstimationHours={newEstimationHours}
                   newEstimationMinutes={newEstimationMinutes}
                   newEstimationReason={newEstimationReason}
                   newLoggedHours={newLoggedHours}
                   newLoggedMinutes={newLoggedMinutes}
                   newLoggedDescription={newLoggedDescription}
+                  newBilledHours={newBilledHours}
+                  newBilledMinutes={newBilledMinutes}
+                  newBilledDescription={newBilledDescription}
                   editingEstimation={editingEstimation}
                   editingLogged={editingLogged}
+                  editingBilled={editingBilled}
                   editEstimationHours={editEstimationHours}
                   editEstimationMinutes={editEstimationMinutes}
                   editEstimationReason={editEstimationReason}
                   editLoggedHours={editLoggedHours}
                   editLoggedMinutes={editLoggedMinutes}
                   editLoggedDescription={editLoggedDescription}
+                  editBilledHours={editBilledHours}
+                  editBilledMinutes={editBilledMinutes}
+                  editBilledDescription={editBilledDescription}
                   onEstimationHoursChange={setNewEstimationHours}
                   onEstimationMinutesChange={setNewEstimationMinutes}
                   onEstimationReasonChange={setNewEstimationReason}
                   onLoggedHoursChange={setNewLoggedHours}
                   onLoggedMinutesChange={setNewLoggedMinutes}
                   onLoggedDescriptionChange={setNewLoggedDescription}
+                  onBilledHoursChange={setNewBilledHours}
+                  onBilledMinutesChange={setNewBilledMinutes}
+                  onBilledDescriptionChange={setNewBilledDescription}
                   onEditEstimationHoursChange={setEditEstimationHours}
                   onEditEstimationMinutesChange={setEditEstimationMinutes}
                   onEditEstimationReasonChange={setEditEstimationReason}
                   onEditLoggedHoursChange={setEditLoggedHours}
                   onEditLoggedMinutesChange={setEditLoggedMinutes}
                   onEditLoggedDescriptionChange={setEditLoggedDescription}
+                  onEditBilledHoursChange={setEditBilledHours}
+                  onEditBilledMinutesChange={setEditBilledMinutes}
+                  onEditBilledDescriptionChange={setEditBilledDescription}
                   onAddEstimation={handleAddEstimation}
                   onAddLoggedTime={handleAddLoggedTime}
+                  onAddBilledTime={handleAddBilledTime}
                   onStartEditingEstimation={startEditingEstimation}
                   onStartEditingLogged={startEditingLogged}
+                  onStartEditingBilled={startEditingBilled}
                   onSaveEstimationEdit={saveEstimationEdit}
                   onSaveLoggedEdit={saveLoggedEdit}
+                  onSaveBilledEdit={saveBilledEdit}
                   onCancelEstimationEdit={cancelEstimationEdit}
                   onCancelLoggedEdit={cancelLoggedEdit}
+                  onCancelBilledEdit={cancelBilledEdit}
                   onConfirmDeleteEstimation={confirmDeleteEstimation}
                   onConfirmDeleteLoggedTime={confirmDeleteLoggedTime}
+                  onConfirmDeleteBilledTime={confirmDeleteBilledTime}
                   card={card}
                 />
 

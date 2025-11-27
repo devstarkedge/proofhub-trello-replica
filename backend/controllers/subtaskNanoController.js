@@ -69,6 +69,9 @@ export const createNano = asyncHandler(async (req, res, next) => {
     tags: req.body.tags || [],
     attachments: req.body.attachments || [],
     colorToken: req.body.colorToken || 'pink',
+    estimationTime: req.body.estimationTime || [],
+    loggedTime: req.body.loggedTime || [],
+    billedTime: req.body.billedTime || [],
     order: req.body.order ?? count,
     createdBy: req.user.id,
     breadcrumbs: {
@@ -119,6 +122,9 @@ export const updateNano = asyncHandler(async (req, res, next) => {
     tags: req.body.tags ?? nano.tags,
     attachments: req.body.attachments ?? nano.attachments,
     colorToken: req.body.colorToken ?? nano.colorToken,
+    estimationTime: req.body.estimationTime ?? nano.estimationTime,
+    loggedTime: req.body.loggedTime ?? nano.loggedTime,
+    billedTime: req.body.billedTime ?? nano.billedTime,
     updatedBy: req.user.id
   };
 

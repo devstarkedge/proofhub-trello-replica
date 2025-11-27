@@ -96,6 +96,30 @@ const subtaskSchema = new mongoose.Schema({
     type: Date
   },
   attachments: [attachmentSchema],
+  estimationTime: [{
+    id: { type: String, required: true },
+    hours: { type: Number, required: true, min: 0 },
+    minutes: { type: Number, required: true, min: 0, max: 59 },
+    reason: { type: String, trim: true, maxlength: 500 },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    date: { type: Date, default: Date.now }
+  }],
+  loggedTime: [{
+    id: { type: String, required: true },
+    hours: { type: Number, required: true, min: 0 },
+    minutes: { type: Number, required: true, min: 0, max: 59 },
+    description: { type: String, trim: true, maxlength: 500 },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    date: { type: Date, default: Date.now }
+  }],
+  billedTime: [{
+    id: { type: String, required: true },
+    hours: { type: Number, required: true, min: 0 },
+    minutes: { type: Number, required: true, min: 0, max: 59 },
+    description: { type: String, trim: true, maxlength: 500 },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    date: { type: Date, default: Date.now }
+  }],
   order: {
     type: Number,
     default: 0

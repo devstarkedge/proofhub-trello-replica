@@ -439,6 +439,19 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     });
   }
 
+  if (req.body.billedTime) {
+    req.body.billedTime.forEach(entry => {
+      if (!entry._id) { // Only for new entries
+        if (!entry.user) {
+          entry.user = req.user.id;
+        }
+        if (!entry.description) {
+          return next(new ErrorResponse("Description is required for new billed time entries", 400));
+        }
+      }
+    });
+  }
+
   card = await Card.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
@@ -447,7 +460,8 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
     .populate("estimationTime.user", "name email avatar")
-    .populate("loggedTime.user", "name email avatar");
+    .populate("loggedTime.user", "name email avatar")
+    .populate("billedTime.user", "name email avatar");
 
   // Log specific activity types based on what changed
   if (req.body.title && req.body.title !== card.title) {

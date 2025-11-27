@@ -78,6 +78,9 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
     startDate: req.body.startDate,
     attachments: req.body.attachments || [],
     colorToken: req.body.colorToken || 'purple',
+    estimationTime: req.body.estimationTime || [],
+    loggedTime: req.body.loggedTime || [],
+    billedTime: req.body.billedTime || [],
     order: req.body.order ?? currentCount,
     createdBy: req.user.id,
     breadcrumbs: buildBreadcrumbs(card)
@@ -124,6 +127,9 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
     startDate: req.body.startDate ?? subtask.startDate,
     attachments: req.body.attachments ?? subtask.attachments,
     colorToken: req.body.colorToken ?? subtask.colorToken,
+    estimationTime: req.body.estimationTime ?? subtask.estimationTime,
+    loggedTime: req.body.loggedTime ?? subtask.loggedTime,
+    billedTime: req.body.billedTime ?? subtask.billedTime,
     updatedBy: req.user.id
   };
 
