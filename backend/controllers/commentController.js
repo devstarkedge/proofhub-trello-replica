@@ -3,6 +3,7 @@ import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Notification from '../models/Notification.js';
+import Activity from '../models/Activity.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { emitNotification, emitToBoard } from '../server.js';
 import { invalidateCache } from '../middleware/cache.js';
@@ -15,18 +16,20 @@ const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
     if (!nano) throw new ErrorResponse('Subtask-Nano not found', 404);
     const subtask = await Subtask.findById(nano.subtask);
     return {
+      boardId: nano.board,
       cardId: nano.task._id.toString(),
       subtaskId: subtask?._id,
       nanoId,
-      contextType: 'subtaskNano',
+      contextType: 'nanoSubtask',
       contextRef: nanoId,
     };
   }
 
   if (subtaskId) {
-    const subtask = await Subtask.findById(subtaskId);
+    const subtask = await Subtask.findById(subtaskId).populate('board');
     if (!subtask) throw new ErrorResponse('Subtask not found', 404);
     return {
+      boardId: subtask.board,
       cardId: subtask.task._id.toString(),
       subtaskId,
       contextType: 'subtask',
@@ -37,12 +40,13 @@ const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
   if (!cardId) {
     throw new ErrorResponse('Card context is required', 400);
   }
-
+  const card = await Card.findById(cardId).populate('board');
   return {
+    boardId: card.board,
     cardId,
     subtaskId: null,
     nanoId: null,
-    contextType: 'card',
+    contextType: 'task',
     contextRef: cardId,
   };
 };
@@ -50,7 +54,7 @@ const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
 export const createComment = asyncHandler(async (req, res) => {
   const { htmlContent, card, subtask, subtaskNano } = req.body;
 
-  const { cardId, subtaskId, nanoId, contextType, contextRef } = await getContextDetails({
+  const { boardId, cardId, subtaskId, nanoId, contextType, contextRef } = await getContextDetails({
     cardId: card,
     subtaskId: subtask,
     nanoId: subtaskNano
@@ -75,6 +79,18 @@ export const createComment = asyncHandler(async (req, res) => {
     contextRef,
   });
   await comment.save();
+
+  // Log activity
+  await Activity.create({
+    type: 'comment_added',
+    description: `Added a new comment`,
+    user: req.user.id,
+    board: boardId,
+    card: cardId,
+    subtask: subtaskId,
+    nanoSubtask: nanoId,
+    contextType: contextType,
+  });
 
   const populatedComment = await Comment.findById(comment._id).populate('user', 'name avatar');
 
@@ -162,6 +178,18 @@ export const updateComment = asyncHandler(async (req, res) => {
   comment.editedAt = new Date();
   await comment.save();
 
+  // Log activity
+  await Activity.create({
+    type: 'comment_updated',
+    description: `Updated a comment`,
+    user: req.user.id,
+    board: comment.card.board,
+    card: comment.card._id,
+    subtask: comment.subtask,
+    nanoSubtask: comment.subtaskNano,
+    contextType: comment.contextType === 'card' ? 'task' : comment.contextType,
+  });
+
   // Re-process mentions (notify new mentions)
   try {
     await notificationService.processMentions(comment.htmlContent || '', comment.card, req.user.id);
@@ -190,6 +218,18 @@ export const deleteComment = asyncHandler(async (req, res) => {
 
   await Comment.findByIdAndDelete(req.params.id);
   await Card.findByIdAndUpdate(comment.card, { $pull: { comments: req.params.id } });
+
+  // Log activity
+  await Activity.create({
+    type: 'comment_deleted',
+    description: `Deleted a comment`,
+    user: req.user.id,
+    board: comment.card.board,
+    card: comment.card._id,
+    subtask: comment.subtask,
+    nanoSubtask: comment.subtaskNano,
+    contextType: comment.contextType === 'card' ? 'task' : comment.contextType,
+  });
 
   // Invalidate relevant caches
   invalidateCache(`/api/cards/${comment.card}`);

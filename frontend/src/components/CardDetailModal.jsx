@@ -322,44 +322,52 @@ const CardDetailModal = ({
 
   // Filter members based on search query and group by department
   useEffect(() => {
-    if (searchQuery.length >= 2) {
-      const filtered = teamMembers.filter(member =>
-        member.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        member.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-
-      // Group filtered members by department
+    const groupMembers = (members) => {
       const grouped = {};
-      filtered.forEach(member => {
-         // Handle department as array - take first department for grouping
-         const dept = member.department && Array.isArray(member.department) && member.department.length > 0 ? member.department[0] : null;
-         const deptId = (dept?._id || dept || 'Unassigned') || 'Unassigned'; // Ensure deptId is never falsy
-         const deptName = dept?.name || 'Unassigned';
+      members.forEach((member) => {
+        const dept =
+          member.department &&
+          Array.isArray(member.department) &&
+          member.department.length > 0
+            ? member.department[0]
+            : null;
+        const deptId = (dept?._id || dept || "Unassigned") || "Unassigned";
+        const deptName = dept?.name || "Unassigned";
 
         if (!grouped[deptId]) {
           grouped[deptId] = {
             department: { _id: deptId, name: deptName },
-            members: []
+            members: [],
           };
         }
         grouped[deptId].members.push(member);
       });
+      return grouped;
+    };
 
+    if (isDropdownOpen) {
+      let membersToList = teamMembers;
+
+      if (searchQuery.length > 0) {
+        membersToList = teamMembers.filter(
+          (member) =>
+            member.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            member.email?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+
+      const grouped = groupMembers(membersToList);
       setGroupedFilteredMembers(grouped);
-      setIsDropdownOpen(true);
 
-      // Initialize expanded departments
       const initialExpanded = {};
-      Object.keys(grouped).forEach(deptId => {
-        initialExpanded[deptId] = true; // Expand all by default
+      Object.keys(grouped).forEach((deptId) => {
+        initialExpanded[deptId] = true;
       });
       setExpandedDepartments(initialExpanded);
     } else {
-      setFilteredMembers([]);
       setGroupedFilteredMembers({});
-      setIsDropdownOpen(false);
     }
-  }, [searchQuery, teamMembers]);
+  }, [searchQuery, teamMembers, isDropdownOpen]);
 
   const handleSelectMember = (memberId) => {
     if (!memberId) return;
@@ -1249,6 +1257,7 @@ const CardDetailModal = ({
                         activities={activities}
                         loading={activitiesLoading}
                         teamMembers={teamMembers}
+                        type="task"
                       />
                     )}
                   </motion.div>

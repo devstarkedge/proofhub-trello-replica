@@ -3,6 +3,7 @@ import { ErrorResponse } from '../middleware/errorHandler.js';
 import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
+import Activity from '../models/Activity.js';
 import { emitToBoard } from '../server.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
@@ -88,6 +89,21 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
 
   const populated = await Subtask.findById(subtask._id).populate(basePopulate);
 
+  // Log activity
+  await Activity.create({
+    type: 'subtask_created',
+    description: `Created subtask "${subtask.title}"`,
+    user: req.user.id,
+    board: card.board,
+    card: taskId,
+    subtask: subtask._id,
+    contextType: 'subtask',
+    metadata: {
+      subtaskTitle: subtask.title,
+      title: subtask.title
+    }
+  });
+
   await refreshCardHierarchyStats(taskId);
 
   emitToBoard(card.board.toString(), 'hierarchy-subtask-changed', {
@@ -114,6 +130,8 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
   if (!subtask) {
     return next(new ErrorResponse('Subtask not found', 404));
   }
+
+  const oldSubtask = { ...subtask.toObject() };
 
   const updates = {
     title: req.body.title ?? subtask.title,
@@ -142,6 +160,57 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
     updates,
     { new: true }
   ).populate(basePopulate);
+
+  // Log activities
+  if (oldSubtask.title !== subtask.title) {
+    await Activity.create({
+      type: 'title_changed',
+      description: `Changed title from "${oldSubtask.title}" to "${subtask.title}"`,
+      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
+    });
+  }
+  if (oldSubtask.status !== subtask.status) {
+    await Activity.create({
+      type: 'status_changed',
+      description: `Changed status from ${oldSubtask.status} to ${subtask.status}`,
+      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
+    });
+  }
+  if (oldSubtask.priority !== subtask.priority) {
+    await Activity.create({
+      type: 'priority_changed',
+      description: `Changed priority from ${oldSubtask.priority} to ${subtask.priority}`,
+      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
+    });
+  }
+  if (oldSubtask.description !== subtask.description) {
+    await Activity.create({
+      type: 'description_changed',
+      description: `Updated the description`,
+      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
+    });
+  }
+  if (oldSubtask.dueDate !== subtask.dueDate) {
+    await Activity.create({
+      type: 'due_date_changed',
+      description: `Changed due date to ${subtask.dueDate}`,
+      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
+    });
+  }
+  if (JSON.stringify(oldSubtask.assignees) !== JSON.stringify(subtask.assignees)) {
+    await Activity.create({
+      type: 'member_added',
+      description: `Updated assignees`,
+      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
+    });
+  }
+  if (JSON.stringify(oldSubtask.loggedTime) !== JSON.stringify(subtask.loggedTime)) {
+    await Activity.create({
+      type: 'time_logged',
+      description: `Updated logged time`,
+      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
+    });
+  }
 
   await refreshCardHierarchyStats(subtask.task);
 
@@ -173,17 +242,35 @@ export const deleteSubtask = asyncHandler(async (req, res, next) => {
   // Clean up related nanos
   await SubtaskNano.deleteMany({ subtask: subtask._id });
 
+  const subtaskTitle = subtask.title;
+  const taskId = subtask.task;
+  const boardId = subtask.board;
+
   await subtask.deleteOne();
 
-  await refreshCardHierarchyStats(subtask.task);
+  // Log activity
+  await Activity.create({
+    type: 'subtask_deleted',
+    description: `Deleted subtask "${subtaskTitle}"`,
+    user: req.user.id,
+    board: boardId,
+    card: taskId,
+    subtask: subtask._id,
+    contextType: 'subtask',
+    metadata: {
+      subtaskTitle
+    }
+  });
 
-  emitToBoard(subtask.board.toString(), 'hierarchy-subtask-changed', {
+  await refreshCardHierarchyStats(taskId);
+
+  emitToBoard(boardId.toString(), 'hierarchy-subtask-changed', {
     type: 'deleted',
-    taskId: subtask.task.toString(),
+    taskId: taskId.toString(),
     subtaskId: subtask._id
   });
 
-  const parentCard = await Card.findById(subtask.task);
+  const parentCard = await Card.findById(taskId);
   invalidateHierarchyCache({
     boardId: parentCard?.board || subtask.board,
     listId: parentCard?.list,
@@ -229,4 +316,43 @@ export const reorderSubtasks = asyncHandler(async (req, res, next) => {
     data: subtasks
   });
 });
+
+// @desc    Get subtask activity logs
+// @route   GET /api/subtasks/:id/activity
+// @access  Private
+export const getSubtaskActivity = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  const { limit = 100, page = 1 } = req.query;
+
+  // Verify subtask exists
+  const subtask = await Subtask.findById(id);
+  if (!subtask) {
+    return next(new ErrorResponse('Subtask not found', 404));
+  }
+
+  // Get all activities for this subtask - filter by both subtask reference and contextType
+  const activities = await Activity.find({ 
+    subtask: id,
+    contextType: 'subtask'
+  })
+    .populate('user', 'name email avatar')
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit))
+    .skip((parseInt(page) - 1) * parseInt(limit));
+
+  const total = await Activity.countDocuments({ 
+    subtask: id,
+    contextType: 'subtask'
+  });
+
+  res.status(200).json({
+    success: true,
+    count: activities.length,
+    total,
+    page: parseInt(page),
+    pages: Math.ceil(total / parseInt(limit)),
+    data: activities,
+  });
+});
+
 

@@ -347,6 +347,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
     board,
     card: card._id,
     list,
+    contextType: 'task'
   });
 
   // Invalidate relevant caches
@@ -471,6 +472,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       user: req.user.id,
       board: card.board,
       card: card._id,
+      contextType: 'task',
       metadata: {
         oldTitle: card.title,
         newTitle: req.body.title
@@ -485,6 +487,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       user: req.user.id,
       board: card.board,
       card: card._id,
+      contextType: 'task',
       metadata: {
         hasDescription: !!req.body.description
       }
@@ -498,6 +501,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       user: req.user.id,
       board: card.board,
       card: card._id,
+      contextType: 'task',
       metadata: {
         oldStatus: card.status,
         newStatus: req.body.status
@@ -512,6 +516,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       user: req.user.id,
       board: card.board,
       card: card._id,
+      contextType: 'task',
       metadata: {
         oldPriority: card.priority || 'None',
         newPriority: req.body.priority
@@ -526,6 +531,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       user: req.user.id,
       board: card.board,
       card: card._id,
+      contextType: 'task',
       metadata: {
         oldDate: card.dueDate,
         newDate: req.body.dueDate
@@ -547,6 +553,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
           user: req.user.id,
           board: card.board,
           card: card._id,
+          contextType: 'task',
           metadata: {
             hours: lastEntry.hours,
             minutes: lastEntry.minutes,
@@ -571,6 +578,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
           user: req.user.id,
           board: card.board,
           card: card._id,
+          contextType: 'task',
           metadata: {
             hours: lastEntry.hours,
             minutes: lastEntry.minutes,
@@ -589,6 +597,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     board: card.board,
     card: card._id,
     list: card.list,
+    contextType: 'task',
     metadata: {
       changes: req.body
     }
@@ -626,10 +635,29 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   if (req.body.assignees !== undefined) {
     const newAssignees = req.body.assignees || [];
     const addedAssignees = newAssignees.filter(id => !oldAssignees.includes(id.toString()));
+    const removedAssignees = oldAssignees.filter(id => !newAssignees.includes(id));
 
-    // Notify added assignees
     if (addedAssignees.length > 0) {
       await notificationService.notifyTaskAssigned(card, addedAssignees, req.user.id);
+      await Activity.create({
+        type: 'member_added',
+        description: `added members to the card`,
+        user: req.user.id,
+        board: card.board,
+        card: card._id,
+        contextType: 'task',
+      });
+    }
+
+    if (removedAssignees.length > 0) {
+      await Activity.create({
+        type: 'member_removed',
+        description: `removed members from the card`,
+        user: req.user.id,
+        board: card.board,
+        card: card._id,
+        contextType: 'task',
+      });
     }
   }
 
@@ -736,22 +764,21 @@ export const moveCard = asyncHandler(async (req, res, next) => {
 
   await card.save();
 
-  // Log activity
-  await Activity.create({
-    type: "card_moved",
-    description: `Moved card "${card.title}"`,
-    user: req.user.id,
-    board: card.board,
-    card: card._id,
-    list: card.list,
-    metadata: {
-      fromList: sourceListTitle,
-      toList: destinationList.title,
-      newPosition
-    }
-  });
-
-  // Emit real-time updates for both move and status change
+    // Log activity
+    await Activity.create({
+      type: "card_moved",
+      description: `Moved card "${card.title}"`,
+      user: req.user.id,
+      board: card.board,
+      card: card._id,
+      list: card.list,
+      contextType: 'task',
+      metadata: {
+        fromList: sourceListTitle,
+        toList: destinationList.title,
+        newPosition
+      }
+    });  // Emit real-time updates for both move and status change
   emitToBoard(card.board.toString(), 'card-moved', {
     cardId: card._id,
     sourceListId,
@@ -875,13 +902,13 @@ export const getCardActivity = asyncHandler(async (req, res, next) => {
   }
 
   // Get all activities for this card
-  const activities = await Activity.find({ card: id })
+  const activities = await Activity.find({ card: id, contextType: 'task' })
     .populate("user", "name email avatar")
     .sort({ createdAt: -1 })
     .limit(parseInt(limit))
     .skip((parseInt(page) - 1) * parseInt(limit));
 
-  const total = await Activity.countDocuments({ card: id });
+  const total = await Activity.countDocuments({ card: id, contextType: 'task' });
 
   res.status(200).json({
     success: true,

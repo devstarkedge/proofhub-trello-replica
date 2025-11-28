@@ -8,6 +8,7 @@ import AuthContext from "../context/AuthContext";
 import CardDescription from "./CardDetailModal/CardDescription";
 import AttachmentsSection from "./CardDetailModal/AttachmentsSection";
 import CommentsSection from "./CardDetailModal/CommentsSection";
+import ActivitySection from "./CardDetailModal/ActivitySection";
 import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
 import SubtasksSection from "./CardDetailModal/SubtasksSection";
@@ -121,6 +122,7 @@ const SubtaskDetailModal = ({
     loadSubtask();
     loadTeamMembers();
     loadComments();
+    loadActivities();
     loadNanos();
   }, [entityId]);
 
@@ -168,36 +170,52 @@ const SubtaskDetailModal = ({
   }, [title]);
 
   useEffect(() => {
-    if (searchQuery.length >= 2) {
-      const filtered = teamMembers.filter(member =>
-        member.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        member.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+    const groupMembers = (members) => {
       const grouped = {};
-      filtered.forEach(member => {
-        const dept = member.department && Array.isArray(member.department) && member.department.length > 0 ? member.department[0] : null;
+      members.forEach((member) => {
+        const dept =
+          member.department &&
+          Array.isArray(member.department) &&
+          member.department.length > 0
+            ? member.department[0]
+            : null;
         const deptId = (dept?._id || dept || "Unassigned") || "Unassigned";
         const deptName = dept?.name || "Unassigned";
+
         if (!grouped[deptId]) {
           grouped[deptId] = {
             department: { _id: deptId, name: deptName },
-            members: []
+            members: [],
           };
         }
         grouped[deptId].members.push(member);
       });
+      return grouped;
+    };
+
+    if (isDropdownOpen) {
+      let membersToList = teamMembers;
+
+      if (searchQuery.length > 0) {
+        membersToList = teamMembers.filter(
+          (member) =>
+            member.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            member.email?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+
+      const grouped = groupMembers(membersToList);
       setGroupedFilteredMembers(grouped);
+
       const initialExpanded = {};
-      Object.keys(grouped).forEach(deptId => {
+      Object.keys(grouped).forEach((deptId) => {
         initialExpanded[deptId] = true;
       });
       setExpandedDepartments(initialExpanded);
-      setIsDropdownOpen(true);
     } else {
       setGroupedFilteredMembers({});
-      setIsDropdownOpen(false);
     }
-  }, [searchQuery, teamMembers]);
+  }, [searchQuery, teamMembers, isDropdownOpen]);
 
   const loadSubtask = async () => {
     try {
@@ -249,6 +267,20 @@ const SubtaskDetailModal = ({
       setComments(data || []);
     } catch (error) {
       console.error("Error loading comments:", error);
+    }
+  };
+
+  const loadActivities = async () => {
+    if (!entityId) return;
+    setActivitiesLoading(true);
+    try {
+      const response = await Database.getSubtaskActivity(entityId, 100, 1);
+      setActivities(response.data || []);
+    } catch (error) {
+      console.error("Error loading activities:", error);
+      setActivities([]);
+    } finally {
+      setActivitiesLoading(false);
     }
   };
 
@@ -830,6 +862,12 @@ const SubtaskDetailModal = ({
                         label: "Comments",
                         icon: AlertCircle,
                         badge: comments.length
+                      },
+                      {
+                        id: "activity",
+                        label: "Activity",
+                        icon: AlertCircle,
+                        badge: activities.length
                       }
                     ]}
                   />
@@ -840,13 +878,22 @@ const SubtaskDetailModal = ({
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <CommentsSection
-                      comments={comments}
-                      newComment={newComment}
-                      teamMembers={teamMembers}
-                      onCommentChange={setNewComment}
-                      onAddComment={handleAddComment}
-                    />
+                    {activeTab === "comments" ? (
+                      <CommentsSection
+                        comments={comments}
+                        newComment={newComment}
+                        teamMembers={teamMembers}
+                        onCommentChange={setNewComment}
+                        onAddComment={handleAddComment}
+                      />
+                    ) : (
+                      <ActivitySection
+                        activities={activities}
+                        loading={activitiesLoading}
+                        teamMembers={teamMembers}
+                        type="subtask"
+                      />
+                    )}
                   </motion.div>
                 </div>
               </div>

@@ -138,6 +138,7 @@ const CardSidebar = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}
+                onFocus={() => onIsDropdownOpenChange(true)}
                 placeholder="Search members by name or email..."
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
@@ -241,11 +242,7 @@ const CardSidebar = ({
                 </div>
               )}
 
-              {searchQuery.length < 2 && searchQuery.length > 0 && (
-                <div className="text-center text-gray-500 text-sm py-4">
-                  Type at least 2 characters to search
-                </div>
-              )}
+
             </div>
           </div>
 

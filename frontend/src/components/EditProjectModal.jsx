@@ -74,15 +74,33 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
     }
   }, [isOpen, project]);
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = async (projectData) => {
     try {
-      const response = await Database.getUsers();
-      const deptEmployees = response.data.filter(user =>
-        user.department && user.department._id === project.department?._id && user.role === 'employee' && user.isVerified
-      );
-      setEmployees(deptEmployees);
+      // Get department ID from the project
+      const departmentId = projectData.department?._id || projectData.department;
+      
+      if (!departmentId) {
+        console.warn('No department ID found in project data');
+        setEmployees([]);
+        return;
+      }
+
+      // Use the departmentId to fetch employees from that department
+      const response = await Database.getUsers(departmentId);
+      
+      if (response.success || response.data) {
+        // Filter for verified employees only
+        const deptEmployees = (response.data || []).filter(user => 
+          user.role === 'employee' && user.isVerified
+        );
+        setEmployees(deptEmployees);
+      } else {
+        console.warn('Failed to fetch employees:', response.message);
+        setEmployees([]);
+      }
     } catch (error) {
       console.error('Error fetching employees:', error);
+      setEmployees([]);
     }
   };
 

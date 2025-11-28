@@ -1213,6 +1213,34 @@ class DatabaseService {
     }
     return await res.json();
   }
+
+  // Subtask Activity operations
+  async getSubtaskActivity(subtaskId, limit = 100, page = 1) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/activity?limit=${limit}&page=${page}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  // Nano-Subtask Activity operations
+  async getNanoActivity(nanoId, limit = 100, page = 1) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/subtask-nanos/${nanoId}/activity?limit=${limit}&page=${page}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
 }
 
 // Create singleton instance

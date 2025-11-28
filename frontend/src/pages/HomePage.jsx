@@ -33,10 +33,12 @@ const HomePage = () => {
   const [selectedMembers, setSelectedMembers] = useState({});
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [memberDropdownOpen, setMemberDropdownOpen] = useState({});
+  const [memberListExpanded, setMemberListExpanded] = useState({});
   const [membersWithAssignments, setMembersWithAssignments] = useState({});
   const [projectsWithMemberAssignments, setProjectsWithMemberAssignments] = useState({});
   const statusDropdownRef = useRef(null);
   const memberDropdownRefs = useRef({});
+  const memberListRefs = useRef({});
 
   useEffect(() => {
     fetchDepartments();
@@ -512,66 +514,110 @@ const HomePage = () => {
                               <p className="text-gray-600 mt-1">{department.description}</p>
                             )}
                           </div>
+                          {/* Manager Avatars */}
+                          {department.managers && department.managers.length > 0 && (
+                            <div className="flex items-center gap-2 ml-4">
+                              <div className="flex -space-x-2">
+                                {department.managers.slice(0, 3).map((manager, index) => (
+                                  <div
+                                    key={manager._id}
+                                    className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm"
+                                    title={manager.name}
+                                  >
+                                    <span className="text-xs font-semibold text-white">
+                                      {manager.name.charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                ))}
+                                {department.managers.length > 3 && (
+                                  <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                    <span className="text-xs font-semibold text-white">
+                                      +{department.managers.length - 3}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-3">
-                          {/* Member Filter Dropdown */}
-                          <div className="relative" ref={(el) => (memberDropdownRefs.current[department._id] = el)}>
-                            <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all">
-                              <User className="text-gray-400" size={16} />
-                              <span className="text-sm font-medium text-gray-700 flex-1 pointer-events-none">
-                                {selectedMembers[department._id] === 'all' || !selectedMembers[department._id]
-                                  ? 'All Members'
-                                  : departmentMembers.find(m => m._id === selectedMembers[department._id])?.name || 'All Members'}
-                              </span>
+                          {/* Member Avatars */}
+                          <div className="relative">
+                            <div
+                              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-all"
+                              onClick={() => setMemberListExpanded(prev => ({ ...prev, [department._id]: !prev[department._id] }))}
+                            >
+                              <div className="flex -space-x-2">
+                                {(membersWithAssignments[department._id] || []).slice(0, 5).map((member, index) => (
+                                  <div
+                                    key={member._id}
+                                    className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm"
+                                    title={member.name}
+                                  >
+                                    <span className="text-xs font-semibold text-white">
+                                      {member.name.charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                ))}
+                                {(membersWithAssignments[department._id] || []).length > 5 && (
+                                  <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                    <span className="text-xs font-semibold text-white">
+                                      +{(membersWithAssignments[department._id] || []).length - 5}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                               <ChevronDown
-                                className={`text-gray-400 transition-transform duration-200 cursor-pointer ${memberDropdownOpen[department._id] ? 'rotate-180' : ''}`}
+                                className={`text-gray-400 transition-transform duration-200 ${memberListExpanded[department._id] ? 'rotate-180' : ''}`}
                                 size={16}
-                                onClick={() => setMemberDropdownOpen(prev => ({ ...prev, [department._id]: !prev[department._id] }))}
                               />
                             </div>
+                            {/* Expandable Member List */}
                             <AnimatePresence>
-                              {memberDropdownOpen[department._id] && (
+                              {memberListExpanded[department._id] && (
                                 <motion.div
                                   initial={{ opacity: 0, y: -10, scale: 0.95 }}
                                   animate={{ opacity: 1, y: 0, scale: 1 }}
                                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
                                   transition={{ duration: 0.15 }}
-                                  className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
+                                  className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden min-w-[200px]"
                                 >
-                                  <div className="py-1">
+                                  <div className="py-2">
                                     <div
-                                      className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 ${
+                                      className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 flex items-center gap-3 ${
                                         (selectedMembers[department._id] || 'all') === 'all' ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
                                       }`}
                                       onClick={() => {
                                         setSelectedMembers(prev => ({ ...prev, [department._id]: 'all' }));
-                                        setMemberDropdownOpen(prev => ({ ...prev, [department._id]: false }));
+                                        setMemberListExpanded(prev => ({ ...prev, [department._id]: false }));
                                       }}
                                     >
-                                      <div className="flex items-center justify-between">
-                                        <span className="font-medium">All Members</span>
-                                        {(selectedMembers[department._id] || 'all') === 'all' && (
-                                          <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                                        )}
-                                      </div>
+                                      <Users size={16} />
+                                      <span className="font-medium">All Members</span>
+                                      {(selectedMembers[department._id] || 'all') === 'all' && (
+                                        <div className="w-2 h-2 bg-blue-600 rounded-full ml-auto"></div>
+                                      )}
                                     </div>
                                     {(membersWithAssignments[department._id] || []).map((member) => (
                                       <div
                                         key={member._id}
-                                        className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 ${
+                                        className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 flex items-center gap-3 ${
                                           selectedMembers[department._id] === member._id ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
                                         }`}
                                         onClick={() => {
                                           setSelectedMembers(prev => ({ ...prev, [department._id]: member._id }));
-                                          setMemberDropdownOpen(prev => ({ ...prev, [department._id]: false }));
+                                          setMemberListExpanded(prev => ({ ...prev, [department._id]: false }));
                                         }}
                                       >
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-medium">{member.name}</span>
-                                          {selectedMembers[department._id] === member._id && (
-                                            <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                                          )}
+                                        <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                                          <span className="text-xs font-semibold text-white">
+                                            {member.name.charAt(0).toUpperCase()}
+                                          </span>
                                         </div>
+                                        <span className="font-medium">{member.name}</span>
+                                        {selectedMembers[department._id] === member._id && (
+                                          <div className="w-2 h-2 bg-blue-600 rounded-full ml-auto"></div>
+                                        )}
                                       </div>
                                     ))}
                                   </div>

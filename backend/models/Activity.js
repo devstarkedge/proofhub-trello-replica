@@ -25,7 +25,14 @@ const activitySchema = new mongoose.Schema({
       'priority_changed',
       'subtask_created',
       'subtask_completed',
-      'subtask_deleted'
+      'subtask_deleted',
+      'subtask_updated',
+      'subtask_moved',
+      'nano_created',
+      'nano_updated',
+      'nano_completed',
+      'nano_deleted',
+      'nano_moved'
     ],
     required: true
   },
@@ -38,6 +45,14 @@ const activitySchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  // Context - determines what type of item this activity belongs to
+  contextType: {
+    type: String,
+    enum: ['task', 'subtask', 'nanoSubtask'],
+    default: 'task',
+    required: true
+  },
+  // References to all hierarchy levels
   board: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Board'
@@ -45,6 +60,14 @@ const activitySchema = new mongoose.Schema({
   card: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Card'
+  },
+  subtask: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subtask'
+  },
+  nanoSubtask: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SubtaskNano'
   },
   list: {
     type: mongoose.Schema.Types.ObjectId,
@@ -55,16 +78,22 @@ const activitySchema = new mongoose.Schema({
   },
   createdAt: {
     type: Date,
-    default: Date.now
+    default: Date.now,
+    index: true
   }
 }, {
   timestamps: false
 });
 
-// Indexes
+// Indexes for efficient filtering
 activitySchema.index({ board: 1, createdAt: -1 });
 activitySchema.index({ card: 1, createdAt: -1 });
+activitySchema.index({ subtask: 1, createdAt: -1 });
+activitySchema.index({ nanoSubtask: 1, createdAt: -1 });
+activitySchema.index({ contextType: 1, createdAt: -1 });
 activitySchema.index({ user: 1, createdAt: -1 });
+activitySchema.index({ card: 1, subtask: 1, createdAt: -1 });
+activitySchema.index({ subtask: 1, nanoSubtask: 1, createdAt: -1 });
 
 // TTL index - auto-delete activities older than 90 days
 activitySchema.index({ createdAt: 1 }, { expireAfterSeconds: 7776000 });
