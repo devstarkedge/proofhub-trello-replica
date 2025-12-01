@@ -667,6 +667,19 @@ class DatabaseService {
     return await res.json();
   }
 
+  async getDepartmentsWithAssignments() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments/with-assignments`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
   async createDepartment(name, description, managerIds) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };

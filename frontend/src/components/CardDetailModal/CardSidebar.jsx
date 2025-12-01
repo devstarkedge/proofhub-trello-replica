@@ -338,6 +338,29 @@ const CardSidebar = ({
                 <Plus size={16} />
               </motion.button>
             </div>
+            {labels.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {labels.map((label, index) => {
+                  const safeKey = String(label || `label-${index}`).trim() || `label-${index}`;
+                  return (
+                    <motion.span
+                      key={safeKey}
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium flex items-center gap-1"
+                    >
+                      {label}
+                      <button
+                        onClick={() => onRemoveLabel(label)}
+                        className="hover:bg-blue-200 rounded-full p-0.5 transition-colors"
+                      >
+                        <X size={10} />
+                      </button>
+                    </motion.span>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

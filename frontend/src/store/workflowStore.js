@@ -26,6 +26,7 @@ const useWorkflowStore = create(
         try {
           set({ loading: true, error: null });
 
+          // Fetch board data
           const response = await Database.getProject(projectId);
           if (!response.success) {
             throw new Error(response.message || 'Failed to load project');
@@ -34,16 +35,22 @@ const useWorkflowStore = create(
           const projectBoard = response.data;
           set({ board: projectBoard });
 
+          // Fetch lists first
           const listsResponse = await Database.getLists(projectBoard._id);
           const boardLists = listsResponse.data || listsResponse;
-          set({ lists: boardLists });
 
+          // Fetch cards for all lists in parallel
+          const cardPromises = boardLists.map(list => Database.getCards(list._id));
+          const cardsResponses = await Promise.all(cardPromises);
+
+          // Group cards by listId
           const cardsMap = {};
-          for (const list of boardLists) {
-            const cardsResponse = await Database.getCards(list._id);
-            cardsMap[list._id] = cardsResponse.data || cardsResponse;
-          }
-          set({ cardsByList: cardsMap, lastUpdated: Date.now() });
+          boardLists.forEach((list, index) => {
+            const cardsData = cardsResponses[index].data || cardsResponses[index];
+            cardsMap[list._id] = Array.isArray(cardsData) ? cardsData : [];
+          });
+
+          set({ lists: boardLists, cardsByList: cardsMap, lastUpdated: Date.now() });
         } catch (error) {
           console.error('Error initializing workflow:', error);
           set({ error: error.message || 'Failed to load workflow' });

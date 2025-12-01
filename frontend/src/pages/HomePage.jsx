@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Eye, EyeOff, Building2, FolderKanban,
@@ -10,6 +10,7 @@ import Database from '../services/database';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
+import HomePageSkeleton from '../components/LoadingSkeleton';
 import { lazy, Suspense } from 'react';
 const AddProjectModal = lazy(() => import('../components/AddProjectModal'));
 const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
@@ -68,49 +69,21 @@ const HomePage = () => {
   const fetchDepartments = async () => {
     try {
       setLoading(true);
-      const response = await Database.getDepartments();
-      setDepartments(response.data || []);
-      setError(null);
+      const response = await Database.getDepartmentsWithAssignments();
+      const departmentsData = response.data || [];
 
-      // Fetch members with assignments for each department
-      const membersPromises = response.data.map(async (dept) => {
-        try {
-          const membersResponse = await Database.getMembersWithAssignments(dept._id);
-          return { deptId: dept._id, members: membersResponse.data || [] };
-        } catch (error) {
-          console.error(`Error fetching members for department ${dept._id}:`, error);
-          return { deptId: dept._id, members: [] };
-        }
-      });
+      setDepartments(departmentsData);
 
-      const membersResults = await Promise.all(membersPromises);
+      // Extract member assignments data from the response
       const membersMap = {};
-      membersResults.forEach(result => {
-        membersMap[result.deptId] = result.members;
-      });
-      setMembersWithAssignments(membersMap);
-
-      // Fetch projects with member assignments for each department
-      const projectsPromises = response.data.map(async (dept) => {
-        try {
-          const projectsMap = {};
-          // For each member in this department, fetch their assigned projects
-          for (const member of membersMap[dept._id] || []) {
-            const projectsResponse = await Database.getProjectsWithMemberAssignments(dept._id, member._id);
-            projectsMap[member._id] = projectsResponse.data || [];
-          }
-          return { deptId: dept._id, projectsMap };
-        } catch (error) {
-          console.error(`Error fetching projects for department ${dept._id}:`, error);
-          return { deptId: dept._id, projectsMap: {} };
-        }
-      });
-
-      const projectsResults = await Promise.all(projectsPromises);
       const projectsMap = {};
-      projectsResults.forEach(result => {
-        projectsMap[result.deptId] = result.projectsMap;
+
+      departmentsData.forEach(dept => {
+        membersMap[dept._id] = dept.membersWithAssignments || [];
+        projectsMap[dept._id] = dept.projectsWithMemberAssignments || {};
       });
+
+      setMembersWithAssignments(membersMap);
       setProjectsWithMemberAssignments(projectsMap);
 
     } catch (err) {
@@ -121,12 +94,12 @@ const HomePage = () => {
     }
   };
 
-  const handleAddProject = (departmentId) => {
+  const handleAddProject = useCallback((departmentId) => {
     setSelectedDepartment(departmentId);
     setModalOpen(true);
-  };
+  }, []);
 
-  const handleProjectAdded = (newProject) => {
+  const handleProjectAdded = useCallback((newProject) => {
     setDepartments(prev => prev.map(dept => {
       if (dept._id === selectedDepartment) {
         return {
@@ -136,14 +109,14 @@ const HomePage = () => {
       }
       return dept;
     }));
-  };
+  }, [selectedDepartment]);
 
-  const handleEditProject = (project, departmentId) => {
+  const handleEditProject = useCallback((project, departmentId) => {
     setSelectedProject({ ...project, departmentId });
     setEditModalOpen(true);
-  };
+  }, []);
 
-  const handleProjectUpdated = (updatedProject) => {
+  const handleProjectUpdated = useCallback((updatedProject) => {
     setDepartments(prev => prev.map(dept => {
       if (dept._id === selectedProject.departmentId) {
         return {
@@ -155,9 +128,9 @@ const HomePage = () => {
       }
       return dept;
     }));
-  };
+  }, [selectedProject?.departmentId]);
 
-  const handleDeleteProject = async (project, departmentId) => {
+  const handleDeleteProject = useCallback(async (project, departmentId) => {
     if (window.confirm(`Are you sure you want to delete the project "${project.name}"?`)) {
       try {
         await Database.deleteProject(project._id);
@@ -175,21 +148,21 @@ const HomePage = () => {
         alert('Failed to delete project. Please try again.');
       }
     }
-  };
+  }, []);
 
-  const handleViewProject = (projectId) => {
+  const handleViewProject = useCallback((projectId) => {
     setSelectedProjectId(projectId);
     setViewModalOpen(true);
-  };
+  }, []);
 
-  const toggleViewAllProjects = (departmentId) => {
+  const toggleViewAllProjects = useCallback((departmentId) => {
     setExpandedDepartments(prev => ({
       ...prev,
       [departmentId]: !prev[departmentId]
     }));
-  };
+  }, []);
 
-  const filterProjects = (projects, departmentId) => {
+  const filterProjects = useCallback((projects, departmentId) => {
     if (!projects) return [];
 
     let filtered = projects;
@@ -219,11 +192,11 @@ const HomePage = () => {
     }
 
     return filtered;
-  };
+  }, [searchQuery, filterStatus, selectedMembers, projectsWithMemberAssignments]);
 
-  const canAddProject = user?.role === 'admin' || user?.role === 'manager';
+  const canAddProject = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
 
-  const getStatusLabel = (status) => {
+  const getStatusLabel = useCallback((status) => {
     const statusMap = {
       'all': 'All Status',
       'planning': 'Planning',
@@ -232,65 +205,16 @@ const HomePage = () => {
       'on-hold': 'On Hold'
     };
     return statusMap[status] || 'All Status';
-  };
+  }, []);
 
-  const handleStatusSelect = (status) => {
+  const handleStatusSelect = useCallback((status) => {
     setFilterStatus(status);
     setStatusDropdownOpen(false);
-  };
+  }, []);
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        type: "spring",
-        stiffness: 100
-      }
-    }
-  };
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-        <Sidebar />
-        <div className="flex-1 ml-64">
-          <Header />
-          <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="text-center"
-            >
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"
-              />
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="text-gray-600 font-medium"
-              >
-                Loading your workspace...
-              </motion.p>
-            </motion.div>
-          </div>
-        </div>
-      </div>
-    );
+    return <HomePageSkeleton />;
   }
 
   if (error) {
@@ -300,11 +224,7 @@ const HomePage = () => {
         <div className="flex-1 ml-64">
           <Header />
           <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-white rounded-2xl shadow-xl p-8 max-w-md"
-            >
+            <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
               <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <AlertCircle className="text-red-600" size={32} />
               </div>
@@ -316,7 +236,7 @@ const HomePage = () => {
               >
                 Try Again
               </button>
-            </motion.div>
+            </div>
           </div>
         </div>
       </div>
@@ -330,34 +250,20 @@ const HomePage = () => {
         <Header />
         <main className="p-6 space-y-6">
           {/* Welcome Header */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-2xl relative overflow-hidden"
-          >
+          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-2xl relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30"></div>
             <div className="relative z-10">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2 }}
-                className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mb-4"
-              >
+              <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mb-4 animate-in zoom-in duration-300 delay-200">
                 <Sparkles size={20} />
                 <span className="text-sm font-medium">Welcome!</span>
-              </motion.div>
-              <h1 className="text-4xl font-bold mb-2">Hello, {user?.name}! 👋</h1>
-              <p className="text-blue-100 text-lg">Manage your projects and collaborate with your team</p>
+              </div>
+              <h1 className="text-4xl font-bold mb-2 animate-in fade-in slide-in-from-left-4 duration-500 delay-300">Hello, {user?.name}! 👋</h1>
+              <p className="text-blue-100 text-lg animate-in fade-in duration-500 delay-500">Manage your projects and collaborate with your team</p>
             </div>
-          </motion.div>
+          </div>
 
           {/* Controls Bar */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200"
-          >
+          <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
             <div className="flex flex-wrap items-center justify-between gap-4">
               {/* Search */}
               <div className="flex-1 min-w-[300px]">
@@ -455,28 +361,19 @@ const HomePage = () => {
                 </div>
               </div>
             </div>
-          </motion.div>
+          </div>
 
           {/* Departments Section */}
           {departments.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-white rounded-2xl shadow-lg p-12 text-center border border-gray-200"
-            >
+            <div className="bg-white rounded-2xl shadow-lg p-12 text-center border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
               <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Building2 size={40} className="text-blue-600" />
               </div>
               <h3 className="text-2xl font-bold text-gray-900 mb-2">No departments found</h3>
               <p className="text-gray-600 mb-6">Contact your administrator to create departments and get started.</p>
-            </motion.div>
+            </div>
           ) : (
-            <motion.div
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
-              className="space-y-6"
-            >
+            <div className="space-y-6 animate-in fade-in duration-500 delay-400">
               {departments.map((department, deptIndex) => {
                 const filteredProjects = filterProjects(department.projects, department._id);
                 const isExpanded = expandedDepartments[department._id];
@@ -487,10 +384,10 @@ const HomePage = () => {
                 const departmentMembers = department.members || [];
 
                 return (
-                  <motion.div
+                  <div
                     key={department._id}
-                    variants={itemVariants}
-                    className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+                    className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
+                    style={{ animationDelay: `${deptIndex * 100}ms` }}
                   >
                     {/* Department Header */}
                     <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-6 border-b border-gray-200">
@@ -657,11 +554,10 @@ const HomePage = () => {
                               }
                             >
                               {displayedProjects.map((project, index) => (
-                                <motion.div
+                                <div
                                   key={project._id}
-                                  initial={{ opacity: 0, y: 20 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: index * 0.05 }}
+                                  className="animate-in fade-in slide-in-from-bottom-4 duration-300"
+                                  style={{ animationDelay: `${index * 50}ms` }}
                                 >
                                   <ProjectCard
                                     project={project}
@@ -674,7 +570,7 @@ const HomePage = () => {
                                     onView={() => handleViewProject(project._id)}
                                     viewMode={viewMode}
                                   />
-                                </motion.div>
+                                </div>
                               ))}
                             </motion.div>
                           </AnimatePresence>
@@ -724,10 +620,10 @@ const HomePage = () => {
                         </motion.div>
                       )}
                     </div>
-                  </motion.div>
+                  </div>
                 );
               })}
-            </motion.div>
+            </div>
           )}
         </main>
       </div>
@@ -762,4 +658,4 @@ const HomePage = () => {
   );
 };
 
-export default HomePage;
+export default memo(HomePage);

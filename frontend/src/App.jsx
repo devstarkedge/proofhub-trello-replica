@@ -5,6 +5,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { TeamProvider } from "./context/DepartmentContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import Loading from "./components/Loading";
+import ErrorBoundary from "./components/ErrorBoundary";
 import "./App.css";
 
 // Lazy load components for code splitting
@@ -40,7 +41,9 @@ function App() {
               path="/"
               element={
                 <PrivateRoute>
-                  <HomePage />
+                  <ErrorBoundary>
+                    <HomePage />
+                  </ErrorBoundary>
                 </PrivateRoute>
               }
             />

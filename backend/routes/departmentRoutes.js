@@ -1,12 +1,13 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment } from '../controllers/departmentController.js';
+import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment, getDepartmentsWithAssignments } from '../controllers/departmentController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 
 const router = express.Router();
 
 router.get('/', getDepartments);
+router.get('/with-assignments', protect, getDepartmentsWithAssignments);
 router.get('/:id', protect, getDepartment);
 
 router.post('/', protect, authorize('admin'), [

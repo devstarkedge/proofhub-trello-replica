@@ -284,7 +284,8 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   }
 
   // Check ownership - allow admin and manager roles to update
-  if (board.owner.toString() !== req.user.id && req.user.role !== "admin" && req.user.role !== "manager") {
+  const ownerId = board.owner && typeof board.owner === 'object' ? board.owner._id?.toString() : board.owner?.toString();
+  if (ownerId !== req.user.id && req.user.role !== "admin" && req.user.role !== "manager") {
     return next(new ErrorResponse("Not authorized to update this board", 403));
   }
 

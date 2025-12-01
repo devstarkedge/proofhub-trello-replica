@@ -51,7 +51,9 @@ const ListView = () => {
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
-    search: ''
+    search: '',
+    dateFrom: '',
+    dateTo: ''
   });
   const [sorting, setSorting] = useState({ key: 'dueDate', order: 'asc' });
   const [viewMode, setViewMode] = useState('comfortable'); // compact, comfortable, spacious
@@ -173,6 +175,24 @@ const ListView = () => {
       );
     }
 
+    if (filters.dateFrom || filters.dateTo) {
+      filtered = filtered.filter(card => {
+        if (!card.dueDate) return false;
+        const cardDate = new Date(card.dueDate);
+        const fromDate = filters.dateFrom ? new Date(filters.dateFrom) : null;
+        const toDate = filters.dateTo ? new Date(filters.dateTo) : null;
+
+        if (fromDate && toDate) {
+          return cardDate >= fromDate && cardDate <= toDate;
+        } else if (fromDate) {
+          return cardDate >= fromDate;
+        } else if (toDate) {
+          return cardDate <= toDate;
+        }
+        return true;
+      });
+    }
+
     const sorted = [...filtered].sort((a, b) => {
       let aValue, bValue;
 
@@ -219,11 +239,13 @@ const ListView = () => {
     setFilters({
       status: 'all',
       priority: 'all',
-      search: ''
+      search: '',
+      dateFrom: '',
+      dateTo: ''
     });
   };
 
-  const hasActiveFilters = filters.status !== 'all' || filters.priority !== 'all' || filters.search !== '';
+  const hasActiveFilters = filters.status !== 'all' || filters.priority !== 'all' || filters.search !== '' || filters.dateFrom !== '' || filters.dateTo !== '';
 
   const getStats = () => {
     const total = cards.length;
@@ -588,6 +610,31 @@ const ListView = () => {
                   onValueChange={(value) => setFilters({ ...filters, priority: value })}
                 />
 
+                {/* Date Range Filters */}
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="date"
+                      placeholder="From date"
+                      value={filters.dateFrom}
+                      onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+                      className="pl-10 pr-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white/50 hover:bg-white hover:border-gray-300 text-sm"
+                    />
+                  </div>
+                  <span className="text-gray-500 text-sm">to</span>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="date"
+                      placeholder="To date"
+                      value={filters.dateTo}
+                      onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+                      className="pl-10 pr-3 py-2 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white/50 hover:bg-white hover:border-gray-300 text-sm"
+                    />
+                  </div>
+                </div>
+
                 {hasActiveFilters && (
                   <Button
                     variant="outline"
@@ -644,6 +691,16 @@ const ListView = () => {
                   {filters.search && (
                     <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200">
                       Search: "{filters.search}"
+                    </Badge>
+                  )}
+                  {filters.dateFrom && (
+                    <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-200">
+                      From: {new Date(filters.dateFrom).toLocaleDateString()}
+                    </Badge>
+                  )}
+                  {filters.dateTo && (
+                    <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-200">
+                      To: {new Date(filters.dateTo).toLocaleDateString()}
                     </Badge>
                   )}
                 </div>

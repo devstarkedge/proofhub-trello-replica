@@ -14,6 +14,7 @@ import useWorkflowStore from '../store/workflowStore';
 import useModalHierarchyStore from '../store/modalHierarchyStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
 import HierarchyModalStack from '../components/hierarchy/HierarchyModalStack';
+import { WorkflowSkeleton } from '../components/LoadingSkeleton';
 import { toast } from 'react-toastify';
 
 const WorkFlow = memo(() => {
@@ -279,68 +280,94 @@ useEffect(() => {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Map friendly UI filter values to actual data values
-  const mapPriorityValue = (val) => {
-    if (!val || val === 'All') return null;
-    const map = { 'Low': 'low', 'Medium': 'medium', 'High': 'high' };
-    return map[val] || val.toLowerCase();
-  };
-  // Normalize status by trimming and lowercasing for comparison
-  const normalize = (s) => (s || '').toString().trim().toLowerCase();
-  const activeStatus = statusFilter && statusFilter !== 'All' ? normalize(statusFilter) : null;
-  const activePriority = mapPriorityValue(priorityFilter);
+  // Memoize filter values to prevent unnecessary re-computations
+  const activeFilters = React.useMemo(() => {
+    const mapPriorityValue = (val) => {
+      if (!val || val === 'All') return null;
+      const map = { 'Low': 'low', 'Medium': 'medium', 'High': 'high' };
+      return map[val] || val.toLowerCase();
+    };
 
-  // Compute filtered cards per list while keeping lists intact
+    const normalize = (s) => (s || '').toString().trim().toLowerCase();
+
+    return {
+      status: statusFilter && statusFilter !== 'All' ? normalize(statusFilter) : null,
+      priority: mapPriorityValue(priorityFilter),
+      search: debouncedSearch ? debouncedSearch.toLowerCase() : '',
+      selectedProjectId: selectedProject ? (selectedProject._id || selectedProject) : null
+    };
+  }, [statusFilter, priorityFilter, debouncedSearch, selectedProject]);
+
+  // Compute filtered cards per list with optimized filtering
   const { filteredCardsByList, totalFilteredCount } = React.useMemo(() => {
-    // Use defensive copy and ensure we have an object
     const result = {};
     let total = 0;
 
-    const search = debouncedSearch ? debouncedSearch.toLowerCase() : '';
+    // Pre-compute normalized values for better performance
+    const normalize = (s) => (s || '').toString().trim().toLowerCase();
 
     for (const list of lists) {
       const listId = list._id;
       const cards = cardsByList[listId] || [];
-      const filtered = cards.filter(card => {
-        // status filter
-        if (activeStatus) {
+
+      // Only filter if we have active filters
+      const hasFilters = activeFilters.status || activeFilters.priority || activeFilters.search || activeFilters.selectedProjectId;
+
+      const filtered = hasFilters ? cards.filter(card => {
+        // Status filter
+        if (activeFilters.status) {
           const cstatus = normalize(card.status);
-          if (cstatus !== activeStatus) return false;
+          if (cstatus !== activeFilters.status) return false;
         }
-        // priority filter
-        if (activePriority) {
+
+        // Priority filter
+        if (activeFilters.priority) {
           const cprio = normalize(card.priority);
-          if (cprio !== activePriority) return false;
+          if (cprio !== activeFilters.priority) return false;
         }
-        // project filter (if selectedProject is set)
-        if (selectedProject) {
-          // card.board could be id or object
+
+        // Project filter
+        if (activeFilters.selectedProjectId) {
           const cardBoardId = typeof card.board === 'string' ? card.board : (card.board?._id || card.board);
-          const selBoardId = selectedProject._id || selectedProject;
-          if (cardBoardId !== selBoardId) return false;
+          if (cardBoardId !== activeFilters.selectedProjectId) return false;
         }
-        // search filter
-        if (search) {
-          const matchTitle = (card.title || '').toLowerCase().includes(search);
-          const matchDesc = (card.description || '').toLowerCase().includes(search);
-          const matchLabels = (card.labels || []).some(l => ('' + l).toLowerCase().includes(search));
-          if (!(matchTitle || matchDesc || matchLabels)) return false;
+
+        // Search filter - optimized with early returns
+        if (activeFilters.search) {
+          const title = (card.title || '').toLowerCase();
+          if (title.includes(activeFilters.search)) return true;
+
+          const desc = (card.description || '').toLowerCase();
+          if (desc.includes(activeFilters.search)) return true;
+
+          const labels = card.labels || [];
+          if (labels.some(l => ('' + l).toLowerCase().includes(activeFilters.search))) return true;
+
+          return false;
         }
+
         return true;
-      });
+      }) : cards; // No filtering needed
+
       result[listId] = filtered;
       total += filtered.length;
     }
+
     return { filteredCardsByList: result, totalFilteredCount: total };
-  }, [lists, cardsByList, activeStatus, activePriority, selectedProject, debouncedSearch]);
+  }, [lists, cardsByList, activeFilters]);
 
   const autoOpenSharedPath = useCallback(async () => {
     if (!taskId || !board) return;
     try {
       closeHierarchy();
 
-      const taskResponse = await Database.getCard(taskId);
-      const taskData = taskResponse.data || taskResponse;
+      // Check if task data is already available in the store
+      let taskData = getCard(taskId);
+      if (!taskData) {
+        const taskResponse = await Database.getCard(taskId);
+        taskData = taskResponse.data || taskResponse;
+      }
+
       if (!taskData?._id) {
         throw new Error('Task not found');
       }
@@ -351,29 +378,36 @@ useEffect(() => {
         project: board,
       });
 
-      if (subtaskId) {
-        const subtaskResponse = await Database.getSubtask(subtaskId);
-        const subtaskData = subtaskResponse.data || subtaskResponse;
-        if (!subtaskData?._id) {
-          throw new Error('Subtask not found');
-        }
-        openHierarchyModal({
-          type: 'subtask',
-          entity: subtaskData,
-          parentDepth: 0,
-        });
+      if (subtaskId || nenoId) {
+        // Fetch subtask and nano data in parallel if both are needed
+        const fetchPromises = [];
+        if (subtaskId) fetchPromises.push(Database.getSubtask(subtaskId));
+        if (nenoId) fetchPromises.push(Database.getNano(nenoId));
 
-        if (nenoId) {
-          const nanoResponse = await Database.getNano(nenoId);
-          const nanoData = nanoResponse.data || nanoResponse;
-          if (!nanoData?._id) {
-            throw new Error('Neno subtask not found');
+        const responses = await Promise.all(fetchPromises);
+
+        if (subtaskId) {
+          const subtaskData = responses[0]?.data || responses[0];
+          if (!subtaskData?._id) {
+            throw new Error('Subtask not found');
           }
           openHierarchyModal({
-            type: 'subtaskNano',
-            entity: nanoData,
-            parentDepth: 1,
+            type: 'subtask',
+            entity: subtaskData,
+            parentDepth: 0,
           });
+
+          if (nenoId) {
+            const nanoData = responses[1]?.data || responses[1];
+            if (!nanoData?._id) {
+              throw new Error('Neno subtask not found');
+            }
+            openHierarchyModal({
+              type: 'subtaskNano',
+              entity: nanoData,
+              parentDepth: 1,
+            });
+          }
         }
       }
 
@@ -383,7 +417,7 @@ useEffect(() => {
       toast.error('Unable to open the shared item. It may have been removed.');
       setShareAutoOpened(true);
     }
-  }, [taskId, subtaskId, nenoId, board, closeHierarchy, openHierarchyModal]);
+  }, [taskId, subtaskId, nenoId, board, closeHierarchy, openHierarchyModal, getCard]);
 
   useEffect(() => {
     if (!taskId || loading || shareAutoOpened || !board) {
@@ -393,22 +427,7 @@ useEffect(() => {
   }, [taskId, loading, shareAutoOpened, board, autoOpenSharedPath]);
   
   if (loading || teamLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
-        >
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            className="w-16 h-16 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"
-          />
-          <p className="text-white text-xl font-medium">Loading project workflow...</p>
-        </motion.div>
-      </div>
-    );
+    return <WorkflowSkeleton />;
   }
 
   if (error) {

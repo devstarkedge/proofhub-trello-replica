@@ -31,6 +31,143 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Get all departments with member assignments (optimized for HomePage)
+// @route   GET /api/departments/with-assignments
+// @access  Private
+export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next) => {
+  // Get all departments with basic info
+  const departments = await Department.find({ isActive: true })
+    .populate("managers", "name email")
+    .populate("members", "name email")
+    .populate("projects", "name description background members status")
+    .sort("name");
+
+  // Prepare result with member assignments data
+  const departmentsWithAssignments = await Promise.all(
+    departments.map(async (dept) => {
+      // Get members with assignments for this department
+      const membersWithAssignments = await getMembersWithAssignmentsData(dept._id);
+
+      // Get projects with member assignments mapping
+      const projectsWithMemberAssignments = {};
+      for (const member of membersWithAssignments) {
+        const memberProjects = await getProjectsWithMemberAssignmentsData(dept._id, member._id);
+        projectsWithMemberAssignments[member._id] = memberProjects;
+      }
+
+      return {
+        ...dept.toObject(),
+        projectsCount: dept.projects.length,
+        membersWithAssignments,
+        projectsWithMemberAssignments
+      };
+    })
+  );
+
+  res.status(200).json({
+    success: true,
+    count: departmentsWithAssignments.length,
+    data: departmentsWithAssignments,
+  });
+});
+
+// Helper function to get members with assignments (extracted from getMembersWithAssignments)
+async function getMembersWithAssignmentsData(departmentId) {
+  const department = await Department.findById(departmentId);
+  if (!department) return [];
+
+  // Get all projects in this department
+  const projects = await Board.find({ department: departmentId, isArchived: false })
+    .populate('members', 'name email')
+    .select('_id name members');
+
+  // Get all cards (tasks) in these projects
+  const projectIds = projects.map(p => p._id);
+  const cards = await Card.find({ board: { $in: projectIds } })
+    .populate('assignees', 'name email')
+    .populate('members', 'name email')
+    .select('_id board assignees members subtaskStats');
+
+  // Collect all unique members who have assignments
+  const assignedMembers = new Set();
+
+  // Add members directly assigned to projects
+  if (projects && projects.length > 0) {
+    projects.forEach(project => {
+      if (project.members && project.members.length > 0) {
+        project.members.forEach(member => {
+          assignedMembers.add(member._id.toString());
+        });
+      }
+    });
+  }
+
+  // Add members assigned to tasks/cards
+  if (cards && cards.length > 0) {
+    cards.forEach(card => {
+      if (card.assignees && card.assignees.length > 0) {
+        card.assignees.forEach(assignee => {
+          assignedMembers.add(assignee._id.toString());
+        });
+      }
+      if (card.members && card.members.length > 0) {
+        card.members.forEach(member => {
+          assignedMembers.add(member._id.toString());
+        });
+      }
+    });
+  }
+
+  // Filter department members to only include those with assignments
+  const membersWithAssignments = department.members.filter(memberId =>
+    assignedMembers.has(memberId.toString())
+  );
+
+  // Populate the member details
+  const populatedMembers = await User.find({
+    _id: { $in: membersWithAssignments }
+  }).select('name email');
+
+  return populatedMembers;
+}
+
+// Helper function to get projects with member assignments (extracted from getProjectsWithMemberAssignments)
+async function getProjectsWithMemberAssignmentsData(departmentId, memberId) {
+  // Get all projects in this department
+  const allProjects = await Board.find({
+    department: departmentId,
+    isArchived: false
+  }).select('_id name description background members status');
+
+  // Get projects where member is directly assigned
+  const directlyAssignedProjects = allProjects.filter(project =>
+    project.members && project.members.some(member => member.toString() === memberId)
+  );
+
+  // Get projects where member is assigned to tasks/cards
+  const projectIds = allProjects.map(p => p._id);
+  const cardsWithMember = await Card.find({
+    board: { $in: projectIds },
+    $or: [
+      { assignees: memberId },
+      { members: memberId }
+    ]
+  }).select('board').distinct('board');
+
+  // Combine all project IDs
+  const assignedProjectIds = new Set([
+    ...directlyAssignedProjects.map(p => p._id.toString()),
+    ...cardsWithMember.map(id => id.toString())
+  ]);
+
+  // Get the actual projects
+  const assignedProjects = allProjects.filter(project =>
+    assignedProjectIds.has(project._id.toString())
+  );
+
+  return assignedProjects;
+}
+
 // @desc    Get single department
 // @route   GET /api/departments/:id
 // @access  Private
