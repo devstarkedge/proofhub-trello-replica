@@ -187,7 +187,8 @@ export class AdvancedSearch {
     const {
       fuzzy = false,
       caseSensitive = false,
-      highlight = false
+      highlight = false,
+      scope = 'all'
     } = options;
 
     const parsed = this.parseQuery(query);
@@ -230,7 +231,7 @@ export class AdvancedSearch {
           }
         } else if (token.type === 'term') {
           // General term search
-          tokenMatches = this.searchCard(card, token.value, fuzzy);
+          tokenMatches = this.searchCard(card, token.value, fuzzy, scope);
           if (tokenMatches && highlight) {
             cardHighlights.push({
               text: token.value,
@@ -288,8 +289,8 @@ export class AdvancedSearch {
   }
 
   // Search across all relevant card fields
-  searchCard(card, query, fuzzy = false) {
-    const searchableFields = [
+  searchCard(card, query, fuzzy = false, scope = 'all') {
+    let searchableFields = [
       'title',
       'description',
       'board.name',
@@ -299,6 +300,17 @@ export class AdvancedSearch {
       'priority',
       'status'
     ];
+
+    if (scope === 'title') {
+      searchableFields = ['title'];
+    } else if (scope === 'description') {
+      searchableFields = ['description'];
+    } else if (scope === 'assignee') {
+      searchableFields = ['assignees.name'];
+    } else if (scope === 'project') {
+      searchableFields = ['board.name'];
+    }
+    // For 'all', use all fields
 
     for (const field of searchableFields) {
       if (this.searchInField(card, field, query, fuzzy)) {

@@ -28,7 +28,9 @@ import {
   Activity,
   History,
   Lightbulb,
-  Command
+  Command,
+  FileText,
+  Globe
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DepartmentContext from '../context/DepartmentContext';
@@ -70,7 +72,10 @@ const ListView = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchHighlights, setSearchHighlights] = useState(new Map());
   const [searchMode, setSearchMode] = useState('standard'); // standard, fuzzy, advanced
+  const [searchScope, setSearchScope] = useState('all'); // all, title, description, assignee, project
   const [showSearchHelp, setShowSearchHelp] = useState(false);
+  const helpPanelRef = useRef(null);
+  const suggestionsRef = useRef(null);
 
   useEffect(() => {
     if (currentDepartment) {
@@ -122,6 +127,26 @@ const ListView = () => {
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
+
+  // Handle outside click for help panel and suggestions
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (helpPanelRef.current && !helpPanelRef.current.contains(event.target)) {
+        setShowSearchHelp(false);
+      }
+      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+
+    if (showSearchHelp || showSuggestions) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSearchHelp, showSuggestions]);
 
   const loadCards = async () => {
     try {
@@ -220,7 +245,8 @@ const ListView = () => {
     if (filters.search) {
       const searchResult = advancedSearch.current.search(filtered, filters.search, {
         fuzzy: searchMode === 'fuzzy',
-        highlight: true
+        highlight: true,
+        scope: searchScope
       });
 
       if (searchResult.results) {
@@ -718,20 +744,23 @@ const ListView = () => {
                   <input
                     type="text"
                     placeholder={
-                      searchMode === 'fuzzy' ? "Fuzzy search tasks..." :
+                      searchMode === 'fuzzy' ? `Fuzzy search ${searchScope === 'all' ? 'tasks' : searchScope}...` :
                       searchMode === 'advanced' ? "Advanced search (title:keyword, assignee:name)..." :
-                      "Search tasks, projects, assignees..."
+                      searchScope === 'all' ? "Search task, projects..." :
+                      searchScope === 'title' ? "Search task titles..." :
+                      searchScope === 'description' ? "Search descriptions..." :
+                      searchScope === 'assignee' ? "Search assignees..." :
+                      "Search projects..."
                     }
                     value={filters.search}
                     onChange={(e) => handleSearchChange(e.target.value)}
                     onKeyDown={handleSearchKeyDown}
                     onFocus={() => filters.search && setShowSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                     className="w-full pl-11 pr-20 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white/50 hover:bg-white hover:border-gray-300"
                   />
 
                   {/* Search Controls */}
-                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                  <div className="absolute right-2 top-1/2 transform scale-110 bg-gray-200 rounded-lg -translate-y-1/2 flex items-center gap-1">
                     {/* Search Mode Toggle */}
                     <button
                       onClick={toggleSearchMode}
@@ -750,11 +779,54 @@ const ListView = () => {
                     {/* Help Button */}
                     <button
                       onClick={() => setShowSearchHelp(!showSearchHelp)}
-                      className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all duration-200"
+                      className="p-1.5 text-gray-400 hover:text-blue-500  hover:bg-blue-50 rounded-lg transition-all duration-200"
                       title="Search help (Ctrl+?)"
                     >
                       <Lightbulb className="w-3.5 h-3.5" />
                     </button>
+
+                    {/* Search Scope */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className={`p-1.5 rounded-lg transition-all duration-200 ${
+                            searchScope === 'all' ? 'text-gray-400 hover:text-blue-500 hover:bg-blue-50' :
+                            searchScope === 'title' ? 'text-blue-500 hover:text-blue-600 hover:bg-blue-50' :
+                            searchScope === 'description' ? 'text-green-500 hover:text-green-600 hover:bg-green-50' :
+                            searchScope === 'assignee' ? 'text-purple-500 hover:text-purple-600 hover:bg-purple-50' :
+                            'text-orange-500 hover:text-orange-600 hover:bg-orange-50'
+                          }`}
+                          title={`Search scope: ${searchScope} (click to change)`}
+                        >
+                          {searchScope === 'all' ? <Globe className="w-3.5 h-3.5" /> :
+                           searchScope === 'title' ? <Tag className="w-3.5 h-3.5" /> :
+                           searchScope === 'description' ? <FileText className="w-3.5 h-3.5" /> :
+                           searchScope === 'assignee' ? <User className="w-3.5 h-3.5" /> :
+                           <FolderKanban className="w-3.5 h-3.5" />}
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40 bg-white/95 backdrop-blur-xl border-2 rounded-xl shadow-xl">
+                        {[
+                          { value: 'all', label: 'All Fields', icon: Search },
+                          { value: 'title', label: 'Title Only', icon: Tag },
+                          { value: 'description', label: 'Description', icon: FileText },
+                          { value: 'assignee', label: 'Assignee', icon: User },
+                          { value: 'project', label: 'Project', icon: FolderKanban }
+                        ].map((option) => (
+                          <DropdownMenuItem
+                            key={option.value}
+                            onSelect={() => setSearchScope(option.value)}
+                            className={`${searchScope === option.value ? 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 font-bold' : 'hover:bg-gray-50'} cursor-pointer transition-all duration-200 rounded-lg mx-1 my-0.5`}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              {searchScope === option.value && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                              <option.icon className="w-4 h-4" />
+                              <span className={searchScope === option.value ? '' : 'ml-6'}>{option.label}</span>
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
                     {/* Search History */}
                     <DropdownMenu>
@@ -816,7 +888,7 @@ const ListView = () => {
 
                   {/* Search Suggestions */}
                   {showSuggestions && searchSuggestions.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-[9999] max-h-48 overflow-y-auto">
+                    <div ref={suggestionsRef} className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-[9999] max-h-48 overflow-y-auto">
                       {searchSuggestions.map((suggestion, index) => (
                         <button
                           key={index}
@@ -834,7 +906,7 @@ const ListView = () => {
 
                   {/* Search Help Panel */}
                   {showSearchHelp && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-[9999] p-4 max-w-md">
+                    <div ref={helpPanelRef} className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-[9999] p-4 max-w-md">
                       <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                         <Lightbulb className="w-4 h-4 text-blue-500" />
                         Advanced Search Help
@@ -844,6 +916,7 @@ const ListView = () => {
                         <div><strong>Exact phrases:</strong> "exact phrase"</div>
                         <div><strong>Operators:</strong> keyword AND other, keyword OR other, keyword NOT other</div>
                         <div><strong>Fuzzy mode:</strong> Finds similar matches</div>
+                        <div><strong>Search scope:</strong> Use the scope button to limit search to specific fields</div>
                         <div><strong>Shortcuts:</strong> Ctrl+/ (focus), Ctrl+? (help), Esc (close)</div>
                       </div>
                       <button
@@ -1090,13 +1163,17 @@ const ListView = () => {
                       <TableCell>{getStatusBadge(card.list?.title || 'N/A')}</TableCell>
                       <TableCell>
                         <div className={`flex items-center gap-2 ${getDueDateColor(card.dueDate)}`}>
-                          <Calendar className="w-4 h-4" />
+                          <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100 transition-colors">
+                            <Calendar className="w-4 h-4" />
+                          </div>
                           <span className="font-medium">{formatDueDate(card.dueDate)}</span>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 text-gray-700 group-hover:text-gray-900 transition-colors">
-                          <Clock className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
+                          <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100 transition-colors">
+                            <Clock className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
+                          </div>
                           <span className="font-medium">{calculateTotalLoggedTime(card.loggedTime)}</span>
                         </div>
                       </TableCell>
