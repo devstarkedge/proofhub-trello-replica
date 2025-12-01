@@ -22,6 +22,7 @@ const notificationSchema = new mongoose.Schema({
       'user_created',
       'user_assigned',
       'user_unassigned',
+      'announcement_created',
       'test_notification'
     ],
     required: true

@@ -25,6 +25,7 @@ const Analytics = lazy(() => import("./pages/Analytics"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Announcements = lazy(() => import("./pages/Announcements"));
 const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
 
 function App() {
@@ -172,6 +173,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <Settings />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/announcements"
+              element={
+                <PrivateRoute>
+                  <Announcements />
                 </PrivateRoute>
               }
             />

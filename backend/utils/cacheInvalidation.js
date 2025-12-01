@@ -45,3 +45,18 @@ export const invalidateHierarchyCache = ({
   }
 };
 
+export const invalidateAnnouncementCache = ({ announcementId, clearAll = false }) => {
+  if (clearAll) {
+    // Clear all announcement-related caches
+    invalidateCache('/api/announcements');
+    invalidateCache('/api/announcements/stats/overview');
+  } else if (announcementId) {
+    // Clear specific announcement cache
+    const id = ensureString(announcementId);
+    if (id) {
+      invalidateCache('/api/announcements');
+      invalidateCache(`/api/announcements/${id}`);
+    }
+  }
+};
+

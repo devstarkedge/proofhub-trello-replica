@@ -21,6 +21,7 @@ import adminRoutes from './routes/admin.js';
 import uploadsRoutes from './routes/uploads.js';
 import subtaskRoutes from './routes/subtasks.js';
 import subtaskNanoRoutes from './routes/subtaskNanos.js';
+import announcementsRoutes from './routes/announcements.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
@@ -85,6 +86,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/subtasks', subtaskRoutes);
 app.use('/api/subtask-nanos', subtaskNanoRoutes);
+app.use('/api/announcements', announcementsRoutes);
 
 import jwt from 'jsonwebtoken';
 
@@ -153,6 +155,27 @@ io.on('connection', (socket) => {
     io.to(`board-${boardId}`).emit('comment-added', { cardId, comment });
   });
 
+  // Announcement Socket events
+  socket.on('join-announcements', () => {
+    socket.join('announcements');
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined announcements room`);
+  });
+
+  socket.on('leave-announcements', () => {
+    socket.leave('announcements');
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left announcements room`);
+  });
+
+  socket.on('join-announcement', (announcementId) => {
+    socket.join(`announcement-${announcementId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined announcement room: announcement-${announcementId}`);
+  });
+
+  socket.on('leave-announcement', (announcementId) => {
+    socket.leave(`announcement-${announcementId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left announcement room: announcement-${announcementId}`);
+  });
+
   socket.on('join-board', (boardId) => {
     socket.join(`board-${boardId}`);
     if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined board ${boardId}`);
@@ -217,6 +240,7 @@ export const emitToBoard = (boardId, event, data) => {
 export { io };
 
 import seedAdmin from './utils/seed.js';
+import { startBackgroundJobs } from './utils/backgroundTasks.js';
 
 // MongoDB connection with connection pooling
 mongoose.connect(process.env.MONGO_URI, {
@@ -228,6 +252,8 @@ mongoose.connect(process.env.MONGO_URI, {
     if (process.env.NODE_ENV !== 'production') console.log('Connected to MongoDB with connection pooling');
     // Seed the admin user
     seedAdmin();
+    // Start background jobs for scheduled announcements and expiry
+    startBackgroundJobs();
     server.listen(PORT, () => {
       if (process.env.NODE_ENV !== 'production') console.log(`Server running on port ${PORT}`);
     });

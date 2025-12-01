@@ -408,6 +408,159 @@ class NotificationService {
     return this.createBulkNotifications(notifications);
   }
 
+  // Send announcement emails in background
+  async sendAnnouncementEmails(announcement, subscriberIds) {
+    try {
+      // Get subscriber details
+      const subscribers = await User.find({
+        _id: { $in: subscriberIds },
+        settings: { $elemMatch: { 'notifications.email': true } }
+      }).select('email name');
+
+      const promises = subscribers.map(subscriber => {
+        return new Promise((resolve) => {
+          // Queue email sending to prevent blocking
+          setTimeout(async () => {
+            try {
+              const emailData = {
+                to: subscriber.email,
+                subject: `New Announcement: ${announcement.title}`,
+                html: this.generateAnnouncementEmailTemplate(announcement, subscriber)
+              };
+              await sendEmail(emailData);
+              resolve(true);
+            } catch (error) {
+              console.error(`Error sending announcement email to ${subscriber.email}:`, error);
+              resolve(false);
+            }
+          }, Math.random() * 5000); // Stagger requests over 5 seconds
+        });
+      });
+
+      await Promise.all(promises);
+    } catch (error) {
+      console.error('Error queuing announcement emails:', error);
+    }
+  }
+
+  // Generate announcement email template
+  generateAnnouncementEmailTemplate(announcement, subscriber) {
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const announcementUrl = `${baseUrl}/announcements?id=${announcement._id}`;
+
+    const categoryColor = {
+      'HR': '#9333ea',
+      'Urgent': '#dc2626',
+      'System Update': '#2563eb',
+      'Events': '#eab308',
+      'General': '#6b7280'
+    };
+
+    const categoryBg = {
+      'HR': '#f3e8ff',
+      'Urgent': '#fee2e2',
+      'System Update': '#eff6ff',
+      'Events': '#fefce8',
+      'General': '#f3f4f6'
+    };
+
+    const color = categoryColor[announcement.category] || '#6b7280';
+    const bg = categoryBg[announcement.category] || '#f3f4f6';
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${announcement.title}</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+            .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 20px; text-align: center; }
+            .header h1 { margin: 0; font-size: 24px; font-weight: 300; }
+            .header h2 { margin: 10px 0 0 0; font-size: 18px; font-weight: 500; }
+            .content { padding: 30px 20px; background: #ffffff; }
+            .announcement-title { font-size: 22px; font-weight: 700; margin: 0 0 10px 0; color: #1f2937; }
+            .announcement-category { display: inline-block; background: ${bg}; color: ${color}; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 15px; }
+            .announcement-meta { font-size: 13px; color: #6b7280; margin: 10px 0; }
+            .announcement-body { font-size: 15px; line-height: 1.8; color: #374151; margin: 20px 0; }
+            .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: 600; margin: 20px 0; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
+            .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e9ecef; }
+            .footer a { color: #667eea; text-decoration: none; }
+            .author-info { display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+            .author-avatar { width: 40px; height: 40px; border-radius: 50%; background: #e5e7eb; }
+            .author-details { font-size: 14px; }
+            .author-name { font-weight: 600; color: #1f2937; }
+            .author-title { color: #6b7280; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🔔 FlowTask Announcement</h1>
+              <h2>You Have a New Announcement</h2>
+            </div>
+            <div class="content">
+              <p>Hello ${subscriber.name},</p>
+              
+              <div class="announcement-category">${announcement.category}</div>
+              <h2 class="announcement-title">${announcement.title}</h2>
+              
+              <div class="announcement-meta">
+                <strong>Posted:</strong> ${new Date(announcement.createdAt).toLocaleDateString('en-US', { 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </div>
+              
+              <div class="announcement-body">
+                ${announcement.description.replace(/\n/g, '<br>')}
+              </div>
+
+              ${announcement.attachments && announcement.attachments.length > 0 ? `
+                <div style="margin: 20px 0; padding: 15px; background: #f9fafb; border-radius: 8px;">
+                  <strong style="font-size: 14px;">📎 Attachments:</strong>
+                  <ul style="margin: 10px 0 0 20px; padding: 0;">
+                    ${announcement.attachments.map(att => `
+                      <li style="margin: 5px 0;">
+                        <a href="${att.url}" style="color: #667eea; text-decoration: none;">
+                          ${att.originalName}
+                        </a>
+                      </li>
+                    `).join('')}
+                  </ul>
+                </div>
+              ` : ''}
+
+              <div class="author-info">
+                <div style="flex-grow: 1;">
+                  <div class="author-name">👤 ${announcement.createdBy?.name || 'Administrator'}</div>
+                  ${announcement.createdBy?.title ? `<div class="author-title">${announcement.createdBy.title}</div>` : ''}
+                </div>
+              </div>
+
+              <div style="text-align: center;">
+                <a href="${announcementUrl}" class="button">View Full Announcement</a>
+              </div>
+
+              <p style="font-size: 14px; color: #6b7280; margin-top: 20px;">
+                You can view all announcements and interact with them in the <a href="${baseUrl}/announcements" style="color: #667eea;">Announcements section</a> of FlowTask.
+              </p>
+            </div>
+            <div class="footer">
+              <p>You're receiving this email because you were selected as a subscriber for this announcement.</p>
+              <p>You can manage your notification preferences in your <a href="${baseUrl}/settings">settings</a>.</p>
+              <p>&copy; 2025 FlowTask. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+  }
+
   // Queue processing for scalability
   async addToQueue(notificationData, options = {}) {
     this.queue.push({ notificationData, options });

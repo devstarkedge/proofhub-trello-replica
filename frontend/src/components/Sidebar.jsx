@@ -1,5 +1,5 @@
 import React, { useContext } from 'react';
-import { Home, Folder, Users, BarChart3, Settings, LayoutDashboard, UserCheck } from 'lucide-react';
+import { Home, Folder, Users, BarChart3, Settings, LayoutDashboard, UserCheck, Bell } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 
@@ -10,6 +10,7 @@ const Sidebar = () => {
     const baseItems = [
       { path: '/', icon: Home, label: 'Home' },
       { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
+      { path: '/announcements', icon: Bell, label: 'Announcements' },
     ];
 
     // Role-based navigation items
