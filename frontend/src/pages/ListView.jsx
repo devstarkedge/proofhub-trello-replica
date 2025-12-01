@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo, lazy, Suspense, useRef } from 'react';
+import React, { useState, useEffect, useContext, useMemo, lazy, Suspense, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -25,26 +25,33 @@ import {
   Sparkles,
   Zap,
   Target,
-  Activity
+  Activity,
+  History,
+  Lightbulb,
+  Command
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DepartmentContext from '../context/DepartmentContext';
+import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import Header from '../components/Header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '../components/ui/dropdown-menu';
 import { Button } from '../components/ui/button';
+import { AdvancedSearch, debounce, highlightText } from '../utils/advancedSearch';
 
 const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
 
 const ListView = () => {
   const { currentDepartment, departments, setCurrentDepartment } = useContext(DepartmentContext);
+  const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   // Simple in-memory caches for fast reuse and freshness checks
   const projectCache = useRef(new Map());
   const taskCache = useRef(new Map());
+  const advancedSearch = useRef(new AdvancedSearch());
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,6 +64,13 @@ const ListView = () => {
   });
   const [sorting, setSorting] = useState({ key: 'dueDate', order: 'asc' });
   const [viewMode, setViewMode] = useState('comfortable'); // compact, comfortable, spacious
+
+  // Advanced search state
+  const [searchSuggestions, setSearchSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchHighlights, setSearchHighlights] = useState(new Map());
+  const [searchMode, setSearchMode] = useState('standard'); // standard, fuzzy, advanced
+  const [showSearchHelp, setShowSearchHelp] = useState(false);
 
   useEffect(() => {
     if (currentDepartment) {
@@ -88,6 +102,26 @@ const ListView = () => {
       }
     }
   }, [departments, currentDepartment, setCurrentDepartment]);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === '/' && e.ctrlKey) {
+        e.preventDefault();
+        const searchInput = document.querySelector('input[placeholder*="Search"]');
+        if (searchInput) searchInput.focus();
+      } else if (e.key === '?' && e.ctrlKey) {
+        e.preventDefault();
+        setShowSearchHelp(prev => !prev);
+      } else if (e.key === 'Escape') {
+        setShowSuggestions(false);
+        setShowSearchHelp(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   const loadCards = async () => {
     try {
@@ -155,26 +189,51 @@ const ListView = () => {
     }
   };
 
+  // Debounced search suggestions update
+  const updateSearchSuggestions = useCallback(
+    debounce((query) => {
+      if (query.length >= 2) {
+        const suggestions = advancedSearch.current.getSuggestions(query, cards);
+        setSearchSuggestions(suggestions);
+        setShowSuggestions(suggestions.length > 0);
+      } else {
+        setShowSuggestions(false);
+      }
+    }, 300),
+    [cards]
+  );
+
   const filteredAndSortedCards = useMemo(() => {
     let filtered = cards;
 
+    // Apply status filter
     if (filters.status !== 'all') {
       filtered = filtered.filter(card => card.list?.title?.toLowerCase().replace(' ', '-') === filters.status);
     }
 
+    // Apply priority filter
     if (filters.priority !== 'all') {
       filtered = filtered.filter(card => card.priority?.toLowerCase() === filters.priority);
     }
 
+    // Apply advanced search
     if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(card =>
-        card.title?.toLowerCase().includes(searchLower) ||
-        card.board?.name?.toLowerCase().includes(searchLower) ||
-        card.assignees?.some(a => a.name?.toLowerCase().includes(searchLower))
-      );
+      const searchResult = advancedSearch.current.search(filtered, filters.search, {
+        fuzzy: searchMode === 'fuzzy',
+        highlight: true
+      });
+
+      if (searchResult.results) {
+        filtered = searchResult.results;
+        setSearchHighlights(searchResult.highlights || new Map());
+      } else {
+        filtered = searchResult;
+      }
+    } else {
+      setSearchHighlights(new Map());
     }
 
+    // Apply date range filter
     if (filters.dateFrom || filters.dateTo) {
       filtered = filtered.filter(card => {
         if (!card.dueDate) return false;
@@ -193,6 +252,7 @@ const ListView = () => {
       });
     }
 
+    // Apply sorting
     const sorted = [...filtered].sort((a, b) => {
       let aValue, bValue;
 
@@ -225,7 +285,7 @@ const ListView = () => {
     });
 
     return sorted;
-  }, [cards, filters, sorting]);
+  }, [cards, filters, sorting, searchMode]);
 
   const handleSort = (key) => {
     if (sorting.key === key) {
@@ -243,6 +303,95 @@ const ListView = () => {
       dateFrom: '',
       dateTo: ''
     });
+    setSearchSuggestions([]);
+    setShowSuggestions(false);
+    setSearchHighlights(new Map());
+  };
+
+  // Handle search input changes with debouncing
+  const handleSearchChange = (value) => {
+    setFilters(prev => ({ ...prev, search: value }));
+    if (value.trim()) {
+      setSearchMode('standard'); // Manual search uses standard mode
+    }
+    updateSearchSuggestions(value);
+  };
+
+  // Handle search suggestion selection
+  const handleSuggestionSelect = (suggestion) => {
+    setFilters(prev => ({ ...prev, search: suggestion }));
+    setShowSuggestions(false);
+  };
+
+  // Handle keyboard shortcuts
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      setShowSuggestions(false);
+      setShowSearchHelp(false);
+    } else if (e.key === '/' && e.ctrlKey) {
+      e.preventDefault();
+      document.querySelector('input[placeholder*="Search"]').focus();
+    } else if (e.key === '?' && e.ctrlKey) {
+      e.preventDefault();
+      setShowSearchHelp(!showSearchHelp);
+    }
+  };
+
+  // Toggle search mode
+  const toggleSearchMode = () => {
+    setSearchMode(prev => {
+      if (prev === 'standard') return 'fuzzy';
+      if (prev === 'fuzzy') return 'advanced';
+      return 'standard';
+    });
+  };
+
+  // Advanced filter presets
+  const getFilterPresets = () => ({
+    'My Tasks': {
+      priority: 'all',
+      status: 'all',
+      search: user ? `assignees:"${user.name}"` : '',
+      dateFrom: '',
+      dateTo: ''
+    },
+    'High Priority': {
+      priority: 'high',
+      status: 'all',
+      search: '',
+      dateFrom: '',
+      dateTo: ''
+    },
+    'Overdue Tasks': {
+      priority: 'all',
+      status: 'all',
+      search: '',
+      dateFrom: '',
+      dateTo: new Date().toISOString().split('T')[0]
+    },
+    'This Week': {
+      priority: 'all',
+      status: 'all',
+      search: '',
+      dateFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      dateTo: new Date().toISOString().split('T')[0]
+    },
+    'In Progress': {
+      priority: 'all',
+      status: 'in-progress',
+      search: '',
+      dateFrom: '',
+      dateTo: ''
+    }
+  });
+
+  const applyFilterPreset = (presetName) => {
+    const presets = getFilterPresets();
+    const preset = presets[presetName];
+    if (preset) {
+      setFilters(preset);
+      setSearchMode('fuzzy'); // Use fuzzy search mode for presets to handle name variations
+    }
   };
 
   const hasActiveFilters = filters.status !== 'all' || filters.priority !== 'all' || filters.search !== '' || filters.dateFrom !== '' || filters.dateTo !== '';
@@ -560,26 +709,150 @@ const ListView = () => {
           )}
 
           {/* Enhanced Filters Bar */}
-          <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 p-5 hover:shadow-2xl transition-all duration-300">
+          <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 p-5 hover:shadow-2xl transition-all duration-300 relative z-[100]">
             <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
               <div className="flex flex-wrap items-center gap-3 flex-1">
-                {/* Enhanced Search */}
-                <div className="relative flex-1 min-w-[240px] max-w-md group">
+                {/* Advanced Search */}
+                <div className="relative flex-1 min-w-[280px] max-w-lg group z-[9999]">
                   <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
                   <input
                     type="text"
-                    placeholder="Search tasks, projects, assignees..."
+                    placeholder={
+                      searchMode === 'fuzzy' ? "Fuzzy search tasks..." :
+                      searchMode === 'advanced' ? "Advanced search (title:keyword, assignee:name)..." :
+                      "Search tasks, projects, assignees..."
+                    }
                     value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    className="w-full pl-11 pr-11 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white/50 hover:bg-white hover:border-gray-300"
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    onFocus={() => filters.search && setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    className="w-full pl-11 pr-20 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white/50 hover:bg-white hover:border-gray-300"
                   />
-                  {filters.search && (
+
+                  {/* Search Controls */}
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                    {/* Search Mode Toggle */}
                     <button
-                      onClick={() => setFilters({ ...filters, search: '' })}
-                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg p-1 transition-all"
+                      onClick={toggleSearchMode}
+                      className={`p-1.5 rounded-lg transition-all duration-200 ${
+                        searchMode === 'standard' ? 'text-gray-400 hover:text-blue-500 hover:bg-blue-50' :
+                        searchMode === 'fuzzy' ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50' :
+                        'text-purple-500 hover:text-purple-600 hover:bg-purple-50'
+                      }`}
+                      title={`Search mode: ${searchMode} (click to change)`}
                     >
-                      <X className="w-4 h-4" />
+                      {searchMode === 'fuzzy' ? <Sparkles className="w-3.5 h-3.5" /> :
+                       searchMode === 'advanced' ? <Command className="w-3.5 h-3.5" /> :
+                       <Search className="w-3.5 h-3.5" />}
                     </button>
+
+                    {/* Help Button */}
+                    <button
+                      onClick={() => setShowSearchHelp(!showSearchHelp)}
+                      className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all duration-200"
+                      title="Search help (Ctrl+?)"
+                    >
+                      <Lightbulb className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Search History */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                          title="Search history"
+                        >
+                          <History className="w-3.5 h-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64 bg-white/95 backdrop-blur-xl border-2 rounded-xl shadow-xl">
+                        <div className="px-3 py-2 border-b border-gray-200">
+                          <h4 className="font-semibold text-gray-900 text-sm">Recent Searches</h4>
+                        </div>
+                        {advancedSearch.current.getPopularSearches().length > 0 ? (
+                          advancedSearch.current.getPopularSearches().map((query, index) => (
+                            <DropdownMenuItem
+                              key={index}
+                              onSelect={() => handleSuggestionSelect(query)}
+                              className="cursor-pointer hover:bg-blue-50 transition-colors"
+                            >
+                              <div className="flex items-center gap-2 w-full">
+                                <History className="w-3 h-3 text-gray-400" />
+                                <span className="text-sm text-gray-700 truncate">{query}</span>
+                              </div>
+                            </DropdownMenuItem>
+                          ))
+                        ) : (
+                          <div className="px-3 py-4 text-center text-sm text-gray-500">
+                            No recent searches
+                          </div>
+                        )}
+                        {advancedSearch.current.getPopularSearches().length > 0 && (
+                          <DropdownMenuSeparator />
+                        )}
+                        <DropdownMenuItem
+                          onSelect={() => advancedSearch.current.clearHistory()}
+                          className="cursor-pointer hover:bg-red-50 text-red-600 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <X className="w-3 h-3" />
+                            <span className="text-sm">Clear History</span>
+                          </div>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Clear Button */}
+                    {filters.search && (
+                      <button
+                        onClick={() => handleSearchChange('')}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Search Suggestions */}
+                  {showSuggestions && searchSuggestions.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-[9999] max-h-48 overflow-y-auto">
+                      {searchSuggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          onClick={() => handleSuggestionSelect(suggestion)}
+                          className="w-full px-4 py-2 text-left hover:bg-blue-50 transition-colors first:rounded-t-xl last:rounded-b-xl"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Search className="w-3 h-3 text-gray-400" />
+                            <span className="text-sm text-gray-700">{suggestion}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Search Help Panel */}
+                  {showSearchHelp && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-[9999] p-4 max-w-md">
+                      <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <Lightbulb className="w-4 h-4 text-blue-500" />
+                        Advanced Search Help
+                      </h4>
+                      <div className="space-y-2 text-sm text-gray-600">
+                        <div><strong>Field search:</strong> title:keyword, assignees:name, label:tag</div>
+                        <div><strong>Exact phrases:</strong> "exact phrase"</div>
+                        <div><strong>Operators:</strong> keyword AND other, keyword OR other, keyword NOT other</div>
+                        <div><strong>Fuzzy mode:</strong> Finds similar matches</div>
+                        <div><strong>Shortcuts:</strong> Ctrl+/ (focus), Ctrl+? (help), Esc (close)</div>
+                      </div>
+                      <button
+                        onClick={() => setShowSearchHelp(false)}
+                        className="mt-3 text-xs text-blue-600 hover:text-blue-700"
+                      >
+                        Close
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -609,6 +882,33 @@ const ListView = () => {
                   value={filters.priority}
                   onValueChange={(value) => setFilters({ ...filters, priority: value })}
                 />
+
+                {/* Filter Presets */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="flex items-center gap-2 hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 border-2 rounded-xl hover:border-purple-300 group">
+                      <Sparkles size={16} className="text-gray-500 group-hover:text-purple-600 transition-colors" />
+                      <span className="text-gray-700 font-medium">Presets</span>
+                      <ChevronsUpDown size={16} className="text-gray-400 group-hover:text-purple-500 transition-colors" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52 bg-white/95 backdrop-blur-xl border-2 rounded-xl shadow-xl">
+                    {Object.keys(getFilterPresets()).map((presetName, index) => (
+                      <React.Fragment key={presetName}>
+                        <DropdownMenuItem
+                          onSelect={() => applyFilterPreset(presetName)}
+                          className="cursor-pointer hover:bg-purple-50 transition-colors rounded-lg mx-1 my-0.5"
+                        >
+                          <div className="flex items-center gap-2 w-full">
+                            <Sparkles className="w-4 h-4 text-purple-500" />
+                            <span>{presetName}</span>
+                          </div>
+                        </DropdownMenuItem>
+                        {index === 0 && <DropdownMenuSeparator className="my-1" />}
+                      </React.Fragment>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
                 {/* Date Range Filters */}
                 <div className="flex items-center gap-2">
@@ -710,7 +1010,7 @@ const ListView = () => {
         </div>
 
         {/* Enhanced Table */}
-        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/50 overflow-hidden hover:shadow-3xl transition-all duration-300">
+        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/50 overflow-hidden hover:shadow-3xl transition-all duration-300 z-[10]">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-gradient-to-r from-slate-100 via-blue-50 to-indigo-50 border-b-2 border-blue-200/50">
@@ -742,9 +1042,12 @@ const ListView = () => {
                               onClick={(e) => { e.stopPropagation(); openCardModal(card); }}
                               className="text-left font-semibold hover:text-blue-600 transition-colors"
                               aria-label={`Open details for ${card.title}`}
-                            >
-                              {card.title}
-                            </button>
+                              dangerouslySetInnerHTML={{
+                                __html: searchHighlights.has(card._id)
+                                  ? highlightText(card.title || '', searchHighlights.get(card._id))
+                                  : card.title
+                              }}
+                            />
                           </div>
                         </div>
                       </TableCell>
