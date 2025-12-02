@@ -1,5 +1,5 @@
 import express from 'express';
-import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser } from '../controllers/userController.js';
+import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser, getVerifiedUsers, getUsersByDepartments, getManagerUsers } from '../controllers/userController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
 import { getVapidKeys } from '../utils/pushNotification.js';
@@ -50,6 +50,11 @@ router.delete('/push-subscription', protect, async (req, res) => {
     res.status(500).json({ message: 'Failed to remove push subscription' });
   }
 });
+
+// Announcement audience endpoints
+router.get('/verified', protect, hrOrAdmin, getVerifiedUsers);
+router.get('/by-departments', protect, hrOrAdmin, getUsersByDepartments);
+router.get('/managers', protect, hrOrAdmin, getManagerUsers);
 
 // Admin and HR can view all users, Manager can view users in their department/team
 router.get('/', protect, hrOrAdmin, getUsers);

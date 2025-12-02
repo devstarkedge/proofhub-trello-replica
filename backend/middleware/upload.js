@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename);
 const uploadsDir = path.join(__dirname, '../../uploads');
 const cardImagesDir = path.join(uploadsDir, 'card-images');
 const commentImagesDir = path.join(uploadsDir, 'comment-images');
+const announcementImagesDir = path.join(uploadsDir, 'announcement-images');
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -19,6 +20,9 @@ if (!fs.existsSync(cardImagesDir)) {
 }
 if (!fs.existsSync(commentImagesDir)) {
   fs.mkdirSync(commentImagesDir, { recursive: true });
+}
+if (!fs.existsSync(announcementImagesDir)) {
+  fs.mkdirSync(announcementImagesDir, { recursive: true });
 }
 
 // Configure storage
@@ -34,6 +38,14 @@ const storage = multer.diskStorage({
       case 'comment-image':
         uploadPath = commentImagesDir;
         break;
+      case 'announcement':
+        uploadPath = announcementImagesDir;
+        break;
+    }
+
+    // For announcements, default to announcement-images folder
+    if (file.fieldname === 'attachments') {
+      uploadPath = announcementImagesDir;
     }
 
     cb(null, uploadPath);
@@ -54,6 +66,11 @@ const fileFilter = (req, file, cb) => {
 
   if (uploadType === 'card-image' || uploadType === 'comment-image') {
     allowedTypes = imageTypes;
+  }
+
+  // For announcements, allow both images and documents
+  if (file.fieldname === 'attachments' || uploadType === 'announcement') {
+    allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip/;
   }
 
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());

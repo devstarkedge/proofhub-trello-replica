@@ -30,15 +30,27 @@ const announcementService = {
 
       // Add text fields - serialize objects as JSON strings
       Object.keys(data).forEach(key => {
-        if (typeof data[key] === 'object' && data[key] !== null) {
-          // Stringify nested objects (subscribers, lastFor)
-          formData.append(key, JSON.stringify(data[key]));
-        } else if (typeof data[key] === 'boolean') {
+        const value = data[key];
+        
+        // Skip null, undefined, and empty string values
+        if (value === null || value === undefined || value === '') {
+          return;
+        }
+        
+        if (typeof value === 'object') {
+          // For Date objects, convert to ISO string
+          if (value instanceof Date) {
+            formData.append(key, value.toISOString());
+          } else {
+            // Stringify other objects (subscribers, lastFor)
+            formData.append(key, JSON.stringify(value));
+          }
+        } else if (typeof value === 'boolean') {
           // Explicitly append booleans
-          formData.append(key, data[key].toString());
-        } else if (data[key] !== null && data[key] !== undefined && data[key] !== '') {
-          // Only append non-empty values
-          formData.append(key, data[key]);
+          formData.append(key, value.toString());
+        } else {
+          // Append primitive values
+          formData.append(key, value);
         }
       });
 

@@ -219,8 +219,7 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     lastFor,
     scheduledFor,
     allowComments,
-    isPinned,
-    attachments = []
+    isPinned
   } = req.body;
 
   if (!title || !description) {
@@ -233,6 +232,21 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
 
   // Calculate expiry date
   const expiresAt = calculateExpiryDate(lastFor.value, lastFor.unit);
+
+  // Process uploaded files
+  const attachments = [];
+  if (req.files && req.files.length > 0) {
+    req.files.forEach(file => {
+      const fileUrl = `${req.protocol}://${req.get('host')}/uploads/announcement-images/${file.filename}`;
+      attachments.push({
+        filename: file.filename,
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        url: fileUrl
+      });
+    });
+  }
 
   // Create announcement object
   const announcementData = {
@@ -251,10 +265,23 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     lastFor,
     allowComments: allowComments !== false,
     attachments,
-    isPinned: isPinned === true,
-    isScheduled: scheduledFor ? true : false,
-    scheduledFor: scheduledFor ? new Date(scheduledFor) : null
+    isPinned: isPinned === true
   };
+
+  // Only add scheduling fields if scheduledFor is provided and valid
+  if (scheduledFor) {
+    const scheduledDate = new Date(scheduledFor);
+    if (!isNaN(scheduledDate.getTime())) {
+      announcementData.isScheduled = true;
+      announcementData.scheduledFor = scheduledDate;
+    } else {
+      announcementData.isScheduled = false;
+      announcementData.scheduledFor = null;
+    }
+  } else {
+    announcementData.isScheduled = false;
+    announcementData.scheduledFor = null;
+  }
 
   // Handle pinning logic
   if (announcementData.isPinned) {
@@ -333,7 +360,7 @@ export const updateAnnouncement = asyncHandler(async (req, res, next) => {
   }
 
   // Check authorization
-  if (announcement.createdBy.toString() !== req.user.id && req.user.role !== 'admin') {
+  if (announcement.createdBy.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'manager') {
     return next(new ErrorResponse('Not authorized to update this announcement', 403));
   }
 
@@ -373,14 +400,20 @@ export const updateAnnouncement = asyncHandler(async (req, res, next) => {
   await announcement.populate('createdBy', 'name email avatar role');
 
   // Notify subscribers of update
-  const subscriberIds = await getSubscriberUserIds(announcement.subscribers);
+  try {
+    const subscriberIds = await getSubscriberUserIds(announcement.subscribers);
 
-  subscriberIds.forEach(userId => {
-    io.to(`user-${userId}`).emit('announcement-updated', {
-      announcementId: announcement._id,
-      announcement: announcement.toJSON()
-    });
-  });
+    if (subscriberIds && Array.isArray(subscriberIds)) {
+      subscriberIds.forEach(userId => {
+        io.to(`user-${userId}`).emit('announcement-updated', {
+          announcementId: announcement._id,
+          announcement: announcement.toJSON()
+        });
+      });
+    }
+  } catch (error) {
+    console.error('Error notifying subscribers about update:', error);
+  }
 
   invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });
 
@@ -398,24 +431,34 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
   const announcement = await Announcement.findById(req.params.id);
 
   if (!announcement) {
-    return next(new ErrorResponse('Announcement not found', 404));
+    // If announcement doesn't exist, consider it already deleted
+    return res.status(200).json({
+      success: true,
+      message: 'Announcement already deleted or does not exist'
+    });
   }
 
   // Check authorization
-  if (announcement.createdBy.toString() !== req.user.id && req.user.role !== 'admin') {
+  if (announcement.createdBy.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'manager') {
     return next(new ErrorResponse('Not authorized to delete this announcement', 403));
   }
 
   await Announcement.findByIdAndDelete(req.params.id);
 
   // Notify subscribers
-  const subscriberIds = await getSubscriberUserIds(announcement.subscribers);
+  try {
+    const subscriberIds = await getSubscriberUserIds(announcement.subscribers);
 
-  subscriberIds.forEach(userId => {
-    io.to(`user-${userId}`).emit('announcement-deleted', {
-      announcementId: announcement._id
-    });
-  });
+    if (subscriberIds && Array.isArray(subscriberIds)) {
+      subscriberIds.forEach(userId => {
+        io.to(`user-${userId}`).emit('announcement-deleted', {
+          announcementId: announcement._id
+        });
+      });
+    }
+  } catch (error) {
+    console.error('Error notifying subscribers about deletion:', error);
+  }
 
   invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });
 

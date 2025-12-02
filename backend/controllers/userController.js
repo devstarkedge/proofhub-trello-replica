@@ -205,6 +205,70 @@ export const updateProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Get all verified users for announcements
+// @route   GET /api/users/verified
+// @access  Private/Admin
+export const getVerifiedUsers = asyncHandler(async (req, res, next) => {
+  const users = await User.find({
+    isVerified: true,
+    isActive: true
+  })
+    .populate('department', 'name')
+    .select('name email avatar department role')
+    .sort('name');
+
+  res.status(200).json({
+    success: true,
+    data: users
+  });
+});
+
+// @desc    Get users by departments for announcements
+// @route   GET /api/users/by-departments
+// @access  Private/Admin
+export const getUsersByDepartments = asyncHandler(async (req, res, next) => {
+  const { departments } = req.query;
+
+  if (!departments) {
+    return next(new ErrorResponse('Departments parameter is required', 400));
+  }
+
+  const departmentIds = Array.isArray(departments) ? departments : departments.split(',');
+
+  const users = await User.find({
+    department: { $in: departmentIds },
+    isVerified: true,
+    isActive: true
+  })
+    .populate('department', 'name')
+    .select('name email avatar department role')
+    .sort('name');
+
+  res.status(200).json({
+    success: true,
+    data: users
+  });
+});
+
+// @desc    Get all manager users for announcements
+// @route   GET /api/users/managers
+// @access  Private/Admin
+export const getManagerUsers = asyncHandler(async (req, res, next) => {
+  const users = await User.find({
+    role: { $in: ['admin', 'manager'] },
+    isVerified: true,
+    isActive: true
+  })
+    .populate('department', 'name')
+    .select('name email avatar department role')
+    .sort('name');
+
+  res.status(200).json({
+    success: true,
+    data: users
+  });
+});
+
 // @desc    Update current user settings
 // @route   PUT /api/users/settings
 // @access  Private
