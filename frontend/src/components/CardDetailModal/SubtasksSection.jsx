@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckSquare, Trash2, Plus, Clock } from "lucide-react";
+import { CheckSquare, Trash2, Plus, Clock, RefreshCw } from "lucide-react";
 
 const themeProgress = {
   blue: 'from-blue-400 to-cyan-400',
@@ -86,7 +86,7 @@ const SubtasksSection = ({
               >
                 <input
                   type="checkbox"
-                  checked={completed}
+                  checked={completed || false}
                   onChange={() => onToggleComplete(item)}
                   className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
@@ -99,6 +99,13 @@ const SubtasksSection = ({
                   </p>
                   <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
                     {renderStatus(item.status)}
+                    {/* Recurring Task indicator */}
+                    {(item.isRecurring || item.tags?.includes('Recurring Task')) && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                        <RefreshCw size={10} />
+                        Recurring
+                      </span>
+                    )}
                     {item.dueDate && (
                       <span className="flex items-center gap-1">
                         <Clock size={12} />
@@ -138,7 +145,7 @@ const SubtasksSection = ({
         <div className="flex gap-2 mt-3">
           <input
             type="text"
-            value={newItemTitle}
+            value={newItemTitle || ''}
             onChange={(e) => onNewItemTitleChange(e.target.value)}
             onKeyPress={(e) => {
               if (e.key === "Enter") onCreateItem();

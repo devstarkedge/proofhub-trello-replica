@@ -20,7 +20,7 @@ const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
       cardId: nano.task._id.toString(),
       subtaskId: subtask?._id,
       nanoId,
-      contextType: 'nanoSubtask',
+      contextType: 'subtaskNano',
       contextRef: nanoId,
     };
   }
@@ -46,7 +46,7 @@ const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
     cardId,
     subtaskId: null,
     nanoId: null,
-    contextType: 'task',
+    contextType: 'card',
     contextRef: cardId,
   };
 };

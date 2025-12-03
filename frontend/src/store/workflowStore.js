@@ -477,6 +477,25 @@ const useWorkflowStore = create(
         return get().lists.find(list => list._id === listId);
       },
 
+      // Update a card's hasRecurrence property
+      updateCardRecurrence: (cardId, hasRecurrence) => {
+        set((state) => {
+          const newCardsByList = { ...state.cardsByList };
+          let cardFound = false;
+          Object.keys(newCardsByList).forEach(listId => {
+            newCardsByList[listId] = newCardsByList[listId].map(card => {
+              if (card._id === cardId) {
+                cardFound = true;
+                return { ...card, hasRecurrence };
+              }
+              return card;
+            });
+          });
+          if (!cardFound) return state;
+          return { cardsByList: newCardsByList, lastUpdated: Date.now() };
+        });
+      },
+
       // Clear workflow data
       clearWorkflow: () => set({
         board: null,

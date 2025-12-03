@@ -146,6 +146,16 @@ const subtaskSchema = new mongoose.Schema({
       trim: true
     }
   },
+  // Recurring task fields
+  isRecurring: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  recurringTaskId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'RecurringTask'
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -172,6 +182,7 @@ subtaskSchema.index({ task: 1, order: 1 });
 subtaskSchema.index({ board: 1, status: 1 });
 subtaskSchema.index({ assignees: 1, status: 1 });
 subtaskSchema.index({ dueDate: 1 });
+subtaskSchema.index({ isRecurring: 1, recurringTaskId: 1 });
 
 export default mongoose.model('Subtask', subtaskSchema);
 

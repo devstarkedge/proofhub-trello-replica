@@ -1,6 +1,6 @@
-import React, { useContext } from "react";
+import React, { useContext, useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Loader } from "lucide-react";
+import { MessageSquare, Loader, ChevronRight, ChevronDown } from "lucide-react";
 import RichTextEditor from "../RichTextEditor";
 import AuthContext from "../../context/AuthContext";
 
@@ -11,15 +11,52 @@ const CommentsSection = ({
   onCommentChange,
   onAddComment,
   onImageUpload,
+  modalContainerRef,
 }) => {
   const { user } = useContext(AuthContext);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditorExpanded, setIsEditorExpanded] = useState(false);
+  const editorContainerRef = useRef(null);
+
+  // Handle clicking outside to collapse editor (scoped to modal)
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Don't collapse if clicking inside the editor container
+      if (editorContainerRef.current && editorContainerRef.current.contains(event.target)) {
+        return;
+      }
+      
+      // If modal container is provided, only collapse if click is within the modal
+      if (modalContainerRef?.current) {
+        if (modalContainerRef.current.contains(event.target)) {
+          setIsEditorExpanded(false);
+        }
+      }
+    };
+
+    if (isEditorExpanded) {
+      // Use a small delay to prevent immediate collapse
+      const timeoutId = setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside);
+      }, 100);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isEditorExpanded, modalContainerRef]);
 
   const handleSubmit = async () => {
     if (!newComment?.trim()) return;
     setIsSubmitting(true);
     try {
       await onAddComment();
+      setIsEditorExpanded(false); // Collapse after successful submit
     } finally {
       setIsSubmitting(false);
     }
@@ -46,6 +83,7 @@ const CommentsSection = ({
       <div className="ml-8 space-y-4">
         {/* Add Comment */}
         <motion.div
+          ref={editorContainerRef}
           className="flex gap-3"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -55,32 +93,65 @@ const CommentsSection = ({
             {user?.name?.[0]?.toUpperCase() || "U"}
           </div>
           <div className="flex-1">
-            <div className="border border-gray-300 rounded-lg overflow-hidden hover:border-gray-400 transition-colors shadow-sm hover:shadow-md">
-              <RichTextEditor
-                content={newComment}
-                onChange={onCommentChange}
-                placeholder="Write a comment..."
-                users={teamMembers}
-                isComment={true}
-                allowMentions={true}
-                startExpanded={true}
-                className="min-h-[80px]"
-                onImageUpload={onImageUpload}
-                mentionContainer={document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50.flex.items-start.justify-center.z-60')}
-              />
-            </div>
-            <div className="flex justify-end mt-2 gap-2">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleSubmit}
-                disabled={isSubmitting || !newComment?.trim()}
-                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:shadow-lg transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting && <Loader size={16} className="animate-spin" />}
-                {isSubmitting ? "Posting..." : "Comment"}
-              </motion.button>
-            </div>
+            <AnimatePresence mode="wait">
+              {isEditorExpanded ? (
+                <motion.div
+                  key="expanded"
+                  initial={{ opacity: 0, height: "auto" }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 50 }}
+                  transition={{ duration: 0.2, ease: "easeInOut" }}
+                >
+                  <div className="border border-gray-300 rounded-lg overflow-hidden hover:border-gray-400 transition-colors shadow-sm hover:shadow-md">
+                    <RichTextEditor
+                      content={newComment}
+                      onChange={onCommentChange}
+                      placeholder="Write a comment..."
+                      users={teamMembers}
+                      isComment={true}
+                      allowMentions={true}
+                      startExpanded={true}
+                      className="min-h-[80px]"
+                      onImageUpload={onImageUpload}
+                      mentionContainer={document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50.flex.items-start.justify-center.z-60')}
+                    />
+                  </div>
+                  <div className="flex justify-end mt-2 gap-2">
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setIsEditorExpanded(false)}
+                      className="px-4 py-2 text-gray-600 hover:text-gray-800 rounded-lg transition-colors font-medium"
+                    >
+                      Cancel
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={handleSubmit}
+                      disabled={isSubmitting || !newComment?.trim()}
+                      className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:shadow-lg transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSubmitting && <Loader size={16} className="animate-spin" />}
+                      {isSubmitting ? "Posting..." : "Comment"}
+                    </motion.button>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="collapsed"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  onClick={() => setIsEditorExpanded(true)}
+                  className="p-3 bg-white rounded-lg cursor-pointer hover:bg-gray-50 border border-gray-200 hover:border-gray-300 transition-all shadow-sm flex items-center gap-2"
+                >
+                  <ChevronRight size={16} className="text-gray-400" />
+                  <span className="text-gray-500 text-sm">Write a comment...</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
 

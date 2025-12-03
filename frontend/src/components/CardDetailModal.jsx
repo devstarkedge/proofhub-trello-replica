@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, AlignLeft, Tag, AlertCircle, MessageSquare, Activity } from "lucide-react";
+import { X, AlignLeft, Tag, AlertCircle, MessageSquare, Activity, RefreshCw } from "lucide-react";
 import Database from "../services/database";
 import commentService from "../services/commentService";
 import AuthContext from "../context/AuthContext";
@@ -18,6 +18,7 @@ import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
 import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
+import RecurringSettingsModal from "./RecurringSettingsModal";
 
 const themeOverlay = {
   blue: 'bg-blue-950/60',
@@ -71,6 +72,10 @@ const CardDetailModal = ({
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  // Recurring Task States
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [existingRecurrence, setExistingRecurrence] = useState(null);
+  const [recurrenceLoading, setRecurrenceLoading] = useState(false);
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
   const initializeHierarchyTask = useModalHierarchyStore((state) => state.initializeTaskStack);
@@ -80,6 +85,7 @@ const CardDetailModal = ({
 
   const labelUpdateRef = React.useRef(onLabelUpdate);
   const managedHierarchyRef = React.useRef(false);
+  const modalContentRef = useRef(null);
   useEffect(() => {
     labelUpdateRef.current = onLabelUpdate;
   }, [onLabelUpdate]);
@@ -198,6 +204,21 @@ const CardDetailModal = ({
       }
     };
 
+    // Load existing recurrence data
+    const loadRecurrence = async () => {
+      if (!card?._id) return;
+      setRecurrenceLoading(true);
+      try {
+        const response = await Database.getRecurrenceByCard(card._id);
+        setExistingRecurrence(response.data || null);
+      } catch (error) {
+        console.error("Error loading recurrence:", error);
+        setExistingRecurrence(null);
+      } finally {
+        setRecurrenceLoading(false);
+      }
+    };
+
     loadFreshCardData();
     loadComments();
     loadActivities();
@@ -205,6 +226,7 @@ const CardDetailModal = ({
     loadDepartments();
     loadProjectName();
     loadAvailableStatuses();
+    loadRecurrence();
 
     // Setup real-time update listeners
     const handleCardUpdate = (event) => {
@@ -877,6 +899,38 @@ const CardDetailModal = ({
     }
   };
 
+  // Recurring Task Functions
+  const handleSaveRecurrence = async (recurrenceData) => {
+    try {
+      if (existingRecurrence) {
+        // Update existing recurrence
+        await Database.updateRecurrence(existingRecurrence._id, recurrenceData);
+        const response = await Database.getRecurrenceByCard(card._id);
+        setExistingRecurrence(response.data || null);
+      } else {
+        // Create new recurrence
+        await Database.createRecurrence(recurrenceData);
+        const response = await Database.getRecurrenceByCard(card._id);
+        setExistingRecurrence(response.data || null);
+      }
+      // Refresh subtasks to show newly created recurring subtask
+      fetchSubtasks();
+    } catch (error) {
+      console.error("Error saving recurrence:", error);
+      throw error;
+    }
+  };
+
+  const handleDeleteRecurrence = async (recurrenceId) => {
+    try {
+      await Database.deleteRecurrence(recurrenceId);
+      setExistingRecurrence(null);
+    } catch (error) {
+      console.error("Error deleting recurrence:", error);
+      throw error;
+    }
+  };
+
   const handleCreateSubtask = async () => {
     if (!newSubtaskTitle.trim() || !card?._id) return;
     try {
@@ -988,6 +1042,7 @@ const CardDetailModal = ({
   };
 
   return (
+    <>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -998,6 +1053,7 @@ const CardDetailModal = ({
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <motion.div
+          ref={modalContentRef}
           variants={modalVariants}
           initial="hidden"
           animate="visible"
@@ -1029,6 +1085,21 @@ const CardDetailModal = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 ml-4">
+                {/* Set Recurring Button - Only shown on main task modal */}
+                <motion.button
+                  whileHover={{ scale: 1.05, y: -1 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setShowRecurringModal(true)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 shadow-sm ${
+                    existingRecurrence
+                      ? `bg-gradient-to-r from-${theme}-50 to-${theme}-100 text-${theme}-700 border border-${theme}-200 hover:from-${theme}-100 hover:to-${theme}-150 hover:shadow-md`
+                      : `bg-gradient-to-r from-${theme}-500 to-${theme}-600 text-white hover:from-${theme}-600 hover:to-${theme}-700 hover:shadow-lg`
+                  }`}
+                  title={existingRecurrence ? 'Edit Recurring Settings' : 'Set Recurring'}
+                >
+                  <RefreshCw size={16} className={`${existingRecurrence ? 'animate-spin-slow text-${theme}-600' : 'text-white'} transition-colors`} />
+                  {existingRecurrence ? 'Recurring' : 'Set Recurring'}
+                </motion.button>
                 <CardActionMenu
                   entityType="task"
                   ids={{
@@ -1080,7 +1151,8 @@ const CardDetailModal = ({
                 {labels.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {labels.map((label, index) => {
-                      const safeKey = String(label || `label-${index}`).trim() || `label-${index}`;
+                      const labelStr = String(label || '').trim();
+                      const safeKey = labelStr || `label-${index}`;
                       return (
                         <motion.span
                           key={safeKey}
@@ -1132,6 +1204,7 @@ const CardDetailModal = ({
                   teamMembers={teamMembers}
                   onChange={setDescription}
                   onImageUpload={uploadImageForDescription}
+                  modalContainerRef={modalContentRef}
                 />
 
                 {/* Time Tracking Component */}
@@ -1251,6 +1324,7 @@ const CardDetailModal = ({
                         onCommentChange={setNewComment}
                         onAddComment={handleAddComment}
                         onImageUpload={uploadImageForComment}
+                        modalContainerRef={modalContentRef}
                       />
                     ) : (
                       <ActivitySection
@@ -1301,6 +1375,17 @@ const CardDetailModal = ({
         </motion.div>
       </motion.div>
     </AnimatePresence>
+
+    {/* Recurring Settings Modal - Only for main task (outside AnimatePresence to avoid key conflicts) */}
+    <RecurringSettingsModal
+      isOpen={showRecurringModal}
+      onClose={() => setShowRecurringModal(false)}
+      card={card}
+      existingRecurrence={existingRecurrence}
+      onSave={handleSaveRecurrence}
+      onDelete={handleDeleteRecurrence}
+    />
+  </>
   );
 };
 

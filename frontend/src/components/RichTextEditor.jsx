@@ -20,7 +20,9 @@ import {
   Redo,
   Loader,
   AlertCircle,
-  Check
+  Check,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import MentionList from './MentionList';
 import 'tippy.js/dist/tippy.css';
@@ -47,8 +49,10 @@ const RichTextEditor = ({
   onImageUpload = null, // Callback when image is uploaded
   isComment = false, // Is this editor for comments?
   mentionContainer = document.body, // Container for mention popup
+  modalContainerRef = null, // Ref to the modal container for click-outside detection
+  collapsible = false, // Whether the editor is collapsible (used in modals)
 }) => {
-  const [isExpanded, setIsExpanded] = useState(startExpanded || isComment);
+  const [isExpanded, setIsExpanded] = useState(startExpanded);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -62,22 +66,43 @@ const RichTextEditor = ({
     usersRef.current = users || [];
   }, [users]);
 
-  // Handle clicking outside to collapse
+  // Handle clicking outside to collapse (scoped to modal if provided)
   useEffect(() => {
+    if (!collapsible) return;
+    
     const handleClickOutside = (event) => {
-      if (editorRef.current && !editorRef.current.contains(event.target)) {
+      // Don't collapse if clicking inside the editor
+      if (editorRef.current && editorRef.current.contains(event.target)) {
+        return;
+      }
+      
+      // If modal container is provided, only collapse if click is within the modal but outside the editor
+      if (modalContainerRef?.current) {
+        if (modalContainerRef.current.contains(event.target)) {
+          setIsExpanded(false);
+        }
+      } else {
+        // Fallback: collapse on any outside click
         setIsExpanded(false);
       }
     };
 
     if (isExpanded) {
-      document.addEventListener('mousedown', handleClickOutside);
+      // Use a small delay to prevent immediate collapse on the same click that expands
+      const timeoutId = setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside);
+      }, 100);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isExpanded]);
+  }, [isExpanded, collapsible, modalContainerRef]);
 
   const mentionExtension = allowMentions
     ? Mention.configure({
@@ -168,8 +193,12 @@ const RichTextEditor = ({
       content: content || '',
       editorProps: {
         attributes: {
-          class: `prose prose-sm max-w-none focus:outline-none ${
-            !isExpanded ? (isComment ? 'h-[60px]' : 'h-[120px]') : 'min-h-[200px]'
+          class: `prose prose-sm max-w-none focus:outline-none transition-all duration-200 ease-in-out ${
+            collapsible && !isExpanded 
+              ? 'h-[50px] overflow-hidden' 
+              : isComment 
+                ? 'min-h-[80px]' 
+                : 'min-h-[200px]'
           }`,
         },
       },
@@ -178,6 +207,26 @@ const RichTextEditor = ({
         onChange(html);
       },
     });
+
+  // Update editor attributes when isExpanded changes
+  useEffect(() => {
+    if (editor) {
+      editor.setOptions({
+        editorProps: {
+          attributes: {
+            class: `prose prose-sm max-w-none focus:outline-none transition-all duration-200 ease-in-out ${
+              collapsible && !isExpanded 
+                ? 'h-[50px] overflow-hidden' 
+                : isComment 
+                  ? 'min-h-[80px]' 
+                  : 'min-h-[200px]'
+            }`,
+          },
+        },
+      });
+    }
+  }, [isExpanded, collapsible, isComment, editor]);
+
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
       editor.commands.setContent(content || '');
@@ -192,23 +241,51 @@ const RichTextEditor = ({
     // Keep expanded once focused to allow formatting before typing
   };
 
+  const handleExpandClick = () => {
+    setIsExpanded(true);
+    editor?.commands.focus();
+  };
+
   if (!editor) {
     return null;
   }
 
   return (
     <div ref={editorRef} className="w-full relative">
-      {/* Toolbar - only show when expanded */}
-      {isExpanded && (
-        <div className="flex items-center gap-1 mb-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
-          <button
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            className={`p-2 rounded hover:bg-gray-200 transition-colors ${
-              editor.isActive('bold') ? 'bg-gray-200' : ''
-            }`}
-            title="Bold"
-          >
-            <Bold size={16} />
+      {/* Collapsed Header - show when collapsible and not expanded */}
+      {collapsible && !isExpanded && (
+        <div 
+          onClick={handleExpandClick}
+          className="flex items-center gap-2 p-3 cursor-pointer hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
+        >
+          <ChevronRight size={16} className="text-gray-400" />
+          <span className="text-gray-500 text-sm">
+            {editor.getText().trim() ? 'Click to expand...' : placeholder}
+          </span>
+        </div>
+      )}
+
+      {/* Expanded Editor */}
+      <div className={`transition-all duration-200 ease-in-out ${collapsible && !isExpanded ? 'hidden' : ''}`}>
+        {/* Toolbar - only show when expanded */}
+        {isExpanded && (
+          <div className="flex items-center gap-1 mb-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+            {collapsible && (
+              <>
+                <div className="flex items-center gap-1 text-gray-400 mr-2">
+                  <ChevronDown size={16} />
+                </div>
+                <div className="w-px h-6 bg-gray-300 mx-1" />
+              </>
+            )}
+            <button
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              className={`p-2 rounded hover:bg-gray-200 transition-colors ${
+                editor.isActive('bold') ? 'bg-gray-200' : ''
+              }`}
+              title="Bold"
+            >
+              <Bold size={16} />
           </button>
           <button
             onClick={() => editor.chain().focus().toggleItalic().run()}
@@ -381,47 +458,48 @@ const RichTextEditor = ({
             <Redo size={16} />
           </button>
         </div>
-      )}
+        )}
 
-      {/* Editor Content */}
-      <div
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        className="w-full"
-      >
-        <EditorContent
-          editor={editor}
-          placeholder={placeholder}
-          className="w-full"
-        />
-      </div>
-
-      {/* Placeholder when collapsed and empty */}
-      {!isExpanded && !editor.getText().trim() && (
+        {/* Editor Content */}
         <div
-          className="absolute top-0 left-0 right-0 bottom-0 flex items-start p-3 text-gray-500 cursor-text pointer-events-none"
-          onClick={() => {
-            setIsExpanded(true);
-            editor?.commands.focus();
-          }}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          className="w-full"
         >
-          {placeholder}
+          <EditorContent
+            editor={editor}
+            placeholder={placeholder}
+            className="w-full"
+          />
         </div>
-      )}
 
-      {/* Upload Status Messages */}
-      {uploadError && (
-        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">
-          <AlertCircle size={16} className="flex-shrink-0" />
-          <span>{uploadError}</span>
-        </div>
-      )}
-      {uploadSuccess && (
-        <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700 text-sm">
-          <Check size={16} className="flex-shrink-0" />
-          <span>Image uploaded successfully</span>
-        </div>
-      )}
+        {/* Placeholder when not collapsible and collapsed and empty */}
+        {!collapsible && !isExpanded && !editor.getText().trim() && (
+          <div
+            className="absolute top-0 left-0 right-0 bottom-0 flex items-start p-3 text-gray-500 cursor-text pointer-events-none"
+            onClick={() => {
+              setIsExpanded(true);
+              editor?.commands.focus();
+            }}
+          >
+            {placeholder}
+          </div>
+        )}
+
+        {/* Upload Status Messages */}
+        {uploadError && (
+          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">
+            <AlertCircle size={16} className="flex-shrink-0" />
+            <span>{uploadError}</span>
+          </div>
+        )}
+        {uploadSuccess && (
+          <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700 text-sm">
+            <Check size={16} className="flex-shrink-0" />
+            <span>Image uploaded successfully</span>
+          </div>
+        )}
+      </div>
 
       <style>{`
         .ProseMirror {

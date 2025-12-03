@@ -115,6 +115,27 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-nano-hierarchy', { detail: data }));
     });
 
+    // Recurring task events
+    this.socket.on('recurrence-created', (data) => {
+      console.log('Recurrence created:', data);
+      window.dispatchEvent(new CustomEvent('socket-recurrence-created', { detail: data }));
+    });
+
+    this.socket.on('recurrence-updated', (data) => {
+      console.log('Recurrence updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-recurrence-updated', { detail: data }));
+    });
+
+    this.socket.on('recurrence-stopped', (data) => {
+      console.log('Recurrence stopped:', data);
+      window.dispatchEvent(new CustomEvent('socket-recurrence-stopped', { detail: data }));
+    });
+
+    this.socket.on('recurrence-triggered', (data) => {
+      console.log('Recurrence triggered:', data);
+      window.dispatchEvent(new CustomEvent('socket-recurrence-triggered', { detail: data }));
+    });
+
     this.socket.on('attachment-added', (data) => {
       console.log('Attachment added:', data);
       window.dispatchEvent(new CustomEvent('socket-attachment-added', { detail: data }));

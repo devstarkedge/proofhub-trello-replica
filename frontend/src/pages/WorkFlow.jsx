@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, Suspense, memo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown } from 'lucide-react';
+import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw } from 'lucide-react';
 import Database from '../services/database';
 import Header from '../components/Header';
 import Board from '../components/Board';
@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import HierarchyModalStack from '../components/hierarchy/HierarchyModalStack';
 import { WorkflowSkeleton } from '../components/LoadingSkeleton';
 import { toast } from 'react-toastify';
+import AllRecurringTasksPage from './AllRecurringTasksPage';
 
 const WorkFlow = memo(() => {
   const { deptId, projectId, taskId, subtaskId, nenoId } = useParams();
@@ -41,7 +42,8 @@ const WorkFlow = memo(() => {
     updateListColor,
     updateListTitle,
     moveList,
-    getCard
+    getCard,
+    updateCardRecurrence
   } = useWorkflowStore();
 
   const [statusFilter, setStatusFilter] = useState('All');
@@ -53,6 +55,7 @@ const WorkFlow = memo(() => {
   const [selectedProject, setSelectedProject] = useState(null);
   const [fullProjectData, setFullProjectData] = useState(null);
   const [shareAutoOpened, setShareAutoOpened] = useState(false);
+  const [showRecurringPage, setShowRecurringPage] = useState(false);
   const shareKey = `${taskId || ''}-${subtaskId || ''}-${nenoId || ''}`;
   const modalStack = useModalHierarchyStore((state) => state.stack);
   const openHierarchyModal = useModalHierarchyStore((state) => state.openModalByType);
@@ -77,6 +80,43 @@ const WorkFlow = memo(() => {
       };
     }
   }, [user, board]);
+
+  // Listen for real-time recurrence updates to show/hide recurring label on cards
+  useEffect(() => {
+    if (!board) return;
+
+    const handleRecurrenceCreated = (event) => {
+      const { cardId } = event.detail || {};
+      if (cardId) {
+        updateCardRecurrence(cardId, true);
+      }
+    };
+
+    const handleRecurrenceStopped = (event) => {
+      const { cardId } = event.detail || {};
+      if (cardId) {
+        updateCardRecurrence(cardId, false);
+      }
+    };
+
+    const handleRecurrenceUpdated = (event) => {
+      const { cardId, recurrence } = event.detail || {};
+      if (cardId && recurrence) {
+        // If recurrence was deactivated via update, hide the label
+        updateCardRecurrence(cardId, recurrence.isActive !== false);
+      }
+    };
+
+    window.addEventListener('socket-recurrence-created', handleRecurrenceCreated);
+    window.addEventListener('socket-recurrence-stopped', handleRecurrenceStopped);
+    window.addEventListener('socket-recurrence-updated', handleRecurrenceUpdated);
+
+    return () => {
+      window.removeEventListener('socket-recurrence-created', handleRecurrenceCreated);
+      window.removeEventListener('socket-recurrence-stopped', handleRecurrenceStopped);
+      window.removeEventListener('socket-recurrence-updated', handleRecurrenceUpdated);
+    };
+  }, [board, updateCardRecurrence]);
 
 useEffect(() => {
   if (board) {
@@ -541,6 +581,18 @@ useEffect(() => {
                 Filters
               </motion.button>
 
+              {/* View All Recurring Tasks Button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowRecurringPage(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-500/80 hover:bg-orange-500 rounded-lg text-white transition-colors backdrop-blur-lg border border-orange-400/50"
+                title="View All Recurring Tasks"
+              >
+                <RefreshCw size={18} />
+                <span className="hidden lg:inline">Recurring Tasks</span>
+              </motion.button>
+
               {/* Team Members */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -730,6 +782,30 @@ useEffect(() => {
           />
         </Suspense>
       )}
+
+      {/* All Recurring Tasks Page Overlay */}
+      <AnimatePresence>
+        {showRecurringPage && board && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50"
+          >
+            <AllRecurringTasksPage
+              boardId={board._id}
+              boardName={board.name}
+              onBack={() => setShowRecurringPage(false)}
+              onOpenCard={(card) => {
+                setShowRecurringPage(false);
+                if (card?._id) {
+                  handleOpenCardModal(card);
+                }
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 });

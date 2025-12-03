@@ -138,6 +138,7 @@ const SubtaskNanoModal = ({
   }, [entityId]);
 
   const labelUpdateRef = useRef(onLabelUpdate);
+  const modalContentRef = useRef(null);
   useEffect(() => {
     labelUpdateRef.current = onLabelUpdate;
   }, [onLabelUpdate]);
@@ -632,6 +633,7 @@ const SubtaskNanoModal = ({
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <motion.div
+          ref={modalContentRef}
           variants={{
             hidden: { opacity: 0, scale: 0.95 },
             visible: { opacity: 1, scale: 1 },
@@ -698,6 +700,7 @@ const SubtaskNanoModal = ({
                   description={description}
                   teamMembers={teamMembers}
                   onChange={setDescription}
+                  modalContainerRef={modalContentRef}
                 />
 
                 <AttachmentsSection
@@ -799,6 +802,7 @@ const SubtaskNanoModal = ({
                         teamMembers={teamMembers}
                         onCommentChange={setNewComment}
                         onAddComment={handleAddComment}
+                        modalContainerRef={modalContentRef}
                       />
                     ) : (
                       <ActivitySection

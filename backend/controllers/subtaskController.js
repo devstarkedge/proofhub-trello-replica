@@ -7,6 +7,7 @@ import Activity from '../models/Activity.js';
 import { emitToBoard } from '../server.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
+import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 
 const basePopulate = [
   { path: 'assignees', select: 'name email avatar' },
@@ -175,6 +176,11 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
       description: `Changed status from ${oldSubtask.status} to ${subtask.status}`,
       user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
     });
+    
+    // Handle recurring task completion triggers
+    if (subtask.status === 'done' || subtask.status === 'closed') {
+      await handleTaskCompletion(subtask._id, subtask.status);
+    }
   }
   if (oldSubtask.priority !== subtask.priority) {
     await Activity.create({

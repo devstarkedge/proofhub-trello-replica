@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   Trash2,
@@ -11,9 +11,22 @@ import {
   CheckSquare,
   Clock,
   Eye,
+  RefreshCw,
 } from "lucide-react";
 
 const Card = memo(({ card, onClick, onDelete, compact = false }) => {
+  const labelsContainerRef = useRef(null);
+  
+  // Combine all labels including recurring
+  const allLabels = [
+    ...(card.labels || []).map(label => ({ text: label, type: 'regular' })),
+    ...(card.hasRecurrence ? [{ text: 'Recurring', type: 'recurring' }] : [])
+  ];
+
+  // Show max 6 labels, rest as +X counter
+  const maxVisibleLabels = 6;
+  const visibleLabelsCount = Math.min(allLabels.length, maxVisibleLabels);
+
   const subtaskStats = card.subtaskStats
     ? card.subtaskStats
     : card.subtasks
@@ -70,56 +83,59 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
       className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100 relative"
       key={card._id}
     >
-      {/* Header: Labels, with Date and Delete Button on hover */}
-      <div className="flex justify-between items-center mb-3 pt-1 relative">
-        <div className="flex flex-wrap gap-1 items-center">
-          {card.labels && card.labels.length > 0 && (
-            <>
-              {card.labels.slice(0, 3).map((label, idx) => (
-                <motion.span
-                  key={idx}
-                  whileHover={{ scale: 1.05 }}
-                  className="px-2 py-1 text-xs bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-md font-medium"
-                >
-                  {label}
-                </motion.span>
-              ))}
-              {card.labels.length > 3 && (
-                <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md font-medium">
-                  +{card.labels.length - 3}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          {card.dueDate && (
-            <motion.div
-              key="due-date"
+      {/* Hover Actions - Positioned top right */}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+        {card.dueDate && (
+          <motion.div
+            key="due-date"
+            whileHover={{ scale: 1.05 }}
+            className={`flex items-center gap-1 text-xs ${
+              isOverdue
+                ? "text-red-600 bg-red-50 px-2 py-1 rounded-md font-medium"
+                : "text-gray-600 bg-white px-2 py-1 rounded-md shadow-sm border border-gray-100"
+            }`}
+          >
+            <Calendar size={12} />
+            <span>{new Date(card.dueDate).toLocaleDateString()}</span>
+          </motion.div>
+        )}
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(card._id);
+          }}
+          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded bg-white shadow-sm border border-gray-100"
+        >
+          <Trash2 size={14} />
+        </motion.button>
+      </div>
+
+      {/* Labels Row */}
+      {allLabels.length > 0 && (
+        <div ref={labelsContainerRef} className="flex flex-wrap gap-1 items-center mb-3">
+          {allLabels.slice(0, visibleLabelsCount).map((label, idx) => (
+            <motion.span
+              key={`${label.type}-${idx}`}
               whileHover={{ scale: 1.05 }}
-              className={`flex items-center gap-1 text-xs ${
-                isOverdue
-                  ? "text-red-600 bg-red-50 px-2 py-1 rounded-md font-medium"
-                  : "text-gray-600 bg-white px-2 py-1 rounded-md shadow-sm"
+              className={`px-2 py-1 text-xs text-white rounded-md font-medium flex items-center gap-1 ${
+                label.type === 'recurring' 
+                  ? 'bg-gradient-to-r from-orange-500 to-amber-500' 
+                  : 'bg-gradient-to-r from-blue-500 to-blue-600'
               }`}
             >
-              <Calendar size={12} />
-              <span>{new Date(card.dueDate).toLocaleDateString()}</span>
-            </motion.div>
+              {label.type === 'recurring' && <RefreshCw size={10} />}
+              {label.text}
+            </motion.span>
+          ))}
+          {allLabels.length > visibleLabelsCount && (
+            <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md font-medium">
+              +{allLabels.length - visibleLabelsCount}
+            </span>
           )}
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(card._id);
-            }}
-            className="transition-opacity p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-          >
-            <Trash2 size={14} />
-          </motion.button>
         </div>
-      </div>
+      )}
 
       {/* Cover Image - Mid Area */}
       {card.cover && (

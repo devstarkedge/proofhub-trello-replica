@@ -4,6 +4,7 @@ import Board from "../models/Board.js";
 import Department from "../models/Department.js";
 import Activity from "../models/Activity.js";
 import Notification from "../models/Notification.js";
+import RecurringTask from "../models/RecurringTask.js";
 import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
@@ -33,6 +34,24 @@ export const getCards = asyncHandler(async (req, res, next) => {
 
   const result = await Card.paginate({ list: listId }, options);
 
+  // Get card IDs from results
+  const cardIds = result.docs.map(card => card._id);
+  
+  // Get all active recurring tasks for these cards
+  const recurringTasks = await RecurringTask.find({ 
+    card: { $in: cardIds }, 
+    isActive: true 
+  }).select('card');
+  
+  const recurringCardIds = new Set(recurringTasks.map(rt => rt.card.toString()));
+
+  // Add hasRecurrence flag to each card
+  const cardsWithRecurrence = result.docs.map(card => {
+    const cardObj = card.toObject();
+    cardObj.hasRecurrence = recurringCardIds.has(card._id.toString());
+    return cardObj;
+  });
+
   res.status(200).json({
     success: true,
     count: result.totalDocs,
@@ -42,7 +61,7 @@ export const getCards = asyncHandler(async (req, res, next) => {
       hasNext: result.hasNextPage,
       hasPrev: result.hasPrevPage
     },
-    data: result.docs,
+    data: cardsWithRecurrence,
   });
 });
 
@@ -69,6 +88,21 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
 
   const result = await Card.paginate({ board: boardId }, options);
 
+  // Get all active recurring tasks for this board
+  const recurringTasks = await RecurringTask.find({ 
+    board: boardId, 
+    isActive: true 
+  }).select('card');
+  
+  const recurringCardIds = new Set(recurringTasks.map(rt => rt.card.toString()));
+
+  // Add hasRecurrence flag to each card
+  const cardsWithRecurrence = result.docs.map(card => {
+    const cardObj = card.toObject();
+    cardObj.hasRecurrence = recurringCardIds.has(card._id.toString());
+    return cardObj;
+  });
+
   res.status(200).json({
     success: true,
     count: result.totalDocs,
@@ -78,7 +112,7 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
       hasNext: result.hasNextPage,
       hasPrev: result.hasPrevPage
     },
-    data: result.docs,
+    data: cardsWithRecurrence,
   });
 });
 
@@ -294,9 +328,18 @@ export const getCard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Card not found", 404));
   }
 
+  // Check if card has active recurrence
+  const recurringTask = await RecurringTask.findOne({ 
+    card: card._id, 
+    isActive: true 
+  });
+
+  const cardObj = card.toObject();
+  cardObj.hasRecurrence = !!recurringTask;
+
   res.status(200).json({
     success: true,
-    data: card,
+    data: cardObj,
   });
 });
 

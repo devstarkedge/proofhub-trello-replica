@@ -32,7 +32,15 @@ const activitySchema = new mongoose.Schema({
       'nano_updated',
       'nano_completed',
       'nano_deleted',
-      'nano_moved'
+      'nano_moved',
+      // Recurrence activity types
+      'recurrence_created',
+      'recurrence_updated',
+      'recurrence_deleted',
+      'recurrence_stopped',
+      'recurrence_triggered',
+      'recurrence_paused',
+      'recurrence_resumed'
     ],
     required: true
   },
@@ -48,7 +56,7 @@ const activitySchema = new mongoose.Schema({
   // Context - determines what type of item this activity belongs to
   contextType: {
     type: String,
-    enum: ['task', 'subtask', 'nanoSubtask'],
+    enum: ['task', 'subtask', 'nanoSubtask', 'card'],
     default: 'task',
     required: true
   },

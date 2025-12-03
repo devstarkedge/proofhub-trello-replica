@@ -60,3 +60,26 @@ export const invalidateAnnouncementCache = ({ announcementId, clearAll = false }
   }
 };
 
+export const invalidateRecurrenceCache = ({ boardId, cardId, recurrenceId }) => {
+  const board = ensureString(boardId);
+  const card = ensureString(cardId);
+  const recurrence = ensureString(recurrenceId);
+
+  // Invalidate board-level recurrence list
+  if (board) {
+    invalidateCache(`/api/recurrence/all/${board}`);
+  }
+
+  // Invalidate card-specific recurrence
+  if (card) {
+    invalidateCache(`/api/recurrence/card/${card}`);
+    // Also invalidate subtasks as recurrence creates subtasks
+    invalidateCache(`/api/subtasks/task/${card}`);
+  }
+
+  // Invalidate specific recurrence
+  if (recurrence) {
+    invalidateCache(`/api/recurrence/${recurrence}`);
+  }
+};
+
