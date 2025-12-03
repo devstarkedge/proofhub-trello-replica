@@ -68,7 +68,7 @@ const WorkFlow = memo(() => {
     if (projectId && !teamLoading) {
       loadData();
     }
-  }, [deptId, projectId, teamLoading, initializeWorkflow]);
+  }, [deptId, projectId, teamLoading]);
 
   useEffect(() => {
     if (user && board) {
@@ -728,20 +728,6 @@ useEffect(() => {
                 <Plus size={24} />
                 Create First List
               </motion.button>
-            </div>
-          </motion.div>
-        </div>
-      ) : totalFilteredCount === 0 ? (
-        <div className="flex items-center justify-center" style={{ height: 'calc(100vh - 120px)' }}>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-center text-white max-w-md mx-4"
-          >
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
-              <div className="mx-auto mb-4 text-white/50">🔍</div>
-              <h2 className="text-3xl font-bold mb-4">No tasks found</h2>
-              <p className="text-xl mb-8 text-white/70">Try adjusting your filters or search term.</p>
             </div>
           </motion.div>
         </div>

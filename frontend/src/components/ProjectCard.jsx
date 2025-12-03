@@ -123,6 +123,10 @@ const ProjectCard = ({
   };
 
   const handleCardClick = () => {
+    // Don't navigate if project is optimistic (temp ID)
+    if (projectData.isOptimistic || String(projectData.id).startsWith('temp-')) {
+      return;
+    }
     const departmentId = projectData.departmentId || deptId;
     const projectId = projectData.id;
     if (departmentId && projectId) {
@@ -132,20 +136,31 @@ const ProjectCard = ({
 
   const statusConfig = getStatusConfig(projectData.status);
   const priorityConfig = getPriorityBadge(projectData.priority);
+  const isOptimistic = projectData.isOptimistic || String(projectData.id).startsWith('temp-');
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
+      animate={{ opacity: isOptimistic ? 0.7 : 1, y: 0 }}
       whileHover={{ 
-        y: -8, 
+        y: isOptimistic ? 0 : -8, 
         transition: { duration: 0.3, ease: "easeOut" } 
       }}
-      onHoverStart={() => setIsHovered(true)}
+      onHoverStart={() => !isOptimistic && setIsHovered(true)}
       onHoverEnd={() => setIsHovered(false)}
-      className="bg-white rounded-2xl shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-100 overflow-hidden cursor-pointer group relative"
+      className={`bg-white rounded-2xl shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-100 overflow-hidden group relative ${isOptimistic ? 'cursor-wait' : 'cursor-pointer'}`}
       onClick={handleCardClick}
     >
+      {/* Optimistic Loading Indicator */}
+      {isOptimistic && (
+        <div className="absolute inset-0 bg-white/50 z-20 flex items-center justify-center">
+          <div className="flex items-center gap-2 text-blue-600">
+            <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent"></div>
+            <span className="text-sm font-medium">Creating...</span>
+          </div>
+        </div>
+      )}
+      
       {/* Animated Background Gradient */}
       <motion.div
         className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"

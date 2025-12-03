@@ -10,10 +10,16 @@ import { invalidateCache } from '../middleware/cache.js';
 // @route   GET /api/lists/board/:boardId
 // @access  Private
 export const getLists = asyncHandler(async (req, res, next) => {
+  const { boardId } = req.params;
+  
+  console.log('Fetching lists for board:', boardId);
+
   const lists = await List.find({ 
-    board: req.params.boardId,
+    board: boardId,
     isArchived: false
   }).sort('position');
+
+  console.log('Found lists:', lists.length);
 
   res.status(200).json({
     success: true,

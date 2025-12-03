@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, startTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Eye, EyeOff, Building2, FolderKanban,
@@ -12,9 +12,22 @@ import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import HomePageSkeleton from '../components/LoadingSkeleton';
 import { lazy, Suspense } from 'react';
+
+// Lazy load modals for better initial load
 const AddProjectModal = lazy(() => import('../components/AddProjectModal'));
 const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
 const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
+
+// Memoized modal loading fallback
+const ModalLoadingFallback = memo(() => (
+  <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+    <div className="bg-white rounded-xl p-6 shadow-xl">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+      <p className="text-gray-600 mt-3 text-sm">Loading...</p>
+    </div>
+  </div>
+));
+ModalLoadingFallback.displayName = 'ModalLoadingFallback';
 
 const HomePage = () => {
   const { user } = useContext(AuthContext);
@@ -41,11 +54,12 @@ const HomePage = () => {
   const memberDropdownRefs = useRef({});
   const memberListRefs = useRef({});
 
+  // Fetch departments on mount
   useEffect(() => {
     fetchDepartments();
   }, []);
 
-  // Handle outside click to close dropdown
+  // Handle outside click to close dropdown - optimized with useCallback
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
@@ -66,25 +80,28 @@ const HomePage = () => {
     };
   }, []);
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async () => {
     try {
       setLoading(true);
       const response = await Database.getDepartmentsWithAssignments();
       const departmentsData = response.data || [];
 
-      setDepartments(departmentsData);
+      // Use startTransition for non-urgent state updates
+      startTransition(() => {
+        setDepartments(departmentsData);
 
-      // Extract member assignments data from the response
-      const membersMap = {};
-      const projectsMap = {};
+        // Extract member assignments data from the response
+        const membersMap = {};
+        const projectsMap = {};
 
-      departmentsData.forEach(dept => {
-        membersMap[dept._id] = dept.membersWithAssignments || [];
-        projectsMap[dept._id] = dept.projectsWithMemberAssignments || {};
+        departmentsData.forEach(dept => {
+          membersMap[dept._id] = dept.membersWithAssignments || [];
+          projectsMap[dept._id] = dept.projectsWithMemberAssignments || {};
+        });
+
+        setMembersWithAssignments(membersMap);
+        setProjectsWithMemberAssignments(projectsMap);
       });
-
-      setMembersWithAssignments(membersMap);
-      setProjectsWithMemberAssignments(projectsMap);
 
     } catch (err) {
       console.error('Error fetching departments:', err);
@@ -92,23 +109,47 @@ const HomePage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleAddProject = useCallback((departmentId) => {
     setSelectedDepartment(departmentId);
     setModalOpen(true);
   }, []);
 
-  const handleProjectAdded = useCallback((newProject) => {
-    setDepartments(prev => prev.map(dept => {
-      if (dept._id === selectedDepartment) {
-        return {
-          ...dept,
-          projects: [...(dept.projects || []), newProject]
-        };
-      }
-      return dept;
-    }));
+  // Enhanced handleProjectAdded for optimistic updates
+  const handleProjectAdded = useCallback((newProject, tempId = null, revert = false) => {
+    startTransition(() => {
+      setDepartments(prev => prev.map(dept => {
+        if (dept._id === selectedDepartment) {
+          // If reverting (error case), remove the optimistic project
+          if (revert && tempId) {
+            return {
+              ...dept,
+              projects: (dept.projects || []).filter(p => p._id !== tempId)
+            };
+          }
+          
+          // If replacing optimistic with real project
+          if (tempId && newProject) {
+            return {
+              ...dept,
+              projects: (dept.projects || []).map(p => 
+                p._id === tempId ? newProject : p
+              )
+            };
+          }
+          
+          // Initial optimistic add
+          if (newProject) {
+            return {
+              ...dept,
+              projects: [...(dept.projects || []), newProject]
+            };
+          }
+        }
+        return dept;
+      }));
+    });
   }, [selectedDepartment]);
 
   const handleEditProject = useCallback((project, departmentId) => {
@@ -117,32 +158,36 @@ const HomePage = () => {
   }, []);
 
   const handleProjectUpdated = useCallback((updatedProject) => {
-    setDepartments(prev => prev.map(dept => {
-      if (dept._id === selectedProject.departmentId) {
-        return {
-          ...dept,
-          projects: dept.projects.map(project =>
-            project._id === updatedProject._id ? updatedProject : project
-          )
-        };
-      }
-      return dept;
-    }));
+    startTransition(() => {
+      setDepartments(prev => prev.map(dept => {
+        if (dept._id === selectedProject.departmentId) {
+          return {
+            ...dept,
+            projects: dept.projects.map(project =>
+              project._id === updatedProject._id ? updatedProject : project
+            )
+          };
+        }
+        return dept;
+      }));
+    });
   }, [selectedProject?.departmentId]);
 
   const handleDeleteProject = useCallback(async (project, departmentId) => {
     if (window.confirm(`Are you sure you want to delete the project "${project.name}"?`)) {
       try {
         await Database.deleteProject(project._id);
-        setDepartments(prev => prev.map(dept => {
-          if (dept._id === departmentId) {
-            return {
-              ...dept,
-              projects: dept.projects.filter(p => p._id !== project._id)
-            };
-          }
-          return dept;
-        }));
+        startTransition(() => {
+          setDepartments(prev => prev.map(dept => {
+            if (dept._id === departmentId) {
+              return {
+                ...dept,
+                projects: dept.projects.filter(p => p._id !== project._id)
+              };
+            }
+            return dept;
+          }));
+        });
       } catch (error) {
         console.error('Error deleting project:', error);
         alert('Failed to delete project. Please try again.');
@@ -160,6 +205,14 @@ const HomePage = () => {
       ...prev,
       [departmentId]: !prev[departmentId]
     }));
+  }, []);
+
+  // Optimized search handler with debounce effect
+  const handleSearchChange = useCallback((e) => {
+    const value = e.target.value;
+    startTransition(() => {
+      setSearchQuery(value);
+    });
   }, []);
 
   const filterProjects = useCallback((projects, departmentId) => {
@@ -273,7 +326,7 @@ const HomePage = () => {
                     type="text"
                     placeholder="Search projects..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={handleSearchChange}
                     className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                 </div>
@@ -628,32 +681,38 @@ const HomePage = () => {
         </main>
       </div>
 
-      {/* Modals */}
-      <Suspense fallback={<div>Loading...</div>}>
-        <AddProjectModal
-          isOpen={modalOpen}
-          onClose={() => setModalOpen(false)}
-          departmentId={selectedDepartment}
-          onProjectAdded={handleProjectAdded}
-        />
-      </Suspense>
+      {/* Modals - Render only when open for better performance */}
+      {modalOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <AddProjectModal
+            isOpen={modalOpen}
+            onClose={() => setModalOpen(false)}
+            departmentId={selectedDepartment}
+            onProjectAdded={handleProjectAdded}
+          />
+        </Suspense>
+      )}
 
-      <Suspense fallback={<div>Loading...</div>}>
-        <EditProjectModal
-          isOpen={editModalOpen}
-          onClose={() => setEditModalOpen(false)}
-          project={selectedProject}
-          onProjectUpdated={handleProjectUpdated}
-        />
-      </Suspense>
+      {editModalOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <EditProjectModal
+            isOpen={editModalOpen}
+            onClose={() => setEditModalOpen(false)}
+            project={selectedProject}
+            onProjectUpdated={handleProjectUpdated}
+          />
+        </Suspense>
+      )}
 
-      <Suspense fallback={<div>Loading...</div>}>
-        <ViewProjectModal
-          isOpen={viewModalOpen}
-          onClose={() => setViewModalOpen(false)}
-          projectId={selectedProjectId}
-        />
-      </Suspense>
+      {viewModalOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <ViewProjectModal
+            isOpen={viewModalOpen}
+            onClose={() => setViewModalOpen(false)}
+            projectId={selectedProjectId}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

@@ -9,6 +9,12 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
 import { emitNotification } from "../server.js";
 import notificationService from "../utils/notificationService.js";
+import { 
+  notifyProjectCreatedInBackground, 
+  sendProjectEmailsInBackground, 
+  logProjectActivityInBackground,
+  invalidateCacheInBackground 
+} from "../utils/backgroundTasks.js";
 
 // @desc    Get all boards for user
 // @route   GET /api/boards
@@ -203,6 +209,9 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     );
   }
 
+  // Check if background tasks should be used (for optimistic UI)
+  const runBackgroundTasks = req.body.runBackgroundTasks === true;
+
   const board = await Board.create({
     name,
     description,
@@ -234,43 +243,71 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     $push: { projects: board._id }
   });
 
-  // Create default lists
+  // Create default lists (essential, do synchronously)
   const defaultLists = ["To Do", "In Progress", "Review", "Done"];
-  for (let i = 0; i < defaultLists.length; i++) {
-    await List.create({
-      title: defaultLists[i],
+  const listPromises = defaultLists.map((title, i) => 
+    List.create({
+      title,
       board: board._id,
       position: i,
-    });
-  }
+    })
+  );
+  await Promise.all(listPromises);
 
-  // Log activity
-  await Activity.create({
-    type: "board_created",
-    description: `Created board "${name}"`,
-    user: req.user.id,
-    board: board._id,
-  });
-
-  // Send notifications using the notification service
-  await notificationService.notifyProjectCreated(board, req.user.id);
-
-  // Invalidate relevant caches
-  invalidateCache(`/api/boards`);
-  invalidateCache(`/api/boards/department/${board.department}`);
-  invalidateCache("/api/departments");
-  invalidateCache("/api/analytics/dashboard");
-
+  // Populate board for response (essential, do synchronously)
   const populatedBoard = await Board.findById(board._id)
     .populate("owner", "name email avatar")
     .populate("team", "name")
     .populate("department", "name")
     .populate("members", "name email avatar");
 
+  // Send response immediately for fast UI update
   res.status(201).json({
     success: true,
     data: populatedBoard,
   });
+
+  // Run heavy tasks in background (after response is sent)
+  if (runBackgroundTasks) {
+    // Log activity in background
+    logProjectActivityInBackground({
+      type: "board_created",
+      description: `Created board "${name}"`,
+      user: req.user.id,
+      board: board._id,
+    });
+
+    // Send notifications in background
+    notifyProjectCreatedInBackground(board, req.user.id);
+
+    // Send emails to members in background
+    if (members && members.length > 0) {
+      sendProjectEmailsInBackground(board, members);
+    }
+
+    // Invalidate caches in background
+    invalidateCacheInBackground([
+      `/api/boards`,
+      `/api/boards/department/${board.department}`,
+      "/api/departments",
+      "/api/analytics/dashboard"
+    ]);
+  } else {
+    // Synchronous fallback for non-optimistic requests
+    await Activity.create({
+      type: "board_created",
+      description: `Created board "${name}"`,
+      user: req.user.id,
+      board: board._id,
+    });
+
+    await notificationService.notifyProjectCreated(board, req.user.id);
+
+    invalidateCache(`/api/boards`);
+    invalidateCache(`/api/boards/department/${board.department}`);
+    invalidateCache("/api/departments");
+    invalidateCache("/api/analytics/dashboard");
+  }
 });
 
 // @desc    Update board

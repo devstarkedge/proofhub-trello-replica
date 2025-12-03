@@ -41,6 +41,74 @@ export const createNotificationInBackground = (notificationData) => {
   });
 };
 
+// Background task for project creation notifications
+export const notifyProjectCreatedInBackground = (board, creatorId) => {
+  runBackground(async () => {
+    try {
+      await notificationService.notifyProjectCreated(board, creatorId);
+    } catch (err) {
+      console.error('notifyProjectCreatedInBackground error:', err);
+    }
+  });
+};
+
+// Background task for project-related emails
+export const sendProjectEmailsInBackground = (board, members) => {
+  runBackground(async () => {
+    try {
+      // Get member details for email
+      const memberDocs = await User.find({ _id: { $in: members } }).select('email name');
+      
+      for (const member of memberDocs) {
+        if (member.email) {
+          await sendEmail({
+            to: member.email,
+            subject: `You've been added to project: ${board.name}`,
+            html: `
+              <h2>New Project Assignment</h2>
+              <p>Hi ${member.name},</p>
+              <p>You have been added to the project <strong>${board.name}</strong>.</p>
+              <p>Description: ${board.description || 'No description provided'}</p>
+              <p>Start Date: ${board.startDate ? new Date(board.startDate).toLocaleDateString() : 'Not set'}</p>
+              <p>Due Date: ${board.dueDate ? new Date(board.dueDate).toLocaleDateString() : 'Not set'}</p>
+              <br>
+              <p>Best regards,<br>FlowTask Team</p>
+            `
+          });
+        }
+      }
+    } catch (err) {
+      console.error('sendProjectEmailsInBackground error:', err);
+    }
+  });
+};
+
+// Background task for logging project activities
+export const logProjectActivityInBackground = (activityData) => {
+  runBackground(async () => {
+    try {
+      const Activity = (await import('../models/Activity.js')).default;
+      await Activity.create(activityData);
+    } catch (err) {
+      console.error('logProjectActivityInBackground error:', err);
+    }
+  });
+};
+
+// Background task for cache invalidation
+export const invalidateCacheInBackground = (cacheKeys) => {
+  runBackground(async () => {
+    try {
+      const { invalidateCache } = await import('../middleware/cache.js');
+      for (const key of cacheKeys) {
+        invalidateCache(key);
+      }
+    } catch (err) {
+      console.error('invalidateCacheInBackground error:', err);
+    }
+  });
+};
+
 export const notifyAdminsUserRegisteredInBackground = (user, adminIds) => {
   runBackground(async () => {
     try {
@@ -238,5 +306,9 @@ export default {
   sendPushInBackground,
   processScheduledAnnouncements,
   archiveExpiredAnnouncements,
-  startBackgroundJobs
+  startBackgroundJobs,
+  notifyProjectCreatedInBackground,
+  sendProjectEmailsInBackground,
+  logProjectActivityInBackground,
+  invalidateCacheInBackground
 };

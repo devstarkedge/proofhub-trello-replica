@@ -24,7 +24,7 @@ const useWorkflowStore = create(
       // Initialize workflow data
       initializeWorkflow: async (projectId) => {
         try {
-          set({ loading: true, error: null });
+          set({ loading: true, error: null, lists: [], cardsByList: {} });
 
           // Fetch board data
           const response = await Database.getProject(projectId);
@@ -37,7 +37,14 @@ const useWorkflowStore = create(
 
           // Fetch lists first
           const listsResponse = await Database.getLists(projectBoard._id);
-          const boardLists = listsResponse.data || listsResponse;
+          const boardLists = Array.isArray(listsResponse.data) ? listsResponse.data : 
+                            Array.isArray(listsResponse) ? listsResponse : [];
+
+          // If no lists found, set empty state and return early
+          if (!boardLists || boardLists.length === 0) {
+            set({ lists: [], cardsByList: {}, lastUpdated: Date.now() });
+            return;
+          }
 
           // Fetch cards for all lists in parallel
           const cardPromises = boardLists.map(list => Database.getCards(list._id));
@@ -46,7 +53,7 @@ const useWorkflowStore = create(
           // Group cards by listId
           const cardsMap = {};
           boardLists.forEach((list, index) => {
-            const cardsData = cardsResponses[index].data || cardsResponses[index];
+            const cardsData = cardsResponses[index]?.data || cardsResponses[index];
             cardsMap[list._id] = Array.isArray(cardsData) ? cardsData : [];
           });
 

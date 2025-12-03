@@ -19,6 +19,7 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/cards/list/',
     '/api/cards/board/',
     '/api/cards/', // Skip individual card endpoints for real-time updates
+    '/api/lists/', // Skip lists endpoint to ensure new projects show default lists
     '/api/comments/', // Skip all comment endpoints for real-time updates
     '/api/departments',
     '/api/departments/',
