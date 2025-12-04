@@ -26,6 +26,7 @@ const HomePage = lazy(() => import("./pages/HomePage"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Announcements = lazy(() => import("./pages/Announcements"));
+const RemindersPage = lazy(() => import("./pages/RemindersPage"));
 const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
 
 function App() {
@@ -181,6 +182,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <Announcements />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/reminders"
+              element={
+                <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                  <RemindersPage />
                 </PrivateRoute>
               }
             />

@@ -19,14 +19,20 @@ import {
   CheckCircle2,
   Circle,
   TrendingUp,
-  BarChart3
+  BarChart3,
+  Bell,
+  CalendarDays
 } from 'lucide-react';
 import DepartmentContext from '../context/DepartmentContext';
+import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import Header from '../components/Header';
+import ReminderCalendar from '../components/ReminderCalendar';
+import ReminderModal from '../components/ReminderModal';
 
 const CalendarView = () => {
   const { currentDepartment } = useContext(DepartmentContext);
+  const { user } = useContext(AuthContext);
   const [events, setEvents] = useState([]);
   const [filteredEvents, setFilteredEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +42,27 @@ const CalendarView = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [stats, setStats] = useState({ total: 0, high: 0, medium: 0, low: 0, overdue: 0 });
+  
+  // Tab state: 'tasks' or 'reminders'
+  const [activeTab, setActiveTab] = useState('tasks');
+  
+  // Reminder modal state
+  const [selectedReminder, setSelectedReminder] = useState(null);
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
+  
+  // Check if user can see reminders tab
+  const canViewReminders = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+
+  const handleSelectReminder = (reminder) => {
+    setSelectedReminder(reminder);
+    setSelectedProject({
+      id: reminder.project?._id,
+      _id: reminder.project?._id,
+      name: reminder.project?.name
+    });
+    setShowReminderModal(true);
+  };
 
   useEffect(() => {
     if (currentDepartment) {
@@ -320,9 +347,41 @@ const CalendarView = () => {
           </div>
         </motion.div>
 
-        {/* Stats Cards */}
+        {/* Tab Navigation */}
+        {canViewReminders && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-2 bg-white rounded-xl shadow-md p-1.5 mb-6 w-fit"
+          >
+            <button
+              onClick={() => setActiveTab('tasks')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === 'tasks'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <CalendarDays size={18} />
+              Task Deadlines
+            </button>
+            <button
+              onClick={() => setActiveTab('reminders')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === 'reminders'
+                  ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <Bell size={18} />
+              Client Reminders
+            </button>
+          </motion.div>
+        )}
+
+        {/* Stats Cards - Only show for tasks tab */}
         <AnimatePresence>
-          {currentDepartment && (
+          {currentDepartment && activeTab === 'tasks' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -397,9 +456,34 @@ const CalendarView = () => {
           )}
         </AnimatePresence>
 
-        {/* Filters Section */}
-        <AnimatePresence>
-          {showFilters && (
+        {/* Conditional Content based on Active Tab */}
+        {activeTab === 'reminders' && canViewReminders ? (
+          /* Client Reminders Calendar View */
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-xl shadow-xl p-6 border border-gray-100"
+          >
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
+                <Bell className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Client Reminders Calendar</h2>
+                <p className="text-sm text-gray-600">View and manage follow-up reminders for completed projects</p>
+              </div>
+            </div>
+            <ReminderCalendar
+              departmentId={currentDepartment?._id}
+              onSelectReminder={handleSelectReminder}
+            />
+          </motion.div>
+        ) : (
+          /* Tasks Calendar Content */
+          <>
+            {/* Filters Section */}
+            <AnimatePresence>
+              {showFilters && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
@@ -551,6 +635,8 @@ const CalendarView = () => {
             </motion.div>
           </div>
         </motion.div>
+          </>
+        )}
       </div>
 
       {/* Event Modal */}
@@ -708,6 +794,22 @@ const CalendarView = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Reminder Modal */}
+      {showReminderModal && selectedProject && (
+        <ReminderModal
+          isOpen={showReminderModal}
+          onClose={() => {
+            setShowReminderModal(false);
+            setSelectedReminder(null);
+            setSelectedProject(null);
+          }}
+          projectId={selectedProject._id}
+          projectName={selectedProject.name}
+          clientInfo={selectedReminder?.client}
+          onReminderSaved={() => {}}
+        />
+      )}
     </div>
   );
 };

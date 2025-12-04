@@ -341,7 +341,7 @@ const Header = ({ boardName }) => {
 
                             return (
                               <motion.div
-                                key={notification._id}
+                                key={`${notification._id}-${index}`}
                                 layout
                                 initial={{ opacity: 0, y: -20 }}
                                 animate={{ opacity: 1, y: 0 }}

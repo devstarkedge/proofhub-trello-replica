@@ -33,8 +33,12 @@ export const NotificationProvider = ({ children }) => {
     try {
       const response = await Database.getNotifications();
       const notificationData = response.data || response || [];
-      setNotifications(notificationData);
-      const unread = notificationData.filter(n => !n.isRead).length;
+      // Deduplicate notifications by _id
+      const uniqueNotifications = notificationData.filter((notification, index, self) =>
+        index === self.findIndex(n => n._id === notification._id)
+      );
+      setNotifications(uniqueNotifications);
+      const unread = uniqueNotifications.filter(n => !n.isRead).length;
       setUnreadCount(unread);
     } catch (error) {
       console.error('Error loading notifications:', error);
@@ -72,9 +76,17 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const addNotification = (notification) => {
-    // Add to list
-    setNotifications(prev => [notification, ...prev]);
-    setUnreadCount(prev => prev + 1);
+    // Add to list, avoiding duplicates
+    setNotifications(prev => {
+      // Check if notification already exists by _id
+      const exists = prev.some(n => n._id === notification._id);
+      if (exists) {
+        return prev;
+      }
+      // Increment unread count for new notifications
+      setUnreadCount(count => count + 1);
+      return [notification, ...prev];
+    });
 
     // Show toast notification
     showToast(notification);

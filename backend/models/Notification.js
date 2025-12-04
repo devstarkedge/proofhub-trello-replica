@@ -23,7 +23,12 @@ const notificationSchema = new mongoose.Schema({
       'user_assigned',
       'user_unassigned',
       'announcement_created',
-      'test_notification'
+      'test_notification',
+      'reminder_due_soon',
+      'reminder_sent',
+      'reminder_completed',
+      'reminder_missed',
+      'awaiting_client_response'
     ],
     required: true
   },

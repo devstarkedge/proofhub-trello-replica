@@ -1,5 +1,5 @@
 import React, { useContext } from 'react';
-import { Home, Folder, Users, BarChart3, Settings, LayoutDashboard, UserCheck, Bell } from 'lucide-react';
+import { Home, Folder, Users, BarChart3, Settings, LayoutDashboard, UserCheck, Bell, CalendarClock } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 
@@ -20,6 +20,7 @@ const Sidebar = () => {
       if (userRole === 'admin') {
         return [
           ...baseItems,
+          { path: '/reminders', icon: CalendarClock, label: 'Client Reminders' },
           { path: '/teams', icon: Users, label: 'Teams' },
           { path: '/hr-panel', icon: UserCheck, label: 'HR Panel' },
           { path: '/admin/settings', icon: Settings, label: 'Admin Settings' },
@@ -33,6 +34,7 @@ const Sidebar = () => {
       } else if (userRole === 'manager') {
         return [
           ...baseItems,
+          { path: '/reminders', icon: CalendarClock, label: 'Client Reminders' },
           { path: '/teams', icon: Users, label: 'Teams' },
         ];
       } else {

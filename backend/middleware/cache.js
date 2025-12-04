@@ -10,7 +10,9 @@ const DYNAMIC_PATHS = [
   '/api/departments/',
   '/api/teams/',
   '/api/users', // Skip caching for all user-related endpoints
-  '/api/auth/admin-create-user' // Skip caching for admin user creation
+  '/api/auth/admin-create-user', // Skip caching for admin user creation
+  '/api/reminders', // Skip caching for all reminder endpoints
+  '/api/reminders/' // Skip caching for all reminder-related endpoints
 ];
 
 export const cacheMiddleware = (ttl = 60) => {
@@ -29,7 +31,11 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/auth/verify', // Skip session verification endpoint for user-specific data
     '/api/auth/admin-create-user', // Skip admin user creation for real-time updates
     '/api/notifications', // Skip notifications endpoint for user-specific data
-    '/api/analytics/dashboard' // Skip dashboard analytics for real-time updates
+    '/api/analytics/dashboard', // Skip dashboard analytics for real-time updates
+    '/api/reminders', // Skip all reminder endpoints for real-time updates
+    '/api/reminders/', // Skip all reminder-related endpoints
+    '/api/reminders/dashboard', // Skip reminder dashboard stats
+    '/api/reminders/calendar' // Skip reminder calendar data
   ];
   return (req, res, next) => {
     // Skip caching for non-GET requests

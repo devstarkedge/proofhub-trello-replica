@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useContext, useMemo, Suspense, memo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, FolderKanban, Users,
   Clock, CheckCircle2, Search,
-  ArrowUpRight
+  ArrowUpRight, Bell, AlertCircle, Calendar, ChevronRight
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
@@ -54,6 +54,100 @@ const ProjectCardWrapper = memo(({ project, onView, onEdit, onDelete }) => (
 ));
 ProjectCardWrapper.displayName = 'ProjectCardWrapper';
 
+// Reminder Widget Component
+const ReminderWidget = memo(({ reminders, loading }) => {
+  const getStatusColor = (reminder) => {
+    const scheduledDate = new Date(reminder.scheduledDate);
+    const now = new Date();
+    const hoursUntil = (scheduledDate - now) / (1000 * 60 * 60);
+    
+    if (reminder.status === 'completed') return 'border-l-green-500 bg-green-50';
+    if (hoursUntil < 0) return 'border-l-red-500 bg-red-50';
+    if (hoursUntil <= 24) return 'border-l-orange-500 bg-orange-50';
+    return 'border-l-blue-500 bg-blue-50';
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+        <div className="animate-pulse">
+          <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
+          <div className="space-y-3">
+            <div className="h-16 bg-gray-100 rounded"></div>
+            <div className="h-16 bg-gray-100 rounded"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white rounded-xl shadow-sm p-6 border border-gray-100"
+    >
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          <Bell className="text-indigo-600" size={20} />
+          Upcoming Reminders
+        </h3>
+        <Link
+          to="/reminders"
+          className="text-sm text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+        >
+          View All
+          <ChevronRight size={16} />
+        </Link>
+      </div>
+
+      {reminders.length === 0 ? (
+        <div className="text-center py-6">
+          <Bell className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+          <p className="text-gray-500 text-sm">No upcoming reminders</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {reminders.slice(0, 4).map((reminder) => (
+            <motion.div
+              key={reminder._id}
+              whileHover={{ x: 4 }}
+              className={`p-3 rounded-lg border-l-4 transition-colors ${getStatusColor(reminder)}`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900 text-sm truncate">
+                    {reminder.project?.name || 'Unknown Project'}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    {reminder.client?.name || 'No client'}
+                  </p>
+                </div>
+                <div className="text-right ml-3">
+                  <p className="text-xs text-gray-500 flex items-center gap-1">
+                    <Calendar size={12} />
+                    {formatDate(reminder.scheduledDate)}
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+});
+ReminderWidget.displayName = 'ReminderWidget';
+
 const Dashboard = memo(() => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
@@ -66,6 +160,13 @@ const Dashboard = memo(() => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+  
+  // Reminders state
+  const [upcomingReminders, setUpcomingReminders] = useState([]);
+  const [remindersLoading, setRemindersLoading] = useState(true);
+  
+  // Check if user can view reminders
+  const canViewReminders = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
 
   // Use React Query for optimized data fetching
   const { data: dashboardData, isLoading, refetch } = useDashboardData();
@@ -75,6 +176,32 @@ const Dashboard = memo(() => {
       loadDepartments();
     }
   }, [departments, loadDepartments]);
+
+  // Fetch upcoming reminders for widget
+  useEffect(() => {
+    const fetchReminders = async () => {
+      if (!canViewReminders) {
+        setRemindersLoading(false);
+        return;
+      }
+      
+      try {
+        setRemindersLoading(true);
+        const response = await Database.getAllReminders({ status: 'pending' });
+        // Sort by scheduled date and take upcoming ones
+        const sorted = (response.data || [])
+          .filter(r => r.status !== 'completed' && r.status !== 'cancelled')
+          .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
+        setUpcomingReminders(sorted);
+      } catch (error) {
+        console.error('Error fetching reminders:', error);
+      } finally {
+        setRemindersLoading(false);
+      }
+    };
+    
+    fetchReminders();
+  }, [canViewReminders]);
 
   const projects = dashboardData?.data?.projects || [];
   const loading = isLoading;
@@ -229,6 +356,16 @@ const Dashboard = memo(() => {
               <StatCard key={stat.title} stat={stat} index={index} />
             ))}
           </div>
+
+          {/* Reminders Widget - Only for Admin/Manager */}
+          {canViewReminders && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                {/* Placeholder for other widgets or leave empty */}
+              </div>
+              <ReminderWidget reminders={upcomingReminders} loading={remindersLoading} />
+            </div>
+          )}
 
           {/* Filters & Search */}
           <motion.div

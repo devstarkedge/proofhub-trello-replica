@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Save, AlertCircle, Loader, Calendar, Users, DollarSign,
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
-  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock, Plus
+  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock, Plus, Bell
 } from 'lucide-react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select"
 import { Badge } from "../components/ui/badge"
 import { toast } from "react-toastify"
 import Database from '../services/database';
+import ReminderPanel from './ReminderPanel';
+import ReminderModal from './ReminderModal';
 
 const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
   const [formData, setFormData] = useState({
@@ -36,6 +38,23 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  
+  // Reminder modal state
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderKey, setReminderKey] = useState(0); // For forcing re-render of ReminderPanel
+  
+  // Get user role from localStorage
+  const getUserRole = useCallback(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      return user.role || 'employee';
+    } catch {
+      return 'employee';
+    }
+  }, []);
+  
+  const userRole = getUserRole();
+  const canManageReminders = userRole === 'admin' || userRole === 'manager';
 
   useEffect(() => {
     if (isOpen && project) {
@@ -240,6 +259,7 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
   };
 
   return (
+    <>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -333,8 +353,8 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
                 />
               </motion.div>
 
-              {/* Status, Priority & Visibility */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Status & Visibility Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <motion.div custom={2} variants={fieldVariants} initial="hidden" animate="visible">
                   <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                     <TrendingUp className="h-4 w-4 text-blue-600" />
@@ -355,27 +375,8 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white pointer-events-none" />
                   </div>
                 </motion.div>
+                
                 <motion.div custom={3} variants={fieldVariants} initial="hidden" animate="visible">
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                    <AlertCircle className="h-4 w-4 text-red-600" />
-                    Priority
-                  </label>
-                  <div className="relative">
-                    <select
-                      name="priority"
-                      value={formData.priority}
-                      onChange={handleInputChange}
-                      className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all hover:border-indigo-300 bg-gradient-to-r ${priorityColors[formData.priority]} text-gray-700 font-semibold appearance-none cursor-pointer`}
-                    >
-                      <option value="low">Low Priority</option>
-                      <option value="medium">Medium Priority</option>
-                      <option value="high">High Priority</option>
-                      <option value="urgent">Urgent</option>
-                    </select>
-                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white pointer-events-none" />
-                  </div>
-                </motion.div>
-                <motion.div custom={4} variants={fieldVariants} initial="hidden" animate="visible">
                   <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                     <Globe className="h-4 w-4 text-green-600" />
                     Visibility
@@ -394,6 +395,85 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
                   </div>
                 </motion.div>
               </div>
+
+              {/* Priority / Client Reminder Section */}
+              <AnimatePresence mode="wait">
+                {formData.status === 'completed' && canManageReminders ? (
+                  <motion.div 
+                    key="reminder-section"
+                    custom={4} 
+                    variants={fieldVariants} 
+                    initial="hidden" 
+                    animate="visible"
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-5 rounded-2xl border border-indigo-200/60 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
+                          <Bell className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-gray-900">Client Reminder</h4>
+                          <p className="text-xs text-gray-500 mt-0.5">Set follow-up reminders for completed projects</p>
+                        </div>
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        type="button"
+                        onClick={() => setShowReminderModal(true)}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
+                      >
+                        <Calendar className="h-4 w-4" />
+                        Manage Reminders
+                      </motion.button>
+                    </div>
+                    <ReminderPanel
+                      key={reminderKey}
+                      projectId={project?.id || project?._id}
+                      clientInfo={{
+                        clientName: formData.clientName,
+                        clientEmail: formData.clientEmail,
+                        clientWhatsappNumber: formData.clientWhatsappNumber
+                      }}
+                      onOpenReminderModal={() => setShowReminderModal(true)}
+                      compact={true}
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    key="priority-section"
+                    custom={4} 
+                    variants={fieldVariants} 
+                    initial="hidden" 
+                    animate="visible"
+                    exit={{ opacity: 0, y: -10 }}
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                  >
+                    <div>
+                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                        <AlertCircle className="h-4 w-4 text-red-600" />
+                        Priority
+                      </label>
+                      <div className="relative">
+                        <select
+                          name="priority"
+                          value={formData.priority}
+                          onChange={handleInputChange}
+                          className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all hover:border-indigo-300 bg-gradient-to-r ${priorityColors[formData.priority]} text-gray-700 font-semibold appearance-none cursor-pointer`}
+                        >
+                          <option value="low">Low Priority</option>
+                          <option value="medium">Medium Priority</option>
+                          <option value="high">High Priority</option>
+                          <option value="urgent">Urgent</option>
+                        </select>
+                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white pointer-events-none" />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Dates */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -709,6 +789,27 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    
+    {/* Reminder Modal - Outside AnimatePresence since it handles its own animation */}
+    {canManageReminders && (
+      <ReminderModal
+        isOpen={showReminderModal}
+        onClose={() => setShowReminderModal(false)}
+        projectId={project?.id || project?._id}
+        projectName={formData.title}
+        clientInfo={{
+          clientName: formData.clientName,
+          clientEmail: formData.clientEmail,
+          clientWhatsappNumber: formData.clientWhatsappNumber
+        }}
+        onReminderCreated={() => {
+          // Refresh the reminder panel by incrementing the key
+          setReminderKey(prev => prev + 1);
+          toast.success('Reminder saved successfully!');
+        }}
+      />
+    )}
+  </>
   );
 };
 

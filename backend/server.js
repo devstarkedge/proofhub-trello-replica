@@ -23,6 +23,7 @@ import subtaskRoutes from './routes/subtasks.js';
 import subtaskNanoRoutes from './routes/subtaskNanos.js';
 import announcementsRoutes from './routes/announcements.js';
 import recurrenceRoutes from './routes/recurrence.js';
+import remindersRoutes from './routes/reminders.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
@@ -89,6 +90,7 @@ app.use('/api/subtasks', subtaskRoutes);
 app.use('/api/subtask-nanos', subtaskNanoRoutes);
 app.use('/api/announcements', announcementsRoutes);
 app.use('/api/recurrence', recurrenceRoutes);
+app.use('/api/reminders', remindersRoutes);
 
 import jwt from 'jsonwebtoken';
 
@@ -244,6 +246,7 @@ export { io };
 import seedAdmin from './utils/seed.js';
 import { startBackgroundJobs } from './utils/backgroundTasks.js';
 import { startRecurringTaskScheduler } from './utils/recurrenceScheduler.js';
+import { startReminderScheduler } from './utils/reminderScheduler.js';
 
 // MongoDB connection with connection pooling
 mongoose.connect(process.env.MONGO_URI, {
@@ -259,6 +262,8 @@ mongoose.connect(process.env.MONGO_URI, {
     startBackgroundJobs();
     // Start recurring task scheduler
     startRecurringTaskScheduler();
+    // Start reminder scheduler
+    startReminderScheduler();
     server.listen(PORT, () => {
       if (process.env.NODE_ENV !== 'production') console.log(`Server running on port ${PORT}`);
     });
