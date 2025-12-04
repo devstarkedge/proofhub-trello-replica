@@ -1,4 +1,4 @@
-import React, { memo, useRef } from "react";
+import React, { memo, useRef, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   Trash2,
@@ -14,37 +14,68 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+// Move static values outside component
+const MAX_VISIBLE_LABELS = 6;
+
 const Card = memo(({ card, onClick, onDelete, compact = false }) => {
   const labelsContainerRef = useRef(null);
   
-  // Combine all labels including recurring
-  const allLabels = [
+  // Memoize computed values to prevent recalculation on every render
+  const allLabels = useMemo(() => [
     ...(card.labels || []).map(label => ({ text: label, type: 'regular' })),
     ...(card.hasRecurrence ? [{ text: 'Recurring', type: 'recurring' }] : [])
-  ];
+  ], [card.labels, card.hasRecurrence]);
 
-  // Show max 6 labels, rest as +X counter
-  const maxVisibleLabels = 6;
-  const visibleLabelsCount = Math.min(allLabels.length, maxVisibleLabels);
+  const visibleLabelsCount = useMemo(() => 
+    Math.min(allLabels.length, MAX_VISIBLE_LABELS), 
+    [allLabels.length]
+  );
 
-  const subtaskStats = card.subtaskStats
-    ? card.subtaskStats
-    : card.subtasks
-      ? {
-          total: card.subtasks.length,
-          completed: card.subtasks.filter((s) => s.completed).length
-        }
-      : null;
+  const subtaskStats = useMemo(() => 
+    card.subtaskStats
+      ? card.subtaskStats
+      : card.subtasks
+        ? {
+            total: card.subtasks.length,
+            completed: card.subtasks.filter((s) => s.completed).length
+          }
+        : null,
+    [card.subtaskStats, card.subtasks]
+  );
 
-  const hasDetails =
+  const hasDetails = useMemo(() =>
     (subtaskStats?.total > 0) ||
     card.attachments?.length > 0 ||
-    card.comments?.length > 0;
+    card.comments?.length > 0,
+    [subtaskStats, card.attachments, card.comments]
+  );
 
-  const isOverdue =
+  const isOverdue = useMemo(() =>
     card.dueDate &&
     new Date(card.dueDate) < new Date() &&
-    card.status !== "Done";
+    card.status !== "Done",
+    [card.dueDate, card.status]
+  );
+
+  // Memoize logged time calculation
+  const loggedTimeDisplay = useMemo(() => {
+    if (!card.loggedTime?.length) return null;
+    const hours = card.loggedTime.reduce((total, log) => total + log.hours, 0);
+    const minutes = card.loggedTime.reduce((total, log) => total + log.minutes, 0);
+    return { hours, minutes };
+  }, [card.loggedTime]);
+
+  // Memoize delete handler
+  const handleDelete = useCallback((e) => {
+    e.stopPropagation();
+    onDelete(card._id);
+  }, [onDelete, card._id]);
+
+  // Memoize formatted due date
+  const formattedDueDate = useMemo(() => 
+    card.dueDate ? new Date(card.dueDate).toLocaleDateString() : null,
+    [card.dueDate]
+  );
 
   if (compact) {
     return (
@@ -102,10 +133,7 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
         <motion.button
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(card._id);
-          }}
+          onClick={handleDelete}
           className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded bg-white shadow-sm border border-gray-100"
         >
           <Trash2 size={14} />

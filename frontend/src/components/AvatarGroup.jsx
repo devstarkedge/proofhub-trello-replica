@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, memo } from 'react';
+import ReactDOM from 'react-dom';
 
 const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
   const [hovered, setHovered] = useState(false);
@@ -6,25 +7,22 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
   const avatarBarRef = useRef(null);
 
   // Hide tooltip on mouse leave
+  // Improved hover logic: closes only when mouse leaves both avatar and dropdown
   useEffect(() => {
     if (!hovered) return;
-    function handleMouseLeave(event) {
+    function handleMouseMove(event) {
       if (
         dropdownRef.current &&
-        !dropdownRef.current.contains(event.relatedTarget) &&
+        !dropdownRef.current.contains(event.target) &&
         avatarBarRef.current &&
-        !avatarBarRef.current.contains(event.relatedTarget)
+        !avatarBarRef.current.contains(event.target)
       ) {
         setHovered(false);
       }
     }
-    const bar = avatarBarRef.current;
-    const drop = dropdownRef.current;
-    if (bar) bar.addEventListener('mouseleave', handleMouseLeave);
-    if (drop) drop.addEventListener('mouseleave', handleMouseLeave);
+    document.addEventListener('mousemove', handleMouseMove);
     return () => {
-      if (bar) bar.removeEventListener('mouseleave', handleMouseLeave);
-      if (drop) drop.removeEventListener('mouseleave', handleMouseLeave);
+      document.removeEventListener('mousemove', handleMouseMove);
     };
   }, [hovered]);
 
@@ -56,7 +54,7 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
 
   // More than 2 assignees: collapsed avatar bar + hover tooltip
   return (
-    <div className="relative flex items-center">
+    <div className="flex items-center" style={{ position: 'relative', zIndex: 1 }}>
       <div
         ref={avatarBarRef}
         className="flex -space-x-3 cursor-pointer"
@@ -64,6 +62,7 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
         aria-label="Show all assignees"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
+        style={{ zIndex: 2 }}
       >
         {assignees.slice(0, 3).map((assignee, idx) => (
           <div
@@ -78,18 +77,27 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
       <span className="ml-4 text-gray-700 font-medium select-none">
         {assignees.length} members
       </span>
-      {/* Hover Tooltip List */}
-      {hovered && (
+      {/* Hover Tooltip List in Portal */}
+      {hovered && ReactDOM.createPortal(
         <div
           ref={dropdownRef}
-          className="absolute left-0 top-full mt-2 min-w-[120px] bg-white rounded-lg shadow-lg z-[9999] p-2 space-y-1 border border-gray-100 text-xs animate-fade-in"
+          className="fixed left-0 top-0 z-[9999] pointer-events-auto"
           style={{
-            opacity: hovered ? 1 : 0,
-            transform: hovered ? 'scale(1)' : 'scale(0.95)',
+            minWidth: '140px',
+            background: 'white',
+            borderRadius: '0.75rem',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+            border: '1px solid #e5e7eb',
+            padding: '0.5rem 0.75rem',
+            fontSize: '0.95rem',
+            maxHeight: '220px',
+            overflowY: 'auto',
             transition: 'opacity 150ms, transform 150ms',
+            opacity: hovered ? 1 : 0,
+            transform: hovered ? 'scale(1)' : 'scale(0.97)',
+            left: avatarBarRef.current ? (avatarBarRef.current.getBoundingClientRect().left) : 0,
+            top: avatarBarRef.current ? (avatarBarRef.current.getBoundingClientRect().bottom + 6) : 0,
           }}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
         >
           <ul>
             {assignees.map((assignee, idx) => (
@@ -101,7 +109,8 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
               </li>
             ))}
           </ul>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

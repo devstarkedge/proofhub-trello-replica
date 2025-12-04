@@ -12,14 +12,12 @@ import { invalidateCache } from '../middleware/cache.js';
 export const getLists = asyncHandler(async (req, res, next) => {
   const { boardId } = req.params;
   
-  console.log('Fetching lists for board:', boardId);
-
   const lists = await List.find({ 
     board: boardId,
     isArchived: false
-  }).sort('position');
-
-  console.log('Found lists:', lists.length);
+  })
+    .sort('position')
+    .lean(); // Use lean() for read-only operations - ~5x faster
 
   res.status(200).json({
     success: true,
@@ -35,15 +33,18 @@ export const createList = asyncHandler(async (req, res, next) => {
   const { title, board, position, color } = req.body;
 
   // Verify board access
-  const boardDoc = await Board.findById(board);
+  const boardDoc = await Board.findById(board).lean();
   if (!boardDoc) {
     return next(new ErrorResponse('Board not found', 404));
   }
 
+  // Get current list count for position if not provided
+  const listPosition = position !== undefined ? position : await List.countDocuments({ board });
+
   const list = await List.create({
     title,
     board,
-    position: position !== undefined ? position : await List.countDocuments({ board }),
+    position: listPosition,
     color
   });
 

@@ -1,35 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import { Plus, X } from 'lucide-react';
 import KanbanList from './List';
 
-const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onUpdateListTitle, onMoveCard, onMoveList }) => {
+const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onUpdateListTitle, onMoveCard, onMoveList }) => {
   const [isAddingList, setIsAddingList] = useState(false);
   const [newListTitle, setNewListTitle] = useState('');
   const [draggedList, setDraggedList] = useState(null);
   const [draggedCard, setDraggedCard] = useState(null);
   const [isDraggingCard, setIsDraggingCard] = useState(false);
   
-  const handleAddList = () => {
+  // Memoize list IDs for stable reference
+  const listIds = useMemo(() => lists.map(l => l._id), [lists]);
+
+  const handleAddList = useCallback(() => {
     if (newListTitle.trim()) {
       onAddList(newListTitle.trim());
       setNewListTitle('');
       setIsAddingList(false);
     }
-  };
+  }, [newListTitle, onAddList]);
 
-  const handleListDragStart = (e, list) => {
+  const handleListDragStart = useCallback((e, list) => {
     setDraggedList(list);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('dragType', 'list');
     e.dataTransfer.setData('dragId', list._id);
-  };
+  }, []);
 
-  const handleListDragOver = (e) => {
+  const handleListDragOver = useCallback((e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-  };
+  }, []);
 
-  const handleListDrop = (e, targetList) => {
+  const handleListDrop = useCallback((e, targetList) => {
     e.preventDefault();
     const dragType = e.dataTransfer.getData('dragType');
     if (dragType === 'list' && draggedList && draggedList._id !== targetList._id) {
@@ -40,21 +43,21 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
       onMoveList(draggedList._id, newPosition);
     }
     setDraggedList(null);
-  };
+  }, [draggedList, onMoveList]);
 
-  const handleCardDragStart = (e, card) => {
+  const handleCardDragStart = useCallback((e, card) => {
     setDraggedCard(card);
     setIsDraggingCard(true);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', card._id);
-  };
+  }, []);
 
-  const handleCardDragOver = (e) => {
+  const handleCardDragOver = useCallback((e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-  };
+  }, []);
 
-  const handleCardDrop = (e, targetList) => {
+  const handleCardDrop = useCallback((e, targetList) => {
     e.preventDefault();
     const cardId = e.dataTransfer.getData('text/plain');
     if (cardId && draggedCard && draggedCard.list !== targetList._id) {
@@ -63,12 +66,12 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
     }
     setDraggedCard(null);
     setIsDraggingCard(false);
-  };
+  }, [draggedCard, cardsByList, onMoveCard]);
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback(() => {
     setDraggedCard(null);
     setIsDraggingCard(false);
-  };
+  }, []);
   
   return (
     <div className="p-4 h-[calc(100vh-64px)]">
@@ -150,6 +153,8 @@ const Board = ({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAdd
       </div>
     </div>
   );
-};
+});
+
+Board.displayName = 'Board';
 
 export default Board;

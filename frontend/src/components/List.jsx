@@ -1,10 +1,41 @@
-import React, { useState, memo } from 'react';
+import React, { useState, memo, useCallback, useMemo } from 'react';
 import { Plus, MoreHorizontal, X, Copy, Move, Eye, Palette, Zap, Archive, Trash2, Edit3 } from 'lucide-react';
 import Card from './Card';
 import AddCardForm from './AddCardForm';
 import Database from '../services/database';
 
-const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
+// Memoized color options - defined outside component to avoid recreation
+const listColors = {
+  '1': 'bg-blue-100',
+  '2': 'bg-yellow-100',
+  '3': 'bg-green-100',
+  '4': 'bg-gray-100',
+  'green': 'bg-green-200',
+  'yellow': 'bg-yellow-200',
+  'orange': 'bg-orange-200',
+  'red': 'bg-red-200',
+  'purple': 'bg-purple-200',
+  'blue': 'bg-blue-200',
+  'cyan': 'bg-cyan-200',
+  'lime': 'bg-lime-200',
+  'pink': 'bg-pink-200',
+  'gray': 'bg-gray-200'
+};
+
+const colorOptions = [
+  { name: 'green', class: 'bg-green-400' },
+  { name: 'yellow', class: 'bg-yellow-400' },
+  { name: 'orange', class: 'bg-orange-400' },
+  { name: 'red', class: 'bg-red-400' },
+  { name: 'purple', class: 'bg-purple-400' },
+  { name: 'blue', class: 'bg-blue-400' },
+  { name: 'cyan', class: 'bg-cyan-400' },
+  { name: 'lime', class: 'bg-lime-400' },
+  { name: 'pink', class: 'bg-pink-400' },
+  { name: 'gray', class: 'bg-gray-400' }
+];
+
+const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onUpdateListTitle, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -12,65 +43,39 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
   const [isDragging, setIsDragging] = useState(false);
   const [dropTarget, setDropTarget] = useState(null);
   
-  const handleAddCard = (listId, title) => {
+  const handleAddCard = useCallback((listId, title) => {
     onAddCard(listId, title);
     setIsAddingCard(false);
-  };
+  }, [onAddCard]);
   
-  const listColors = {
-    '1': 'bg-blue-100',
-    '2': 'bg-yellow-100',
-    '3': 'bg-green-100',
-    '4': 'bg-gray-100',
-    'green': 'bg-green-200',
-    'yellow': 'bg-yellow-200',
-    'orange': 'bg-orange-200',
-    'red': 'bg-red-200',
-    'purple': 'bg-purple-200',
-    'blue': 'bg-blue-200',
-    'cyan': 'bg-cyan-200',
-    'lime': 'bg-lime-200',
-    'pink': 'bg-pink-200',
-    'gray': 'bg-gray-200'
-  };
-  
-  const colorOptions = [
-    { name: 'green', class: 'bg-green-400' },
-    { name: 'yellow', class: 'bg-yellow-400' },
-    { name: 'orange', class: 'bg-orange-400' },
-    { name: 'red', class: 'bg-red-400' },
-    { name: 'purple', class: 'bg-purple-400' },
-    { name: 'blue', class: 'bg-blue-400' },
-    { name: 'cyan', class: 'bg-cyan-400' },
-    { name: 'lime', class: 'bg-lime-400' },
-    { name: 'pink', class: 'bg-pink-400' },
-    { name: 'gray', class: 'bg-gray-400' }
-  ];
-  
+  // Memoize list class computation
+  const listClass = useMemo(() => 
+    `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit min-h-[100px] max-h-[calc(100vh-120px)] flex flex-col ${dropTarget ? 'shadow-lg shadow-blue-400/50' : ''}`,
+    [list.color, dropTarget]
+  );
 
-
-  // Drag and drop handlers for cards
-  const handleCardDragStart = (e, card) => {
+  // Drag and drop handlers for cards - wrapped in useCallback
+  const handleCardDragStart = useCallback((e, card) => {
     setDraggedCard(card);
     setIsDragging(true);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', card._id);
-  };
+  }, []);
 
-  const handleCardDragOver = (e, targetCard) => {
+  const handleCardDragOver = useCallback((e, targetCard) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setDropTarget(targetCard._id);
-  };
+  }, []);
 
-  const handleCardDragLeave = (e, targetCard) => {
+  const handleCardDragLeave = useCallback((e, targetCard) => {
     if (dropTarget === targetCard._id) {
       setDropTarget(null);
     }
-  };
+  }, [dropTarget]);
 
-  const handleCardDrop = (e, targetCard) => {
+  const handleCardDrop = useCallback((e, targetCard) => {
     e.preventDefault();
     e.stopPropagation();
     const cardId = e.dataTransfer.getData('text/plain');
@@ -84,9 +89,9 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
     setDraggedCard(null);
     setIsDragging(false);
     setDropTarget(null);
-  };
+  }, [draggedCard, list._id, onMoveCard, onDrop, list]);
 
-  const handleListDrop = (e) => {
+  const handleListDrop = useCallback((e) => {
     e.preventDefault();
     const cardId = e.dataTransfer.getData('text/plain');
     if (cardId && draggedCard && draggedCard.listId !== list._id) {
@@ -99,21 +104,21 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
     setDraggedCard(null);
     setIsDragging(false);
     setDropTarget(null);
-  };
+  }, [draggedCard, list._id, cards.length, onMoveCard, onDrop, list]);
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback(() => {
     setIsDragging(false);
     setDraggedCard(null);
     setDropTarget(null);
-  };
+  }, []);
 
-  const handleChangeColor = (colorName) => {
+  const handleChangeColor = useCallback((colorName) => {
     onUpdateListColor(list._id, colorName);
     setShowColorPicker(false);
     setShowMenu(false);
-  };
+  }, [list._id, onUpdateListColor]);
 
-  const getCardClass = (card) => {
+  const getCardClass = useCallback((card) => {
     let className = '';
     if (isDragging && draggedCard?._id === card._id) {
       className += ' opacity-30 scale-105 shadow-2xl z-10';
@@ -122,11 +127,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
       className += ' border-2 border-blue-400 rounded';
     }
     return className;
-  };
-  
-  const listClass = `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit min-h-[100px] max-h-[calc(100vh-120px)] flex flex-col ${
-    dropTarget ? 'shadow-lg shadow-blue-400/50' : ''
-  }`;
+  }, [isDragging, draggedCard, dropTarget]);
   
   return (
     <div
@@ -271,37 +272,41 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
         </div>
       </div>
       
-      {/* Cards Container */}
+      {/* Cards Container - Use virtualization for large lists */}
       <div
-        className="space-y-2 mb-2 flex-1"
+        className="mb-2 flex-1 overflow-y-auto"
+        style={{ maxHeight: 'calc(100vh - 280px)' }}
         onDragOver={onDragOver}
         onDrop={handleListDrop}
         onDragLeave={() => setDropTarget(null)}
       >
-        {cards.map(card => (
-          <div
-            key={card._id}
-            className={getCardClass(card)}
-            draggable
-            onDragStart={(e) => {
-              handleCardDragStart(e, card);
-              onCardDragStart(e, card);
-            }}
-            onDragOver={(e) => handleCardDragOver(e, card)}
-            onDragLeave={(e) => handleCardDragLeave(e, card)}
-            onDrop={(e) => handleCardDrop(e, card)}
-            onDragEnd={() => {
-              handleDragEnd();
-              onCardDragEnd();
-            }}
-          >
-            <Card
-              card={card}
-              onClick={() => onCardClick(card)}
-              onDelete={onDeleteCard}
-            />
-          </div>
-        ))}
+        {/* For small lists, render directly; for large lists, consider virtualization */}
+        <div className="space-y-2">
+          {cards.map(card => (
+            <div
+              key={card._id}
+              className={getCardClass(card)}
+              draggable
+              onDragStart={(e) => {
+                handleCardDragStart(e, card);
+                onCardDragStart(e, card);
+              }}
+              onDragOver={(e) => handleCardDragOver(e, card)}
+              onDragLeave={(e) => handleCardDragLeave(e, card)}
+              onDrop={(e) => handleCardDrop(e, card)}
+              onDragEnd={() => {
+                handleDragEnd();
+                onCardDragEnd();
+              }}
+            >
+              <Card
+                card={card}
+                onClick={() => onCardClick(card)}
+                onDelete={onDeleteCard}
+              />
+            </div>
+          ))}
+        </div>
       </div>
       
       {/* Add Card Section */}
@@ -325,5 +330,8 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
 }
 
 );
+
+// Add display name for debugging
+KanbanList.displayName = 'KanbanList';
 
 export default KanbanList;

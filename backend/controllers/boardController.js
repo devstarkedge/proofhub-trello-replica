@@ -39,7 +39,8 @@ export const getBoards = asyncHandler(async (req, res, next) => {
     .populate("team", "name")
     .populate("department", "name")
     .populate("members", "name email avatar")
-    .sort("-createdAt");
+    .sort("-createdAt")
+    .lean(); // Use lean() for read-only operations - ~5x faster
 
   res.status(200).json({
     success: true,
@@ -61,7 +62,8 @@ export const getBoardsByDepartment = asyncHandler(async (req, res, next) => {
     .populate("owner", "name email avatar")
     .populate("team", "name")
     .populate("members", "name email avatar")
-    .sort("-createdAt");
+    .sort("-createdAt")
+    .lean(); // Use lean() for read-only operations
 
   res.status(200).json({
     success: true,
@@ -155,7 +157,8 @@ export const getWorkflowData = asyncHandler(async (req, res, next) => {
     .populate("owner", "name email avatar role")
     .populate("team", "name")
     .populate("department", "name")
-    .populate("members", "name email avatar role");
+    .populate("members", "name email avatar role")
+    .lean(); // Use lean() for read-only operations
 
   if (!board) {
     return next(new ErrorResponse("Project not found", 404));
@@ -196,7 +199,8 @@ export const getBoard = asyncHandler(async (req, res, next) => {
     .populate("owner", "name email avatar")
     .populate("team", "name")
     .populate("department", "name")
-    .populate("members", "name email avatar");
+    .populate("members", "name email avatar")
+    .lean(); // Use lean() for read-only operations
 
   if (!board) {
     return next(new ErrorResponse("Board not found", 404));

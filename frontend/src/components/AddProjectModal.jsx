@@ -21,7 +21,7 @@ const COUNTRY_CODES = [
   { code: "+61", country: "AUS", countryCode: "AU", name: "Australia", digits: 9 },
   { code: "+86", country: "CHN", countryCode: "CN", name: "China", digits: 11 },
   { code: "+81", country: "JPN", countryCode: "JP", name: "Japan", digits: 10 },
-  { code: "+49", country: "DEU", countryCode: "DE", name: "Germany", digits: 11 },
+  { code: "+49", country: "DEU", countryCode: "DE", name: "Germany", digits: 10 },
   { code: "+33", country: "FRA", countryCode: "FR", name: "France", digits: 9 },
   { code: "+971", country: "UAE", countryCode: "AE", name: "UAE", digits: 9 },
   { code: "+65", country: "SGP", countryCode: "SG", name: "Singapore", digits: 8 },
@@ -33,14 +33,15 @@ const COUNTRY_CODES = [
   { code: "+92", country: "PAK", countryCode: "PK", name: "Pakistan", digits: 10 },
   { code: "+880", country: "BGD", countryCode: "BD", name: "Bangladesh", digits: 10 },
   { code: "+27", country: "ZAF", countryCode: "ZA", name: "South Africa", digits: 9 },
-  { code: "+60", country: "MYS", countryCode: "MY", name: "Malaysia", digits: 10 },
+  { code: "+60", country: "MYS", countryCode: "MY", name: "Malaysia", digits: 9 },
   { code: "+63", country: "PHL", countryCode: "PH", name: "Philippines", digits: 10 },
   { code: "+966", country: "SAU", countryCode: "SA", name: "Saudi Arabia", digits: 9 },
   { code: "+64", country: "NZL", countryCode: "NZ", name: "New Zealand", digits: 9 },
   { code: "+41", country: "CHE", countryCode: "CH", name: "Switzerland", digits: 9 },
   { code: "+31", country: "NLD", countryCode: "NL", name: "Netherlands", digits: 9 },
   { code: "+46", country: "SWE", countryCode: "SE", name: "Sweden", digits: 9 },
-]
+];
+
 
 // Email validation regex
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/

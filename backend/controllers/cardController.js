@@ -20,48 +20,95 @@ export const getCards = asyncHandler(async (req, res, next) => {
   const { listId } = req.params;
   const { page = 1, limit = 50 } = req.query;
 
-  const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    sort: { position: 1 },
-    populate: [
-      { path: "assignees", select: "name email avatar" },
-      { path: "members", select: "name email avatar" },
-      { path: "createdBy", select: "name email avatar" },
-      { path: "comments", select: "text htmlContent user createdAt" }
-    ]
-  };
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
 
-  const result = await Card.paginate({ list: listId }, options);
+  // Use aggregation pipeline for single query with recurrence status
+  const pipeline = [
+    { $match: { list: new mongoose.Types.ObjectId(listId) } },
+    { $sort: { position: 1 } },
+    { $skip: skip },
+    { $limit: limitNum },
+    // Lookup assignees
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'assignees',
+        foreignField: '_id',
+        as: 'assignees',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup members
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'members',
+        foreignField: '_id',
+        as: 'members',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup createdBy
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'createdBy',
+        foreignField: '_id',
+        as: 'createdByArr',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup comments
+    {
+      $lookup: {
+        from: 'comments',
+        localField: '_id',
+        foreignField: 'card',
+        as: 'comments',
+        pipeline: [{ $project: { text: 1, htmlContent: 1, user: 1, createdAt: 1 } }]
+      }
+    },
+    // Lookup recurring tasks in same pipeline
+    {
+      $lookup: {
+        from: 'recurringtasks',
+        let: { cardId: '$_id' },
+        pipeline: [
+          { $match: { $expr: { $and: [{ $eq: ['$card', '$$cardId'] }, { $eq: ['$isActive', true] }] } } },
+          { $limit: 1 },
+          { $project: { _id: 1 } }
+        ],
+        as: 'recurrence'
+      }
+    },
+    // Add computed fields
+    {
+      $addFields: {
+        createdBy: { $arrayElemAt: ['$createdByArr', 0] },
+        hasRecurrence: { $gt: [{ $size: '$recurrence' }, 0] }
+      }
+    },
+    // Clean up temporary fields
+    { $project: { createdByArr: 0, recurrence: 0 } }
+  ];
 
-  // Get card IDs from results
-  const cardIds = result.docs.map(card => card._id);
-  
-  // Get all active recurring tasks for these cards
-  const recurringTasks = await RecurringTask.find({ 
-    card: { $in: cardIds }, 
-    isActive: true 
-  }).select('card');
-  
-  const recurringCardIds = new Set(recurringTasks.map(rt => rt.card.toString()));
-
-  // Add hasRecurrence flag to each card
-  const cardsWithRecurrence = result.docs.map(card => {
-    const cardObj = card.toObject();
-    cardObj.hasRecurrence = recurringCardIds.has(card._id.toString());
-    return cardObj;
-  });
+  const [cards, countResult] = await Promise.all([
+    Card.aggregate(pipeline),
+    Card.countDocuments({ list: listId })
+  ]);
 
   res.status(200).json({
     success: true,
-    count: result.totalDocs,
+    count: countResult,
     pagination: {
-      currentPage: result.page,
-      totalPages: result.totalPages,
-      hasNext: result.hasNextPage,
-      hasPrev: result.hasPrevPage
+      currentPage: pageNum,
+      totalPages: Math.ceil(countResult / limitNum),
+      hasNext: pageNum * limitNum < countResult,
+      hasPrev: pageNum > 1
     },
-    data: cardsWithRecurrence,
+    data: cards,
   });
 });
 
@@ -72,47 +119,106 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
   const { boardId } = req.params;
   const { page = 1, limit = 100 } = req.query;
 
-  const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    sort: { position: 1 },
-    populate: [
-      { path: "assignees", select: "name email avatar" },
-      { path: "members", select: "name email avatar" },
-      { path: "createdBy", select: "name email avatar" },
-      { path: "list", select: "title" },
-      { path: "loggedTime.user", select: "name email avatar" },
-      { path: "comments", select: "text htmlContent user createdAt" }
-    ]
-  };
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
 
-  const result = await Card.paginate({ board: boardId }, options);
+  // Use aggregation pipeline for single query with recurrence status
+  const pipeline = [
+    { $match: { board: new mongoose.Types.ObjectId(boardId) } },
+    { $sort: { position: 1 } },
+    { $skip: skip },
+    { $limit: limitNum },
+    // Lookup assignees
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'assignees',
+        foreignField: '_id',
+        as: 'assignees',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup members
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'members',
+        foreignField: '_id',
+        as: 'members',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup createdBy
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'createdBy',
+        foreignField: '_id',
+        as: 'createdByArr',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup list
+    {
+      $lookup: {
+        from: 'lists',
+        localField: 'list',
+        foreignField: '_id',
+        as: 'listArr',
+        pipeline: [{ $project: { title: 1 } }]
+      }
+    },
+    // Lookup comments
+    {
+      $lookup: {
+        from: 'comments',
+        localField: '_id',
+        foreignField: 'card',
+        as: 'comments',
+        pipeline: [{ $project: { text: 1, htmlContent: 1, user: 1, createdAt: 1 } }]
+      }
+    },
+    // Lookup recurring tasks in same pipeline
+    {
+      $lookup: {
+        from: 'recurringtasks',
+        let: { cardId: '$_id' },
+        pipeline: [
+          { $match: { $expr: { $and: [{ $eq: ['$card', '$$cardId'] }, { $eq: ['$isActive', true] }] } } },
+          { $limit: 1 },
+          { $project: { _id: 1 } }
+        ],
+        as: 'recurrence'
+      }
+    },
+    // Add computed fields
+    {
+      $addFields: {
+        createdBy: { $arrayElemAt: ['$createdByArr', 0] },
+        list: { $arrayElemAt: ['$listArr', 0] },
+        hasRecurrence: { $gt: [{ $size: '$recurrence' }, 0] }
+      }
+    },
+    // Clean up temporary fields
+    { $project: { createdByArr: 0, listArr: 0, recurrence: 0 } }
+  ];
 
-  // Get all active recurring tasks for this board
-  const recurringTasks = await RecurringTask.find({ 
-    board: boardId, 
-    isActive: true 
-  }).select('card');
-  
-  const recurringCardIds = new Set(recurringTasks.map(rt => rt.card.toString()));
-
-  // Add hasRecurrence flag to each card
-  const cardsWithRecurrence = result.docs.map(card => {
-    const cardObj = card.toObject();
-    cardObj.hasRecurrence = recurringCardIds.has(card._id.toString());
-    return cardObj;
-  });
+  const [cards, countResult] = await Promise.all([
+    Card.aggregate(pipeline),
+    Card.countDocuments({ board: boardId })
+  ]);
 
   res.status(200).json({
     success: true,
-    count: result.totalDocs,
+    count: countResult,
     pagination: {
-      currentPage: result.page,
-      totalPages: result.totalPages,
-      hasNext: result.hasNextPage,
-      hasPrev: result.hasPrevPage
+      currentPage: pageNum,
+      totalPages: Math.ceil(countResult / limitNum),
+      hasNext: pageNum * limitNum < countResult,
+      hasPrev: pageNum > 1
     },
-    data: cardsWithRecurrence,
+    data: cards,
   });
 });
 
@@ -316,30 +422,94 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
 // @route   GET /api/cards/:id
 // @access  Private
 export const getCard = asyncHandler(async (req, res, next) => {
-  const card = await Card.findById(req.params.id)
-    .populate("assignees", "name email avatar")
-    .populate("members", "name email avatar")
-    .populate("createdBy", "name email avatar")
-    .populate("list", "title")
-    .populate("board", "name")
-    .populate("loggedTime.user", "name email avatar");
+  // Use aggregation to get card with recurrence status in single query
+  const pipeline = [
+    { $match: { _id: new mongoose.Types.ObjectId(req.params.id) } },
+    // Lookup assignees
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'assignees',
+        foreignField: '_id',
+        as: 'assignees',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup members
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'members',
+        foreignField: '_id',
+        as: 'members',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup createdBy
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'createdBy',
+        foreignField: '_id',
+        as: 'createdByArr',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup list
+    {
+      $lookup: {
+        from: 'lists',
+        localField: 'list',
+        foreignField: '_id',
+        as: 'listArr',
+        pipeline: [{ $project: { title: 1 } }]
+      }
+    },
+    // Lookup board
+    {
+      $lookup: {
+        from: 'boards',
+        localField: 'board',
+        foreignField: '_id',
+        as: 'boardArr',
+        pipeline: [{ $project: { name: 1 } }]
+      }
+    },
+    // Lookup recurring tasks in same pipeline
+    {
+      $lookup: {
+        from: 'recurringtasks',
+        let: { cardId: '$_id' },
+        pipeline: [
+          { $match: { $expr: { $and: [{ $eq: ['$card', '$$cardId'] }, { $eq: ['$isActive', true] }] } } },
+          { $limit: 1 },
+          { $project: { _id: 1 } }
+        ],
+        as: 'recurrence'
+      }
+    },
+    // Add computed fields
+    {
+      $addFields: {
+        createdBy: { $arrayElemAt: ['$createdByArr', 0] },
+        list: { $arrayElemAt: ['$listArr', 0] },
+        board: { $arrayElemAt: ['$boardArr', 0] },
+        hasRecurrence: { $gt: [{ $size: '$recurrence' }, 0] }
+      }
+    },
+    // Clean up temporary fields
+    { $project: { createdByArr: 0, listArr: 0, boardArr: 0, recurrence: 0 } }
+  ];
 
-  if (!card) {
+  const results = await Card.aggregate(pipeline);
+  
+  if (!results || results.length === 0) {
     return next(new ErrorResponse("Card not found", 404));
   }
 
-  // Check if card has active recurrence
-  const recurringTask = await RecurringTask.findOne({ 
-    card: card._id, 
-    isActive: true 
-  });
-
-  const cardObj = card.toObject();
-  cardObj.hasRecurrence = !!recurringTask;
-
   res.status(200).json({
     success: true,
-    data: cardObj,
+    data: results[0],
   });
 });
 
@@ -358,10 +528,15 @@ export const createCard = asyncHandler(async (req, res, next) => {
     priority,
     dueDate,
     startDate,
+    position,
   } = req.body;
 
-  // Get the list to determine the status
-  const cardList = await List.findById(list);
+  // Get the list and count cards in parallel
+  const [cardList, cardCount] = await Promise.all([
+    List.findById(list).lean(),
+    position === undefined || position === null ? Card.countDocuments({ list }) : Promise.resolve(position)
+  ]);
+  
   if (!cardList) {
     return next(new ErrorResponse("List not found", 404));
   }
@@ -378,7 +553,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
     dueDate,
     startDate,
     status: cardList.title.toLowerCase().replace(/\s+/g, '-'),
-    position: await Card.countDocuments({ list }),
+    position: cardCount,
     createdBy: req.user.id,
   });
 

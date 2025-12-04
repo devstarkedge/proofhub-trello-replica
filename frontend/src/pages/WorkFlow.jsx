@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, Suspense, memo, useCallback } from 'react';
+import React, { useState, useEffect, useContext, Suspense, memo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw } from 'lucide-react';
@@ -23,6 +23,9 @@ const WorkFlow = memo(() => {
   const navigate = useNavigate();
   const { currentTeam, loading: teamLoading } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
+  
+  // Track previous projectId to detect changes
+  const prevProjectIdRef = useRef(projectId);
 
   // Use workflow store
   const {
@@ -31,7 +34,9 @@ const WorkFlow = memo(() => {
     cardsByList,
     loading,
     error,
+    currentProjectId,
     initializeWorkflow,
+    clearWorkflow,
     updateBoard,
     addCard,
     deleteCard,
@@ -63,6 +68,28 @@ const WorkFlow = memo(() => {
   const closeHierarchyToDepth = useModalHierarchyStore((state) => state.closeToDepth);
   const updateHierarchyLabel = useModalHierarchyStore((state) => state.updateItemLabel);
   const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
+
+  // Reset local state when projectId changes
+  useEffect(() => {
+    if (prevProjectIdRef.current && prevProjectIdRef.current !== projectId) {
+      // Clear workflow data immediately when project changes
+      clearWorkflow();
+      // Reset all local filters and state
+      setStatusFilter('All');
+      setPriorityFilter('All');
+      setSearchQuery('');
+      setDebouncedSearch('');
+      setShowFilters(false);
+      setEditModalOpen(false);
+      setSelectedProject(null);
+      setFullProjectData(null);
+      setShareAutoOpened(false);
+      setShowRecurringPage(false);
+      // Close any open modals
+      closeHierarchy();
+    }
+    prevProjectIdRef.current = projectId;
+  }, [projectId, clearWorkflow, closeHierarchy]);
 
   useEffect(() => {
     if (projectId && !teamLoading) {
@@ -124,7 +151,8 @@ useEffect(() => {
   }
 }, [board, setHierarchyProject]);
 
-  const loadData = async () => {
+  // Memoize loadData to prevent recreation
+  const loadData = useCallback(async () => {
     try {
       // Check department access first
       const response = await Database.getProject(projectId);
@@ -146,21 +174,22 @@ useEffect(() => {
       console.error('Error loading project data:', error);
       throw error; // Let the store handle error state
     }
-  };
+  }, [deptId, projectId, initializeWorkflow]);
   
-  const handleAddCard = async (listId, title) => {
+  // Memoize card handlers
+  const handleAddCard = useCallback(async (listId, title) => {
     try {
       await addCard(listId, title, board._id);
     } catch (error) {
       console.error('Error adding card:', error);
     }
-  };
+  }, [addCard, board?._id]);
 
   const handleSearchChange = useCallback((e) => setSearchQuery(e.target.value), []);
   const handleStatusChange = useCallback((e) => setStatusFilter(e.target.value), []);
   const handlePriorityChange = useCallback((e) => setPriorityFilter(e.target.value), []);
 
-  const handleDeleteCard = async (cardId, options = {}) => {
+  const handleDeleteCard = useCallback(async (cardId, options = {}) => {
     if (!cardId) return;
     const {
       skipConfirm = false,
@@ -181,7 +210,7 @@ useEffect(() => {
         toast.success('Deleted successfully');
       }
       if (closeModals) {
-        closeAllModals();
+        closeHierarchy();
       }
     } catch (error) {
       console.error('Error deleting card:', error);
@@ -190,17 +219,17 @@ useEffect(() => {
       }
       throw error;
     }
-  };
+  }, [deleteCard, closeHierarchy]);
 
-  const handleUpdateCard = async (cardId, updates) => {
+  const handleUpdateCard = useCallback(async (cardId, updates) => {
     try {
       await updateCard(cardId, updates);
     } catch (error) {
       console.error('Error updating card:', error);
     }
-  };
+  }, [updateCard]);
 
-  const handleMoveCard = async (cardId, newListId, newPosition) => {
+  const handleMoveCard = useCallback(async (cardId, newListId, newPosition) => {
     try {
       // Get the target list to determine new status
       const targetList = lists.find(list => list._id === newListId);
@@ -214,17 +243,17 @@ useEffect(() => {
     } catch (error) {
       console.error('Error moving card:', error);
     }
-  };
+  }, [lists, moveCard]);
 
-  const handleAddList = async (title) => {
+  const handleAddList = useCallback(async (title) => {
     try {
       await addList(board._id, title);
     } catch (error) {
       console.error('Error adding list:', error);
     }
-  };
+  }, [addList, board?._id]);
 
-  const handleDeleteList = async (listId) => {
+  const handleDeleteList = useCallback(async (listId) => {
     if (window.confirm('Are you sure you want to delete this list and all its cards?')) {
       try {
         await deleteList(listId);
@@ -232,25 +261,25 @@ useEffect(() => {
         console.error('Error deleting list:', error);
       }
     }
-  };
+  }, [deleteList]);
 
-  const handleUpdateListColor = async (listId, color) => {
+  const handleUpdateListColor = useCallback(async (listId, color) => {
     try {
       await updateListColor(listId, color);
     } catch (error) {
       console.error('Error updating list color:', error);
     }
-  };
+  }, [updateListColor]);
 
-  const handleMoveList = async (listId, newPosition) => {
+  const handleMoveList = useCallback(async (listId, newPosition) => {
     try {
       await moveList(listId, newPosition);
     } catch (error) {
       console.error('Error moving list:', error);
     }
-  };
+  }, [moveList]);
 
-  const handleOpenEditModal = async () => {
+  const handleOpenEditModal = useCallback(async () => {
     if (user && (user.role === 'admin' || user.role === 'manager')) {
       try {
         // Fetch full project data to ensure team members are loaded
@@ -264,31 +293,31 @@ useEffect(() => {
         console.error('Error fetching full project data:', error);
       }
     }
-  };
+  }, [user, projectId]);
 
-  const handleProjectUpdated = (updatedProject) => {
+  const handleProjectUpdated = useCallback((updatedProject) => {
     updateBoard({
       name: updatedProject.name,
       description: updatedProject.description
     });
-  };
+  }, [updateBoard]);
 
-  const handleOpenCardModal = (card) => {
+  const handleOpenCardModal = useCallback((card) => {
     if (!card) return;
     openHierarchyModal({
       type: 'task',
       entity: card,
       project: board
     });
-  };
+  }, [openHierarchyModal, board]);
 
-  const closeAllModals = () => closeHierarchy();
+  const closeAllModals = useCallback(() => closeHierarchy(), [closeHierarchy]);
 
-  const closeModalToDepth = (depth) => {
+  const closeModalToDepth = useCallback((depth) => {
     closeHierarchyToDepth(depth);
-  };
+  }, [closeHierarchyToDepth]);
 
-  const handleOpenChildEntity = (child, parentDepth) => {
+  const handleOpenChildEntity = useCallback((child, parentDepth) => {
     if (!child?.entityId || !child?.type) return;
     const entity =
       child.initialData ||
@@ -303,7 +332,7 @@ useEffect(() => {
       entity,
       parentDepth
     });
-  };
+  }, [openHierarchyModal]);
 
   const handleStackLabelUpdate = useCallback((item, label) => {
     if (!item?.entityId) return;
@@ -466,7 +495,9 @@ useEffect(() => {
     autoOpenSharedPath();
   }, [taskId, loading, shareAutoOpened, board, autoOpenSharedPath]);
   
-  if (loading || teamLoading) {
+  // Show loading skeleton while loading, team loading, or when projectId doesn't match current data
+  const isProjectMismatch = currentProjectId && currentProjectId !== projectId;
+  if (loading || teamLoading || isProjectMismatch) {
     return <WorkflowSkeleton />;
   }
 

@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import Database from '../services/database';
 
+// Track the current request to prevent race conditions
+let currentRequestId = 0;
+
 const useWorkflowStore = create(
   devtools(
     (set, get) => ({
@@ -12,6 +15,7 @@ const useWorkflowStore = create(
       loading: true,
       error: null,
       lastUpdated: null,
+      currentProjectId: null, // Track which project data belongs to
 
       // Actions
       setBoard: (board) => set({ board }),
@@ -23,17 +27,40 @@ const useWorkflowStore = create(
 
       // OPTIMIZED: Initialize workflow data with single API call
       initializeWorkflow: async (projectId) => {
+        // Increment request ID to track this specific request
+        const requestId = ++currentRequestId;
+        
         try {
-          set({ loading: true, error: null, lists: [], cardsByList: {} });
+          // Clear previous data immediately and set loading
+          set({ 
+            loading: true, 
+            error: null, 
+            board: null,
+            lists: [], 
+            cardsByList: {},
+            currentProjectId: projectId 
+          });
 
           // Use the new optimized endpoint that returns everything in one call
           const response = await Database.getWorkflowComplete(projectId);
+          
+          // Check if this request is still the current one (prevent race conditions)
+          if (requestId !== currentRequestId) {
+            console.log('Stale request ignored for project:', projectId);
+            return;
+          }
           
           if (!response.success) {
             throw new Error(response.message || 'Failed to load project');
           }
 
           const { board, lists, cardsByList } = response.data;
+          
+          // Double-check we're still on the same project
+          if (get().currentProjectId !== projectId) {
+            console.log('Project changed during load, ignoring result');
+            return;
+          }
           
           // Set all data at once
           set({ 
@@ -43,33 +70,49 @@ const useWorkflowStore = create(
             lastUpdated: Date.now() 
           });
         } catch (error) {
+          // Only set error if this is still the current request
+          if (requestId !== currentRequestId) return;
+          
           console.error('Error initializing workflow:', error);
           set({ error: error.message || 'Failed to load workflow' });
           
           // Fallback to legacy loading if new endpoint fails
           try {
-            await get().initializeWorkflowLegacy(projectId);
+            await get().initializeWorkflowLegacy(projectId, requestId);
           } catch (legacyError) {
             console.error('Legacy loading also failed:', legacyError);
           }
         } finally {
-          set({ loading: false });
+          // Only set loading false if this is still the current request
+          if (requestId === currentRequestId) {
+            set({ loading: false });
+          }
         }
       },
 
       // Legacy method for backward compatibility
-      initializeWorkflowLegacy: async (projectId) => {
+      initializeWorkflowLegacy: async (projectId, requestId) => {
+        // Check if request is still valid
+        if (requestId !== undefined && requestId !== currentRequestId) return;
+        
         // Fetch board data
         const response = await Database.getProject(projectId);
         if (!response.success) {
           throw new Error(response.message || 'Failed to load project');
         }
 
+        // Check again after async operation
+        if (requestId !== undefined && requestId !== currentRequestId) return;
+
         const projectBoard = response.data;
         set({ board: projectBoard });
 
         // Fetch lists first
         const listsResponse = await Database.getLists(projectBoard._id);
+        
+        // Check again after async operation
+        if (requestId !== undefined && requestId !== currentRequestId) return;
+        
         const boardLists = Array.isArray(listsResponse.data) ? listsResponse.data : 
                           Array.isArray(listsResponse) ? listsResponse : [];
 
@@ -82,6 +125,9 @@ const useWorkflowStore = create(
         // Fetch cards for all lists in parallel
         const cardPromises = boardLists.map(list => Database.getCards(list._id));
         const cardsResponses = await Promise.all(cardPromises);
+        
+        // Final check before setting state
+        if (requestId !== undefined && requestId !== currentRequestId) return;
 
         // Group cards by listId
         const cardsMap = {};
@@ -203,24 +249,22 @@ const useWorkflowStore = create(
 
         if (!originalCard) return;
 
-        // If assignees are being updated, populate them with user data
+        // Process updates - avoid fetching users on every update
+        // Only populate assignees if they're IDs (strings), otherwise keep them as-is
         let processedUpdates = { ...updates };
         if (updates.assignees && Array.isArray(updates.assignees)) {
-          try {
-            // Fetch team members to populate assignee data
-            const usersResponse = await Database.getUsers();
-            const teamMembers = usersResponse.data || [];
-
+          // Check if assignees are already populated objects
+          const needsPopulation = updates.assignees.some(a => typeof a === 'string');
+          if (needsPopulation) {
+            // Use board members from current state instead of fetching users
+            const boardMembers = get().board?.members || [];
             processedUpdates.assignees = updates.assignees.map(assigneeId => {
-              const user = teamMembers.find(u => u._id === assigneeId);
+              if (typeof assigneeId === 'object') return assigneeId;
+              const user = boardMembers.find(u => u._id === assigneeId);
               return user ? { _id: user._id, name: user.name, email: user.email } : { _id: assigneeId, name: 'Unknown', email: '' };
             });
-          } catch (error) {
-            console.error('Error fetching team members for assignee population:', error);
-            // Fallback: keep assignees as IDs if population fails
-            processedUpdates.assignees = updates.assignees;
           }
-        };
+        }
 
         // Optimistic update
         set((state) => {
@@ -535,9 +579,10 @@ const useWorkflowStore = create(
         board: null,
         lists: [],
         cardsByList: {},
-        loading: false,
+        loading: true,
         error: null,
-        lastUpdated: null
+        lastUpdated: null,
+        currentProjectId: null
       })
     }),
     {

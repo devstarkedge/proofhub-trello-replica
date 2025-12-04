@@ -191,14 +191,13 @@ class DatabaseService {
     return await res.json();
   }
 
-  async createList(boardId, title) {
+  async createList(boardId, title, position = null) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const lists = await this.getLists(boardId);
-    const position = lists.length;
+    // Position will be handled by backend if not provided
     const res = await fetch(`${baseURL}/api/lists`, {
       method: 'POST',
       headers,
@@ -280,14 +279,13 @@ class DatabaseService {
     return await res.json();
   }
 
-  async createCard(listId, title, boardId) {
+  async createCard(listId, title, boardId, position = null) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const cards = await this.getCards(listId);
-    const position = cards.length;
+    // Position will be handled by backend if not provided
     const res = await fetch(`${baseURL}/api/cards`, {
       method: 'POST',
       headers,
