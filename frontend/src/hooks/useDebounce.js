@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 
-export function useDebounce(value, delay) {
+// Returns debounced value - can be destructured as array or used directly
+export function useDebounce(value, delay = 200) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
   useEffect(() => {
@@ -13,5 +14,8 @@ export function useDebounce(value, delay) {
     };
   }, [value, delay]);
 
-  return debouncedValue;
+  // Return as array for destructuring compatibility [debouncedValue]
+  const result = [debouncedValue];
+  result.value = debouncedValue; // Also allow direct access
+  return result;
 }

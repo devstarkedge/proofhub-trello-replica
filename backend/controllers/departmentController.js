@@ -35,39 +35,148 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
 // @route   GET /api/departments/with-assignments
 // @access  Private
 export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next) => {
-  // Get all departments with basic info
-  const departments = await Department.find({ isActive: true })
-    .populate("managers", "name email")
-    .populate("members", "name email")
-    .populate("projects", "name description background members status")
-    .sort("name");
-
-  // Prepare result with member assignments data
-  const departmentsWithAssignments = await Promise.all(
-    departments.map(async (dept) => {
-      // Get members with assignments for this department
-      const membersWithAssignments = await getMembersWithAssignmentsData(dept._id);
-
-      // Get projects with member assignments mapping
-      const projectsWithMemberAssignments = {};
-      for (const member of membersWithAssignments) {
-        const memberProjects = await getProjectsWithMemberAssignmentsData(dept._id, member._id);
-        projectsWithMemberAssignments[member._id] = memberProjects;
+  // OPTIMIZED: Single aggregation pipeline instead of N+1 queries
+  const departments = await Department.aggregate([
+    { $match: { isActive: true } },
+    // Lookup managers
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'managers',
+        foreignField: '_id',
+        pipeline: [{ $project: { name: 1, email: 1 } }],
+        as: 'managers'
       }
-
-      return {
-        ...dept.toObject(),
-        projectsCount: dept.projects.length,
-        membersWithAssignments,
-        projectsWithMemberAssignments
-      };
-    })
-  );
+    },
+    // Lookup members
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'members',
+        foreignField: '_id',
+        pipeline: [{ $project: { name: 1, email: 1 } }],
+        as: 'members'
+      }
+    },
+    // Lookup projects (boards)
+    {
+      $lookup: {
+        from: 'boards',
+        let: { deptId: '$_id' },
+        pipeline: [
+          { $match: { $expr: { $eq: ['$department', '$$deptId'] }, isArchived: false } },
+          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1 } }
+        ],
+        as: 'projects'
+      }
+    },
+    // Lookup all cards for this department's projects
+    {
+      $lookup: {
+        from: 'cards',
+        let: { projectIds: '$projects._id' },
+        pipeline: [
+          { $match: { $expr: { $in: ['$board', '$$projectIds'] } } },
+          { $project: { board: 1, assignees: 1, members: 1 } }
+        ],
+        as: 'allCards'
+      }
+    },
+    // Compute derived fields
+    {
+      $addFields: {
+        projectsCount: { $size: '$projects' },
+        // Collect all assigned member IDs from projects and cards
+        _assignedMemberIds: {
+          $setUnion: [
+            // Members from projects
+            { $reduce: {
+              input: '$projects',
+              initialValue: [],
+              in: { $concatArrays: ['$$value', { $ifNull: ['$$this.members', []] }] }
+            }},
+            // Assignees from cards
+            { $reduce: {
+              input: '$allCards',
+              initialValue: [],
+              in: { $concatArrays: ['$$value', { $ifNull: ['$$this.assignees', []] }] }
+            }},
+            // Members from cards
+            { $reduce: {
+              input: '$allCards',
+              initialValue: [],
+              in: { $concatArrays: ['$$value', { $ifNull: ['$$this.members', []] }] }
+            }}
+          ]
+        }
+      }
+    },
+    // Filter members to only those with assignments
+    {
+      $addFields: {
+        membersWithAssignments: {
+          $filter: {
+            input: '$members',
+            as: 'member',
+            cond: { $in: ['$$member._id', '$_assignedMemberIds'] }
+          }
+        }
+      }
+    },
+    // Build projectsWithMemberAssignments mapping
+    {
+      $addFields: {
+        projectsWithMemberAssignments: {
+          $arrayToObject: {
+            $map: {
+              input: '$membersWithAssignments',
+              as: 'member',
+              in: {
+                k: { $toString: '$$member._id' },
+                v: {
+                  $filter: {
+                    input: '$projects',
+                    as: 'project',
+                    cond: {
+                      $or: [
+                        { $in: ['$$member._id', { $ifNull: ['$$project.members', []] }] },
+                        { $gt: [
+                          { $size: {
+                            $filter: {
+                              input: '$allCards',
+                              as: 'card',
+                              cond: {
+                                $and: [
+                                  { $eq: ['$$card.board', '$$project._id'] },
+                                  { $or: [
+                                    { $in: ['$$member._id', { $ifNull: ['$$card.assignees', []] }] },
+                                    { $in: ['$$member._id', { $ifNull: ['$$card.members', []] }] }
+                                  ]}
+                                ]
+                              }
+                            }
+                          }},
+                          0
+                        ]}
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    // Clean up internal fields
+    { $project: { allCards: 0, _assignedMemberIds: 0 } },
+    { $sort: { name: 1 } }
+  ]);
 
   res.status(200).json({
     success: true,
-    count: departmentsWithAssignments.length,
-    data: departmentsWithAssignments,
+    count: departments.length,
+    data: departments,
   });
 });
 

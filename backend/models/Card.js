@@ -185,6 +185,19 @@ cardSchema.index({ dueDate: 1, status: 1 }); // For overdue task queries
 cardSchema.index({ priority: 1, dueDate: 1 }); // For priority + deadline sorting
 cardSchema.index({ createdBy: 1, createdAt: -1 }); // For user-created tasks timeline
 
+// New compound indexes for optimized queries
+cardSchema.index({ list: 1, isArchived: 1, position: 1 }); // For list cards with position sorting
+cardSchema.index({ board: 1, list: 1, status: 1 }); // For board filtering by list and status
+cardSchema.index({ board: 1, list: 1, position: 1 }); // For board cards sorted by position
+cardSchema.index({ 'assignees': 1, 'dueDate': 1, 'status': 1 }); // For user overdue dashboard
+cardSchema.index({ board: 1, assignees: 1 }); // For project member tasks
+cardSchema.index({ board: 1, members: 1 }); // For project member involvement
+// Text index for search
+cardSchema.index({ title: 'text', description: 'text', labels: 'text' }, {
+  weights: { title: 10, labels: 5, description: 1 },
+  name: 'card_text_search'
+});
+
 // Virtual for comments
 cardSchema.virtual('comments', {
   ref: 'Comment',

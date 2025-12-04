@@ -11,6 +11,7 @@ import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import HomePageSkeleton from '../components/LoadingSkeleton';
+import { useDebounce } from '../hooks/useDebounce';
 import { lazy, Suspense } from 'react';
 
 // Lazy load modals for better initial load
@@ -42,6 +43,7 @@ const HomePage = () => {
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery] = useDebounce(searchQuery, 200);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedMembers, setSelectedMembers] = useState({});
@@ -220,11 +222,11 @@ const HomePage = () => {
 
     let filtered = projects;
 
-    // Search filter
-    if (searchQuery) {
+    // Search filter - use debounced value
+    if (debouncedSearchQuery) {
       filtered = filtered.filter(project =>
-        project.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        project.description?.toLowerCase().includes(searchQuery.toLowerCase())
+        project.name?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+        project.description?.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
       );
     }
 
@@ -245,7 +247,7 @@ const HomePage = () => {
     }
 
     return filtered;
-  }, [searchQuery, filterStatus, selectedMembers, projectsWithMemberAssignments]);
+  }, [debouncedSearchQuery, filterStatus, selectedMembers, projectsWithMemberAssignments]);
 
   const canAddProject = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
 

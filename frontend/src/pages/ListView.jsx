@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo, lazy, Suspense, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useContext, useMemo, lazy, Suspense, useRef, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -422,7 +422,8 @@ const ListView = () => {
 
   const hasActiveFilters = filters.status !== 'all' || filters.priority !== 'all' || filters.search !== '' || filters.dateFrom !== '' || filters.dateTo !== '';
 
-  const getStats = () => {
+  // Memoized stats calculation to prevent recalculating on every render
+  const stats = useMemo(() => {
     const total = cards.length;
     const completed = cards.filter(c => c.list?.title?.toLowerCase() === 'done').length;
     const inProgress = cards.filter(c => c.list?.title?.toLowerCase() === 'in progress').length;
@@ -435,11 +436,9 @@ const ListView = () => {
     }).length;
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { total, completed, inProgress, highPriority, overdue, completionRate };
-  };
+  }, [cards]);
 
-  const stats = getStats();
-
-  const getPriorityPill = (priority) => {
+  const getPriorityPill = useCallback((priority) => {
     if (!priority) {
       return (
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 transition-all duration-200 hover:scale-105 w-fit">
@@ -462,9 +461,9 @@ const ListView = () => {
         <span className={`text-xs font-semibold ${color}`}>{priority}</span>
       </div>
     );
-  };
+  }, []);
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = useCallback((status) => {
     const config = {
       'To-Do': { color: 'bg-slate-50 text-slate-700 border-slate-300', icon: ClipboardList, glow: 'hover:shadow-slate-200' },
       'In Progress': { color: 'bg-blue-50 text-blue-700 border-blue-300', icon: Activity, glow: 'hover:shadow-blue-200' },
@@ -479,9 +478,9 @@ const ListView = () => {
         <span className="text-xs font-semibold">{status}</span>
       </div>
     );
-  };
+  }, []);
 
-  const getDueDateColor = (dueDate) => {
+  const getDueDateColor = useCallback((dueDate) => {
     if (!dueDate) return 'text-gray-400';
     const today = new Date();
     const due = new Date(dueDate);
@@ -491,9 +490,9 @@ const ListView = () => {
     if (diffDays === 0) return 'text-orange-600 font-semibold';
     if (diffDays <= 3) return 'text-amber-600 font-semibold';
     return 'text-gray-600';
-  };
+  }, []);
 
-  const formatDueDate = (dueDate) => {
+  const formatDueDate = useCallback((dueDate) => {
     if (!dueDate) return 'No due date';
     const date = new Date(dueDate);
     const today = new Date();
@@ -503,9 +502,9 @@ const ListView = () => {
     if (diffDays === 0) return 'Due today';
     if (diffDays === 1) return 'Due tomorrow';
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
+  }, []);
 
-  const calculateTotalLoggedTime = (loggedTime) => {
+  const calculateTotalLoggedTime = useCallback((loggedTime) => {
     if (!loggedTime || loggedTime.length === 0) return '0h 0m';
 
     const totalMinutes = loggedTime.reduce((acc, entry) => {
@@ -516,9 +515,9 @@ const ListView = () => {
     const minutes = totalMinutes % 60;
 
     return `${hours}h ${minutes}m`;
-  };
+  }, []);
 
-  const handleExport = () => {
+  const handleExport = useCallback(() => {
     if (filteredAndSortedCards.length === 0) {
       alert('No tasks to export');
       return;
@@ -632,9 +631,9 @@ const ListView = () => {
 
     const fileName = `tasks_export_${currentDepartment?.name || 'all'}_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(workbook, fileName);
-  };
+  }, [filteredAndSortedCards, currentDepartment]);
 
-  const renderSkeleton = () => (
+  const renderSkeleton = useCallback(() => (
     [...Array(8)].map((_, i) => (
       <TableRow key={i} className="animate-pulse">
         <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-3/4"></div></TableCell>
@@ -645,7 +644,7 @@ const ListView = () => {
         <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2"></div></TableCell>
       </TableRow>
     ))
-  );
+  ), []);
 
   const rowPaddingClass = viewMode === 'compact' ? 'py-2' : viewMode === 'comfortable' ? 'py-4' : 'py-6';
 
@@ -1348,7 +1347,8 @@ const ListView = () => {
   );
 };
 
-const StatCard = ({ title, value, icon: Icon, color, subtitle, delay, pulse }) => {
+// Memoized StatCard component to prevent unnecessary re-renders
+const StatCard = memo(({ title, value, icon: Icon, color, subtitle, delay, pulse }) => {
   const colorClasses = {
     blue: {
       bg: 'from-blue-500 to-cyan-500',
@@ -1411,9 +1411,11 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle, delay, pulse }) =
       </div>
     </div>
   );
-};
+});
+StatCard.displayName = 'StatCard';
 
-const FilterDropdown = ({ label, icon: Icon, options, value, onValueChange }) => (
+// Memoized FilterDropdown component
+const FilterDropdown = memo(({ label, icon: Icon, options, value, onValueChange }) => (
   <DropdownMenu>
     <DropdownMenuTrigger asChild>
       <Button variant="outline" className="flex items-center gap-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 border-2 rounded-xl hover:border-blue-300 group">
@@ -1442,9 +1444,10 @@ const FilterDropdown = ({ label, icon: Icon, options, value, onValueChange }) =>
       ))}
     </DropdownMenuContent>
   </DropdownMenu>
-);
+));
+FilterDropdown.displayName = 'FilterDropdown';
 
-const SortableHeader = ({ title, sortKey, sorting, onSort, icon: Icon }) => (
+const SortableHeader = memo(({ title, sortKey, sorting, onSort, icon: Icon }) => (
   <TableHead 
     className="cursor-pointer select-none hover:bg-gradient-to-r hover:from-blue-100/50 hover:to-indigo-100/50 transition-all duration-200 group"
     onClick={() => onSort(sortKey)}
@@ -1464,6 +1467,7 @@ const SortableHeader = ({ title, sortKey, sorting, onSort, icon: Icon }) => (
       )}
     </div>
   </TableHead>
-);
+));
+SortableHeader.displayName = 'SortableHeader';
 
-export default ListView;
+export default memo(ListView);

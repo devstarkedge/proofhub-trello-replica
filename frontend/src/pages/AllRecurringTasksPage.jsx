@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RefreshCw, Calendar, Clock, User, Edit2, Trash2, ChevronLeft,
@@ -7,6 +7,7 @@ import {
 import { toast } from 'react-toastify';
 import Database from '../services/database';
 import RecurringSettingsModal from '../components/RecurringSettingsModal';
+import { useDebounce } from '../hooks/useDebounce';
 
 const SCHEDULE_TYPE_LABELS = {
   daily: 'Daily',
@@ -27,6 +28,7 @@ const AllRecurringTasksPage = ({ boardId, boardName, onBack, onOpenCard }) => {
   const [recurrences, setRecurrences] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery] = useDebounce(searchQuery, 200);
   const [filterActive, setFilterActive] = useState('all'); // 'all', 'active', 'inactive'
   const [selectedRecurrence, setSelectedRecurrence] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -176,21 +178,24 @@ const AllRecurringTasksPage = ({ boardId, boardName, onBack, onOpenCard }) => {
     }
   };
 
-  const filteredRecurrences = recurrences.filter(r => {
-    // Filter by active status
-    if (filterActive === 'active' && !r.isActive) return false;
-    if (filterActive === 'inactive' && r.isActive) return false;
-    
-    // Filter by search query
-    if (searchQuery) {
-      const cardTitle = r.card?.title?.toLowerCase() || '';
-      const template = r.subtaskTemplate?.title?.toLowerCase() || '';
-      const query = searchQuery.toLowerCase();
-      if (!cardTitle.includes(query) && !template.includes(query)) return false;
-    }
-    
-    return true;
-  });
+  // OPTIMIZED: Use memoized filter with debounced search query
+  const filteredRecurrences = useMemo(() => {
+    return recurrences.filter(r => {
+      // Filter by active status
+      if (filterActive === 'active' && !r.isActive) return false;
+      if (filterActive === 'inactive' && r.isActive) return false;
+      
+      // Filter by debounced search query (prevents filtering on every keystroke)
+      if (debouncedSearchQuery) {
+        const cardTitle = r.card?.title?.toLowerCase() || '';
+        const template = r.subtaskTemplate?.title?.toLowerCase() || '';
+        const query = debouncedSearchQuery.toLowerCase();
+        if (!cardTitle.includes(query) && !template.includes(query)) return false;
+      }
+      
+      return true;
+    });
+  }, [recurrences, filterActive, debouncedSearchQuery]);
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col">

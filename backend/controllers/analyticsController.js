@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Card from '../models/Card.js';
 import Board from '../models/Board.js';
 import Team from '../models/Team.js';
@@ -10,43 +11,92 @@ import { ErrorResponse } from '../middleware/errorHandler.js';
 // @access  Private
 export const getUserAnalytics = asyncHandler(async (req, res, next) => {
   const { userId } = req.params;
-
-  // Get all cards assigned to this user
-  const cards = await Card.find({ assignees: userId });
-
-  // Calculate statistics
-  const totalTasks = cards.length;
-  const completedTasks = cards.filter(c => c.status === 'done').length;
-  const inProgressTasks = cards.filter(c => c.status === 'in-progress').length;
-  const todoTasks = cards.filter(c => c.status === 'todo').length;
-  const reviewTasks = cards.filter(c => c.status === 'review').length;
-
-  // Overdue tasks
   const now = new Date();
-  const overdueTasks = cards.filter(c => c.dueDate && new Date(c.dueDate) < now && c.status !== 'done');
 
-  // Priority breakdown
-  const priorityBreakdown = {
-    low: cards.filter(c => c.priority === 'low').length,
-    medium: cards.filter(c => c.priority === 'medium').length,
-    high: cards.filter(c => c.priority === 'high').length,
-    critical: cards.filter(c => c.priority === 'critical').length
-  };
+  // Use aggregation pipeline for optimized single-query analytics
+  const [analytics] = await Card.aggregate([
+    { $match: { assignees: { $in: [new mongoose.Types.ObjectId(userId)] } } },
+    {
+      $facet: {
+        // Status counts
+        statusCounts: [
+          {
+            $group: {
+              _id: '$status',
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        // Priority breakdown
+        priorityCounts: [
+          {
+            $group: {
+              _id: '$priority',
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        // Overdue tasks
+        overdueTasks: [
+          {
+            $match: {
+              dueDate: { $lt: now },
+              status: { $ne: 'done' }
+            }
+          },
+          {
+            $project: {
+              id: '$_id',
+              title: 1,
+              dueDate: 1,
+              priority: 1
+            }
+          }
+        ],
+        // Average completion time calculation
+        completionTimeData: [
+          {
+            $match: {
+              status: 'done',
+              startDate: { $exists: true, $ne: null }
+            }
+          },
+          {
+            $project: {
+              completionTime: { $subtract: ['$updatedAt', '$startDate'] }
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              avgTime: { $avg: '$completionTime' },
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        // Total count
+        totalCount: [
+          { $count: 'total' }
+        ]
+      }
+    }
+  ]);
 
-  // Completion rate
+  // Process aggregation results
+  const statusMap = {};
+  (analytics?.statusCounts || []).forEach(s => { statusMap[s._id] = s.count; });
+
+  const priorityMap = {};
+  (analytics?.priorityCounts || []).forEach(p => { priorityMap[p._id] = p.count; });
+
+  const totalTasks = analytics?.totalCount?.[0]?.total || 0;
+  const completedTasks = statusMap['done'] || 0;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  // Average completion time
-  const completedCards = cards.filter(c => c.status === 'done' && c.startDate);
-  let avgCompletionTime = 0;
-  if (completedCards.length > 0) {
-    const totalTime = completedCards.reduce((sum, card) => {
-      const start = new Date(card.startDate);
-      const end = new Date(card.updatedAt);
-      return sum + (end - start);
-    }, 0);
-    avgCompletionTime = Math.round(totalTime / completedCards.length / (1000 * 60 * 60 * 24)); // in days
-  }
+  const avgTimeData = analytics?.completionTimeData?.[0];
+  const avgCompletionTime = avgTimeData
+    ? Math.round(avgTimeData.avgTime / (1000 * 60 * 60 * 24)) // Convert ms to days
+    : 0;
 
   res.status(200).json({
     success: true,
@@ -54,19 +104,19 @@ export const getUserAnalytics = asyncHandler(async (req, res, next) => {
       userId,
       totalTasks,
       completedTasks,
-      inProgressTasks,
-      todoTasks,
-      reviewTasks,
-      overdueTasks: overdueTasks.length,
+      inProgressTasks: statusMap['in-progress'] || 0,
+      todoTasks: statusMap['todo'] || 0,
+      reviewTasks: statusMap['review'] || 0,
+      overdueTasks: analytics?.overdueTasks?.length || 0,
       completionRate,
-      priorityBreakdown,
+      priorityBreakdown: {
+        low: priorityMap['low'] || 0,
+        medium: priorityMap['medium'] || 0,
+        high: priorityMap['high'] || 0,
+        critical: priorityMap['critical'] || 0
+      },
       avgCompletionTime,
-      overdueTasksList: overdueTasks.map(c => ({
-        id: c._id,
-        title: c.title,
-        dueDate: c.dueDate,
-        priority: c.priority
-      }))
+      overdueTasksList: analytics?.overdueTasks || []
     }
   });
 });
@@ -105,7 +155,7 @@ export const getBoardAnalytics = asyncHandler(async (req, res, next) => {
 export const getProjectsAnalytics = asyncHandler(async (req, res, next) => {
   const { departmentId } = req.params;
 
-  let boardQuery = {};
+  let departmentIds = [];
   if (departmentId === 'all') {
     // Get all departments user has access to
     const user = req.user;
@@ -115,41 +165,108 @@ export const getProjectsAnalytics = asyncHandler(async (req, res, next) => {
     } else if (user.role !== 'admin') {
       departmentQuery.members = user._id;
     }
-    const departments = await Department.find(departmentQuery);
-    boardQuery.department = { $in: departments.map(d => d._id) };
+    const departments = await Department.find(departmentQuery).select('_id');
+    departmentIds = departments.map(d => d._id);
   } else {
-    boardQuery.department = departmentId;
+    departmentIds = [new mongoose.Types.ObjectId(departmentId)];
   }
 
-  const boards = await Board.find(boardQuery).populate('team', 'name');
-
-  const projects = await Promise.all(boards.map(async (board) => {
-    const cards = await Card.find({ board: board._id });
-    const totalCards = cards.length;
-    const completedCards = cards.filter(card => card.status === 'done').length;
-    const progress = totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0;
-
-    let status = 'Planning';
-    if (progress === 100) status = 'Completed';
-    else if (progress > 0) status = 'In Progress';
-
-    const dueDates = cards.map(card => card.dueDate).filter(date => date).sort((a, b) => new Date(b) - new Date(a));
-    const dueDate = dueDates.length > 0 ? new Date(dueDates[0]).toISOString().split('T')[0] : null;
-
-    return {
-      id: board._id,
-      name: board.name,
-      description: board.description || 'Project description',
-      department: board.department,
-      team: board.team?.name || 'General',
-      progress: progress,
-      dueDate: dueDate,
-      status: status,
-      totalCards,
-      completedCards,
-      members: board.members || []
-    };
-  }));
+  // Use aggregation pipeline to get all project data in a single query
+  const projects = await Board.aggregate([
+    {
+      $match: {
+        department: { $in: departmentIds }
+      }
+    },
+    {
+      $lookup: {
+        from: 'teams',
+        localField: 'team',
+        foreignField: '_id',
+        as: 'teamInfo',
+        pipeline: [{ $project: { name: 1 } }]
+      }
+    },
+    {
+      $lookup: {
+        from: 'cards',
+        localField: '_id',
+        foreignField: 'board',
+        as: 'cards',
+        pipeline: [
+          { $project: { status: 1, dueDate: 1 } }
+        ]
+      }
+    },
+    {
+      $project: {
+        id: '$_id',
+        name: 1,
+        description: { $ifNull: ['$description', 'Project description'] },
+        department: 1,
+        team: { $ifNull: [{ $arrayElemAt: ['$teamInfo.name', 0] }, 'General'] },
+        members: { $ifNull: ['$members', []] },
+        totalCards: { $size: '$cards' },
+        completedCards: {
+          $size: {
+            $filter: {
+              input: '$cards',
+              cond: { $eq: ['$$this.status', 'done'] }
+            }
+          }
+        },
+        // Get the latest due date
+        dueDate: {
+          $let: {
+            vars: {
+              dueDates: {
+                $filter: {
+                  input: '$cards.dueDate',
+                  cond: { $ne: ['$$this', null] }
+                }
+              }
+            },
+            in: {
+              $cond: {
+                if: { $gt: [{ $size: '$$dueDates' }, 0] },
+                then: {
+                  $dateToString: {
+                    format: '%Y-%m-%d',
+                    date: { $max: '$$dueDates' }
+                  }
+                },
+                else: null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      $addFields: {
+        progress: {
+          $cond: {
+            if: { $gt: ['$totalCards', 0] },
+            then: { $round: { $multiply: [{ $divide: ['$completedCards', '$totalCards'] }, 100] } },
+            else: 0
+          }
+        }
+      }
+    },
+    {
+      $addFields: {
+        status: {
+          $switch: {
+            branches: [
+              { case: { $eq: ['$progress', 100] }, then: 'Completed' },
+              { case: { $gt: ['$progress', 0] }, then: 'In Progress' }
+            ],
+            default: 'Planning'
+          }
+        }
+      }
+    }
+  ]);
 
   res.status(200).json({
     success: true,

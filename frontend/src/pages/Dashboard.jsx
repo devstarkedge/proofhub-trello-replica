@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useContext, useMemo, Suspense, memo, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
-  LayoutDashboard, FolderKanban, TrendingUp, Users,
-  Clock, CheckCircle2, AlertCircle, Filter, Search,
-  Calendar, BarChart3, ArrowUpRight, Plus
+  LayoutDashboard, FolderKanban, Users,
+  Clock, CheckCircle2, Search,
+  ArrowUpRight
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
@@ -16,7 +16,43 @@ import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import { lazy } from 'react';
 const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
-import EditProjectModal from '../components/EditProjectModal';
+const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
+
+// Memoized StatCard component for better performance
+const StatCard = memo(({ stat, index }) => (
+  <div
+    className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all p-6 border border-gray-100 hover:-translate-y-1 duration-200"
+    style={{ animationDelay: `${index * 50}ms` }}
+  >
+    <div className="flex items-center justify-between mb-4">
+      <div className={`${stat.color} p-3 rounded-lg`}>
+        <stat.icon className="text-white" size={24} />
+      </div>
+      <div className="flex items-center gap-1 text-sm text-green-600">
+        <ArrowUpRight size={16} />
+        <span>{stat.change}</span>
+      </div>
+    </div>
+    <h3 className="text-2xl font-bold text-gray-900">{stat.value}</h3>
+    <p className="text-gray-600 text-sm mt-1">{stat.title}</p>
+  </div>
+));
+StatCard.displayName = 'StatCard';
+
+// Memoized ProjectCardWrapper to reduce re-renders
+const ProjectCardWrapper = memo(({ project, onView, onEdit, onDelete }) => (
+  <div className="animate-fade-in">
+    <ProjectCard
+      project={project}
+      departmentName={project.department}
+      showManager={false}
+      onView={onView}
+      onEdit={onEdit}
+      onDelete={onDelete}
+    />
+  </div>
+));
+ProjectCardWrapper.displayName = 'ProjectCardWrapper';
 
 const Dashboard = memo(() => {
   const navigate = useNavigate();
@@ -95,40 +131,56 @@ const Dashboard = memo(() => {
     }
   }, [currentDepartment, departments]);
 
-  const stats = useMemo(() => [
-    {
-      title: 'Total Projects',
-      value: filteredProjects.length,
-      icon: FolderKanban,
-      color: 'bg-blue-500',
-      change: '+12%',
-      trend: 'up'
-    },
-    {
-      title: 'Completed',
-      value: filteredProjects.filter(p => p.status === 'Completed').length,
-      icon: CheckCircle2,
-      color: 'bg-green-500',
-      change: '+8%',
-      trend: 'up'
-    },
-    {
-      title: 'In Progress',
-      value: filteredProjects.filter(p => p.status === 'In Progress').length,
-      icon: Clock,
-      color: 'bg-yellow-500',
-      change: '+5%',
-      trend: 'up'
-    },
-    {
-      title: 'Team Members',
-      value: teamMembersCount,
-      icon: Users,
-      color: 'bg-purple-500',
-      change: '+3',
-      trend: 'up'
+  // Optimized stats calculation - single pass through data
+  const { stats, projectCounts } = useMemo(() => {
+    let completed = 0;
+    let inProgress = 0;
+    
+    for (const p of filteredProjects) {
+      if (p.status === 'Completed') completed++;
+      else if (p.status === 'In Progress') inProgress++;
     }
-  ], [filteredProjects, teamMembersCount]);
+    
+    const counts = { total: filteredProjects.length, completed, inProgress };
+    
+    return {
+      projectCounts: counts,
+      stats: [
+        {
+          title: 'Total Projects',
+          value: counts.total,
+          icon: FolderKanban,
+          color: 'bg-blue-500',
+          change: '+12%',
+          trend: 'up'
+        },
+        {
+          title: 'Completed',
+          value: counts.completed,
+          icon: CheckCircle2,
+          color: 'bg-green-500',
+          change: '+8%',
+          trend: 'up'
+        },
+        {
+          title: 'In Progress',
+          value: counts.inProgress,
+          icon: Clock,
+          color: 'bg-yellow-500',
+          change: '+5%',
+          trend: 'up'
+        },
+        {
+          title: 'Team Members',
+          value: teamMembersCount,
+          icon: Users,
+          color: 'bg-purple-500',
+          change: '+3',
+          trend: 'up'
+        }
+      ]
+    };
+  }, [filteredProjects, teamMembersCount]);
 
   if (loading) {
     return (
@@ -174,26 +226,7 @@ const Dashboard = memo(() => {
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {stats.map((stat, index) => (
-              <motion.div
-                key={stat.title}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                whileHover={{ y: -5, transition: { duration: 0.2 } }}
-                className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all p-6 border border-gray-100"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`${stat.color} p-3 rounded-lg`}>
-                    <stat.icon className="text-white" size={24} />
-                  </div>
-                  <div className="flex items-center gap-1 text-sm text-green-600">
-                    <ArrowUpRight size={16} />
-                    <span>{stat.change}</span>
-                  </div>
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900">{stat.value}</h3>
-                <p className="text-gray-600 text-sm mt-1">{stat.title}</p>
-              </motion.div>
+              <StatCard key={stat.title} stat={stat} index={index} />
             ))}
           </div>
 
@@ -241,11 +274,7 @@ const Dashboard = memo(() => {
           </motion.div>
 
           {/* Projects Grid */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="bg-white rounded-xl shadow-sm p-6 border border-gray-100"
-          >
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
                 <FolderKanban size={24} className="text-blue-600" />
@@ -254,41 +283,25 @@ const Dashboard = memo(() => {
             </div>
 
             {filteredProjects.length === 0 ? (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="text-center py-12"
-              >
+              <div className="text-center py-12">
                 <FolderKanban size={64} className="mx-auto text-gray-300 mb-4" />
                 <p className="text-gray-500 text-lg mb-2">No projects found</p>
                 <p className="text-gray-400 mb-6">Create your first project to get started</p>
-              </motion.div>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <AnimatePresence>
-                  {filteredProjects.map((project, index) => (
-                    <motion.div
-                      key={project.id}
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      transition={{ delay: index * 0.05 }}
-                      whileHover={{ y: -5 }}
-                    >
-                      <ProjectCard
-                        project={project}
-                        departmentName={project.department}
-                        showManager={false}
-                        onView={() => handleViewProject(project.id)}
-                        onEdit={() => handleEditProject(project)}
-                        onDelete={() => handleDeleteProject(project.id)}
-                      />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
+                {filteredProjects.map((project) => (
+                  <ProjectCardWrapper
+                    key={project.id}
+                    project={project}
+                    onView={() => handleViewProject(project.id)}
+                    onEdit={() => handleEditProject(project)}
+                    onDelete={() => handleDeleteProject(project.id)}
+                  />
+                ))}
               </div>
             )}
-          </motion.div>
+          </div>
         </main>
       </div>
 
@@ -300,12 +313,14 @@ const Dashboard = memo(() => {
         />
       </Suspense>
 
-      <EditProjectModal
-        isOpen={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        project={selectedProject}
-        onProjectUpdated={() => refetch()}
-      />
+      <Suspense fallback={<div>Loading...</div>}>
+        <EditProjectModal
+          isOpen={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          project={selectedProject}
+          onProjectUpdated={() => refetch()}
+        />
+      </Suspense>
     </div>
   );
 });

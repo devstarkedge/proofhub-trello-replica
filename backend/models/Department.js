@@ -40,5 +40,9 @@ const departmentSchema = new mongoose.Schema({
 // Indexes
 departmentSchema.index({ name: 1 });
 departmentSchema.index({ isActive: 1 });
+// Additional compound indexes for optimized queries
+departmentSchema.index({ isActive: 1, name: 1 }); // For active dept lookup sorted by name
+departmentSchema.index({ members: 1, isActive: 1 }); // For user's departments
+departmentSchema.index({ managers: 1, isActive: 1 }); // For manager's departments
 
 export default mongoose.model('Department', departmentSchema);

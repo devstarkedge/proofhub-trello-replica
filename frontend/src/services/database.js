@@ -162,6 +162,21 @@ class DatabaseService {
     return await res.json();
   }
 
+  // OPTIMIZED: Get complete workflow data in single request (board + lists + cards)
+  async getWorkflowComplete(projectId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/boards/${projectId}/workflow-complete`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || `HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
   // List CRUD operations
   async getLists(boardId) {
     const token = localStorage.getItem('token');

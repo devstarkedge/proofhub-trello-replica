@@ -21,49 +21,76 @@ const useWorkflowStore = create(
       setError: (error) => set({ error }),
       setLastUpdated: (timestamp) => set({ lastUpdated: timestamp }),
 
-      // Initialize workflow data
+      // OPTIMIZED: Initialize workflow data with single API call
       initializeWorkflow: async (projectId) => {
         try {
           set({ loading: true, error: null, lists: [], cardsByList: {} });
 
-          // Fetch board data
-          const response = await Database.getProject(projectId);
+          // Use the new optimized endpoint that returns everything in one call
+          const response = await Database.getWorkflowComplete(projectId);
+          
           if (!response.success) {
             throw new Error(response.message || 'Failed to load project');
           }
 
-          const projectBoard = response.data;
-          set({ board: projectBoard });
-
-          // Fetch lists first
-          const listsResponse = await Database.getLists(projectBoard._id);
-          const boardLists = Array.isArray(listsResponse.data) ? listsResponse.data : 
-                            Array.isArray(listsResponse) ? listsResponse : [];
-
-          // If no lists found, set empty state and return early
-          if (!boardLists || boardLists.length === 0) {
-            set({ lists: [], cardsByList: {}, lastUpdated: Date.now() });
-            return;
-          }
-
-          // Fetch cards for all lists in parallel
-          const cardPromises = boardLists.map(list => Database.getCards(list._id));
-          const cardsResponses = await Promise.all(cardPromises);
-
-          // Group cards by listId
-          const cardsMap = {};
-          boardLists.forEach((list, index) => {
-            const cardsData = cardsResponses[index]?.data || cardsResponses[index];
-            cardsMap[list._id] = Array.isArray(cardsData) ? cardsData : [];
+          const { board, lists, cardsByList } = response.data;
+          
+          // Set all data at once
+          set({ 
+            board, 
+            lists: lists || [], 
+            cardsByList: cardsByList || {}, 
+            lastUpdated: Date.now() 
           });
-
-          set({ lists: boardLists, cardsByList: cardsMap, lastUpdated: Date.now() });
         } catch (error) {
           console.error('Error initializing workflow:', error);
           set({ error: error.message || 'Failed to load workflow' });
+          
+          // Fallback to legacy loading if new endpoint fails
+          try {
+            await get().initializeWorkflowLegacy(projectId);
+          } catch (legacyError) {
+            console.error('Legacy loading also failed:', legacyError);
+          }
         } finally {
           set({ loading: false });
         }
+      },
+
+      // Legacy method for backward compatibility
+      initializeWorkflowLegacy: async (projectId) => {
+        // Fetch board data
+        const response = await Database.getProject(projectId);
+        if (!response.success) {
+          throw new Error(response.message || 'Failed to load project');
+        }
+
+        const projectBoard = response.data;
+        set({ board: projectBoard });
+
+        // Fetch lists first
+        const listsResponse = await Database.getLists(projectBoard._id);
+        const boardLists = Array.isArray(listsResponse.data) ? listsResponse.data : 
+                          Array.isArray(listsResponse) ? listsResponse : [];
+
+        // If no lists found, set empty state and return early
+        if (!boardLists || boardLists.length === 0) {
+          set({ lists: [], cardsByList: {}, lastUpdated: Date.now() });
+          return;
+        }
+
+        // Fetch cards for all lists in parallel
+        const cardPromises = boardLists.map(list => Database.getCards(list._id));
+        const cardsResponses = await Promise.all(cardPromises);
+
+        // Group cards by listId
+        const cardsMap = {};
+        boardLists.forEach((list, index) => {
+          const cardsData = cardsResponses[index]?.data || cardsResponses[index];
+          cardsMap[list._id] = Array.isArray(cardsData) ? cardsData : [];
+        });
+
+        set({ lists: boardLists, cardsByList: cardsMap, lastUpdated: Date.now() });
       },
 
       // Update board (project) details

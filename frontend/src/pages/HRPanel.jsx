@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback, memo } from 'react';
 import {
   Users,
   Filter,
@@ -23,6 +23,107 @@ import useDepartmentStore from '../store/departmentStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 
+// Memoized User Row Component for better performance
+const UserRow = memo(({ 
+  user, 
+  loadingStates, 
+  onVerify, 
+  onDecline, 
+  onAssign, 
+  onDelete,
+  getRoleBadge,
+  getStatusBadge
+}) => {
+  return (
+    <tr className="hover:bg-gray-50 transition-colors duration-150">
+      <td className="px-6 py-4 whitespace-nowrap">
+        <div className="flex items-center">
+          <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+            {user.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="ml-4">
+            <div className="text-sm font-semibold text-gray-900">{user.name}</div>
+            <div className="text-sm text-gray-500">{user.email}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        {getRoleBadge(user.role)}
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        {user.department && user.department.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {user.department.map((dept, index) => (
+              <span key={`${dept._id}-${index}`} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-medium">
+                <Building2 className="w-3 h-3" />
+                {dept.name}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-sm text-gray-400 italic">Not Assigned</span>
+        )}
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        {getStatusBadge(user)}
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+        <div className="flex items-center gap-2">
+          {!user.isVerified && user.role !== 'admin' && (
+            <>
+              <button
+                onClick={() => onVerify(user._id)}
+                disabled={loadingStates[user._id]}
+                className="inline-flex items-center gap-1 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loadingStates[user._id] ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4" />
+                )}
+                {loadingStates[user._id] ? 'Verifying...' : 'Verify'}
+              </button>
+              <button
+                onClick={() => onDecline(user._id)}
+                disabled={loadingStates[user._id]}
+                className="inline-flex items-center gap-1 px-3 py-2 bg-red-300 text-red-800 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loadingStates[user._id] ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <XCircle className="w-4 h-4" />
+                )}
+                {loadingStates[user._id] ? 'Declining...' : 'Decline'}
+              </button>
+            </>
+          )}
+          {user.isVerified && (
+            <>
+              <button
+                onClick={() => onAssign(user)}
+                className="inline-flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200 font-semibold"
+              >
+                <UserCog className="w-4 h-4" />
+                Assign
+              </button>
+              {(user.role === 'manager' || user.role === 'employee') && (
+                <button
+                  onClick={() => onDelete(user)}
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+});
+UserRow.displayName = 'UserRow';
+
 const HRPanel = () => {
   const { user } = useContext(AuthContext);
   const departmentStore = useDepartmentStore();
@@ -37,6 +138,7 @@ const HRPanel = () => {
     department: '',
     search: ''
   });
+  const [debouncedFilters] = useDebounce(filters, 200);
   const [userToDelete, setUserToDelete] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [toast, setToast] = useState(null);
@@ -197,25 +299,42 @@ const HRPanel = () => {
     setSelectedDepartments(prev => prev.filter(id => id !== deptId));
   };
 
-  const getAvailableDepartments = () => {
+  const getAvailableDepartments = useCallback(() => {
     return departmentStore.departments.filter(dept => !selectedDepartments.includes(dept._id));
-  };
+  }, [departmentStore.departments, selectedDepartments]);
 
-  const getSelectedDepartmentObjects = () => {
+  const getSelectedDepartmentObjects = useCallback(() => {
     return departmentStore.departments.filter(dept => selectedDepartments.includes(dept._id));
-  };
+  }, [departmentStore.departments, selectedDepartments]);
 
-  const filteredUsers = users.filter(user => {
-    const matchesRole = !filters.role || user.role === filters.role;
-    const matchesDepartment = !filters.department || (user.department && user.department.some(d => d._id === filters.department));
-    const matchesSearch = !filters.search ||
-      user.name.toLowerCase().includes(filters.search.toLowerCase()) ||
-      user.email.toLowerCase().includes(filters.search.toLowerCase());
+  // OPTIMIZED: Memoize filtered users to prevent recalculation on every render
+  // Uses debouncedFilters to prevent filtering on every keystroke
+  const filteredUsers = useMemo(() => {
+    if (!users.length) return [];
+    
+    const searchLower = debouncedFilters.search?.toLowerCase() || '';
+    
+    return users.filter(user => {
+      // Early returns for better performance
+      if (debouncedFilters.role && user.role !== debouncedFilters.role) return false;
+      
+      if (debouncedFilters.department) {
+        const hasDept = user.department?.some(d => d._id === debouncedFilters.department);
+        if (!hasDept) return false;
+      }
+      
+      if (searchLower) {
+        const nameMatch = user.name.toLowerCase().includes(searchLower);
+        const emailMatch = user.email.toLowerCase().includes(searchLower);
+        if (!nameMatch && !emailMatch) return false;
+      }
+      
+      return true;
+    });
+  }, [users, debouncedFilters.role, debouncedFilters.department, debouncedFilters.search]);
 
-    return matchesRole && matchesDepartment && matchesSearch;
-  });
-
-  const getStatusBadge = (user) => {
+  // Memoize badge generators to prevent recreating functions
+  const getStatusBadge = useCallback((user) => {
     if (!user.isVerified) {
       return (
         <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">
@@ -238,9 +357,10 @@ const HRPanel = () => {
         Active
       </span>
     );
-  };
+  }, []);
 
-  const getRoleBadge = (role) => {
+  // Memoize role badge generator
+  const getRoleBadge = useCallback((role) => {
     const roleConfig = {
       admin: { color: 'bg-red-100 text-red-800', icon: Shield },
       manager: { color: 'bg-blue-100 text-blue-800', icon: Briefcase },
@@ -256,7 +376,15 @@ const HRPanel = () => {
         {role.charAt(0).toUpperCase() + role.slice(1)}
       </span>
     );
-  };
+  }, []);
+
+  // Memoize stats to prevent recalculation
+  const stats = useMemo(() => ({
+    total: users.length,
+    pending: users.filter(u => !u.isVerified).length,
+    active: users.filter(u => u.isVerified && u.isActive).length,
+    departments: departmentStore.departments.length
+  }), [users, departmentStore.departments.length]);
 
   if (loading) {
     return (
@@ -294,13 +422,13 @@ const HRPanel = () => {
             </div>
           </div>
 
-          {/* Stats Cards */}
+          {/* Stats Cards - Using memoized stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
             <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm font-medium">Total Users</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-1">{users.length}</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-1">{stats.total}</p>
                 </div>
                 <div className="bg-blue-100 p-3 rounded-lg">
                   <Users className="w-6 h-6 text-blue-600" />
@@ -313,7 +441,7 @@ const HRPanel = () => {
                 <div>
                   <p className="text-gray-500 text-sm font-medium">Pending</p>
                   <p className="text-3xl font-bold text-yellow-600 mt-1">
-                    {users.filter(u => !u.isVerified).length}
+                    {stats.pending}
                   </p>
                 </div>
                 <div className="bg-yellow-100 p-3 rounded-lg">
@@ -327,7 +455,7 @@ const HRPanel = () => {
                 <div>
                   <p className="text-gray-500 text-sm font-medium">Active</p>
                   <p className="text-3xl font-bold text-green-600 mt-1">
-                    {users.filter(u => u.isVerified && u.isActive).length}
+                    {stats.active}
                   </p>
                 </div>
                 <div className="bg-green-100 p-3 rounded-lg">
@@ -340,7 +468,7 @@ const HRPanel = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm font-medium">Departments</p>
-                  <p className="text-3xl font-bold text-purple-600 mt-1">{departmentStore.departments.length}</p>
+                  <p className="text-3xl font-bold text-purple-600 mt-1">{stats.departments}</p>
                 </div>
                 <div className="bg-purple-100 p-3 rounded-lg">
                   <Building2 className="w-6 h-6 text-purple-600" />
@@ -432,91 +560,18 @@ const HRPanel = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredUsers.map((user, index) => (
-                    <tr key={user._id} className="hover:bg-gray-50 transition-colors duration-150" style={{animationDelay: `${index * 50}ms`}}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                            {user.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-semibold text-gray-900">{user.name}</div>
-                            <div className="text-sm text-gray-500">{user.email}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {getRoleBadge(user.role)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {user.department && user.department.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {user.department.map((dept, index) => (
-                              <span key={`${dept._id}-${index}`} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-medium">
-                                <Building2 className="w-3 h-3" />
-                                {dept.name}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400 italic">Not Assigned</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {getStatusBadge(user)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          {!user.isVerified && user.role !== 'admin' && (
-                            <>
-                              <button
-                                onClick={() => handleVerifyUser(user._id)}
-                                disabled={loadingStates[user._id]}
-                                className="inline-flex items-center gap-1 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {loadingStates[user._id] ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <CheckCircle className="w-4 h-4" />
-                                )}
-                                {loadingStates[user._id] ? 'Verifying...' : 'Verify'}
-                              </button>
-                              <button
-                                onClick={() => handleDeclineUser(user._id)}
-                                disabled={loadingStates[user._id]}
-                                className="inline-flex items-center gap-1 px-3 py-2 bg-red-300 text-red-800 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {loadingStates[user._id] ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <XCircle className="w-4 h-4" />
-                                )}
-                                {loadingStates[user._id] ? 'Declining...' : 'Decline'}
-                              </button>
-                            </>
-                          )}
-                          {user.isVerified && (
-                            <>
-                              <button
-                                onClick={() => openAssignModal(user)}
-                                className="inline-flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200 font-semibold"
-                              >
-                                <UserCog className="w-4 h-4" />
-                                Assign
-                              </button>
-                              {(user.role === 'manager' || user.role === 'employee') && (
-                                <button
-                                  onClick={() => openDeleteModal(user)}
-                                  className="inline-flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                  Delete
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                    <UserRow
+                      key={user._id}
+                      user={user}
+                      index={index}
+                      loadingStates={loadingStates}
+                      getRoleBadge={getRoleBadge}
+                      getStatusBadge={getStatusBadge}
+                      handleVerifyUser={handleVerifyUser}
+                      handleDeclineUser={handleDeclineUser}
+                      openAssignModal={openAssignModal}
+                      openDeleteModal={openDeleteModal}
+                    />
                   ))}
                 </tbody>
               </table>

@@ -4,6 +4,7 @@ import Card from "../models/Card.js";
 import Activity from "../models/Activity.js";
 import Department from "../models/Department.js";
 import Notification from "../models/Notification.js";
+import RecurringTask from "../models/RecurringTask.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
@@ -66,6 +67,81 @@ export const getBoardsByDepartment = asyncHandler(async (req, res, next) => {
     success: true,
     count: boards.length,
     data: boards,
+  });
+});
+
+// @desc    Get complete workflow data (board + lists + cards) in single request
+// @route   GET /api/boards/:id/workflow-complete
+// @access  Private
+export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
+  const { id: projectId } = req.params;
+
+  // Fetch board and lists in parallel
+  const [board, lists] = await Promise.all([
+    Board.findById(projectId)
+      .populate('owner', 'name email avatar role')
+      .populate('team', 'name')
+      .populate('department', 'name')
+      .populate('members', 'name email avatar role')
+      .lean(),
+    List.find({ board: projectId, isArchived: false })
+      .sort('position')
+      .lean()
+  ]);
+
+  if (!board) {
+    return next(new ErrorResponse('Board not found', 404));
+  }
+
+  // Check access
+  const hasAccess =
+    board.owner?._id?.toString() === req.user.id ||
+    board.members?.some((m) => m?._id?.toString() === req.user.id) ||
+    board.visibility === 'public' ||
+    req.user.role === 'admin';
+
+  if (!hasAccess) {
+    return next(new ErrorResponse('Not authorized to access this board', 403));
+  }
+
+  // Fetch all cards for all lists in one query
+  const listIds = lists.map(l => l._id);
+  const cards = await Card.find({ list: { $in: listIds } })
+    .populate('assignees', 'name email avatar')
+    .populate('members', 'name email avatar')
+    .sort({ list: 1, position: 1 })
+    .lean();
+
+  // Fetch recurrence status in batch
+  const cardIds = cards.map(c => c._id);
+  const recurringTasks = await RecurringTask.find({
+    card: { $in: cardIds },
+    isActive: true
+  }).select('card').lean();
+
+  const recurringSet = new Set(recurringTasks.map(r => r.card.toString()));
+
+  // Group cards by list and add hasRecurrence flag
+  const cardsByList = {};
+  listIds.forEach(id => { cardsByList[id.toString()] = []; });
+  
+  cards.forEach(card => {
+    const listId = card.list.toString();
+    if (cardsByList[listId]) {
+      cardsByList[listId].push({
+        ...card,
+        hasRecurrence: recurringSet.has(card._id.toString())
+      });
+    }
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      board,
+      lists,
+      cardsByList
+    }
   });
 });
 

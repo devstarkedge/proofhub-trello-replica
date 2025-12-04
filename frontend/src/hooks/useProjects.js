@@ -1,13 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Database from '../services/database';
 
-// Hook for fetching dashboard data fresh (no caching)
+// Hook for fetching dashboard data fresh (no caching to ensure real-time data)
 export function useDashboardData() {
   return useQuery({
     queryKey: ['dashboard'],
     queryFn: () => Database.getDashboardDataFresh(),
-    staleTime: 0, // No caching
+    staleTime: 0, // Always fetch fresh data
     gcTime: 0, // No garbage collection delay
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
   });
 }
 
