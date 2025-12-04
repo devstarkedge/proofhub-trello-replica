@@ -42,6 +42,7 @@ import { Badge } from '../components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '../components/ui/dropdown-menu';
 import { Button } from '../components/ui/button';
 import { AdvancedSearch, debounce, highlightText } from '../utils/advancedSearch';
+import AvatarGroup from '../components/AvatarGroup';
 
 const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
 
@@ -1123,40 +1124,35 @@ const ListView = () => {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-gray-700 group-hover:text-gray-900 transition-colors">
-                          <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100 transition-colors">
-                            <FolderKanban className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
-                          </div>
-                          {card.board && card.board._id ? (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleProjectClick(card.board._id); }}
-                              className="font-medium text-left hover:text-blue-700 transition-colors"
-                              aria-label={`Open project ${card.board?.name}`}
-                            >
-                              {card.board?.name || 'N/A'}
-                            </button>
-                          ) : (
-                            <span className="font-medium">{card.board?.name || 'N/A'}</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {card.assignees && card.assignees.length > 0 ? (
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110">
-                              {card.assignees[0].name.charAt(0).toUpperCase()}
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-gray-700 group-hover:text-gray-900 transition-colors">
+                            <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100 transition-colors">
+                              <FolderKanban className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
                             </div>
-                            <span className="text-gray-700 font-medium group-hover:text-gray-900 transition-colors">{card.assignees[0].name}</span>
+                            {card.board && card.board._id ? (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleProjectClick(card.board._id); }}
+                                className="font-medium text-left hover:text-blue-700 transition-colors"
+                                aria-label={`Open project ${card.board?.name}`}
+                                dangerouslySetInnerHTML={{
+                                  __html: searchHighlights.has(card._id)
+                                    ? highlightText(card.board?.name || 'N/A', searchHighlights.get(card._id))
+                                    : (card.board?.name || 'N/A')
+                                }}
+                              />
+                            ) : (
+                              <span className="font-medium"
+                                dangerouslySetInnerHTML={{
+                                  __html: searchHighlights.has(card._id)
+                                    ? highlightText(card.board?.name || 'N/A', searchHighlights.get(card._id))
+                                    : (card.board?.name || 'N/A')
+                                }}
+                              />
+                            )}
                           </div>
-                        ) : (
-                          <span className="text-gray-400 italic flex items-center gap-2">
-                            <div className="p-1.5 bg-gray-100 rounded-lg">
-                              <User className="w-4 h-4" />
-                            </div>
-                            Unassigned
-                          </span>
-                        )}
+                        </TableCell>
+                      <TableCell>
+                        <AvatarGroup assignees={card.assignees || []} />
                       </TableCell>
                       <TableCell>{getPriorityPill(card.priority)}</TableCell>
                       <TableCell>{getStatusBadge(card.list?.title || 'N/A')}</TableCell>

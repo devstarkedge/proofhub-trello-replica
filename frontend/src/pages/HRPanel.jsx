@@ -568,10 +568,10 @@ const HRPanel = () => {
                       loadingStates={loadingStates}
                       getRoleBadge={getRoleBadge}
                       getStatusBadge={getStatusBadge}
-                      handleVerifyUser={handleVerifyUser}
-                      handleDeclineUser={handleDeclineUser}
-                      openAssignModal={openAssignModal}
-                      openDeleteModal={openDeleteModal}
+                        onVerify={handleVerifyUser}
+                        onDecline={handleDeclineUser}
+                        onAssign={openAssignModal}
+                        onDelete={openDeleteModal}
                     />
                   ))}
                 </tbody>
