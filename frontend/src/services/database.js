@@ -1530,6 +1530,41 @@ class DatabaseService {
     return await res.json();
   }
 
+  async syncReminderClientFromProject(reminderId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/reminders/${reminderId}/sync-client`, {
+      method: 'POST',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to sync client info');
+    }
+    return await res.json();
+  }
+
+  async updateReminderClient(reminderId, clientData) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/reminders/${reminderId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ client: clientData })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to update client info');
+    }
+    return await res.json();
+  }
+
   async getReminderDashboardStats(filters = {}) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };

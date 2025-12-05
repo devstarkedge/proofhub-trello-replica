@@ -27,6 +27,7 @@ const Profile = lazy(() => import("./pages/Profile"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Announcements = lazy(() => import("./pages/Announcements"));
 const RemindersPage = lazy(() => import("./pages/RemindersPage"));
+const ClientReminderCalendarPage = lazy(() => import("./pages/ClientReminderCalendarPage"));
 const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
 
 function App() {
@@ -190,6 +191,14 @@ function App() {
               element={
                 <PrivateRoute requiredRole={["Manager", "Admin"]}>
                   <RemindersPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/reminder-calendar"
+              element={
+                <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                  <ClientReminderCalendarPage />
                 </PrivateRoute>
               }
             />

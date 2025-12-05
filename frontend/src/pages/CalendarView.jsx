@@ -28,6 +28,7 @@ import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import Header from '../components/Header';
 import ReminderCalendar from '../components/ReminderCalendar';
+import { ModernCalendarGrid } from '../components/calendar';
 import ReminderModal from '../components/ReminderModal';
 
 const CalendarView = () => {
@@ -458,23 +459,14 @@ const CalendarView = () => {
 
         {/* Conditional Content based on Active Tab */}
         {activeTab === 'reminders' && canViewReminders ? (
-          /* Client Reminders Calendar View */
+          /* Client Reminders Calendar View - Using Modern Calendar */
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-xl shadow-xl p-6 border border-gray-100"
           >
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
-                <Bell className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Client Reminders Calendar</h2>
-                <p className="text-sm text-gray-600">View and manage follow-up reminders for completed projects</p>
-              </div>
-            </div>
-            <ReminderCalendar
-              departmentId={currentDepartment?._id}
+            <ModernCalendarGrid
+              departmentId={currentDepartment?._id !== 'all' ? currentDepartment?._id : null}
+              departments={[]}
               onSelectReminder={handleSelectReminder}
             />
           </motion.div>

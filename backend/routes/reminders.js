@@ -12,7 +12,8 @@ import {
   getAllReminders,
   sendReminderNow,
   getProjectReminderStats,
-  cancelReminder
+  cancelReminder,
+  syncClientFromProject
 } from '../controllers/reminderController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
@@ -57,5 +58,6 @@ router.route('/:id')
 router.post('/:id/complete', completeReminder);
 router.post('/:id/send', sendReminderNow);
 router.post('/:id/cancel', cancelReminder);
+router.post('/:id/sync-client', syncClientFromProject);
 
 export default router;

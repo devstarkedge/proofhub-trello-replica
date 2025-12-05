@@ -9,6 +9,7 @@ import {
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ReminderCalendar from '../components/ReminderCalendar';
+import { ModernCalendarGrid } from '../components/calendar';
 import ReminderModal from '../components/ReminderModal';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
@@ -197,7 +198,7 @@ const RemindersPage = memo(() => {
           >
             <div>
               <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
+                <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-500/30">
                   <Bell className="text-white" size={28} />
                 </div>
                 Client Reminders
@@ -207,57 +208,61 @@ const RemindersPage = memo(() => {
             
             <div className="flex items-center gap-3">
               {/* View Mode Toggle */}
-              <div className="flex items-center bg-white rounded-lg shadow-sm border border-gray-200 p-1">
+              <div className="flex items-center bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200/50 p-1.5">
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     viewMode === 'list' 
-                      ? 'bg-indigo-100 text-indigo-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/30' 
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                 >
                   <List size={18} />
-                  List
+                  List View
                 </button>
                 <button
                   onClick={() => setViewMode('calendar')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     viewMode === 'calendar' 
-                      ? 'bg-indigo-100 text-indigo-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/30' 
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                 >
                   <CalendarDays size={18} />
-                  Calendar
+                  Calendar View
                 </button>
               </div>
 
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => fetchData(true)}
-                disabled={refreshing}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 rounded-lg shadow-md hover:shadow-lg transition-all border border-gray-200"
-              >
-                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </motion.button>
+              {viewMode === 'list' && (
+                <>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => fetchData(true)}
+                    disabled={refreshing}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all border border-gray-200"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </motion.button>
 
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 rounded-lg shadow-md hover:shadow-lg transition-all border border-gray-200"
-              >
-                <Filter className="w-4 h-4" />
-                Filters
-                <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-              </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all border border-gray-200"
+                  >
+                    <Filter className="w-4 h-4" />
+                    Filters
+                    <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+                  </motion.button>
+                </>
+              )}
             </div>
           </motion.div>
 
           {/* Stats Cards */}
-          {stats && (
+          {stats && viewMode === 'list' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -325,9 +330,9 @@ const RemindersPage = memo(() => {
             </motion.div>
           )}
 
-          {/* Filters Section */}
+          {/* Filters Section - List View Only */}
           <AnimatePresence>
-            {showFilters && (
+            {showFilters && viewMode === 'list' && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
@@ -383,7 +388,7 @@ const RemindersPage = memo(() => {
           </AnimatePresence>
 
           {/* Main Content */}
-          {loading ? (
+          {loading && viewMode !== 'calendar' ? (
             <div className="flex items-center justify-center py-20">
               <Loader className="w-10 h-10 text-indigo-600 animate-spin" />
             </div>
@@ -391,10 +396,10 @@ const RemindersPage = memo(() => {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="bg-white rounded-xl shadow-sm p-6 border border-gray-200"
             >
-              <ReminderCalendar
+              <ModernCalendarGrid
                 departmentId={selectedDepartment !== 'all' ? selectedDepartment : null}
+                departments={departments}
                 onSelectReminder={handleViewReminder}
               />
             </motion.div>

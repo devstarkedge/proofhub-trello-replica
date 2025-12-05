@@ -265,7 +265,7 @@ reminderSchema.statics.getCalendarReminders = async function(startDate, endDate,
   return this.find(query)
     .populate('project', 'name')
     .populate('createdBy', 'name avatar')
-    .select('scheduledDate status client.name project notes')
+    .select('scheduledDate status client project notes priority type')
     .sort({ scheduledDate: 1 })
     .lean();
 };

@@ -16,12 +16,12 @@ export const createReminder = asyncHandler(async (req, res) => {
     customIntervalDays,
     notes,
     priority,
-    tags
+    tags,
+    client: clientFromBody
   } = req.body;
 
   // Validate project exists and is completed
   const project = await Board.findById(projectId)
-    .populate('clientDetails')
     .populate('department');
   
   if (!project) {
@@ -31,16 +31,19 @@ export const createReminder = asyncHandler(async (req, res) => {
     });
   }
 
-  // Get client details from project
-  const clientDetails = project.clientDetails || {};
+  // Get client details from project's embedded clientDetails or from request body
+  const projectClientDetails = project.clientDetails || {};
+  
+  // Prioritize client info from request body, fallback to project's clientDetails
+  const clientData = {
+    name: clientFromBody?.name || projectClientDetails.clientName || '',
+    email: clientFromBody?.email || projectClientDetails.clientEmail || '',
+    phone: clientFromBody?.phone || projectClientDetails.clientWhatsappNumber || ''
+  };
 
   const reminder = await Reminder.create({
     project: projectId,
-    client: {
-      name: clientDetails.clientName || '',
-      email: clientDetails.clientEmail || '',
-      phone: clientDetails.clientWhatsappNumber || ''
-    },
+    client: clientData,
     scheduledDate: new Date(scheduledDate),
     frequency: frequency || 'one-time',
     customIntervalDays: frequency === 'custom' ? customIntervalDays : undefined,
@@ -133,7 +136,8 @@ export const updateReminder = asyncHandler(async (req, res) => {
     notes,
     priority,
     tags,
-    status
+    status,
+    client
   } = req.body;
 
   const reminder = await Reminder.findById(req.params.id);
@@ -158,6 +162,15 @@ export const updateReminder = asyncHandler(async (req, res) => {
   if (priority) reminder.priority = priority;
   if (tags) reminder.tags = tags;
   if (status) reminder.status = status;
+  
+  // Update client info if provided
+  if (client) {
+    reminder.client = {
+      name: client.name || reminder.client?.name || '',
+      email: client.email || reminder.client?.email || '',
+      phone: client.phone || reminder.client?.phone || ''
+    };
+  }
 
   if (isRescheduling) {
     reminder.addHistoryEntry('rescheduled', req.user._id, `Rescheduled to ${new Date(scheduledDate).toLocaleDateString()}`);
@@ -226,6 +239,48 @@ export const deleteReminder = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Sync reminder client info from project
+// @route   POST /api/reminders/:id/sync-client
+// @access  Private (Admin/Manager only)
+export const syncClientFromProject = asyncHandler(async (req, res) => {
+  const reminder = await Reminder.findById(req.params.id).populate('project');
+
+  if (!reminder) {
+    return res.status(404).json({
+      success: false,
+      message: 'Reminder not found'
+    });
+  }
+
+  if (!reminder.project) {
+    return res.status(400).json({
+      success: false,
+      message: 'No project associated with this reminder'
+    });
+  }
+
+  const project = await Board.findById(reminder.project._id || reminder.project);
+  const clientDetails = project?.clientDetails || {};
+
+  reminder.client = {
+    name: clientDetails.clientName || reminder.client?.name || '',
+    email: clientDetails.clientEmail || reminder.client?.email || '',
+    phone: clientDetails.clientWhatsappNumber || reminder.client?.phone || ''
+  };
+
+  await reminder.save();
+
+  const updatedReminder = await Reminder.findById(reminder._id)
+    .populate('project', 'name status clientDetails')
+    .populate('createdBy', 'name avatar email');
+
+  res.json({
+    success: true,
+    data: updatedReminder,
+    message: 'Client info synced from project'
+  });
+});
+
 // @desc    Get reminder dashboard stats
 // @route   GET /api/reminders/dashboard/stats
 // @access  Private (Admin/Manager only)
@@ -270,8 +325,10 @@ export const getCalendarReminders = asyncHandler(async (req, res) => {
   }
 
   const filters = {};
-  if (department) filters.department = department;
-  if (project) filters.project = project;
+  // Only add department filter if it's a valid ObjectId (not 'all')
+  if (department && department !== 'all') filters.department = department;
+  // Only add project filter if it's a valid ObjectId (not 'all')
+  if (project && project !== 'all') filters.project = project;
 
   const reminders = await Reminder.getCalendarReminders(
     new Date(startDate),
