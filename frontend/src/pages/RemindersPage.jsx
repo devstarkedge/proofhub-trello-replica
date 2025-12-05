@@ -547,7 +547,12 @@ const RemindersPage = memo(() => {
           }}
           projectId={selectedProject._id}
           projectName={selectedProject.name}
-          clientInfo={selectedReminder?.client}
+          clientInfo={{
+            clientName: selectedReminder?.client?.name || '',
+            clientEmail: selectedReminder?.client?.email || '',
+            clientWhatsappNumber: selectedReminder?.client?.phone || ''
+          }}
+          existingReminder={selectedReminder}
           onReminderSaved={() => fetchData(true)}
         />
       )}

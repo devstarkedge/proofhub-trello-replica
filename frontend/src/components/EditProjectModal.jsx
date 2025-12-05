@@ -138,6 +138,32 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
+    
+    // Auto-save status change immediately
+    if (name === 'status') {
+      autoSaveStatus(value);
+    }
+  };
+
+  // Auto-save status without requiring Save button click
+  const autoSaveStatus = async (newStatus) => {
+    try {
+      const projectId = project.id || project._id;
+      await Database.updateProject(projectId, { status: newStatus });
+      // Show subtle confirmation
+      toast.success(`Status updated to "${newStatus.replace('-', ' ')}"`, {
+        autoClose: 2000,
+        hideProgressBar: true,
+      });
+      if (onProjectUpdated) {
+        onProjectUpdated({ ...project, status: newStatus });
+      }
+    } catch (error) {
+      console.error('Error auto-saving status:', error);
+      toast.error('Failed to update status');
+      // Revert the status in form if save failed
+      setFormData(prev => ({ ...prev, status: project.status }));
+    }
   };
 
   const handleAssigneeChange = (userId) => {
