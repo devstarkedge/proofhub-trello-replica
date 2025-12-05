@@ -88,12 +88,7 @@ const ReminderSidePanel = memo(({
     }
 
     const message = encodeURIComponent(
-      `Hi ${client.name || 'there'},\n\n` +
-      `This is a follow-up regarding your project: ${project.name || 'Project'}\n\n` +
-      `Scheduled Date: ${formatDateTime(reminder.scheduledDate).date}\n` +
-      `Time: ${formatDateTime(reminder.scheduledDate).time}\n\n` +
-      `${reminder.notes ? `Notes: ${reminder.notes}\n\n` : ''}` +
-      `Please let us know if you have any questions.`
+      `Hi ${client.name || 'there'}, This is a follow-up regarding '${project.name || 'Project'}'. The given task is done from my end. Please check and let us know if you need any help further.`
     );
     
     const phone = client.phone.replace(/[^0-9+]/g, '');
