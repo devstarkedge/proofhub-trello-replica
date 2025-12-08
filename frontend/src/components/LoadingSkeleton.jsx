@@ -1,4 +1,6 @@
 import React from 'react';
+import Sidebar from './Sidebar';
+import Header from './Header';
 
 const SkeletonCard = () => (
   <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 animate-pulse">
@@ -127,8 +129,10 @@ const WorkflowSkeleton = () => (
 
 const HomePageSkeleton = () => (
   <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+    <Sidebar />
     <div className="flex-1 ml-64">
-      <div className="p-6 space-y-6">
+      <Header />
+      <main className="p-6 space-y-6">
         {/* Welcome Header Skeleton */}
         <div className="bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 rounded-2xl p-8 animate-pulse">
           <div className="flex items-center gap-2 mb-4">
@@ -161,7 +165,7 @@ const HomePageSkeleton = () => (
             <DepartmentSkeleton key={i} />
           ))}
         </div>
-      </div>
+      </main>
     </div>
   </div>
 );

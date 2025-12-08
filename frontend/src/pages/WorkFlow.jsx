@@ -164,7 +164,8 @@ useEffect(() => {
       const projectBoard = response.data;
       const boardDeptId = projectBoard.department?._id || projectBoard.department;
 
-      if (deptId && boardDeptId !== deptId) {
+      // Skip department check if deptId is 'all' (all departments view)
+      if (deptId && deptId !== 'all' && boardDeptId !== deptId) {
         throw new Error('This project does not belong to the specified department.');
       }
 
@@ -229,16 +230,18 @@ useEffect(() => {
     }
   }, [updateCard]);
 
-  const handleMoveCard = useCallback(async (cardId, newListId, newPosition) => {
+  const handleMoveCard = useCallback(async (cardId, newListId, newPosition, newStatus) => {
     try {
-      // Get the target list to determine new status
-      const targetList = lists.find(list => list._id === newListId);
-      if (!targetList) {
-        console.error('Target list not found');
-        return;
+      // Fallback: derive status from target list if not provided
+      let status = newStatus;
+      if (!status) {
+        const targetList = lists.find(list => list._id === newListId);
+        if (targetList) {
+          status = targetList.title.toLowerCase().replace(/\s+/g, '-');
+        }
       }
 
-      await moveCard(cardId, newListId, newPosition, targetList.title);
+      await moveCard(cardId, newListId, newPosition, status);
 
     } catch (error) {
       console.error('Error moving card:', error);

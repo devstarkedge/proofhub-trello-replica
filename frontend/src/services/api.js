@@ -8,9 +8,17 @@ const api = axios.create({
   },
 });
 
-// Add a request interceptor to include the token in all requests
+// Add a request interceptor to check network status and include token
 api.interceptors.request.use(
   (config) => {
+    // Block requests when offline
+    if (!navigator.onLine) {
+      const offlineError = new Error('No internet connection. Please check your network.');
+      offlineError.code = 'NETWORK_OFFLINE';
+      offlineError.config = config;
+      return Promise.reject(offlineError);
+    }
+    
     const token = localStorage.getItem('token');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;

@@ -81,7 +81,9 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
     const cardId = e.dataTransfer.getData('text/plain');
     if (cardId && draggedCard && draggedCard._id !== targetCard._id) {
       const newPosition = targetCard.position;
-      onMoveCard(draggedCard._id, list._id, newPosition);
+      // Derive status from list title for immediate optimistic UI update
+      const newStatus = list.title.toLowerCase().replace(/\s+/g, '-');
+      onMoveCard(draggedCard._id, list._id, newPosition, newStatus);
     } else if (!cardId) {
       // List drop on card position - insert before this card
       onDrop(e, list);
@@ -89,14 +91,16 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
     setDraggedCard(null);
     setIsDragging(false);
     setDropTarget(null);
-  }, [draggedCard, list._id, onMoveCard, onDrop, list]);
+  }, [draggedCard, list._id, list.title, onMoveCard, onDrop, list]);
 
   const handleListDrop = useCallback((e) => {
     e.preventDefault();
     const cardId = e.dataTransfer.getData('text/plain');
     if (cardId && draggedCard && draggedCard.listId !== list._id) {
       const newPosition = cards.length;
-      onMoveCard(draggedCard._id, list._id, newPosition);
+      // Derive status from list title for immediate optimistic UI update
+      const newStatus = list.title.toLowerCase().replace(/\s+/g, '-');
+      onMoveCard(draggedCard._id, list._id, newPosition, newStatus);
     } else if (!cardId) {
       // List drop at end of list
       onDrop(e, list);
@@ -104,7 +108,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
     setDraggedCard(null);
     setIsDragging(false);
     setDropTarget(null);
-  }, [draggedCard, list._id, cards.length, onMoveCard, onDrop, list]);
+  }, [draggedCard, list._id, list.title, cards.length, onMoveCard, onDrop, list]);
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);

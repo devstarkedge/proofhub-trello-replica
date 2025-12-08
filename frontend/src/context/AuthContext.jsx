@@ -11,8 +11,8 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const loginUser = (userData, userToken) => {
+    // Only store token in localStorage, NOT user data (security improvement)
     localStorage.setItem("token", userToken);
-    localStorage.setItem("user", JSON.stringify(userData));
     setToken(userToken);
     setUser(userData);
     setIsAuthenticated(true);
@@ -22,8 +22,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logoutUser = useCallback(() => {
+    // Only remove token from localStorage
     localStorage.removeItem("token");
-    localStorage.removeItem("user");
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
@@ -34,15 +34,14 @@ export const AuthProvider = ({ children }) => {
 
   const restoreSession = useCallback(async () => {
     const savedToken = localStorage.getItem("token");
-    const savedUser = localStorage.getItem("user");
 
-    if (savedToken && savedUser) {
+    if (savedToken) {
       try {
-        // Add cache-busting parameter to ensure fresh data
+        // Fetch fresh user data from API using the stored token
         const response = await api.get(`/api/auth/verify?_t=${Date.now()}`);
         const userData = response.data.data;
 
-        // Re-hydrate state from verified data
+        // Re-hydrate state from verified data (user data in memory only)
         setToken(savedToken);
         setUser(userData);
         setIsAuthenticated(true);

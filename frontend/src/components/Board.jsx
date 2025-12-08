@@ -62,7 +62,9 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
     const cardId = e.dataTransfer.getData('text/plain');
     if (cardId && draggedCard && draggedCard.list !== targetList._id) {
       const newPosition = cardsByList[targetList._id]?.length || 0;
-      onMoveCard(draggedCard._id, targetList._id, newPosition);
+      // Derive status from target list title for immediate optimistic UI update
+      const newStatus = targetList.title.toLowerCase().replace(/\s+/g, '-');
+      onMoveCard(draggedCard._id, targetList._id, newPosition, newStatus);
     }
     setDraggedCard(null);
     setIsDraggingCard(false);

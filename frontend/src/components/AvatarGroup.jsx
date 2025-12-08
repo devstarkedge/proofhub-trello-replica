@@ -43,9 +43,9 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
         {assignees.map((assignee, idx) => (
           <div key={assignee._id || idx} className="flex items-center gap-1">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg">
-              {assignee.name.charAt(0).toUpperCase()}
+              {assignee?.name?.charAt(0)?.toUpperCase() || '?'}
             </div>
-            <span className="text-gray-700 font-medium">{assignee.name}</span>
+            <span className="text-gray-700 font-medium">{assignee?.name || 'Unknown'}</span>
           </div>
         ))}
       </div>
@@ -70,7 +70,7 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
             className={`w-8 h-8 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white transition-transform duration-200 z-0`}
             style={{ left: `-${idx * 12}px` }}
           >
-            {assignee.name.charAt(0).toUpperCase()}
+            {assignee?.name?.charAt(0)?.toUpperCase() || '?'}
           </div>
         ))}
       </div>
@@ -103,9 +103,9 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
             {assignees.map((assignee, idx) => (
               <li key={assignee._id || idx} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-blue-50 transition-colors">
                 <div className="w-6 h-6 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-[0.8rem] font-bold shadow">
-                  {assignee.name.charAt(0).toUpperCase()}
+                  {assignee?.name?.charAt(0)?.toUpperCase() || '?'}
                 </div>
-                <span className="text-gray-900 font-medium truncate max-w-[80px]">{assignee.name}</span>
+                <span className="text-gray-900 font-medium truncate max-w-[80px]">{assignee?.name || 'Unknown'}</span>
               </li>
             ))}
           </ul>

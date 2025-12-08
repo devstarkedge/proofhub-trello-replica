@@ -32,12 +32,24 @@ const EditDepartmentModal = ({
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [reassignData, setReassignData] = useState(null);
 
+  // Helper function to normalize manager IDs (handles both object and string formats)
+  const normalizeManagerIds = (managers) => {
+    if (!managers || !Array.isArray(managers)) return [];
+    return managers.map(m => {
+      if (typeof m === 'object' && m !== null) {
+        return m._id?.toString() || m._id;
+      }
+      return m?.toString() || m;
+    }).filter(Boolean);
+  };
+
   useEffect(() => {
     if (isOpen && department) {
       setFormData({
         name: department.name || "",
         description: department.description || "",
-        managers: department.managers || [],
+        // Normalize manager IDs to ensure consistent string format
+        managers: normalizeManagerIds(department.managers),
       });
       setErrors({});
     }
@@ -51,13 +63,27 @@ const EditDepartmentModal = ({
     }
   };
 
+  // Helper to normalize a single ID
+  const normalizeId = (item) => {
+    if (!item) return null;
+    if (typeof item === 'object' && item !== null) {
+      return item._id?.toString() || item.toString();
+    }
+    return item?.toString();
+  };
+
   const handleManagerChange = (selectedManagers) => {
+    // Normalize all IDs for proper comparison
+    const normalizedSelected = selectedManagers.map(id => normalizeId(id)).filter(Boolean);
+    const normalizedFormManagers = formData.managers.map(id => normalizeId(id)).filter(Boolean);
+    const currentDeptId = normalizeId(department._id);
+    
     // Check if any newly selected managers are already assigned to other departments
-    const newManagers = selectedManagers.filter(
-      (id) => !formData.managers.includes(id)
+    const newManagers = normalizedSelected.filter(
+      (id) => !normalizedFormManagers.includes(id)
     );
     const managersToCheck = managers.filter((manager) =>
-      newManagers.includes(manager._id)
+      newManagers.includes(normalizeId(manager._id))
     );
 
     const managersWithOtherAssignments = managersToCheck.filter(
@@ -65,7 +91,7 @@ const EditDepartmentModal = ({
         manager.department &&
         manager.department.length > 0 &&
         !manager.department.some(
-          (dept) => dept === department._id || dept._id === department._id
+          (dept) => normalizeId(dept) === currentDeptId
         )
     );
 
@@ -73,17 +99,12 @@ const EditDepartmentModal = ({
       // Show reassign confirmation modal
       const manager = managersWithOtherAssignments[0];
       const otherDepartments = manager.department.filter(
-        (dept) =>
-          (typeof dept === "string" ? dept : dept._id || dept) !==
-          department._id
+        (dept) => normalizeId(dept) !== currentDeptId
       );
       const otherDeptNames = departments
         .filter((dept) =>
           otherDepartments.some(
-            (otherDept) =>
-              (typeof otherDept === "string"
-                ? otherDept
-                : otherDept._id || otherDept) === dept._id
+            (otherDept) => normalizeId(otherDept) === normalizeId(dept._id)
           )
         )
         .map((dept) => dept.name)
@@ -93,7 +114,7 @@ const EditDepartmentModal = ({
         manager,
         otherDeptNames,
         selectedDepartment: department.name,
-        selectedManagers,
+        selectedManagers: normalizedSelected,
         currentDepartment: department,
       });
       setShowReassignModal(true);
@@ -101,7 +122,7 @@ const EditDepartmentModal = ({
     }
 
     // No conflicts, proceed with selection
-    setFormData((prev) => ({ ...prev, managers: selectedManagers }));
+    setFormData((prev) => ({ ...prev, managers: normalizedSelected }));
   };
 
   const validateForm = () => {

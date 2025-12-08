@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Save, AlertCircle, Loader, Calendar, Users, DollarSign,
@@ -11,8 +11,12 @@ import { toast } from "react-toastify"
 import Database from '../services/database';
 import ReminderPanel from './ReminderPanel';
 import ReminderModal from './ReminderModal';
+import AuthContext from '../context/AuthContext';
 
 const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
+  // Get user from AuthContext instead of localStorage
+  const { user } = useContext(AuthContext);
+  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -43,17 +47,8 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderKey, setReminderKey] = useState(0); // For forcing re-render of ReminderPanel
   
-  // Get user role from localStorage
-  const getUserRole = useCallback(() => {
-    try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      return user.role || 'employee';
-    } catch {
-      return 'employee';
-    }
-  }, []);
-  
-  const userRole = getUserRole();
+  // Get user role from AuthContext
+  const userRole = user?.role || 'employee';
   const canManageReminders = userRole === 'admin' || userRole === 'manager';
 
   useEffect(() => {

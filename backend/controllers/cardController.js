@@ -413,7 +413,7 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
         members: { name: 1, email: 1, avatar: 1 },
         createdBy: { name: 1, email: 1, avatar: 1 },
         list: { title: 1 },
-        board: { name: 1 },
+        board: { _id: 1, name: 1 },
         loggedTime: 1,
         totalLoggedTime: {
           $reduce: {

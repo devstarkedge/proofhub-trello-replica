@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, X, User, CheckCircle } from 'lucide-react';
 
 const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = false, currentDepartment, departments = [] }) => {
@@ -7,13 +7,39 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
   const dropdownRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Filter managers based on search term, exclude already selected ones, and exclude managers already assigned to this department
-  const availableManagers = managers.filter(manager =>
-    !selectedManagers.includes(manager._id) &&
-    (!currentDepartment || !currentDepartment.managers?.includes(manager._id)) &&
-    (manager.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     manager.email.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Helper function to normalize an ID (extract string ID from object or return string as-is)
+  const normalizeId = (item) => {
+    if (!item) return null;
+    if (typeof item === 'object' && item !== null) {
+      return item._id?.toString() || item.toString();
+    }
+    return item?.toString();
+  };
+
+  // Normalize selectedManagers to array of string IDs for consistent comparison
+  const selectedManagerIds = useMemo(() => {
+    return selectedManagers.map(m => normalizeId(m)).filter(Boolean);
+  }, [selectedManagers]);
+
+  // Filter managers based on search term and exclude already selected ones
+  // Already selected managers should NOT appear in the dropdown
+  const availableManagers = useMemo(() => {
+    return managers.filter(manager => {
+      const managerId = normalizeId(manager._id);
+      
+      // Exclude if already selected
+      if (selectedManagerIds.includes(managerId)) {
+        return false;
+      }
+      
+      // Apply search filter
+      const matchesSearch = 
+        manager.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        manager.email.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      return matchesSearch;
+    });
+  }, [managers, selectedManagerIds, searchTerm]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -36,18 +62,20 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
   }, [isOpen]);
 
   const handleSelectManager = (managerId) => {
-    if (!selectedManagers.includes(managerId)) {
-      onChange([...selectedManagers, managerId]);
+    const normalizedId = normalizeId(managerId);
+    if (!selectedManagerIds.includes(normalizedId)) {
+      onChange([...selectedManagers, normalizedId]);
     }
     setSearchTerm('');
   };
 
   const handleRemoveManager = (managerId) => {
-    onChange(selectedManagers.filter(id => id !== managerId));
+    const normalizedId = normalizeId(managerId);
+    onChange(selectedManagers.filter(id => normalizeId(id) !== normalizedId));
   };
 
   const getSelectedManagerObjects = () => {
-    return managers.filter(manager => selectedManagers.includes(manager._id));
+    return managers.filter(manager => selectedManagerIds.includes(normalizeId(manager._id)));
   };
 
   const handleKeyDown = (e) => {
@@ -67,9 +95,8 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
       {selectedManagers.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {selectedManagers.map(managerItem => {
-            const isObject = typeof managerItem === 'object' && managerItem !== null;
-            const managerId = isObject ? managerItem._id : managerItem;
-            const manager = isObject ? managerItem : managers.find(m => m._id === managerItem);
+            const managerId = normalizeId(managerItem);
+            const manager = managers.find(m => normalizeId(m._id) === managerId);
             return (
               <div
                 key={managerId}
@@ -84,7 +111,7 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
                 {!disabled && (
                   <button
                     type="button"
-                    onClick={() => handleRemoveManager(isObject ? managerItem : managerId)}
+                    onClick={() => handleRemoveManager(managerId)}
                     className="hover:bg-indigo-200 rounded-full p-0.5 transition-colors"
                     title="Remove manager"
                   >

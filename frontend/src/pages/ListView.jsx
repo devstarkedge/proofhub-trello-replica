@@ -78,6 +78,13 @@ const ListView = () => {
   const helpPanelRef = useRef(null);
   const suggestionsRef = useRef(null);
 
+  // Reset pagination to page 1 when department changes
+  useEffect(() => {
+    if (currentDepartment) {
+      setPage(1);
+    }
+  }, [currentDepartment]);
+
   useEffect(() => {
     if (currentDepartment) {
       loadCards();
@@ -168,24 +175,29 @@ const ListView = () => {
     setTimeout(() => setRefreshing(false), 500);
   };
 
-  // Navigate to project's workflow page, prefetching workflow data first
-  const handleProjectClick = async (projectId) => {
+  // Navigate to project's workflow page, prefetching complete workflow data first
+  const handleProjectClick = useCallback(async (projectId) => {
     if (!currentDepartment || !projectId) return;
+
     const deptId = currentDepartment._id;
-    const key = ['workflow', deptId, projectId];
+    const key = ['workflow-complete', projectId];
+
     try {
-      // If cached in our small cache, skip prefetch
+      // Prefetch complete workflow data (board + lists + cards) for instant rendering
       if (!projectCache.current.has(projectId)) {
-        const res = await queryClient.prefetchQuery(key, () => Database.getWorkflowData(deptId, projectId));
+        const res = await queryClient.prefetchQuery({
+          queryKey: key,
+          queryFn: () => Database.getWorkflowComplete(projectId)
+        });
         if (res && res.data) projectCache.current.set(projectId, res.data);
       }
     } catch (err) {
-      // ignore prefetch errors; navigation can still proceed and WorkFlow will load
+      // Ignore prefetch errors; navigation can still proceed and WorkFlow will load
       console.warn('Prefetch workflow failed', err);
     } finally {
       navigate(`/workflow/${deptId}/${projectId}`);
     }
-  };
+  }, [currentDepartment, queryClient, navigate]);
 
   // Modal handling for card details
   const [modalOpen, setModalOpen] = useState(false);
@@ -314,6 +326,15 @@ const ListView = () => {
     return sorted;
   }, [cards, filters, sorting, searchMode]);
 
+  // Pagination state (must be after filteredAndSortedCards)
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10); // Default page size: 10
+  const totalPages = useMemo(() => Math.ceil(filteredAndSortedCards.length / pageSize), [filteredAndSortedCards, pageSize]);
+  const paginatedCards = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredAndSortedCards.slice(start, start + pageSize);
+  }, [filteredAndSortedCards, page, pageSize]);
+
   const handleSort = (key) => {
     if (sorting.key === key) {
       setSorting({ ...sorting, order: sorting.order === 'asc' ? 'desc' : 'asc' });
@@ -425,7 +446,7 @@ const ListView = () => {
     const total = cards.length;
     const completed = cards.filter(c => c.list?.title?.toLowerCase() === 'done').length;
     const inProgress = cards.filter(c => c.list?.title?.toLowerCase() === 'in progress').length;
-    const highPriority = cards.filter(c => c.priority === 'High').length;
+    const highPriority = cards.filter(c => c.priority?.toLowerCase() === 'high').length;
     const overdue = cards.filter(c => {
       if (!c.dueDate) return false;
       const today = new Date();
@@ -1127,20 +1148,20 @@ const ListView = () => {
               <TableBody>
                 {loading ? (
                   renderSkeleton()
-                ) : filteredAndSortedCards.length > 0 ? (
-                  filteredAndSortedCards.map((card, index) => (
+                ) : paginatedCards.length > 0 ? (
+                  paginatedCards.map((card, index) => (
                     <TableRow 
                       key={card._id} 
-                      className={`hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 transition-all duration-300 cursor-pointer group animate-slide-in border-b border-gray-100 ${rowPaddingClass}`}
+                        className={`hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 transition-all duration-300 group animate-slide-in border-b border-gray-100 ${rowPaddingClass}`}
                       style={{ animationDelay: `${index * 30}ms` }}
                     >
                       <TableCell className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
                         <div className="flex items-center gap-3">
                           <div className="w-1 h-10 bg-gradient-to-b from-blue-500 to-purple-500 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg shadow-blue-500/50"></div>
                           <div className="flex-1">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); openCardModal(card); }}
-                              className="text-left font-semibold hover:text-blue-600 transition-colors"
+                              <button
+                                onClick={(e) => { e.stopPropagation(); openCardModal(card); }}
+                                className="text-left font-semibold hover:text-blue-600 transition-colors cursor-pointer"
                               aria-label={`Open details for ${card.title}`}
                               dangerouslySetInnerHTML={{
                                 __html: searchHighlights.has(card._id)
@@ -1156,26 +1177,23 @@ const ListView = () => {
                             <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100 transition-colors">
                               <FolderKanban className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
                             </div>
-                            {card.board && card.board._id ? (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleProjectClick(card.board._id); }}
-                                className="font-medium text-left hover:text-blue-700 transition-colors"
-                                aria-label={`Open project ${card.board?.name}`}
-                                dangerouslySetInnerHTML={{
-                                  __html: searchHighlights.has(card._id)
-                                    ? highlightText(card.board?.name || 'N/A', searchHighlights.get(card._id))
-                                    : (card.board?.name || 'N/A')
-                                }}
-                              />
-                            ) : (
-                              <span className="font-medium"
-                                dangerouslySetInnerHTML={{
-                                  __html: searchHighlights.has(card._id)
-                                    ? highlightText(card.board?.name || 'N/A', searchHighlights.get(card._id))
-                                    : (card.board?.name || 'N/A')
-                                }}
-                              />
-                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (card.board && card.board._id) {
+                                  handleProjectClick(card.board._id);
+                                } else {
+                                  alert('No project ID available for this card.');
+                                }
+                              }}
+                              className={`font-medium text-left transition-colors cursor-pointer ${card.board && card.board._id ? 'hover:text-blue-700' : 'text-gray-600'}`}
+                              aria-label={`Open project ${card.board?.name || 'N/A'}`}
+                              dangerouslySetInnerHTML={{
+                                __html: searchHighlights.has(card._id)
+                                  ? highlightText(card.board?.name || 'N/A', searchHighlights.get(card._id))
+                                  : (card.board?.name || 'N/A')
+                              }}
+                            />
                           </div>
                         </TableCell>
                       <TableCell>
@@ -1238,13 +1256,31 @@ const ListView = () => {
           </div>
         </div>
 
-        {/* Results Count */}
+        {/* Pagination Controls & Results Count */}
         {!loading && filteredAndSortedCards.length > 0 && (
-          <div className="mt-6 text-center">
+          <div className="mt-6 flex flex-col items-center gap-2">
             <Badge variant="secondary" className="text-sm py-2 px-4 bg-white/80 backdrop-blur-sm border-2 border-gray-200 hover:border-blue-300 transition-all">
-              Showing <span className="font-bold text-blue-600 mx-1">{filteredAndSortedCards.length}</span> of{' '}
-              <span className="font-bold text-gray-900 mx-1">{cards.length}</span> tasks
+              Showing <span className="font-bold text-blue-600 mx-1">{paginatedCards.length}</span> of{' '}
+              <span className="font-bold text-gray-900 mx-1">{filteredAndSortedCards.length}</span> tasks (Page {page} of {totalPages})
             </Badge>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
+                Previous
+              </Button>
+              <span className="text-sm">Page {page} / {totalPages}</span>
+              <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>
+                Next
+              </Button>
+              <select
+                className="ml-4 px-2 py-1 border rounded text-sm"
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+              >
+                {[10, 20, 50].map(size => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </main>
@@ -1257,13 +1293,15 @@ const ListView = () => {
             onClose={() => setModalOpen(false)}
             onUpdate={async (updates) => {
               try {
-                // Update in-memory cache
-                const existing = taskCache.current.get(modalCard._id) || modalCard;
-                const merged = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-                taskCache.current.set(modalCard._id, merged);
-                // Update list state
-                setCards(prev => prev.map(c => c._id === modalCard._id ? { ...c, ...updates } : c));
-                setModalCard(merged);
+                // 1. Update DB
+                const resp = await Database.updateCard(modalCard._id, updates);
+                const updatedCard = resp.data || resp;
+                // 2. Update cache
+                taskCache.current.set(modalCard._id, updatedCard);
+                // 3. Update list state
+                setCards(prev => prev.map(c => c._id === modalCard._id ? updatedCard : c));
+                // 4. Update modal
+                setModalCard(updatedCard);
               } catch (err) {
                 console.error('Error applying update to modal card', err);
               }

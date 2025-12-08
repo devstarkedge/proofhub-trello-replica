@@ -26,7 +26,7 @@ const themeOverlay = {
   pink: 'bg-pink-950/50'
 };
 
-const CardDetailModal = ({
+const CardDetailModal = React.memo(({
   card,
   onClose,
   onUpdate,
@@ -38,21 +38,23 @@ const CardDetailModal = ({
   onLabelUpdate
 }) => {
   const { user } = useContext(AuthContext);
-  const [title, setTitle] = useState(card.title);
-  const [description, setDescription] = useState(card.description || "");
+  // Memoize card props to avoid unnecessary re-renders
+  const initialCard = React.useMemo(() => card, [card]);
+  const [title, setTitle] = useState(initialCard.title);
+  const [description, setDescription] = useState(initialCard.description || "");
   const [assignees, setAssignees] = useState(
-    card.assignees ? card.assignees.map((a) => (typeof a === 'object' ? a._id : a)).filter(Boolean) : []
+    initialCard.assignees ? initialCard.assignees.map((a) => (typeof a === 'object' ? a._id : a)).filter(Boolean) : []
   );
-  const [priority, setPriority] = useState(card.priority || "");
-  const [status, setStatus] = useState(card.status || "");
+  const [priority, setPriority] = useState(initialCard.priority || "");
+  const [status, setStatus] = useState(initialCard.status || "");
   const [availableStatuses, setAvailableStatuses] = useState([]);
   const [dueDate, setDueDate] = useState(
-    card.dueDate ? new Date(card.dueDate).toISOString().split("T")[0] : ""
+    initialCard.dueDate ? new Date(initialCard.dueDate).toISOString().split("T")[0] : ""
   );
   const [startDate, setStartDate] = useState(
-    card.startDate ? new Date(card.startDate).toISOString().split("T")[0] : ""
+    initialCard.startDate ? new Date(initialCard.startDate).toISOString().split("T")[0] : ""
   );
-  const [labels, setLabels] = useState(card.labels || []);
+  const [labels, setLabels] = useState(initialCard.labels || []);
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [activities, setActivities] = useState([]);
@@ -61,7 +63,7 @@ const CardDetailModal = ({
   const [subtasks, setSubtasks] = useState([]);
   const [subtasksLoading, setSubtasksLoading] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
-  const [attachments, setAttachments] = useState(card.attachments || []);
+  const [attachments, setAttachments] = useState(initialCard.attachments || []);
   const [teamMembers, setTeamMembers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1396,6 +1398,6 @@ const CardDetailModal = ({
     />
   </>
   );
-};
+});
 
 export default CardDetailModal;

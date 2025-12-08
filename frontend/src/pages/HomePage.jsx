@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Eye, EyeOff, Building2, FolderKanban,
   TrendingUp, Users, AlertCircle, Search, Filter,
-  Grid, List as ListIcon, ChevronDown, Sparkles, User
+  Grid, List as ListIcon, ChevronDown, Sparkles, User, Shield
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
@@ -469,6 +469,7 @@ const HomePage = () => {
                           {/* Manager Avatars */}
                           {department.managers && department.managers.length > 0 && (
                             <div className="flex items-center gap-2 ml-4">
+                              <Shield size={20} className="text-gray-500" />
                               <div className="flex -space-x-2">
                                 {department.managers.slice(0, 3).map((manager, index) => (
                                   <div

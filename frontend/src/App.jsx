@@ -2,9 +2,11 @@ import React, { Suspense, lazy } from "react";
 import { Routes, Route } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from "./context/AuthContext";
+import { MeProvider } from "./context/MeContext";
 import { TeamProvider } from "./context/DepartmentContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import Loading from "./components/Loading";
+import NetworkStatusToast from "./components/NetworkStatusToast";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./App.css";
 
@@ -33,19 +35,20 @@ const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
 function App() {
   return (
     <AuthProvider>
-      <TeamProvider>
-        <NotificationProvider>
-          <Suspense fallback={<Loading size="lg" text="Loading application..." />}>
-            <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/verify-pending" element={<VerifyPending />} />
-            <Route
-              path="/"
-              element={
-                <PrivateRoute>
-                  <ErrorBoundary>
-                    <HomePage />
+      <MeProvider>
+        <TeamProvider>
+          <NotificationProvider>
+            <Suspense fallback={<Loading size="lg" text="Loading application..." />}>
+              <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/verify-pending" element={<VerifyPending />} />
+              <Route
+                path="/"
+                element={
+                  <PrivateRoute>
+                    <ErrorBoundary>
+                      <HomePage />
                   </ErrorBoundary>
                 </PrivateRoute>
               }
@@ -202,22 +205,24 @@ function App() {
                 </PrivateRoute>
               }
             />
-            </Routes>
-          </Suspense>
-          <ToastContainer
-            position="top-right"
-            autoClose={5000}
-            hideProgressBar={false}
-            newestOnTop={false}
-            closeOnClick
-            rtl={false}
-            pauseOnFocusLoss
-            draggable
-            pauseOnHover
-            theme="light"
-          />
-        </NotificationProvider>
-      </TeamProvider>
+              </Routes>
+            </Suspense>
+            <ToastContainer
+              position="top-right"
+              autoClose={5000}
+              hideProgressBar={false}
+              newestOnTop={false}
+              closeOnClick
+              rtl={false}
+              pauseOnFocusLoss
+              draggable
+              pauseOnHover
+              theme="light"
+            />
+            <NetworkStatusToast />
+          </NotificationProvider>
+        </TeamProvider>
+      </MeProvider>
     </AuthProvider>
   );
 }
