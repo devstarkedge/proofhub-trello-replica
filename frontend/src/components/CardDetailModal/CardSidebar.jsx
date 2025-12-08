@@ -12,6 +12,7 @@ import {
   Plus,
   ChevronDown,
 } from "lucide-react";
+import LabelDropdown from "../LabelDropdown";
 
 const CardSidebar = ({
   saving,
@@ -23,7 +24,6 @@ const CardSidebar = ({
   dueDate,
   startDate,
   labels,
-  newLabel,
   availableStatuses,
   searchQuery,
   isDropdownOpen,
@@ -33,9 +33,7 @@ const CardSidebar = ({
   onStatusChange,
   onDueDateChange,
   onStartDateChange,
-  onLabelChange,
-  onAddLabel,
-  onRemoveLabel,
+  onLabelsChange,
   onSelectMember,
   onRemoveAssignee,
   onToggleDepartment,
@@ -43,6 +41,8 @@ const CardSidebar = ({
   onIsDropdownOpenChange,
   onDeleteCard,
   card,
+  boardId,
+  entityType = 'card',
 }) => {
   const dropdownRef = useRef(null);
 
@@ -312,56 +312,14 @@ const CardSidebar = ({
             />
           </div>
 
-          {/* Add Label */}
-          <div>
-            <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-              <Tag size={14} />
-              Add Label
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newLabel}
-                onChange={(e) => onLabelChange(e.target.value)}
-                onKeyPress={(e) =>
-                  e.key === "Enter" && onAddLabel()
-                }
-                placeholder="Label name..."
-                className="flex-1 p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={onAddLabel}
-                className="px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus size={16} />
-              </motion.button>
-            </div>
-            {labels.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {labels.map((label, index) => {
-                  const safeKey = String(label || `label-${index}`).trim() || `label-${index}`;
-                  return (
-                    <motion.span
-                      key={safeKey}
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium flex items-center gap-1"
-                    >
-                      {label}
-                      <button
-                        onClick={() => onRemoveLabel(label)}
-                        className="hover:bg-blue-200 rounded-full p-0.5 transition-colors"
-                      >
-                        <X size={10} />
-                      </button>
-                    </motion.span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* Labels - Using LabelDropdown */}
+          <LabelDropdown
+            boardId={boardId}
+            selectedLabels={labels}
+            onLabelsChange={onLabelsChange}
+            entityType={entityType}
+            entityId={card?._id}
+          />
         </div>
       </div>
 

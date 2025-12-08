@@ -11,7 +11,8 @@ import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 
 const basePopulate = [
   { path: 'assignees', select: 'name email avatar' },
-  { path: 'watchers', select: 'name email avatar' }
+  { path: 'watchers', select: 'name email avatar' },
+  { path: 'tags', select: 'name color' }
 ];
 
 const buildBreadcrumbs = (card) => ({

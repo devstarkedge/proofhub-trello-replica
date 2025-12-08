@@ -50,6 +50,33 @@ export const getCards = asyncHandler(async (req, res, next) => {
         pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
       }
     },
+    // Lookup labels - handle both ObjectId and string formats
+    {
+      $lookup: {
+        from: 'labels',
+        let: { labelIds: { $ifNull: ['$labels', []] } },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $in: [
+                  { $toString: '$_id' },
+                  {
+                    $map: {
+                      input: '$$labelIds',
+                      as: 'lid',
+                      in: { $toString: '$$lid' }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          { $project: { name: 1, color: 1 } }
+        ],
+        as: 'labels'
+      }
+    },
     // Lookup createdBy
     {
       $lookup: {
@@ -147,6 +174,33 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
         foreignField: '_id',
         as: 'members',
         pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup labels - handle both ObjectId and string formats
+    {
+      $lookup: {
+        from: 'labels',
+        let: { labelIds: { $ifNull: ['$labels', []] } },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $in: [
+                  { $toString: '$_id' },
+                  {
+                    $map: {
+                      input: '$$labelIds',
+                      as: 'lid',
+                      in: { $toString: '$$lid' }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          { $project: { name: 1, color: 1 } }
+        ],
+        as: 'labels'
       }
     },
     // Lookup createdBy
@@ -473,6 +527,33 @@ export const getCard = asyncHandler(async (req, res, next) => {
         foreignField: '_id',
         as: 'boardArr',
         pipeline: [{ $project: { name: 1 } }]
+      }
+    },
+    // Lookup labels - handle both ObjectId and string formats
+    {
+      $lookup: {
+        from: 'labels',
+        let: { labelIds: { $ifNull: ['$labels', []] } },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $in: [
+                  { $toString: '$_id' },
+                  {
+                    $map: {
+                      input: '$$labelIds',
+                      as: 'lid',
+                      in: { $toString: '$$lid' }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          { $project: { name: 1, color: 1 } }
+        ],
+        as: 'labels'
       }
     },
     // Lookup recurring tasks in same pipeline

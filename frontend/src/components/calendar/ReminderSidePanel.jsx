@@ -4,8 +4,7 @@ import {
   X, Calendar, Clock, User, Mail, Phone, FileText,
   CheckCircle2, AlertCircle, AlertTriangle, Send,
   MessageSquare, ChevronLeft, ChevronRight, Loader,
-  ExternalLink, Copy, Edit2, Trash2, MoreVertical,
-  RefreshCw, Save
+  ExternalLink, Copy, Edit2, Trash2, MoreVertical
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../../services/database';
@@ -27,8 +26,6 @@ const ReminderSidePanel = memo(({
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedReminderId, setExpandedReminderId] = useState(null);
   const [actionLoading, setActionLoading] = useState({});
-  const [editingClientId, setEditingClientId] = useState(null);
-  const [editClientData, setEditClientData] = useState({ name: '', email: '', phone: '' });
   const itemsPerPage = 10;
 
   // Reset page when date changes
@@ -170,44 +167,6 @@ const ReminderSidePanel = memo(({
     }
   };
 
-  // Start editing client info
-  const startEditingClient = (reminder) => {
-    setEditingClientId(reminder._id);
-    setEditClientData({
-      name: reminder.client?.name || '',
-      email: reminder.client?.email || '',
-      phone: reminder.client?.phone || ''
-    });
-  };
-
-  // Save client info
-  const saveClientInfo = async (reminder) => {
-    setActionLoading(prev => ({ ...prev, [reminder._id]: 'saveClient' }));
-    try {
-      await Database.updateReminderClient(reminder._id, editClientData);
-      toast.success('Client info updated successfully!');
-      setEditingClientId(null);
-      onRefresh?.();
-    } catch (error) {
-      toast.error('Failed to update client info');
-    } finally {
-      setActionLoading(prev => ({ ...prev, [reminder._id]: null }));
-    }
-  };
-
-  // Sync client from project
-  const syncClientFromProject = async (reminder) => {
-    setActionLoading(prev => ({ ...prev, [reminder._id]: 'sync' }));
-    try {
-      await Database.syncReminderClientFromProject(reminder._id);
-      toast.success('Client info synced from project!');
-      onRefresh?.();
-    } catch (error) {
-      toast.error('Failed to sync client info: ' + error.message);
-    } finally {
-      setActionLoading(prev => ({ ...prev, [reminder._id]: null }));
-    }
-  };
 
   const panelVariants = {
     hidden: { x: '100%', opacity: 0 },
@@ -390,174 +349,74 @@ const ReminderSidePanel = memo(({
                               <div className="px-4 pb-4 border-t border-gray-100 pt-4 space-y-4">
                                 {/* Client Details */}
                                 <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                                  <div className="flex items-center justify-between">
-                                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                                      <User className="h-4 w-4" />
-                                      Client Information
-                                    </h4>
-                                    <div className="flex items-center gap-1">
-                                      {editingClientId === reminder._id ? (
-                                        <>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              saveClientInfo(reminder);
-                                            }}
-                                            disabled={actionLoading[reminder._id] === 'saveClient'}
-                                            className="p-1.5 bg-green-100 hover:bg-green-200 text-green-600 rounded-lg transition-colors"
-                                            title="Save"
-                                          >
-                                            {actionLoading[reminder._id] === 'saveClient' ? (
-                                              <Loader className="h-3.5 w-3.5 animate-spin" />
-                                            ) : (
-                                              <Save className="h-3.5 w-3.5" />
-                                            )}
-                                          </button>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setEditingClientId(null);
-                                            }}
-                                            className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors"
-                                            title="Cancel"
-                                          >
-                                            <X className="h-3.5 w-3.5" />
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              startEditingClient(reminder);
-                                            }}
-                                            className="p-1.5 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg transition-colors"
-                                            title="Edit client info"
-                                          >
-                                            <Edit2 className="h-3.5 w-3.5" />
-                                          </button>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              syncClientFromProject(reminder);
-                                            }}
-                                            disabled={actionLoading[reminder._id] === 'sync'}
-                                            className="p-1.5 bg-purple-100 hover:bg-purple-200 text-purple-600 rounded-lg transition-colors"
-                                            title="Sync from project"
-                                          >
-                                            {actionLoading[reminder._id] === 'sync' ? (
-                                              <Loader className="h-3.5 w-3.5 animate-spin" />
-                                            ) : (
-                                              <RefreshCw className="h-3.5 w-3.5" />
-                                            )}
-                                          </button>
-                                        </>
-                                      )}
+                                  <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                                    <User className="h-4 w-4" />
+                                    Client Information
+                                  </h4>
+
+                                  {/* Display Mode */}
+                                  <div className="grid grid-cols-1 gap-2 text-sm">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-gray-500">Name:</span>
+                                      <span className="font-medium text-gray-900">
+                                        {reminder.client?.name || <span className="text-gray-400 italic">Not set</span>}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-gray-500 flex items-center gap-1">
+                                        <Mail className="h-3.5 w-3.5" />
+                                        Email:
+                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        {reminder.client?.email ? (
+                                          <>
+                                            <span className="text-gray-900 truncate max-w-[150px]">
+                                              {reminder.client.email}
+                                            </span>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                copyToClipboard(reminder.client.email, 'Email');
+                                              }}
+                                              className="p-1 hover:bg-gray-200 rounded"
+                                            >
+                                              <Copy className="h-3.5 w-3.5 text-gray-400" />
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <span className="text-gray-400 italic">Not set</span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-gray-500 flex items-center gap-1">
+                                        <Phone className="h-3.5 w-3.5" />
+                                        Phone:
+                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        {reminder.client?.phone ? (
+                                          <>
+                                            <span className="text-gray-900">
+                                              {reminder.client.phone}
+                                            </span>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                copyToClipboard(reminder.client.phone, 'Phone');
+                                              }}
+                                              className="p-1 hover:bg-gray-200 rounded"
+                                            >
+                                              <Copy className="h-3.5 w-3.5 text-gray-400" />
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <span className="text-gray-400 italic">Not set</span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
-                                  
-                                  {editingClientId === reminder._id ? (
-                                    // Edit Mode
-                                    <div className="grid grid-cols-1 gap-3">
-                                      <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">Name</label>
-                                        <input
-                                          type="text"
-                                          value={editClientData.name}
-                                          onChange={(e) => setEditClientData(prev => ({ ...prev, name: e.target.value }))}
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                          placeholder="Client name"
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">Email</label>
-                                        <input
-                                          type="email"
-                                          value={editClientData.email}
-                                          onChange={(e) => setEditClientData(prev => ({ ...prev, email: e.target.value }))}
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                          placeholder="client@email.com"
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">Phone (with country code)</label>
-                                        <input
-                                          type="tel"
-                                          value={editClientData.phone}
-                                          onChange={(e) => setEditClientData(prev => ({ ...prev, phone: e.target.value }))}
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                          placeholder="+1234567890"
-                                        />
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    // Display Mode
-                                    <div className="grid grid-cols-1 gap-2 text-sm">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-gray-500">Name:</span>
-                                        <span className="font-medium text-gray-900">
-                                          {reminder.client?.name || <span className="text-gray-400 italic">Not set</span>}
-                                        </span>
-                                      </div>
-                                      
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-gray-500 flex items-center gap-1">
-                                          <Mail className="h-3.5 w-3.5" />
-                                          Email:
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                          {reminder.client?.email ? (
-                                            <>
-                                              <span className="text-gray-900 truncate max-w-[150px]">
-                                                {reminder.client.email}
-                                              </span>
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  copyToClipboard(reminder.client.email, 'Email');
-                                                }}
-                                                className="p-1 hover:bg-gray-200 rounded"
-                                              >
-                                                <Copy className="h-3.5 w-3.5 text-gray-400" />
-                                              </button>
-                                            </>
-                                          ) : (
-                                            <span className="text-gray-400 italic">Not set</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                      
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-gray-500 flex items-center gap-1">
-                                          <Phone className="h-3.5 w-3.5" />
-                                          Phone:
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                          {reminder.client?.phone ? (
-                                            <>
-                                              <span className="text-gray-900">
-                                                {reminder.client.phone}
-                                              </span>
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  copyToClipboard(reminder.client.phone, 'Phone');
-                                                }}
-                                                className="p-1 hover:bg-gray-200 rounded"
-                                              >
-                                                <Copy className="h-3.5 w-3.5 text-gray-400" />
-                                              </button>
-                                            </>
-                                          ) : (
-                                            <span className="text-gray-400 italic">Not set</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
                                 </div>
 
                                 {/* Notes */}

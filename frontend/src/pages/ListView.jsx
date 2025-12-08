@@ -338,9 +338,6 @@ const ListView = () => {
   // Handle search input changes with debouncing
   const handleSearchChange = (value) => {
     setFilters(prev => ({ ...prev, search: value }));
-    if (value.trim()) {
-      setSearchMode('standard'); // Manual search uses standard mode
-    }
     updateSearchSuggestions(value);
   };
 
@@ -893,11 +890,11 @@ const ListView = () => {
                         <button
                           key={index}
                           onClick={() => handleSuggestionSelect(suggestion)}
-                          className="w-full px-4 py-2 text-left hover:bg-blue-50 transition-colors first:rounded-t-xl last:rounded-b-xl"
+                          className="w-full px-4 py-2 text-left hover:bg-blue-50 transition-colors first:rounded-t-xl last:rounded-b-xl group"
                         >
                           <div className="flex items-center gap-2">
-                            <Search className="w-3 h-3 text-gray-400" />
-                            <span className="text-sm text-gray-700">{suggestion}</span>
+                            <Tag className="w-3 h-3 text-blue-500 group-hover:text-blue-600 transition-colors" />
+                            <span className="text-sm text-gray-700 group-hover:text-gray-900 transition-colors">{suggestion}</span>
                           </div>
                         </button>
                       ))}
@@ -911,13 +908,43 @@ const ListView = () => {
                         <Lightbulb className="w-4 h-4 text-blue-500" />
                         Advanced Search Help
                       </h4>
-                      <div className="space-y-2 text-sm text-gray-600">
-                        <div><strong>Field search:</strong> title:keyword, assignees:name, label:tag</div>
-                        <div><strong>Exact phrases:</strong> "exact phrase"</div>
-                        <div><strong>Operators:</strong> keyword AND other, keyword OR other, keyword NOT other</div>
-                        <div><strong>Fuzzy mode:</strong> Finds similar matches</div>
-                        <div><strong>Search scope:</strong> Use the scope button to limit search to specific fields</div>
-                        <div><strong>Shortcuts:</strong> Ctrl+/ (focus), Ctrl+? (help), Esc (close)</div>
+                      <div className="space-y-3 text-sm text-gray-600">
+                        <div className="flex items-start gap-2">
+                          <Tag className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <strong>Field search:</strong> title:bug, assignees:john, labels:urgent, board:project, priority:high
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <strong>Exact phrases:</strong> "exact phrase"
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Command className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <strong>Operators:</strong> keyword AND other, keyword OR other, keyword NOT other
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Sparkles className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <strong>Fuzzy mode:</strong> Finds similar matches using approximate string matching
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Globe className="w-4 h-4 text-indigo-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <strong>Search scope:</strong> Use the scope button to limit search to specific fields
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Command className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <strong>Shortcuts:</strong> Ctrl+/ (focus), Ctrl+? (help), Esc (close)
+                          </div>
+                        </div>
                       </div>
                       <button
                         onClick={() => setShowSearchHelp(false)}

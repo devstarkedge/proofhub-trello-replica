@@ -466,7 +466,6 @@ const CalendarView = () => {
           >
             <ModernCalendarGrid
               departmentId={currentDepartment?._id !== 'all' ? currentDepartment?._id : null}
-              departments={[]}
               onSelectReminder={handleSelectReminder}
             />
           </motion.div>

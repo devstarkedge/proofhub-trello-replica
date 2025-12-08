@@ -53,7 +53,6 @@ const CardDetailModal = ({
     card.startDate ? new Date(card.startDate).toISOString().split("T")[0] : ""
   );
   const [labels, setLabels] = useState(card.labels || []);
-  const [newLabel, setNewLabel] = useState("");
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [activities, setActivities] = useState([]);
@@ -763,7 +762,11 @@ const CardDetailModal = ({
 
     setSaving(true);
     try {
-    const updates = {
+    // Convert labels to IDs for backend, but keep full objects for optimistic update
+    const labelIds = labels.map(l => typeof l === 'object' ? l._id : l);
+    
+    // Create updates for backend (with IDs)
+    const backendUpdates = {
       title,
       description,
       assignees: assignees.length > 0 ? assignees : null,
@@ -771,7 +774,7 @@ const CardDetailModal = ({
       status,
       dueDate: dueDate ? new Date(dueDate).toISOString() : null,
       startDate: startDate ? new Date(startDate).toISOString() : null,
-      labels,
+      labels: labelIds,
       attachments: attachments.length > 0 ? attachments : [],
       estimationTime: estimationEntries.map((entry) => ({
         hours: entry.hours,
@@ -795,6 +798,11 @@ const CardDetailModal = ({
         date: entry.date,
       })),
     };
+    
+    // Include full label objects for optimistic UI update
+    backendUpdates._labelsPopulated = labels.filter(l => typeof l === 'object' && l.name);
+    
+    const updates = backendUpdates;
 
       // Check if status has changed and move card if needed
       if (status !== card.status) {
@@ -861,16 +869,6 @@ const CardDetailModal = ({
       console.error("Error adding comment:", error);
       toast.error("Failed to add comment");
     }
-  };
-
-  const handleAddLabel = () => {
-    if (!newLabel.trim() || labels.includes(newLabel.trim())) return;
-    setLabels([...labels, newLabel.trim()]);
-    setNewLabel("");
-  };
-
-  const removeLabel = (label) => {
-    setLabels(labels.filter((l) => l !== label));
   };
 
   const handleDeleteAttachment = (attachmentIdOrIndex) => {
@@ -1151,23 +1149,35 @@ const CardDetailModal = ({
                 {labels.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {labels.map((label, index) => {
-                      const labelStr = String(label || '').trim();
-                      const safeKey = labelStr || `label-${index}`;
+                      // Handle both object labels (new) and string labels (legacy)
+                      const isObject = typeof label === 'object' && label !== null;
+                      const labelName = isObject ? label.name : String(label || '').trim();
+                      const labelColor = isObject && label.color ? label.color : '#3B82F6';
+                      const labelId = isObject ? label._id : `label-${index}`;
+                      
+                      if (!labelName) return null;
+                      
+                      // Calculate contrasting text color
+                      const hex = labelColor.replace('#', '');
+                      const r = parseInt(hex.substr(0, 2), 16);
+                      const g = parseInt(hex.substr(2, 2), 16);
+                      const b = parseInt(hex.substr(4, 2), 16);
+                      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                      const textColor = luminance > 0.5 ? '#1F2937' : '#FFFFFF';
+                      
                       return (
                         <motion.span
-                          key={safeKey}
+                          key={labelId}
                           initial={{ scale: 0 }}
                           animate={{ scale: 1 }}
-                          className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+                          className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+                          style={{
+                            backgroundColor: labelColor,
+                            color: textColor
+                          }}
                         >
                           <Tag size={14} />
-                          {label}
-                          <button
-                            onClick={() => removeLabel(label)}
-                            className="hover:bg-white hover:bg-opacity-20 rounded-full p-0.5 transition-colors"
-                          >
-                            <X size={12} />
-                          </button>
+                          {labelName}
                         </motion.span>
                       );
                     })}
@@ -1349,7 +1359,6 @@ const CardDetailModal = ({
                 dueDate={dueDate}
                 startDate={startDate}
                 labels={labels}
-                newLabel={newLabel}
                 availableStatuses={availableStatuses}
                 searchQuery={searchQuery}
                 isDropdownOpen={isDropdownOpen}
@@ -1359,9 +1368,7 @@ const CardDetailModal = ({
                 onStatusChange={setStatus}
                 onDueDateChange={setDueDate}
                 onStartDateChange={setStartDate}
-                onLabelChange={setNewLabel}
-                onAddLabel={handleAddLabel}
-                onRemoveLabel={removeLabel}
+                onLabelsChange={setLabels}
                 onSelectMember={handleSelectMember}
                 onRemoveAssignee={handleRemoveAssignee}
                 onToggleDepartment={toggleDepartment}
@@ -1369,6 +1376,8 @@ const CardDetailModal = ({
                 onIsDropdownOpenChange={setIsDropdownOpen}
                 onDeleteCard={handleSidebarDelete}
                 card={card}
+                boardId={card?.board?._id || card?.board}
+                entityType="card"
               />
             </div>
           </div>

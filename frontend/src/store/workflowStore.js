@@ -252,6 +252,13 @@ const useWorkflowStore = create(
         // Process updates - avoid fetching users on every update
         // Only populate assignees if they're IDs (strings), otherwise keep them as-is
         let processedUpdates = { ...updates };
+        
+        // Handle labels - use populated labels if available
+        if (updates._labelsPopulated && Array.isArray(updates._labelsPopulated)) {
+          processedUpdates.labels = updates._labelsPopulated;
+          delete processedUpdates._labelsPopulated;
+        }
+        
         if (updates.assignees && Array.isArray(updates.assignees)) {
           // Check if assignees are already populated objects
           const needsPopulation = updates.assignees.some(a => typeof a === 'string');
@@ -278,7 +285,11 @@ const useWorkflowStore = create(
         });
 
         try {
-          await Database.updateCard(cardId, updates);
+          // Remove internal fields before sending to backend
+          const backendUpdates = { ...updates };
+          delete backendUpdates._labelsPopulated;
+          
+          await Database.updateCard(cardId, backendUpdates);
         } catch (error) {
           console.error('Error updating card:', error);
           // Rollback optimistic update

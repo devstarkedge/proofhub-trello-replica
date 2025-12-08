@@ -50,7 +50,6 @@ const SubtaskNanoModal = ({
     initialData.assignees ? initialData.assignees.map(a => (typeof a === "object" ? a._id : a)).filter(Boolean) : []
   );
   const [tags, setTags] = useState(initialData.tags || []);
-  const [newTag, setNewTag] = useState("");
   const [attachments, setAttachments] = useState(initialData.attachments || []);
   const [teamMembers, setTeamMembers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -268,6 +267,9 @@ const SubtaskNanoModal = ({
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Convert tags (labels) to IDs if they are objects
+      const tagIds = tags.map(t => typeof t === 'object' ? t._id : t);
+      
       const payload = {
         title,
         description,
@@ -276,7 +278,7 @@ const SubtaskNanoModal = ({
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
         startDate: startDate ? new Date(startDate).toISOString() : null,
         assignees,
-        tags,
+        tags: tagIds,
         attachments,
         estimationTime: estimationEntries,
         loggedTime: loggedTime,
@@ -313,16 +315,6 @@ const SubtaskNanoModal = ({
       return;
     }
     await runDelete();
-  };
-
-  const handleAddTag = () => {
-    if (!newTag.trim() || tags.includes(newTag.trim())) return;
-    setTags([...tags, newTag.trim()]);
-    setNewTag("");
-  };
-
-  const removeTag = (tag) => {
-    setTags(tags.filter(t => t !== tag));
   };
 
   const handleSelectMember = (memberId) => {
@@ -826,7 +818,6 @@ const SubtaskNanoModal = ({
                 dueDate={dueDate}
                 startDate={startDate}
                 labels={tags}
-                newLabel={newTag}
                 availableStatuses={statusOptions}
                 searchQuery={searchQuery}
                 isDropdownOpen={isDropdownOpen}
@@ -836,9 +827,7 @@ const SubtaskNanoModal = ({
                 onStatusChange={setStatus}
                 onDueDateChange={setDueDate}
                 onStartDateChange={setStartDate}
-                onLabelChange={setNewTag}
-                onAddLabel={handleAddTag}
-                onRemoveLabel={removeTag}
+                onLabelsChange={setTags}
                 onSelectMember={handleSelectMember}
                 onRemoveAssignee={handleRemoveAssignee}
                 onToggleDepartment={handleToggleDepartment}
@@ -846,6 +835,8 @@ const SubtaskNanoModal = ({
                 onIsDropdownOpenChange={setIsDropdownOpen}
                 onDeleteCard={handleSidebarDelete}
                 card={{ _id: entityId }}
+                boardId={currentProject?._id}
+                entityType="nano"
               />
             </div>
           </div>
@@ -856,4 +847,3 @@ const SubtaskNanoModal = ({
 };
 
 export default SubtaskNanoModal;
-

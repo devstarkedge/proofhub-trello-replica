@@ -617,7 +617,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                     <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors cursor-pointer">
                       <SelectValue placeholder="Click to select team members..." />
                     </SelectTrigger>
-                    <SelectContent className="max-h-64">
+                    <SelectContent className="max-h-64 max-w-xs overflow-y-auto">
                       {availableEmployees.map((employee) => {
                           const getRoleIcon = (role) => {
                             switch (role) {
@@ -644,12 +644,12 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                           return (
                             <SelectItem key={employee._id} value={employee._id} className="py-3">
                               <div className="flex items-center gap-3 w-full">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
                                   {(employee.name?.name || employee.name || "U").charAt(0).toUpperCase()}
                                 </div>
                                 <div className="flex flex-col flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
-                                    <span className="font-medium text-gray-900 truncate">{employee.name?.name || employee.name || "Unknown"}</span>
+                                    <span className="font-medium text-gray-900 truncate text-sm">{employee.name?.name || employee.name || "Unknown"}</span>
                                     {getRoleIcon(employee.role)}
                                   </div>
                                   <span className="text-xs text-gray-500 truncate">{employee.email?.email || employee.email || "No email"}</span>

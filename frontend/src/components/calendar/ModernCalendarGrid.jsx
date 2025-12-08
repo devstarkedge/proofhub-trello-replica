@@ -15,10 +15,10 @@ import ReminderModal from '../ReminderModal';
 /**
  * ModernCalendarGrid - Enterprise-level calendar component
  * Features: Modern UI, hover previews, side panel, search, timeline, export
+ * Note: Department filter is controlled by the header/parent component
  */
 const ModernCalendarGrid = memo(({ 
-  departmentId, 
-  departments = [],
+  departmentId,
   onSelectReminder,
   className = '' 
 }) => {
@@ -29,7 +29,6 @@ const ModernCalendarGrid = memo(({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedDepartment, setSelectedDepartment] = useState(departmentId || 'all');
   const [searchFilters, setSearchFilters] = useState(null);
   
   // Side panel state
@@ -104,8 +103,9 @@ const ModernCalendarGrid = memo(({
       const endDate = new Date(year, month + 2, 0);
       
       const filters = {};
-      if (selectedDepartment && selectedDepartment !== 'all') {
-        filters.department = selectedDepartment;
+      // Use departmentId from props (controlled by header)
+      if (departmentId && departmentId !== 'all') {
+        filters.department = departmentId;
       }
       
       // Apply search filters if present
@@ -167,7 +167,7 @@ const ModernCalendarGrid = memo(({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentDate, selectedDepartment, searchFilters]);
+  }, [currentDate, departmentId, searchFilters]);
 
   useEffect(() => {
     fetchReminders();
@@ -238,11 +238,6 @@ const ModernCalendarGrid = memo(({
     setSearchFilters(null);
   };
 
-  // Department change handler
-  const handleDepartmentChange = (deptId) => {
-    setSelectedDepartment(deptId);
-  };
-
   // Helper functions
   const formatMonthYear = () => {
     return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -267,13 +262,10 @@ const ModernCalendarGrid = memo(({
 
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Search Bar */}
+      {/* Search Bar - Department is controlled by header */}
       <CalendarSearch
         onSearch={handleSearch}
         onClear={handleClearSearch}
-        departments={departments}
-        selectedDepartment={selectedDepartment}
-        onDepartmentChange={handleDepartmentChange}
       />
 
       {/* Global Timeline */}

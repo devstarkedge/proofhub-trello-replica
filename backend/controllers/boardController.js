@@ -1,6 +1,7 @@
 import Board from "../models/Board.js";
 import List from "../models/List.js";
 import Card from "../models/Card.js";
+import Label from "../models/Label.js";
 import Activity from "../models/Activity.js";
 import Department from "../models/Department.js";
 import Notification from "../models/Notification.js";
@@ -114,8 +115,25 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     .sort({ list: 1, position: 1 })
     .lean();
 
+  // Fetch all labels for this board for manual population
+  const allLabels = await Label.find({ board: projectId }).select('name color').lean();
+  const labelMap = new Map(allLabels.map(l => [l._id.toString(), l]));
+
+  // Populate labels manually (handles both ObjectId and string formats)
+  const cardsWithLabels = cards.map(card => {
+    if (card.labels && card.labels.length > 0) {
+      card.labels = card.labels
+        .map(labelId => {
+          const idStr = typeof labelId === 'object' ? labelId._id?.toString() || labelId.toString() : labelId.toString();
+          return labelMap.get(idStr) || null;
+        })
+        .filter(Boolean);
+    }
+    return card;
+  });
+
   // Fetch recurrence status in batch
-  const cardIds = cards.map(c => c._id);
+  const cardIds = cardsWithLabels.map(c => c._id);
   const recurringTasks = await RecurringTask.find({
     card: { $in: cardIds },
     isActive: true
@@ -127,7 +145,7 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
   const cardsByList = {};
   listIds.forEach(id => { cardsByList[id.toString()] = []; });
   
-  cards.forEach(card => {
+  cardsWithLabels.forEach(card => {
     const listId = card.list.toString();
     if (cardsByList[listId]) {
       cardsByList[listId].push({
@@ -199,8 +217,7 @@ export const getBoard = asyncHandler(async (req, res, next) => {
     .populate("owner", "name email avatar")
     .populate("team", "name")
     .populate("department", "name")
-    .populate("members", "name email avatar")
-    .lean(); // Use lean() for read-only operations
+    .populate("members", "name email avatar");
 
   if (!board) {
     return next(new ErrorResponse("Board not found", 404));
@@ -219,9 +236,21 @@ export const getBoard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Not authorized to access this board", 403));
   }
 
+  // Calculate progress based on cards
+  const cards = await Card.find({ board: board._id }).select('status');
+  const totalCards = cards.length;
+  const completedCards = cards.filter(card => card.status === 'done').length;
+  const progress = totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0;
+
+  // Convert to plain object and add progress
+  const boardData = board.toObject();
+  boardData.progress = progress;
+  boardData.totalCards = totalCards;
+  boardData.completedCards = completedCards;
+
   res.status(200).json({
     success: true,
-    data: board,
+    data: boardData,
   });
 });
 

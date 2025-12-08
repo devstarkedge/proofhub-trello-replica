@@ -11,6 +11,7 @@ import Sidebar from '../components/Sidebar';
 import ReminderCalendar from '../components/ReminderCalendar';
 import { ModernCalendarGrid } from '../components/calendar';
 import ReminderModal from '../components/ReminderModal';
+import ViewProjectModal from '../components/ViewProjectModal';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
@@ -43,6 +44,8 @@ const RemindersPage = memo(() => {
   const [selectedReminder, setSelectedReminder] = useState(null);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
 
   // Check if user can access this page
   const canAccess = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
@@ -134,6 +137,11 @@ const RemindersPage = memo(() => {
       name: reminder.project?.name
     });
     setShowReminderModal(true);
+  };
+
+  const handleViewProject = (projectId) => {
+    setSelectedProjectId(projectId);
+    setShowProjectModal(true);
   };
 
   // Get status display info
@@ -376,7 +384,6 @@ const RemindersPage = memo(() => {
                       onChange={(e) => setSelectedDepartment(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value="all">All Departments</option>
                       {departments.map(dept => (
                         <option key={dept._id} value={dept._id}>{dept.name}</option>
                       ))}
@@ -399,7 +406,6 @@ const RemindersPage = memo(() => {
             >
               <ModernCalendarGrid
                 departmentId={selectedDepartment !== 'all' ? selectedDepartment : null}
-                departments={departments}
                 onSelectReminder={handleViewReminder}
               />
             </motion.div>
@@ -440,7 +446,10 @@ const RemindersPage = memo(() => {
                           {/* Project & Client Info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-2">
-                              <h4 className="font-semibold text-gray-900 truncate">
+                              <h4
+                                className="font-semibold text-gray-900 truncate cursor-pointer hover:text-blue-600 transition-colors"
+                                onClick={() => handleViewProject(reminder.project?._id)}
+                              >
                                 {reminder.project?.name || 'Unknown Project'}
                               </h4>
                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${statusDisplay.bg} ${statusDisplay.color}`}>
@@ -559,6 +568,18 @@ const RemindersPage = memo(() => {
           }}
           existingReminder={selectedReminder}
           onReminderSaved={() => fetchData(true)}
+        />
+      )}
+
+      {/* Project View Modal */}
+      {showProjectModal && selectedProjectId && (
+        <ViewProjectModal
+          isOpen={showProjectModal}
+          onClose={() => {
+            setShowProjectModal(false);
+            setSelectedProjectId(null);
+          }}
+          projectId={selectedProjectId}
         />
       )}
     </div>

@@ -8,13 +8,11 @@ import {
 /**
  * CalendarSearch - Global search for reminders with filters
  * Supports search by client, project, and date range
+ * Note: Department filter is controlled by the header, not here
  */
 const CalendarSearch = memo(({
   onSearch,
   onClear,
-  departments = [],
-  selectedDepartment,
-  onDepartmentChange,
   className = ''
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,11 +36,10 @@ const CalendarSearch = memo(({
     debounceTimerRef.current = setTimeout(() => {
       onSearch?.({
         query,
-        ...currentFilters,
-        department: selectedDepartment
+        ...currentFilters
       });
     }, 300);
-  }, [onSearch, selectedDepartment]);
+  }, [onSearch]);
 
   // Handle search input change
   const handleSearchChange = (e) => {
@@ -131,28 +128,6 @@ const CalendarSearch = memo(({
                 <X className="h-4 w-4 text-gray-400" />
               </motion.button>
             )}
-          </div>
-
-          {/* Department Selector */}
-          <div className="relative min-w-[160px]">
-            <select
-              value={selectedDepartment}
-              onChange={(e) => onDepartmentChange?.(e.target.value)}
-              className="
-                w-full px-4 py-3 pr-10
-                bg-gray-50/50 border border-gray-200
-                rounded-xl text-sm font-medium
-                appearance-none cursor-pointer
-                focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
-                transition-all duration-200
-              "
-            >
-              <option value="all">All Departments</option>
-              {departments.map(dept => (
-                <option key={dept._id} value={dept._id}>{dept.name}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
           </div>
 
           {/* Advanced Filters Toggle */}

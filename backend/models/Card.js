@@ -89,8 +89,8 @@ const cardSchema = new mongoose.Schema({
     ref: 'User'
   }],
   labels: [{
-    type: String,
-    trim: true
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Label'
   }],
   priority: {
     type: String,

@@ -97,10 +97,9 @@ const ClientReminderCalendarPage = memo(() => {
             </div>
           </motion.div>
 
-          {/* Modern Calendar Grid */}
+          {/* Modern Calendar Grid - Department controlled by header */}
           <ModernCalendarGrid
             departmentId={currentDepartment?._id !== 'all' ? currentDepartment?._id : null}
-            departments={departments.filter(d => d._id !== 'all')}
             onSelectReminder={handleSelectReminder}
           />
         </main>

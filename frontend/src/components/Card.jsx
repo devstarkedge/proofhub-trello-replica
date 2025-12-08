@@ -17,14 +17,62 @@ import {
 // Move static values outside component
 const MAX_VISIBLE_LABELS = 6;
 
+// Helper function to get text color based on background
+const getTextColor = (bgColor) => {
+  if (!bgColor || typeof bgColor !== 'string') return '#FFFFFF';
+  const hex = bgColor.replace('#', '');
+  if (hex.length !== 6 && hex.length !== 3) return '#FFFFFF';
+  const r = parseInt(hex.length === 3 ? hex[0] + hex[0] : hex.substr(0, 2), 16);
+  const g = parseInt(hex.length === 3 ? hex[1] + hex[1] : hex.substr(2, 2), 16);
+  const b = parseInt(hex.length === 3 ? hex[2] + hex[2] : hex.substr(4, 2), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#000000' : '#FFFFFF';
+};
+
 const Card = memo(({ card, onClick, onDelete, compact = false }) => {
   const labelsContainerRef = useRef(null);
   
+  // Helper to check if a string looks like a MongoDB ObjectId (24 hex characters)
+  const isObjectIdString = (str) => {
+    return typeof str === 'string' && /^[a-f\d]{24}$/i.test(str);
+  };
+  
   // Memoize computed values to prevent recalculation on every render
-  const allLabels = useMemo(() => [
-    ...(card.labels || []).map(label => ({ text: label, type: 'regular' })),
-    ...(card.hasRecurrence ? [{ text: 'Recurring', type: 'recurring' }] : [])
-  ], [card.labels, card.hasRecurrence]);
+  // Now labels can be objects with name and color, or just strings
+  const allLabels = useMemo(() => {
+    const cardLabels = (card.labels || [])
+      .map(label => {
+        // Handle populated label objects (new system)
+        if (typeof label === 'object' && label !== null && label.name) {
+          return {
+            text: label.name,
+            color: label.color || '#3B82F6',
+            type: 'regular'
+          };
+        }
+        // Skip ObjectId strings (unpopulated references)
+        if (isObjectIdString(label)) {
+          return null;
+        }
+        // Legacy string label (actual text labels)
+        if (typeof label === 'string' && label.trim()) {
+          return {
+            text: label,
+            color: '#3B82F6',
+            type: 'regular'
+          };
+        }
+        return null;
+      })
+      .filter(Boolean); // Remove null entries
+    
+    // Add recurring label if applicable
+    if (card.hasRecurrence) {
+      cardLabels.push({ text: 'Recurring', type: 'recurring', color: null });
+    }
+    
+    return cardLabels;
+  }, [card.labels, card.hasRecurrence]);
 
   const visibleLabelsCount = useMemo(() => 
     Math.min(allLabels.length, MAX_VISIBLE_LABELS), 
@@ -147,11 +195,15 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
             <motion.span
               key={`${label.type}-${idx}`}
               whileHover={{ scale: 1.05 }}
-              className={`px-2 py-1 text-xs text-white rounded-md font-medium flex items-center gap-1 ${
+              className={`px-2 py-1 text-xs rounded-md font-medium flex items-center gap-1 ${
                 label.type === 'recurring' 
-                  ? 'bg-gradient-to-r from-orange-500 to-amber-500' 
-                  : 'bg-gradient-to-r from-blue-500 to-blue-600'
+                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' 
+                  : ''
               }`}
+              style={label.type !== 'recurring' && label.color ? {
+                backgroundColor: label.color,
+                color: getTextColor(label.color)
+              } : undefined}
             >
               {label.type === 'recurring' && <RefreshCw size={10} />}
               {label.text}

@@ -83,8 +83,8 @@ const subtaskSchema = new mongoose.Schema({
     ref: 'User'
   }],
   tags: [{
-    type: String,
-    trim: true
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Label'
   }],
   dueDate: {
     type: Date

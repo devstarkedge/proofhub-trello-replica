@@ -9,7 +9,8 @@ import { refreshCardHierarchyStats, refreshSubtaskNanoStats } from '../utils/hie
 import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 
 const populateConfig = [
-  { path: 'assignees', select: 'name email avatar' }
+  { path: 'assignees', select: 'name email avatar' },
+  { path: 'tags', select: 'name color' }
 ];
 
 const getOrderedNanos = (subtaskId) => {
