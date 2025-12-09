@@ -285,12 +285,13 @@ export const syncClientFromProject = asyncHandler(async (req, res) => {
 // @route   GET /api/reminders/dashboard/stats
 // @access  Private (Admin/Manager only)
 export const getDashboardStats = asyncHandler(async (req, res) => {
-  const { department, project, manager, startDate, endDate } = req.query;
+  const { department, project, manager, startDate, endDate, status } = req.query;
 
   const filters = {};
   if (department) filters.department = department;
   if (project) filters.project = project;
   if (manager) filters.createdBy = manager;
+  if (status) filters.status = status;
 
   const stats = await Reminder.getDashboardStats(filters);
 

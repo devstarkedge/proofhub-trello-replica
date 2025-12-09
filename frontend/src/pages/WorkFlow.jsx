@@ -71,25 +71,23 @@ const WorkFlow = memo(() => {
 
   // Reset local state when projectId changes
   useEffect(() => {
+    // We rely on store's initializeWorkflow to handle data loading/clearing.
+    // However, we MUST reset local UI state (filters, etc.) when switching projects.
     if (prevProjectIdRef.current && prevProjectIdRef.current !== projectId) {
-      // Clear workflow data immediately when project changes
-      clearWorkflow();
-      // Reset all local filters and state
-      setStatusFilter('All');
-      setPriorityFilter('All');
-      setSearchQuery('');
-      setDebouncedSearch('');
-      setShowFilters(false);
-      setEditModalOpen(false);
-      setSelectedProject(null);
-      setFullProjectData(null);
-      setShareAutoOpened(false);
-      setShowRecurringPage(false);
-      // Close any open modals
-      closeHierarchy();
+       setStatusFilter('All');
+       setPriorityFilter('All');
+       setSearchQuery('');
+       setDebouncedSearch('');
+       setShowFilters(false);
+       setEditModalOpen(false);
+       setSelectedProject(null);
+       setFullProjectData(null);
+       setShareAutoOpened(false);
+       setShowRecurringPage(false);
+       closeHierarchy();
     }
     prevProjectIdRef.current = projectId;
-  }, [projectId, clearWorkflow, closeHierarchy]);
+  }, [projectId, closeHierarchy]);
 
   useEffect(() => {
     if (projectId && !teamLoading) {

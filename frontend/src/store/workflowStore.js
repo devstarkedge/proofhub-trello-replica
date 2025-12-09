@@ -27,11 +27,22 @@ const useWorkflowStore = create(
 
       // OPTIMIZED: Initialize workflow data with single API call
       initializeWorkflow: async (projectId) => {
-        // Increment request ID to track this specific request
         const requestId = ++currentRequestId;
+        const state = get();
         
-        try {
-          // Clear previous data immediately and set loading
+        // Check if we already have data for this project
+        const isSameProject = state.currentProjectId === projectId;
+        const hasData = state.board && state.lists && state.lists.length >= 0; 
+        
+        if (isSameProject && hasData) {
+          // Background refresh - silent update
+          // Do NOT set loading to true.
+          // We can optionally set a "refreshing" flag if we want a spinner somewhere, 
+          // but for "no flicker" we usually just leave it alone.
+          // Let's assume we don't want to show any loading state for background refresh 
+          // to adhere to "Prevent unnecessary re-renders" and "flickering".
+        } else {
+          // New project or no data - show loader and clear old data
           set({ 
             loading: true, 
             error: null, 
@@ -40,11 +51,13 @@ const useWorkflowStore = create(
             cardsByList: {},
             currentProjectId: projectId 
           });
+        }
 
+        try {
           // Use the new optimized endpoint that returns everything in one call
           const response = await Database.getWorkflowComplete(projectId);
           
-          // Check if this request is still the current one (prevent race conditions)
+          // Check if this request is still the current one
           if (requestId !== currentRequestId) {
             console.log('Stale request ignored for project:', projectId);
             return;
@@ -58,6 +71,10 @@ const useWorkflowStore = create(
           
           // Double-check we're still on the same project
           if (get().currentProjectId !== projectId) {
+            // This happens if user switched project while loading
+            // But strict check: if we started a load for P2, currentProjectId is P2.
+            // If user quickly switched P2->P3, currentProjectId is P3. 
+            // So this check is correct.
             console.log('Project changed during load, ignoring result');
             return;
           }
@@ -67,26 +84,17 @@ const useWorkflowStore = create(
             board, 
             lists: lists || [], 
             cardsByList: cardsByList || {}, 
-            lastUpdated: Date.now() 
+            lastUpdated: Date.now(),
+            loading: false 
           });
         } catch (error) {
-          // Only set error if this is still the current request
           if (requestId !== currentRequestId) return;
           
           console.error('Error initializing workflow:', error);
-          set({ error: error.message || 'Failed to load workflow' });
-          
-          // Fallback to legacy loading if new endpoint fails
-          try {
-            await get().initializeWorkflowLegacy(projectId, requestId);
-          } catch (legacyError) {
-            console.error('Legacy loading also failed:', legacyError);
-          }
-        } finally {
-          // Only set loading false if this is still the current request
-          if (requestId === currentRequestId) {
-            set({ loading: false });
-          }
+          set({ 
+            error: error.message || 'Failed to load workflow',
+            loading: false 
+          });
         }
       },
 

@@ -196,6 +196,7 @@ reminderSchema.statics.getDashboardStats = async function(filters = {}) {
   if (filters.department) query.department = filters.department;
   if (filters.createdBy) query.createdBy = filters.createdBy;
   if (filters.project) query.project = filters.project;
+  if (filters.status) query.status = filters.status;
   
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -205,15 +206,15 @@ reminderSchema.statics.getDashboardStats = async function(filters = {}) {
     {
       $facet: {
         upcoming: [
-          { $match: { status: 'pending', scheduledDate: { $gte: now } } },
+          { $match: { status: { $nin: ['completed', 'cancelled'] }, scheduledDate: { $gte: now } } },
           { $count: 'count' }
         ],
         dueSoon: [
-          { $match: { status: 'pending', scheduledDate: { $gte: now, $lte: tomorrow } } },
+          { $match: { status: { $nin: ['completed', 'cancelled'] }, scheduledDate: { $gte: now, $lte: tomorrow } } },
           { $count: 'count' }
         ],
         overdue: [
-          { $match: { status: 'pending', scheduledDate: { $lt: now } } },
+          { $match: { status: { $nin: ['completed', 'cancelled'] }, scheduledDate: { $lt: now } } },
           { $count: 'count' }
         ],
         completed: [

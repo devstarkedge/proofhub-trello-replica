@@ -95,13 +95,17 @@ const ListView = () => {
   }, [currentDepartment]);
 
   // Optional: prefetch workflow data for unique projects when cards load
+  // Skip prefetching when "All Departments" is selected since the API doesn't support it
   useEffect(() => {
-    if (!loading && cards && currentDepartment) {
+    if (!loading && cards && currentDepartment && currentDepartment._id !== 'all') {
       const uniqueProjects = Array.from(new Set(cards.map(c => c.board?._id).filter(Boolean)));
       // Prefetch up to first 5 projects to avoid spamming network
       uniqueProjects.slice(0, 5).forEach(projectId => {
         const key = ['workflow', currentDepartment._id, projectId];
-        queryClient.prefetchQuery(key, () => Database.getWorkflowData(currentDepartment._id, projectId)).catch(() => {});
+        queryClient.prefetchQuery({
+          queryKey: key,
+          queryFn: () => Database.getWorkflowData(currentDepartment._id, projectId)
+        }).catch(() => {});
       });
     }
   }, [loading, cards, currentDepartment, queryClient]);
@@ -176,10 +180,11 @@ const ListView = () => {
   };
 
   // Navigate to project's workflow page, prefetching complete workflow data first
-  const handleProjectClick = useCallback(async (projectId) => {
-    if (!currentDepartment || !projectId) return;
+  const handleProjectClick = useCallback(async (projectId, boardDepartmentId) => {
+    if (!projectId) return;
 
-    const deptId = currentDepartment._id;
+    // Use the board's actual department, fall back to current department
+    const deptId = boardDepartmentId || currentDepartment?._id;
     const key = ['workflow-complete', projectId];
 
     try {
@@ -1181,7 +1186,7 @@ const ListView = () => {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (card.board && card.board._id) {
-                                  handleProjectClick(card.board._id);
+                                  handleProjectClick(card.board._id, card.board.department);
                                 } else {
                                   alert('No project ID available for this card.');
                                 }

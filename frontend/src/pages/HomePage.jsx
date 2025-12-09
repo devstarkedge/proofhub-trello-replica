@@ -12,6 +12,7 @@ import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import HomePageSkeleton from '../components/LoadingSkeleton';
 import { useDebounce } from '../hooks/useDebounce';
+import useProjectStore from '../store/projectStore';
 import { lazy, Suspense } from 'react';
 
 // Lazy load modals for better initial load
@@ -31,10 +32,22 @@ const ModalLoadingFallback = memo(() => (
 ModalLoadingFallback.displayName = 'ModalLoadingFallback';
 
 const HomePage = () => {
+  // Store state
+  const { 
+    departments, 
+    membersWithAssignments, 
+    projectsWithMemberAssignments, 
+    loading, 
+    error,
+    fetchDepartments,
+    projectAdded,
+    projectUpdated,
+    projectDeleted
+  } = useProjectStore(); // Using the new store
+
   const { user } = useContext(AuthContext);
-  const [departments, setDepartments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Removed local useState for departments, loading, error, members assignments
+  
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -44,22 +57,21 @@ const HomePage = () => {
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery] = useDebounce(searchQuery, 200);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
+  const [viewMode, setViewMode] = useState('grid');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedMembers, setSelectedMembers] = useState({});
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [memberDropdownOpen, setMemberDropdownOpen] = useState({});
   const [memberListExpanded, setMemberListExpanded] = useState({});
-  const [membersWithAssignments, setMembersWithAssignments] = useState({});
-  const [projectsWithMemberAssignments, setProjectsWithMemberAssignments] = useState({});
+  
   const statusDropdownRef = useRef(null);
   const memberDropdownRefs = useRef({});
   const memberListRefs = useRef({});
 
-  // Fetch departments on mount
+  // Fetch departments on mount using store
   useEffect(() => {
     fetchDepartments();
-  }, []);
+  }, [fetchDepartments]);
 
   // Handle outside click to close dropdown - optimized with useCallback
   useEffect(() => {
@@ -82,77 +94,24 @@ const HomePage = () => {
     };
   }, []);
 
-  const fetchDepartments = useCallback(async () => {
-    try {
-      setLoading(true);
-      const response = await Database.getDepartmentsWithAssignments();
-      const departmentsData = response.data || [];
-
-      // Use startTransition for non-urgent state updates
-      startTransition(() => {
-        setDepartments(departmentsData);
-
-        // Extract member assignments data from the response
-        const membersMap = {};
-        const projectsMap = {};
-
-        departmentsData.forEach(dept => {
-          membersMap[dept._id] = dept.membersWithAssignments || [];
-          projectsMap[dept._id] = dept.projectsWithMemberAssignments || {};
-        });
-
-        setMembersWithAssignments(membersMap);
-        setProjectsWithMemberAssignments(projectsMap);
-      });
-
-    } catch (err) {
-      console.error('Error fetching departments:', err);
-      setError('Failed to load departments');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Removed local fetchDepartments function as it is now in the store
 
   const handleAddProject = useCallback((departmentId) => {
     setSelectedDepartment(departmentId);
     setModalOpen(true);
   }, []);
 
-  // Enhanced handleProjectAdded for optimistic updates
+  // Use store action for optimistic update
   const handleProjectAdded = useCallback((newProject, tempId = null, revert = false) => {
-    startTransition(() => {
-      setDepartments(prev => prev.map(dept => {
-        if (dept._id === selectedDepartment) {
-          // If reverting (error case), remove the optimistic project
-          if (revert && tempId) {
-            return {
-              ...dept,
-              projects: (dept.projects || []).filter(p => p._id !== tempId)
-            };
-          }
-          
-          // If replacing optimistic with real project
-          if (tempId && newProject) {
-            return {
-              ...dept,
-              projects: (dept.projects || []).map(p => 
-                p._id === tempId ? newProject : p
-              )
-            };
-          }
-          
-          // Initial optimistic add
-          if (newProject) {
-            return {
-              ...dept,
-              projects: [...(dept.projects || []), newProject]
-            };
-          }
-        }
-        return dept;
-      }));
-    });
-  }, [selectedDepartment]);
+    if (revert) {
+        // Handle revert if needed - for now fetchDepartments is safest on error or specific rollback logic
+        // But since we are using store, we can just fetch fresh.
+        fetchDepartments(true);
+    } else if (newProject) {
+        // Optimistic add
+        projectAdded(selectedDepartment, newProject);
+    }
+  }, [selectedDepartment, projectAdded, fetchDepartments]);
 
   const handleEditProject = useCallback((project, departmentId) => {
     setSelectedProject({ ...project, departmentId });
@@ -160,42 +119,23 @@ const HomePage = () => {
   }, []);
 
   const handleProjectUpdated = useCallback((updatedProject) => {
-    startTransition(() => {
-      setDepartments(prev => prev.map(dept => {
-        if (dept._id === selectedProject.departmentId) {
-          return {
-            ...dept,
-            projects: dept.projects.map(project =>
-              project._id === updatedProject._id ? updatedProject : project
-            )
-          };
-        }
-        return dept;
-      }));
-    });
-  }, [selectedProject?.departmentId]);
+    projectUpdated(updatedProject);
+  }, [projectUpdated]);
 
   const handleDeleteProject = useCallback(async (project, departmentId) => {
     if (window.confirm(`Are you sure you want to delete the project "${project.name}"?`)) {
       try {
+        // Optimistic delete
+        projectDeleted(departmentId, project._id);
         await Database.deleteProject(project._id);
-        startTransition(() => {
-          setDepartments(prev => prev.map(dept => {
-            if (dept._id === departmentId) {
-              return {
-                ...dept,
-                projects: dept.projects.filter(p => p._id !== project._id)
-              };
-            }
-            return dept;
-          }));
-        });
       } catch (error) {
         console.error('Error deleting project:', error);
         alert('Failed to delete project. Please try again.');
+        // Revert by fetching
+        fetchDepartments(true);
       }
     }
-  }, []);
+  }, [projectDeleted, fetchDepartments]);
 
   const handleViewProject = useCallback((projectId) => {
     setSelectedProjectId(projectId);
@@ -272,31 +212,36 @@ const HomePage = () => {
     return <HomePageSkeleton />;
   }
 
-  if (error) {
-    return (
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-        <Sidebar />
-        <div className="flex-1 ml-64">
-          <Header />
-          <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-            <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <AlertCircle className="text-red-600" size={32} />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 text-center mb-2">Something went wrong</h3>
-              <p className="text-gray-600 text-center mb-6">{error}</p>
-              <button
-                onClick={fetchDepartments}
-                className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-medium hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg"
-              >
-                Try Again
-              </button>
+    // Simplified error handling - rely on store state or toast if needed
+    // But currently using error state from store if we wanted to show full page error
+    // check if we have data to show even if error
+    
+    // Only show full page error if we have NO data.
+    if (error && departments.length === 0) {
+       return (
+         <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+            <Sidebar />
+            <div className="flex-1 ml-64">
+               <Header />
+               <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+                  <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
+                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <AlertCircle className="text-red-600" size={32} />
+                     </div>
+                     <h3 className="text-xl font-bold text-gray-900 text-center mb-2">Something went wrong</h3>
+                     <p className="text-gray-600 text-center mb-6">{error}</p>
+                     <button
+                        onClick={() => fetchDepartments(true)}
+                        className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-medium hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg"
+                     >
+                        Try Again
+                     </button>
+                  </div>
+               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+         </div>
+       );
+    }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">

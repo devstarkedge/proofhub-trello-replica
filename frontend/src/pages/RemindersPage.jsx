@@ -63,7 +63,7 @@ const RemindersPage = memo(() => {
       
       const filters = {};
       if (statusFilter !== 'all') filters.status = statusFilter;
-      if (selectedDepartment !== 'all') filters.departmentId = selectedDepartment;
+      if (selectedDepartment !== 'all') filters.department = selectedDepartment;
       
       const [remindersRes, statsRes] = await Promise.all([
         Database.getAllReminders(filters),
