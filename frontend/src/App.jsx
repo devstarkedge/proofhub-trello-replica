@@ -8,6 +8,7 @@ import { NotificationProvider } from "./context/NotificationContext";
 import Loading from "./components/Loading";
 import NetworkStatusToast from "./components/NetworkStatusToast";
 import ErrorBoundary from "./components/ErrorBoundary";
+import GlobalFallback from "./components/GlobalFallback";
 import "./App.css";
 
 // Lazy load components for code splitting
@@ -205,6 +206,7 @@ function App() {
                 </PrivateRoute>
               }
             />
+            <Route path="*" element={<GlobalFallback type="404" />} />
               </Routes>
             </Suspense>
             <ToastContainer
