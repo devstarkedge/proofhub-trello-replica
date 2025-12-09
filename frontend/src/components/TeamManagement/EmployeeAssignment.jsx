@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { EmployeeListSkeleton } from './SkeletonLoaders';
 import { useDebounce } from '../../hooks/useDebounce';
+import PermissionGate from '../PermissionGate';
 
 /**
  * EmployeeAssignment Component
@@ -113,8 +114,8 @@ const EmployeeAssignment = memo(({
               </span>
             </div>
 
-            {/* Add Member Button */}
-            {isAdmin && (
+            {/* Add Member Button - Use PermissionGate instead of isAdmin check */}
+            <PermissionGate permission="canAssignMembers">
               <button
                 onClick={onAddMemberClick}
                 className="px-3 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg sm:rounded-xl hover:from-green-700 hover:to-blue-700 transition-all shadow-md sm:shadow-lg shadow-green-500/30 font-semibold flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base justify-center"
@@ -122,7 +123,7 @@ const EmployeeAssignment = memo(({
                 <UserPlus size={16} className="flex-shrink-0" />
                 <span>Add Member</span>
               </button>
-            )}
+            </PermissionGate>
           </div>
         </div>
       </div>

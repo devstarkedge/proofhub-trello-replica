@@ -24,8 +24,9 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'manager', 'hr', 'employee'],
-    default: 'employee'
+    default: 'employee',
+    lowercase: true,
+    trim: true
   },
   department: [{
     type: mongoose.Schema.Types.ObjectId,

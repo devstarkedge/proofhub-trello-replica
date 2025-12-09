@@ -1,14 +1,16 @@
-import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspense, lazy } from 'react';
+import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspense, lazy, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Building2, Shield } from 'lucide-react';
+import { Building2, Shield, Users } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import useDepartmentStore from '../store/departmentStore';
+import useRoleStore from '../store/roleStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import DepartmentList from '../components/TeamManagement/DepartmentList';
 import EmployeeAssignment from '../components/TeamManagement/EmployeeAssignment';
 import TeamStats from '../components/TeamManagement/TeamStats';
+import RoleManagementPanel from '../components/TeamManagement/RoleManagementPanel';
 import Toast from '../components/TeamManagement/Toast';
 import ErrorBoundary from '../components/TeamManagement/ErrorBoundary';
 import { teamManagementReducer, initialState, ACTION_TYPES } from '../components/TeamManagement/teamManagementReducer';
@@ -18,6 +20,8 @@ import EditDepartmentModal from '../components/EditDepartmentModal';
 // Lazy load modals
 const CreateDepartmentModal = lazy(() => import('../components/TeamManagement/modals/CreateDepartmentModal'));
 const AddMemberModal = lazy(() => import('../components/TeamManagement/modals/AddMemberModal'));
+const CreateRoleModal = lazy(() => import('../components/TeamManagement/modals/CreateRoleModal'));
+const EditRoleModal = lazy(() => import('../components/TeamManagement/modals/EditRoleModal'));
 const ReassignModal = lazy(() => import('../components/TeamManagement/modals/ReassignModal'));
 const DeleteConfirmationModal = lazy(() => import('../components/TeamManagement/modals/DeleteConfirmationModal'));
 
@@ -48,8 +52,30 @@ const TeamManagement = () => {
     loading: departmentsLoading
   } = useDepartmentStore();
 
+  // Role store for custom roles management
+  const { roles, createRole, updateRole, deleteRole, loadRoles, initialized: rolesInitialized } = useRoleStore();
+  
+  // Create Role Modal state
+  const [showCreateRoleModal, setShowCreateRoleModal] = useState(false);
+  const [createRoleLoading, setCreateRoleLoading] = useState(false);
+
+  // Edit Role Modal state
+  const [showEditRoleModal, setShowEditRoleModal] = useState(false);
+  const [editRoleLoading, setEditRoleLoading] = useState(false);
+  const [roleToEdit, setRoleToEdit] = useState(null);
+
+  // Tab state for switching between Departments and Roles management
+  const [activeManagementTab, setActiveManagementTab] = useState('departments');
+
   // Consolidated state management with useReducer
   const [state, dispatch] = useReducer(teamManagementReducer, initialState);
+
+  // Load roles on mount
+  useEffect(() => {
+    if (!rolesInitialized) {
+      loadRoles().catch(console.error);
+    }
+  }, [rolesInitialized, loadRoles]);
 
   // Track departments loading
   useEffect(() => {
@@ -447,6 +473,62 @@ const TeamManagement = () => {
     dispatch({ type: ACTION_TYPES.OPEN_EDIT_MODAL });
   }, [setCurrentDepartment]);
 
+  // Handle creating a new custom role
+  const handleCreateRole = useCallback(async (roleData) => {
+    setCreateRoleLoading(true);
+    try {
+      await createRole(roleData);
+      setShowCreateRoleModal(false);
+      showToast(`Role "${roleData.name}" created successfully!`, 'success');
+    } catch (error) {
+      console.error('Error creating role:', error);
+      showToast(error.response?.data?.message || 'Failed to create role', 'error');
+    } finally {
+      setCreateRoleLoading(false);
+    }
+  }, [createRole, showToast]);
+
+  // Handle updating an existing role
+  const handleUpdateRole = useCallback(async (roleId, roleData) => {
+    setEditRoleLoading(true);
+    try {
+      await updateRole(roleId, roleData);
+      setShowEditRoleModal(false);
+      setRoleToEdit(null);
+      showToast(`Role "${roleData.name}" updated successfully!`, 'success');
+    } catch (error) {
+      console.error('Error updating role:', error);
+      showToast(error.response?.data?.message || 'Failed to update role', 'error');
+    } finally {
+      setEditRoleLoading(false);
+    }
+  }, [updateRole, showToast]);
+
+  // Handle deleting a role
+  const handleDeleteRole = useCallback(async (role) => {
+    if (!role) return;
+    try {
+      await deleteRole(role._id);
+      setShowEditRoleModal(false);
+      setRoleToEdit(null);
+      showToast(`Role "${role.name}" deleted successfully!`, 'success');
+    } catch (error) {
+      console.error('Error deleting role:', error);
+      showToast(error.response?.data?.message || 'Failed to delete role', 'error');
+    }
+  }, [deleteRole, showToast]);
+
+  // Open Create Role modal from Add Member modal
+  const handleOpenCreateRoleModal = useCallback(() => {
+    setShowCreateRoleModal(true);
+  }, []);
+
+  // Open Edit Role Modal
+  const handleOpenEditRoleModal = useCallback((role) => {
+    setRoleToEdit(role);
+    setShowEditRoleModal(true);
+  }, []);
+
   const handleDeleteDepartment = useCallback(async () => {
     if (!state.departmentToDelete) return;
     dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
@@ -515,10 +597,38 @@ const TeamManagement = () => {
                     <div className="p-1.5 sm:p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg sm:rounded-xl shadow-lg">
                       <Building2 className="text-white" size={24} />
                     </div>
-                    <span>Department Management</span>
+                    <span>Team Management</span>
                   </h1>
-                  <p className="text-sm sm:text-base text-gray-600 ml-10 sm:ml-11">Manage teams and organize your workforce efficiently</p>
+                  <p className="text-sm sm:text-base text-gray-600 ml-10 sm:ml-11">Manage teams, departments, and roles</p>
                 </div>
+                
+                {/* Tab Navigation for Admin */}
+                {isAdmin && (
+                  <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-md border border-gray-100 w-fit">
+                    <button
+                      onClick={() => setActiveManagementTab('departments')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
+                        activeManagementTab === 'departments'
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Building2 size={18} />
+                      Departments
+                    </button>
+                    <button
+                      onClick={() => setActiveManagementTab('roles')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
+                        activeManagementTab === 'roles'
+                          ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-md'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Shield size={18} />
+                      Roles & Permissions
+                    </button>
+                  </div>
+                )}
                 
                 {/* Quick Stats - Hidden on mobile, visible on tablet+ */}
                 <div className="hidden md:block">
@@ -536,50 +646,77 @@ const TeamManagement = () => {
               <TeamStats stats={stats} isLoading={state.isLoading} />
             </motion.div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-              {/* Left Column - Department List */}
-              <div className="md:col-span-1">
-                <DepartmentList
-                  departments={departments}
-                  currentDepartment={state.currentDepartment}
-                  isLoading={state.isLoading}
-                  onSelectDepartment={handleSelectDepartment}
-                  onCreateClick={() => dispatch({ type: ACTION_TYPES.OPEN_CREATE_MODAL })}
-                  onEditClick={handleOpenEditModal}
-                  onDeleteClick={(dept) => {
-                    dispatch({ type: ACTION_TYPES.SET_DEPARTMENT_TO_DELETE, payload: dept });
-                    dispatch({ type: ACTION_TYPES.OPEN_DELETE_MODAL });
-                  }}
-                />
-              </div>
+            {/* Content based on active tab */}
+            <AnimatePresence mode="wait">
+              {activeManagementTab === 'departments' ? (
+                <motion.div
+                  key="departments"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.2 }}
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6"
+                >
+                  {/* Left Column - Department List */}
+                  <div className="md:col-span-1">
+                    <DepartmentList
+                      departments={departments}
+                      currentDepartment={state.currentDepartment}
+                      isLoading={state.isLoading}
+                      onSelectDepartment={handleSelectDepartment}
+                      onCreateClick={() => dispatch({ type: ACTION_TYPES.OPEN_CREATE_MODAL })}
+                      onEditClick={handleOpenEditModal}
+                      onDeleteClick={(dept) => {
+                        dispatch({ type: ACTION_TYPES.SET_DEPARTMENT_TO_DELETE, payload: dept });
+                        dispatch({ type: ACTION_TYPES.OPEN_DELETE_MODAL });
+                      }}
+                    />
+                  </div>
 
-              {/* Right Column - Assign Members */}
-              <div className="md:col-span-1 lg:col-span-2">
-                <EmployeeAssignment
-                currentDepartment={state.currentDepartment}
-                assignedEmployees={filteredAssignedEmployees}
-                availableEmployees={filteredAvailableEmployees}
-                selectedUsers={state.selectedUsers}
-                searchQuery={state.searchQuery}
-                activeTab={state.activeTab}
-                isLoading={state.isLoading}
-                isAdmin={isAdmin}
-                departments={departments}
-                currentPage={state.currentPage}
-                itemsPerPage={state.itemsPerPage}
-                onSelectUser={handleSelectUser}
-                onSelectAll={handleSelectAll}
-                onSearchChange={handleSearchChange}
-                onTabChange={handleTabChange}
-                onAddMemberClick={() => dispatch({ type: ACTION_TYPES.OPEN_ADD_MEMBER_MODAL })}
-                onAssignClick={handleAssignUsers}
-                onUnassignClick={handleUnassignUsers}
-                onClearSelection={() => dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS })}
-                onPageChange={(page) => dispatch({ type: ACTION_TYPES.SET_CURRENT_PAGE, payload: page })}
-                onItemsPerPageChange={(count) => dispatch({ type: ACTION_TYPES.SET_ITEMS_PER_PAGE, payload: count })}
-                />
-              </div>
-            </div>
+                  {/* Right Column - Assign Members */}
+                  <div className="md:col-span-1 lg:col-span-2">
+                    <EmployeeAssignment
+                    currentDepartment={state.currentDepartment}
+                    assignedEmployees={filteredAssignedEmployees}
+                    availableEmployees={filteredAvailableEmployees}
+                    selectedUsers={state.selectedUsers}
+                    searchQuery={state.searchQuery}
+                    activeTab={state.activeTab}
+                    isLoading={state.isLoading}
+                    isAdmin={isAdmin}
+                    departments={departments}
+                    currentPage={state.currentPage}
+                    itemsPerPage={state.itemsPerPage}
+                    onSelectUser={handleSelectUser}
+                    onSelectAll={handleSelectAll}
+                    onSearchChange={handleSearchChange}
+                    onTabChange={handleTabChange}
+                    onAddMemberClick={() => dispatch({ type: ACTION_TYPES.OPEN_ADD_MEMBER_MODAL })}
+                    onAssignClick={handleAssignUsers}
+                    onUnassignClick={handleUnassignUsers}
+                    onClearSelection={() => dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS })}
+                    onPageChange={(page) => dispatch({ type: ACTION_TYPES.SET_CURRENT_PAGE, payload: page })}
+                    onItemsPerPageChange={(count) => dispatch({ type: ACTION_TYPES.SET_ITEMS_PER_PAGE, payload: count })}
+                    />
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="roles"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <RoleManagementPanel
+                    onCreateRole={handleOpenCreateRoleModal}
+                    onEditRole={handleOpenEditRoleModal}
+                    onDeleteRole={handleDeleteRole}
+                    isLoading={state.isLoading}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </ErrorBoundary>
         </main>
       </div>
@@ -627,6 +764,28 @@ const TeamManagement = () => {
           onShowPasswordToggle={() => dispatch({ type: ACTION_TYPES.TOGGLE_PASSWORD_VISIBILITY })}
           onSubmit={handleAddMember}
           onClose={() => dispatch({ type: ACTION_TYPES.CLOSE_ADD_MEMBER_MODAL })}
+          onAddNewRole={handleOpenCreateRoleModal}
+          currentUserRole={user?.role}
+        />
+
+        <CreateRoleModal
+          isOpen={showCreateRoleModal}
+          isLoading={createRoleLoading}
+          onSubmit={handleCreateRole}
+          onClose={() => setShowCreateRoleModal(false)}
+          existingRoleNames={roles.map(r => r.name)}
+        />
+
+        <EditRoleModal
+          isOpen={showEditRoleModal}
+          isLoading={editRoleLoading}
+          role={roleToEdit}
+          onSubmit={handleUpdateRole}
+          onDelete={handleDeleteRole}
+          onClose={() => {
+            setShowEditRoleModal(false);
+            setRoleToEdit(null);
+          }}
         />
 
         <ReassignModal

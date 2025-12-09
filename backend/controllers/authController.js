@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Department from '../models/Department.js';
 import Notification from '../models/Notification.js';
+import Role from '../models/Role.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { sendEmail } from '../utils/email.js';
@@ -252,9 +253,19 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // Validate role
-  const validRoles = ['admin', 'manager', 'hr', 'employee'];
-  if (!validRoles.includes(role)) {
+  // Validate role - check both system roles and custom roles from database
+  const systemRoles = ['admin', 'manager', 'hr', 'employee'];
+  let isValidRole = systemRoles.includes(role);
+  
+  // If not a system role, check if it's a valid custom role
+  if (!isValidRole) {
+    const customRole = await Role.findOne({ slug: role });
+    if (customRole) {
+      isValidRole = true;
+    }
+  }
+  
+  if (!isValidRole) {
     return next(new ErrorResponse('Invalid role selected', 400));
   }
 

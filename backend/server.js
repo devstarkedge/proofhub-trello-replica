@@ -25,6 +25,7 @@ import announcementsRoutes from './routes/announcements.js';
 import recurrenceRoutes from './routes/recurrence.js';
 import remindersRoutes from './routes/reminders.js';
 import labelsRoutes from './routes/labels.js';
+import rolesRoutes from './routes/roles.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
@@ -93,6 +94,7 @@ app.use('/api/announcements', announcementsRoutes);
 app.use('/api/recurrence', recurrenceRoutes);
 app.use('/api/reminders', remindersRoutes);
 app.use('/api/labels', labelsRoutes);
+app.use('/api/roles', rolesRoutes);
 
 import jwt from 'jsonwebtoken';
 

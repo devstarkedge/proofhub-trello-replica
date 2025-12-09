@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useCallback } from "react";
 import api from "../services/api";
 import socketService from "../services/socket";
+import useRoleStore from "../store/roleStore";
 
 const AuthContext = createContext();
 
@@ -30,6 +31,9 @@ export const AuthProvider = ({ children }) => {
 
     // Disconnect socket on logout
     socketService.disconnect();
+    
+    // Reset role store
+    useRoleStore.getState().reset();
   }, []);
 
   const restoreSession = useCallback(async () => {
@@ -48,6 +52,14 @@ export const AuthProvider = ({ children }) => {
 
         // Connect socket after session restore
         socketService.connect(userData._id, savedToken);
+        
+        // Load user permissions after session restore
+        try {
+          await useRoleStore.getState().loadMyPermissions();
+          await useRoleStore.getState().loadRoles();
+        } catch (permErr) {
+          console.error("Error loading permissions:", permErr);
+        }
       } catch (error) {
         console.error("Session restore failed:", error);
         logoutUser();
@@ -101,6 +113,15 @@ export const AuthProvider = ({ children }) => {
       const res = await api.post("/api/auth/login", body);
       const { token, user } = res.data;
       loginUser(user, token);
+      
+      // Load user permissions after login
+      try {
+        await useRoleStore.getState().loadMyPermissions();
+        await useRoleStore.getState().loadRoles();
+      } catch (permErr) {
+        console.error("Error loading permissions:", permErr);
+      }
+      
       return { success: true, user };
     } catch (err) {
       console.error(err.response?.data);

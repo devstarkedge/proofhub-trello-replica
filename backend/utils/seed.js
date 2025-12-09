@@ -1,7 +1,105 @@
 import User from "../models/User.js";
+import Role from "../models/Role.js";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+/**
+ * Seed default system roles
+ */
+const seedRoles = async () => {
+  try {
+    const systemRoles = [
+      {
+        name: 'Admin',
+        slug: 'admin',
+        description: 'Full system access with all permissions',
+        permissions: {
+          canCreateDepartment: true,
+          canCreateTask: true,
+          canCreateProject: true,
+          canCreateAnnouncement: true,
+          canCreateReminder: true,
+          canAssignMembers: true,
+          canDeleteTasks: true,
+          canDeleteProjects: true
+        },
+        isSystem: true
+      },
+      {
+        name: 'Manager',
+        slug: 'manager',
+        description: 'Can manage projects, tasks, and team members',
+        permissions: {
+          canCreateDepartment: false,
+          canCreateTask: true,
+          canCreateProject: true,
+          canCreateAnnouncement: true,
+          canCreateReminder: true,
+          canAssignMembers: true,
+          canDeleteTasks: true,
+          canDeleteProjects: true
+        },
+        isSystem: true
+      },
+      {
+        name: 'HR',
+        slug: 'hr',
+        description: 'Human resources with department and announcement access',
+        permissions: {
+          canCreateDepartment: true,
+          canCreateTask: true,
+          canCreateProject: false,
+          canCreateAnnouncement: true,
+          canCreateReminder: true,
+          canAssignMembers: true,
+          canDeleteTasks: false,
+          canDeleteProjects: false
+        },
+        isSystem: true
+      },
+      {
+        name: 'Employee',
+        slug: 'employee',
+        description: 'Standard employee with basic task access',
+        permissions: {
+          canCreateDepartment: false,
+          canCreateTask: true,
+          canCreateProject: false,
+          canCreateAnnouncement: false,
+          canCreateReminder: true,
+          canAssignMembers: false,
+          canDeleteTasks: false,
+          canDeleteProjects: false
+        },
+        isSystem: true
+      }
+    ];
+
+    let createdCount = 0;
+    let existingCount = 0;
+
+    for (const roleData of systemRoles) {
+      const existingRole = await Role.findOne({ slug: roleData.slug });
+      if (!existingRole) {
+        await Role.create(roleData);
+        createdCount++;
+        console.log(`Created system role: ${roleData.name}`);
+      } else {
+        existingCount++;
+      }
+    }
+
+    if (createdCount > 0) {
+      console.log(`Successfully seeded ${createdCount} system role(s).`);
+    }
+    if (existingCount > 0) {
+      console.log(`${existingCount} system role(s) already exist.`);
+    }
+  } catch (error) {
+    console.error("Error seeding roles:", error);
+  }
+};
 
 const seedAdmin = async () => {
   try {
@@ -45,6 +143,9 @@ const seedAdmin = async () => {
     } else {
       console.log("Admin user already exists. Skipping seed.");
     }
+    
+    // Always seed roles
+    await seedRoles();
   } catch (error) {
     console.error("Error seeding admin user:", error);
     process.exit(1);

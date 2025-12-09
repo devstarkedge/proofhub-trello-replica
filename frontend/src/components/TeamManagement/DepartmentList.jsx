@@ -9,6 +9,7 @@ import {
   Users
 } from 'lucide-react';
 import { DepartmentListSkeleton } from './SkeletonLoaders';
+import PermissionGate from '../PermissionGate';
 
 /**
  * DepartmentList Component
@@ -26,28 +27,30 @@ const DepartmentList = memo(({
 }) => {
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Create Department Card */}
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl sm:rounded-2xl shadow-lg md:shadow-xl p-4 sm:p-6 text-white"
-      >
-        <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-          <div className="p-2 sm:p-3 bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl flex-shrink-0">
-            <Plus size={20} className="sm:w-6 sm:h-6" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-base sm:text-lg font-semibold">New Department</h2>
-            <p className="text-xs sm:text-sm text-blue-100 truncate">Create a new team</p>
-          </div>
-        </div>
-        <button
-          onClick={onCreateClick}
-          className="w-full py-2 sm:py-3 bg-white text-blue-600 rounded-lg sm:rounded-xl font-semibold hover:bg-blue-50 transition-all shadow-md md:shadow-lg hover:shadow-lg md:hover:shadow-xl transform hover:-translate-y-0.5 text-sm sm:text-base"
+      {/* Create Department Card - Only show if user has permission */}
+      <PermissionGate permission="canCreateDepartment">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl sm:rounded-2xl shadow-lg md:shadow-xl p-4 sm:p-6 text-white"
         >
-          Create Department
-        </button>
-      </motion.div>
+          <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl flex-shrink-0">
+              <Plus size={20} className="sm:w-6 sm:h-6" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-semibold">New Department</h2>
+              <p className="text-xs sm:text-sm text-blue-100 truncate">Create a new team</p>
+            </div>
+          </div>
+          <button
+            onClick={onCreateClick}
+            className="w-full py-2 sm:py-3 bg-white text-blue-600 rounded-lg sm:rounded-xl font-semibold hover:bg-blue-50 transition-all shadow-md md:shadow-lg hover:shadow-lg md:hover:shadow-xl transform hover:-translate-y-0.5 text-sm sm:text-base"
+          >
+            Create Department
+          </button>
+        </motion.div>
+      </PermissionGate>
 
       {/* Departments List */}
       <motion.div
@@ -171,26 +174,30 @@ const DepartmentListItem = memo(({
           </div>
         </div>
         <div className="flex flex-col gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(dept);
-            }}
-            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-            title="Edit department"
-          >
-            <Edit2 size={16} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(dept);
-            }}
-            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-            title="Delete department"
-          >
-            <Trash2 size={16} />
-          </button>
+          <PermissionGate permission="canCreateDepartment">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(dept);
+              }}
+              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Edit department"
+            >
+              <Edit2 size={16} />
+            </button>
+          </PermissionGate>
+          <PermissionGate permission="canCreateDepartment">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(dept);
+              }}
+              className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              title="Delete department"
+            >
+              <Trash2 size={16} />
+            </button>
+          </PermissionGate>
         </div>
       </div>
     </motion.div>

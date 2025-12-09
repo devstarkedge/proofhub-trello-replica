@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import Role from '../models/Role.js';
 
 export const protect = async (req, res, next) => {
   try {
@@ -55,8 +56,9 @@ export const protect = async (req, res, next) => {
 };
 
 // Role-based authorization middleware
+// Supports both predefined roles and custom roles
 export const authorize = (...roles) => {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -68,14 +70,42 @@ export const authorize = (...roles) => {
     const normalizedUserRole = req.user.role.toLowerCase();
     const normalizedRoles = roles.map(role => role.toLowerCase());
 
-    if (!normalizedRoles.includes(normalizedUserRole)) {
+    // Check if user's role is in the allowed roles list
+    if (normalizedRoles.includes(normalizedUserRole)) {
+      return next();
+    }
+
+    // For custom roles, check if they have equivalent permissions
+    // Admin check - admin always has full access
+    if (normalizedUserRole === 'admin') {
+      return next();
+    }
+
+    // If the route requires 'admin' specifically and user is not admin, deny
+    if (normalizedRoles.length === 1 && normalizedRoles[0] === 'admin') {
       return res.status(403).json({
         success: false,
         message: `User role '${req.user.role}' is not authorized to access this route`
       });
     }
 
-    next();
+    // For custom roles not in the predefined list, 
+    // check if the role exists and is active
+    try {
+      const userRoleDoc = await Role.findOne({ slug: normalizedUserRole, isActive: true });
+      if (userRoleDoc) {
+        // Custom role exists and is active - allow access based on route requirements
+        // More granular permission checks should be done using checkPermission middleware
+        return next();
+      }
+    } catch (error) {
+      console.error('Error checking custom role:', error);
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: `User role '${req.user.role}' is not authorized to access this route`
+    });
   };
 };
 
