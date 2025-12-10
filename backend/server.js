@@ -26,6 +26,8 @@ import recurrenceRoutes from './routes/recurrence.js';
 import remindersRoutes from './routes/reminders.js';
 import labelsRoutes from './routes/labels.js';
 import rolesRoutes from './routes/roles.js';
+import attachmentsRoutes from './routes/attachments.js';
+import versionsRoutes from './routes/versions.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
@@ -95,6 +97,8 @@ app.use('/api/recurrence', recurrenceRoutes);
 app.use('/api/reminders', remindersRoutes);
 app.use('/api/labels', labelsRoutes);
 app.use('/api/roles', rolesRoutes);
+app.use('/api/attachments', attachmentsRoutes);
+app.use('/api/versions', versionsRoutes);
 
 import jwt from 'jsonwebtoken';
 

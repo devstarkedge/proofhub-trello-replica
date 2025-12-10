@@ -5,6 +5,7 @@ import Department from "../models/Department.js";
 import Activity from "../models/Activity.js";
 import Notification from "../models/Notification.js";
 import RecurringTask from "../models/RecurringTask.js";
+import VersionHistory from "../models/VersionHistory.js";
 import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
@@ -780,6 +781,19 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   }
 
   if (req.body.description !== undefined && req.body.description !== card.description) {
+    // Save version history for description
+    await VersionHistory.createVersion({
+      entityType: 'card_description',
+      entityId: card._id,
+      content: card.description ? card.description.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim() : '',
+      htmlContent: card.description || '',
+      mentions: card.descriptionMentions || [],
+      editedBy: req.user.id,
+      card: card._id,
+      board: card.board,
+      changeType: 'edited'
+    });
+
     await Activity.create({
       type: "description_changed",
       description: `Updated the task description`,
@@ -789,6 +803,20 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       contextType: 'task',
       metadata: {
         hasDescription: !!req.body.description
+      }
+    });
+
+    // Get version count for the response
+    const versionCount = await VersionHistory.getVersionCount('card_description', card._id);
+
+    // Emit real-time description update with version info
+    emitToBoard(card.board.toString(), 'description-updated', {
+      cardId: card._id,
+      description: req.body.description,
+      versionCount,
+      updatedBy: {
+        id: req.user.id,
+        name: req.user.name
       }
     });
   }

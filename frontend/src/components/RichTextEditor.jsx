@@ -246,6 +246,72 @@ const RichTextEditor = ({
     editor?.commands.focus();
   };
 
+  // Handle paste events for images from clipboard
+  const handlePaste = useCallback(async (event) => {
+    const clipboardItems = event.clipboardData?.items;
+    if (!clipboardItems) return;
+
+    for (const item of clipboardItems) {
+      if (item.type.startsWith('image/')) {
+        event.preventDefault();
+        
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        // Validate file size
+        if (file.size > 10 * 1024 * 1024) { // 10MB limit
+          setUploadError('Pasted image must be less than 10MB');
+          setTimeout(() => setUploadError(null), 3000);
+          return;
+        }
+
+        setUploadingImage(true);
+        setUploadError(null);
+        setUploadSuccess(false);
+
+        try {
+          if (onImageUpload) {
+            const formData = new FormData();
+            formData.append('image', file, `pasted-image-${Date.now()}.${file.type.split('/')[1] || 'png'}`);
+            const imageUrl = await onImageUpload(formData);
+            if (imageUrl) {
+              editor.chain().focus().setImage({ src: imageUrl }).run();
+              setUploadSuccess(true);
+              setTimeout(() => setUploadSuccess(false), 2000);
+            }
+          } else {
+            // Fallback to base64 for preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              editor.chain().focus().setImage({ src: e.target.result }).run();
+              setUploadSuccess(true);
+              setTimeout(() => setUploadSuccess(false), 2000);
+            };
+            reader.readAsDataURL(file);
+          }
+        } catch (error) {
+          console.error('Paste image upload failed:', error);
+          setUploadError('Failed to upload pasted image');
+          setTimeout(() => setUploadError(null), 3000);
+        } finally {
+          setUploadingImage(false);
+        }
+        return; // Only process the first image
+      }
+    }
+  }, [editor, onImageUpload]);
+
+  // Attach paste handler to editor
+  useEffect(() => {
+    const editorElement = editorRef.current;
+    if (editorElement) {
+      editorElement.addEventListener('paste', handlePaste);
+      return () => {
+        editorElement.removeEventListener('paste', handlePaste);
+      };
+    }
+  }, [handlePaste]);
+
   if (!editor) {
     return null;
   }

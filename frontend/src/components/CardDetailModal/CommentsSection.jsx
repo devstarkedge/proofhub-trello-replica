@@ -1,10 +1,162 @@
-import React, { useContext, useState, useRef, useEffect } from "react";
+import React, { useContext, useState, useRef, useEffect, useCallback, lazy, Suspense, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Loader, ChevronRight, ChevronDown } from "lucide-react";
+import { 
+  MessageSquare, 
+  Loader, 
+  ChevronRight, 
+  History, 
+  Edit3, 
+  Trash2, 
+  MoreHorizontal, 
+  X,
+  Loader2
+} from "lucide-react";
 import RichTextEditor from "../RichTextEditor";
 import AuthContext from "../../context/AuthContext";
+import versionService from "../../services/versionService";
 
-const CommentsSection = ({
+// Lazy load VersionHistoryModal
+const VersionHistoryModal = lazy(() => import("../VersionHistoryModal"));
+
+// Memoized Comment Component for better performance
+const CommentItem = memo(({ 
+  comment, 
+  index, 
+  currentUserId, 
+  onEdit, 
+  onDelete, 
+  onShowHistory 
+}) => {
+  const [showActions, setShowActions] = useState(false);
+  const [versionCount, setVersionCount] = useState(0);
+  const actionsRef = useRef(null);
+  
+  const commentId = comment._id || comment.id;
+  const isOwner = currentUserId === comment.user?._id || currentUserId === comment.user?.id;
+  
+  // Fetch version count
+  useEffect(() => {
+    const fetchVersionCount = async () => {
+      if (commentId) {
+        try {
+          const count = await versionService.getVersionCount('comment', commentId);
+          setVersionCount(count);
+        } catch (error) {
+          // Silent fail - version count is optional
+        }
+      }
+    };
+    fetchVersionCount();
+  }, [commentId]);
+
+  // Close actions on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (actionsRef.current && !actionsRef.current.contains(e.target)) {
+        setShowActions(false);
+      }
+    };
+    if (showActions) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showActions]);
+
+  const safeKey = String(commentId || `comment-${index}`).trim() || `comment-${index}`;
+  
+  return (
+    <motion.div
+      key={safeKey}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05 }}
+      className="flex gap-3 mb-4 group"
+    >
+      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white font-semibold shadow-md flex-shrink-0">
+        {comment.user?.name?.[0]?.toUpperCase() || "U"}
+      </div>
+      <div className="flex-1">
+        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm text-gray-900">
+                {comment.user?.name || "User"}
+              </span>
+              <span className="text-xs text-gray-500">
+                {new Date(comment.createdAt).toLocaleString()}
+              </span>
+              {comment.isEdited && (
+                <span className="text-xs text-gray-400 italic">(edited)</span>
+              )}
+              {versionCount > 0 && (
+                <button
+                  onClick={() => onShowHistory(comment)}
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 transition-colors"
+                  title="View edit history"
+                >
+                  <History size={12} />
+                  <span>{versionCount}</span>
+                </button>
+              )}
+            </div>
+            
+            {/* Actions Menu */}
+            {isOwner && (
+              <div className="relative" ref={actionsRef}>
+                <button
+                  onClick={() => setShowActions(!showActions)}
+                  className="p-1 text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-all rounded"
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+                
+                <AnimatePresence>
+                  {showActions && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: -5 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: -5 }}
+                      className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 min-w-[120px]"
+                    >
+                      <button
+                        onClick={() => {
+                          onEdit(comment);
+                          setShowActions(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                      >
+                        <Edit3 size={14} />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          onDelete(comment);
+                          setShowActions(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+          <div 
+            className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none prose-img:max-w-full prose-img:h-auto prose-img:rounded-md prose-img:shadow-sm" 
+            dangerouslySetInnerHTML={{ __html: comment.htmlContent || comment.text }} 
+          />
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+
+CommentItem.displayName = 'CommentItem';
+
+const CommentsSection = memo(({
   comments,
   newComment,
   teamMembers,
@@ -12,10 +164,16 @@ const CommentsSection = ({
   onAddComment,
   onImageUpload,
   modalContainerRef,
+  onEditComment,
+  onDeleteComment,
 }) => {
   const { user } = useContext(AuthContext);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditorExpanded, setIsEditorExpanded] = useState(false);
+  const [editingComment, setEditingComment] = useState(null);
+  const [editContent, setEditContent] = useState('');
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [selectedCommentForHistory, setSelectedCommentForHistory] = useState(null);
   const editorContainerRef = useRef(null);
 
   // Handle clicking outside to collapse editor (scoped to modal)
@@ -61,6 +219,54 @@ const CommentsSection = ({
       setIsSubmitting(false);
     }
   };
+
+  // Handle edit submission
+  const handleEditSubmit = useCallback(async () => {
+    if (!editContent?.trim() || !editingComment) return;
+    setIsSubmitting(true);
+    try {
+      if (onEditComment) {
+        await onEditComment(editingComment._id || editingComment.id, editContent);
+      }
+      setEditingComment(null);
+      setEditContent('');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [editContent, editingComment, onEditComment]);
+
+  // Handle delete
+  const handleDelete = useCallback(async (comment) => {
+    if (window.confirm('Are you sure you want to delete this comment?')) {
+      if (onDeleteComment) {
+        await onDeleteComment(comment._id || comment.id);
+      }
+    }
+  }, [onDeleteComment]);
+
+  // Handle edit start
+  const handleEditStart = useCallback((comment) => {
+    setEditingComment(comment);
+    setEditContent(comment.htmlContent || comment.text || '');
+  }, []);
+
+  // Handle show history
+  const handleShowHistory = useCallback((comment) => {
+    setSelectedCommentForHistory(comment);
+    setShowVersionHistory(true);
+  }, []);
+
+  // Handle version rollback for comment
+  const handleVersionRollback = useCallback(async (version) => {
+    if (selectedCommentForHistory && onEditComment) {
+      await onEditComment(
+        selectedCommentForHistory._id || selectedCommentForHistory.id, 
+        version.htmlContent || version.content
+      );
+    }
+    setShowVersionHistory(false);
+    setSelectedCommentForHistory(null);
+  }, [selectedCommentForHistory, onEditComment]);
 
   return (
     <motion.div
@@ -169,38 +375,100 @@ const CommentsSection = ({
               </motion.div>
             ) : (
               comments.map((comment, index) => {
-                const safeKey = String(comment._id || comment.id || `comment-${index}`).trim() || `comment-${index}`;
-                return (
-                  <motion.div
-                    key={safeKey}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="flex gap-3 mb-4"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white font-semibold shadow-md flex-shrink-0">
-                      {comment.user?.name?.[0]?.toUpperCase() || "U"}
-                    </div>
-                    <div className="flex-1">
-                      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="font-semibold text-sm text-gray-900">
-                            {comment.user?.name || "User"}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {new Date(comment.createdAt).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none prose-img:max-w-full prose-img:h-auto prose-img:rounded-md prose-img:shadow-sm" dangerouslySetInnerHTML={{ __html: comment.htmlContent || comment.text }} />
+                const commentId = comment._id || comment.id;
+                const isEditing = editingComment && (editingComment._id === commentId || editingComment.id === commentId);
+                
+                if (isEditing) {
+                  return (
+                    <motion.div
+                      key={commentId || `comment-${index}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex gap-3 mb-4"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white font-semibold shadow-md flex-shrink-0">
+                        {comment.user?.name?.[0]?.toUpperCase() || "U"}
                       </div>
-                    </div>
-                  </motion.div>
+                      <div className="flex-1">
+                        <div className="border border-blue-300 rounded-lg overflow-hidden shadow-md">
+                          <RichTextEditor
+                            content={editContent}
+                            onChange={setEditContent}
+                            placeholder="Edit your comment..."
+                            users={teamMembers}
+                            isComment={true}
+                            allowMentions={true}
+                            startExpanded={true}
+                            className="min-h-[80px]"
+                            onImageUpload={onImageUpload}
+                          />
+                        </div>
+                        <div className="flex justify-end mt-2 gap-2">
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => {
+                              setEditingComment(null);
+                              setEditContent('');
+                            }}
+                            className="px-4 py-2 text-gray-600 hover:text-gray-800 rounded-lg transition-colors font-medium flex items-center gap-1"
+                          >
+                            <X size={16} />
+                            Cancel
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleEditSubmit}
+                            disabled={isSubmitting || !editContent?.trim()}
+                            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:shadow-lg transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isSubmitting && <Loader size={16} className="animate-spin" />}
+                            Save
+                          </motion.button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                }
+                
+                return (
+                  <CommentItem
+                    key={commentId || `comment-${index}`}
+                    comment={comment}
+                    index={index}
+                    currentUserId={user?._id || user?.id}
+                    onEdit={handleEditStart}
+                    onDelete={handleDelete}
+                    onShowHistory={handleShowHistory}
+                  />
                 );
               })
             )}
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Version History Modal */}
+      {showVersionHistory && selectedCommentForHistory && (
+        <Suspense fallback={
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <Loader2 className="w-8 h-8 animate-spin text-white" />
+          </div>
+        }>
+          <VersionHistoryModal
+            entityType="comment"
+            entityId={selectedCommentForHistory._id || selectedCommentForHistory.id}
+            isOpen={showVersionHistory}
+            onClose={() => {
+              setShowVersionHistory(false);
+              setSelectedCommentForHistory(null);
+            }}
+            onRollback={handleVersionRollback}
+            title="Comment History"
+          />
+        </Suspense>
+      )}
 
       <style jsx="true">{`
         .custom-scrollbar::-webkit-scrollbar {
@@ -221,6 +489,8 @@ const CommentsSection = ({
       `}</style>
     </motion.div>
   );
-};
+});
+
+CommentsSection.displayName = 'CommentsSection';
 
 export default CommentsSection;

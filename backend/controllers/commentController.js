@@ -4,6 +4,7 @@ import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Notification from '../models/Notification.js';
 import Activity from '../models/Activity.js';
+import VersionHistory from '../models/VersionHistory.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { emitNotification, emitToBoard } from '../server.js';
 import { invalidateCache } from '../middleware/cache.js';
@@ -167,6 +168,23 @@ export const updateComment = asyncHandler(async (req, res) => {
     return res.status(403).json({ message: 'Not authorized' });
   }
 
+  // Save previous version before updating
+  const previousContent = comment.text;
+  const previousHtmlContent = comment.htmlContent;
+  
+  // Create version history entry
+  await VersionHistory.createVersion({
+    entityType: 'comment',
+    entityId: comment._id,
+    content: previousContent,
+    htmlContent: previousHtmlContent,
+    mentions: comment.mentions,
+    editedBy: req.user.id,
+    card: comment.card._id,
+    board: comment.card.board,
+    changeType: 'edited'
+  });
+
   if (htmlContent) {
     comment.htmlContent = htmlContent;
     comment.text = (htmlContent || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
@@ -177,6 +195,9 @@ export const updateComment = asyncHandler(async (req, res) => {
   comment.isEdited = true;
   comment.editedAt = new Date();
   await comment.save();
+
+  // Get version count for the response
+  const versionCount = await VersionHistory.getVersionCount('comment', comment._id);
 
   // Log activity
   await Activity.create({
@@ -197,13 +218,35 @@ export const updateComment = asyncHandler(async (req, res) => {
     console.error('Error processing mentions on comment update:', err);
   }
 
+  // Emit real-time update with version info
+  if (comment.card.board) {
+    emitToBoard(comment.card.board.toString(), 'comment-updated', {
+      cardId: comment.card._id,
+      commentId: comment._id,
+      updates: {
+        text: comment.text,
+        htmlContent: comment.htmlContent,
+        isEdited: true,
+        editedAt: comment.editedAt,
+        versionCount
+      },
+      updatedBy: {
+        id: req.user.id,
+        name: req.user.name
+      }
+    });
+  }
+
   // Invalidate relevant caches
   invalidateCache(`/api/cards/${comment.card}`);
   invalidateCache(`/api/cards/${comment.card}/comments`);
 
   res.status(200).json({
     success: true,
-    data: comment,
+    data: {
+      ...comment.toObject(),
+      versionCount
+    },
   });
 });
 

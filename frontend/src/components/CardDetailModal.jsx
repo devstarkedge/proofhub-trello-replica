@@ -886,6 +886,41 @@ const CardDetailModal = React.memo(({
     toast.info("Attachment removed");
   };
 
+  // Handle comment edit
+  const handleEditComment = async (commentId, newContent) => {
+    const cardId = card.id || card._id;
+    if (!cardId || !commentId) return;
+
+    try {
+      await commentService.updateComment(commentId, newContent, 'card', cardId);
+      
+      setComments(prev => prev.map(c => 
+        (c._id === commentId || c.id === commentId) 
+          ? { ...c, htmlContent: newContent, text: newContent, isEdited: true }
+          : c
+      ));
+      toast.success("Comment updated!");
+    } catch (error) {
+      console.error("Error updating comment:", error);
+      toast.error("Failed to update comment");
+    }
+  };
+
+  // Handle comment delete
+  const handleDeleteComment = async (commentId) => {
+    const cardId = card.id || card._id;
+    if (!cardId || !commentId) return;
+
+    try {
+      await commentService.deleteComment(commentId, 'card', cardId);
+      setComments(prev => prev.filter(c => c._id !== commentId && c.id !== commentId));
+      toast.success("Comment deleted!");
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+      toast.error("Failed to delete comment");
+    }
+  };
+
   const fetchSubtasks = async () => {
     if (!card?._id) return;
     setSubtasksLoading(true);
@@ -1217,6 +1252,8 @@ const CardDetailModal = React.memo(({
                   onChange={setDescription}
                   onImageUpload={uploadImageForDescription}
                   modalContainerRef={modalContentRef}
+                  cardId={card._id || card.id}
+                  onVersionRollback={setDescription}
                 />
 
                 {/* Time Tracking Component */}
@@ -1296,8 +1333,16 @@ const CardDetailModal = React.memo(({
 
                 {/* Attachments Component */}
                 <AttachmentsSection 
-                  attachments={attachments}
+                  cardId={card._id || card.id}
+                  boardId={card?.board?._id || card?.board}
                   onDeleteAttachment={handleDeleteAttachment}
+                  onAttachmentAdded={(newAttachments) => {
+                    setAttachments(prev => [...prev, ...newAttachments]);
+                  }}
+                  onCoverChange={(coverData) => {
+                    // Handle cover image change if needed
+                    console.log('Cover changed:', coverData);
+                  }}
                 />
 
                 {/* Comments & Activity Section with Tabs */}
@@ -1337,6 +1382,8 @@ const CardDetailModal = React.memo(({
                         onAddComment={handleAddComment}
                         onImageUpload={uploadImageForComment}
                         modalContainerRef={modalContentRef}
+                        onEditComment={handleEditComment}
+                        onDeleteComment={handleDeleteComment}
                       />
                     ) : (
                       <ActivitySection
