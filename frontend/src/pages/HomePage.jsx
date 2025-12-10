@@ -70,6 +70,9 @@ const HomePage = () => {
   const memberListRefs = useRef({});
 
   // Fetch departments on mount using store
+  // Note: Department visibility is controlled by the backend based on user role:
+  // - Admin users see ALL departments
+  // - Non-admin users see ONLY departments they're assigned to
   useEffect(() => {
     fetchDepartments();
   }, [fetchDepartments]);
@@ -222,7 +225,7 @@ const HomePage = () => {
        return (
          <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
             <Sidebar />
-            <div className="flex-1 ml-64">
+            <div className="flex-1 lg:ml-64">
                <Header />
                <div className="flex items-center justify-center h-[calc(100vh-200px)]">
                   <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -247,7 +250,7 @@ const HomePage = () => {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 lg:ml-64">
         <Header />
         <main className="p-6 space-y-6">
           {/* Welcome Header */}

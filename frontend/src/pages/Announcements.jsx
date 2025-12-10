@@ -332,7 +332,7 @@ const Announcements = () => {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 lg:ml-64">
         <Header />
         <main className="p-6 space-y-6">
           {/* Header Section */}

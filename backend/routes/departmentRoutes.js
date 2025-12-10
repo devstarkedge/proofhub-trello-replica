@@ -6,7 +6,7 @@ import { validate } from '../middleware/validation.js';
 
 const router = express.Router();
 
-router.get('/', getDepartments);
+router.get('/', protect, getDepartments);
 router.get('/with-assignments', protect, getDepartmentsWithAssignments);
 router.get('/:id', protect, getDepartment);
 

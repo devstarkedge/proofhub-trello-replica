@@ -12,7 +12,20 @@ import { runBackground, createNotificationInBackground } from '../utils/backgrou
 // @route   GET /api/departments
 // @access  Private
 export const getDepartments = asyncHandler(async (req, res, next) => {
-  const departments = await Department.find({ isActive: true })
+  const user = req.user;
+
+  // Build query based on user role
+  let query = { isActive: true };
+  
+  if (user) {
+    // Admin and Manager see all departments for management purposes
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      // Regular users see only departments they're members of
+      query.members = user._id;
+    }
+  }
+
+  const departments = await Department.find(query)
     .populate("managers", "name email")
     .populate("members", "name email")
     .populate("projects", "name description background members status")
@@ -34,10 +47,29 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
 // @desc    Get all departments with member assignments (optimized for HomePage)
 // @route   GET /api/departments/with-assignments
 // @access  Private
+// @desc    Get all departments with member assignments (optimized for HomePage)
+// @route   GET /api/departments/with-assignments
+// @access  Private
 export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next) => {
+  const user = req.user;
+
+  // Build match query based on user role (for Dashboard/Home - shows only assigned)
+  let matchQuery = { isActive: true };
+  
+  if (user) {
+    if (user.role === 'manager') {
+      // Managers see their assigned departments in Dashboard/Home
+      matchQuery._id = { $in: user.department || [] };
+    } else if (user.role !== 'admin') {
+      // Regular users see departments they're members of
+      matchQuery.members = user._id;
+    }
+    // Admin users see all departments (no additional filter)
+  }
+
   // OPTIMIZED: Single aggregation pipeline instead of N+1 queries
   const departments = await Department.aggregate([
-    { $match: { isActive: true } },
+    { $match: matchQuery },
     // Lookup managers
     {
       $lookup: {

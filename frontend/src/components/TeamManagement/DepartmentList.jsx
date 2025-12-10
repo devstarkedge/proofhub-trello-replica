@@ -70,7 +70,7 @@ const DepartmentList = memo(({
             </span>
           </div>
         </div>
-        <div className="max-h-[400px] sm:max-h-[500px] md:max-h-[600px] overflow-y-auto">
+        <div className="max-h-[60vh] sm:max-h-[50vh] md:max-h-[600px] overflow-y-auto">
           <AnimatePresence mode="wait">
             {isLoading ? (
               <motion.div

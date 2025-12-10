@@ -168,6 +168,12 @@ const Dashboard = memo(() => {
   // Check if user can view reminders
   const canViewReminders = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
 
+  // Check if user can view department filter (admin only)
+  // Note: Department visibility is controlled by the backend based on user role:
+  // - Admin users see ALL departments and have access to the department filter
+  // - Non-admin users see ONLY departments they're assigned to (no filter needed)
+  const canViewDepartmentFilter = user?.role?.toLowerCase() === 'admin';
+
   // Use React Query for optimized data fetching
   const { data: dashboardData, isLoading, refetch } = useDashboardData();
 
@@ -313,7 +319,7 @@ const Dashboard = memo(() => {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <Sidebar />
-        <div className="flex-1 ml-64">
+        <div className="flex-1 lg:ml-64">
           <Header />
           <div className="flex items-center justify-center h-[calc(100vh-64px)]">
             <motion.div
@@ -330,7 +336,7 @@ const Dashboard = memo(() => {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 lg:ml-64">
         <Header />
         <main className="p-6 space-y-6">
           {/* Header Section */}
@@ -384,18 +390,20 @@ const Dashboard = memo(() => {
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
-              <select
-                value={currentDepartment?._id || 'all'}
-                onChange={(e) => {
-                  const selected = departments.find(d => d._id === e.target.value);
-                  setCurrentDepartment(selected);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {departments.map(dept => (
-                  <option key={dept._id} value={dept._id}>{dept.name}</option>
-                ))}
-              </select>
+              {canViewDepartmentFilter && (
+                <select
+                  value={currentDepartment?._id || 'all'}
+                  onChange={(e) => {
+                    const selected = departments.find(d => d._id === e.target.value);
+                    setCurrentDepartment(selected);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {departments.map(dept => (
+                    <option key={dept._id} value={dept._id}>{dept.name}</option>
+                  ))}
+                </select>
+              )}
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}

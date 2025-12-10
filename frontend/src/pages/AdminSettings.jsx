@@ -100,7 +100,7 @@ const AdminSettings = () => {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 lg:ml-64">
         <Header />
         <main className="p-6">
           <div className="max-w-4xl mx-auto">

@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
 import NotificationContext from '../context/NotificationContext';
+import Sidebar from './Sidebar';
 
 const UserVerificationModal = lazy(() => import('./UserVerificationModal'));
 
@@ -20,6 +21,7 @@ const Header = ({ boardName }) => {
   const { user, logoutUser } = useContext(AuthContext);
   const { currentTeam, currentDepartment, teams, departments, setCurrentTeam, setCurrentDepartment } = useContext(DepartmentContext);
   const { notifications, unreadCount, markAsRead, deleteNotification, handleNotificationClick, verificationModal, handleVerificationAction, closeVerificationModal } = useContext(NotificationContext);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -54,6 +56,16 @@ const Header = ({ boardName }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // prevent body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (mobileSidebarOpen) {
+      document.body.classList.add('overflow-hidden');
+    } else {
+      document.body.classList.remove('overflow-hidden');
+    }
+    return () => document.body.classList.remove('overflow-hidden');
+  }, [mobileSidebarOpen]);
+
 
 
   const navItems = [
@@ -75,6 +87,14 @@ const Header = ({ boardName }) => {
         <div className="flex items-center justify-between gap-4">
           {/* Left Section */}
           <div className="flex items-center gap-4 flex-1">
+            {/* Mobile menu button */}
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="lg:hidden p-2 rounded-md hover:bg-gray-100 text-gray-600"
+              aria-label="Open menu"
+            >
+              <Menu size={18} />
+            </button>
             {/* Back Button */}
             {['/list-view', '/calendar', '/analytics'].includes(location.pathname) && (
               <motion.button
@@ -537,6 +557,9 @@ const Header = ({ boardName }) => {
       </div>
 
       {/* User Verification Modal */}
+      {mobileSidebarOpen && (
+        <Sidebar isMobile={true} onClose={() => setMobileSidebarOpen(false)} />
+      )}
       {verificationModal && (
         <Suspense fallback={<div>Loading...</div>}>
           <UserVerificationModal

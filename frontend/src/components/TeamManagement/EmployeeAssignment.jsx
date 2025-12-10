@@ -215,7 +215,7 @@ const EmployeeAssignment = memo(({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="max-h-96 overflow-y-auto"
+                className="max-h-[40vh] sm:max-h-96 overflow-y-auto"
               >
                 {paginatedEmployees.map((employee, index) => (
                   <EmployeeListRow

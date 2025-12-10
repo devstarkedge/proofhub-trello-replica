@@ -195,7 +195,7 @@ const RemindersPage = memo(() => {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="flex-1 lg:ml-64">
         <Header />
         <main className="p-6 space-y-6">
           {/* Header Section */}
