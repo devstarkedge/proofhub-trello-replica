@@ -107,7 +107,7 @@ const UserRow = memo(({
                 <UserCog className="w-4 h-4" />
                 Assign
               </button>
-              {(user.role === 'manager' || user.role === 'employee') && (
+              {user.role !== 'admin' && (
                 <button
                   onClick={() => onDelete(user)}
                   className="inline-flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold"

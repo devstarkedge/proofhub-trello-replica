@@ -1049,7 +1049,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                                 transition={{ duration: 0.15 }}
-                                className="absolute bottom-full left-0 mb-2 w-72 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 overflow-hidden"
+                                className="absolute bottom-full left-0 mb-2 w-full bg-white border border-gray-200 rounded-xl shadow-2xl z-50 overflow-hidden"
                               >
                                 {/* Country List */}
                                 <div className="max-h-56 overflow-y-auto">
@@ -1058,7 +1058,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                                       <div
                                         key={country.code}
                                         onClick={() => handleCountryCodeChange(country.code)}
-                                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-b-0 ${
+                                        className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-b-0 ${
                                           formData.clientCountryCode === country.code ? 'bg-blue-50 text-blue-700' : ''
                                         }`}
                                       >
@@ -1066,21 +1066,20 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                                           countryCode={country.countryCode}
                                           svg
                                           style={{
-                                            width: '1.5em',
-                                            height: '1.5em',
-                                            borderRadius: '3px',
+                                            width: '1.2em',
+                                            height: '1.2em',
+                                            borderRadius: '2px',
                                             objectFit: 'cover',
                                             boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
                                           }}
                                           title={country.name}
                                         />
                                         <div className="flex-1 min-w-0">
-                                          <div className="font-medium text-sm truncate">{country.name}</div>
-                                          <div className="text-xs text-gray-400">{country.country}</div>
+                                          <div className="font-medium text-xs truncate">{country.name}</div>
                                         </div>
-                                        <span className="text-sm font-semibold text-gray-500 flex-shrink-0">{country.code}</span>
+                                        <span className="text-xs font-semibold text-gray-500 flex-shrink-0">{country.code}</span>
                                         {formData.clientCountryCode === country.code && (
-                                          <CheckCircle2 className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                                          <CheckCircle2 className="h-3 w-3 text-blue-600 flex-shrink-0" />
                                         )}
                                       </div>
                                     ))

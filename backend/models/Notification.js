@@ -28,7 +28,10 @@ const notificationSchema = new mongoose.Schema({
       'reminder_sent',
       'reminder_completed',
       'reminder_missed',
-      'awaiting_client_response'
+      'awaiting_client_response',
+      'user_verified',
+      'user_approved',
+      'user_declined'
     ],
     required: true
   },

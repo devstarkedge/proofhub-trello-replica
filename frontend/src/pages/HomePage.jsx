@@ -11,6 +11,7 @@ import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import HomePageSkeleton from '../components/LoadingSkeleton';
+import NeonSparkText from '../components/NeonSparkText';
 import { useDebounce } from '../hooks/useDebounce';
 import useProjectStore from '../store/projectStore';
 import { lazy, Suspense } from 'react';
@@ -257,7 +258,9 @@ const HomePage = () => {
                 <Sparkles size={20} />
                 <span className="text-sm font-medium">Welcome!</span>
               </div>
-              <h1 className="text-4xl font-bold mb-2 animate-in fade-in slide-in-from-left-4 duration-500 delay-300">Hello, {user?.name}! 👋</h1>
+              <h1 className="text-4xl font-bold mb-2 animate-in fade-in slide-in-from-left-4 duration-500 delay-300">
+                Hello, <NeonSparkText text={user?.name || 'User'} className="text-4xl" />! 👋
+              </h1>
               <p className="text-blue-100 text-lg animate-in fade-in duration-500 delay-500">Manage your projects and collaborate with your team</p>
             </div>
           </div>
