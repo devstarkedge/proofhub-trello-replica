@@ -13,6 +13,7 @@ const activitySchema = new mongoose.Schema({
       'member_added',
       'member_removed',
       'attachment_added',
+      'attachment_deleted',
       'due_date_changed',
       'list_created',
       'list_updated',

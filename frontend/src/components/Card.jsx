@@ -91,11 +91,18 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
     [card.subtaskStats, card.subtasks]
   );
 
+  // Compute attachments count (support backend-provided attachmentsCount)
+  const attachmentsCount = useMemo(() => {
+    if (typeof card.attachmentsCount === 'number') return card.attachmentsCount;
+    if (Array.isArray(card.attachments)) return card.attachments.length;
+    return 0;
+  }, [card.attachmentsCount, card.attachments]);
+
   const hasDetails = useMemo(() =>
     (subtaskStats?.total > 0) ||
-    card.attachments?.length > 0 ||
-    card.comments?.length > 0,
-    [subtaskStats, card.attachments, card.comments]
+    attachmentsCount > 0 ||
+    (card.comments && card.comments.length > 0),
+    [subtaskStats, attachmentsCount, card.comments]
   );
 
   const isOverdue = useMemo(() =>
@@ -171,169 +178,173 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
     <motion.div
       whileHover={{ y: -2, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}
       onClick={onClick}
-      className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100 relative"
+      className="bg-white rounded-lg p-0 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100 relative overflow-hidden min-h-[100px]"
       key={card._id}
     >
-      {/* Hover Actions - Positioned top right */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
-        {card.dueDate && (
-          <motion.div
-            key="due-date"
-            whileHover={{ scale: 1.05 }}
-            className={`flex items-center gap-1 text-xs ${
-              isOverdue
-                ? "text-red-600 bg-red-50 px-2 py-1 rounded-md font-medium"
-                : "text-gray-600 bg-white px-2 py-1 rounded-md shadow-sm border border-gray-100"
-            }`}
-          >
-            <Calendar size={12} />
-            <span>{new Date(card.dueDate).toLocaleDateString()}</span>
-          </motion.div>
-        )}
-        <motion.button
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={handleDelete}
-          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded bg-white shadow-sm border border-gray-100"
-        >
-          <Trash2 size={14} />
-        </motion.button>
-      </div>
-
-      {/* Labels Row */}
-      {allLabels.length > 0 && (
-        <div ref={labelsContainerRef} className="flex flex-wrap gap-1 items-center mb-3">
-          {allLabels.slice(0, visibleLabelsCount).map((label, idx) => (
-            <motion.span
-              key={`${label.type}-${idx}`}
-              whileHover={{ scale: 1.05 }}
-              className={`px-2 py-1 text-xs rounded-md font-medium flex items-center gap-1 ${
-                label.type === 'recurring' 
-                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' 
-                  : ''
-              }`}
-              style={label.type !== 'recurring' && label.color ? {
-                backgroundColor: label.color,
-                color: getTextColor(label.color)
-              } : undefined}
-            >
-              {label.type === 'recurring' && <RefreshCw size={10} />}
-              {label.text}
-            </motion.span>
-          ))}
-          {allLabels.length > visibleLabelsCount && (
-            <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md font-medium">
-              +{allLabels.length - visibleLabelsCount}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Cover Image - Mid Area */}
+      {/* Cover Image - Background Layer */}
       {coverImageUrl && (
-        <div className="mb-4 -mx-4 -mt-4">
+        <div className="absolute top-0 left-0 w-full h-[160px] z-0">
           <img
             src={coverImageUrl}
             alt="Card cover"
-            className="h-40 sm:h-36 w-full object-cover rounded-t-lg"
+            className="w-full h-full object-cover"
           />
+          {/* Gradient Overlay for Text Readability - Fades to white at bottom to blend with card body */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-white" />
         </div>
       )}
 
-      {/* Card Title - Slightly Lower */}
-      <h4 className="text-sm font-semibold text-gray-900 mb-3 line-clamp-2 leading-relaxed">
-        {card.title}
-      </h4>
-
-      {/* Assignees */}
-      {card.assignees && card.assignees.length > 0 && (
-        <div className="flex items-center gap-2 mb-3 p-2 bg-gray-50 rounded-lg">
-          <div className="flex -space-x-2">
-            {card.assignees.slice(0, 3).map((assignee, idx) => (
-              <div
-                key={assignee._id}
-                className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center border-2 border-white"
-                title={assignee.name}
-              >
-                <span className="text-white text-xs font-bold">
-                  {assignee.name?.[0]?.toUpperCase()}
-                </span>
-              </div>
-            ))}
-            {card.assignees.length > 3 && (
-              <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white">
-                <span className="text-white text-xs font-bold">
-                  +{card.assignees.length - 3}
-                </span>
-              </div>
-            )}
-          </div>
-          <span className="text-xs text-gray-700 font-medium truncate">
-            {card.assignees.length === 1
-              ? card.assignees[0].name
-              : `${card.assignees.length} members`}
-          </span>
-        </div>
-      )}
-
-      {/* Card Badges - Without Status/Priority/Nano */}
-      {hasDetails && (
-        <div className="flex items-center flex-wrap gap-3 pt-3 border-t border-gray-100">
-          {subtaskStats?.total > 0 && (
+      {/* Card Content - Foreground Layer */}
+      <div className="relative z-10 p-4 pt-5">
+        {/* Hover Actions - Positioned top right */}
+        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+          {card.dueDate && (
             <motion.div
-              key="subtasks"
+              key="due-date"
               whileHover={{ scale: 1.05 }}
-              className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md ${
-                subtaskStats.completed === subtaskStats.total
-                  ? "bg-green-50 text-green-700"
-                  : "bg-gray-100 text-gray-700"
+              className={`flex items-center gap-1 text-xs ${
+                isOverdue
+                  ? "text-red-600 bg-red-50 px-2 py-1 rounded-md font-medium shadow-sm"
+                  : "text-gray-600 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border border-gray-100"
               }`}
             >
-              <CheckSquare size={12} />
-              <span>
-                {subtaskStats.completed}/{subtaskStats.total}
-              </span>
+              <Calendar size={12} />
+              <span>{new Date(card.dueDate).toLocaleDateString()}</span>
             </motion.div>
           )}
-
-          {card.attachments && card.attachments.length > 0 && (
-            <motion.div
-              key="attachments"
-              whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-1 text-xs text-gray-600"
-            >
-              <Paperclip size={12} />
-              <span>{card.attachments.length}</span>
-            </motion.div>
-          )}
-
-          {card.comments && card.comments.length > 0 && (
-            <motion.div
-              key="comments"
-              whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md font-medium"
-            >
-              <MessageSquare size={12} />
-              <span>{card.comments.length}</span>
-            </motion.div>
-          )}
-
-          {card.loggedTime && card.loggedTime.length > 0 && (
-            <motion.div
-              key="logged-time"
-              whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md font-medium "
-            >
-              <Clock size={12} />
-              <span>
-                {card.loggedTime.reduce((total, log) => total + log.hours, 0)}h{' '}
-                {card.loggedTime.reduce((total, log) => total + log.minutes, 0)}m
-              </span>
-            </motion.div>
-          )}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={handleDelete}
+            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded bg-white/90 backdrop-blur-sm shadow-sm border border-gray-100"
+          >
+            <Trash2 size={14} />
+          </motion.button>
         </div>
-      )}
 
+        {/* Labels Row */}
+        {allLabels.length > 0 && (
+          <div ref={labelsContainerRef} className="flex flex-wrap gap-1 items-center mb-3">
+            {allLabels.slice(0, visibleLabelsCount).map((label, idx) => (
+              <motion.span
+                key={`${label.type}-${idx}`}
+                whileHover={{ scale: 1.05 }}
+                className={`px-2 py-1 text-xs rounded-md font-medium flex items-center gap-1 shadow-sm ${
+                  label.type === 'recurring' 
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' 
+                    : ''
+                }`}
+                style={label.type !== 'recurring' && label.color ? {
+                  backgroundColor: label.color,
+                  color: getTextColor(label.color)
+                } : undefined}
+              >
+                {label.type === 'recurring' && <RefreshCw size={10} />}
+                {label.text}
+              </motion.span>
+            ))}
+            {allLabels.length > visibleLabelsCount && (
+              <span className="px-2 py-1 text-xs bg-white/80 backdrop-blur-sm text-gray-600 rounded-md font-medium shadow-sm border border-gray-100">
+                +{allLabels.length - visibleLabelsCount}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Card Title */}
+        <h4 className="text-sm font-semibold text-gray-900 mb-3 line-clamp-2 leading-relaxed drop-shadow-sm">
+          {card.title}
+        </h4>
+
+        {/* Assignees */}
+        {card.assignees && card.assignees.length > 0 && (
+          <div className="flex items-center gap-2 mb-3 p-2 bg-white/60 backdrop-blur-sm rounded-lg border border-white/50">
+            <div className="flex -space-x-2">
+              {card.assignees.slice(0, 3).map((assignee, idx) => (
+                <div
+                  key={assignee._id}
+                  className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center border-2 border-white"
+                  title={assignee.name}
+                >
+                  <span className="text-white text-xs font-bold">
+                    {assignee.name?.[0]?.toUpperCase()}
+                  </span>
+                </div>
+              ))}
+              {card.assignees.length > 3 && (
+                <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white">
+                  <span className="text-white text-xs font-bold">
+                    +{card.assignees.length - 3}
+                  </span>
+                </div>
+              )}
+            </div>
+            <span className="text-xs text-gray-700 font-medium truncate">
+              {card.assignees.length === 1
+                ? card.assignees[0].name
+                : `${card.assignees.length} members`}
+            </span>
+          </div>
+        )}
+
+        {/* Card Badges */}
+        {hasDetails && (
+          <div className="flex items-center flex-wrap gap-3 pt-3 border-t border-gray-100/50">
+            {subtaskStats?.total > 0 && (
+              <motion.div
+                key="subtasks"
+                whileHover={{ scale: 1.05 }}
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md ${
+                  subtaskStats.completed === subtaskStats.total
+                    ? "bg-green-50 text-green-700"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                <CheckSquare size={12} />
+                <span>
+                  {subtaskStats.completed}/{subtaskStats.total}
+                </span>
+              </motion.div>
+            )}
+
+            {attachmentsCount > 0 && (
+              <motion.div
+                key="attachments"
+                whileHover={{ scale: 1.05 }}
+                className="flex items-center gap-1 text-xs text-gray-600"
+              >
+                <Paperclip size={12} />
+                <span>{attachmentsCount}</span>
+              </motion.div>
+            )}
+
+            {card.comments && card.comments.length > 0 && (
+              <motion.div
+                key="comments"
+                whileHover={{ scale: 1.05 }}
+                className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md font-medium"
+              >
+                <MessageSquare size={12} />
+                <span>{card.comments.length}</span>
+              </motion.div>
+            )}
+
+            {card.loggedTime && card.loggedTime.length > 0 && (
+              <motion.div
+                key="logged-time"
+                whileHover={{ scale: 1.05 }}
+                className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md font-medium "
+              >
+                <Clock size={12} />
+                <span>
+                  {card.loggedTime.reduce((total, log) => total + log.hours, 0)}h{' '}
+                  {card.loggedTime.reduce((total, log) => total + log.minutes, 0)}m
+                </span>
+              </motion.div>
+            )}
+          </div>
+        )}
+      </div>
 
     </motion.div>
   );

@@ -1,6 +1,7 @@
 import Board from "../models/Board.js";
 import List from "../models/List.js";
 import Card from "../models/Card.js";
+import Attachment from "../models/Attachment.js";
 import Label from "../models/Label.js";
 import Activity from "../models/Activity.js";
 import Department from "../models/Department.js";
@@ -142,6 +143,13 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
 
   const recurringSet = new Set(recurringTasks.map(r => r.card.toString()));
 
+  // Fetch attachment counts for these cards in batch to avoid extra per-card queries
+  const attachmentCountsAgg = await Attachment.aggregate([
+    { $match: { card: { $in: cardIds }, isDeleted: false } },
+    { $group: { _id: '$card', count: { $sum: 1 } } }
+  ]);
+  const attachmentCountMap = new Map(attachmentCountsAgg.map(a => [a._id.toString(), a.count]));
+
   // Group cards by list and add hasRecurrence flag
   const cardsByList = {};
   listIds.forEach(id => { cardsByList[id.toString()] = []; });
@@ -151,7 +159,8 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     if (cardsByList[listId]) {
       cardsByList[listId].push({
         ...card,
-        hasRecurrence: recurringSet.has(card._id.toString())
+        hasRecurrence: recurringSet.has(card._id.toString()),
+        attachmentsCount: attachmentCountMap.get(card._id.toString()) || 0
       });
     }
   });
