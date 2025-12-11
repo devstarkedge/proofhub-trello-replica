@@ -9,7 +9,7 @@ import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import Header from '../components/Header';
 import Loading from '../components/Loading';
-import { validateField, validateForm, debouncedEmailCheck, validationRules } from '../utils/validationUtils';
+import { validateField, validateForm as validateFormUtil, debouncedEmailCheck, validationRules } from '../utils/validationUtils';
 
 
 const Profile = () => {
@@ -49,7 +49,7 @@ const Profile = () => {
 
   const validateForm = () => {
     const fieldsToValidate = ['name', 'email', 'title'];
-    const { isValid, errors: validationErrors } = validateForm(profileData, fieldsToValidate);
+    const { isValid, errors: validationErrors } = validateFormUtil(profileData, fieldsToValidate);
 
     // Additional email uniqueness check
     if (profileData.email && !emailAvailable) {

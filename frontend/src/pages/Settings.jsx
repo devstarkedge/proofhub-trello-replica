@@ -74,6 +74,11 @@ const Settings = () => {
       }
     }
 
+    // Check if new password is same as current password
+    if (settingsData.newPassword && settingsData.currentPassword && settingsData.newPassword === settingsData.currentPassword) {
+      validationErrors.newPassword = 'New password cannot be the same as current password';
+    }
+
     setErrors(validationErrors);
     return isValid && Object.keys(validationErrors).length === 0;
   };

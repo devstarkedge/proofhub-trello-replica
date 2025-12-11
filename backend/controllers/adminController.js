@@ -33,6 +33,10 @@ export const updateAdminSettings = asyncHandler(async (req, res, next) => {
     if (!isMatch) {
       return next(new ErrorResponse('Current password is incorrect', 401));
     }
+
+    if (newPassword === currentPassword) {
+      return next(new ErrorResponse('New password cannot be the same as the current password', 400));
+    }
   }
 
   // Update email if provided

@@ -292,6 +292,10 @@ export const updateSettings = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse('Current password is incorrect', 400));
     }
 
+    if (newPassword === currentPassword) {
+      return next(new ErrorResponse('New password cannot be the same as the current password', 400));
+    }
+
     user.password = newPassword;
   }
 

@@ -6,7 +6,7 @@ import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 
 const AdminSettings = () => {
-  const { user, token, getProfile } = useContext(AuthContext);
+  const { user, token, setUser } = useContext(AuthContext);
   const [formData, setFormData] = useState({
     newEmail: "",
     currentPassword: "",
@@ -54,6 +54,12 @@ const AdminSettings = () => {
       return;
     }
 
+    if (newPassword && currentPassword && newPassword === currentPassword) {
+      setError("New password cannot be the same as current password.");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const config = {
         headers: {
@@ -70,7 +76,12 @@ const AdminSettings = () => {
       const res = await api.put("/api/admin/settings", body, config);
 
       setMessage(res.data.message);
-      getProfile();
+      
+      // Update user context if email changed
+      if (newEmail && user.email !== newEmail) {
+        setUser((prev) => ({ ...prev, email: newEmail }));
+      }
+      
       setFormData({
         newEmail: "",
         currentPassword: "",

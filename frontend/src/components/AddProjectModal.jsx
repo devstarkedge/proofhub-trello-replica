@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from "framer-motion"
 import {
   X, Plus, AlertCircle, Loader, Calendar, Users, DollarSign,
@@ -45,6 +46,8 @@ const COUNTRY_CODES = [
 
 // Email validation regex
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+// Strict project URL regex: require http(s) protocol and a domain (allow subdomains and paths)
+const PROJECT_URL_REGEX = /^https?:\/\/([a-z0-9-]+\.)+[a-z]{2,}(?:[:0-9]*)?(?:\/\S*)?$/i
 
 // Memoized animation variants
 const modalVariants = {
@@ -113,8 +116,12 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
   const [newCategoryName, setNewCategoryName] = useState("")
   const [newCategoryDescription, setNewCategoryDescription] = useState("")
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false)
+  const [visOpen, setVisOpen] = useState(false)
+  const [projectUrlValid, setProjectUrlValid] = useState(false)
   const [countrySearchQuery, setCountrySearchQuery] = useState("")
   const countryDropdownRef = useRef(null)
+  const visTriggerRef = useRef(null)
+  const visMenuRef = useRef(null)
   const countrySearchInputRef = useCallback(node => {
     if (node) {
       // Auto-focus the search input when dropdown opens
@@ -142,6 +149,20 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
       setCountrySearchQuery("")
     }
   }, [countryDropdownOpen])
+
+  // Close visibility menu when clicking outside
+  useEffect(() => {
+    const handleOutside = (e) => {
+      if (visOpen) {
+        const target = e.target
+        if (visTriggerRef.current && visTriggerRef.current.contains(target)) return
+        if (visMenuRef.current && visMenuRef.current.contains(target)) return
+        setVisOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [visOpen])
 
   // Close country dropdown when clicking outside
   useEffect(() => {
@@ -260,10 +281,36 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
 
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target
+
+    // Prevent negative values for price fields
+    if ((name === 'fixedPrice' || name === 'hourlyPrice') && parseFloat(value) < 0) {
+      return
+    }
+
     setFormData((prev) => ({ ...prev, [name]: value }))
     // Clear error for this field when user starts typing
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: "" }))
+    }
+
+    // Real-time validation for projectUrl
+    if (name === 'projectUrl') {
+      const trimmed = value.trim()
+      // don't show error for empty field but keep invalid state false
+      if (!trimmed) {
+        setProjectUrlValid(false)
+        setErrors((prev) => ({ ...prev, projectUrl: "" }))
+      } else if (trimmed.includes('@')) {
+        // Definitely an email -> invalid
+        setProjectUrlValid(false)
+        setErrors((prev) => ({ ...prev, projectUrl: "Please enter a valid URL." }))
+      } else if (!PROJECT_URL_REGEX.test(trimmed)) {
+        setProjectUrlValid(false)
+        setErrors((prev) => ({ ...prev, projectUrl: "Please enter a valid URL." }))
+      } else {
+        setProjectUrlValid(true)
+        setErrors((prev) => ({ ...prev, projectUrl: "" }))
+      }
     }
   }, [errors])
 
@@ -364,6 +411,10 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
 
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault()
+    if (!projectUrlValid) {
+      toast.error("Please enter a valid project URL.")
+      return
+    }
     if (!validateForm()) {
       toast.error("Please fill all required details in the form")
       return
@@ -445,7 +496,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
     } finally {
       setIsSaving(false)
     }
-  }, [formData, validateForm, fetchDepartmentTeams, departmentId, onProjectAdded, onClose, initialFormData])
+  }, [formData, validateForm, fetchDepartmentTeams, departmentId, onProjectAdded, onClose, initialFormData, projectUrlValid])
 
   // Memoize available employees (those not already assigned)
   const availableEmployees = useMemo(() => 
@@ -458,6 +509,16 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
     formData.assignees.map(assigneeId => employees.find(emp => emp._id === assigneeId)).filter(Boolean),
     [formData.assignees, employees]
   )
+
+  // Compute trigger rect for visibility menu positioning (portal)
+  const visTriggerRect = visTriggerRef.current ? visTriggerRef.current.getBoundingClientRect() : null
+  const visMenuStyle = visTriggerRect ? {
+    position: 'absolute',
+    top: visTriggerRect.bottom + window.scrollY,
+    left: visTriggerRect.left + window.scrollX,
+    minWidth: visTriggerRect.width,
+    zIndex: 9999
+  } : { position: 'absolute', visibility: 'hidden' }
 
   if (!isOpen) return null
 
@@ -496,18 +557,38 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-xl">
-                  <Globe className="h-4 w-4" />
-                  <select
-                    name="visibility"
-                    value={formData.visibility}
-                    onChange={handleInputChange}
-                    className="bg-transparent text-white text-sm font-medium focus:outline-none cursor-pointer"
+                <div className="relative">
+                  <div
+                    ref={visTriggerRef}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setVisOpen(v => !v)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setVisOpen(v => !v) }}
+                    className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-xl cursor-pointer select-none"
                   >
-                    <option value="private" className="text-gray-900">Private</option>
-                    <option value="public" className="text-gray-900">Public</option>
-                  </select>
-                  <ChevronDown className="h-4 w-4" />
+                    <Globe className="h-4 w-4" />
+                    <span className="text-white text-sm font-medium capitalize">{formData.visibility}</span>
+                    <ChevronDown className={`h-4 w-4 transition-transform ${visOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                  {visOpen && createPortal(
+                    <div ref={visMenuRef} style={visMenuStyle} className="bg-white rounded-md shadow-lg z-50 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => { setFormData(prev => ({ ...prev, visibility: 'private' })); setVisOpen(false) }}
+                        className="block w-full text-left px-4 py-2 hover:bg-gray-100"
+                      >
+                        Private
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setFormData(prev => ({ ...prev, visibility: 'public' })); setVisOpen(false) }}
+                        className="block w-full text-left px-4 py-2 hover:bg-gray-100"
+                      >
+                        Public
+                      </button>
+                    </div>,
+                    document.body
+                  )}
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.1, rotate: 90 }}
@@ -726,14 +807,47 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                     <Link2 className="h-4 w-4 text-blue-600" />
                     Project URL
                   </label>
-                  <input
-                    type="text"
-                    name="projectUrl"
-                    value={formData.projectUrl}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
-                    placeholder="https://example.com"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="projectUrl"
+                      value={formData.projectUrl}
+                      onChange={handleInputChange}
+                      className={`w-full px-4 py-3 pr-10 border rounded-xl focus:outline-none focus:ring-2 transition-all ${
+                        errors.projectUrl ? 'border-red-500 focus:ring-red-200 bg-red-50' : (projectUrlValid ? 'border-green-500 focus:ring-green-200 bg-green-50' : 'border-gray-300 focus:ring-blue-500')
+                      }`}
+                      placeholder="https://example.com"
+                    />
+                    {/* Indicator icon */}
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      {projectUrlValid ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      ) : (formData.projectUrl ? (
+                        <AlertCircle className="h-5 w-5 text-red-500" />
+                      ) : null)}
+                    </div>
+                  </div>
+                  <AnimatePresence>
+                    {errors.projectUrl && formData.projectUrl && (
+                      <motion.p
+                        initial={{ opacity: 0, y: -5, height: 0 }}
+                        animate={{ opacity: 1, y: 0, height: 'auto' }}
+                        exit={{ opacity: 0, y: -5, height: 0 }}
+                        className="text-red-600 text-sm mt-2 flex items-center gap-1"
+                      >
+                        <AlertCircle size={14} /> {errors.projectUrl}
+                      </motion.p>
+                    )}
+                    {projectUrlValid && (
+                      <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-green-600 text-sm mt-2 flex items-center gap-1"
+                      >
+                        <CheckCircle2 size={14} /> URL verified
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               </div>
 
@@ -910,6 +1024,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                         name="fixedPrice"
                         value={formData.fixedPrice}
                         onChange={handleInputChange}
+                        min="0"
                         className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
                         placeholder="$0.00"
                       />
@@ -930,6 +1045,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                         name="hourlyPrice"
                         value={formData.hourlyPrice}
                         onChange={handleInputChange}
+                        min="0"
                         className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
                         placeholder="$/hr"
                       />
@@ -1188,7 +1304,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
               whileTap={{ scale: 0.98 }}
               type="submit"
               onClick={handleSubmit}
-              disabled={isSaving}
+              disabled={isSaving || !projectUrlValid}
               className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all shadow-lg shadow-blue-500/30"
             >
               {isSaving ? (
