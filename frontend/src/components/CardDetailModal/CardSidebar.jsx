@@ -278,7 +278,7 @@ const CardSidebar = ({
             >
               <option value="">Select status</option>
               {availableStatuses.map((statusOption, idx) => (
-                <option key={statusOption.value || `status-${idx}`} value={statusOption.value}>
+                <option key={`${statusOption.value}-${idx}`} value={statusOption.value}>
                   {statusOption.label}
                 </option>
               ))}

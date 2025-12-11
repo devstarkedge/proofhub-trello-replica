@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import MentionList from './MentionList';
 import useEditorAttachment from '../hooks/useEditorAttachment';
+import EditorAttachmentPreview from './EditorAttachmentPreview';
 import 'tippy.js/dist/tippy.css';
 
 const CustomImage = Image.extend({
@@ -505,7 +506,10 @@ const RichTextEditor = ({
               try {
                 // Use Cloudinary upload if cardId is available
                 if (cardId && enableAttachments) {
-                  await uploadAttachmentFile(file);
+                  // Fire and forget upload (handled by store/preview)
+                  uploadAttachmentFile(file).catch(console.error);
+                  
+                  // Show success briefly
                   setUploadSuccess(true);
                   setTimeout(() => setUploadSuccess(false), 2000);
                 } else if (onImageUpload) {
@@ -573,7 +577,8 @@ const RichTextEditor = ({
                   if (files.length === 0) return;
 
                   try {
-                    await uploadAttachmentFiles(files);
+                    // Fire and forget - store handles progress
+                    uploadAttachmentFiles(files);
                   } catch (error) {
                     console.error('Attachment upload failed:', error);
                   } finally {
@@ -657,6 +662,19 @@ const RichTextEditor = ({
             }}
           >
             {placeholder}
+          </div>
+        )}
+
+
+
+        {/* Attachment Previews Integration */}
+        {cardId && (
+          <div className="px-3 pb-2">
+            <EditorAttachmentPreview 
+              cardId={cardId} 
+              contextType={contextType || (isComment ? 'comment' : 'description')}
+              contextRef={contextRef}
+            />
           </div>
         )}
 

@@ -16,7 +16,8 @@ import {
   Square,
   Star,
   Loader,
-  ChevronDown
+  ChevronDown,
+  AlertCircle
 } from 'lucide-react';
 import useAttachmentStore from '../store/attachmentStore';
 import { InlineAttachmentBadge } from './TinyPreview';
@@ -54,13 +55,35 @@ const AttachmentList = ({
     selectAll,
     deleteSelected,
     isSelected,
-    loadMore
+    loadMore,
+    uploadProgress
   } = useAttachmentStore();
 
   // Use prop attachments if provided, otherwise use store
-  const attachments = useMemo(() => {
+  const realAttachments = useMemo(() => {
     return propAttachments || storeAttachments[cardId] || [];
   }, [propAttachments, storeAttachments, cardId]);
+
+  // Merge pending uploads with real attachments
+  const attachments = useMemo(() => {
+    const pendingUploads = Object.values(uploadProgress)
+      .filter(p => p.cardId === cardId && p.status !== 'completed') // completed items are already in realAttachments
+      .map(p => ({
+        _id: `pending-${p.fileName}`,
+        isPending: true,
+        originalName: p.fileName,
+        fileType: p.fileType,
+        fileSize: p.size,
+        thumbnailUrl: p.fileType === 'image' ? (p.preview || null) : null,
+        createdAt: new Date(),
+        progress: p.progress,
+        status: p.status,
+        error: p.error
+      }));
+    
+    // Sort pending first, then newest real attachments
+    return [...pendingUploads, ...realAttachments];
+  }, [realAttachments, uploadProgress, cardId]);
 
   const isLoading = loading[cardId];
   const paginationData = pagination[cardId];
@@ -203,9 +226,9 @@ const AttachmentList = ({
           <h4 className="font-semibold text-gray-800 text-lg">
             Attachments
           </h4>
-          {attachments.length > 0 && (
+          {(attachments.length > 0 || Object.keys(uploadProgress).length > 0) && (
             <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full font-medium">
-              {attachments.length}
+              {attachments.length + Object.keys(uploadProgress).filter(k => uploadProgress[k].cardId === cardId).length}
             </span>
           )}
         </div>
@@ -313,12 +336,33 @@ const AttachmentList = ({
                     <span>
                       {formatFileSize(attachment.fileSize)} • {formatDate(attachment.createdAt)}
                     </span>
-                    {/* Source badge - shows where the attachment came from */}
-                    {attachment.contextType && attachment.contextType !== 'card' && (
-                      <InlineAttachmentBadge contextType={attachment.contextType} />
+                    {/* Source badge or Progress status */}
+                    {attachment.isPending ? (
+                      <span className={`text-[10px] font-medium ${
+                        attachment.status === 'error' ? 'text-red-500' : 'text-blue-500'
+                      }`}>
+                        {attachment.status === 'error' ? 'Upload failed' : `${Math.round(attachment.progress)}% • Uploading...`}
+                      </span>
+                    ) : (
+                      attachment.contextType && attachment.contextType !== 'card' && (
+                        <InlineAttachmentBadge contextType={attachment.contextType} />
+                      )
                     )}
                   </div>
-                  {attachment.uploadedBy && (
+                  
+                  {/* Progress Bar for pending items */}
+                  {attachment.isPending && attachment.status !== 'error' && (
+                    <div className="mt-1.5 w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${attachment.progress}%` }}
+                        transition={{ duration: 0.2 }}
+                        className="h-full bg-blue-500 rounded-full"
+                      />
+                    </div>
+                  )}
+
+                  {!attachment.isPending && attachment.uploadedBy && (
                     <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
                       <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[10px] font-medium">
                         {attachment.uploadedBy.name?.[0]?.toUpperCase() || 'U'}
@@ -328,8 +372,20 @@ const AttachmentList = ({
                   )}
                 </div>
 
-                {/* Actions menu */}
+                {/* Actions menu or Status Icon */}
                 <div className="relative self-start">
+                  {attachment.isPending ? (
+                    <div className="p-1.5">
+                      {attachment.status === 'error' ? (
+                        <div className="text-red-500 cursor-help" title={attachment.error}>
+                          <AlertCircle size={16} />
+                        </div>
+                      ) : (
+                        <Loader size={16} className="text-blue-500 animate-spin" />
+                      )}
+                    </div>
+                  ) : (
+                    <>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -393,6 +449,8 @@ const AttachmentList = ({
                       </motion.div>
                     )}
                   </AnimatePresence>
+                  </>
+                  )}
                 </div>
               </div>
             </motion.div>

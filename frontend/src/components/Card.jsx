@@ -138,10 +138,68 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
     onDelete(card._id);
   }, [onDelete, card._id]);
 
-  // Memoize formatted due date
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  // Memoize formatter due date
   const formattedDueDate = useMemo(() => 
     card.dueDate ? new Date(card.dueDate).toLocaleDateString() : null,
     [card.dueDate]
+  );
+
+  const labelsLimit = isHovered ? allLabels.length : 2;
+  const visibleLabels = allLabels.slice(0, labelsLimit);
+  const hiddenLabelsCount = allLabels.length - labelsLimit;
+
+  // Reusable labels renderer
+  const renderLabels = (isOverlay = false) => (
+    <div 
+      ref={labelsContainerRef} 
+      className={`flex flex-wrap gap-1.5 items-start transition-all duration-300 ${
+        isOverlay 
+          ? 'absolute top-3 left-3 right-3 z-20' 
+          : 'mb-3'
+      }`}
+    >
+      {visibleLabels.map((label, idx) => (
+        <motion.span
+          key={`${label.type}-${idx}`}
+          layout // Animate position changes
+          initial={false}
+          className={`
+            px-1.5 py-[1px] text-[9px] uppercase tracking-wider font-bold rounded-full flex items-center gap-1 shadow-sm backdrop-blur-md border border-white/20 select-none
+            ${isOverlay ? 'shadow-sm' : ''}
+            ${label.type === 'recurring' ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : ''}
+          `}
+          style={label.type !== 'recurring' && label.color ? {
+            // High visibility pastel style:
+            // Use a solid white background with a heavy tint of the label color
+            backgroundColor: isOverlay ? '#ffffff' : (label.color + '15'), 
+            color: label.color,
+            // Add a subtle border matching the color
+            border: `1px solid ${label.color}30`,
+            // If overlay, add a colored shadow/glow for pop
+            boxShadow: isOverlay ? `0 2px 4px rgba(0,0,0,0.1)` : 'none',
+            // Ensure background is distinct
+            opacity: 1
+          } : undefined}
+        >
+          {label.type === 'recurring' && <RefreshCw size={8} className={isHovered ? "animate-spin" : ""} />}
+          <span className="truncate max-w-[100px]">{label.text}</span>
+        </motion.span>
+      ))}
+      
+      {hiddenLabelsCount > 0 && (
+        <motion.span 
+          layout
+          className={`
+            px-1.5 py-[1px] text-[9px] font-bold rounded-full shadow-sm border
+            ${isOverlay ? 'bg-white text-gray-600 border-gray-200' : 'bg-gray-100 text-gray-600 border-gray-200'}
+          `}
+        >
+          +{hiddenLabelsCount}
+        </motion.span>
+      )}
+    </div>
   );
 
   if (compact) {
@@ -176,176 +234,133 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
 
   return (
     <motion.div
-      whileHover={{ y: -2, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}
+      whileHover={{ y: -4, boxShadow: "0 12px 20px -8px rgba(0, 0, 0, 0.15)" }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
-      className="bg-white rounded-lg p-0 shadow-sm hover:shadow-md cursor-pointer transition-all group border border-gray-100 relative overflow-hidden min-h-[100px]"
+      className="bg-white rounded-xl shadow-sm hover:shadow-md cursor-pointer transition-all duration-300 group ring-1 ring-gray-200 border-0 overflow-hidden min-h-[100px]"
       key={card._id}
     >
       {/* Cover Image - Background Layer */}
       {coverImageUrl && (
-        <div className="absolute top-0 left-0 w-full h-[160px] z-0">
-          <img
-            src={coverImageUrl}
-            alt="Card cover"
-            className="w-full h-full object-cover"
-          />
-          {/* Gradient Overlay for Text Readability - Fades to white at bottom to blend with card body */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-white" />
+        <div className="relative w-full h-[140px] overflow-hidden">
+          <div className={`absolute inset-0 transition-all duration-500 ease-out transform ${isHovered ? 'scale-110 blur-[2px] brightness-75' : 'scale-100'}`}>
+            <img
+              src={coverImageUrl}
+              alt="Card cover"
+              className="w-full h-full object-cover"
+            />
+          </div>
+          {/* Gradient Overlay - Only visible on hover for text contrast */}
+          <div className={`absolute inset-0 bg-gradient-to-t from-black/60 to-transparent transition-opacity duration-300 ${isHovered ? 'opacity-60' : 'opacity-0'}`} />
+          
+          {/* Overylay Labels */}
+          {allLabels.length > 0 && renderLabels(true)}
         </div>
       )}
 
-      {/* Card Content - Foreground Layer */}
-      <div className="relative z-10 p-4 pt-5">
-        {/* Hover Actions - Positioned top right */}
-        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+      {/* Card Content */}
+      <div className="relative p-3.5 flex flex-col gap-2">
+        {/* Hover Actions - Positioned absolutely relative to card */}
+        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 z-30 transform translate-x-2 group-hover:translate-x-0">
           {card.dueDate && (
-            <motion.div
-              key="due-date"
-              whileHover={{ scale: 1.05 }}
-              className={`flex items-center gap-1 text-xs ${
+            <div
+              className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm backdrop-blur-md ${
                 isOverdue
-                  ? "text-red-600 bg-red-50 px-2 py-1 rounded-md font-medium shadow-sm"
-                  : "text-gray-600 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm border border-gray-100"
+                  ? "text-red-600 bg-red-50 border border-red-100"
+                  : "text-gray-700 bg-white/90 border border-gray-200"
               }`}
             >
-              <Calendar size={12} />
-              <span>{new Date(card.dueDate).toLocaleDateString()}</span>
-            </motion.div>
+              <Calendar size={10} />
+              <span>{new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+            </div>
           )}
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+          <button
             onClick={handleDelete}
-            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded bg-white/90 backdrop-blur-sm shadow-sm border border-gray-100"
+            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full bg-white/90 shadow-sm border border-gray-200 transition-colors"
           >
-            <Trash2 size={14} />
-          </motion.button>
+            <Trash2 size={12} />
+          </button>
         </div>
 
-        {/* Labels Row */}
-        {allLabels.length > 0 && (
-          <div ref={labelsContainerRef} className="flex flex-wrap gap-1 items-center mb-3">
-            {allLabels.slice(0, visibleLabelsCount).map((label, idx) => (
-              <motion.span
-                key={`${label.type}-${idx}`}
-                whileHover={{ scale: 1.05 }}
-                className={`px-2 py-1 text-xs rounded-md font-medium flex items-center gap-1 shadow-sm ${
-                  label.type === 'recurring' 
-                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' 
-                    : ''
-                }`}
-                style={label.type !== 'recurring' && label.color ? {
-                  backgroundColor: label.color,
-                  color: getTextColor(label.color)
-                } : undefined}
-              >
-                {label.type === 'recurring' && <RefreshCw size={10} />}
-                {label.text}
-              </motion.span>
-            ))}
-            {allLabels.length > visibleLabelsCount && (
-              <span className="px-2 py-1 text-xs bg-white/80 backdrop-blur-sm text-gray-600 rounded-md font-medium shadow-sm border border-gray-100">
-                +{allLabels.length - visibleLabelsCount}
-              </span>
-            )}
-          </div>
-        )}
+        {/* Labels (If no cover) */}
+        {!coverImageUrl && allLabels.length > 0 && renderLabels(false)}
 
         {/* Card Title */}
-        <h4 className="text-sm font-semibold text-gray-900 mb-3 line-clamp-2 leading-relaxed drop-shadow-sm">
+        <h4 className="text-[14px] leading-snug font-semibold text-gray-800 line-clamp-2 group-hover:text-blue-600 transition-colors">
           {card.title}
         </h4>
 
-        {/* Assignees */}
-        {card.assignees && card.assignees.length > 0 && (
-          <div className="flex items-center gap-2 mb-3 p-2 bg-white/60 backdrop-blur-sm rounded-lg border border-white/50">
-            <div className="flex -space-x-2">
-              {card.assignees.slice(0, 3).map((assignee, idx) => (
+        {/* Footer Info: Assignees & Badges */}
+        <div className="flex items-center justify-between mt-1 pt-2 border-t border-gray-100">
+          {/* Assignees */}
+          <div className="flex -space-x-1.5">
+            {card.assignees?.slice(0, 3).map((assignee) => {
+              // Single uniform gradient as requested
+              const colorClass = 'bg-gradient-to-br from-blue-500 to-indigo-600';
+
+              return (
                 <div
                   key={assignee._id}
-                  className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center border-2 border-white"
+                  className={`w-6 h-6 rounded-full ring-2 ring-white flex items-center justify-center overflow-hidden ${
+                    assignee.avatar ? 'bg-gray-100' : colorClass
+                  }`}
                   title={assignee.name}
                 >
-                  <span className="text-white text-xs font-bold">
-                    {assignee.name?.[0]?.toUpperCase()}
-                  </span>
+                  {assignee.avatar ? (
+                     <img src={assignee.avatar} alt={assignee.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-[9px] font-bold text-white shadow-sm">
+                      {assignee.name?.[0]?.toUpperCase()}
+                    </span>
+                  )}
                 </div>
-              ))}
-              {card.assignees.length > 3 && (
-                <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white">
-                  <span className="text-white text-xs font-bold">
-                    +{card.assignees.length - 3}
-                  </span>
+              );
+            })}
+            {card.assignees?.length > 3 && (
+              <div className="w-6 h-6 rounded-full ring-2 ring-white bg-gray-50 flex items-center justify-center">
+                <span className="text-[9px] font-bold text-gray-500">+{card.assignees.length - 3}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Indicators */}
+          {(hasDetails || card.dueDate) && (
+            <div className="flex items-center gap-3 text-gray-400">
+               {/* Show separate date if not in hover menu (fallback) or if compact view needed */}
+               {!isHovered && card.dueDate && (
+                  <div className={`flex items-center gap-1 text-[10px] font-medium ${isOverdue ? "text-red-500" : ""}`}>
+                    <Clock size={12} strokeWidth={2.5} />
+                    <span>{new Date(card.dueDate).getDate()} {new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short' })}</span>
+                  </div>
+               )}
+
+               {subtaskStats?.total > 0 && (
+                <div className={`flex items-center gap-1 text-[10px] font-medium ${
+                   subtaskStats.completed === subtaskStats.total ? "text-green-600" : ""
+                }`}>
+                  <CheckSquare size={12} strokeWidth={2.5} />
+                  <span>{subtaskStats.completed}/{subtaskStats.total}</span>
                 </div>
               )}
+              
+              {attachmentsCount > 0 && (
+                <div className="flex items-center gap-0.5">
+                  <Paperclip size={12} strokeWidth={2.5} />
+                  <span className="text-[10px] font-medium">{attachmentsCount}</span>
+                </div>
+              )}
+
+              {card.comments?.length > 0 && (
+                 <div className="flex items-center gap-0.5">
+                 <MessageSquare size={12} strokeWidth={2.5} />
+                 <span className="text-[10px] font-medium">{card.comments.length}</span>
+               </div>
+              )}
             </div>
-            <span className="text-xs text-gray-700 font-medium truncate">
-              {card.assignees.length === 1
-                ? card.assignees[0].name
-                : `${card.assignees.length} members`}
-            </span>
-          </div>
-        )}
-
-        {/* Card Badges */}
-        {hasDetails && (
-          <div className="flex items-center flex-wrap gap-3 pt-3 border-t border-gray-100/50">
-            {subtaskStats?.total > 0 && (
-              <motion.div
-                key="subtasks"
-                whileHover={{ scale: 1.05 }}
-                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md ${
-                  subtaskStats.completed === subtaskStats.total
-                    ? "bg-green-50 text-green-700"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-              >
-                <CheckSquare size={12} />
-                <span>
-                  {subtaskStats.completed}/{subtaskStats.total}
-                </span>
-              </motion.div>
-            )}
-
-            {attachmentsCount > 0 && (
-              <motion.div
-                key="attachments"
-                whileHover={{ scale: 1.05 }}
-                className="flex items-center gap-1 text-xs text-gray-600"
-              >
-                <Paperclip size={12} />
-                <span>{attachmentsCount}</span>
-              </motion.div>
-            )}
-
-            {card.comments && card.comments.length > 0 && (
-              <motion.div
-                key="comments"
-                whileHover={{ scale: 1.05 }}
-                className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md font-medium"
-              >
-                <MessageSquare size={12} />
-                <span>{card.comments.length}</span>
-              </motion.div>
-            )}
-
-            {card.loggedTime && card.loggedTime.length > 0 && (
-              <motion.div
-                key="logged-time"
-                whileHover={{ scale: 1.05 }}
-                className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md font-medium "
-              >
-                <Clock size={12} />
-                <span>
-                  {card.loggedTime.reduce((total, log) => total + log.hours, 0)}h{' '}
-                  {card.loggedTime.reduce((total, log) => total + log.minutes, 0)}m
-                </span>
-              </motion.div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
-
     </motion.div>
   );
 }

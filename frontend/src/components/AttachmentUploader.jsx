@@ -42,12 +42,10 @@ const AttachmentUploader = ({
   allowPaste = true 
 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
 
-  const { uploadFile, uploadMultiple, uploadFromPaste, uploadProgress } = useAttachmentStore();
+  const { uploadMultiple, uploadFromPaste } = useAttachmentStore();
 
   // Handle paste events for clipboard images
   useEffect(() => {
@@ -65,14 +63,15 @@ const AttachmentUploader = ({
             const reader = new FileReader();
             reader.onload = async (e) => {
               try {
-                setIsUploading(true);
-                await uploadFromPaste(e.target.result, cardId, { contextType, contextRef });
-                toast.success('Image pasted and uploaded successfully!');
+                // Determine if this is a comment/description upload or just a general card attachment
+                // For direct clipboard paste in the uploader area, we treat it as a generic card attachment unless specified
+                const pasteContextType = contextType || 'card';
+                const pasteContextRef = contextRef || cardId;
+                
+                await uploadFromPaste(e.target.result, cardId, { contextType: pasteContextType, contextRef: pasteContextRef });
                 onUploadComplete?.();
               } catch (error) {
                 toast.error('Failed to upload pasted image');
-              } finally {
-                setIsUploading(false);
               }
             };
             reader.readAsDataURL(file);
@@ -82,8 +81,20 @@ const AttachmentUploader = ({
       }
     };
 
-    document.addEventListener('paste', handlePaste);
-    return () => document.removeEventListener('paste', handlePaste);
+    const component = dropZoneRef.current;
+    if (component) {
+        component.addEventListener('paste', handlePaste);
+    } else {
+        document.addEventListener('paste', handlePaste);
+    }
+    
+    return () => {
+        if (component) {
+            component.removeEventListener('paste', handlePaste);
+        } else {
+            document.removeEventListener('paste', handlePaste);
+        }
+    };
   }, [allowPaste, cardId, contextType, contextRef, uploadFromPaste, onUploadComplete]);
 
   const validateFile = useCallback((file) => {
@@ -118,16 +129,18 @@ const AttachmentUploader = ({
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    processFiles(files);
+    handleFiles(files);
   }, []);
 
   const handleFileSelect = useCallback((e) => {
     const files = Array.from(e.target.files);
-    processFiles(files);
+    handleFiles(files);
     e.target.value = ''; // Reset input
   }, []);
 
-  const processFiles = useCallback((files) => {
+  const handleFiles = useCallback(async (files) => {
+    if (files.length === 0) return;
+
     if (files.length > MAX_FILES) {
       toast.error(`Maximum ${MAX_FILES} files allowed at once`);
       files = files.slice(0, MAX_FILES);
@@ -139,12 +152,7 @@ const AttachmentUploader = ({
     files.forEach(file => {
       const validation = validateFile(file);
       if (validation.valid) {
-        validFiles.push({
-          file,
-          id: `${Date.now()}-${file.name}`,
-          status: 'pending',
-          preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null
-        });
+        validFiles.push(file);
       } else {
         errors.push(validation.error);
       }
@@ -155,84 +163,17 @@ const AttachmentUploader = ({
     }
 
     if (validFiles.length > 0) {
-      setSelectedFiles(prev => [...prev, ...validFiles]);
-    }
-  }, [validateFile]);
-
-  const removeFile = useCallback((fileId) => {
-    setSelectedFiles(prev => {
-      const file = prev.find(f => f.id === fileId);
-      if (file?.preview) {
-        URL.revokeObjectURL(file.preview);
-      }
-      return prev.filter(f => f.id !== fileId);
-    });
-  }, []);
-
-  const uploadFiles = useCallback(async () => {
-    if (selectedFiles.length === 0) return;
-
-    setIsUploading(true);
-
-    try {
-      if (selectedFiles.length === 1) {
-        // Single file upload
-        const fileData = selectedFiles[0];
-        setSelectedFiles(prev => prev.map(f => 
-          f.id === fileData.id ? { ...f, status: 'uploading' } : f
-        ));
-
-        await uploadFile(fileData.file, cardId, { contextType, contextRef });
-
-        setSelectedFiles(prev => prev.map(f => 
-          f.id === fileData.id ? { ...f, status: 'completed' } : f
-        ));
-      } else {
-        // Batch upload
-        setSelectedFiles(prev => prev.map(f => ({ ...f, status: 'uploading' })));
+      try {
+        // Immediate upload - optimistic UI handled by store/AttachmentList
+        uploadMultiple(validFiles, cardId, { contextType, contextRef });
         
-        const files = selectedFiles.map(f => f.file);
-        const result = await uploadMultiple(files, cardId, { contextType, contextRef });
-
-        setSelectedFiles(prev => prev.map(f => ({ ...f, status: 'completed' })));
-
-        if (result.failed?.length > 0) {
-          toast.warning(`${result.failed.length} file(s) failed to upload`);
-        }
-      }
-
-      // Clear files after successful upload
-      setTimeout(() => {
-        setSelectedFiles([]);
+        // Notify parent immediately that uploads started
         onUploadComplete?.();
-      }, 1000);
-
-      toast.success('Files uploaded successfully!');
-    } catch (error) {
-      toast.error('Upload failed: ' + error.message);
-      setSelectedFiles(prev => prev.map(f => ({ ...f, status: 'error' })));
-    } finally {
-      setIsUploading(false);
+      } catch (error) {
+        console.error("Upload start error", error);
+      }
     }
-  }, [selectedFiles, cardId, contextType, contextRef, uploadFile, uploadMultiple, onUploadComplete]);
-
-  const getFileIcon = (file) => {
-    const type = file.type;
-    if (type.startsWith('image/')) return <FileImage size={20} className="text-blue-500" />;
-    if (type === 'application/pdf') return <FileText size={20} className="text-red-500" />;
-    if (type.includes('spreadsheet') || type.includes('excel')) return <FileSpreadsheet size={20} className="text-green-500" />;
-    if (type.includes('word') || type.includes('document')) return <FileText size={20} className="text-blue-600" />;
-    if (type.startsWith('video/')) return <Film size={20} className="text-purple-500" />;
-    return <File size={20} className="text-gray-500" />;
-  };
-
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
+  }, [validateFile, cardId, contextType, contextRef, uploadMultiple, onUploadComplete]);
 
   // Compact mode - just a button
   if (compact) {
@@ -244,67 +185,21 @@ const AttachmentUploader = ({
           multiple
           accept={Object.keys(ACCEPTED_FILE_TYPES).join(',')}
           className="hidden"
-          onChange={async (e) => {
-            const files = Array.from(e.target.files || []);
-            if (files.length === 0) return;
-
-            // Enforce max files
-            let selected = files;
-            if (selected.length > MAX_FILES) {
-              toast.warn(`Maximum ${MAX_FILES} files allowed; uploading first ${MAX_FILES}`);
-              selected = selected.slice(0, MAX_FILES);
-            }
-
-            setIsUploading(true);
-
-            try {
-              if (selected.length === 1) {
-                const file = selected[0];
-                const validation = validateFile(file);
-                if (!validation.valid) {
-                  toast.error(validation.error);
-                  return;
-                }
-
-                await uploadFile(file, cardId, { contextType, contextRef });
-              } else {
-                const validFiles = selected.filter(f => validateFile(f).valid);
-                if (validFiles.length === 0) {
-                  toast.error('No valid files to upload');
-                  return;
-                }
-                await uploadMultiple(validFiles, cardId, { contextType, contextRef });
-              }
-
-              toast.success('File(s) uploaded successfully');
-              onUploadComplete?.();
-            } catch (err) {
-              console.error('Compact upload failed:', err);
-              toast.error('Upload failed: ' + (err?.message || err));
-            } finally {
-              setIsUploading(false);
-              e.target.value = '';
-            }
-          }}
+          onChange={handleFileSelect}
         />
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => fileInputRef.current?.click()}
-          disabled={isUploading}
-          className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition-colors"
         >
-          {isUploading ? (
-            <Loader size={16} className="animate-spin" />
-          ) : (
-            <Plus size={16} />
-          )}
+          <Plus size={16} />
           <span className="text-sm">Attach</span>
         </motion.button>
         {allowPaste && (
-          <span className="text-xs text-gray-400 flex items-center gap-1">
+          <span className="text-xs text-gray-400 flex items-center gap-1 cursor-help" title="Click anywhere or press Ctrl+V to paste">
             <Clipboard size={12} />
-            or paste
+            Paste supported
           </span>
         )}
       </div>
@@ -322,11 +217,11 @@ const AttachmentUploader = ({
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         className={`
-          relative border-2 border-dashed rounded-xl p-4 text-center cursor-pointer
-          transition-all duration-200 ease-in-out
+          relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer
+          transition-all duration-200 ease-in-out group
           ${isDragging 
-            ? 'border-blue-500 bg-blue-50 scale-[1.02]' 
-            : 'border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100'
+            ? 'border-blue-500 bg-blue-50 scale-[1.01]' 
+            : 'border-gray-300 hover:border-blue-400 bg-gray-50 hover:bg-gray-100'
           }
         `}
       >
@@ -340,168 +235,31 @@ const AttachmentUploader = ({
         />
         
         <motion.div
-          animate={{ y: isDragging ? -2 : 0 }}
+          animate={{ y: isDragging ? -5 : 0 }}
           transition={{ type: 'spring', stiffness: 300 }}
         >
           <Upload 
-            size={24} 
-            className={`mx-auto mb-2 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} 
+            size={32} 
+            className={`mx-auto mb-3 transition-colors ${
+              isDragging ? 'text-blue-500' : 'text-gray-400 group-hover:text-blue-500'
+            }`} 
           />
         </motion.div>
 
-        <p className="text-gray-600 font-medium text-sm mb-0.5">
-          {isDragging ? 'Drop files here' : 'Drag & drop files here'}
+        <p className="text-gray-700 font-medium text-sm mb-1">
+          {isDragging ? 'Drop files to upload instantly' : 'Click or drag files here'}
         </p>
-        <p className="text-gray-400 text-xs">
-          or click to browse
-        </p>
-        <p className="text-gray-400 text-[10px] mt-1">
-          Max {MAX_FILES} files • 10MB each
+        <p className="text-gray-500 text-xs">
+          Up to {MAX_FILES} files • 10MB each
         </p>
         
         {allowPaste && (
-          <p className="text-blue-500 text-[10px] mt-1 flex items-center justify-center gap-1">
+          <div className="absolute bottom-2 right-2 opacity-50 text-[10px] text-gray-400 flex items-center gap-1">
             <Clipboard size={10} />
-            Paste images
-          </p>
+            Paste supported
+          </div>
         )}
       </div>
-
-      {/* Selected Files List */}
-      <AnimatePresence>
-        {selectedFiles.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="space-y-2"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">
-                {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
-              </span>
-              <button
-                onClick={() => setSelectedFiles([])}
-                className="text-xs text-gray-500 hover:text-gray-700"
-              >
-                Clear all
-              </button>
-            </div>
-
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {selectedFiles.map((fileData) => (
-                <motion.div
-                  key={fileData.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200 shadow-sm"
-                >
-                  {/* Preview/Icon */}
-                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    {fileData.preview ? (
-                      <img src={fileData.preview} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      getFileIcon(fileData.file)
-                    )}
-                  </div>
-
-                  {/* File info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">
-                      {fileData.file.name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {formatFileSize(fileData.file.size)}
-                    </p>
-                  </div>
-
-                  {/* Status */}
-                  <div className="flex-shrink-0">
-                    {fileData.status === 'pending' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeFile(fileData.id);
-                        }}
-                        className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <X size={16} />
-                      </button>
-                    )}
-                    {fileData.status === 'uploading' && (
-                      <Loader size={16} className="text-blue-500 animate-spin" />
-                    )}
-                    {fileData.status === 'completed' && (
-                      <CheckCircle size={16} className="text-green-500" />
-                    )}
-                    {fileData.status === 'error' && (
-                      <AlertCircle size={16} className="text-red-500" />
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* Upload button */}
-            {selectedFiles.some(f => f.status === 'pending') && (
-              <motion.button
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={uploadFiles}
-                disabled={isUploading}
-                className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2 hover:shadow-lg transition-all disabled:opacity-50"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader size={18} className="animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload size={18} />
-                    Upload {selectedFiles.filter(f => f.status === 'pending').length} file{selectedFiles.filter(f => f.status === 'pending').length > 1 ? 's' : ''}
-                  </>
-                )}
-              </motion.button>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Upload Progress */}
-      <AnimatePresence>
-        {Object.entries(uploadProgress).length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-2"
-          >
-            {Object.entries(uploadProgress).map(([id, progress]) => (
-              <div key={id} className="bg-white rounded-lg border border-gray-200 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-700 truncate">{progress.fileName}</span>
-                  <span className="text-xs text-gray-500">{progress.progress}%</span>
-                </div>
-                <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progress.progress}%` }}
-                    className={`h-full rounded-full transition-all ${
-                      progress.status === 'error' ? 'bg-red-500' :
-                      progress.status === 'completed' ? 'bg-green-500' :
-                      'bg-blue-500'
-                    }`}
-                  />
-                </div>
-              </div>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };

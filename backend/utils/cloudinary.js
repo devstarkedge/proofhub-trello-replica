@@ -6,15 +6,25 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Configure Cloudinary
+// Configure Cloudinary
 const configureCloudinary = () => {
-  if (!cloudinary.config().cloud_name) {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-      secure: true
-    });
+  if (cloudinary.config().cloud_name) return;
+
+  const { CLOUDINARY_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
+
+  if (!CLOUDINARY_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('Missing Cloudinary configuration in production!');
+    }
+    throw new Error('Cloudinary configuration missing. Please check CLOUDINARY_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.');
   }
+
+  cloudinary.config({
+    cloud_name: CLOUDINARY_NAME,
+    api_key: CLOUDINARY_API_KEY,
+    api_secret: CLOUDINARY_API_SECRET,
+    secure: true
+  });
 };
 
 // Initialize on first load

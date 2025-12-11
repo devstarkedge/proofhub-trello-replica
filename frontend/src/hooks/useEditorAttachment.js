@@ -30,7 +30,8 @@ const useEditorAttachment = ({
   const isFirstDescriptionImageRef = useRef(true);
 
   // Get store methods
-  const addAttachment = useAttachmentStore(state => state.addAttachment);
+  // Get store methods
+  const { addAttachment, uploadFile: storeUploadFile } = useAttachmentStore();
   const attachments = useAttachmentStore(state => state.attachments[cardId] || []);
 
   // Determine if this is the first image in description (for auto-cover)
@@ -83,14 +84,13 @@ const useEditorAttachment = ({
     return url.replace('/upload/', `/upload/${transformStr}/`);
   }, []);
 
-  // Create inline preview HTML for different file types
+  // Create inline preview html
   const createInlinePreview = useCallback((attachment) => {
     const { fileType, url, secureUrl, originalName, thumbnailUrl } = attachment;
     const displayUrl = secureUrl || url;
     const previewUrl = thumbnailUrl || getThumbnailUrl(displayUrl);
 
     if (fileType === 'image') {
-      // For images, return just the URL to be handled by TipTap Image extension
       return {
         type: 'image',
         src: displayUrl,
@@ -99,7 +99,6 @@ const useEditorAttachment = ({
       };
     }
 
-    // For other file types, create a styled link/preview
     const iconMap = {
       pdf: '📄',
       document: '📝',
@@ -121,7 +120,7 @@ const useEditorAttachment = ({
     };
   }, [getThumbnailUrl]);
 
-  // Upload file to Cloudinary and add to both editor and main attachments list
+  // Upload file via store
   const uploadFile = useCallback(async (file) => {
     if (!cardId) {
       setError('Card ID is required for upload');
@@ -129,7 +128,7 @@ const useEditorAttachment = ({
       return null;
     }
 
-    // Validate file size (10MB limit)
+    // Validate size
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
       setError('File must be less than 10MB');
@@ -143,25 +142,22 @@ const useEditorAttachment = ({
     setUploadProgress(0);
 
     try {
-      // Determine if this should be set as cover
       const setCover = shouldSetAsCover() && file.type.startsWith('image/');
-      
-      // Upload to Cloudinary via our API
-      const attachment = await attachmentService.uploadFile(file, cardId, {
+
+      // Use store action to upload - this will handle progress updates in the store
+      // which will reflect in the AttachmentList
+      const attachment = await storeUploadFile(file, cardId, {
         contextType,
         contextRef: contextRef || cardId,
         setCover
       });
-
-      // Add to main attachments store (for dual-display)
-      addAttachment(cardId, attachment);
 
       // Mark that we've processed the first image
       if (file.type.startsWith('image/') && contextType === 'description') {
         isFirstDescriptionImageRef.current = false;
       }
 
-      // Create inline preview and call appropriate callback
+      // Create inline preview for the editor
       const preview = createInlinePreview(attachment);
       
       if (preview.type === 'image' && onInsertImage) {
@@ -183,21 +179,17 @@ const useEditorAttachment = ({
     } finally {
       setUploading(false);
     }
-  }, [cardId, contextType, contextRef, shouldSetAsCover, addAttachment, createInlinePreview, onInsertImage, onInsertFile, clearStates]);
+  }, [cardId, contextType, contextRef, shouldSetAsCover, storeUploadFile, createInlinePreview, onInsertImage, onInsertFile, clearStates]);
 
   // Upload multiple files
   const uploadFiles = useCallback(async (files) => {
-    const results = [];
-    
-    for (const file of files) {
-      const result = await uploadFile(file);
-      if (result) {
-        results.push(result);
-      }
-    }
-    
-    return results;
-  }, [uploadFile]);
+    // Return immediately to allow UI to update
+    const result = await useAttachmentStore.getState().uploadMultiple(files, cardId, {
+      contextType,
+      contextRef: contextRef || cardId
+    });
+    return result;
+  }, [cardId, contextType, contextRef]);
 
   // Handle clipboard paste (image data URL)
   const uploadFromPaste = useCallback(async (imageDataUrl) => {

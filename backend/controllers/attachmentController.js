@@ -92,15 +92,26 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
   }
 
   // Upload to Cloudinary
-  const cloudinaryResult = await uploadToCloudinary(req.file.buffer, {
-    folder: `flowtask/cards/${cardId}/attachments`,
-    resourceType,
-    context: {
-      cardId,
-      uploadedBy: req.user.id,
-      originalName: req.file.originalname
-    }
-  });
+  let cloudinaryResult;
+  try {
+    cloudinaryResult = await uploadToCloudinary(req.file.buffer, {
+      folder: `flowtask/cards/${cardId}/attachments`,
+      resourceType,
+      context: {
+        cardId,
+        uploadedBy: req.user.id,
+        originalName: req.file.originalname
+      }
+    });
+  } catch (error) {
+    console.error('Upload failed:', error.message);
+    throw new ErrorResponse(
+      error.message.includes('Cloudinary configuration missing') 
+        ? 'Server storage configuration error' 
+        : 'Image upload failed', 
+      500
+    );
+  }
 
   // Create attachment record
   const attachmentData = {

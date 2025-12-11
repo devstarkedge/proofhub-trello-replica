@@ -154,10 +154,27 @@ const useAttachmentStore = create(
       uploadFile: async (file, cardId, options = {}) => {
         const uploadId = `${Date.now()}-${file.name}`;
         
+        // Create preview URL for immediate display
+        let preview = null;
+        if (file.type.startsWith('image/')) {
+          preview = URL.createObjectURL(file);
+        }
+
         set((s) => ({
           uploadProgress: {
             ...s.uploadProgress,
-            [uploadId]: { progress: 0, status: 'uploading', fileName: file.name }
+            [uploadId]: { 
+              progress: 0, 
+              status: 'uploading', 
+              fileName: file.name,
+              fileType: file.type.startsWith('image/') ? 'image' : 'file',
+              preview,
+              preview,
+              size: file.size,
+              cardId, // Track which card this belongs to
+              contextType: options.contextType || 'card',
+              contextRef: options.contextRef || cardId
+            }
           }
         }));
 
@@ -168,7 +185,10 @@ const useAttachmentStore = create(
               set((s) => ({
                 uploadProgress: {
                   ...s.uploadProgress,
-                  [uploadId]: { progress, status: 'uploading', fileName: file.name }
+                  [uploadId]: { 
+                    ...s.uploadProgress[uploadId],
+                    progress 
+                  }
                 }
               }));
             }
@@ -181,19 +201,34 @@ const useAttachmentStore = create(
             },
             uploadProgress: {
               ...s.uploadProgress,
-              [uploadId]: { progress: 100, status: 'completed', fileName: file.name }
+              [uploadId]: { 
+                ...s.uploadProgress[uploadId],
+                progress: 100, 
+                status: 'completed' 
+              }
             }
           }));
 
-          // Clear progress after delay
-          setTimeout(() => get().clearUploadProgress(uploadId), 2000);
+          // Clear progress after delay and revoke object URL
+          setTimeout(() => {
+            const state = get();
+            const progress = state.uploadProgress[uploadId];
+            if (progress?.preview) {
+              URL.revokeObjectURL(progress.preview);
+            }
+            get().clearUploadProgress(uploadId);
+          }, 1000);
 
           return attachment;
         } catch (error) {
           set((s) => ({
             uploadProgress: {
               ...s.uploadProgress,
-              [uploadId]: { progress: 0, status: 'error', fileName: file.name, error: error.message }
+              [uploadId]: { 
+                ...s.uploadProgress[uploadId],
+                status: 'error', 
+                error: error.message 
+              }
             }
           }));
           throw error;
@@ -201,60 +236,42 @@ const useAttachmentStore = create(
       },
 
       uploadMultiple: async (files, cardId, options = {}) => {
-        const uploadId = `batch-${Date.now()}`;
+        // Handle each file individually to show individual progress bars
+        // Start all uploads concurrently without waiting for them to complete
+        const uploadIds = [];
         
-        set((s) => ({
-          uploadProgress: {
-            ...s.uploadProgress,
-            [uploadId]: { progress: 0, status: 'uploading', fileName: `${files.length} files` }
-          }
-        }));
-
-        try {
-          const result = await attachmentService.uploadMultiple(files, cardId, options);
-
-          if (result.uploaded?.length > 0) {
-            set((s) => ({
-              attachments: {
-                ...s.attachments,
-                [cardId]: [...result.uploaded, ...(s.attachments[cardId] || [])]
-              }
-            }));
-          }
-
-          set((s) => ({
-            uploadProgress: {
-              ...s.uploadProgress,
-              [uploadId]: { 
-                progress: 100, 
-                status: 'completed', 
-                fileName: `${result.uploaded?.length || 0} of ${files.length} files`,
-                failed: result.failed
-              }
-            }
-          }));
-
-          setTimeout(() => get().clearUploadProgress(uploadId), 3000);
-
-          return result;
-        } catch (error) {
-          set((s) => ({
-            uploadProgress: {
-              ...s.uploadProgress,
-              [uploadId]: { progress: 0, status: 'error', fileName: `${files.length} files`, error: error.message }
-            }
-          }));
-          throw error;
-        }
+        // We use map to trigger the async operations but we don't await Promise.all
+        // This makes it non-blocking ("fire and forget" from the caller's perspective)
+        files.forEach(file => {
+          // We can't easily get the uploadId back from the async updateState unless we change uploadFile
+          // But uploadFile generates ID deterministically-ish or we can rely on the store update.
+          // Better approach: Let's assume the caller will watch the store.
+          // Or, we can make uploadFile return the uploadId synchronously if we split it?
+          // For now, we'll just trigger them.
+           get().uploadFile(file, cardId, options).catch(err => {
+             console.error(`Background upload failed for ${file.name}:`, err);
+           });
+        });
+        
+        // Return immediately indicating uploads started
+        return { success: true, started: true, count: files.length };
       },
 
       uploadFromPaste: async (imageData, cardId, options = {}) => {
         const uploadId = `paste-${Date.now()}`;
         
+        // Convert base64 to blob for preview if needed, or just use base64
         set((s) => ({
           uploadProgress: {
             ...s.uploadProgress,
-            [uploadId]: { progress: 50, status: 'uploading', fileName: 'Pasted image' }
+            [uploadId]: { 
+              progress: 50, 
+              status: 'uploading', 
+              fileName: 'Pasted image',
+              fileType: 'image',
+              preview: imageData,
+              cardId
+            }
           }
         }));
 
@@ -268,18 +285,26 @@ const useAttachmentStore = create(
             },
             uploadProgress: {
               ...s.uploadProgress,
-              [uploadId]: { progress: 100, status: 'completed', fileName: 'Pasted image' }
+              [uploadId]: { 
+                ...s.uploadProgress[uploadId],
+                progress: 100, 
+                status: 'completed' 
+              }
             }
           }));
 
-          setTimeout(() => get().clearUploadProgress(uploadId), 2000);
+          setTimeout(() => get().clearUploadProgress(uploadId), 1000);
 
           return attachment;
         } catch (error) {
           set((s) => ({
             uploadProgress: {
               ...s.uploadProgress,
-              [uploadId]: { progress: 0, status: 'error', fileName: 'Pasted image', error: error.message }
+              [uploadId]: { 
+                ...s.uploadProgress[uploadId],
+                status: 'error', 
+                error: error.message 
+              }
             }
           }));
           throw error;

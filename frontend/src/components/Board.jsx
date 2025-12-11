@@ -79,9 +79,9 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
     <div className="p-4 h-[calc(100vh-64px)]">
       <div className="flex gap-3 pb-4 h-full">
         {/* Lists */}
-        {lists.map(list => (
+        {lists.map((list, index) => (
           <div
-            key={list._id}
+            key={`${list._id}-${index}`}
             onDragOver={handleCardDragOver}
             onDrop={(e) => handleCardDrop(e, list)}
             className={`${isDraggingCard ? 'border-2 border-dashed border-blue-400 rounded-xl' : ''}`}
