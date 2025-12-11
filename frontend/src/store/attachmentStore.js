@@ -297,6 +297,25 @@ const useAttachmentStore = create(
         }
       },
 
+      setAsCover: async (cardId, attachmentId) => {
+        try {
+          const result = await attachmentService.setAsCover(attachmentId);
+          // Update all attachments - unset isCover on others, set on this one
+          get().updateAttachment(cardId, attachmentId, { isCover: true });
+          const currentAttachments = get().attachments[cardId] || [];
+          currentAttachments.forEach(att => {
+            if (att._id !== attachmentId && att.isCover) {
+              get().updateAttachment(cardId, att._id, { isCover: false });
+            }
+          });
+          // Return the full attachment data from the response
+          return result?.data || result;
+        } catch (error) {
+          console.error('Set as cover error:', error);
+          throw error;
+        }
+      },
+
       deleteSelected: async (cardId) => {
         const state = get();
         const attachmentIds = state.selectedAttachments;
@@ -310,28 +329,6 @@ const useAttachmentStore = create(
           return true;
         } catch (error) {
           console.error('Delete selected error:', error);
-          throw error;
-        }
-      },
-
-      setAsCover: async (cardId, attachmentId) => {
-        try {
-          await attachmentService.setAsCover(attachmentId);
-          
-          // Update all attachments to remove cover from others
-          set((s) => ({
-            attachments: {
-              ...s.attachments,
-              [cardId]: (s.attachments[cardId] || []).map(a => ({
-                ...a,
-                isCover: a._id === attachmentId
-              }))
-            }
-          }));
-
-          return true;
-        } catch (error) {
-          console.error('Set cover error:', error);
           throw error;
         }
       },

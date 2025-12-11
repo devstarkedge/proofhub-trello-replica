@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, lazy, Suspense, memo } from "react";
+import React, { useEffect, useCallback, lazy, Suspense, memo, useRef } from "react";
 import { Paperclip, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import useAttachmentStore from "../../store/attachmentStore";
@@ -20,7 +20,8 @@ const AttachmentsSection = memo(({
   onDeleteAttachment, // Legacy prop for backwards compatibility
   onAttachmentAdded,
   onCoverChange,
-  readOnly = false
+  readOnly = false,
+  currentCoverImageId // Pass the current cover image ID to avoid redundant updates
 }) => {
   const store = useAttachmentStore();
   
@@ -30,6 +31,9 @@ const AttachmentsSection = memo(({
   const error = store.error[cardId] || null;
   const pagination = store.pagination[cardId] || {};
   const totalCount = pagination.totalCount || attachments.length;
+  
+  // Track if we've notified parent of cover to prevent infinite loops
+  const coverNotifiedRef = useRef(false);
   
   // Store actions
   const {
@@ -47,6 +51,8 @@ const AttachmentsSection = memo(({
   // Fetch attachments on mount and when cardId changes
   useEffect(() => {
     if (cardId) {
+      // Reset cover notification flag when card changes
+      coverNotifiedRef.current = false;
       fetchAttachments(cardId);
     }
   }, [cardId, fetchAttachments]);
@@ -64,12 +70,16 @@ const AttachmentsSection = memo(({
   }, [cardId, deleteAttachment, onDeleteAttachment]);
 
   // Handle set as cover
-  const handleSetCover = useCallback(async (attachmentId) => {
+  const handleSetCover = useCallback(async (attachmentOrId) => {
     if (!cardId) return;
+    
+    // Support both attachment object and ID
+    const attachmentId = typeof attachmentOrId === 'object' ? attachmentOrId._id : attachmentOrId;
     
     try {
       const result = await setAsCover(cardId, attachmentId);
       if (onCoverChange) {
+        // Pass the full result back to parent
         onCoverChange(result);
       }
     } catch (error) {
@@ -83,6 +93,28 @@ const AttachmentsSection = memo(({
       fetchAttachments(cardId);
     }
   }, [cardId, fetchAttachments]);
+
+  // Notify parent when cover image is first detected after upload
+  // Only notify once per card to prevent infinite loops
+  useEffect(() => {
+    if (!cardId || !onCoverChange || loading || !attachments.length) return;
+    
+    // Only notify if we haven't already notified for this card AND there's a cover
+    if (!coverNotifiedRef.current) {
+      const coverAttachment = attachments.find(att => att.isCover);
+      if (coverAttachment) {
+        // Only notify if this is a NEW cover (not already set in parent)
+        // Check if the current cover image ID is different from what we found
+        if (coverAttachment._id !== currentCoverImageId) {
+          coverNotifiedRef.current = true;
+          onCoverChange(coverAttachment);
+        } else {
+          // Cover is already set in parent, just mark as notified to prevent re-notification
+          coverNotifiedRef.current = true;
+        }
+      }
+    }
+  }, [cardId, loading, currentCoverImageId]); // Added currentCoverImageId to dependency
 
   return (
     <motion.div

@@ -105,13 +105,25 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
     [card.dueDate, card.status]
   );
 
-  // Memoize logged time calculation
-  const loggedTimeDisplay = useMemo(() => {
-    if (!card.loggedTime?.length) return null;
-    const hours = card.loggedTime.reduce((total, log) => total + log.hours, 0);
-    const minutes = card.loggedTime.reduce((total, log) => total + log.minutes, 0);
-    return { hours, minutes };
-  }, [card.loggedTime]);
+  // Memoize cover image URL
+  const coverImageUrl = useMemo(() => {
+    // Check for new coverImage attachment reference
+    if (card.coverImage) {
+      if (typeof card.coverImage === 'object') {
+        // Try secureUrl first, then url, then fallback to other properties
+        return card.coverImage.secureUrl || card.coverImage.url || null;
+      } else if (typeof card.coverImage === 'string') {
+        // If it's just an ID, it might need to be fetched separately
+        // For now, we can't display without the full object
+        return null;
+      }
+    }
+    // Fallback to legacy cover property
+    if (card.cover) {
+      return card.cover.type === "color" ? null : card.cover.value;
+    }
+    return null;
+  }, [card.coverImage, card.cover]);
 
   // Memoize delete handler
   const handleDelete = useCallback((e) => {
@@ -218,18 +230,12 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
       )}
 
       {/* Cover Image - Mid Area */}
-      {card.cover && (
-        <div className="mb-4 mx-0">
-          <div
-            className="h-32 sm:h-28 rounded-lg w-full"
-            style={{
-              background:
-                card.cover.type === "color"
-                  ? card.cover.value
-                  : `url(${card.cover.value})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
+      {coverImageUrl && (
+        <div className="mb-4 -mx-4 -mt-4">
+          <img
+            src={coverImageUrl}
+            alt="Card cover"
+            className="h-40 sm:h-36 w-full object-cover rounded-t-lg"
           />
         </div>
       )}

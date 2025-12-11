@@ -15,6 +15,7 @@ import {
   ListOrdered,
   Quote,
   Image as ImageIcon,
+  Paperclip,
   Type,
   Undo,
   Redo,
@@ -25,6 +26,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import MentionList from './MentionList';
+import useEditorAttachment from '../hooks/useEditorAttachment';
 import 'tippy.js/dist/tippy.css';
 
 const CustomImage = Image.extend({
@@ -46,11 +48,17 @@ const RichTextEditor = ({
   users = [],
   startExpanded = false,
   allowMentions = true,
-  onImageUpload = null, // Callback when image is uploaded
+  onImageUpload = null, // Legacy callback when image is uploaded (for backward compatibility)
   isComment = false, // Is this editor for comments?
   mentionContainer = document.body, // Container for mention popup
   modalContainerRef = null, // Ref to the modal container for click-outside detection
   collapsible = false, // Whether the editor is collapsible (used in modals)
+  // New props for Cloudinary attachment integration
+  cardId = null, // Card ID for attachment uploads
+  contextType = null, // 'description' or 'comment' - determines source tag
+  contextRef = null, // Reference ID (cardId for description, commentId for comment)
+  enableAttachments = false, // Enable multi-file attachment button (images, PDFs, docs, etc.)
+  enableAutoCover = true, // Auto-set first description image as cover
 }) => {
   const [isExpanded, setIsExpanded] = useState(startExpanded);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -58,6 +66,43 @@ const RichTextEditor = ({
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
+  const attachmentInputRef = useRef(null);
+
+  // Editor instance ref for callbacks
+  const editorInstanceRef = useRef(null);
+
+  // Callback to insert image into editor
+  const handleInsertImage = useCallback((imageUrl) => {
+    if (editorInstanceRef.current) {
+      editorInstanceRef.current.chain().focus().setImage({ src: imageUrl }).run();
+    }
+  }, []);
+
+  // Callback to insert file preview into editor
+  const handleInsertFile = useCallback((html) => {
+    if (editorInstanceRef.current) {
+      editorInstanceRef.current.chain().focus().insertContent(html).run();
+    }
+  }, []);
+
+  // Initialize useEditorAttachment hook for Cloudinary integration
+  const {
+    uploading: attachmentUploading,
+    error: attachmentError,
+    success: attachmentSuccess,
+    uploadFile: uploadAttachmentFile,
+    uploadFiles: uploadAttachmentFiles,
+    uploadFromPaste: uploadAttachmentFromPaste,
+    validateFile,
+    getAcceptedFileTypes
+  } = useEditorAttachment({
+    cardId,
+    contextType: contextType || (isComment ? 'comment' : 'description'),
+    contextRef,
+    onInsertImage: handleInsertImage,
+    onInsertFile: handleInsertFile,
+    enableAutoCover
+  });
 
   // keep a ref to the users so suggestion items can access latest list without
   // re-creating the editor/extensions when users update asynchronously
@@ -233,6 +278,11 @@ const RichTextEditor = ({
     }
   }, [content, editor]);
 
+  // Store editor instance in ref for attachment hook callbacks
+  useEffect(() => {
+    editorInstanceRef.current = editor;
+  }, [editor]);
+
   const handleFocus = () => {
     setIsExpanded(true);
   };
@@ -270,7 +320,13 @@ const RichTextEditor = ({
         setUploadSuccess(false);
 
         try {
-          if (onImageUpload) {
+          // Use new Cloudinary attachment upload if cardId is available
+          if (cardId && enableAttachments) {
+            await uploadAttachmentFile(file);
+            setUploadSuccess(true);
+            setTimeout(() => setUploadSuccess(false), 2000);
+          } else if (onImageUpload) {
+            // Legacy: use provided callback
             const formData = new FormData();
             formData.append('image', file, `pasted-image-${Date.now()}.${file.type.split('/')[1] || 'png'}`);
             const imageUrl = await onImageUpload(formData);
@@ -299,7 +355,7 @@ const RichTextEditor = ({
         return; // Only process the first image
       }
     }
-  }, [editor, onImageUpload]);
+  }, [editor, onImageUpload, cardId, enableAttachments, uploadAttachmentFile]);
 
   // Attach paste handler to editor
   useEffect(() => {
@@ -406,7 +462,7 @@ const RichTextEditor = ({
                 fileInputRef.current.click();
               }
             }}
-            disabled={uploadingImage}
+            disabled={uploadingImage || attachmentUploading}
             className="p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative"
             title="Upload Image"
           >
@@ -436,8 +492,8 @@ const RichTextEditor = ({
                 return;
               }
 
-              if (file.size > 5 * 1024 * 1024) { // 5MB limit
-                setUploadError('Image must be less than 5MB');
+              if (file.size > 10 * 1024 * 1024) { // 10MB limit
+                setUploadError('Image must be less than 10MB');
                 setTimeout(() => setUploadError(null), 3000);
                 return;
               }
@@ -447,7 +503,12 @@ const RichTextEditor = ({
               setUploadSuccess(false);
 
               try {
-                if (onImageUpload) {
+                // Use Cloudinary upload if cardId is available
+                if (cardId && enableAttachments) {
+                  await uploadAttachmentFile(file);
+                  setUploadSuccess(true);
+                  setTimeout(() => setUploadSuccess(false), 2000);
+                } else if (onImageUpload) {
                   const formData = new FormData();
                   formData.append('image', file);
                   const imageUrl = await onImageUpload(formData);
@@ -478,6 +539,53 @@ const RichTextEditor = ({
               }
             }}
           />
+          {/* Multi-file Attachment Button - only show when enableAttachments is true */}
+          {enableAttachments && cardId && (
+            <>
+              <button
+                onClick={() => {
+                  if (attachmentInputRef.current) {
+                    attachmentInputRef.current.click();
+                  }
+                }}
+                disabled={attachmentUploading || uploadingImage}
+                className="p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative"
+                title="Attach Files (PDF, Word, Excel, etc.)"
+              >
+                {attachmentUploading ? (
+                  <Loader size={16} className="animate-spin" />
+                ) : attachmentSuccess ? (
+                  <Check size={16} className="text-green-600" />
+                ) : attachmentError ? (
+                  <AlertCircle size={16} className="text-red-600" />
+                ) : (
+                  <Paperclip size={16} />
+                )}
+              </button>
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                accept={getAcceptedFileTypes()}
+                multiple
+                className="hidden"
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files || []);
+                  if (files.length === 0) return;
+
+                  try {
+                    await uploadAttachmentFiles(files);
+                  } catch (error) {
+                    console.error('Attachment upload failed:', error);
+                  } finally {
+                    // Reset file input
+                    if (attachmentInputRef.current) {
+                      attachmentInputRef.current.value = '';
+                    }
+                  }
+                }}
+              />
+            </>
+          )}
           <div className="w-px h-6 bg-gray-300 mx-1" />
           <button
             onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -572,16 +680,21 @@ const RichTextEditor = ({
           padding: 12px;
         }
         .ProseMirror img {
-          max-width: 100%;
+          max-width: 200px;
+          max-height: 200px;
+          width: auto;
           height: auto;
           border-radius: 8px;
-          display: block;
-          margin: 16px 0;
+          display: inline-block;
+          margin: 8px 4px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-          transition: box-shadow 0.3s ease;
+          transition: all 0.3s ease;
+          cursor: pointer;
+          object-fit: cover;
         }
         .ProseMirror img:hover {
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          transform: scale(1.02);
         }
         .ProseMirror p {
           margin: 8px 0;
@@ -634,6 +747,54 @@ const RichTextEditor = ({
           border-radius: 3px;
           font-weight: 600;
           cursor: pointer;
+        }
+        /* Inline attachment styles */
+        .inline-attachment {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 2px 8px;
+          background-color: #f3f4f6;
+          border: 1px solid #e5e7eb;
+          border-radius: 4px;
+          font-size: 12px;
+          cursor: pointer;
+          user-select: none;
+          transition: all 0.15s ease;
+        }
+        .inline-attachment:hover {
+          background-color: #e5e7eb;
+          border-color: #d1d5db;
+        }
+        .inline-attachment[data-type="pdf"] {
+          background-color: #fef2f2;
+          border-color: #fecaca;
+        }
+        .inline-attachment[data-type="pdf"]:hover {
+          background-color: #fee2e2;
+        }
+        .inline-attachment[data-type="document"] {
+          background-color: #eff6ff;
+          border-color: #bfdbfe;
+        }
+        .inline-attachment[data-type="document"]:hover {
+          background-color: #dbeafe;
+        }
+        .inline-attachment[data-type="spreadsheet"] {
+          background-color: #f0fdf4;
+          border-color: #bbf7d0;
+        }
+        .inline-attachment[data-type="spreadsheet"]:hover {
+          background-color: #dcfce7;
+        }
+        .inline-attachment-icon {
+          font-size: 14px;
+        }
+        .inline-attachment-name {
+          max-width: 150px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
       `}</style>
     </div>

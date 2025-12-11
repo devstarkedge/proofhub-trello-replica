@@ -112,6 +112,7 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
   const cards = await Card.find({ list: { $in: listIds } })
     .populate('assignees', 'name email avatar')
     .populate('members', 'name email avatar')
+    .populate('coverImage', 'url secureUrl thumbnailUrl fileName fileType isCover')
     .sort({ list: 1, position: 1 })
     .lean();
 

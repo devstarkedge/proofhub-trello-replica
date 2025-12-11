@@ -103,6 +103,11 @@ const cardSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  coverImage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Attachment',
+    default: null
+  },
   dueDate: {
     type: Date
   },

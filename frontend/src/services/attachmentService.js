@@ -277,6 +277,51 @@ class AttachmentService {
     }
   }
 
+  // Delete attachment
+  async deleteAttachment(attachmentId, cardId) {
+    try {
+      const response = await fetch(
+        `${baseURL}/api/attachments/${attachmentId}`,
+        {
+          method: 'DELETE',
+          headers: this.getHeaders()
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Delete failed');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Delete attachment error:', error);
+      throw error;
+    }
+  }
+
+  // Remove cover from card
+  async removeCover(cardId) {
+    try {
+      const response = await fetch(
+        `${baseURL}/api/cards/${cardId}/remove-cover`,
+        {
+          method: 'PATCH',
+          headers: this.getHeaders()
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to remove cover');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Remove cover error:', error);
+      throw error;
+    }
+  }
+
   // Helper to get file type icon based on fileType
   getFileIcon(fileType) {
     const icons = {

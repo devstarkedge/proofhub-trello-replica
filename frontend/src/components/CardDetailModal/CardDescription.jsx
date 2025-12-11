@@ -14,7 +14,8 @@ const CardDescription = memo(({
   onImageUpload, 
   modalContainerRef,
   cardId,
-  onVersionRollback 
+  onVersionRollback,
+  enableCloudinaryAttachments = true // Enable new Cloudinary attachment system
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
@@ -147,6 +148,12 @@ const CardDescription = memo(({
                   onImageUpload={onImageUpload}
                   className="prose-img:max-w-full prose-img:h-auto prose-img:rounded-lg"
                   startExpanded={true}
+                  // New Cloudinary attachment props
+                  cardId={cardId}
+                  contextType="description"
+                  contextRef={cardId}
+                  enableAttachments={enableCloudinaryAttachments && !!cardId}
+                  enableAutoCover={true}
                 />
               </div>
             </motion.div>
@@ -161,7 +168,7 @@ const CardDescription = memo(({
               className="p-4 bg-white rounded-lg cursor-pointer hover:bg-gray-50 min-h-[60px] border border-gray-200 hover:border-gray-300 transition-all shadow-sm"
             >
               {description ? (
-                <div className="prose prose-sm max-w-none text-gray-800 line-clamp-2 overflow-hidden">
+                <div className="prose prose-sm max-w-none text-gray-800 line-clamp-2 overflow-hidden description-collapsed">
                   <div dangerouslySetInnerHTML={{ __html: description }} />
                 </div>
               ) : (

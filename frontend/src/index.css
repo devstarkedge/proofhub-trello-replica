@@ -227,3 +227,16 @@
   z-index: 4;
   pointer-events: none;
 }
+
+/* Description collapsed state - very small image previews */
+.description-collapsed img {
+  max-width: 50px !important;
+  max-height: 35px !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: cover !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  border-radius: 4px !important;
+  margin: 0 4px !important;
+}

@@ -243,8 +243,49 @@ const AttachmentUploader = ({
           type="file"
           multiple
           accept={Object.keys(ACCEPTED_FILE_TYPES).join(',')}
-          onChange={handleFileSelect}
           className="hidden"
+          onChange={async (e) => {
+            const files = Array.from(e.target.files || []);
+            if (files.length === 0) return;
+
+            // Enforce max files
+            let selected = files;
+            if (selected.length > MAX_FILES) {
+              toast.warn(`Maximum ${MAX_FILES} files allowed; uploading first ${MAX_FILES}`);
+              selected = selected.slice(0, MAX_FILES);
+            }
+
+            setIsUploading(true);
+
+            try {
+              if (selected.length === 1) {
+                const file = selected[0];
+                const validation = validateFile(file);
+                if (!validation.valid) {
+                  toast.error(validation.error);
+                  return;
+                }
+
+                await uploadFile(file, cardId, { contextType, contextRef });
+              } else {
+                const validFiles = selected.filter(f => validateFile(f).valid);
+                if (validFiles.length === 0) {
+                  toast.error('No valid files to upload');
+                  return;
+                }
+                await uploadMultiple(validFiles, cardId, { contextType, contextRef });
+              }
+
+              toast.success('File(s) uploaded successfully');
+              onUploadComplete?.();
+            } catch (err) {
+              console.error('Compact upload failed:', err);
+              toast.error('Upload failed: ' + (err?.message || err));
+            } finally {
+              setIsUploading(false);
+              e.target.value = '';
+            }
+          }}
         />
         <motion.button
           whileHover={{ scale: 1.05 }}
@@ -281,7 +322,7 @@ const AttachmentUploader = ({
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         className={`
-          relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer
+          relative border-2 border-dashed rounded-xl p-4 text-center cursor-pointer
           transition-all duration-200 ease-in-out
           ${isDragging 
             ? 'border-blue-500 bg-blue-50 scale-[1.02]' 
@@ -299,29 +340,29 @@ const AttachmentUploader = ({
         />
         
         <motion.div
-          animate={{ y: isDragging ? -5 : 0 }}
+          animate={{ y: isDragging ? -2 : 0 }}
           transition={{ type: 'spring', stiffness: 300 }}
         >
           <Upload 
-            size={40} 
-            className={`mx-auto mb-3 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} 
+            size={24} 
+            className={`mx-auto mb-2 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} 
           />
         </motion.div>
 
-        <p className="text-gray-600 font-medium mb-1">
+        <p className="text-gray-600 font-medium text-sm mb-0.5">
           {isDragging ? 'Drop files here' : 'Drag & drop files here'}
         </p>
-        <p className="text-gray-400 text-sm">
+        <p className="text-gray-400 text-xs">
           or click to browse
         </p>
-        <p className="text-gray-400 text-xs mt-2">
-          Images, PDFs, Documents, Spreadsheets • Max {MAX_FILES} files • 10MB each
+        <p className="text-gray-400 text-[10px] mt-1">
+          Max {MAX_FILES} files • 10MB each
         </p>
         
         {allowPaste && (
-          <p className="text-blue-500 text-xs mt-2 flex items-center justify-center gap-1">
-            <Clipboard size={12} />
-            You can also paste images from clipboard
+          <p className="text-blue-500 text-[10px] mt-1 flex items-center justify-center gap-1">
+            <Clipboard size={10} />
+            Paste images
           </p>
         )}
       </div>

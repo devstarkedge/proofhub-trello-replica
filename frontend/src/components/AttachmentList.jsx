@@ -19,6 +19,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import useAttachmentStore from '../store/attachmentStore';
+import { InlineAttachmentBadge } from './TinyPreview';
 import { toast } from 'react-toastify';
 
 // Lazy load the document viewer
@@ -122,7 +123,7 @@ const AttachmentList = ({
     
     try {
       if (onSetCover) {
-        onSetCover(attachment._id);
+        await onSetCover(attachment);
       } else {
         await setAsCover(cardId, attachment._id);
       }
@@ -243,8 +244,8 @@ const AttachmentList = ({
         </div>
       )}
 
-      {/* Attachment grid */}
-      <div ref={listRef} className="ml-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Attachment list (compact) */}
+      <div ref={listRef} className="ml-8 space-y-2">
         <AnimatePresence mode="popLayout">
           {visibleAttachments.map((attachment, index) => (
             <motion.div
@@ -255,8 +256,8 @@ const AttachmentList = ({
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ delay: index * 0.03 }}
               className={`
-                relative group bg-white rounded-xl border shadow-sm overflow-hidden
-                hover:shadow-md transition-all cursor-pointer
+                relative group bg-white rounded-xl border shadow-sm
+                hover:shadow-md transition-all cursor-pointer flex items-center gap-3 p-2
                 ${isSelected(attachment._id) ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-blue-300'}
               `}
               onClick={() => handlePreview(attachment, index)}
@@ -284,116 +285,115 @@ const AttachmentList = ({
                 </div>
               )}
 
-              {/* Preview area */}
-              <div className="h-24 bg-gray-100 flex items-center justify-center overflow-hidden">
-                {attachment.fileType === 'image' ? (
-                  <img
-                    src={attachment.thumbnailUrl || attachment.secureUrl || attachment.url}
-                    alt={attachment.originalName}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    {getFileIcon(attachment.fileType, 32)}
-                    <span className="text-xs text-gray-500 uppercase font-medium">
-                      {attachment.format || attachment.fileType}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Info area */}
-              <div className="p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">
-                      {attachment.originalName}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {formatFileSize(attachment.fileSize)} • {formatDate(attachment.createdAt)}
-                    </p>
-                  </div>
-
-                  {/* Actions menu */}
-                  <div className="relative">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedMenu(expandedMenu === attachment._id ? null : attachment._id);
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      <MoreVertical size={16} />
-                    </button>
-
-                    <AnimatePresence>
-                      {expandedMenu === attachment._id && (
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.95, y: -5 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95, y: -5 }}
-                          className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={() => handlePreview(attachment, index)}
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                          >
-                            <Eye size={14} />
-                            Preview
-                          </button>
-                          <button
-                            onClick={(e) => handleDownload(attachment, e)}
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                          >
-                            <Download size={14} />
-                            Download
-                          </button>
-                          {attachment.fileType === 'image' && !attachment.isCover && (
-                            <button
-                              onClick={(e) => handleSetCover(attachment, e)}
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                            >
-                              <Star size={14} />
-                              Set as cover
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              const url = attachment.secureUrl || attachment.url;
-                              window.open(url, '_blank');
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                          >
-                            <ExternalLink size={14} />
-                            Open in tab
-                          </button>
-                          <hr className="my-1 border-gray-200" />
-                          <button
-                            onClick={(e) => handleDelete(attachment, e)}
-                            className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                          >
-                            <Trash2 size={14} />
-                            Delete
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+              {/* Preview thumbnail and info */}
+              <div className="flex items-center gap-3 w-full">
+                <div className="relative w-14 h-14 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden">
+                  {attachment.fileType === 'image' ? (
+                    <img
+                      src={attachment.thumbnailUrl || attachment.secureUrl || attachment.url}
+                      alt={attachment.originalName}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-500">
+                      {getFileIcon(attachment.fileType, 20)}
+                      <span className="text-[10px] uppercase font-medium">
+                        {attachment.format || attachment.fileType}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Uploader info */}
-                {attachment.uploadedBy && (
-                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
-                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[10px] font-medium">
-                      {attachment.uploadedBy.name?.[0]?.toUpperCase() || 'U'}
-                    </div>
-                    <span className="text-xs text-gray-500 truncate">
-                      {attachment.uploadedBy.name}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {attachment.originalName}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
+                    <span>
+                      {formatFileSize(attachment.fileSize)} • {formatDate(attachment.createdAt)}
                     </span>
+                    {/* Source badge - shows where the attachment came from */}
+                    {attachment.contextType && attachment.contextType !== 'card' && (
+                      <InlineAttachmentBadge contextType={attachment.contextType} />
+                    )}
                   </div>
-                )}
+                  {attachment.uploadedBy && (
+                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                      <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-[10px] font-medium">
+                        {attachment.uploadedBy.name?.[0]?.toUpperCase() || 'U'}
+                      </div>
+                      <span className="truncate">{attachment.uploadedBy.name}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions menu */}
+                <div className="relative self-start">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedMenu(expandedMenu === attachment._id ? null : attachment._id);
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <MoreVertical size={16} />
+                  </button>
+
+                  <AnimatePresence>
+                    {expandedMenu === attachment._id && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -5 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -5 }}
+                        className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => handlePreview(attachment, index)}
+                          className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                        >
+                          <Eye size={14} />
+                          Preview
+                        </button>
+                        <button
+                          onClick={(e) => handleDownload(attachment, e)}
+                          className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                        >
+                          <Download size={14} />
+                          Download
+                        </button>
+                        {attachment.fileType === 'image' && !attachment.isCover && (
+                          <button
+                            onClick={(e) => handleSetCover(attachment, e)}
+                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                          >
+                            <Star size={14} />
+                            Set as cover
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            const url = attachment.secureUrl || attachment.url;
+                            window.open(url, '_blank');
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                        >
+                          <ExternalLink size={14} />
+                          Open in tab
+                        </button>
+                        <hr className="my-1 border-gray-200" />
+                        <button
+                          onClick={(e) => handleDelete(attachment, e)}
+                          className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                        >
+                          <Trash2 size={14} />
+                          Delete
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </motion.div>
           ))}

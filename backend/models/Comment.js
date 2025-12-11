@@ -3,15 +3,16 @@ import mongoose from 'mongoose';
 const commentSchema = new mongoose.Schema({
   text: {
     type: String,
-    required: [true, 'Comment text is required'],
+    required: false,
     trim: true,
-      maxlength: [10000, 'Comment cannot exceed 10000 characters']
+    default: '',
+    maxlength: [10000, 'Comment cannot exceed 10000 characters']
   },
-    htmlContent: {
-      type: String,
-      required: true,
-      trim: true
-    },
+  htmlContent: {
+    type: String,
+    required: true,
+    trim: true
+  },
   card: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Card',

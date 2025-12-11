@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -15,9 +15,6 @@ import {
   ExternalLink,
   Loader
 } from 'lucide-react';
-
-// Lazy load heavy preview components
-const PDFViewer = lazy(() => import('./PDFViewer'));
 
 const DocumentViewerModal = ({ 
   attachment, 
@@ -144,20 +141,18 @@ const DocumentViewerModal = ({
     // PDF preview
     if (fileType === 'pdf') {
       return (
-        <Suspense fallback={<PreviewLoader />}>
-          <div className="w-full h-full">
-            <iframe
-              src={`${displayUrl}#toolbar=1&navpanes=0&scrollbar=1`}
-              className="w-full h-full border-0 rounded"
-              title={currentAttachment.originalName}
-              onLoad={() => setLoading(false)}
-              onError={() => {
-                setLoading(false);
-                setError('Failed to load PDF');
-              }}
-            />
-          </div>
-        </Suspense>
+        <div className="w-full h-full">
+          <iframe
+            src={`${displayUrl}#toolbar=1&navpanes=0&scrollbar=1`}
+            className="w-full h-full border-0 rounded"
+            title={currentAttachment.originalName}
+            onLoad={() => setLoading(false)}
+            onError={() => {
+              setLoading(false);
+              setError('Failed to load PDF');
+            }}
+          />
+        </div>
       );
     }
 

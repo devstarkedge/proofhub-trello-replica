@@ -64,6 +64,8 @@ const CardDetailModal = React.memo(({
   const [subtasksLoading, setSubtasksLoading] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [attachments, setAttachments] = useState(initialCard.attachments || []);
+  const [coverImage, setCoverImage] = useState(initialCard.coverImage || null);
+  const [coverImageOptimistic, setCoverImageOptimistic] = useState(null); // For optimistic UI
   const [teamMembers, setTeamMembers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -196,6 +198,8 @@ const CardDetailModal = React.memo(({
             return { ...entry, id };
           }));
           setAttachments(freshCard.attachments || []);
+          setCoverImage(freshCard.coverImage || null);
+          setCoverImageOptimistic(null); // Clear optimistic state when fresh data loaded
           setHierarchyActiveItem("task", freshCard);
         } else if (card) {
           setHierarchyActiveItem("task", card);
@@ -767,6 +771,15 @@ const CardDetailModal = React.memo(({
     // Convert labels to IDs for backend, but keep full objects for optimistic update
     const labelIds = labels.map(l => typeof l === 'object' ? l._id : l);
     
+    // Get full assignee objects from teamMembers for optimistic UI
+    const assigneeObjects = assignees.map(assigneeId => {
+      // Check if it's already an object
+      if (typeof assigneeId === 'object' && assigneeId._id) return assigneeId;
+      // Find in team members
+      const member = teamMembers.find(m => m._id === assigneeId);
+      return member || { _id: assigneeId, name: 'Unknown', email: '' };
+    });
+    
     // Create updates for backend (with IDs)
     const backendUpdates = {
       title,
@@ -778,6 +791,7 @@ const CardDetailModal = React.memo(({
       startDate: startDate ? new Date(startDate).toISOString() : null,
       labels: labelIds,
       attachments: attachments.length > 0 ? attachments : [],
+      coverImage: coverImage ? (typeof coverImage === 'object' ? coverImage._id : coverImage) : null,
       estimationTime: estimationEntries.map((entry) => ({
         hours: entry.hours,
         minutes: entry.minutes,
@@ -803,6 +817,12 @@ const CardDetailModal = React.memo(({
     
     // Include full label objects for optimistic UI update
     backendUpdates._labelsPopulated = labels.filter(l => typeof l === 'object' && l.name);
+    // Include full assignee objects for optimistic UI update
+    backendUpdates._assigneesPopulated = assigneeObjects;
+    // Include full coverImage object for optimistic UI update
+    if (coverImage && typeof coverImage === 'object') {
+      backendUpdates._coverImagePopulated = coverImage;
+    }
     
     const updates = backendUpdates;
 
@@ -840,9 +860,10 @@ const CardDetailModal = React.memo(({
   };
 
   const handleAddComment = async () => {
-    // newComment may be HTML; check plain text
+    // newComment may be HTML; check plain text or HTML content (images, etc.)
     const plain = (newComment || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
-    if (!plain) return;
+    const hasHtmlContent = newComment && /<img|<a|<div/.test(newComment);
+    if (!plain && !hasHtmlContent) return;
     const cardId = card.id || card._id;
     if (!cardId) return;
 
@@ -1339,9 +1360,25 @@ const CardDetailModal = React.memo(({
                   onAttachmentAdded={(newAttachments) => {
                     setAttachments(prev => [...prev, ...newAttachments]);
                   }}
-                  onCoverChange={(coverData) => {
-                    // Handle cover image change if needed
-                    console.log('Cover changed:', coverData);
+                  currentCoverImageId={coverImage?._id || coverImage}
+                  onCoverChange={async (coverData) => {
+                    // Optimistic UI update: Update local state immediately
+                    if (coverData && coverData._id) {
+                      setCoverImage(coverData);
+                      setCoverImageOptimistic(coverData);
+                      
+                      // Update the workflow store so the card on the board shows the cover immediately
+                      try {
+                        await onUpdate({ 
+                          coverImage: coverData,
+                          _coverImagePopulated: coverData // Include full object for optimistic UI
+                        });
+                      } catch (error) {
+                        console.error('Error updating cover in workflow store:', error);
+                      }
+                      
+                      toast.success('Cover image updated!');
+                    }
                   }}
                 />
 
@@ -1384,6 +1421,8 @@ const CardDetailModal = React.memo(({
                         modalContainerRef={modalContentRef}
                         onEditComment={handleEditComment}
                         onDeleteComment={handleDeleteComment}
+                        cardId={card._id || card.id}
+                        enableCloudinaryAttachments={true}
                       />
                     ) : (
                       <ActivitySection

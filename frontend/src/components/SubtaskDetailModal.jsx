@@ -766,6 +766,8 @@ const SubtaskDetailModal = ({
                   teamMembers={teamMembers}
                   onChange={setDescription}
                   modalContainerRef={modalContentRef}
+                  cardId={parentTaskId}
+                  enableCloudinaryAttachments={!!parentTaskId}
                 />
 
                 <SubtasksSection
@@ -881,6 +883,8 @@ const SubtaskDetailModal = ({
                         onCommentChange={setNewComment}
                         onAddComment={handleAddComment}
                         modalContainerRef={modalContentRef}
+                        cardId={parentTaskId}
+                        enableCloudinaryAttachments={!!parentTaskId}
                       />
                     ) : (
                       <ActivitySection

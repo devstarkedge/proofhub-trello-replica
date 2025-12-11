@@ -341,7 +341,8 @@ const SubtaskNanoModal = ({
 
   const handleAddComment = async () => {
     const plain = (newComment || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
-    if (!plain) return;
+    const hasHtmlContent = newComment && /<img|<a|<div/.test(newComment);
+    if (!plain && !hasHtmlContent) return;
     if (!parentTaskId) {
       toast.error("Parent task not ready");
       return;

@@ -1030,8 +1030,11 @@ class DatabaseService {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    // Extract plain text from HTML for the text field
+    const plainText = (htmlContent || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
     const payload = {
       htmlContent,
+      text: plainText || '', // Send empty string for image-only comments
       card: cardId,
       subtask: subtaskId,
       subtaskNano: nanoId

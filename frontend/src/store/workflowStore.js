@@ -267,7 +267,11 @@ const useWorkflowStore = create(
           delete processedUpdates._labelsPopulated;
         }
         
-        if (updates.assignees && Array.isArray(updates.assignees)) {
+        // Handle assignees - use populated assignees if available
+        if (updates._assigneesPopulated && Array.isArray(updates._assigneesPopulated)) {
+          processedUpdates.assignees = updates._assigneesPopulated;
+          delete processedUpdates._assigneesPopulated;
+        } else if (updates.assignees && Array.isArray(updates.assignees)) {
           // Check if assignees are already populated objects
           const needsPopulation = updates.assignees.some(a => typeof a === 'string');
           if (needsPopulation) {
@@ -279,6 +283,15 @@ const useWorkflowStore = create(
               return user ? { _id: user._id, name: user.name, email: user.email } : { _id: assigneeId, name: 'Unknown', email: '' };
             });
           }
+        }
+        
+        // Handle coverImage - use populated coverImage if available
+        if (updates._coverImagePopulated && typeof updates._coverImagePopulated === 'object') {
+          processedUpdates.coverImage = updates._coverImagePopulated;
+          delete processedUpdates._coverImagePopulated;
+        } else if (updates.coverImage && typeof updates.coverImage === 'object') {
+          // If coverImage is already an object, use it directly
+          processedUpdates.coverImage = updates.coverImage;
         }
 
         // Optimistic update
@@ -296,6 +309,8 @@ const useWorkflowStore = create(
           // Remove internal fields before sending to backend
           const backendUpdates = { ...updates };
           delete backendUpdates._labelsPopulated;
+          delete backendUpdates._assigneesPopulated;
+          delete backendUpdates._coverImagePopulated;
           
           await Database.updateCard(cardId, backendUpdates);
         } catch (error) {

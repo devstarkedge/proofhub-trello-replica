@@ -67,6 +67,30 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
   const fileType = getFileTypeCategory(req.file.mimetype);
   const resourceType = getCloudinaryResourceType(req.file.mimetype);
 
+  // Auto-cover logic: Set as cover if this is the first description image and no cover exists
+  let shouldSetAsCover = setCover === 'true';
+  if (!shouldSetAsCover && fileType === 'image' && contextType === 'description') {
+    // Check if card already has a cover image
+    const existingCover = await Attachment.findOne({
+      card: cardId,
+      isCover: true,
+      isDeleted: false
+    }).lean();
+    
+    if (!existingCover) {
+      // No cover exists, check if there are any description images
+      const descriptionImages = await Attachment.countDocuments({
+        card: cardId,
+        contextType: 'description',
+        fileType: 'image',
+        isDeleted: false
+      });
+      
+      // If this is the first description image, set it as cover
+      shouldSetAsCover = descriptionImages === 0;
+    }
+  }
+
   // Upload to Cloudinary
   const cloudinaryResult = await uploadToCloudinary(req.file.buffer, {
     folder: `flowtask/cards/${cardId}/attachments`,
@@ -100,7 +124,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     height: cloudinaryResult.height,
     pages: cloudinaryResult.pages,
     duration: cloudinaryResult.duration,
-    isCover: setCover === 'true'
+    isCover: shouldSetAsCover
   };
 
   // Add thumbnail URLs for images
@@ -115,6 +139,11 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
 
   const attachment = await Attachment.create(attachmentData);
   await attachment.populate('uploadedBy', 'name avatar');
+
+  // If this attachment is set as cover, update the card's coverImage field
+  if (shouldSetAsCover) {
+    await Card.findByIdAndUpdate(cardId, { coverImage: attachment._id });
+  }
 
   // Log activity
   await Activity.create({
@@ -358,6 +387,9 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
     throw new ErrorResponse('Attachment not found', 404);
   }
 
+  const wasCover = attachment.isCover;
+  const cardId = attachment.card;
+
   // Delete from Cloudinary
   try {
     await deleteFromCloudinary(attachment.publicId, attachment.resourceType);
@@ -368,6 +400,26 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
 
   // Soft delete the attachment
   await attachment.softDelete(req.user.id);
+
+  // Auto-promote next description image to cover if deleted attachment was cover
+  let newCoverAttachment = null;
+  if (wasCover) {
+    // Find next eligible image to be cover (prioritize description images)
+    newCoverAttachment = await Attachment.findOne({
+      card: cardId,
+      fileType: 'image',
+      isDeleted: false,
+      _id: { $ne: attachment._id }
+    }).sort({ 
+      contextType: 1, // 'description' comes before 'comment' alphabetically
+      createdAt: 1 
+    });
+
+    if (newCoverAttachment) {
+      newCoverAttachment.isCover = true;
+      await newCoverAttachment.save();
+    }
+  }
 
   // Log activity
   await Activity.create({
@@ -386,7 +438,12 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
       deletedBy: {
         id: req.user.id,
         name: req.user.name
-      }
+      },
+      newCover: newCoverAttachment ? {
+        _id: newCoverAttachment._id,
+        url: newCoverAttachment.secureUrl || newCoverAttachment.url,
+        thumbnailUrl: newCoverAttachment.thumbnailUrl
+      } : null
     });
   }
 
@@ -396,7 +453,11 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: 'Attachment deleted successfully'
+    message: 'Attachment deleted successfully',
+    newCover: newCoverAttachment ? {
+      _id: newCoverAttachment._id,
+      url: newCoverAttachment.secureUrl || newCoverAttachment.url
+    } : null
   });
 });
 

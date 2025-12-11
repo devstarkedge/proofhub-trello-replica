@@ -98,6 +98,16 @@ export const getCards = asyncHandler(async (req, res, next) => {
         pipeline: [{ $project: { text: 1, htmlContent: 1, user: 1, createdAt: 1 } }]
       }
     },
+    // Lookup coverImage from attachments collection
+    {
+      $lookup: {
+        from: 'attachments',
+        localField: 'coverImage',
+        foreignField: '_id',
+        as: 'coverImageArr',
+        pipeline: [{ $project: { url: 1, secureUrl: 1, thumbnailUrl: 1, fileName: 1, fileType: 1, isCover: 1 } }]
+      }
+    },
     // Lookup recurring tasks in same pipeline
     {
       $lookup: {
@@ -115,11 +125,12 @@ export const getCards = asyncHandler(async (req, res, next) => {
     {
       $addFields: {
         createdBy: { $arrayElemAt: ['$createdByArr', 0] },
+        coverImage: { $arrayElemAt: ['$coverImageArr', 0] },
         hasRecurrence: { $gt: [{ $size: '$recurrence' }, 0] }
       }
     },
     // Clean up temporary fields
-    { $project: { createdByArr: 0, recurrence: 0 } }
+    { $project: { createdByArr: 0, coverImageArr: 0, recurrence: 0 } }
   ];
 
   const [cards, countResult] = await Promise.all([
@@ -760,6 +771,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
+    .populate("coverImage", "url secureUrl thumbnailUrl fileName fileType")
     .populate("estimationTime.user", "name email avatar")
     .populate("loggedTime.user", "name email avatar")
     .populate("billedTime.user", "name email avatar");

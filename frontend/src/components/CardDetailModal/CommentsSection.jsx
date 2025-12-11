@@ -37,7 +37,8 @@ const CommentItem = memo(({
   // Fetch version count
   useEffect(() => {
     const fetchVersionCount = async () => {
-      if (commentId) {
+      // Don't fetch version count for temporary IDs (optimistic updates)
+      if (commentId && !String(commentId).startsWith('temp-')) {
         try {
           const count = await versionService.getVersionCount('comment', commentId);
           setVersionCount(count);
@@ -145,7 +146,7 @@ const CommentItem = memo(({
             )}
           </div>
           <div 
-            className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none prose-img:max-w-full prose-img:h-auto prose-img:rounded-md prose-img:shadow-sm" 
+            className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none comment-content" 
             dangerouslySetInnerHTML={{ __html: comment.htmlContent || comment.text }} 
           />
         </div>
@@ -166,6 +167,8 @@ const CommentsSection = memo(({
   modalContainerRef,
   onEditComment,
   onDeleteComment,
+  cardId, // For Cloudinary attachment integration
+  enableCloudinaryAttachments = true, // Enable new attachment system
 }) => {
   const { user } = useContext(AuthContext);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -210,7 +213,10 @@ const CommentsSection = memo(({
   }, [isEditorExpanded, modalContainerRef]);
 
   const handleSubmit = async () => {
-    if (!newComment?.trim()) return;
+    // Allow submit if there's text content or HTML content (like images)
+    const hasTextContent = newComment?.trim();
+    const hasHtmlContent = newComment && /<img|<a|<div/.test(newComment);
+    if (!hasTextContent && !hasHtmlContent) return;
     setIsSubmitting(true);
     try {
       await onAddComment();
@@ -222,7 +228,10 @@ const CommentsSection = memo(({
 
   // Handle edit submission
   const handleEditSubmit = useCallback(async () => {
-    if (!editContent?.trim() || !editingComment) return;
+    // Allow submit if there's text content or HTML content (like images)
+    const hasTextContent = editContent?.trim();
+    const hasHtmlContent = editContent && /<img|<a|<div/.test(editContent);
+    if ((!hasTextContent && !hasHtmlContent) || !editingComment) return;
     setIsSubmitting(true);
     try {
       if (onEditComment) {
@@ -320,6 +329,11 @@ const CommentsSection = memo(({
                       className="min-h-[80px]"
                       onImageUpload={onImageUpload}
                       mentionContainer={document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50.flex.items-start.justify-center.z-60')}
+                      // New Cloudinary attachment props
+                      cardId={cardId}
+                      contextType="comment"
+                      enableAttachments={enableCloudinaryAttachments && !!cardId}
+                      enableAutoCover={false}
                     />
                   </div>
                   <div className="flex justify-end mt-2 gap-2">
@@ -335,7 +349,7 @@ const CommentsSection = memo(({
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={handleSubmit}
-                      disabled={isSubmitting || !newComment?.trim()}
+                      disabled={isSubmitting || (!newComment?.trim() && !/<img|<a|<div/.test(newComment || ''))}
                       className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:shadow-lg transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isSubmitting && <Loader size={16} className="animate-spin" />}
@@ -401,6 +415,12 @@ const CommentsSection = memo(({
                             startExpanded={true}
                             className="min-h-[80px]"
                             onImageUpload={onImageUpload}
+                            // New Cloudinary attachment props
+                            cardId={cardId}
+                            contextType="comment"
+                            contextRef={comment._id || comment.id}
+                            enableAttachments={enableCloudinaryAttachments && !!cardId}
+                            enableAutoCover={false}
                           />
                         </div>
                         <div className="flex justify-end mt-2 gap-2">
@@ -420,7 +440,7 @@ const CommentsSection = memo(({
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={handleEditSubmit}
-                            disabled={isSubmitting || !editContent?.trim()}
+                            disabled={isSubmitting || (!editContent?.trim() && !/<img|<a|<div/.test(editContent || ''))}
                             className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:shadow-lg transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {isSubmitting && <Loader size={16} className="animate-spin" />}
@@ -485,6 +505,23 @@ const CommentsSection = memo(({
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #555;
+        }
+        .comment-content img {
+          max-width: 200px;
+          max-height: 200px;
+          width: auto;
+          height: auto;
+          border-radius: 6px;
+          display: inline-block;
+          margin: 4px;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+          cursor: pointer;
+          object-fit: cover;
+          transition: all 0.2s ease;
+        }
+        .comment-content img:hover {
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+          transform: scale(1.05);
         }
       `}</style>
     </motion.div>
