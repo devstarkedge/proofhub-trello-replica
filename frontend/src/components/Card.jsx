@@ -126,7 +126,7 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
         {/* +N Badge */}
         {showCount && (
            <span
-            className="px-2 py-0.5 text-[10px] font-bold rounded-md flex items-center justify-center shadow-sm backdrop-blur-md bg-white/90 text-gray-600"
+            className="w-5 h-5 text-[10px] font-bold rounded-full flex items-center justify-center shadow-sm backdrop-blur-md bg-orange-200 text-orange-800"
           >
             +{hiddenCount}
           </span>

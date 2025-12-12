@@ -1103,75 +1103,88 @@ export const moveCard = asyncHandler(async (req, res, next) => {
 
   await card.save();
 
-    // Log activity
-    await Activity.create({
-      type: "card_moved",
-      description: `Moved card "${card.title}"`,
-      user: req.user.id,
-      board: card.board,
-      card: card._id,
-      list: card.list,
-      contextType: 'task',
-      metadata: {
-        fromList: sourceListTitle,
-        toList: destinationList.title,
-        newPosition
-      }
-    });  // Emit real-time updates for both move and status change
-  emitToBoard(card.board.toString(), 'card-moved', {
-    cardId: card._id,
-    sourceListId,
-    destinationListId,
-    newPosition,
-    status: card.status,
-    movedBy: {
-      id: req.user.id,
-      name: req.user.name
-    }
-  });
-
-  // Also emit a card-updated event for status change
-  emitToBoard(card.board.toString(), 'card-updated', {
-    cardId: card._id,
-    updates: {
-      list: destinationListId,
-      position: newPosition,
-      status: card.status
-    },
-    updatedBy: {
-      id: req.user.id,
-      name: req.user.name
-    }
-  });
-
-  // Send notifications for task movement
-  if (sourceListId.toString() !== destinationListId) {
-    await notificationService.notifyTaskUpdated(card, req.user.id, {
-      moved: true,
-      fromList: sourceListTitle,
-      toList: destinationList.title
-    });
-  }
-
-  // Invalidate caches
-  invalidateHierarchyCache({
-    boardId: card.board,
-    listId: destinationListId,
-    cardId: card._id
-  });
-  invalidateHierarchyCache({
-    boardId: card.board,
-    listId: sourceListId
-  });
-  invalidateCache("/api/departments");
-  invalidateCache(`/api/departments/${card.board.department}/members-with-assignments`);
-  invalidateCache("/api/analytics/dashboard");
-  invalidateCache(`/api/analytics/department/`);
-
+  // OPTIMIZATION: Send response immediately to make UI feel instant
+  // Run side effects (Activity, Notifications, Sockets, Cache) in background
   res.status(200).json({
     success: true,
     data: card,
   });
+
+  // Background tasks - do not await these before sending response
+  (async () => {
+    try {
+      // Log activity
+      await Activity.create({
+        type: "card_moved",
+        description: `Moved card "${card.title}"`,
+        user: req.user.id,
+        board: card.board,
+        card: card._id,
+        list: card.list,
+        contextType: 'task',
+        metadata: {
+          fromList: sourceListTitle,
+          toList: destinationList.title,
+          newPosition
+        }
+      });
+
+      // Emit real-time updates for both move and status change
+      emitToBoard(card.board.toString(), 'card-moved', {
+        cardId: card._id,
+        sourceListId,
+        destinationListId,
+        newPosition,
+        status: card.status,
+        movedBy: {
+          id: req.user.id,
+          name: req.user.name
+        }
+      });
+
+      // Also emit a card-updated event for status change
+      emitToBoard(card.board.toString(), 'card-updated', {
+        cardId: card._id,
+        updates: {
+          list: destinationListId,
+          position: newPosition,
+          status: card.status
+        },
+        updatedBy: {
+          id: req.user.id,
+          name: req.user.name
+        }
+      });
+
+      // Send notifications for task movement
+      if (sourceListId.toString() !== destinationListId) {
+        await notificationService.notifyTaskUpdated(card, req.user.id, {
+          moved: true,
+          fromList: sourceListTitle,
+          toList: destinationList.title
+        });
+      }
+
+      // Invalidate caches
+      invalidateHierarchyCache({
+        boardId: card.board,
+        listId: destinationListId,
+        cardId: card._id
+      });
+      invalidateHierarchyCache({
+        boardId: card.board,
+        listId: sourceListId
+      });
+      invalidateCache("/api/departments");
+      invalidateCache(`/api/departments/${card.board.department}/members-with-assignments`);
+      invalidateCache("/api/analytics/dashboard");
+      invalidateCache(`/api/analytics/department/`);
+      
+    } catch (backgroundError) {
+      console.error("Error in moveCard background tasks:", backgroundError);
+      // Do not crash or send error to response as it's already sent
+    }
+  })();
 });
 
 // @desc    Delete card

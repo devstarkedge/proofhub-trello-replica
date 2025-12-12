@@ -110,16 +110,26 @@ const AttachmentList = ({
     setViewerOpen(true);
   }, []);
 
-  const handleDownload = useCallback((attachment, e) => {
+  const handleDownload = useCallback(async (attachment, e) => {
     e?.stopPropagation();
-    const url = attachment.secureUrl || attachment.url;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = attachment.originalName || 'download';
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      const url = attachment.secureUrl || attachment.url;
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = attachment.originalName || 'download';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Download failed:', error);
+      // Fallback to opening in new tab
+      window.open(attachment.secureUrl || attachment.url, '_blank');
+    }
   }, []);
 
   const handleDelete = useCallback(async (attachment, e) => {

@@ -231,7 +231,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
       ) : (
         <button
           onClick={() => setIsAddingCard(true)}
-          className="mt-2 flex items-center gap-2 text-gray-500 hover:text-gray-800 text-[14px] font-medium w-full p-2.5 rounded-lg hover:bg-white/60 transition-all border border-transparent hover:border-black/5 hover:shadow-sm group"
+          className="mt-2 flex items-center gap-2 text-gray-600 hover:text-gray-800 text-[14px] font-medium w-full p-2.5 rounded-lg hover:bg-white/60  transition-all border border-transparent hover:border-black/5 hover:shadow-sm group"
         >
           <div className="w-6 h-6 rounded bg-black/5 group-hover:bg-purple-100 flex items-center justify-center transition-colors">
              <Plus size={16} className="group-hover:text-purple-600"/>

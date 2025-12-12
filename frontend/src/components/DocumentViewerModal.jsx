@@ -13,8 +13,10 @@ import {
   FileSpreadsheet,
   File,
   ExternalLink,
-  Loader
+  Loader,
+  Share2
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 
 const DocumentViewerModal = ({ 
   attachment, 
@@ -84,23 +86,50 @@ const DocumentViewerModal = ({
     setRotation(prev => (prev + 90) % 360);
   }, []);
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
     const url = currentAttachment?.secureUrl || currentAttachment?.url;
     if (url) {
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = currentAttachment.originalName || 'download';
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = currentAttachment.originalName || 'download';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+      } catch (error) {
+        console.error('Download failed:', error);
+        window.open(url, '_blank');
+      }
     }
   }, [currentAttachment]);
 
-  const handleOpenInNewTab = useCallback(() => {
+  const handleShare = useCallback(async () => {
     const url = currentAttachment?.secureUrl || currentAttachment?.url;
     if (url) {
-      window.open(url, '_blank');
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: currentAttachment.originalName,
+            url: url
+          });
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+             console.error('Share failed:', error);
+          }
+        }
+      } else {
+        try {
+          await navigator.clipboard.writeText(url);
+          toast.success('Link copied to clipboard');
+        } catch (error) {
+          toast.error('Failed to copy link');
+        }
+      }
     }
   }, [currentAttachment]);
 
@@ -211,11 +240,11 @@ const DocumentViewerModal = ({
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={handleOpenInNewTab}
+              onClick={handleShare}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg flex items-center gap-2 hover:bg-gray-300 transition-colors"
             >
-              <ExternalLink size={18} />
-              Open
+              <Share2 size={18} />
+              Share
             </motion.button>
           </div>
         </div>
@@ -306,11 +335,11 @@ const DocumentViewerModal = ({
             <motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
-              onClick={handleOpenInNewTab}
+              onClick={handleShare}
               className="p-2 text-white hover:bg-white/10 rounded-lg transition-colors"
-              title="Open in new tab"
+              title="Share"
             >
-              <ExternalLink size={20} />
+              <Share2 size={20} />
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.1 }}

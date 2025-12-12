@@ -65,6 +65,7 @@ const RichTextEditor = ({
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [, forceUpdate] = useState(); // Force re-render for toolbar state
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
   const attachmentInputRef = useRef(null);
@@ -251,6 +252,9 @@ const RichTextEditor = ({
       onUpdate: ({ editor }) => {
         const html = editor.getHTML();
         onChange(html);
+      },
+      onTransaction: () => {
+        forceUpdate({});
       },
     });
 
@@ -715,14 +719,22 @@ const RichTextEditor = ({
           transform: scale(1.02);
         }
         .ProseMirror p {
-          margin: 8px 0;
+          margin: 1px 0;
+          line-height: 1.4;
         }
-        .ProseMirror ul, .ProseMirror ol {
+        .ProseMirror ul {
+          list-style-type: disc;
           padding-left: 24px;
-          margin: 8px 0;
+          margin: 2px 0;
+        }
+        .ProseMirror ol {
+          list-style-type: decimal;
+          padding-left: 24px;
+          margin: 2px 0;
         }
         .ProseMirror li {
-          margin: 4px 0;
+          margin: 0;
+          line-height: 1.4;
         }
         .ProseMirror blockquote {
           border-left: 4px solid #cbd5e1;

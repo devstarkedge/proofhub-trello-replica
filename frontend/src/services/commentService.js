@@ -84,8 +84,8 @@ class CommentService {
     // Get current cache
     const cachedComments = this.getFromCache(type, entityId) || [];
 
-    // Update cache with optimistic comment
-    const updatedComments = [...cachedComments, tempComment];
+    // Update cache with optimistic comment (prepend for newest-first ordering)
+    const updatedComments = [tempComment, ...cachedComments];
     this.setInCache(type, entityId, updatedComments);
 
     // Dispatch event for immediate UI update
@@ -272,13 +272,17 @@ class CommentService {
   }
 
   /**
-   * Update a comment (optimistic update)
+   * Update a comment (optimistic update with cache invalidation)
    */
   async updateComment(commentId, newText, type, entityId) {
-    // Update in cache optimistically
-    const cachedComments = this.getFromCache(type, entityId) || [];
-    const updatedComments = cachedComments.map(c =>
-      (c._id === commentId || c.id === commentId) ? { ...c, htmlContent: newText, text: newText } : c
+    // Store original cache for rollback on error
+    const originalCachedComments = this.getFromCache(type, entityId) || [];
+    
+    // Update in cache optimistically with proper edit metadata
+    const updatedComments = originalCachedComments.map(c =>
+      (c._id === commentId || c.id === commentId) 
+        ? { ...c, htmlContent: newText, text: newText, isEdited: true, editedAt: new Date().toISOString() } 
+        : c
     );
     this.setInCache(type, entityId, updatedComments);
 
@@ -287,12 +291,25 @@ class CommentService {
 
     // Update on server in background
     try {
-      await Database.updateComment(commentId, newText);
+      const response = await Database.updateComment(commentId, newText);
+      const serverComment = response.data || response;
+      
+      // Update cache with server response to ensure consistency
+      const freshComments = this.getFromCache(type, entityId) || [];
+      const syncedComments = freshComments.map(c =>
+        (c._id === commentId || c.id === commentId)
+          ? { ...c, ...serverComment, isOptimistic: false }
+          : c
+      );
+      this.setInCache(type, entityId, syncedComments);
+      this.dispatchCommentUpdate(type, entityId, syncedComments);
+      
+      return serverComment;
     } catch (error) {
       console.error("Error updating comment:", error);
       // Restore original on error
-      this.setInCache(type, entityId, cachedComments);
-      this.dispatchCommentUpdate(type, entityId, cachedComments, error);
+      this.setInCache(type, entityId, originalCachedComments);
+      this.dispatchCommentUpdate(type, entityId, originalCachedComments, error);
       throw error;
     }
   }

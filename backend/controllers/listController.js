@@ -136,13 +136,21 @@ export const updateListPosition = asyncHandler(async (req, res, next) => {
   list.position = newPosition;
   await list.save();
 
-  // Invalidate relevant caches
-  invalidateHierarchyCache({ boardId: list.board, listId: list._id });
-
+  // OPTIMIZATION: Send response immediately
   res.status(200).json({
     success: true,
     data: list
   });
+
+  // Background tasks
+  (async () => {
+    try {
+      // Invalidate relevant caches
+      invalidateHierarchyCache({ boardId: list.board, listId: list._id });
+    } catch (err) {
+      console.error('Error in updateListPosition background task:', err);
+    }
+  })();
 });
 
 // @desc    Delete list

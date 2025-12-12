@@ -1076,7 +1076,7 @@ class DatabaseService {
     return await res.json();
   }
 
-  async updateComment(commentId, text) {
+  async updateComment(commentId, htmlContent) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
@@ -1085,8 +1085,15 @@ class DatabaseService {
     const res = await fetch(`${baseURL}/api/comments/${commentId}`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ htmlContent })
     });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Failed to update comment' }));
+      if (res.status === 403) {
+        throw new Error(error.message || 'You are not authorized to edit this comment');
+      }
+      throw new Error(error.message || 'Failed to update comment');
+    }
     return await res.json();
   }
 
@@ -1096,7 +1103,15 @@ class DatabaseService {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    await fetch(`${baseURL}/api/comments/${commentId}`, { method: 'DELETE', headers });
+    const res = await fetch(`${baseURL}/api/comments/${commentId}`, { method: 'DELETE', headers });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Failed to delete comment' }));
+      if (res.status === 403) {
+        throw new Error(error.message || 'You are not authorized to delete this comment');
+      }
+      throw new Error(error.message || 'Failed to delete comment');
+    }
+    return await res.json().catch(() => ({ success: true }));
   }
 
   // Notification operations

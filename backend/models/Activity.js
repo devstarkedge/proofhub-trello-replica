@@ -10,6 +10,8 @@ const activitySchema = new mongoose.Schema({
       'card_deleted',
       'card_archived',
       'comment_added',
+      'comment_updated',
+      'comment_deleted',
       'member_added',
       'member_removed',
       'attachment_added',

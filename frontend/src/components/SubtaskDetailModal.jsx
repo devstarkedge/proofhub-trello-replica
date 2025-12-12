@@ -491,6 +491,33 @@ const SubtaskDetailModal = ({
       toast.error("Failed to add comment");
     }
   };
+
+  // Handle comment edit
+  const handleEditComment = async (commentId, newContent) => {
+    if (!entityId || !commentId) return;
+
+    try {
+      await commentService.updateComment(commentId, newContent, 'subtask', entityId);
+      toast.success("Comment updated!");
+    } catch (error) {
+      console.error("Error updating comment:", error);
+      toast.error(error.message || "Failed to update comment");
+    }
+  };
+
+  // Handle comment delete
+  const handleDeleteComment = async (commentId) => {
+    if (!entityId || !commentId) return;
+
+    try {
+      await commentService.deleteComment(commentId, 'subtask', entityId);
+      toast.success("Comment deleted!");
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+      toast.error(error.message || "Failed to delete comment");
+    }
+  };
+
   // Time Tracking Handlers
   const handleAddEstimation = async () => {
     if (!newEstimationHours && !newEstimationMinutes) return;
@@ -919,6 +946,8 @@ const SubtaskDetailModal = ({
                         teamMembers={teamMembers}
                         onCommentChange={setNewComment}
                         onAddComment={handleAddComment}
+                        onEditComment={handleEditComment}
+                        onDeleteComment={handleDeleteComment}
                         modalContainerRef={modalContentRef}
                         cardId={parentTaskId}
                         enableCloudinaryAttachments={!!parentTaskId}

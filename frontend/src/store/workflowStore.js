@@ -380,30 +380,36 @@ const useWorkflowStore = create(
       // Move card with optimistic update
       moveCard: async (cardId, newListId, newPosition, newStatus) => {
         const state = get();
+        // Capture original state for rollback
+        const originalCardsByList = state.cardsByList;
+        
+        // Deep clone the map structure to avoid mutating original state arrays
+        const newCardsByList = { ...state.cardsByList };
+        // We also need to clone the arrays we're going to modify (source and dest lists)
+        // But since we don't know them easily without searching, let's wait until we find them.
+
         let movedCard = null;
-        let sourceListId = null;
 
         // Find and remove card from source list
-        const newCardsByList = { ...state.cardsByList };
         Object.keys(newCardsByList).forEach(listId => {
-          const cardIndex = newCardsByList[listId].findIndex(card => card._id === cardId);
+          const listCards = newCardsByList[listId];
+          const cardIndex = listCards.findIndex(card => card._id === cardId);
           if (cardIndex !== -1) {
-            movedCard = { ...newCardsByList[listId][cardIndex], list: newListId, status: newStatus };
-            sourceListId = listId;
-            newCardsByList[listId] = newCardsByList[listId].filter(card => card._id !== cardId);
+            movedCard = { ...listCards[cardIndex], list: newListId, status: newStatus };
+            // Clone the list array before filtering (which creates a new array anyway, so filter is safe)
+            newCardsByList[listId] = listCards.filter(card => card._id !== cardId);
           }
         });
 
         if (!movedCard) return;
 
         // Add to destination list at correct position
-        if (!newCardsByList[newListId]) {
-          newCardsByList[newListId] = [];
-        }
-        newCardsByList[newListId].splice(newPosition, 0, movedCard);
-
+        // CRITICAL: Must clone the destination array before modifying it
+        const destList = newCardsByList[newListId] ? [...newCardsByList[newListId]] : [];
+        destList.splice(newPosition, 0, movedCard);
+        
         // Update positions in destination list
-        newCardsByList[newListId] = newCardsByList[newListId].map((card, index) => ({
+        newCardsByList[newListId] = destList.map((card, index) => ({
           ...card,
           position: index
         }));
@@ -415,8 +421,8 @@ const useWorkflowStore = create(
           await Database.moveCard(cardId, newListId, newPosition, newStatus);
         } catch (error) {
           console.error('Error moving card:', error);
-          // Rollback - this is complex, so we'll reinitialize
-          await get().initializeWorkflow(state.board._id);
+          // Rollback to exact previous state
+          set({ cardsByList: originalCardsByList });
           throw error;
         }
       },
@@ -557,23 +563,27 @@ const useWorkflowStore = create(
       // Move list with optimistic update
       moveList: async (listId, newPosition) => {
         const state = get();
-        const originalLists = [...state.lists];
+        const originalLists = state.lists; // Keep reference to original array
         const listIndex = state.lists.findIndex(list => list._id === listId);
 
         if (listIndex === -1) return;
 
         // Optimistic update
         const newLists = [...state.lists];
-        const [movedList] = newLists.splice(listIndex, 1);
-        movedList.position = newPosition;
+        const [movedListOriginal] = newLists.splice(listIndex, 1);
+        
+        // Clone the moved list to avoid mutating the object in originalLists
+        const movedList = { ...movedListOriginal, position: newPosition };
+        
         newLists.splice(newPosition, 0, movedList);
 
-        // Update positions
-        newLists.forEach((list, index) => {
-          list.position = index;
-        });
+        // Update positions for all lists (cloning them to avoid mutation)
+        const updatedLists = newLists.map((list, index) => ({
+          ...list,
+          position: index
+        }));
 
-        set({ lists: newLists, lastUpdated: Date.now() });
+        set({ lists: updatedLists, lastUpdated: Date.now() });
 
         try {
           await Database.moveList(listId, newPosition);

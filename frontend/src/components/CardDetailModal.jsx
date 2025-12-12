@@ -130,6 +130,14 @@ const CardDetailModal = React.memo(({
     }
   }, [card?.board, setHierarchyProject]);
 
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
   // Time Tracking States
   const [estimationEntries, setEstimationEntries] = useState(
     (card.estimationTime || []).map((entry, idx) => {
@@ -914,12 +922,7 @@ const CardDetailModal = React.memo(({
 
     try {
       await commentService.updateComment(commentId, newContent, 'card', cardId);
-      
-      setComments(prev => prev.map(c => 
-        (c._id === commentId || c.id === commentId) 
-          ? { ...c, htmlContent: newContent, text: newContent, isEdited: true }
-          : c
-      ));
+      // State is updated via commentService.onCommentsUpdated subscription
       toast.success("Comment updated!");
     } catch (error) {
       console.error("Error updating comment:", error);
@@ -934,7 +937,7 @@ const CardDetailModal = React.memo(({
 
     try {
       await commentService.deleteComment(commentId, 'card', cardId);
-      setComments(prev => prev.filter(c => c._id !== commentId && c.id !== commentId));
+      // State is updated via commentService.onCommentsUpdated subscription
       toast.success("Comment deleted!");
     } catch (error) {
       console.error("Error deleting comment:", error);
