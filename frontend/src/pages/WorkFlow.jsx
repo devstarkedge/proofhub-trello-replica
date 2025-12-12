@@ -240,13 +240,21 @@ useEffect(() => {
     }
   }, [addList, board?._id]);
 
-  const handleDeleteList = useCallback(async (listId) => {
-    if (window.confirm('Are you sure you want to delete this list and all its cards?')) {
-      try {
-        await deleteList(listId);
-      } catch (error) {
-        console.error('Error deleting list:', error);
+  const handleDeleteList = useCallback(async (listId, options = {}) => {
+    const { skipConfirm = false } = options;
+    
+    if (!skipConfirm) {
+      if (!window.confirm('Are you sure you want to delete this list and all its cards?')) {
+        return;
       }
+    }
+
+    try {
+      await deleteList(listId);
+      toast.success('List deleted successfully');
+    } catch (error) {
+      console.error('Error deleting list:', error);
+      toast.error('Failed to delete list');
     }
   }, [deleteList]);
 
@@ -541,7 +549,7 @@ useEffect(() => {
   const hasNoLists = lists.length === 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 overflow-hidden">
       {/* Custom Header for Workflow */}
       <header className="bg-white/10 backdrop-blur-lg border-b border-white/20 shadow-lg">
         <div className="px-6 py-4">
@@ -723,47 +731,49 @@ useEffect(() => {
         </div>
       </header>
 
-      {hasNoLists ? (
-        <div className="flex items-center justify-center" style={{ height: 'calc(100vh - 120px)' }}>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-center text-white max-w-md mx-4"
-          >
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-12 border border-white/20">
-              <Plus size={64} className="mx-auto mb-4 text-white/50" />
-              <h2 className="text-3xl font-bold mb-4">No lists yet!</h2>
-              <p className="text-xl mb-8 text-white/70">Create your first list to get started with this project.</p>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  const title = prompt('Enter list name:');
-                  if (title) handleAddList(title);
-                }}
-                className="px-8 py-4 bg-white text-purple-900 rounded-lg font-semibold text-lg hover:bg-gray-100 transition-colors shadow-lg inline-flex items-center gap-2"
-              >
-                <Plus size={24} />
-                Create First List
-              </motion.button>
-            </div>
-          </motion.div>
-        </div>
-      ) : (
-        <Board
-          lists={lists}
-          cardsByList={filteredCardsByList}
-          onAddCard={handleAddCard}
-          onDeleteCard={handleDeleteCard}
-          onCardClick={handleOpenCardModal}
-          onAddList={handleAddList}
-          onDeleteList={handleDeleteList}
-          onUpdateListColor={handleUpdateListColor}
-          onUpdateListTitle={updateListTitle}
-          onMoveCard={handleMoveCard}
-          onMoveList={handleMoveList}
-        />
-      )}
+      <main className="flex-1 overflow-hidden relative">
+        {hasNoLists ? (
+          <div className="flex items-center justify-center h-full">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="text-center text-white max-w-md mx-4"
+            >
+              <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-12 border border-white/20">
+                <Plus size={64} className="mx-auto mb-4 text-white/50" />
+                <h2 className="text-3xl font-bold mb-4">No lists yet!</h2>
+                <p className="text-xl mb-8 text-white/70">Create your first list to get started with this project.</p>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    const title = prompt('Enter list name:');
+                    if (title) handleAddList(title);
+                  }}
+                  className="px-8 py-4 bg-white text-purple-900 rounded-lg font-semibold text-lg hover:bg-gray-100 transition-colors shadow-lg inline-flex items-center gap-2"
+                >
+                  <Plus size={24} />
+                  Create First List
+                </motion.button>
+              </div>
+            </motion.div>
+          </div>
+        ) : (
+          <Board
+            lists={lists}
+            cardsByList={filteredCardsByList}
+            onAddCard={handleAddCard}
+            onDeleteCard={handleDeleteCard}
+            onCardClick={handleOpenCardModal}
+            onAddList={handleAddList}
+            onDeleteList={handleDeleteList}
+            onUpdateListColor={handleUpdateListColor}
+            onUpdateListTitle={updateListTitle}
+            onMoveCard={handleMoveCard}
+            onMoveList={handleMoveList}
+          />
+        )}
+      </main>
 
       <HierarchyModalStack
         stack={modalStack}

@@ -14,6 +14,7 @@ import {
 import RichTextEditor from "../RichTextEditor";
 import AuthContext from "../../context/AuthContext";
 import versionService from "../../services/versionService";
+import DeletePopup from "../ui/DeletePopup";
 
 // Lazy load VersionHistoryModal
 const VersionHistoryModal = lazy(() => import("../VersionHistoryModal"));
@@ -177,6 +178,7 @@ const CommentsSection = memo(({
   const [editContent, setEditContent] = useState('');
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [selectedCommentForHistory, setSelectedCommentForHistory] = useState(null);
+  const [deletePopup, setDeletePopup] = useState({ isOpen: false, comment: null });
   const editorContainerRef = useRef(null);
 
   // Handle clicking outside to collapse editor (scoped to modal)
@@ -245,13 +247,17 @@ const CommentsSection = memo(({
   }, [editContent, editingComment, onEditComment]);
 
   // Handle delete
-  const handleDelete = useCallback(async (comment) => {
-    if (window.confirm('Are you sure you want to delete this comment?')) {
-      if (onDeleteComment) {
-        await onDeleteComment(comment._id || comment.id);
-      }
+  const handleDelete = useCallback((comment) => {
+    setDeletePopup({ isOpen: true, comment });
+  }, []);
+
+  const handleConfirmDelete = async () => {
+    const { comment } = deletePopup;
+    if (comment && onDeleteComment) {
+      await onDeleteComment(comment._id || comment.id);
     }
-  }, [onDeleteComment]);
+    setDeletePopup({ isOpen: false, comment: null });
+  };
 
   // Handle edit start
   const handleEditStart = useCallback((comment) => {
@@ -524,6 +530,12 @@ const CommentsSection = memo(({
           transform: scale(1.05);
         }
       `}</style>
+      <DeletePopup
+        isOpen={deletePopup.isOpen}
+        onCancel={() => setDeletePopup({ isOpen: false, comment: null })}
+        onConfirm={handleConfirmDelete}
+        itemType="comment"
+      />
     </motion.div>
   );
 });

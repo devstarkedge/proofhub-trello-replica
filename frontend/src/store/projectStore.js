@@ -94,13 +94,24 @@ const useProjectStore = create(
       },
 
       // Action to update state from external (optimistic or after API)
-      projectAdded: (departmentId, newProject) => {
+      projectAdded: (departmentId, newProject, tempId = null) => {
         set(state => ({
           departments: state.departments.map(dept => {
             if (dept._id === departmentId) {
+              const projects = dept.projects || [];
+              if (tempId) {
+                const index = projects.findIndex(p => p._id === tempId);
+                if (index !== -1) {
+                  // Replace temp project with real one
+                  const updatedProjects = [...projects];
+                  updatedProjects[index] = newProject;
+                  return { ...dept, projects: updatedProjects };
+                }
+              }
+              // Add new project if not replacing
               return {
                 ...dept,
-                projects: [...(dept.projects || []), newProject]
+                projects: [...projects, newProject]
               };
             }
             return dept;

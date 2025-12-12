@@ -16,6 +16,7 @@ import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import useModalHierarchyStore from "../store/modalHierarchyStore";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
+import DeletePopup from "../components/ui/DeletePopup"
 
 const overlayMap = {
   purple: "bg-purple-950/50",
@@ -70,6 +71,7 @@ const SubtaskDetailModal = ({
   const [newNanoTitle, setNewNanoTitle] = useState("");
   const [parentTaskId, setParentTaskId] = useState(initialData.task || null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deletePopup, setDeletePopup] = useState({ isOpen: false, type: null, data: null });
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
@@ -342,11 +344,39 @@ const SubtaskDetailModal = ({
     }
   };
 
-  const handleSidebarDelete = async () => {
-    if (!window.confirm("Are you sure you want to delete this subtask? This action cannot be undone.")) {
-      return;
+  const handleSidebarDelete = () => {
+    setDeletePopup({
+      isOpen: true,
+      type: 'subtask',
+      data: null
+    });
+  };
+
+  const executeDeleteNano = async (nano) => {
+    // Optimistic Delete
+    const originalItems = [...nanoItems];
+    setNanoItems(prev => prev.filter(item => item._id !== nano._id));
+
+    try {
+      await Database.deleteNano(nano._id);
+    } catch (error) {
+      console.error("Error deleting nano subtask:", error);
+      toast.error("Failed to delete nano subtask");
+      // Revert
+      setNanoItems(originalItems);
     }
-    await runDelete();
+  };
+
+  const handleConfirmGlobalDelete = async () => {
+    const { type, data } = deletePopup;
+    
+    if (type === 'subtask') {
+      await runDelete();
+    } else if (type === 'subtaskNano') {
+      await executeDeleteNano(data);
+    }
+    
+    setDeletePopup(prev => ({ ...prev, isOpen: false }));
   };
 
   const handleSelectMember = (memberId) => {
@@ -427,22 +457,13 @@ const SubtaskDetailModal = ({
     }
   };
 
-  const handleDeleteNano = async (nano) => {
+  const handleDeleteNano = (nano) => {
     if (!nano?._id) return;
-    if (!window.confirm("Delete this nano subtask?")) return;
-
-    // Optimistic Delete
-    const originalItems = [...nanoItems];
-    setNanoItems(prev => prev.filter(item => item._id !== nano._id));
-
-    try {
-      await Database.deleteNano(nano._id);
-    } catch (error) {
-      console.error("Error deleting nano subtask:", error);
-      toast.error("Failed to delete nano subtask");
-      // Revert
-      setNanoItems(originalItems);
-    }
+    setDeletePopup({
+      isOpen: true,
+      type: 'subtaskNano',
+      data: nano
+    });
   };
 
   const handleOpenNano = (nano) => {
@@ -998,6 +1019,14 @@ const SubtaskDetailModal = ({
           </div>
         </motion.div>
       </motion.div>
+
+      <DeletePopup
+        isOpen={deletePopup.isOpen}
+        onCancel={() => setDeletePopup(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={handleConfirmGlobalDelete}
+        itemType={deletePopup.type || 'subtask'}
+        isLoading={deleteLoading}
+      />
     </AnimatePresence>
   );
 };

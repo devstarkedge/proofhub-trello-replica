@@ -18,6 +18,7 @@ import ProjectCard from '../components/ProjectCard';
 import { lazy } from 'react';
 const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
 const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
+import DeletePopup from '../components/ui/DeletePopup';
 
 // Memoized StatCard component for better performance
 const StatCard = memo(({ stat, index }) => (
@@ -161,6 +162,8 @@ const Dashboard = memo(() => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [showDeletePopup, setShowDeletePopup] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState(null);
   const { prefetchWorkflow } = useWorkflowStore();
   
   // Reminders state
@@ -230,17 +233,25 @@ const Dashboard = memo(() => {
     setEditModalOpen(true);
   }, []);
 
-  const handleDeleteProject = useCallback(async (projectId) => {
-    if (window.confirm('Are you sure you want to delete this project?')) {
-      try {
-        await Database.deleteProject(projectId);
-        refetch();
-      } catch (error) {
-        console.error('Error deleting project:', error);
-        alert('Failed to delete project. Please try again.');
-      }
+  const handleDeleteProject = useCallback((projectId) => {
+    setProjectToDelete(projectId);
+    setShowDeletePopup(true);
+  }, []);
+
+  const confirmDeleteProject = useCallback(async () => {
+    if (!projectToDelete) return;
+
+    try {
+      await Database.deleteProject(projectToDelete);
+      refetch();
+      setShowDeletePopup(false);
+      setProjectToDelete(null);
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      alert('Failed to delete project. Please try again.');
+      setShowDeletePopup(false);
     }
-  }, [refetch]);
+  }, [projectToDelete, refetch]);
 
 
 
@@ -469,6 +480,16 @@ const Dashboard = memo(() => {
           onProjectUpdated={() => refetch()}
         />
       </Suspense>
+
+      <DeletePopup
+        isOpen={showDeletePopup}
+        onCancel={() => {
+          setShowDeletePopup(false);
+          setProjectToDelete(null);
+        }}
+        onConfirm={confirmDeleteProject}
+        itemType="project"
+      />
     </div>
   );
 });

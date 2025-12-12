@@ -39,7 +39,7 @@ export const createList = asyncHandler(async (req, res, next) => {
   }
 
   // Get current list count for position if not provided
-  const listPosition = position !== undefined ? position : await List.countDocuments({ board });
+  const listPosition = (position !== undefined && position !== null) ? position : await List.countDocuments({ board });
 
   const list = await List.create({
     title,

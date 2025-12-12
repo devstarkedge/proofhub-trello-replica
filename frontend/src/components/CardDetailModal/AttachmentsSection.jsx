@@ -2,6 +2,7 @@ import React, { useEffect, useCallback, lazy, Suspense, memo, useRef } from "rea
 import { Paperclip, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import useAttachmentStore from "../../store/attachmentStore";
+import DeletePopup from "../ui/DeletePopup";
 
 // Lazy load heavy components
 const AttachmentUploader = lazy(() => import("../AttachmentUploader"));
@@ -34,6 +35,7 @@ const AttachmentsSection = memo(({
   
   // Track if we've notified parent of cover to prevent infinite loops
   const coverNotifiedRef = useRef(false);
+  const [deletePopup, setDeletePopup] = React.useState({ isOpen: false, attachmentId: null });
   
   // Store actions
   const {
@@ -58,7 +60,14 @@ const AttachmentsSection = memo(({
   }, [cardId, fetchAttachments]);
 
   // Handle delete
-  const handleDelete = useCallback(async (attachmentId) => {
+  const handleDelete = useCallback((attachmentId) => {
+    setDeletePopup({ isOpen: true, attachmentId });
+  }, []);
+
+  const handleConfirmDelete = async () => {
+    const { attachmentId } = deletePopup;
+    if (!attachmentId) return;
+    
     try {
       await deleteAttachment(cardId, attachmentId);
       if (onDeleteAttachment) {
@@ -67,7 +76,8 @@ const AttachmentsSection = memo(({
     } catch (error) {
       console.error('Delete failed:', error);
     }
-  }, [cardId, deleteAttachment, onDeleteAttachment]);
+    setDeletePopup({ isOpen: false, attachmentId: null });
+  };
 
   // Handle set as cover
   const handleSetCover = useCallback(async (attachmentOrId) => {
@@ -198,6 +208,13 @@ const AttachmentsSection = memo(({
           />
         </Suspense>
       </div>
+      
+      <DeletePopup
+        isOpen={deletePopup.isOpen}
+        onCancel={() => setDeletePopup({ isOpen: false, attachmentId: null })}
+        onConfirm={handleConfirmDelete}
+        itemType="attachment"
+      />
     </motion.div>
   );
 });

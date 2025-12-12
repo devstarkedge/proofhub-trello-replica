@@ -11,6 +11,8 @@ import {
   MoreHorizontal
 } from "lucide-react";
 
+import DeletePopup from "./ui/DeletePopup";
+
 // Helper to get text color based on background
 const getTextColor = (bgColor) => {
   if (!bgColor || typeof bgColor !== 'string') return '#FFFFFF';
@@ -25,6 +27,7 @@ const getTextColor = (bgColor) => {
 
 const Card = memo(({ card, onClick, onDelete, isDragging }) => {
   const [isHovered, setIsHovered] = React.useState(false);
+  const [showDeletePopup, setShowDeletePopup] = React.useState(false);
   
   // Memoize computed values
   const allLabels = useMemo(() => {
@@ -92,8 +95,8 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
 
   const handleDelete = useCallback((e) => {
     e.stopPropagation();
-    onDelete(card._id);
-  }, [onDelete, card._id]);
+    setShowDeletePopup(true);
+  }, []);
 
   const renderLabels = (isOverlay = false) => {
     // Determine how many labels to show
@@ -285,6 +288,20 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
           </div>
         </div>
       </div>
+      <DeletePopup
+        isOpen={showDeletePopup}
+        onCancel={(e) => {
+           if (e && e.stopPropagation) e.stopPropagation();
+           setShowDeletePopup(false);
+        }}
+        onConfirm={() => {
+          onDelete(card._id, { skipConfirm: true });
+          setShowDeletePopup(false);
+        }}
+        itemType="card"
+        // isLoading={isDeleting} // We don't have isDeleting state here, assume optimistic or parent handles
+        preventCloseOnOverlay={true}
+      />
     </motion.div>
   );
 });

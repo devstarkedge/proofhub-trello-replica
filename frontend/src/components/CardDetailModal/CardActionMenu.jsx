@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MoreVertical, Share2, Link as LinkIcon, Trash2, ArrowRightLeft, Copy, Archive } from "lucide-react";
+import DeletePopup from "../ui/DeletePopup";
 
 const ENTITY_LABEL = {
   task: "Task",
@@ -18,16 +19,18 @@ const CardActionMenu = ({
   const [isOpen, setIsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showDeletePopup, setShowDeletePopup] = useState(false);
+  
   const wrapperRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (event) => {
+      // Don't close if clicking inside the delete popup (which is in a portal)
+      // The portal is outside this DOM tree, so we don't need to check its ref here usually
       if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
         setIsOpen(false);
         setShareOpen(false);
-        setConfirmingDelete(false);
       }
     };
 
@@ -71,73 +74,47 @@ const CardActionMenu = ({
 
   const handleDeleteClick = () => {
     if (!onDelete || isDeleting) return;
-    setConfirmingDelete(true);
+    setIsOpen(false); // Close the menu
+    setShowDeletePopup(true); // Open the popup
   };
 
   const handleConfirmDelete = async () => {
     if (!onDelete || isDeleting) return;
     try {
       await onDelete();
-      setIsOpen(false);
-    } finally {
-      setConfirmingDelete(false);
+      // Popup will be closed by the parent component usually or we can close it here
+      setShowDeletePopup(false); 
+    } catch (error) {
+       console.error("Delete failed", error);
+       // Keep popup open on error? Or toast?
     }
   };
 
-  const entityLabel = ENTITY_LABEL[entityType] || "Item";
-
   return (
-    <div className="relative" ref={wrapperRef}>
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        disabled={disabled}
-        onClick={() => setIsOpen((prev) => !prev)}
-        className={`p-2 rounded-full border border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300 transition-colors ${
-          disabled ? "opacity-40 cursor-not-allowed" : ""
-        }`}
-        aria-label="Open actions menu"
-      >
-        <MoreVertical size={20} />
-      </motion.button>
+    <>
+      <div className="relative" ref={wrapperRef}>
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          disabled={disabled}
+          onClick={() => setIsOpen((prev) => !prev)}
+          className={`p-2 rounded-full border border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300 transition-colors ${
+            disabled ? "opacity-40 cursor-not-allowed" : ""
+          }`}
+          aria-label="Open actions menu"
+        >
+          <MoreVertical size={20} />
+        </motion.button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-2xl border border-gray-100 z-50"
-          >
-            {confirmingDelete ? (
-              <div className="p-4 text-sm text-gray-700 space-y-3">
-                <p className="font-medium text-gray-900">
-                  Delete {entityLabel}?
-                </p>
-                <p className="text-gray-500 text-xs leading-relaxed">
-                  Are you sure you want to delete this {entityLabel}? This action cannot be undone.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setConfirmingDelete(false);
-                      setShareOpen(false);
-                    }}
-                    className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleConfirmDelete}
-                    className="flex-1 px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors disabled:opacity-60"
-                    disabled={isDeleting}
-                  >
-                    {isDeleting ? "Deleting..." : "Delete"}
-                  </button>
-                </div>
-              </div>
-            ) : (
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -8 }}
+              transition={{ duration: 0.15 }}
+              className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-2xl border border-gray-100 z-50"
+            >
               <div className="py-2">
                 <button
                   onClick={() => console.log("Move button clicked")}
@@ -208,6 +185,8 @@ const CardActionMenu = ({
                   </AnimatePresence>
                 </div>
 
+                <div className="my-1 border-t border-gray-100" />
+
                 <button
                   onClick={handleDeleteClick}
                   className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50 transition-colors"
@@ -215,17 +194,26 @@ const CardActionMenu = ({
                 >
                   <Trash2 size={16} />
                   <span className="font-semibold">
-                    {isDeleting ? "Deleting..." : "Delete"}
+                    Delete {ENTITY_LABEL[entityType]}
                   </span>
                 </button>
               </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <DeletePopup
+        isOpen={showDeletePopup}
+        onCancel={() => setShowDeletePopup(false)}
+        onConfirm={handleConfirmDelete}
+        itemType={entityType === "subtaskNano" ? "subtaskNano" : entityType}
+        isLoading={isDeleting}
+      />
+    </>
   );
 };
 
 export default CardActionMenu;
+
 

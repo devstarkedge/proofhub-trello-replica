@@ -114,13 +114,13 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
       <Droppable droppableId="all-lists" direction="horizontal" type="list">
         {(provided) => (
           <div 
-            className="p-4 h-[calc(100vh-64px)] overflow-x-auto overflow-y-hidden"
+            className="p-4 h-full overflow-x-auto overflow-y-hidden"
             ref={provided.innerRef}
             {...provided.droppableProps}
           >
             <div className="flex gap-4 h-full items-start">
               {/* Lists */}
-              {lists.map((list, index) => (
+              {lists.filter(l => l && l._id).map((list, index) => (
                 <Draggable key={list._id} draggableId={list._id} index={index}>
                   {(provided, snapshot) => (
                     <div

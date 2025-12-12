@@ -20,6 +20,7 @@ import { lazy, Suspense } from 'react';
 const AddProjectModal = lazy(() => import('../components/AddProjectModal'));
 const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
 const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
+import DeletePopup from '../components/ui/DeletePopup';
 
 // Memoized modal loading fallback
 const ModalLoadingFallback = memo(() => (
@@ -64,6 +65,8 @@ const HomePage = () => {
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [memberDropdownOpen, setMemberDropdownOpen] = useState({});
   const [memberListExpanded, setMemberListExpanded] = useState({});
+  const [showDeletePopup, setShowDeletePopup] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState(null);
   
   const statusDropdownRef = useRef(null);
   const memberDropdownRefs = useRef({});
@@ -112,8 +115,8 @@ const HomePage = () => {
         // But since we are using store, we can just fetch fresh.
         fetchDepartments(true);
     } else if (newProject) {
-        // Optimistic add
-        projectAdded(selectedDepartment, newProject);
+        // Optimistic add or replace
+        projectAdded(selectedDepartment, newProject, tempId);
     }
   }, [selectedDepartment, projectAdded, fetchDepartments]);
 
@@ -126,20 +129,29 @@ const HomePage = () => {
     projectUpdated(updatedProject);
   }, [projectUpdated]);
 
-  const handleDeleteProject = useCallback(async (project, departmentId) => {
-    if (window.confirm(`Are you sure you want to delete the project "${project.name}"?`)) {
-      try {
+  const handleDeleteProject = useCallback((project, departmentId) => {
+    setProjectToDelete({ project, departmentId });
+    setShowDeletePopup(true);
+  }, []);
+
+  const confirmDeleteProject = useCallback(async () => {
+    if (!projectToDelete) return;
+    const { project, departmentId } = projectToDelete;
+
+    try {
         // Optimistic delete
         projectDeleted(departmentId, project._id);
         await Database.deleteProject(project._id);
-      } catch (error) {
+        setShowDeletePopup(false);
+        setProjectToDelete(null);
+    } catch (error) {
         console.error('Error deleting project:', error);
         alert('Failed to delete project. Please try again.');
         // Revert by fetching
         fetchDepartments(true);
-      }
+        setShowDeletePopup(false);
     }
-  }, [projectDeleted, fetchDepartments]);
+  }, [projectToDelete, projectDeleted, fetchDepartments]);
 
   const handleViewProject = useCallback((projectId) => {
     setSelectedProjectId(projectId);
@@ -667,6 +679,16 @@ const HomePage = () => {
           />
         </Suspense>
       )}
+
+      <DeletePopup
+        isOpen={showDeletePopup}
+        onCancel={() => {
+          setShowDeletePopup(false);
+          setProjectToDelete(null);
+        }}
+        onConfirm={confirmDeleteProject}
+        itemType="project"
+      />
     </div>
   );
 };
