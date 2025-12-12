@@ -95,27 +95,45 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
     onDelete(card._id);
   }, [onDelete, card._id]);
 
-  const renderLabels = (isOverlay = false) => (
-    <div className={`flex flex-wrap gap-1.5 ${isOverlay ? 'absolute top-2 left-2 right-2 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300' : 'mb-2.5'}`}>
-      {allLabels.slice(0, isOverlay && !isHovered ? 2 : 4).map((label, idx) => (
-        <span
-          key={`${label.type}-${idx}`}
-          className={`
-            px-2 py-0.5 text-[10px] font-bold rounded-md flex items-center gap-1 shadow-sm backdrop-blur-md transition-transform
-            ${label.type === 'recurring' ? 'bg-gradient-to-r from-orange-500 to-yellow-500 text-white' : ''}
-          `}
-          style={label.type !== 'recurring' ? {
-            backgroundColor: isOverlay ? 'rgba(255, 255, 255, 0.95)' : (label.color + '20'),
-            color: isOverlay ? label.color : label.color,
-            border: `1px solid ${isOverlay ? 'transparent' : label.color + '30'}`
-          } : undefined}
-        >
-          {label.type === 'recurring' && <RefreshCw size={8} className="animate-spin-slow" />}
-          <span className="truncate max-w-[80px]">{label.text}</span>
-        </span>
-      ))}
-    </div>
-  );
+  const renderLabels = (isOverlay = false) => {
+    // Determine how many labels to show
+    // If overlay and NOT hovered: limit to 2
+    // Otherwise (hovered or not overlay): show all
+    const visibleLabels = allLabels.slice(0, isOverlay && !isHovered ? 2 : allLabels.length);
+    const hiddenCount = allLabels.length - 2;
+    const showCount = isOverlay && !isHovered && hiddenCount > 0;
+
+    return (
+      <div className={`flex flex-wrap gap-1.5 ${isOverlay ? 'absolute top-2 left-2 right-2 z-10' : 'mb-2.5'}`}>
+        {visibleLabels.map((label, idx) => (
+          <span
+            key={`${label.type}-${idx}`}
+            className={`
+              px-2 py-0.5 text-[10px] font-bold rounded-md flex items-center gap-1 shadow-sm backdrop-blur-md transition-transform
+              ${label.type === 'recurring' ? 'bg-gradient-to-r from-orange-500 to-yellow-500 text-white' : ''}
+            `}
+            style={label.type !== 'recurring' ? {
+              backgroundColor: isOverlay ? 'rgba(255, 255, 255, 0.95)' : (label.color + '20'),
+              color: isOverlay ? label.color : label.color,
+              border: `1px solid ${isOverlay ? 'transparent' : label.color + '30'}`
+            } : undefined}
+          >
+            {label.type === 'recurring' && <RefreshCw size={8} className="animate-spin-slow" />}
+            <span className="truncate max-w-[80px]">{label.text}</span>
+          </span>
+        ))}
+        
+        {/* +N Badge */}
+        {showCount && (
+           <span
+            className="px-2 py-0.5 text-[10px] font-bold rounded-md flex items-center justify-center shadow-sm backdrop-blur-md bg-white/90 text-gray-600"
+          >
+            +{hiddenCount}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <motion.div
