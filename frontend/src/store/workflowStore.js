@@ -23,9 +23,39 @@ const useWorkflowStore = create(
       setCardsByList: (cardsByList) => set({ cardsByList }),
       setLoading: (loading) => set({ loading }),
       setError: (error) => set({ error }),
+      setLoading: (loading) => set({ loading }),
+      setError: (error) => set({ error }),
       setLastUpdated: (timestamp) => set({ lastUpdated: timestamp }),
+      
+      // Cache for prefetched data
+      prefetchedData: {},
+      
+      // Prefetch workflow data in background
+      prefetchWorkflow: async (projectId) => {
+        const state = get();
+        // Don't prefetch if we already have fresh data
+        if (state.prefetchedData[projectId] && (Date.now() - state.prefetchedData[projectId].timestamp < 60000)) {
+           return;
+        }
 
-      // OPTIMIZED: Initialize workflow data with single API call
+        try {
+          const response = await Database.getWorkflowComplete(projectId);
+          if (response.success && response.data) {
+             set(state => ({
+               prefetchedData: {
+                 ...state.prefetchedData,
+                 [projectId]: {
+                   data: response.data,
+                   timestamp: Date.now()
+                 }
+               }
+             }));
+          }
+        } catch (err) {
+          // Silent fail for prefetch
+          console.error('Prefetch failed', err);
+        }
+      },
       initializeWorkflow: async (projectId) => {
         const requestId = ++currentRequestId;
         const state = get();
@@ -42,6 +72,24 @@ const useWorkflowStore = create(
           // Let's assume we don't want to show any loading state for background refresh 
           // to adhere to "Prevent unnecessary re-renders" and "flickering".
         } else {
+          // Check for prefetched data first
+          const prefetched = state.prefetchedData[projectId];
+          if (prefetched && (Date.now() - prefetched.timestamp < 300000)) { // 5 minutes validity
+             console.log('Using prefetched data for', projectId);
+             const { board, lists, cardsByList } = prefetched.data;
+             set({ 
+                board, 
+                lists: lists || [], 
+                cardsByList: cardsByList || {}, 
+                loading: false,
+                lastUpdated: Date.now(),
+                error: null,
+                currentProjectId: projectId
+             });
+             // Clear used prefetch to free memory? Optional. keeping it for now.
+             return;
+          }
+
           // New project or no data - show loader and clear old data
           set({ 
             loading: true, 

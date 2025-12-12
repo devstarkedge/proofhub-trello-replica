@@ -152,28 +152,14 @@ useEffect(() => {
   // Memoize loadData to prevent recreation
   const loadData = useCallback(async () => {
     try {
-      // Check department access first
-      const response = await Database.getProject(projectId);
-
-      if (!response.success) {
-        throw new Error(response.message || 'Failed to load project');
-      }
-
-      const projectBoard = response.data;
-      const boardDeptId = projectBoard.department?._id || projectBoard.department;
-
-      // Skip department check if deptId is 'all' (all departments view)
-      if (deptId && deptId !== 'all' && boardDeptId !== deptId) {
-        throw new Error('This project does not belong to the specified department.');
-      }
-
-      // Initialize workflow store with project data
+      // Initialize workflow store with project data directly
+      // This fetches board, lists, and cards in one parallelized/optimized call
       await initializeWorkflow(projectId);
     } catch (error) {
       console.error('Error loading project data:', error);
-      throw error; // Let the store handle error state
+      // Store already handles error state
     }
-  }, [deptId, projectId, initializeWorkflow]);
+  }, [projectId, initializeWorkflow]);
   
   // Memoize card handlers
   const handleAddCard = useCallback(async (listId, title) => {

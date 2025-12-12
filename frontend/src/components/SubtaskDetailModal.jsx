@@ -373,38 +373,75 @@ const SubtaskDetailModal = ({
 
   const handleCreateNano = async () => {
     if (!newNanoTitle.trim()) return;
+    
+    // Optimistic UI Update
+    const tempId = `temp-${Date.now()}`;
+    const optimisticNano = {
+       _id: tempId,
+       title: newNanoTitle.trim(),
+       status: 'todo',
+       subtask: entityId,
+       task: parentTaskId,
+       board: currentProject?._id || initialData.board,
+       createdAt: new Date().toISOString()
+    };
+
     try {
-      await Database.createNano(entityId, { title: newNanoTitle.trim() });
+      setNanoItems(prev => [...prev, optimisticNano]);
       setNewNanoTitle("");
-      loadNanos();
+
+      // Background API Call
+      const response = await Database.createNano(entityId, { title: optimisticNano.title });
+      const createdNano = response.data || response;
+
+      // Replace temp item with real item
+      setNanoItems(prev => prev.map(item => item._id === tempId ? createdNano : item));
     } catch (error) {
       console.error("Error creating nano subtask:", error);
       toast.error("Failed to create nano subtask");
+      // Revert optimization
+      setNanoItems(prev => prev.filter(item => item._id !== tempId));
     }
   };
 
   const handleToggleNano = async (nano) => {
     if (!nano?._id) return;
+    
+    // Optimistic Toggle
+    const newStatus = nano.status === "done" ? "todo" : "done";
+    
+    setNanoItems(prev => prev.map(item => 
+       item._id === nano._id ? { ...item, status: newStatus } : item
+    ));
+
     try {
-      await Database.updateNano(nano._id, {
-        status: nano.status === "done" ? "todo" : "done"
-      });
-      loadNanos();
+      await Database.updateNano(nano._id, { status: newStatus });
+      // No need to reload, we already updated state
     } catch (error) {
       console.error("Error updating nano subtask:", error);
       toast.error("Failed to update nano subtask");
+      // Revert on failure
+      setNanoItems(prev => prev.map(item => 
+         item._id === nano._id ? { ...item, status: nano.status } : item
+      ));
     }
   };
 
   const handleDeleteNano = async (nano) => {
     if (!nano?._id) return;
     if (!window.confirm("Delete this nano subtask?")) return;
+
+    // Optimistic Delete
+    const originalItems = [...nanoItems];
+    setNanoItems(prev => prev.filter(item => item._id !== nano._id));
+
     try {
       await Database.deleteNano(nano._id);
-      loadNanos();
     } catch (error) {
       console.error("Error deleting nano subtask:", error);
       toast.error("Failed to delete nano subtask");
+      // Revert
+      setNanoItems(originalItems);
     }
   };
 

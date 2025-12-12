@@ -111,6 +111,7 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
   // Fetch all cards for all lists in one query
   const listIds = lists.map(l => l._id);
   const cards = await Card.find({ list: { $in: listIds } })
+    .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime')
     .populate('assignees', 'name email avatar')
     .populate('members', 'name email avatar')
     .populate('coverImage', 'url secureUrl thumbnailUrl fileName fileType isCover')

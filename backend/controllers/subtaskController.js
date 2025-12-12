@@ -91,35 +91,45 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
 
   const populated = await Subtask.findById(subtask._id).populate(basePopulate);
 
-  // Log activity
-  await Activity.create({
-    type: 'subtask_created',
-    description: `Created subtask "${subtask.title}"`,
-    user: req.user.id,
-    board: card.board,
-    card: taskId,
-    subtask: subtask._id,
-    contextType: 'subtask',
-    metadata: {
-      subtaskTitle: subtask.title,
-      title: subtask.title
-    }
-  });
+  // Parallelize secondary operations
+  await Promise.all([
+    // Log activity
+    Activity.create({
+      type: 'subtask_created',
+      description: `Created subtask "${subtask.title}"`,
+      user: req.user.id,
+      board: card.board,
+      card: taskId,
+      subtask: subtask._id,
+      contextType: 'subtask',
+      metadata: {
+        subtaskTitle: subtask.title,
+        title: subtask.title
+      }
+    }),
 
-  await refreshCardHierarchyStats(taskId);
+    // Update stats
+    refreshCardHierarchyStats(taskId),
 
-  emitToBoard(card.board.toString(), 'hierarchy-subtask-changed', {
-    type: 'created',
-    taskId,
-    subtask: populated
-  });
+    // Emit socket
+    Promise.resolve().then(() => {
+        emitToBoard(card.board.toString(), 'hierarchy-subtask-changed', {
+            type: 'created',
+            taskId,
+            subtask: populated
+        });
+    }),
 
-  invalidateHierarchyCache({
-    boardId: card.board,
-    listId: card.list,
-    cardId: taskId,
-    subtaskId: subtask._id
-  });
+    // Invalidate cache
+    Promise.resolve().then(() => {
+        invalidateHierarchyCache({
+            boardId: card.board,
+            listId: card.list,
+            cardId: taskId,
+            subtaskId: subtask._id
+        });
+    })
+  ]);
 
   res.status(201).json({
     success: true,

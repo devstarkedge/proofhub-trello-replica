@@ -3,21 +3,15 @@ import { motion } from "framer-motion";
 import {
   Trash2,
   Calendar,
-  Tag,
   MessageSquare,
   Paperclip,
-  User,
-  AlertCircle,
   CheckSquare,
   Clock,
-  Eye,
   RefreshCw,
+  MoreHorizontal
 } from "lucide-react";
 
-// Move static values outside component
-const MAX_VISIBLE_LABELS = 6;
-
-// Helper function to get text color based on background
+// Helper to get text color based on background
 const getTextColor = (bgColor) => {
   if (!bgColor || typeof bgColor !== 'string') return '#FFFFFF';
   const hex = bgColor.replace('#', '');
@@ -29,20 +23,13 @@ const getTextColor = (bgColor) => {
   return luminance > 0.5 ? '#000000' : '#FFFFFF';
 };
 
-const Card = memo(({ card, onClick, onDelete, compact = false }) => {
-  const labelsContainerRef = useRef(null);
+const Card = memo(({ card, onClick, onDelete, isDragging }) => {
+  const [isHovered, setIsHovered] = React.useState(false);
   
-  // Helper to check if a string looks like a MongoDB ObjectId (24 hex characters)
-  const isObjectIdString = (str) => {
-    return typeof str === 'string' && /^[a-f\d]{24}$/i.test(str);
-  };
-  
-  // Memoize computed values to prevent recalculation on every render
-  // Now labels can be objects with name and color, or just strings
+  // Memoize computed values
   const allLabels = useMemo(() => {
     const cardLabels = (card.labels || [])
       .map(label => {
-        // Handle populated label objects (new system)
         if (typeof label === 'object' && label !== null && label.name) {
           return {
             text: label.name,
@@ -50,12 +37,7 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
             type: 'regular'
           };
         }
-        // Skip ObjectId strings (unpopulated references)
-        if (isObjectIdString(label)) {
-          return null;
-        }
-        // Legacy string label (actual text labels)
-        if (typeof label === 'string' && label.trim()) {
+        if (typeof label === 'string' && label.trim() && !/^[a-f\d]{24}$/i.test(label)) {
           return {
             text: label,
             color: '#3B82F6',
@@ -64,9 +46,8 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
         }
         return null;
       })
-      .filter(Boolean); // Remove null entries
+      .filter(Boolean);
     
-    // Add recurring label if applicable
     if (card.hasRecurrence) {
       cardLabels.push({ text: 'Recurring', type: 'recurring', color: null });
     }
@@ -74,36 +55,21 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
     return cardLabels;
   }, [card.labels, card.hasRecurrence]);
 
-  const visibleLabelsCount = useMemo(() => 
-    Math.min(allLabels.length, MAX_VISIBLE_LABELS), 
-    [allLabels.length]
-  );
+  const stats = useMemo(() => {
+    const subs = card.subtaskStats || (card.subtasks ? {
+      total: card.subtasks.length,
+      completed: card.subtasks.filter(s => s.completed).length
+    } : null);
 
-  const subtaskStats = useMemo(() => 
-    card.subtaskStats
-      ? card.subtaskStats
-      : card.subtasks
-        ? {
-            total: card.subtasks.length,
-            completed: card.subtasks.filter((s) => s.completed).length
-          }
-        : null,
-    [card.subtaskStats, card.subtasks]
-  );
+    const attCount = typeof card.attachmentsCount === 'number' ? card.attachmentsCount : (card.attachments?.length || 0);
 
-  // Compute attachments count (support backend-provided attachmentsCount)
-  const attachmentsCount = useMemo(() => {
-    if (typeof card.attachmentsCount === 'number') return card.attachmentsCount;
-    if (Array.isArray(card.attachments)) return card.attachments.length;
-    return 0;
-  }, [card.attachmentsCount, card.attachments]);
-
-  const hasDetails = useMemo(() =>
-    (subtaskStats?.total > 0) ||
-    attachmentsCount > 0 ||
-    (card.comments && card.comments.length > 0),
-    [subtaskStats, attachmentsCount, card.comments]
-  );
+    return {
+      subtasks: subs,
+      comments: card.comments?.length || 0,
+      attachments: attCount,
+      hasDetails: (subs?.total > 0) || attCount > 0 || (card.comments?.length > 0)
+    };
+  }, [card.subtaskStats, card.subtasks, card.attachmentsCount, card.attachments, card.comments]);
 
   const isOverdue = useMemo(() =>
     card.dueDate &&
@@ -112,259 +78,197 @@ const Card = memo(({ card, onClick, onDelete, compact = false }) => {
     [card.dueDate, card.status]
   );
 
-  // Memoize cover image URL
   const coverImageUrl = useMemo(() => {
-    // Check for new coverImage attachment reference
     if (card.coverImage) {
       if (typeof card.coverImage === 'object') {
-        // Try secureUrl first, then url, then fallback to other properties
         return card.coverImage.secureUrl || card.coverImage.url || null;
-      } else if (typeof card.coverImage === 'string') {
-        // If it's just an ID, it might need to be fetched separately
-        // For now, we can't display without the full object
-        return null;
       }
     }
-    // Fallback to legacy cover property
-    if (card.cover) {
-      return card.cover.type === "color" ? null : card.cover.value;
+    if (card.cover && card.cover.type !== "color") {
+      return card.cover.value;
     }
     return null;
   }, [card.coverImage, card.cover]);
 
-  // Memoize delete handler
   const handleDelete = useCallback((e) => {
     e.stopPropagation();
     onDelete(card._id);
   }, [onDelete, card._id]);
 
-  const [isHovered, setIsHovered] = React.useState(false);
-
-  // Memoize formatter due date
-  const formattedDueDate = useMemo(() => 
-    card.dueDate ? new Date(card.dueDate).toLocaleDateString() : null,
-    [card.dueDate]
-  );
-
-  const labelsLimit = isHovered ? allLabels.length : 2;
-  const visibleLabels = allLabels.slice(0, labelsLimit);
-  const hiddenLabelsCount = allLabels.length - labelsLimit;
-
-  // Reusable labels renderer
   const renderLabels = (isOverlay = false) => (
-    <div 
-      ref={labelsContainerRef} 
-      className={`flex flex-wrap gap-1.5 items-start transition-all duration-300 ${
-        isOverlay 
-          ? 'absolute top-3 left-3 right-3 z-20' 
-          : 'mb-3'
-      }`}
-    >
-      {visibleLabels.map((label, idx) => (
-        <motion.span
+    <div className={`flex flex-wrap gap-1.5 ${isOverlay ? 'absolute top-2 left-2 right-2 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300' : 'mb-2.5'}`}>
+      {allLabels.slice(0, isOverlay && !isHovered ? 2 : 4).map((label, idx) => (
+        <span
           key={`${label.type}-${idx}`}
-          layout // Animate position changes
-          initial={false}
           className={`
-            px-1.5 py-[1px] text-[9px] uppercase tracking-wider font-bold rounded-full flex items-center gap-1 shadow-sm backdrop-blur-md border border-white/20 select-none
-            ${isOverlay ? 'shadow-sm' : ''}
-            ${label.type === 'recurring' ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white' : ''}
+            px-2 py-0.5 text-[10px] font-bold rounded-md flex items-center gap-1 shadow-sm backdrop-blur-md transition-transform
+            ${label.type === 'recurring' ? 'bg-gradient-to-r from-orange-500 to-yellow-500 text-white' : ''}
           `}
-          style={label.type !== 'recurring' && label.color ? {
-            // High visibility pastel style:
-            // Use a solid white background with a heavy tint of the label color
-            backgroundColor: isOverlay ? '#ffffff' : (label.color + '15'), 
-            color: label.color,
-            // Add a subtle border matching the color
-            border: `1px solid ${label.color}30`,
-            // If overlay, add a colored shadow/glow for pop
-            boxShadow: isOverlay ? `0 2px 4px rgba(0,0,0,0.1)` : 'none',
-            // Ensure background is distinct
-            opacity: 1
+          style={label.type !== 'recurring' ? {
+            backgroundColor: isOverlay ? 'rgba(255, 255, 255, 0.95)' : (label.color + '20'),
+            color: isOverlay ? label.color : label.color,
+            border: `1px solid ${isOverlay ? 'transparent' : label.color + '30'}`
           } : undefined}
         >
-          {label.type === 'recurring' && <RefreshCw size={8} className={isHovered ? "animate-spin" : ""} />}
-          <span className="truncate max-w-[100px]">{label.text}</span>
-        </motion.span>
+          {label.type === 'recurring' && <RefreshCw size={8} className="animate-spin-slow" />}
+          <span className="truncate max-w-[80px]">{label.text}</span>
+        </span>
       ))}
-      
-      {hiddenLabelsCount > 0 && (
-        <motion.span 
-          layout
-          className={`
-            px-1.5 py-[1px] text-[9px] font-bold rounded-full shadow-sm border
-            ${isOverlay ? 'bg-white text-gray-600 border-gray-200' : 'bg-gray-100 text-gray-600 border-gray-200'}
-          `}
-        >
-          +{hiddenLabelsCount}
-        </motion.span>
-      )}
     </div>
   );
 
-  if (compact) {
-    return (
-      <motion.div
-        whileHover={{ scale: 1.02 }}
-        className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all cursor-pointer"
-        onClick={onClick}
-      >
-        <p className="text-sm font-medium text-gray-900">{card.title}</p>
-        <div className="flex items-center gap-2 mt-2 text-xs text-gray-600">
-          {card.assignees && card.assignees.length > 0 && (
-            <div className="flex items-center gap-1">
-              <User size={12} />
-              <span className="truncate">
-                {card.assignees.length === 1
-                  ? card.assignees[0].name
-                  : `${card.assignees.length} members`}
-              </span>
-            </div>
-          )}
-          {card.dueDate && (
-            <div className="flex items-center gap-1">
-              <Calendar size={12} />
-              <span>{new Date(card.dueDate).toLocaleDateString()}</span>
-            </div>
-          )}
-        </div>
-      </motion.div>
-    );
-  }
-
   return (
     <motion.div
-      whileHover={{ y: -4, boxShadow: "0 12px 20px -8px rgba(0, 0, 0, 0.15)" }}
+      layoutId={card._id}
+      whileHover={{ y: -2 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
-      className="bg-white rounded-xl shadow-sm hover:shadow-md cursor-pointer transition-all duration-300 group ring-1 ring-gray-200 border-0 overflow-hidden min-h-[100px]"
-      key={card._id}
+      className={`
+        relative bg-white rounded-xl overflow-hidden group/card border border-gray-100/50 cursor-pointer
+        bg-gradient-to-br from-white to-gray-50/50
+        transition-all duration-200
+        ${isDragging ? 'shadow-2xl ring-2 ring-purple-500/20 rotate-2 !opacity-90' : 'shadow-sm hover:shadow-md hover:border-gray-200'}
+      `}
     >
-      {/* Cover Image - Background Layer */}
+      {/* Cover Image */}
       {coverImageUrl && (
-        <div className="relative w-full h-[140px] overflow-hidden">
-          <div className={`absolute inset-0 transition-all duration-500 ease-out transform ${isHovered ? 'scale-110 blur-[2px] brightness-75' : 'scale-100'}`}>
-            <img
-              src={coverImageUrl}
-              alt="Card cover"
-              className="w-full h-full object-cover"
-            />
+        <div className="relative h-32 w-full overflow-hidden">
+          <div className={`absolute inset-0 transition-transform duration-500 ${isHovered ? 'scale-105 blur-[2px]' : 'scale-100 blur-0'}`}>
+            <img src={coverImageUrl} alt="Cover" className="w-full h-full object-cover" />
           </div>
-          {/* Gradient Overlay - Only visible on hover for text contrast */}
-          <div className={`absolute inset-0 bg-gradient-to-t from-black/60 to-transparent transition-opacity duration-300 ${isHovered ? 'opacity-60' : 'opacity-0'}`} />
-          
-          {/* Overylay Labels */}
+          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300" />
           {allLabels.length > 0 && renderLabels(true)}
         </div>
       )}
 
-      {/* Card Content */}
-      <div className="relative p-3.5 flex flex-col gap-2">
-        {/* Hover Actions - Positioned absolutely relative to card */}
-        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 z-30 transform translate-x-2 group-hover:translate-x-0">
-          {card.dueDate && (
-            <div
-              className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm backdrop-blur-md ${
-                isOverdue
-                  ? "text-red-600 bg-red-50 border border-red-100"
-                  : "text-gray-700 bg-white/90 border border-gray-200"
-              }`}
-            >
-              <Calendar size={10} />
-              <span>{new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-            </div>
-          )}
-          <button
-            onClick={handleDelete}
-            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full bg-white/90 shadow-sm border border-gray-200 transition-colors"
-          >
-            <Trash2 size={12} />
-          </button>
+      {/* Content */}
+      <div className={`p-3.5 relative ${coverImageUrl ? 'pt-2' : ''}`}>
+        
+        {/* Floating Actions on Hover */}
+        <div className={`absolute top-2 right-2 flex gap-1 z-20 transition-all duration-200 ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'}`}>
+           {/* Date moves here on hover */}
+           {card.dueDate && (
+             <div className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-1 rounded-md shadow-sm border backdrop-blur-md transition-colors ${isOverdue ? "bg-red-50 text-red-600 border-red-100" : "bg-white/90 text-gray-500 border-gray-200"}`}>
+               <Clock size={11} strokeWidth={2.5} />
+               <span>{new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+             </div>
+           )}
+           <button onClick={handleDelete} className="p-1.5 bg-white/90 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg shadow-sm border border-gray-200 backdrop-blur-sm transition-colors">
+              <Trash2 size={13} />
+           </button>
         </div>
 
-        {/* Labels (If no cover) */}
+        {/* Labels (if no cover) */}
         {!coverImageUrl && allLabels.length > 0 && renderLabels(false)}
 
-        {/* Card Title */}
-        <h4 className="text-[14px] leading-snug font-semibold text-gray-800 line-clamp-2 group-hover:text-blue-600 transition-colors">
+        {/* Title */}
+        <h4 className={`text-[14px] leading-snug font-medium text-gray-800 line-clamp-2 mb-3 group-hover/card:text-purple-700 transition-colors ${!coverImageUrl && allLabels.length === 0 ? 'mt-1' : ''}`}>
           {card.title}
         </h4>
 
-        {/* Footer Info: Assignees & Badges */}
-        <div className="flex items-center justify-between mt-1 pt-2 border-t border-gray-100">
-          {/* Assignees */}
-          <div className="flex -space-x-1.5">
-            {card.assignees?.slice(0, 3).map((assignee) => {
-              // Single uniform gradient as requested
-              const colorClass = 'bg-gradient-to-br from-blue-500 to-indigo-600';
-
-              return (
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-2 mt-auto border-t border-gray-100/60">
+          
+          {/* Members */}
+          <div className="flex items-center gap-1">
+            {card.assignees?.length === 1 ? (
+              // Single Assignee - Show Name
+              <>
                 <div
-                  key={assignee._id}
-                  className={`w-6 h-6 rounded-full ring-2 ring-white flex items-center justify-center overflow-hidden ${
-                    assignee.avatar ? 'bg-gray-100' : colorClass
-                  }`}
-                  title={assignee.name}
+                  className="w-6 h-6 rounded-full ring-2 ring-white bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center overflow-hidden shadow-sm"
                 >
-                  {assignee.avatar ? (
-                     <img src={assignee.avatar} alt={assignee.name} className="w-full h-full object-cover" />
+                  {card.assignees[0].avatar ? (
+                    <img src={card.assignees[0].avatar} alt={card.assignees[0].name} className="w-full h-full object-cover" />
                   ) : (
-                    <span className="text-[9px] font-bold text-white shadow-sm">
-                      {assignee.name?.[0]?.toUpperCase()}
+                    <span className="text-[9px] font-bold text-white">
+                      {card.assignees[0].name?.[0]?.toUpperCase()}
                     </span>
                   )}
                 </div>
-              );
-            })}
-            {card.assignees?.length > 3 && (
-              <div className="w-6 h-6 rounded-full ring-2 ring-white bg-gray-50 flex items-center justify-center">
-                <span className="text-[9px] font-bold text-gray-500">+{card.assignees.length - 3}</span>
-              </div>
+                <span className="text-[11px] text-gray-600 font-medium truncate max-w-[100px]">{card.assignees[0].name}</span>
+              </>
+            ) : (
+              // Multiple Assignees - Show Stack + Count
+              <>
+                <div className="flex -space-x-2">
+                  {card.assignees?.slice(0, 3).map((assignee) => (
+                    <div
+                      key={assignee._id}
+                      className="w-6 h-6 rounded-full ring-2 ring-white bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center overflow-hidden shadow-sm"
+                      title={assignee.name}
+                    >
+                      {assignee.avatar ? (
+                        <img src={assignee.avatar} alt={assignee.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-[9px] font-bold text-white">
+                          {assignee.name?.[0]?.toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {card.assignees?.length > 3 && (
+                    <div className="w-6 h-6 rounded-full ring-2 ring-white bg-gray-50 flex items-center justify-center text-[9px] font-bold text-gray-500 shadow-sm">
+                      +{card.assignees.length - 3}
+                    </div>
+                  )}
+                </div>
+                {card.assignees?.length > 0 && (
+                  <span className="text-[10px] text-gray-500 font-medium whitespace-nowrap">{card.assignees.length} members</span>
+                )}
+              </>
             )}
           </div>
 
-          {/* Indicators */}
-          {(hasDetails || card.dueDate) && (
-            <div className="flex items-center gap-3 text-gray-400">
-               {/* Show separate date if not in hover menu (fallback) or if compact view needed */}
-               {!isHovered && card.dueDate && (
-                  <div className={`flex items-center gap-1 text-[10px] font-medium ${isOverdue ? "text-red-500" : ""}`}>
-                    <Clock size={12} strokeWidth={2.5} />
-                    <span>{new Date(card.dueDate).getDate()} {new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short' })}</span>
-                  </div>
-               )}
-
-               {subtaskStats?.total > 0 && (
-                <div className={`flex items-center gap-1 text-[10px] font-medium ${
-                   subtaskStats.completed === subtaskStats.total ? "text-green-600" : ""
-                }`}>
-                  <CheckSquare size={12} strokeWidth={2.5} />
-                  <span>{subtaskStats.completed}/{subtaskStats.total}</span>
-                </div>
-              )}
-              
-              {attachmentsCount > 0 && (
-                <div className="flex items-center gap-0.5">
-                  <Paperclip size={12} strokeWidth={2.5} />
-                  <span className="text-[10px] font-medium">{attachmentsCount}</span>
-                </div>
-              )}
-
-              {card.comments?.length > 0 && (
-                 <div className="flex items-center gap-0.5">
-                 <MessageSquare size={12} strokeWidth={2.5} />
-                 <span className="text-[10px] font-medium">{card.comments.length}</span>
+          {/* Badges */}
+          <div className="flex items-center gap-1 text-gray-500 flex-shrink-0">
+            {/* Date - Hidden on Hover */}
+            {card.dueDate && (
+               <div className={`flex items-center gap-1 text-[11px] font-medium px-1 py-0.5 rounded-md group-hover/card:hidden ${isOverdue ? "text-red-600 bg-red-50" : "bg-gray-50 text-gray-500"}`}>
+                 <Clock size={12} strokeWidth={2.5} />
+                 <span>{new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                </div>
-              )}
-            </div>
-          )}
+            )}
+            
+            {/* Logged Time - Shown on Hover */}
+             <div className="hidden group-hover/card:flex items-center gap-1 text-[11px] font-bold px-1 py-0.5 rounded-md bg-green-50 text-green-600 border border-green-100">
+               <Clock size={12} strokeWidth={2.5} />
+               <span>{(() => {
+                 const totalMinutes = card.loggedTime?.reduce((acc, log) => acc + (log.hours * 60) + log.minutes, 0) || 0;
+                 const h = Math.floor(totalMinutes / 60);
+                 const m = totalMinutes % 60;
+                 return `${h}h${m > 0 ? ` ${m}m` : ''}`;
+               })()}</span>
+             </div>
+            
+            {stats.subtasks?.total > 0 && (
+              <div className="flex items-center gap-1 text-[11px] font-medium" title="Subtasks">
+                <CheckSquare size={14} className={stats.subtasks.completed === stats.subtasks.total ? 'text-green-500' : 'text-gray-400'} />
+                <span>{stats.subtasks.completed}/{stats.subtasks.total}</span>
+              </div>
+            )}
+
+            {(stats.attachments > 0 || stats.comments > 0) && (
+              <div className="flex items-center gap-1">
+                 {stats.attachments > 0 && (
+                   <div className="flex items-center gap-0.5">
+                     <Paperclip size={12} />
+                     <span className="text-[11px] font-medium">{stats.attachments}</span>
+                   </div>
+                 )}
+                 {stats.comments > 0 && (
+                    <div className="flex items-center gap-0.5">
+                      <MessageSquare size={12} />
+                      <span className="text-[11px] font-medium">{stats.comments}</span>
+                    </div>
+                 )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </motion.div>
   );
-}
-
-);
+});
 
 export default Card;

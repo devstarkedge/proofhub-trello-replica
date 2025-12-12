@@ -11,6 +11,7 @@ import DepartmentContext from '../context/DepartmentContext';
 import { useDashboardData } from '../hooks/useProjects';
 import { useDebounce } from '../hooks/useDebounce';
 import Database from '../services/database';
+import useWorkflowStore from '../store/workflowStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
@@ -40,8 +41,8 @@ const StatCard = memo(({ stat, index }) => (
 StatCard.displayName = 'StatCard';
 
 // Memoized ProjectCardWrapper to reduce re-renders
-const ProjectCardWrapper = memo(({ project, onView, onEdit, onDelete }) => (
-  <div className="animate-fade-in">
+const ProjectCardWrapper = memo(({ project, onView, onEdit, onDelete, onHover }) => (
+  <div className="animate-fade-in" onMouseEnter={() => onHover && onHover(project.id)}>
     <ProjectCard
       project={project}
       departmentName={project.department}
@@ -160,6 +161,7 @@ const Dashboard = memo(() => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const { prefetchWorkflow } = useWorkflowStore();
   
   // Reminders state
   const [upcomingReminders, setUpcomingReminders] = useState([]);
@@ -442,6 +444,7 @@ const Dashboard = memo(() => {
                     onView={() => handleViewProject(project.id)}
                     onEdit={() => handleEditProject(project)}
                     onDelete={() => handleDeleteProject(project.id)}
+                    onHover={prefetchWorkflow}
                   />
                 ))}
               </div>

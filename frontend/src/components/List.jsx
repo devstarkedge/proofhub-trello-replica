@@ -1,25 +1,25 @@
 import React, { useState, memo, useCallback, useMemo } from 'react';
-import { Plus, MoreHorizontal, X, Copy, Move, Eye, Palette, Zap, Archive, Trash2, Edit3 } from 'lucide-react';
+import { Plus, MoreHorizontal, X, Palette, Trash2, Edit3 } from 'lucide-react';
+import { Droppable, Draggable } from '@hello-pangea/dnd';
 import Card from './Card';
 import AddCardForm from './AddCardForm';
-import Database from '../services/database';
 
-// Memoized color options - defined outside component to avoid recreation
+// Memoized color options
 const listColors = {
-  '1': 'bg-blue-100',
-  '2': 'bg-yellow-100',
-  '3': 'bg-green-100',
-  '4': 'bg-gray-100',
-  'green': 'bg-green-200',
-  'yellow': 'bg-yellow-200',
-  'orange': 'bg-orange-200',
-  'red': 'bg-red-200',
-  'purple': 'bg-purple-200',
-  'blue': 'bg-blue-200',
-  'cyan': 'bg-cyan-200',
-  'lime': 'bg-lime-200',
-  'pink': 'bg-pink-200',
-  'gray': 'bg-gray-200'
+  '1': 'bg-blue-100/50 border-blue-200',
+  '2': 'bg-yellow-100/50 border-yellow-200',
+  '3': 'bg-green-100/50 border-green-200',
+  '4': 'bg-gray-100/50 border-gray-200',
+  'green': 'bg-green-200/50 border-green-300',
+  'yellow': 'bg-yellow-200/50 border-yellow-300',
+  'orange': 'bg-orange-200/50 border-orange-300',
+  'red': 'bg-red-200/50 border-red-300',
+  'purple': 'bg-purple-200/50 border-purple-300',
+  'blue': 'bg-blue-200/50 border-blue-300',
+  'cyan': 'bg-cyan-200/50 border-cyan-300',
+  'lime': 'bg-lime-200/50 border-lime-300',
+  'pink': 'bg-pink-200/50 border-pink-300',
+  'gray': 'bg-gray-200/50 border-gray-300'
 };
 
 const colorOptions = [
@@ -35,125 +35,50 @@ const colorOptions = [
   { name: 'gray', class: 'bg-gray-400' }
 ];
 
-const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onUpdateListTitle, onMoveCard, onDragStart, onDragOver, onDrop, onCardDragStart, onCardDragEnd }) => {
+const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onUpdateListTitle, dragHandleProps, isDragging }) => {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [draggedCard, setDraggedCard] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dropTarget, setDropTarget] = useState(null);
   
   const handleAddCard = useCallback((listId, title) => {
     onAddCard(listId, title);
     setIsAddingCard(false);
   }, [onAddCard]);
   
-  // Memoize list class computation
+  // Dynamic list class
   const listClass = useMemo(() => 
-    `${listColors[list.color] || 'bg-gray-100'} rounded-xl p-3 w-72 flex-shrink-0 h-fit min-h-[100px] max-h-[calc(100vh-120px)] flex flex-col ${dropTarget ? 'shadow-lg shadow-blue-400/50' : ''}`,
-    [list.color, dropTarget]
+    `${listColors[list.color] || 'bg-gray-100/50 border-gray-200'} border rounded-xl p-3 w-72 flex-shrink-0 max-h-full flex flex-col transition-shadow relative group/list ${isDragging ? 'shadow-2xl ring-2 ring-purple-500/50' : 'shadow-sm'}`,
+    [list.color, isDragging]
   );
-
-  // Drag and drop handlers for cards - wrapped in useCallback
-  const handleCardDragStart = useCallback((e, card) => {
-    setDraggedCard(card);
-    setIsDragging(true);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', card._id);
-  }, []);
-
-  const handleCardDragOver = useCallback((e, targetCard) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-    setDropTarget(targetCard._id);
-  }, []);
-
-  const handleCardDragLeave = useCallback((e, targetCard) => {
-    if (dropTarget === targetCard._id) {
-      setDropTarget(null);
-    }
-  }, [dropTarget]);
-
-  const handleCardDrop = useCallback((e, targetCard) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const cardId = e.dataTransfer.getData('text/plain');
-    if (cardId && draggedCard && draggedCard._id !== targetCard._id) {
-      const newPosition = targetCard.position;
-      // Derive status from list title for immediate optimistic UI update
-      const newStatus = list.title.toLowerCase().replace(/\s+/g, '-');
-      onMoveCard(draggedCard._id, list._id, newPosition, newStatus);
-    } else if (!cardId) {
-      // List drop on card position - insert before this card
-      onDrop(e, list);
-    }
-    setDraggedCard(null);
-    setIsDragging(false);
-    setDropTarget(null);
-  }, [draggedCard, list._id, list.title, onMoveCard, onDrop, list]);
-
-  const handleListDrop = useCallback((e) => {
-    e.preventDefault();
-    const cardId = e.dataTransfer.getData('text/plain');
-    if (cardId && draggedCard && draggedCard.listId !== list._id) {
-      const newPosition = cards.length;
-      // Derive status from list title for immediate optimistic UI update
-      const newStatus = list.title.toLowerCase().replace(/\s+/g, '-');
-      onMoveCard(draggedCard._id, list._id, newPosition, newStatus);
-    } else if (!cardId) {
-      // List drop at end of list
-      onDrop(e, list);
-    }
-    setDraggedCard(null);
-    setIsDragging(false);
-    setDropTarget(null);
-  }, [draggedCard, list._id, list.title, cards.length, onMoveCard, onDrop, list]);
-
-  const handleDragEnd = useCallback(() => {
-    setIsDragging(false);
-    setDraggedCard(null);
-    setDropTarget(null);
-  }, []);
 
   const handleChangeColor = useCallback((colorName) => {
     onUpdateListColor(list._id, colorName);
     setShowColorPicker(false);
     setShowMenu(false);
   }, [list._id, onUpdateListColor]);
-
-  const getCardClass = useCallback((card) => {
-    let className = '';
-    if (isDragging && draggedCard?._id === card._id) {
-      className += ' opacity-30 scale-105 shadow-2xl z-10';
-    }
-    if (dropTarget === card._id) {
-      className += ' border-2 border-blue-400 rounded';
-    }
-    return className;
-  }, [isDragging, draggedCard, dropTarget]);
   
   return (
-    <div
-      className={listClass}
-      draggable
-      onDragStart={(e) => onDragStart(e, list)}
-      onDragOver={onDragOver}
-      onDrop={handleListDrop}
-      onDragEnd={handleDragEnd}
-      style={{ cursor: 'grab' }}
-    >
+    <div className={listClass}>
+      {/* Background Blur Layer - Separate to avoid trapping fixed dragged items */}
+      <div className="absolute inset-0 backdrop-blur-sm -z-10 rounded-xl" />
+      
       {/* List Header */}
-      <div className="flex items-center justify-between mb-3 cursor-move" style={{ cursor: 'grab' }}>
-        <h3 className="font-semibold text-gray-800 text-sm px-2 flex-1">{list.title}</h3>
-        <div className="flex items-center gap-1">
-          <div className="relative z-50">
+      <div 
+        className="flex items-center justify-between mb-3 relative z-20"
+        {...dragHandleProps}
+        style={{ cursor: 'grab' }}
+      >
+        <h3 className="font-bold text-gray-900 text-[15px] px-2 flex-1 truncate uppercase tracking-tight">{list.title}</h3>
+        <div className="flex items-center gap-1 opacity-0 group-hover/list:opacity-100 transition-opacity duration-200">
+          <span className="text-xs font-bold text-gray-600 bg-white/60 px-2 py-0.5 rounded-full shadow-sm border border-black/5">{cards.length}</span>
+          <div className="relative z-10">
             <button 
               onClick={(e) => {
+                e.preventDefault(); // Prevent drag start
                 e.stopPropagation();
                 setShowMenu(!showMenu);
               }}
-              className="text-gray-600 hover:bg-gray-200 p-1 rounded transition-colors"
+              className="text-gray-600 hover:text-black hover:bg-black/10 p-1.5 rounded-lg transition-colors"
             >
               <MoreHorizontal size={16} />
             </button>
@@ -161,113 +86,88 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
             {showMenu && (
               <>
                 <div 
-                  className="fixed inset-0 z-10" 
+                  className="fixed inset-0 z-20" 
                   onClick={() => {
                     setShowMenu(false);
                     setShowColorPicker(false);
                   }}
                 />
-                <div className="fixed right-auto mt-1 bg-white rounded-lg shadow-xl py-2 w-64 z-50 max-h-[500px] overflow-y-auto" style={{ minWidth: '200px' }}>
-                  <div className="px-4 py-2 border-b border-gray-200">
-                    <h3 className="font-semibold text-sm text-gray-800">List actions</h3>
-                    <button
-                      onClick={() => {
-                        setShowMenu(false);
-                        setShowColorPicker(false);
-                      }}
-                      className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
-                    >
-                      <X size={16} />
-                    </button>
+                <div className="absolute right-0 mt-2 bg-white rounded-xl shadow-xl py-2 w-64 z-50 border border-gray-100 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                  <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-semibold text-sm text-gray-800">List Actions</h3>
+                    <button onClick={() => setShowMenu(false)} className="text-gray-400 hover:text-gray-600"><X size={16}/></button>
                   </div>
                   
-                  {/* Menu Options */}
-                  <div className="py-2">
+                  <div className="p-2 space-y-1">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onClick={() => {
                         setIsAddingCard(true);
-                      }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                    >
-                      <Plus size={16} />
-                      Add card
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newTitle = prompt('Enter new list name:', list.title);
-                        if (newTitle && newTitle.trim() && newTitle.trim() !== list.title) {
-                          // Use the onUpdateListTitle prop instead of direct API call
-                          if (onUpdateListTitle) {
-                            onUpdateListTitle(list._id, newTitle.trim());
-                          }
-                        }
                         setShowMenu(false);
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2.5 transition-colors"
                     >
-                      <Edit3 size={16} />
-                      Rename list
+                      <Plus size={16} />
+                      Add Card
                     </button>
 
-                    <div className="border-t border-gray-200 my-2"></div>
-                    
+                    <button
+                      onClick={() => {
+                        const newTitle = prompt('Enter new list name:', list.title);
+                        if (newTitle && newTitle.trim()) onUpdateListTitle(list._id, newTitle.trim());
+                        setShowMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2.5 transition-colors"
+                    >
+                      <Edit3 size={16} />
+                      Rename
+                    </button>
+
                     {/* Color Picker */}
-                    <div className="px-4 py-2">
+                    <div className="pt-2 mt-2 border-t border-gray-100">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowColorPicker(!showColorPicker);
-                        }}
-                        className="w-full text-left text-sm text-gray-700 hover:bg-gray-100 px-2 py-1 rounded flex items-center justify-between"
+                        onClick={() => setShowColorPicker(!showColorPicker)}
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center justify-between transition-colors"
                       >
-                        <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-2.5">
                           <Palette size={16} />
-                          Change list color
+                          Color
                         </span>
                       </button>
                       
                       {showColorPicker && (
-                        <div className="mt-2 grid grid-cols-5 gap-2 p-2">
+                        <div className="px-3 pb-2 grid grid-cols-5 gap-1.5 mt-1">
                           {colorOptions.map((color) => (
                             <button
                               key={color.name}
                               onClick={() => handleChangeColor(color.name)}
-                              className={`${color.class} w-10 h-8 rounded hover:opacity-80 transition-opacity ${
-                                list.color === color.name ? 'ring-2 ring-gray-800' : ''
+                              className={`${color.class} w-full aspect-square rounded-md hover:scale-110 transition-transform ${
+                                list.color === color.name ? 'ring-2 ring-offset-1 ring-gray-400' : ''
                               }`}
-                              title={color.name}
                             />
                           ))}
+                          <button
+                           onClick={() => handleChangeColor(null)}
+                           className="w-full aspect-square rounded-md border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                           title="No Color"
+                          >
+                            <X size={12} className="text-gray-400"/>
+                          </button>
                         </div>
-                      )}
-                      
-                      {list.color && (
-                        <button
-                          onClick={() => handleChangeColor(null)}
-                          className="w-full text-left px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded mt-2 flex items-center justify-center gap-2"
-                        >
-                          <X size={14} />
-                          Remove color
-                        </button>
                       )}
                     </div>
                     
-                    <div className="border-t border-gray-200 my-2"></div>
-                    
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteList(list._id);
-                        setShowMenu(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center gap-2"
-                    >
-                      <Trash2 size={16} />
-                      Delete this list
-                    </button>
+                    <div className="pt-2 mt-2 border-t border-gray-100">
+                      <button
+                        onClick={() => {
+                          onDeleteList(list._id);
+                          setShowMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2.5 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                        Delete List
+                      </button>
+                    </div>
                   </div>
                 </div>
               </>
@@ -276,64 +176,72 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
         </div>
       </div>
       
-      {/* Cards Container - Use virtualization for large lists */}
-      <div
-        className="mb-2 flex-1 overflow-y-auto"
-        style={{ maxHeight: 'calc(100vh - 280px)' }}
-        onDragOver={onDragOver}
-        onDrop={handleListDrop}
-        onDragLeave={() => setDropTarget(null)}
-      >
-        {/* For small lists, render directly; for large lists, consider virtualization */}
-        <div className="space-y-2">
-          {cards.map(card => (
-            <div
-              key={card._id}
-              className={getCardClass(card)}
-              draggable
-              onDragStart={(e) => {
-                handleCardDragStart(e, card);
-                onCardDragStart(e, card);
-              }}
-              onDragOver={(e) => handleCardDragOver(e, card)}
-              onDragLeave={(e) => handleCardDragLeave(e, card)}
-              onDrop={(e) => handleCardDrop(e, card)}
-              onDragEnd={() => {
-                handleDragEnd();
-                onCardDragEnd();
-              }}
-            >
-              <Card
-                card={card}
-                onClick={() => onCardClick(card)}
-                onDelete={onDeleteCard}
-              />
+      {/* Cards Container */}
+      <Droppable droppableId={list._id} type="card">
+        {(provided, snapshot) => (
+           <div
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+            className={`flex-1 overflow-y-auto px-1 -mx-1 min-h-[50px] transition-colors rounded-lg z-0 ${snapshot.isDraggingOver ? 'bg-black/5' : ''}`}
+            style={{ 
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'rgba(0,0,0,0.1) transparent'
+            }}
+          >
+            <div className="flex flex-col gap-2 pb-2">
+              {cards.map((card, index) => (
+                <Draggable key={card._id} draggableId={card._id} index={index}>
+                  {(provided, snapshot) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.draggableProps}
+                      {...provided.dragHandleProps}
+                      style={{ 
+                        ...provided.draggableProps.style,
+                        transform: snapshot.isDragging ? provided.draggableProps.style?.transform + ' rotate(2deg)' : provided.draggableProps.style?.transform,
+                        zIndex: snapshot.isDragging ? 9999 : 'auto',
+                      }}
+                      className={`group ${snapshot.isDragging ? 'relative' : ''}`}
+                    >
+                      <Card
+                        card={card}
+                        onClick={() => onCardClick(card)}
+                        onDelete={onDeleteCard}
+                        isDragging={snapshot.isDragging}
+                      />
+                    </div>
+                  )}
+                </Draggable>
+              ))}
+              {provided.placeholder}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+        )}
+      </Droppable>
       
       {/* Add Card Section */}
       {isAddingCard ? (
-        <AddCardForm
-          listId={list._id}
-          onAdd={handleAddCard}
-          onCancel={() => setIsAddingCard(false)}
-        />
+        <div className="mt-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <AddCardForm
+            listId={list._id}
+            onAdd={handleAddCard}
+            onCancel={() => setIsAddingCard(false)}
+          />
+        </div>
       ) : (
         <button
           onClick={() => setIsAddingCard(true)}
-          className="flex items-center gap-2 text-gray-700 hover:text-black text-sm w-full p-2 rounded-lg hover:bg-orange-400 hover:bg-opacity-10 transition-colors"
+          className="mt-2 flex items-center gap-2 text-gray-500 hover:text-gray-800 text-[14px] font-medium w-full p-2.5 rounded-lg hover:bg-white/60 transition-all border border-transparent hover:border-black/5 hover:shadow-sm group"
         >
-          <Plus size={16} />
-          Add a card
+          <div className="w-6 h-6 rounded bg-black/5 group-hover:bg-purple-100 flex items-center justify-center transition-colors">
+             <Plus size={16} className="group-hover:text-purple-600"/>
+          </div>
+          Add Card
         </button>
       )}
     </div>
   );
-}
-
-);
+});
 
 // Add display name for debugging
 KanbanList.displayName = 'KanbanList';

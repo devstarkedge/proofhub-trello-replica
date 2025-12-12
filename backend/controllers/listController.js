@@ -4,7 +4,7 @@ import Board from '../models/Board.js';
 import Activity from '../models/Activity.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { invalidateCache } from '../middleware/cache.js';
+import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 
 // @desc    Get lists for board
 // @route   GET /api/lists/board/:boardId
@@ -58,7 +58,7 @@ export const createList = asyncHandler(async (req, res, next) => {
   });
 
   // Invalidate relevant caches
-  invalidateCache(`/api/lists/board/${board}`);
+  invalidateHierarchyCache({ boardId: board, listId: list._id });
 
   res.status(201).json({
     success: true,
@@ -89,7 +89,7 @@ export const updateList = asyncHandler(async (req, res, next) => {
   });
 
   // Invalidate relevant caches
-  invalidateCache(`/api/lists/board/${list.board}`);
+  invalidateHierarchyCache({ boardId: list.board, listId: list._id });
 
   res.status(200).json({
     success: true,
@@ -137,7 +137,7 @@ export const updateListPosition = asyncHandler(async (req, res, next) => {
   await list.save();
 
   // Invalidate relevant caches
-  invalidateCache(`/api/lists/board/${list.board}`);
+  invalidateHierarchyCache({ boardId: list.board, listId: list._id });
 
   res.status(200).json({
     success: true,
@@ -161,7 +161,7 @@ export const deleteList = asyncHandler(async (req, res, next) => {
   await list.deleteOne();
 
   // Invalidate relevant caches
-  invalidateCache(`/api/lists/board/${list.board}`);
+  invalidateHierarchyCache({ boardId: list.board, listId: list._id });
 
   res.status(200).json({
     success: true,

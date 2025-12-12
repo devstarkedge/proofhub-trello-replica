@@ -20,6 +20,7 @@ export const invalidateHierarchyCache = ({
 
   if (board) {
     invalidateCache(`/api/boards/${board}`);
+    invalidateCache(`/api/boards/${board}/workflow-complete`);
     invalidateCache(`/api/lists/board/${board}`);
     invalidateCache(`/api/cards/board/${board}`);
   }

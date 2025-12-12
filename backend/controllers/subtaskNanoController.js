@@ -85,37 +85,48 @@ export const createNano = asyncHandler(async (req, res, next) => {
 
   const populated = await SubtaskNano.findById(nano._id).populate(populateConfig);
 
-  // Log activity
-  await Activity.create({
-    type: 'nano_created',
-    description: `Created nano-subtask "${nano.title}"`,
-    user: req.user.id,
-    board: subtask.board,
-    card: subtask.task,
-    subtask: subtaskId,
-    nanoSubtask: nano._id,
-    contextType: 'nanoSubtask',
-    metadata: {
-      nanoTitle: nano.title,
-      title: nano.title
-    }
-  });
+  // Parallelize secondary operations
+  await Promise.all([
+    // Log activity
+    Activity.create({
+      type: 'nano_created',
+      description: `Created nano-subtask "${nano.title}"`,
+      user: req.user.id,
+      board: subtask.board,
+      card: subtask.task,
+      subtask: subtaskId,
+      nanoSubtask: nano._id,
+      contextType: 'nanoSubtask',
+      metadata: {
+        nanoTitle: nano.title,
+        title: nano.title
+      }
+    }),
 
-  await refreshSubtaskNanoStats(subtaskId);
-  await refreshCardHierarchyStats(subtask.task);
+    // Update stats
+    refreshSubtaskNanoStats(subtaskId),
+    refreshCardHierarchyStats(subtask.task),
 
-  emitToBoard(subtask.board.toString(), 'hierarchy-nano-changed', {
-    type: 'created',
-    subtaskId,
-    nano: populated
-  });
-  invalidateHierarchyCache({
-    boardId: subtask.board,
-    listId: card?.list,
-    cardId: subtask.task,
-    subtaskId,
-    subtaskNanoId: nano._id
-  });
+    // Emit socket event
+    Promise.resolve().then(() => {
+        emitToBoard(subtask.board.toString(), 'hierarchy-nano-changed', {
+            type: 'created',
+            subtaskId,
+            nano: populated
+        });
+    }),
+
+    // Invalidate cache
+    Promise.resolve().then(() => {
+        invalidateHierarchyCache({
+            boardId: subtask.board,
+            listId: card?.list,
+            cardId: subtask.task,
+            subtaskId,
+            subtaskNanoId: nano._id
+        });
+    })
+  ]);
 
   res.status(201).json({
     success: true,
