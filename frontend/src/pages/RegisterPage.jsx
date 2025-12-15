@@ -102,7 +102,7 @@ const RegisterPage = () => {
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
-        const res = await api.get('/api/departments');
+        const res = await api.get('/api/departments/public');
         setDepartments(res.data.data);
       } catch (err) {
         console.error('Failed to fetch departments:', err);

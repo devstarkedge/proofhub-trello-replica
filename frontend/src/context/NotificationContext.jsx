@@ -183,7 +183,7 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const handleNotificationClick = (notification) => {
-    if (notification.type === 'user_registered' && user?.role === 'admin') {
+    if (notification.type === 'user_registered' && (user?.role === 'admin' || user?.role === 'manager')) {
       setVerificationModal(notification);
       markAsRead(notification._id);
     } else {

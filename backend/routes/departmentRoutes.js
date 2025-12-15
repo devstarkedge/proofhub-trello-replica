@@ -1,11 +1,12 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment, getDepartmentsWithAssignments, getUserDepartmentFilterOptions } from '../controllers/departmentController.js';
+import { getDepartments, getPublicDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment, getDepartmentsWithAssignments, getUserDepartmentFilterOptions } from '../controllers/departmentController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 
 const router = express.Router();
 
+router.get('/public', getPublicDepartments); // Public route must be before protected routes (or distinct)
 router.get('/', protect, getDepartments);
 router.get('/with-assignments', protect, getDepartmentsWithAssignments);
 router.get('/filter-options', protect, getUserDepartmentFilterOptions);

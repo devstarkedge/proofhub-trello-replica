@@ -68,11 +68,11 @@ export const updateUser = asyncHandler(async (req, res, next) => {
   // Update fields
   if (name) user.name = name;
   if (email) user.email = email;
-  if (role && req.user.role === 'admin') user.role = role;
+  if (role && (req.user.role === 'admin' || req.user.role === 'manager')) user.role = role;
   if (department !== undefined) user.department = department;
   if (team !== undefined) user.team = team;
-  if (isVerified !== undefined && req.user.role === 'admin') user.isVerified = isVerified;
-  if (isActive !== undefined && req.user.role === 'admin') user.isActive = isActive;
+  if (isVerified !== undefined && (req.user.role === 'admin' || req.user.role === 'manager')) user.isVerified = isVerified;
+  if (isActive !== undefined && (req.user.role === 'admin' || req.user.role === 'manager')) user.isActive = isActive;
 
   await user.save();
 
@@ -316,10 +316,15 @@ export const updateSettings = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Verify user (Admin only)
+// @desc    Verify user (Admin and Manager only)
 // @route   PUT /api/users/:id/verify
-// @access  Private/Admin
+// @access  Private/Admin/Manager
 export const verifyUser = asyncHandler(async (req, res, next) => {
+  // Strict Role Check
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return next(new ErrorResponse('Not authorized to verify users', 403));
+  }
+
   const { role, department } = req.body;
 
   const user = await User.findById(req.params.id);
@@ -342,51 +347,70 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
   invalidateCache('/api/auth/verify'); // Invalidate session verification cache
   invalidateCache('/api/notifications'); // Invalidate notifications cache for the user
 
-  // Emit real-time update via socket to all connected admin users
-  const { emitToUser } = await import('../server.js');
-  emitToUser(user._id.toString(), 'user-verified', {
-    userId: user._id,
-    isVerified: true,
-    role: user.role,
-    department: user.department
-  });
-
-  // Also emit to admin users who might be viewing the HR panel
-  // This ensures all admin users see the update immediately
-  const { emitToTeam } = await import('../server.js');
-  emitToTeam('admin', 'user-verified', {
-    userId: user._id,
-    isVerified: true,
-    role: user.role,
-    department: user.department
-  });
-
-  // Send verification email
-  try {
-    await sendVerificationEmail(user);
-  } catch (error) {
-    console.error('Email sending failed:', error);
-  }
-
-  // Notify admins about new user verification
-  try {
-    const adminUsers = await User.find({ role: 'admin', isActive: true }).select('_id');
-    const adminIds = adminUsers.map(admin => admin._id);
-    await notificationService.notifyUserVerified(user, adminIds);
-  } catch (error) {
-    console.error('Admin notification failed:', error);
-  }
-
+  // Respond immediately for fast UI
   res.status(200).json({
     success: true,
     data: user
   });
+
+  // Run non-blocking background tasks
+  const { runBackground } = await import('../utils/backgroundTasks.js');
+  
+  runBackground(async () => {
+    try {
+      // Emit real-time update via socket to all connected admin and manager users
+      const { emitToUser } = await import('../server.js');
+      emitToUser(user._id.toString(), 'user-verified', {
+        userId: user._id,
+        isVerified: true,
+        role: user.role,
+        department: user.department
+      });
+
+      // Also emit to admin and manager users who might be viewing the HR panel
+      const { emitToTeam } = await import('../server.js');
+      
+      // Emit to admins
+      emitToTeam('admin', 'user-verified', {
+        userId: user._id,
+        isVerified: true,
+        role: user.role,
+        department: user.department
+      });
+      
+      // Emit to managers
+      emitToTeam('manager', 'user-verified', {
+        userId: user._id,
+        isVerified: true,
+        role: user.role,
+        department: user.department
+      });
+
+      // Send verification email
+      await sendVerificationEmail(user);
+
+      // Notify admins and managers about new user verification
+      const authorizedUsers = await User.find({ 
+        role: { $in: ['admin', 'manager'] }, 
+        isActive: true 
+      }).select('_id');
+      const authorizedIds = authorizedUsers.map(u => u._id);
+      await notificationService.notifyUserVerified(user, authorizedIds);
+    } catch (error) {
+      console.error('Background verification tasks failed:', error);
+    }
+  });
 });
 
-// @desc    Decline user registration (Admin only)
+// @desc    Decline user registration (Admin and Manager only)
 // @route   DELETE /api/users/:id/decline
-// @access  Private/Admin
+// @access  Private/Admin/Manager
 export const declineUser = asyncHandler(async (req, res, next) => {
+  // Strict Role Check
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return next(new ErrorResponse('Not authorized to decline users', 403));
+  }
+
   const user = await User.findById(req.params.id);
 
   if (!user) {

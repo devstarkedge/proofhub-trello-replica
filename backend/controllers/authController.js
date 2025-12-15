@@ -76,11 +76,14 @@ export const register = asyncHandler(async (req, res, next) => {
   // Run non-blocking background tasks: notify admins and send welcome email
   runBackground(async () => {
     try {
-      const adminUsers = await User.find({ role: 'admin', isActive: true }).select('_id');
-      const adminIds = adminUsers.map(admin => admin._id);
+      const authorizedUsers = await User.find({ 
+        role: { $in: ['admin', 'manager'] }, 
+        isActive: true 
+      }).select('_id');
+      const authorizedIds = authorizedUsers.map(u => u._id);
 
-      // Notify admins about registration
-      await notificationService.notifyUserRegistered(user, adminIds);
+      // Notify admins and managers about registration
+      await notificationService.notifyUserRegistered(user, authorizedIds);
 
       // Compute department name inside background task to avoid blocking response
       let deptName = 'No department selected';

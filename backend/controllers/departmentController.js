@@ -46,6 +46,21 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Get all active departments (Public for registration)
+// @route   GET /api/departments/public
+// @access  Public
+export const getPublicDepartments = asyncHandler(async (req, res, next) => {
+  const departments = await Department.find({ isActive: true })
+    .select('name')
+    .sort('name');
+
+  res.status(200).json({
+    success: true,
+    count: departments.length,
+    data: departments
+  });
+});
+
 // @desc    Get all departments with member assignments (optimized for HomePage)
 // @route   GET /api/departments/with-assignments
 // @access  Private

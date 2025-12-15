@@ -372,16 +372,16 @@ class NotificationService {
     return this.createBulkNotifications(notifications);
   }
 
-  // User registration notifications (for admins)
-  async notifyUserRegistered(user, adminUsers) {
+  // User registration notifications (for admins and managers)
+  async notifyUserRegistered(user, recipients) {
     const notifications = [];
 
-    adminUsers.forEach(adminId => {
+    recipients.forEach(recipientId => {
       notifications.push({
         type: 'user_registered',
         title: 'New User Registration',
         message: `${user.name} has registered and is waiting for verification`,
-        user: adminId,
+        user: recipientId,
         sender: user._id,
         relatedTeam: user.team
       });
@@ -390,16 +390,16 @@ class NotificationService {
     return this.createBulkNotifications(notifications);
   }
 
-  // User verification notifications (for admins)
-  async notifyUserVerified(user, adminUsers) {
+  // User verification notifications (for admins and managers)
+  async notifyUserVerified(user, recipients) {
     const notifications = [];
 
-    adminUsers.forEach(adminId => {
+    recipients.forEach(recipientId => {
       notifications.push({
         type: 'user_verified',
         title: 'User Verification Complete',
         message: `${user.name} has been verified and can now access the system`,
-        user: adminId,
+        user: recipientId,
         sender: user._id,
         relatedTeam: user.team
       });

@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import Database from '../services/database';
 import useRoleStore from '../store/roleStore';
+import AuthContext from '../context/AuthContext';
 import { FaUser, FaEnvelope, FaBriefcase, FaCheckCircle, FaTimesCircle, FaCalendarAlt, FaBuilding, FaExclamationTriangle, FaInfoCircle, FaSpinner } from 'react-icons/fa';
 
 const UserVerificationModal = ({ notification, onClose, onAction }) => {
+  const { user: currentUser } = useContext(AuthContext);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [approveLoading, setApproveLoading] = useState(false);
@@ -22,10 +24,16 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
 
   useEffect(() => {
     if (notification && notification.sender) {
+      // Permission check
+      if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'manager') {
+        setError("You don't have permission to perform verification.");
+        setLoading(false);
+        return;
+      }
       loadUserData();
       loadDepartments();
     }
-  }, [notification]);
+  }, [notification, currentUser]);
 
   // Load roles when component mounts
   useEffect(() => {
@@ -238,49 +246,52 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
         <div className="space-y-6">
           {/* User Details Section */}
           <div className="bg-gray-50 p-6 rounded-lg border">
-            <h3 className="text-xl font-semibold mb-5 flex items-center text-gray-800">
-              <FaInfoCircle className="mr-2 text-gray-600" />
+            <h3 className="text-xl font-semibold mb-6 flex items-center text-gray-800 border-b pb-4">
+              <FaInfoCircle className="mr-3 text-blue-600" />
               User Information
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              <div className="flex items-start space-x-3">
-                <FaUser className="text-gray-400 mt-1 flex-shrink-0" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+              
+              {/* Full Name */}
+              <div className="flex items-start">
+                <div className="p-2 bg-white rounded-lg shadow-sm mr-4 border border-gray-100">
+                  <FaUser className="text-blue-500 text-lg" />
+                </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                  <p className="text-gray-900 font-medium">{user.name}</p>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Full Name</label>
+                  <p className="text-gray-900 font-bold text-lg">{user.name}</p>
                 </div>
               </div>
-              <div className="flex items-start space-x-3">
-                <FaEnvelope className="text-gray-400 mt-1 flex-shrink-0" />
+
+              {/* Current Role */}
+              <div className="flex items-start">
+                <div className="p-2 bg-white rounded-lg shadow-sm mr-4 border border-gray-100">
+                  <FaBriefcase className="text-purple-500 text-lg" />
+                </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                  <p className="text-gray-900 font-medium break-all">{user.email}</p>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Current Role</label>
+                  <p className="text-gray-900 font-bold text-lg capitalize">{user.role}</p>
                 </div>
               </div>
-              <div className="flex items-start space-x-3">
-                <FaBriefcase className="text-gray-400 mt-1 flex-shrink-0" />
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Role</label>
-                  <p className="text-gray-900 font-medium capitalize">{user.role}</p>
+
+              {/* Email Address - Spans Full Width */}
+              <div className="flex items-start md:col-span-2">
+                <div className="p-2 bg-white rounded-lg shadow-sm mr-4 border border-gray-100">
+                  <FaEnvelope className="text-indigo-500 text-lg" />
+                </div>
+                <div className="w-full">
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Email Address</label>
+                  <p className="text-gray-900 font-bold text-lg break-words">{user.email}</p>
                 </div>
               </div>
-              <div className="flex items-start space-x-3">
-                {user.isVerified ? (
-                  <FaCheckCircle className="text-green-500 mt-1 flex-shrink-0" />
-                ) : (
-                  <FaTimesCircle className="text-yellow-500 mt-1 flex-shrink-0" />
-                )}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Verification Status</label>
-                  <p className={`font-medium ${user.isVerified ? 'text-green-600' : 'text-yellow-600'}`}>
-                    {user.isVerified ? 'Verified' : 'Pending Verification'}
-                  </p>
+
+              {/* Registration Date */}
+              <div className="flex items-start">
+                <div className="p-2 bg-white rounded-lg shadow-sm mr-4 border border-gray-100">
+                  <FaCalendarAlt className="text-orange-500 text-lg" />
                 </div>
-              </div>
-              <div className="flex items-start space-x-3">
-                <FaCalendarAlt className="text-gray-400 mt-1 flex-shrink-0" />
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Registration Date</label>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Registration Date</label>
                   <p className="text-gray-900 font-medium">
                     {new Date(user.createdAt).toLocaleDateString('en-US', {
                       year: 'numeric',
@@ -290,17 +301,43 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                   </p>
                 </div>
               </div>
-              <div className="flex items-start space-x-3">
-                {user.isActive ? (
-                  <FaCheckCircle className="text-green-500 mt-1 flex-shrink-0" />
-                ) : (
-                  <FaTimesCircle className="text-red-500 mt-1 flex-shrink-0" />
-                )}
+
+              {/* Status Section - Combined or Separate? Keeping separate for clarity */}
+              {/* Verification Status */}
+              <div className="flex items-start">
+                <div className={`p-2 rounded-lg shadow-sm mr-4 border border-gray-100 ${user.isVerified ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                  {user.isVerified ? (
+                    <FaCheckCircle className="text-green-500 text-lg" />
+                  ) : (
+                    <FaTimesCircle className="text-yellow-500 text-lg" />
+                  )}
+                </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
-                  <p className={`font-medium ${user.isActive ? 'text-green-600' : 'text-red-600'}`}>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Verification Status</label>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    user.isVerified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {user.isVerified ? 'Verified' : 'Pending Verification'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Account Status */}
+              <div className="flex items-start">
+                <div className={`p-2 rounded-lg shadow-sm mr-4 border border-gray-100 ${user.isActive ? 'bg-green-50' : 'bg-red-50'}`}>
+                   {user.isActive ? (
+                    <FaCheckCircle className="text-green-500 text-lg" />
+                  ) : (
+                    <FaTimesCircle className="text-red-500 text-lg" />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Account Status</label>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  }`}>
                     {user.isActive ? 'Active' : 'Inactive'}
-                  </p>
+                  </span>
                 </div>
               </div>
             </div>
@@ -323,19 +360,19 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                     setSelectedRole(e.target.value);
                     setValidationErrors({...validationErrors, role: ''});
                   }}
-                  className={`w-full px-4 py-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 ${validationErrors.role ? 'border-red-500' : 'border-gray-300'}`}
+                  className={`w-full px-4 py-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900 ${validationErrors.role ? 'border-red-500' : 'border-gray-300'}`}
                   disabled={approveLoading || declineLoading}
                 >
                   {roles.length === 0 ? (
-                    <option value="employee" disabled>Loading roles...</option>
+                    <option value="employee" disabled className="bg-white text-gray-500">Loading roles...</option>
                   ) : (
                     <>
-                      <option value="" disabled>Select a role</option>
+                      <option value="" disabled className="bg-white text-gray-500">Select a role</option>
                       {/* Exclude admin role from assignment dropdown */}
                       {roles
                         .filter(role => role.slug !== 'admin' && role.isActive !== false)
                         .map(role => (
-                          <option key={role._id} value={role.slug}>
+                          <option key={role._id} value={role.slug} className="bg-white text-gray-900">
                             {role.name}
                           </option>
                         ))
@@ -357,12 +394,12 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                 <select
                   value={selectedDepartment}
                   onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900"
                   disabled={(approveLoading || declineLoading) || departments.length === 0}
                 >
-                  <option value="">No Department</option>
+                  <option value="" className="bg-white text-gray-900">No Department</option>
                   {departments.map((dept) => (
-                    <option key={dept._id} value={dept._id}>
+                    <option key={dept._id} value={dept._id} className="bg-white text-gray-900">
                       {dept.name}
                     </option>
                   ))}
