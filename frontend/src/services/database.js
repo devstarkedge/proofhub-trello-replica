@@ -785,6 +785,20 @@ class DatabaseService {
     return await res.json();
   }
 
+  // Get department filter options for header dropdown (optimized, role-aware)
+  async getDepartmentFilterOptions() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/departments/filter-options`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
   // Team operations
   async getTeams(departmentId = null) {
     const token = localStorage.getItem('token');

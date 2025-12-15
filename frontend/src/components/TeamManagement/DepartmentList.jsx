@@ -23,8 +23,12 @@ const DepartmentList = memo(({
   onSelectDepartment,
   onCreateClick,
   onEditClick,
-  onDeleteClick
+  onDeleteClick,
+  isAdmin = false,
+  isManager = false
 }) => {
+  // Only Admin can edit/delete departments
+  const canManageDepartment = isAdmin;
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Create Department Card - Only show if user has permission */}
@@ -109,6 +113,7 @@ const DepartmentList = memo(({
                     onSelect={onSelectDepartment}
                     onEdit={onEditClick}
                     onDelete={onDeleteClick}
+                    canManageDepartment={canManageDepartment}
                   />
                 ))}
               </motion.div>
@@ -130,7 +135,8 @@ const DepartmentListItem = memo(({
   index,
   onSelect,
   onEdit,
-  onDelete
+  onDelete,
+  canManageDepartment = false
 }) => {
   return (
     <motion.div
@@ -173,8 +179,8 @@ const DepartmentListItem = memo(({
             </span>
           </div>
         </div>
-        <div className="flex flex-col gap-2">
-          <PermissionGate permission="canCreateDepartment">
+        {canManageDepartment && (
+          <div className="flex flex-col gap-2">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -185,8 +191,6 @@ const DepartmentListItem = memo(({
             >
               <Edit2 size={16} />
             </button>
-          </PermissionGate>
-          <PermissionGate permission="canCreateDepartment">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -197,8 +201,8 @@ const DepartmentListItem = memo(({
             >
               <Trash2 size={16} />
             </button>
-          </PermissionGate>
-        </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );

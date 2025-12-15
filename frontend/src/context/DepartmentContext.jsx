@@ -12,6 +12,17 @@ export const TeamProvider = ({ children }) => {
   const [currentTeam, setCurrentTeam] = useState(null);
   const [currentDepartment, setCurrentDepartment] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [hasNoDepartments, setHasNoDepartments] = useState(false);
+
+  // Wrapper for setCurrentDepartment that persists to localStorage
+  const handleSetCurrentDepartment = (dept) => {
+    setCurrentDepartment(dept);
+    if (dept && dept._id) {
+      localStorage.setItem('selectedDepartmentId', dept._id);
+    } else {
+      localStorage.removeItem('selectedDepartmentId');
+    }
+  };
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -83,21 +94,55 @@ export const TeamProvider = ({ children }) => {
 
   const loadDepartments = async () => {
     try {
-      const userDepartments = await Database.getDepartments();
-      const depts = userDepartments.data || [];
-      // Add "All Departments" option at the top
-      const allDepartmentsOption = { _id: 'all', name: 'All Departments' };
-      setDepartments([allDepartmentsOption, ...depts]);
-      if (depts.length > 0) {
-        // Only set currentDepartment if not already set or if current one no longer exists
-        if (!currentDepartment || (!userDepartments.data.find(d => d._id === currentDepartment._id) && currentDepartment._id !== 'all')) {
-          setCurrentDepartment(allDepartmentsOption);
-        }
+      // Use the optimized filter-options endpoint for role-aware department loading
+      const response = await Database.getDepartmentFilterOptions();
+      const { departments: depts, showAllOption, defaultDepartmentId, hasNoDepartments } = response.data || {};
+      
+      // Build the department list based on role-aware visibility
+      let departmentList = [];
+      
+      if (hasNoDepartments) {
+        // User has no departments assigned - set empty state
+        setDepartments([]);
+        setCurrentDepartment(null);
+        setHasNoDepartments(true);
+        return;
+      }
+      
+      setHasNoDepartments(false);
+      
+      // Add "All Departments" option only when showAllOption is true
+      // (admin users OR non-admin with multiple departments)
+      if (showAllOption) {
+        departmentList = [{ _id: 'all', name: 'All Departments' }, ...(depts || [])];
       } else {
-        setCurrentDepartment(allDepartmentsOption);
+        departmentList = depts || [];
+      }
+      
+      setDepartments(departmentList);
+      
+      // Handle department selection with localStorage persistence
+      const savedDeptId = localStorage.getItem('selectedDepartmentId');
+      const savedDept = savedDeptId && departmentList.find(d => d._id === savedDeptId);
+      
+      if (savedDept) {
+        // Restore previously selected department
+        setCurrentDepartment(savedDept);
+      } else if (!currentDepartment || !departmentList.find(d => d._id === currentDepartment._id)) {
+        // Set default based on backend recommendation
+        if (defaultDepartmentId === 'all' && showAllOption) {
+          setCurrentDepartment({ _id: 'all', name: 'All Departments' });
+        } else if (departmentList.length > 0) {
+          // For single department or if 'all' not available, select first
+          const defaultDept = departmentList.find(d => d._id === defaultDepartmentId) || departmentList[0];
+          setCurrentDepartment(defaultDept);
+        } else {
+          setCurrentDepartment(null);
+        }
       }
     } catch (error) {
       console.error('Error loading departments:', error);
+      setDepartments([]);
     }
   };
 
@@ -282,8 +327,9 @@ export const TeamProvider = ({ children }) => {
       departments,
       currentTeam,
       currentDepartment,
+      hasNoDepartments,
       setCurrentTeam,
-      setCurrentDepartment,
+      setCurrentDepartment: handleSetCurrentDepartment,
       loading,
       loadTeams,
       loadDepartments,

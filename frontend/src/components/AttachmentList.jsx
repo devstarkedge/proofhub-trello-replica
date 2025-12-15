@@ -19,7 +19,7 @@ import {
   ChevronDown,
   AlertCircle
 } from 'lucide-react';
-import useAttachmentStore from '../store/attachmentStore';
+import useAttachmentStore, { getEntityKey } from '../store/attachmentStore';
 import { InlineAttachmentBadge } from './TinyPreview';
 import { toast } from 'react-toastify';
 
@@ -27,7 +27,8 @@ import { toast } from 'react-toastify';
 const DocumentViewerModal = lazy(() => import('./DocumentViewerModal'));
 
 const AttachmentList = ({ 
-  cardId, 
+  entityType = 'card',  // 'card' | 'subtask' | 'nanoSubtask'
+  entityId,
   attachments: propAttachments,
   onDelete,
   onSetCover,
@@ -41,6 +42,9 @@ const AttachmentList = ({
   const [expandedMenu, setExpandedMenu] = useState(null);
   const [showAll, setShowAll] = useState(false);
   const listRef = useRef(null);
+
+  const store = useAttachmentStore();
+  const entityKey = getEntityKey(entityType, entityId);
 
   const {
     attachments: storeAttachments,
@@ -57,17 +61,17 @@ const AttachmentList = ({
     isSelected,
     loadMore,
     uploadProgress
-  } = useAttachmentStore();
+  } = store;
 
   // Use prop attachments if provided, otherwise use store
   const realAttachments = useMemo(() => {
-    return propAttachments || storeAttachments[cardId] || [];
-  }, [propAttachments, storeAttachments, cardId]);
+    return propAttachments || storeAttachments[entityKey] || [];
+  }, [propAttachments, storeAttachments, entityKey]);
 
   // Merge pending uploads with real attachments
   const attachments = useMemo(() => {
     const pendingUploads = Object.values(uploadProgress)
-      .filter(p => p.cardId === cardId && p.status !== 'completed') // completed items are already in realAttachments
+      .filter(p => p.entityKey === entityKey && p.status !== 'completed')
       .map(p => ({
         _id: `pending-${p.fileName}`,
         isPending: true,
@@ -83,17 +87,17 @@ const AttachmentList = ({
     
     // Sort pending first, then newest real attachments
     return [...pendingUploads, ...realAttachments];
-  }, [realAttachments, uploadProgress, cardId]);
+  }, [realAttachments, uploadProgress, entityKey]);
 
-  const isLoading = loading[cardId];
-  const paginationData = pagination[cardId];
+  const isLoading = loading[entityKey];
+  const paginationData = pagination[entityKey];
 
   // Fetch attachments on mount if using store
   useEffect(() => {
-    if (!propAttachments && cardId) {
-      fetchAttachments(cardId);
+    if (!propAttachments && entityId) {
+      fetchAttachments(entityType, entityId);
     }
-  }, [cardId, propAttachments, fetchAttachments]);
+  }, [entityType, entityId, propAttachments, fetchAttachments]);
 
   // Virtualization for large lists
   const shouldVirtualize = attachments.length > virtualizeThreshold;
@@ -135,20 +139,31 @@ const AttachmentList = ({
   const handleDelete = useCallback(async (attachment, e) => {
     e?.stopPropagation();
     setExpandedMenu(null);
-    
+    // If a parent provided an onDelete handler (e.g. AttachmentsSection),
+    // delegate deletion handling to the parent (which typically shows the
+    // DeletePopup). This avoids showing the simple browser confirm here
+    // and prevents duplicate confirmations.
+    if (onDelete) {
+      try {
+        onDelete(attachment._id);
+      } catch (error) {
+        console.error('Delegated delete handler failed:', error);
+        toast.error('Failed to delete attachment');
+      }
+      return;
+    }
+
+    // Fallback: when no parent handler is provided, use the simple confirm
+    // flow to delete via the internal store.
     if (window.confirm(`Delete "${attachment.originalName}"?`)) {
       try {
-        if (onDelete) {
-          onDelete(attachment._id);
-        } else {
-          await deleteAttachment(cardId, attachment._id);
-        }
+        await deleteAttachment(entityType, entityId, attachment._id);
         toast.success('Attachment deleted');
       } catch (error) {
         toast.error('Failed to delete attachment');
       }
     }
-  }, [cardId, deleteAttachment, onDelete]);
+  }, [entityType, entityId, deleteAttachment, onDelete]);
 
   const handleSetCover = useCallback(async (attachment, e) => {
     e?.stopPropagation();
@@ -158,26 +173,41 @@ const AttachmentList = ({
       if (onSetCover) {
         await onSetCover(attachment);
       } else {
-        await setAsCover(cardId, attachment._id);
+        await setAsCover(entityType, entityId, attachment._id);
       }
       toast.success('Cover image updated');
     } catch (error) {
       toast.error('Failed to set cover image');
     }
-  }, [cardId, setAsCover, onSetCover]);
+  }, [entityType, entityId, setAsCover, onSetCover]);
 
   const handleBulkDelete = useCallback(async () => {
     if (selectedAttachments.length === 0) return;
-    
+    // For bulk deletes we only support the internal store flow here. If
+    // a parent wants to manage bulk deletions it should pass a handler.
+    if (onDelete) {
+      // If parent provided onDelete, delegate single deletes instead of bulk
+      // bulk deletion behavior is not delegated by default.
+      // Fallback to calling onDelete for each selected item.
+      try {
+        selectedAttachments.forEach(id => onDelete(id));
+        toast.success(`${selectedAttachments.length} attachment(s) deleted`);
+      } catch (error) {
+        console.error('Delegated bulk delete failed:', error);
+        toast.error('Failed to delete attachments');
+      }
+      return;
+    }
+
     if (window.confirm(`Delete ${selectedAttachments.length} attachment(s)?`)) {
       try {
-        await deleteSelected(cardId);
+        await deleteSelected(entityType, entityId);
         toast.success(`${selectedAttachments.length} attachment(s) deleted`);
       } catch (error) {
         toast.error('Failed to delete attachments');
       }
     }
-  }, [selectedAttachments, cardId, deleteSelected]);
+  }, [selectedAttachments, entityType, entityId, deleteSelected]);
 
   const getFileIcon = useCallback((fileType, size = 24) => {
     const icons = {
@@ -238,7 +268,7 @@ const AttachmentList = ({
           </h4>
           {(attachments.length > 0 || Object.keys(uploadProgress).length > 0) && (
             <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full font-medium">
-              {attachments.length + Object.keys(uploadProgress).filter(k => uploadProgress[k].cardId === cardId).length}
+              {attachments.length + Object.keys(uploadProgress).filter(k => uploadProgress[k].entityKey === entityKey).length}
             </span>
           )}
         </div>
@@ -486,7 +516,7 @@ const AttachmentList = ({
         <motion.button
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          onClick={() => loadMore(cardId)}
+          onClick={() => loadMore(entityType, entityId)}
           disabled={isLoading}
           className="ml-8 flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
         >

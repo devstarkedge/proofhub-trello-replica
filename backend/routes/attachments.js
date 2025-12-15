@@ -4,6 +4,8 @@ import {
   uploadAttachment,
   uploadMultipleAttachments,
   getCardAttachments,
+  getSubtaskAttachments,
+  getNanoSubtaskAttachments,
   getAttachmentsByContext,
   getAttachment,
   deleteAttachment,
@@ -23,8 +25,10 @@ router.post('/upload', uploadMiddleware.single('file'), uploadAttachment);
 router.post('/upload-multiple', uploadMiddleware.array('files', 10), uploadMultipleAttachments);
 router.post('/paste', uploadFromPaste);
 
-// Get routes
+// Get routes - specific entity routes first, then generic
 router.get('/card/:cardId', getCardAttachments);
+router.get('/subtask/:subtaskId', getSubtaskAttachments);
+router.get('/nano/:nanoSubtaskId', getNanoSubtaskAttachments);
 router.get('/context/:contextType/:contextRef', getAttachmentsByContext);
 router.get('/:id', getAttachment);
 
@@ -36,3 +40,4 @@ router.delete('/bulk', deleteMultipleAttachments);
 router.delete('/:id', deleteAttachment);
 
 export default router;
+

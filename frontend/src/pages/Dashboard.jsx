@@ -244,6 +244,14 @@ const Dashboard = memo(() => {
     try {
       await Database.deleteProject(projectToDelete);
       refetch();
+      // Refetch reminders since the deleted project's reminders are now gone
+      if (canViewReminders) {
+        const response = await Database.getAllReminders({ status: 'pending' });
+        const sorted = (response.data || [])
+          .filter(r => r.status !== 'completed' && r.status !== 'cancelled')
+          .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
+        setUpcomingReminders(sorted);
+      }
       setShowDeletePopup(false);
       setProjectToDelete(null);
     } catch (error) {
@@ -251,7 +259,7 @@ const Dashboard = memo(() => {
       alert('Failed to delete project. Please try again.');
       setShowDeletePopup(false);
     }
-  }, [projectToDelete, refetch]);
+  }, [projectToDelete, refetch, canViewReminders]);
 
 
 

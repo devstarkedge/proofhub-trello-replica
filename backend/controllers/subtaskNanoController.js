@@ -10,7 +10,8 @@ import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 
 const populateConfig = [
   { path: 'assignees', select: 'name email avatar' },
-  { path: 'tags', select: 'name color' }
+  { path: 'tags', select: 'name color' },
+  { path: 'coverImage', select: 'url secureUrl publicId height width' }
 ];
 
 const getOrderedNanos = (subtaskId) => {

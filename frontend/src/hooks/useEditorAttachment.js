@@ -1,5 +1,5 @@
 import { useCallback, useState, useRef } from 'react';
-import useAttachmentStore from '../store/attachmentStore';
+import useAttachmentStore, { getEntityKey } from '../store/attachmentStore';
 import attachmentService from '../services/attachmentService';
 
 /**
@@ -7,14 +7,18 @@ import attachmentService from '../services/attachmentService';
  * Handles Cloudinary upload, inline preview insertion, and dual-display in main attachments list
  * 
  * @param {Object} options - Configuration options
- * @param {string} options.cardId - The card ID this editor belongs to
+ * @param {string} options.entityType - 'card', 'subtask', or 'nanoSubtask'
+ * @param {string} options.entityId - The entity ID this editor belongs to (cardId, subtaskId, or nanoSubtaskId)
  * @param {string} options.contextType - 'description' or 'comment'
- * @param {string} options.contextRef - The reference ID (cardId for description, commentId for comment)
+ * @param {string} options.contextRef - The reference ID (entityId for description, commentId for comment)
  * @param {Function} options.onInsertImage - Callback to insert image into editor
  * @param {Function} options.onInsertFile - Callback to insert file preview into editor
- * @param {boolean} options.enableAutoCover - Whether to auto-set first description image as cover
+ * @param {boolean} options.enableAutoCover - Whether to auto-set first description image as cover (only for cards)
  */
 const useEditorAttachment = ({
+  entityType = 'card',
+  entityId,
+  // Legacy prop support
   cardId,
   contextType = 'description',
   contextRef,
@@ -22,6 +26,10 @@ const useEditorAttachment = ({
   onInsertFile,
   enableAutoCover = true
 }) => {
+  // Support legacy cardId prop
+  const resolvedEntityId = entityId || cardId;
+  const resolvedEntityType = entityId ? entityType : 'card';
+  
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState(null);
@@ -30,25 +38,16 @@ const useEditorAttachment = ({
   const isFirstDescriptionImageRef = useRef(true);
 
   // Get store methods
-  // Get store methods
+  const entityKey = getEntityKey(resolvedEntityType, resolvedEntityId);
   const { addAttachment, uploadFile: storeUploadFile } = useAttachmentStore();
-  const attachments = useAttachmentStore(state => state.attachments[cardId] || []);
+  const attachments = useAttachmentStore(state => state.attachments[entityKey] || []);
 
-  // Determine if this is the first image in description (for auto-cover)
+  // DISABLED: Auto-cover is disabled - cover must be set explicitly by user
+  // This prevents attachments from automatically becoming covers and ensures
+  // proper isolation between task/subtask/nano-subtask cover images
   const shouldSetAsCover = useCallback(() => {
-    if (!enableAutoCover || contextType !== 'description') return false;
-    
-    // Check if there's already a cover image
-    const hasCover = attachments.some(att => att.isCover);
-    if (hasCover) return false;
-    
-    // Check if there are any description images already
-    const hasDescriptionImages = attachments.some(
-      att => att.contextType === 'description' && att.fileType === 'image'
-    );
-    
-    return !hasDescriptionImages && isFirstDescriptionImageRef.current;
-  }, [enableAutoCover, contextType, attachments]);
+    return false; // Never auto-set cover - require explicit user action
+  }, []);
 
   // Clear states after success/error
   const clearStates = useCallback((delay = 3000) => {
@@ -122,8 +121,8 @@ const useEditorAttachment = ({
 
   // Upload file via store
   const uploadFile = useCallback(async (file) => {
-    if (!cardId) {
-      setError('Card ID is required for upload');
+    if (!resolvedEntityId) {
+      setError('Entity ID is required for upload');
       clearStates();
       return null;
     }
@@ -146,9 +145,9 @@ const useEditorAttachment = ({
 
       // Use store action to upload - this will handle progress updates in the store
       // which will reflect in the AttachmentList
-      const attachment = await storeUploadFile(file, cardId, {
+      const attachment = await storeUploadFile(file, resolvedEntityType, resolvedEntityId, {
         contextType,
-        contextRef: contextRef || cardId,
+        contextRef: contextRef || resolvedEntityId,
         setCover
       });
 
@@ -179,22 +178,22 @@ const useEditorAttachment = ({
     } finally {
       setUploading(false);
     }
-  }, [cardId, contextType, contextRef, shouldSetAsCover, storeUploadFile, createInlinePreview, onInsertImage, onInsertFile, clearStates]);
+  }, [resolvedEntityType, resolvedEntityId, contextType, contextRef, shouldSetAsCover, storeUploadFile, createInlinePreview, onInsertImage, onInsertFile, clearStates]);
 
   // Upload multiple files
   const uploadFiles = useCallback(async (files) => {
     // Return immediately to allow UI to update
-    const result = await useAttachmentStore.getState().uploadMultiple(files, cardId, {
+    const result = await useAttachmentStore.getState().uploadMultiple(files, resolvedEntityType, resolvedEntityId, {
       contextType,
-      contextRef: contextRef || cardId
+      contextRef: contextRef || resolvedEntityId
     });
     return result;
-  }, [cardId, contextType, contextRef]);
+  }, [resolvedEntityType, resolvedEntityId, contextType, contextRef]);
 
   // Handle clipboard paste (image data URL)
   const uploadFromPaste = useCallback(async (imageDataUrl) => {
-    if (!cardId) {
-      setError('Card ID is required for upload');
+    if (!resolvedEntityId) {
+      setError('Entity ID is required for upload');
       clearStates();
       return null;
     }
@@ -207,14 +206,15 @@ const useEditorAttachment = ({
       // Determine if this should be set as cover
       const setCover = shouldSetAsCover();
       
-      const attachment = await attachmentService.uploadFromPaste(imageDataUrl, cardId, {
+      const attachment = await attachmentService.uploadFromPaste(imageDataUrl, resolvedEntityId, {
+        entityType: resolvedEntityType,
         contextType,
-        contextRef: contextRef || cardId,
+        contextRef: contextRef || resolvedEntityId,
         setCover
       });
 
       // Add to main attachments store
-      addAttachment(cardId, attachment);
+      addAttachment(entityKey, attachment);
 
       // Mark that we've processed the first image
       if (contextType === 'description') {
@@ -238,7 +238,7 @@ const useEditorAttachment = ({
     } finally {
       setUploading(false);
     }
-  }, [cardId, contextType, contextRef, shouldSetAsCover, addAttachment, onInsertImage, clearStates]);
+  }, [resolvedEntityType, resolvedEntityId, entityKey, contextType, contextRef, shouldSetAsCover, addAttachment, onInsertImage, clearStates]);
 
   // Validate file type before upload
   const validateFile = useCallback((file) => {

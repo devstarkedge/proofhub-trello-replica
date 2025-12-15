@@ -46,17 +46,32 @@ class AttachmentService {
     }
   }
 
-  // Upload a single file
-  async uploadFile(file, cardId, options = {}) {
-    const { contextType = 'card', contextRef, commentId, setCover = false, onProgress } = options;
+  // Upload a single file - supports card, subtask, and nanoSubtask entity types
+  async uploadFile(file, entityId, options = {}) {
+    const { entityType = 'card', contextType, contextRef, commentId, setCover = false, onProgress } = options;
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('cardId', cardId);
-    formData.append('contextType', contextType);
+    
+    // Add the appropriate parent ID based on entity type
+    switch (entityType) {
+      case 'card':
+        formData.append('cardId', entityId);
+        break;
+      case 'subtask':
+        formData.append('subtaskId', entityId);
+        break;
+      case 'nanoSubtask':
+        formData.append('nanoSubtaskId', entityId);
+        break;
+      default:
+        formData.append('cardId', entityId);
+    }
+    
+    if (contextType) formData.append('contextType', contextType);
     if (contextRef) formData.append('contextRef', contextRef);
     if (commentId) formData.append('commentId', commentId);
-    if (setCover) formData.append('setCover', 'true');
+    if (setCover && entityType === 'card') formData.append('setCover', 'true');
 
     try {
       const response = await fetch(`${baseURL}/api/attachments/upload`, {
@@ -109,19 +124,38 @@ class AttachmentService {
   }
 
   // Upload from clipboard paste (base64 image)
-  async uploadFromPaste(imageData, cardId, options = {}) {
-    const { contextType = 'description', contextRef } = options;
+  async uploadFromPaste(imageData, entityId, options = {}) {
+    const { entityType = 'card', contextType = 'description', contextRef, setCover } = options;
+
+    // Build the request body with the correct parent ID field
+    const body = {
+      imageData,
+      contextType,
+      contextRef
+    };
+    
+    // Add the appropriate parent ID based on entity type
+    switch (entityType) {
+      case 'card':
+        body.cardId = entityId;
+        break;
+      case 'subtask':
+        body.subtaskId = entityId;
+        break;
+      case 'nanoSubtask':
+        body.nanoSubtaskId = entityId;
+        break;
+      default:
+        body.cardId = entityId;
+    }
+    
+    if (setCover && entityType === 'card') body.setCover = true;
 
     try {
       const response = await fetch(`${baseURL}/api/attachments/paste`, {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify({
-          imageData,
-          cardId,
-          contextType,
-          contextRef
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -160,8 +194,78 @@ class AttachmentService {
         pagination: result.pagination || {}
       };
     } catch (error) {
-      console.error('Get attachments error:', error);
+      console.error('Get card attachments error:', error);
       throw error;
+    }
+  }
+
+  // Get attachments for a subtask with pagination
+  async getSubtaskAttachments(subtaskId, options = {}) {
+    const { page = 1, limit = 20, fileType } = options;
+    
+    const params = new URLSearchParams({ page, limit });
+    if (fileType) params.append('fileType', fileType);
+
+    try {
+      const response = await fetch(
+        `${baseURL}/api/attachments/subtask/${subtaskId}?${params}`,
+        { headers: this.getHeaders() }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return {
+        data: result.data || [],
+        pagination: result.pagination || {}
+      };
+    } catch (error) {
+      console.error('Get subtask attachments error:', error);
+      throw error;
+    }
+  }
+
+  // Get attachments for a nano-subtask with pagination
+  async getNanoSubtaskAttachments(nanoSubtaskId, options = {}) {
+    const { page = 1, limit = 20, fileType } = options;
+    
+    const params = new URLSearchParams({ page, limit });
+    if (fileType) params.append('fileType', fileType);
+
+    try {
+      const response = await fetch(
+        `${baseURL}/api/attachments/nano/${nanoSubtaskId}?${params}`,
+        { headers: this.getHeaders() }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return {
+        data: result.data || [],
+        pagination: result.pagination || {}
+      };
+    } catch (error) {
+      console.error('Get nano-subtask attachments error:', error);
+      throw error;
+    }
+  }
+
+  // Generic method to fetch attachments by entity type
+  async getAttachmentsByEntity(entityType, entityId, options = {}) {
+    switch (entityType) {
+      case 'card':
+        return this.getCardAttachments(entityId, options);
+      case 'subtask':
+        return this.getSubtaskAttachments(entityId, options);
+      case 'nanoSubtask':
+        return this.getNanoSubtaskAttachments(entityId, options);
+      default:
+        throw new Error(`Unknown entity type: ${entityType}`);
     }
   }
 

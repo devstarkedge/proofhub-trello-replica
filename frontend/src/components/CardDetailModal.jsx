@@ -19,6 +19,7 @@ import CardSidebar from "./CardDetailModal/CardSidebar";
 import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import RecurringSettingsModal from "./RecurringSettingsModal";
+import DeletePopup from "./ui/DeletePopup";
 
 const themeOverlay = {
   blue: 'bg-blue-950/60',
@@ -75,6 +76,7 @@ const CardDetailModal = React.memo(({
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deletePopup, setDeletePopup] = useState({ isOpen: false, type: null, data: null });
   // Recurring Task States
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [existingRecurrence, setExistingRecurrence] = useState(null);
@@ -299,8 +301,16 @@ const CardDetailModal = React.memo(({
       }
     };
 
+    const handleCardCoverUpdate = (event) => {
+      const { cardId, coverImage } = event.detail;
+      if (cardId === card._id) {
+        setCoverImage(coverImage);
+      }
+    };
+
     // Subscribe to events
     window.addEventListener('socket-card-updated', handleCardUpdate);
+    window.addEventListener('socket-card-cover-updated', handleCardCoverUpdate);
     window.addEventListener('socket-comment-added', handleCommentAdded);
     window.addEventListener('socket-comment-updated', handleCommentUpdated);
     window.addEventListener('socket-comment-deleted', handleCommentDeleted);
@@ -309,6 +319,7 @@ const CardDetailModal = React.memo(({
     // Cleanup
     return () => {
       window.removeEventListener('socket-card-updated', handleCardUpdate);
+      window.removeEventListener('socket-card-cover-updated', handleCardCoverUpdate);
       window.removeEventListener('socket-comment-added', handleCommentAdded);
       window.removeEventListener('socket-comment-updated', handleCommentUpdated);
       window.removeEventListener('socket-comment-deleted', handleCommentDeleted);
@@ -342,7 +353,7 @@ const CardDetailModal = React.memo(({
   }, [card?._id]);
 
   useEffect(() => {
-    const handler = (event) => {
+    const hierarchyHandler = (event) => {
       const { taskId, subtasks: incoming } = event.detail || {};
       if (!taskId || taskId !== (card?._id || card?.id)) return;
       if (Array.isArray(incoming)) {
@@ -351,8 +362,25 @@ const CardDetailModal = React.memo(({
         fetchSubtasks();
       }
     };
-    window.addEventListener('socket-subtask-hierarchy', handler);
-    return () => window.removeEventListener('socket-subtask-hierarchy', handler);
+
+    const coverUpdateHandler = (event) => {
+      const { subtaskId, coverImage } = event.detail || {};
+      if (!subtaskId) return;
+      
+      setSubtasks(prev => prev.map(item => 
+        item._id === subtaskId 
+          ? { ...item, coverImage } 
+          : item
+      ));
+    };
+
+    window.addEventListener('socket-subtask-hierarchy', hierarchyHandler);
+    window.addEventListener('socket-subtask-cover-updated', coverUpdateHandler);
+    
+    return () => {
+      window.removeEventListener('socket-subtask-hierarchy', hierarchyHandler);
+      window.removeEventListener('socket-subtask-cover-updated', coverUpdateHandler);
+    };
   }, [card?._id]);
 
   // Filter members based on search query and group by department
@@ -1017,13 +1045,26 @@ const CardDetailModal = React.memo(({
 
   const handleDeleteSubtask = async (subtask) => {
     if (!subtask?._id) return;
-    if (!window.confirm("Delete this subtask?")) return;
+    // Open app DeletePopup instead of using browser confirm
+    setDeletePopup({ isOpen: true, type: 'subtask', data: subtask });
+  };
+
+  const handleConfirmGlobalDelete = async () => {
+    const { type, data } = deletePopup;
+    if (!type) return;
+
     try {
-      await Database.deleteSubtask(subtask._id);
-      fetchSubtasks();
+      if (type === 'subtask' && data && data._id) {
+        setDeleteLoading(true);
+        await Database.deleteSubtask(data._id);
+        await fetchSubtasks();
+      }
     } catch (error) {
-      console.error("Error deleting subtask:", error);
-      toast.error("Failed to delete subtask");
+      console.error('Error deleting item:', error);
+      toast.error('Failed to delete item');
+    } finally {
+      setDeleteLoading(false);
+      setDeletePopup(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -1357,7 +1398,8 @@ const CardDetailModal = React.memo(({
 
                 {/* Attachments Component */}
                 <AttachmentsSection 
-                  cardId={card._id || card.id}
+                  entityType="card"
+                  entityId={card._id || card.id}
                   boardId={card?.board?._id || card?.board}
                   onDeleteAttachment={handleDeleteAttachment}
                   onAttachmentAdded={(newAttachments) => {
@@ -1475,6 +1517,14 @@ const CardDetailModal = React.memo(({
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    {/* Delete confirmation popup for subtasks */}
+    <DeletePopup
+      isOpen={deletePopup.isOpen}
+      onCancel={() => setDeletePopup(prev => ({ ...prev, isOpen: false }))}
+      onConfirm={handleConfirmGlobalDelete}
+      itemType={deletePopup.type || 'subtask'}
+      isLoading={deleteLoading}
+    />
 
     {/* Recurring Settings Modal - Only for main task (outside AnimatePresence to avoid key conflicts) */}
     <RecurringSettingsModal

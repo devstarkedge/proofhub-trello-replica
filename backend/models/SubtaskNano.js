@@ -88,6 +88,10 @@ const subtaskNanoSchema = new mongoose.Schema({
     ref: 'Label'
   }],
   attachments: [attachmentSchema],
+  coverImage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Attachment'
+  },
   estimationTime: [{
     id: { type: String, required: true },
     hours: { type: Number, required: true, min: 0 },

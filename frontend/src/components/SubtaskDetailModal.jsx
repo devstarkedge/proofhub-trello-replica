@@ -128,7 +128,7 @@ const SubtaskDetailModal = ({
   }, [entityId]);
 
   useEffect(() => {
-    const handler = (event) => {
+    const hierarchyHandler = (event) => {
       const { subtaskId, nanos } = event.detail || {};
       if (!subtaskId || subtaskId !== entityId) return;
       if (Array.isArray(nanos)) {
@@ -137,8 +137,25 @@ const SubtaskDetailModal = ({
         loadNanos();
       }
     };
-    window.addEventListener("socket-nano-hierarchy", handler);
-    return () => window.removeEventListener("socket-nano-hierarchy", handler);
+
+    const coverUpdateHandler = (event) => {
+      const { nanoSubtaskId, coverImage } = event.detail || {};
+      if (!nanoSubtaskId) return;
+      
+      setNanoItems(prev => prev.map(item => 
+        item._id === nanoSubtaskId 
+          ? { ...item, coverImage } 
+          : item
+      ));
+    };
+
+    window.addEventListener("socket-nano-hierarchy", hierarchyHandler);
+    window.addEventListener("socket-nano-cover-updated", coverUpdateHandler);
+    
+    return () => {
+      window.removeEventListener("socket-nano-hierarchy", hierarchyHandler);
+      window.removeEventListener("socket-nano-cover-updated", coverUpdateHandler);
+    };
   }, [entityId]);
 
   // Subscribe to comment service updates for real-time UI synchronization
@@ -774,8 +791,10 @@ const SubtaskDetailModal = ({
     null;
 
   return (
+    <>
     <AnimatePresence>
       <motion.div
+        key="subtask-detail-modal-overlay"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -870,8 +889,11 @@ const SubtaskDetailModal = ({
                 />
 
                 <AttachmentsSection
-                  attachments={attachments}
+                  entityType="subtask"
+                  entityId={entityId}
+                  boardId={currentProject?._id}
                   onDeleteAttachment={handleDeleteAttachment}
+                  readOnly={false}
                 />
                 <TimeTrackingSection
                   estimationEntries={estimationEntries}
@@ -1020,6 +1042,7 @@ const SubtaskDetailModal = ({
         </motion.div>
       </motion.div>
 
+    </AnimatePresence>
       <DeletePopup
         isOpen={deletePopup.isOpen}
         onCancel={() => setDeletePopup(prev => ({ ...prev, isOpen: false }))}
@@ -1027,7 +1050,7 @@ const SubtaskDetailModal = ({
         itemType={deletePopup.type || 'subtask'}
         isLoading={deleteLoading}
       />
-    </AnimatePresence>
+    </>
   );
 };
 

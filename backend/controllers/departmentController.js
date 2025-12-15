@@ -18,10 +18,12 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
   let query = { isActive: true };
   
   if (user) {
-    // Admin and Manager see all departments for management purposes
-    if (user.role !== 'admin' && user.role !== 'manager') {
-      // Regular users see only departments they're members of
-      query.members = user._id;
+    // Only Admin sees all departments
+    // Non-admin users (including managers) see only departments they're assigned to
+    if (user.role !== 'admin') {
+      // Get departments from user's assigned department array
+      const userDeptIds = Array.isArray(user.department) ? user.department : [];
+      query._id = { $in: userDeptIds };
     }
   }
 
@@ -57,12 +59,12 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
   let matchQuery = { isActive: true };
   
   if (user) {
-    if (user.role === 'manager') {
-      // Managers see their assigned departments in Dashboard/Home
-      matchQuery._id = { $in: user.department || [] };
-    } else if (user.role !== 'admin') {
-      // Regular users see departments they're members of
-      matchQuery.members = user._id;
+    // Only Admin sees all departments
+    // Non-admin users (including managers) see only departments they're assigned to
+    if (user.role !== 'admin') {
+      // Get departments from user's assigned department array
+      const userDeptIds = Array.isArray(user.department) ? user.department : [];
+      matchQuery._id = { $in: userDeptIds };
     }
     // Admin users see all departments (no additional filter)
   }
@@ -945,6 +947,67 @@ export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, nex
       totalAttempted: userIds.length,
       totalUnassigned: results.length,
       totalErrors: errors.length
+    }
+  });
+});
+
+// @desc    Get department filter options for header dropdown (optimized)
+// @route   GET /api/departments/filter-options
+// @access  Private
+export const getUserDepartmentFilterOptions = asyncHandler(async (req, res) => {
+  const user = req.user;
+  const isAdmin = user.role === 'admin';
+  
+  let departments;
+  let showAllOption = false;
+  
+  if (isAdmin) {
+    // Admin sees all departments
+    departments = await Department.find({ isActive: true })
+      .select('_id name')
+      .sort('name')
+      .lean();
+    showAllOption = true;
+  } else {
+    // Non-admin users see only their assigned departments
+    const userDeptIds = Array.isArray(user.department) ? user.department : [];
+    
+    if (userDeptIds.length === 0) {
+      // User has no departments assigned
+      return res.status(200).json({
+        success: true,
+        data: {
+          departments: [],
+          showAllOption: false,
+          defaultDepartmentId: null,
+          hasNoDepartments: true
+        }
+      });
+    }
+    
+    departments = await Department.find({ 
+      _id: { $in: userDeptIds },
+      isActive: true 
+    })
+      .select('_id name')
+      .sort('name')
+      .lean();
+    
+    // Show "All Departments" option only if user has more than 1 department
+    showAllOption = departments.length > 1;
+  }
+  
+  // Determine default selection
+  // If only one department, select it; otherwise default to 'all'
+  const defaultDepartmentId = departments.length === 1 ? departments[0]._id : 'all';
+  
+  res.status(200).json({
+    success: true,
+    data: {
+      departments,
+      showAllOption,
+      defaultDepartmentId,
+      hasNoDepartments: departments.length === 0
     }
   });
 });

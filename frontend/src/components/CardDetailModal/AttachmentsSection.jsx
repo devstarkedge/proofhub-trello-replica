@@ -1,7 +1,7 @@
-import React, { useEffect, useCallback, lazy, Suspense, memo, useRef } from "react";
+import React, { useEffect, useCallback, lazy, Suspense, memo } from "react";
 import { Paperclip, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import useAttachmentStore from "../../store/attachmentStore";
+import useAttachmentStore, { getEntityKey } from "../../store/attachmentStore";
 import DeletePopup from "../ui/DeletePopup";
 
 // Lazy load heavy components
@@ -16,7 +16,8 @@ const LoadingFallback = () => (
 );
 
 const AttachmentsSection = memo(({ 
-  cardId, 
+  entityType = 'card',  // 'card' | 'subtask' | 'nanoSubtask'
+  entityId,
   boardId,
   onDeleteAttachment, // Legacy prop for backwards compatibility
   onAttachmentAdded,
@@ -25,16 +26,15 @@ const AttachmentsSection = memo(({
   currentCoverImageId // Pass the current cover image ID to avoid redundant updates
 }) => {
   const store = useAttachmentStore();
+  const entityKey = getEntityKey(entityType, entityId);
   
-  // Extract card-specific values from the keyed store objects
-  const attachments = store.attachments[cardId] || [];
-  const loading = store.loading[cardId] || false;
-  const error = store.error[cardId] || null;
-  const pagination = store.pagination[cardId] || {};
+  // Extract entity-specific values from the keyed store objects
+  const attachments = store.attachments[entityKey] || [];
+  const loading = store.loading[entityKey] || false;
+  const error = store.error[entityKey] || null;
+  const pagination = store.pagination[entityKey] || {};
   const totalCount = pagination.totalCount || attachments.length;
   
-  // Track if we've notified parent of cover to prevent infinite loops
-  const coverNotifiedRef = useRef(false);
   const [deletePopup, setDeletePopup] = React.useState({ isOpen: false, attachmentId: null });
   
   // Store actions
@@ -42,22 +42,28 @@ const AttachmentsSection = memo(({
     fetchAttachments,
     deleteAttachment,
     setAsCover,
-    setError
+    setError,
+    clearEntityData
   } = store;
 
-  // Clear error for this card
+  // Clear error for this entity
   const clearError = useCallback(() => {
-    setError(cardId, null);
-  }, [cardId, setError]);
+    setError(entityKey, null);
+  }, [entityKey, setError]);
 
-  // Fetch attachments on mount and when cardId changes
+  // Fetch attachments on mount and when entity changes
   useEffect(() => {
-    if (cardId) {
-      // Reset cover notification flag when card changes
-      coverNotifiedRef.current = false;
-      fetchAttachments(cardId);
+    if (entityId) {
+      fetchAttachments(entityType, entityId, { forceRefresh: true });
     }
-  }, [cardId, fetchAttachments]);
+    
+    // Cleanup on unmount - clear entity data to prevent stale state
+    return () => {
+      if (entityId) {
+        clearEntityData(entityType, entityId);
+      }
+    };
+  }, [entityType, entityId, fetchAttachments, clearEntityData]);
 
   // Handle delete
   const handleDelete = useCallback((attachmentId) => {
@@ -69,7 +75,7 @@ const AttachmentsSection = memo(({
     if (!attachmentId) return;
     
     try {
-      await deleteAttachment(cardId, attachmentId);
+      await deleteAttachment(entityType, entityId, attachmentId);
       if (onDeleteAttachment) {
         onDeleteAttachment(attachmentId);
       }
@@ -79,52 +85,36 @@ const AttachmentsSection = memo(({
     setDeletePopup({ isOpen: false, attachmentId: null });
   };
 
-  // Handle set as cover
+  // Handle set as cover - supports all entity types
+  // Note: onCoverChange is only called for cards to update CardDetailModal
+  // Subtask and NanoSubtask covers are managed within their own scope
   const handleSetCover = useCallback(async (attachmentOrId) => {
-    if (!cardId) return;
+    if (!entityId) return;
     
     // Support both attachment object and ID
     const attachmentId = typeof attachmentOrId === 'object' ? attachmentOrId._id : attachmentOrId;
     
     try {
-      const result = await setAsCover(cardId, attachmentId);
-      if (onCoverChange) {
-        // Pass the full result back to parent
+      const result = await setAsCover(entityType, entityId, attachmentId);
+      // Only notify parent for cards - subtask/nano covers don't affect parent modals
+      if (onCoverChange && entityType === 'card') {
         onCoverChange(result);
       }
     } catch (error) {
       console.error('Set cover failed:', error);
     }
-  }, [cardId, setAsCover, onCoverChange]);
+  }, [entityType, entityId, setAsCover, onCoverChange]);
 
   // Handle refresh
   const handleRefresh = useCallback(() => {
-    if (cardId) {
-      fetchAttachments(cardId);
+    if (entityId) {
+      fetchAttachments(entityType, entityId, { forceRefresh: true });
     }
-  }, [cardId, fetchAttachments]);
+  }, [entityType, entityId, fetchAttachments]);
 
-  // Notify parent when cover image is first detected after upload
-  // Only notify once per card to prevent infinite loops
-  useEffect(() => {
-    if (!cardId || !onCoverChange || loading || !attachments.length) return;
-    
-    // Only notify if we haven't already notified for this card AND there's a cover
-    if (!coverNotifiedRef.current) {
-      const coverAttachment = attachments.find(att => att.isCover);
-      if (coverAttachment) {
-        // Only notify if this is a NEW cover (not already set in parent)
-        // Check if the current cover image ID is different from what we found
-        if (coverAttachment._id !== currentCoverImageId) {
-          coverNotifiedRef.current = true;
-          onCoverChange(coverAttachment);
-        } else {
-          // Cover is already set in parent, just mark as notified to prevent re-notification
-          coverNotifiedRef.current = true;
-        }
-      }
-    }
-  }, [cardId, loading, currentCoverImageId]); // Added currentCoverImageId to dependency
+  // REMOVED: Auto-cover detection useEffect
+  // Cover images are ONLY set via explicit user action (handleSetCover)
+  // This prevents any auto-propagation of covers between entities
 
   return (
     <motion.div
@@ -188,9 +178,10 @@ const AttachmentsSection = memo(({
         {!readOnly && (
           <Suspense fallback={<LoadingFallback />}>
             <AttachmentUploader
-              cardId={cardId}
+              entityType={entityType}
+              entityId={entityId}
               onUploadComplete={() => {
-                fetchAttachments(cardId);
+                fetchAttachments(entityType, entityId, { forceRefresh: true });
                 if (onAttachmentAdded) onAttachmentAdded([]);
               }}
               compact={attachments.length > 0}
@@ -203,8 +194,9 @@ const AttachmentsSection = memo(({
           <AttachmentList
             attachments={attachments}
             onDelete={readOnly ? undefined : handleDelete}
-            onSetCover={readOnly ? undefined : handleSetCover}
-            cardId={cardId}
+            onSetCover={readOnly || entityType !== 'card' ? undefined : handleSetCover}
+            entityType={entityType}
+            entityId={entityId}
           />
         </Suspense>
       </div>

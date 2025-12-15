@@ -49,7 +49,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
   
   // Dynamic list class
   const listClass = useMemo(() => 
-    `${listColors[list.color] || 'bg-gray-100/50 border-gray-200'} border rounded-xl p-3 w-72 flex-shrink-0 max-h-full flex flex-col transition-shadow relative group/list ${isDragging ? 'shadow-2xl ring-2 ring-purple-500/50' : 'shadow-sm'}`,
+    `${listColors[list.color] || 'bg-gray-100/50 border-gray-200'} border rounded-xl p-3 w-72 flex-shrink-0 flex flex-col transition-shadow relative group/list ${isDragging ? 'shadow-2xl ring-2 ring-purple-500/50' : 'shadow-sm'}`,
     [list.color, isDragging]
   );
 
@@ -184,7 +184,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
            <div
             ref={provided.innerRef}
             {...provided.droppableProps}
-            className={`flex-1 overflow-y-auto px-1 -mx-1 min-h-[50px] transition-colors rounded-lg z-0 ${snapshot.isDraggingOver ? 'bg-black/5' : ''}`}
+            className={`flex-1 px-1 -mx-1 min-h-[50px] transition-colors rounded-lg z-0 ${snapshot.isDraggingOver ? 'bg-black/5' : ''}`}
             style={{ 
               scrollbarWidth: 'thin',
               scrollbarColor: 'rgba(0,0,0,0.1) transparent'

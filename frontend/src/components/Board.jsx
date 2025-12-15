@@ -114,9 +114,10 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
       <Droppable droppableId="all-lists" direction="horizontal" type="list">
         {(provided) => (
           <div 
-            className="p-4 h-full overflow-x-auto overflow-y-hidden"
+            className="p-4 h-full overflow-x-auto"
             ref={provided.innerRef}
             {...provided.droppableProps}
+            style={{ scrollbarWidth: 'thin' }}
           >
             <div className="flex gap-4 h-full items-start">
               {/* Lists */}

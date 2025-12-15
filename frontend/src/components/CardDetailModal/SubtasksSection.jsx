@@ -91,33 +91,46 @@ const SubtasksSection = ({
                   className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
                 <div
-                  className="flex-1 cursor-pointer"
+                  className="flex-1 cursor-pointer flex items-center justify-between gap-3"
                   onClick={() => onOpenItem && onOpenItem(item)}
                 >
-                  <p className={`text-sm font-medium ${completed ? "line-through text-gray-400" : "text-gray-800"}`}>
-                    {item.title || item.text}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                    {renderStatus(item.status)}
-                    {/* Recurring Task indicator */}
-                    {(item.isRecurring || item.tags?.includes('Recurring Task')) && (
-                      <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
-                        <RefreshCw size={10} />
-                        Recurring
-                      </span>
-                    )}
-                    {item.dueDate && (
-                      <span className="flex items-center gap-1">
-                        <Clock size={12} />
-                        {new Date(item.dueDate).toLocaleDateString()}
-                      </span>
-                    )}
-                    {item.nanoCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-gray-200 text-gray-700">
-                        {item.nanoCount} nanos
-                      </span>
-                    )}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium truncate ${completed ? "line-through text-gray-400" : "text-gray-800"}`}>
+                      {item.title || item.text}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                      {renderStatus(item.status)}
+                      {/* Recurring Task indicator */}
+                      {(item.isRecurring || item.tags?.includes('Recurring Task')) && (
+                        <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                          <RefreshCw size={10} />
+                          Recurring
+                        </span>
+                      )}
+                      {item.dueDate && (
+                        <span className="flex items-center gap-1">
+                          <Clock size={12} />
+                          {new Date(item.dueDate).toLocaleDateString()}
+                        </span>
+                      )}
+                      {item.nanoCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-gray-200 text-gray-700">
+                          {item.nanoCount} nanos
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Small Cover Thumbnail */}
+                  {item.coverImage?.url && (
+                    <div className="h-9 w-14 flex-shrink-0 rounded overflow-hidden border border-gray-200 bg-gray-100">
+                      <img 
+                        src={item.coverImage.url} 
+                        alt="cover" 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => onDeleteItem(item)}

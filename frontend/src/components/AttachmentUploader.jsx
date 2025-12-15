@@ -34,9 +34,10 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_FILES = 10;
 
 const AttachmentUploader = ({ 
-  cardId, 
+  entityType = 'card',  // 'card' | 'subtask' | 'nanoSubtask'
+  entityId,
   onUploadComplete, 
-  contextType = 'card',
+  contextType,
   contextRef,
   compact = false,
   allowPaste = true 
@@ -49,7 +50,7 @@ const AttachmentUploader = ({
 
   // Handle paste events for clipboard images
   useEffect(() => {
-    if (!allowPaste) return;
+    if (!allowPaste || !entityId) return;
 
     const handlePaste = async (e) => {
       const items = e.clipboardData?.items;
@@ -63,12 +64,10 @@ const AttachmentUploader = ({
             const reader = new FileReader();
             reader.onload = async (e) => {
               try {
-                // Determine if this is a comment/description upload or just a general card attachment
-                // For direct clipboard paste in the uploader area, we treat it as a generic card attachment unless specified
-                const pasteContextType = contextType || 'card';
-                const pasteContextRef = contextRef || cardId;
+                const pasteContextType = contextType || entityType;
+                const pasteContextRef = contextRef || entityId;
                 
-                await uploadFromPaste(e.target.result, cardId, { contextType: pasteContextType, contextRef: pasteContextRef });
+                await uploadFromPaste(e.target.result, entityType, entityId, { contextType: pasteContextType, contextRef: pasteContextRef });
                 onUploadComplete?.();
               } catch (error) {
                 toast.error('Failed to upload pasted image');
@@ -95,7 +94,7 @@ const AttachmentUploader = ({
             document.removeEventListener('paste', handlePaste);
         }
     };
-  }, [allowPaste, cardId, contextType, contextRef, uploadFromPaste, onUploadComplete]);
+  }, [allowPaste, entityType, entityId, contextType, contextRef, uploadFromPaste, onUploadComplete]);
 
   const validateFile = useCallback((file) => {
     if (file.size > MAX_FILE_SIZE) {
@@ -165,7 +164,7 @@ const AttachmentUploader = ({
     if (validFiles.length > 0) {
       try {
         // Immediate upload - optimistic UI handled by store/AttachmentList
-        uploadMultiple(validFiles, cardId, { contextType, contextRef });
+        uploadMultiple(validFiles, entityType, entityId, { contextType, contextRef });
         
         // Notify parent immediately that uploads started
         onUploadComplete?.();
@@ -173,7 +172,7 @@ const AttachmentUploader = ({
         console.error("Upload start error", error);
       }
     }
-  }, [validateFile, cardId, contextType, contextRef, uploadMultiple, onUploadComplete]);
+  }, [validateFile, entityType, entityId, contextType, contextRef, uploadMultiple, onUploadComplete]);
 
   // Compact mode - just a button
   if (compact) {

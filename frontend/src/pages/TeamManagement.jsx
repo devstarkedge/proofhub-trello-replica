@@ -670,6 +670,8 @@ const TeamManagement = () => {
                         dispatch({ type: ACTION_TYPES.SET_DEPARTMENT_TO_DELETE, payload: dept });
                         dispatch({ type: ACTION_TYPES.OPEN_DELETE_MODAL });
                       }}
+                      isAdmin={isAdmin}
+                      isManager={user?.role === 'manager'}
                     />
                   </div>
 

@@ -2,69 +2,72 @@ import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import attachmentService from '../services/attachmentService';
 
+// Helper to generate composite key for entity-based state management
+const getEntityKey = (entityType, entityId) => `${entityType}:${entityId}`;
+
 const useAttachmentStore = create(
   devtools(
     subscribeWithSelector((set, get) => ({
-      // State
-      attachments: {},  // { cardId: attachments[] }
-      loading: {},      // { cardId: boolean }
-      error: {},        // { cardId: string }
-      pagination: {},   // { cardId: { page, totalPages, hasNext, hasPrev } }
-      uploadProgress: {}, // { uploadId: { progress, status, fileName } }
+      // State - now keyed by composite key (entityType:entityId)
+      attachments: {},  // { 'card:123': attachments[], 'subtask:456': attachments[] }
+      loading: {},      // { 'card:123': boolean }
+      error: {},        // { 'card:123': string }
+      pagination: {},   // { 'card:123': { page, totalPages, hasNext, hasPrev } }
+      uploadProgress: {}, // { uploadId: { progress, status, fileName, entityKey } }
       selectedAttachments: [], // For bulk operations
 
-      // Actions
-      setAttachments: (cardId, attachments) => set((state) => ({
-        attachments: { ...state.attachments, [cardId]: attachments }
+      // Actions - updated to use entityKey
+      setAttachments: (entityKey, attachments) => set((state) => ({
+        attachments: { ...state.attachments, [entityKey]: attachments }
       })),
 
-      addAttachment: (cardId, attachment) => set((state) => ({
+      addAttachment: (entityKey, attachment) => set((state) => ({
         attachments: {
           ...state.attachments,
-          [cardId]: [attachment, ...(state.attachments[cardId] || [])]
+          [entityKey]: [attachment, ...(state.attachments[entityKey] || [])]
         }
       })),
 
-      addAttachments: (cardId, newAttachments) => set((state) => ({
+      addAttachments: (entityKey, newAttachments) => set((state) => ({
         attachments: {
           ...state.attachments,
-          [cardId]: [...newAttachments, ...(state.attachments[cardId] || [])]
+          [entityKey]: [...newAttachments, ...(state.attachments[entityKey] || [])]
         }
       })),
 
-      removeAttachment: (cardId, attachmentId) => set((state) => ({
+      removeAttachment: (entityKey, attachmentId) => set((state) => ({
         attachments: {
           ...state.attachments,
-          [cardId]: (state.attachments[cardId] || []).filter(a => a._id !== attachmentId)
+          [entityKey]: (state.attachments[entityKey] || []).filter(a => a._id !== attachmentId)
         }
       })),
 
-      removeAttachments: (cardId, attachmentIds) => set((state) => ({
+      removeAttachments: (entityKey, attachmentIds) => set((state) => ({
         attachments: {
           ...state.attachments,
-          [cardId]: (state.attachments[cardId] || []).filter(a => !attachmentIds.includes(a._id))
+          [entityKey]: (state.attachments[entityKey] || []).filter(a => !attachmentIds.includes(a._id))
         }
       })),
 
-      updateAttachment: (cardId, attachmentId, updates) => set((state) => ({
+      updateAttachment: (entityKey, attachmentId, updates) => set((state) => ({
         attachments: {
           ...state.attachments,
-          [cardId]: (state.attachments[cardId] || []).map(a =>
+          [entityKey]: (state.attachments[entityKey] || []).map(a =>
             a._id === attachmentId ? { ...a, ...updates } : a
           )
         }
       })),
 
-      setLoading: (cardId, isLoading) => set((state) => ({
-        loading: { ...state.loading, [cardId]: isLoading }
+      setLoading: (entityKey, isLoading) => set((state) => ({
+        loading: { ...state.loading, [entityKey]: isLoading }
       })),
 
-      setError: (cardId, error) => set((state) => ({
-        error: { ...state.error, [cardId]: error }
+      setError: (entityKey, error) => set((state) => ({
+        error: { ...state.error, [entityKey]: error }
       })),
 
-      setPagination: (cardId, pagination) => set((state) => ({
-        pagination: { ...state.pagination, [cardId]: pagination }
+      setPagination: (entityKey, pagination) => set((state) => ({
+        pagination: { ...state.pagination, [entityKey]: pagination }
       })),
 
       setUploadProgress: (uploadId, progress) => set((state) => ({
@@ -88,60 +91,62 @@ const useAttachmentStore = create(
 
       clearSelection: () => set({ selectedAttachments: [] }),
 
-      selectAll: (cardId) => set((state) => ({
-        selectedAttachments: (state.attachments[cardId] || []).map(a => a._id)
+      selectAll: (entityKey) => set((state) => ({
+        selectedAttachments: (state.attachments[entityKey] || []).map(a => a._id)
       })),
 
-      // Async Actions
-      fetchAttachments: async (cardId, options = {}) => {
+      // Async Actions - updated for entity-based fetching
+      fetchAttachments: async (entityType, entityId, options = {}) => {
+        const entityKey = getEntityKey(entityType, entityId);
         const { page = 1, limit = 20, fileType, forceRefresh = false } = options;
         const state = get();
 
         // Return cached if available and not forcing refresh
-        if (!forceRefresh && state.attachments[cardId] && !options.page) {
-          return state.attachments[cardId];
+        if (!forceRefresh && state.attachments[entityKey] && !options.page) {
+          return state.attachments[entityKey];
         }
 
         set((s) => ({
-          loading: { ...s.loading, [cardId]: true },
-          error: { ...s.error, [cardId]: null }
+          loading: { ...s.loading, [entityKey]: true },
+          error: { ...s.error, [entityKey]: null }
         }));
 
         try {
-          const result = await attachmentService.getCardAttachments(cardId, { page, limit, fileType });
+          const result = await attachmentService.getAttachmentsByEntity(entityType, entityId, { page, limit, fileType });
           
           set((s) => ({
-            attachments: { ...s.attachments, [cardId]: result.data },
-            pagination: { ...s.pagination, [cardId]: result.pagination },
-            loading: { ...s.loading, [cardId]: false }
+            attachments: { ...s.attachments, [entityKey]: result.data },
+            pagination: { ...s.pagination, [entityKey]: result.pagination },
+            loading: { ...s.loading, [entityKey]: false }
           }));
 
           return result.data;
         } catch (error) {
           set((s) => ({
-            loading: { ...s.loading, [cardId]: false },
-            error: { ...s.error, [cardId]: error.message }
+            loading: { ...s.loading, [entityKey]: false },
+            error: { ...s.error, [entityKey]: error.message }
           }));
           throw error;
         }
       },
 
-      loadMore: async (cardId) => {
+      loadMore: async (entityType, entityId) => {
+        const entityKey = getEntityKey(entityType, entityId);
         const state = get();
-        const pagination = state.pagination[cardId];
+        const pagination = state.pagination[entityKey];
         
         if (!pagination?.hasNext) return;
 
         const nextPage = pagination.currentPage + 1;
         try {
-          const result = await attachmentService.getCardAttachments(cardId, { page: nextPage });
+          const result = await attachmentService.getAttachmentsByEntity(entityType, entityId, { page: nextPage });
           
           set((s) => ({
             attachments: {
               ...s.attachments,
-              [cardId]: [...(s.attachments[cardId] || []), ...result.data]
+              [entityKey]: [...(s.attachments[entityKey] || []), ...result.data]
             },
-            pagination: { ...s.pagination, [cardId]: result.pagination }
+            pagination: { ...s.pagination, [entityKey]: result.pagination }
           }));
 
           return result.data;
@@ -151,7 +156,8 @@ const useAttachmentStore = create(
         }
       },
 
-      uploadFile: async (file, cardId, options = {}) => {
+      uploadFile: async (file, entityType, entityId, options = {}) => {
+        const entityKey = getEntityKey(entityType, entityId);
         const uploadId = `${Date.now()}-${file.name}`;
         
         // Create preview URL for immediate display
@@ -169,18 +175,18 @@ const useAttachmentStore = create(
               fileName: file.name,
               fileType: file.type.startsWith('image/') ? 'image' : 'file',
               preview,
-              preview,
               size: file.size,
-              cardId, // Track which card this belongs to
-              contextType: options.contextType || 'card',
-              contextRef: options.contextRef || cardId
+              entityType,
+              entityId,
+              entityKey
             }
           }
         }));
 
         try {
-          const attachment = await attachmentService.uploadFile(file, cardId, {
+          const attachment = await attachmentService.uploadFile(file, entityId, {
             ...options,
+            entityType,
             onProgress: (progress) => {
               set((s) => ({
                 uploadProgress: {
@@ -197,7 +203,7 @@ const useAttachmentStore = create(
           set((s) => ({
             attachments: {
               ...s.attachments,
-              [cardId]: [attachment, ...(s.attachments[cardId] || [])]
+              [entityKey]: [attachment, ...(s.attachments[entityKey] || [])]
             },
             uploadProgress: {
               ...s.uploadProgress,
@@ -235,32 +241,22 @@ const useAttachmentStore = create(
         }
       },
 
-      uploadMultiple: async (files, cardId, options = {}) => {
+      uploadMultiple: async (files, entityType, entityId, options = {}) => {
         // Handle each file individually to show individual progress bars
-        // Start all uploads concurrently without waiting for them to complete
-        const uploadIds = [];
-        
-        // We use map to trigger the async operations but we don't await Promise.all
-        // This makes it non-blocking ("fire and forget" from the caller's perspective)
         files.forEach(file => {
-          // We can't easily get the uploadId back from the async updateState unless we change uploadFile
-          // But uploadFile generates ID deterministically-ish or we can rely on the store update.
-          // Better approach: Let's assume the caller will watch the store.
-          // Or, we can make uploadFile return the uploadId synchronously if we split it?
-          // For now, we'll just trigger them.
-           get().uploadFile(file, cardId, options).catch(err => {
-             console.error(`Background upload failed for ${file.name}:`, err);
-           });
+          get().uploadFile(file, entityType, entityId, options).catch(err => {
+            console.error(`Background upload failed for ${file.name}:`, err);
+          });
         });
         
         // Return immediately indicating uploads started
         return { success: true, started: true, count: files.length };
       },
 
-      uploadFromPaste: async (imageData, cardId, options = {}) => {
+      uploadFromPaste: async (imageData, entityType, entityId, options = {}) => {
+        const entityKey = getEntityKey(entityType, entityId);
         const uploadId = `paste-${Date.now()}`;
         
-        // Convert base64 to blob for preview if needed, or just use base64
         set((s) => ({
           uploadProgress: {
             ...s.uploadProgress,
@@ -270,18 +266,23 @@ const useAttachmentStore = create(
               fileName: 'Pasted image',
               fileType: 'image',
               preview: imageData,
-              cardId
+              entityType,
+              entityId,
+              entityKey
             }
           }
         }));
 
         try {
-          const attachment = await attachmentService.uploadFromPaste(imageData, cardId, options);
+          const attachment = await attachmentService.uploadFromPaste(imageData, entityId, {
+            ...options,
+            entityType
+          });
 
           set((s) => ({
             attachments: {
               ...s.attachments,
-              [cardId]: [attachment, ...(s.attachments[cardId] || [])]
+              [entityKey]: [attachment, ...(s.attachments[entityKey] || [])]
             },
             uploadProgress: {
               ...s.uploadProgress,
@@ -311,10 +312,11 @@ const useAttachmentStore = create(
         }
       },
 
-      deleteAttachment: async (cardId, attachmentId) => {
+      deleteAttachment: async (entityType, entityId, attachmentId) => {
+        const entityKey = getEntityKey(entityType, entityId);
         try {
           await attachmentService.deleteAttachment(attachmentId);
-          get().removeAttachment(cardId, attachmentId);
+          get().removeAttachment(entityKey, attachmentId);
           return true;
         } catch (error) {
           console.error('Delete attachment error:', error);
@@ -322,15 +324,16 @@ const useAttachmentStore = create(
         }
       },
 
-      setAsCover: async (cardId, attachmentId) => {
+      setAsCover: async (entityType, entityId, attachmentId) => {
+        const entityKey = getEntityKey(entityType, entityId);
         try {
           const result = await attachmentService.setAsCover(attachmentId);
           // Update all attachments - unset isCover on others, set on this one
-          get().updateAttachment(cardId, attachmentId, { isCover: true });
-          const currentAttachments = get().attachments[cardId] || [];
+          get().updateAttachment(entityKey, attachmentId, { isCover: true });
+          const currentAttachments = get().attachments[entityKey] || [];
           currentAttachments.forEach(att => {
             if (att._id !== attachmentId && att.isCover) {
-              get().updateAttachment(cardId, att._id, { isCover: false });
+              get().updateAttachment(entityKey, att._id, { isCover: false });
             }
           });
           // Return the full attachment data from the response
@@ -341,7 +344,8 @@ const useAttachmentStore = create(
         }
       },
 
-      deleteSelected: async (cardId) => {
+      deleteSelected: async (entityType, entityId) => {
+        const entityKey = getEntityKey(entityType, entityId);
         const state = get();
         const attachmentIds = state.selectedAttachments;
         
@@ -349,7 +353,7 @@ const useAttachmentStore = create(
 
         try {
           await attachmentService.deleteMultiple(attachmentIds);
-          get().removeAttachments(cardId, attachmentIds);
+          get().removeAttachments(entityKey, attachmentIds);
           get().clearSelection();
           return true;
         } catch (error) {
@@ -358,55 +362,94 @@ const useAttachmentStore = create(
         }
       },
 
-      // Selectors
-      getAttachments: (cardId) => get().attachments[cardId] || [],
-      isLoading: (cardId) => get().loading[cardId] || false,
-      getError: (cardId) => get().error[cardId] || null,
-      getPagination: (cardId) => get().pagination[cardId] || null,
+      // Selectors - updated for entity-based access
+      getAttachments: (entityType, entityId) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        return get().attachments[entityKey] || [];
+      },
+      isLoading: (entityType, entityId) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        return get().loading[entityKey] || false;
+      },
+      getError: (entityType, entityId) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        return get().error[entityKey] || null;
+      },
+      getPagination: (entityType, entityId) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        return get().pagination[entityKey] || null;
+      },
       getUploadProgress: () => get().uploadProgress,
       getSelectedCount: () => get().selectedAttachments.length,
       isSelected: (attachmentId) => get().selectedAttachments.includes(attachmentId),
 
-      // Clear card data
-      clearCardData: (cardId) => set((state) => {
+      // Clear entity data - call on modal close to prevent stale state
+      clearEntityData: (entityType, entityId) => set((state) => {
+        const entityKey = getEntityKey(entityType, entityId);
         const newAttachments = { ...state.attachments };
         const newLoading = { ...state.loading };
         const newError = { ...state.error };
         const newPagination = { ...state.pagination };
         
-        delete newAttachments[cardId];
-        delete newLoading[cardId];
-        delete newError[cardId];
-        delete newPagination[cardId];
+        delete newAttachments[entityKey];
+        delete newLoading[entityKey];
+        delete newError[entityKey];
+        delete newPagination[entityKey];
+
+        // Also clear any upload progress for this entity
+        const newUploadProgress = { ...state.uploadProgress };
+        Object.keys(newUploadProgress).forEach(uploadId => {
+          if (newUploadProgress[uploadId]?.entityKey === entityKey) {
+            // Revoke object URL if exists
+            if (newUploadProgress[uploadId]?.preview) {
+              URL.revokeObjectURL(newUploadProgress[uploadId].preview);
+            }
+            delete newUploadProgress[uploadId];
+          }
+        });
 
         return {
           attachments: newAttachments,
           loading: newLoading,
           error: newError,
           pagination: newPagination,
+          uploadProgress: newUploadProgress,
           selectedAttachments: []
         };
       }),
 
-      // Handle real-time events
-      handleAttachmentAdded: (cardId, attachment) => {
-        get().addAttachment(cardId, attachment);
+      // Legacy clear method - kept for backward compatibility
+      clearCardData: (cardId) => {
+        get().clearEntityData('card', cardId);
       },
 
-      handleAttachmentDeleted: (cardId, attachmentId) => {
-        get().removeAttachment(cardId, attachmentId);
+      // Handle real-time events - updated for entity-based handling
+      handleAttachmentAdded: (entityType, entityId, attachment) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        get().addAttachment(entityKey, attachment);
       },
 
-      handleAttachmentsAdded: (cardId, attachments) => {
-        get().addAttachments(cardId, attachments);
+      handleAttachmentDeleted: (entityType, entityId, attachmentId) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        get().removeAttachment(entityKey, attachmentId);
       },
 
-      handleAttachmentsDeleted: (cardId, attachmentIds) => {
-        get().removeAttachments(cardId, attachmentIds);
+      handleAttachmentsAdded: (entityType, entityId, attachments) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        get().addAttachments(entityKey, attachments);
+      },
+
+      handleAttachmentsDeleted: (entityType, entityId, attachmentIds) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        get().removeAttachments(entityKey, attachmentIds);
       }
     })),
     { name: 'attachment-store' }
   )
 );
 
+// Export the helper function separately to avoid re-render issues
+export { getEntityKey };
+
 export default useAttachmentStore;
+

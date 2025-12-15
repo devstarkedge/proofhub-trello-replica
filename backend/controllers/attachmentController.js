@@ -1,6 +1,8 @@
 import asyncHandler from '../middleware/asyncHandler.js';
 import Attachment from '../models/Attachment.js';
 import Card from '../models/Card.js';
+import Subtask from '../models/Subtask.js';
+import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { emitToBoard } from '../server.js';
@@ -56,49 +58,60 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     throw new ErrorResponse('No file uploaded', 400);
   }
 
-  const { cardId, contextType = 'card', contextRef, commentId, setCover } = req.body;
+  const { cardId, subtaskId, nanoSubtaskId, contextType = 'card', contextRef, commentId, setCover } = req.body;
 
-  // Validate card exists
-  const card = await Card.findById(cardId).select('board').lean();
-  if (!card) {
-    throw new ErrorResponse('Card not found', 404);
+  // Validate exactly one parent reference is provided
+  const parentCount = [cardId, subtaskId, nanoSubtaskId].filter(Boolean).length;
+  if (parentCount !== 1) {
+    throw new ErrorResponse('Exactly one parent reference (cardId, subtaskId, or nanoSubtaskId) is required', 400);
+  }
+
+  let boardId, parentType, parentRefId, folderPath, cardForCover;
+  
+  if (cardId) {
+    const card = await Card.findById(cardId).select('board').lean();
+    if (!card) throw new ErrorResponse('Card not found', 404);
+    boardId = card.board;
+    parentType = 'card';
+    parentRefId = cardId;
+    folderPath = `flowtask/cards/${cardId}/attachments`;
+    cardForCover = cardId;
+  } else if (subtaskId) {
+    const subtask = await Subtask.findById(subtaskId).populate('task', 'board').lean();
+    if (!subtask) throw new ErrorResponse('Subtask not found', 404);
+    boardId = subtask.task?.board;
+    parentType = 'subtask';
+    parentRefId = subtaskId;
+    folderPath = `flowtask/subtasks/${subtaskId}/attachments`;
+    cardForCover = null; // Subtasks don't have cover images
+  } else if (nanoSubtaskId) {
+    const nano = await SubtaskNano.findById(nanoSubtaskId).populate({ 
+      path: 'subtask', 
+      populate: { path: 'task', select: 'board' } 
+    }).lean();
+    if (!nano) throw new ErrorResponse('Nano-subtask not found', 404);
+    boardId = nano.subtask?.task?.board;
+    parentType = 'nanoSubtask';
+    parentRefId = nanoSubtaskId;
+    folderPath = `flowtask/nanos/${nanoSubtaskId}/attachments`;
+    cardForCover = null; // Nanos don't have cover images
   }
 
   const fileType = getFileTypeCategory(req.file.mimetype);
   const resourceType = getCloudinaryResourceType(req.file.mimetype);
 
-  // Auto-cover logic: Set as cover if this is the first description image and no cover exists
-  let shouldSetAsCover = setCover === 'true';
-  if (!shouldSetAsCover && fileType === 'image' && contextType === 'description') {
-    // Check if card already has a cover image
-    const existingCover = await Attachment.findOne({
-      card: cardId,
-      isCover: true,
-      isDeleted: false
-    }).lean();
-    
-    if (!existingCover) {
-      // No cover exists, check if there are any description images
-      const descriptionImages = await Attachment.countDocuments({
-        card: cardId,
-        contextType: 'description',
-        fileType: 'image',
-        isDeleted: false
-      });
-      
-      // If this is the first description image, set it as cover
-      shouldSetAsCover = descriptionImages === 0;
-    }
-  }
+  // Cover is ONLY set when explicitly requested - no auto-cover logic
+  // This ensures attachments in subtask/nano modals never affect parent covers
+  const shouldSetAsCover = setCover === 'true' && parentType === 'card';
 
   // Upload to Cloudinary
   let cloudinaryResult;
   try {
     cloudinaryResult = await uploadToCloudinary(req.file.buffer, {
-      folder: `flowtask/cards/${cardId}/attachments`,
+      folder: folderPath,
       resourceType,
       context: {
-        cardId,
+        [parentType]: parentRefId,
         uploadedBy: req.user.id,
         originalName: req.file.originalname
       }
@@ -113,7 +126,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     );
   }
 
-  // Create attachment record
+  // Create attachment record with correct parent field
   const attachmentData = {
     fileName: cloudinaryResult.public_id.split('/').pop(),
     originalName: req.file.originalname,
@@ -125,10 +138,9 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     publicId: cloudinaryResult.public_id,
     resourceType: cloudinaryResult.resource_type,
     format: cloudinaryResult.format,
-    contextType: contextType || 'card',
-    contextRef: contextRef || cardId,
-    card: cardId,
-    board: card.board,
+    contextType: parentType,
+    contextRef: parentRefId,
+    board: boardId,
     comment: commentId || null,
     uploadedBy: req.user.id,
     width: cloudinaryResult.width,
@@ -137,6 +149,15 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     duration: cloudinaryResult.duration,
     isCover: shouldSetAsCover
   };
+
+  // Set the correct parent field
+  if (parentType === 'card') {
+    attachmentData.card = cardId;
+  } else if (parentType === 'subtask') {
+    attachmentData.subtask = subtaskId;
+  } else if (parentType === 'nanoSubtask') {
+    attachmentData.nanoSubtask = nanoSubtaskId;
+  }
 
   // Add thumbnail URLs for images
   if (fileType === 'image') {
@@ -151,33 +172,46 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
   const attachment = await Attachment.create(attachmentData);
   await attachment.populate('uploadedBy', 'name avatar');
 
-  // If this attachment is set as cover, update the card's coverImage field
-  if (shouldSetAsCover) {
-    await Card.findByIdAndUpdate(cardId, { coverImage: attachment._id });
+  // If this attachment is set as cover (only for cards), update the card's coverImage field
+  if (shouldSetAsCover && cardForCover) {
+    await Card.findByIdAndUpdate(cardForCover, { coverImage: attachment._id });
   }
 
   // Log activity
-  await Activity.create({
+  const activityData = {
     type: 'attachment_added',
     description: `Added attachment: ${req.file.originalname}`,
     user: req.user.id,
-    board: card.board,
-    card: cardId
-  });
+    board: boardId
+  };
+  if (parentType === 'card') activityData.card = cardId;
+  await Activity.create(activityData);
 
   // Emit real-time update
-  emitToBoard(card.board.toString(), 'attachment-added', {
-    cardId,
-    attachment,
-    addedBy: {
-      id: req.user.id,
-      name: req.user.name
-    }
-  });
+  if (boardId) {
+    emitToBoard(boardId.toString(), 'attachment-added', {
+      parentType,
+      parentId: parentRefId,
+      cardId: parentType === 'card' ? cardId : null,
+      subtaskId: parentType === 'subtask' ? subtaskId : null,
+      nanoSubtaskId: parentType === 'nanoSubtask' ? nanoSubtaskId : null,
+      attachment,
+      addedBy: {
+        id: req.user.id,
+        name: req.user.name
+      }
+    });
+  }
 
   // Invalidate cache
-  invalidateCache(`/api/cards/${cardId}`);
-  invalidateCache(`/api/attachments/card/${cardId}`);
+  if (parentType === 'card') {
+    invalidateCache(`/api/cards/${cardId}`);
+    invalidateCache(`/api/attachments/card/${cardId}`);
+  } else if (parentType === 'subtask') {
+    invalidateCache(`/api/attachments/subtask/${subtaskId}`);
+  } else if (parentType === 'nanoSubtask') {
+    invalidateCache(`/api/attachments/nano/${nanoSubtaskId}`);
+  }
 
   res.status(201).json({
     success: true,
@@ -316,6 +350,84 @@ export const getCardAttachments = asyncHandler(async (req, res) => {
   const skip = (pageNum - 1) * limitNum;
 
   const query = { card: cardId, isDeleted: false };
+  if (fileType) {
+    query.fileType = fileType;
+  }
+
+  const [attachments, total] = await Promise.all([
+    Attachment.find(query)
+      .populate('uploadedBy', 'name avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
+    Attachment.countDocuments(query)
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: attachments,
+    pagination: {
+      currentPage: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      totalItems: total,
+      hasNext: pageNum * limitNum < total,
+      hasPrev: pageNum > 1
+    }
+  });
+});
+
+// @desc    Get attachments for a subtask
+// @route   GET /api/attachments/subtask/:subtaskId
+// @access  Private
+export const getSubtaskAttachments = asyncHandler(async (req, res) => {
+  const { subtaskId } = req.params;
+  const { page = 1, limit = 20, fileType } = req.query;
+
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
+
+  const query = { subtask: subtaskId, isDeleted: false };
+  if (fileType) {
+    query.fileType = fileType;
+  }
+
+  const [attachments, total] = await Promise.all([
+    Attachment.find(query)
+      .populate('uploadedBy', 'name avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
+    Attachment.countDocuments(query)
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: attachments,
+    pagination: {
+      currentPage: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      totalItems: total,
+      hasNext: pageNum * limitNum < total,
+      hasPrev: pageNum > 1
+    }
+  });
+});
+
+// @desc    Get attachments for a nano-subtask
+// @route   GET /api/attachments/nano/:nanoSubtaskId
+// @access  Private
+export const getNanoSubtaskAttachments = asyncHandler(async (req, res) => {
+  const { nanoSubtaskId } = req.params;
+  const { page = 1, limit = 20, fileType } = req.query;
+
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
+
+  const query = { nanoSubtask: nanoSubtaskId, isDeleted: false };
   if (fileType) {
     query.fileType = fileType;
   }
@@ -548,7 +660,7 @@ export const deleteMultipleAttachments = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Set attachment as card cover
+// @desc    Set attachment as entity cover (card, subtask, or nanoSubtask)
 // @route   PATCH /api/attachments/:id/set-cover
 // @access  Private
 export const setAsCover = asyncHandler(async (req, res) => {
@@ -562,49 +674,110 @@ export const setAsCover = asyncHandler(async (req, res) => {
     throw new ErrorResponse('Only images can be set as cover', 400);
   }
 
-  // Remove cover from other attachments
-  await Attachment.updateMany(
-    { card: attachment.card, isCover: true, _id: { $ne: attachment._id } },
-    { isCover: false }
-  );
+  // Determine which entity this attachment belongs to
+  let entityType, entityId, entityModel;
+  
+  if (attachment.card) {
+    entityType = 'card';
+    entityId = attachment.card;
+    entityModel = Card;
+  } else if (attachment.subtask) {
+    entityType = 'subtask';
+    entityId = attachment.subtask;
+    entityModel = Subtask;
+  } else if (attachment.nanoSubtask) {
+    entityType = 'nanoSubtask';
+    entityId = attachment.nanoSubtask;
+    entityModel = SubtaskNano;
+  } else {
+    throw new ErrorResponse('Attachment does not belong to any entity', 400);
+  }
+
+  // Remove cover from other attachments within the SAME entity only
+  const query = { isCover: true, _id: { $ne: attachment._id } };
+  if (entityType === 'card') {
+    query.card = entityId;
+  } else if (entityType === 'subtask') {
+    query.subtask = entityId;
+  } else if (entityType === 'nanoSubtask') {
+    query.nanoSubtask = entityId;
+  }
+  
+  await Attachment.updateMany(query, { isCover: false });
 
   // Set this attachment as cover
   attachment.isCover = true;
   await attachment.save();
 
-  // Update card cover
-  await Card.findByIdAndUpdate(attachment.card, {
+  // Update the entity's coverImage field
+  await entityModel.findByIdAndUpdate(entityId, {
     coverImage: attachment._id
   });
 
-  // Emit real-time update
+  // Emit real-time update with entity-specific event
   if (attachment.board) {
-    emitToBoard(attachment.board.toString(), 'card-cover-updated', {
-      cardId: attachment.card,
+    const eventName = `${entityType}-cover-updated`;
+    emitToBoard(attachment.board.toString(), eventName, {
+      entityType,
+      entityId,
+      cardId: entityType === 'card' ? entityId : null,
+      subtaskId: entityType === 'subtask' ? entityId : null,
+      nanoSubtaskId: entityType === 'nanoSubtask' ? entityId : null,
       coverAttachment: attachment
     });
   }
 
   res.status(200).json({
     success: true,
-    data: attachment
+    data: attachment,
+    entityType,
+    entityId
   });
 });
+
 
 // @desc    Upload image from clipboard/paste
 // @route   POST /api/attachments/paste
 // @access  Private
 export const uploadFromPaste = asyncHandler(async (req, res) => {
-  const { imageData, cardId, contextType = 'description', contextRef } = req.body;
+  const { imageData, cardId, subtaskId, nanoSubtaskId, contextType = 'description', contextRef, setCover } = req.body;
 
   if (!imageData) {
     throw new ErrorResponse('Image data is required', 400);
   }
 
-  // Validate card exists
-  const card = await Card.findById(cardId).select('board').lean();
-  if (!card) {
-    throw new ErrorResponse('Card not found', 404);
+  // Validate exactly one parent reference is provided
+  const parentCount = [cardId, subtaskId, nanoSubtaskId].filter(Boolean).length;
+  if (parentCount !== 1) {
+    throw new ErrorResponse('Exactly one parent reference (cardId, subtaskId, or nanoSubtaskId) is required', 400);
+  }
+
+  let boardId, parentType, parentRefId, folderPath;
+
+  if (cardId) {
+    const card = await Card.findById(cardId).select('board').lean();
+    if (!card) throw new ErrorResponse('Card not found', 404);
+    boardId = card.board;
+    parentType = 'card';
+    parentRefId = cardId;
+    folderPath = `flowtask/cards/${cardId}/attachments`;
+  } else if (subtaskId) {
+    const subtask = await Subtask.findById(subtaskId).populate('task', 'board').lean();
+    if (!subtask) throw new ErrorResponse('Subtask not found', 404);
+    boardId = subtask.task?.board;
+    parentType = 'subtask';
+    parentRefId = subtaskId;
+    folderPath = `flowtask/subtasks/${subtaskId}/attachments`;
+  } else if (nanoSubtaskId) {
+    const nano = await SubtaskNano.findById(nanoSubtaskId).populate({ 
+      path: 'subtask', 
+      populate: { path: 'task', select: 'board' } 
+    }).lean();
+    if (!nano) throw new ErrorResponse('Nano-subtask not found', 404);
+    boardId = nano.subtask?.task?.board;
+    parentType = 'nanoSubtask';
+    parentRefId = nanoSubtaskId;
+    folderPath = `flowtask/nanos/${nanoSubtaskId}/attachments`;
   }
 
   // Convert base64 to buffer
@@ -618,15 +791,18 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
 
   // Upload to Cloudinary
   const cloudinaryResult = await uploadToCloudinary(buffer, {
-    folder: `flowtask/cards/${cardId}/attachments`,
+    folder: folderPath,
     resourceType: 'image',
     format,
     context: {
-      cardId,
+      [parentType]: parentRefId,
       uploadedBy: req.user.id,
       source: 'clipboard'
     }
   });
+
+  // Determine if should set as cover (only for cards)
+  let shouldSetAsCover = setCover && parentType === 'card';
 
   const attachmentData = {
     fileName: cloudinaryResult.public_id.split('/').pop(),
@@ -639,10 +815,9 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
     publicId: cloudinaryResult.public_id,
     resourceType: 'image',
     format: cloudinaryResult.format,
-    contextType,
-    contextRef: contextRef || cardId,
-    card: cardId,
-    board: card.board,
+    contextType: parentType,
+    contextRef: contextRef || parentRefId,
+    board: boardId,
     uploadedBy: req.user.id,
     width: cloudinaryResult.width,
     height: cloudinaryResult.height,
@@ -651,15 +826,38 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
       width: 800,
       height: 800,
       crop: 'limit'
-    })
+    }),
+    isCover: shouldSetAsCover
   };
+
+  // Set the correct parent field
+  if (parentType === 'card') {
+    attachmentData.card = cardId;
+  } else if (parentType === 'subtask') {
+    attachmentData.subtask = subtaskId;
+  } else if (parentType === 'nanoSubtask') {
+    attachmentData.nanoSubtask = nanoSubtaskId;
+  }
 
   const attachment = await Attachment.create(attachmentData);
   await attachment.populate('uploadedBy', 'name avatar');
 
+  // Handle cover image update if needed
+  if (shouldSetAsCover && parentType === 'card') {
+    await Attachment.updateMany(
+      { card: cardId, isCover: true, _id: { $ne: attachment._id } },
+      { isCover: false }
+    );
+    await Card.findByIdAndUpdate(cardId, { coverImage: attachment._id });
+  }
+
   // Emit real-time update
-  emitToBoard(card.board.toString(), 'attachment-added', {
-    cardId,
+  emitToBoard(boardId.toString(), 'attachment-added', {
+    parentType,
+    parentId: parentRefId,
+    cardId: parentType === 'card' ? cardId : null,
+    subtaskId: parentType === 'subtask' ? subtaskId : null,
+    nanoSubtaskId: parentType === 'nanoSubtask' ? nanoSubtaskId : null,
     attachment,
     addedBy: {
       id: req.user.id,
@@ -668,11 +866,18 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
   });
 
   // Invalidate cache
-  invalidateCache(`/api/cards/${cardId}`);
-  invalidateCache(`/api/attachments/card/${cardId}`);
+  if (parentType === 'card') {
+    invalidateCache(`/api/cards/${cardId}`);
+    invalidateCache(`/api/attachments/card/${cardId}`);
+  } else if (parentType === 'subtask') {
+    invalidateCache(`/api/attachments/subtask/${subtaskId}`);
+  } else if (parentType === 'nanoSubtask') {
+    invalidateCache(`/api/attachments/nano/${nanoSubtaskId}`);
+  }
 
   res.status(201).json({
     success: true,
     data: attachment
   });
 });
+

@@ -153,7 +153,7 @@ const CardDescription = memo(({
                   contextType="description"
                   contextRef={cardId}
                   enableAttachments={enableCloudinaryAttachments && !!cardId}
-                  enableAutoCover={true}
+                  enableAutoCover={false} // Disabled - cover must be set explicitly
                 />
               </div>
             </motion.div>

@@ -7,6 +7,10 @@ import Activity from "../models/Activity.js";
 import Department from "../models/Department.js";
 import Notification from "../models/Notification.js";
 import RecurringTask from "../models/RecurringTask.js";
+import Reminder from "../models/Reminder.js";
+import Subtask from "../models/Subtask.js";
+import SubtaskNano from "../models/SubtaskNano.js";
+import Comment from "../models/Comment.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
@@ -483,6 +487,31 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
 
   // Send notifications before deletion
   await notificationService.notifyTaskDeleted(board, req.user.id, true); // true for project deletion
+
+  // Get all cards for this board (needed for cascade delete of card-related data)
+  const cards = await Card.find({ board: board._id });
+  const cardIds = cards.map(c => c._id);
+
+  // Delete all reminders for this project
+  await Reminder.deleteMany({ project: board._id });
+
+  // Delete all labels for this board
+  await Label.deleteMany({ board: board._id });
+
+  // Delete all subtasks and their nano subtasks for this board
+  const subtasks = await Subtask.find({ board: board._id });
+  const subtaskIds = subtasks.map(s => s._id);
+  await SubtaskNano.deleteMany({ subtask: { $in: subtaskIds } });
+  await Subtask.deleteMany({ board: board._id });
+
+  // Delete all comments for cards in this project
+  await Comment.deleteMany({ card: { $in: cardIds } });
+
+  // Delete all attachments for cards in this project
+  await Attachment.deleteMany({ card: { $in: cardIds } });
+
+  // Delete all recurring tasks for cards in this project
+  await RecurringTask.deleteMany({ card: { $in: cardIds } });
 
   // Delete all lists and cards
   const lists = await List.find({ board: board._id });

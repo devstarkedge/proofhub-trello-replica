@@ -260,7 +260,10 @@ const useWorkflowStore = create(
         // Find and remove card optimistically
         const newCardsByList = { ...state.cardsByList };
         Object.keys(newCardsByList).forEach(listId => {
-          const cardIndex = newCardsByList[listId].findIndex(card => card._id === cardId);
+          const listCards = newCardsByList[listId];
+          // Guard: skip if list is undefined or not an array
+          if (!Array.isArray(listCards)) return;
+          const cardIndex = listCards.findIndex(card => card._id === cardId);
           if (cardIndex !== -1) {
             deletedCard = newCardsByList[listId][cardIndex];
             sourceListId = listId;

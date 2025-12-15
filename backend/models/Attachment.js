@@ -63,7 +63,7 @@ const attachmentSchema = new mongoose.Schema({
   contextType: {
     type: String,
     required: true,
-    enum: ['card', 'subtask', 'subtaskNano', 'comment', 'description'],
+    enum: ['card', 'subtask', 'subtaskNano', 'nanoSubtask', 'comment', 'description'],
     index: true
   },
   contextRef: {
@@ -76,6 +76,16 @@ const attachmentSchema = new mongoose.Schema({
   card: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Card',
+    index: true
+  },
+  subtask: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subtask',
+    index: true
+  },
+  nanoSubtask: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SubtaskNano',
     index: true
   },
   board: {
@@ -175,6 +185,36 @@ attachmentSchema.statics.findByCard = function(cardId, options = {}) {
 // Static method to find active attachments by context
 attachmentSchema.statics.findByContext = function(contextType, contextRef, options = {}) {
   const query = { contextType, contextRef, isDeleted: false };
+  
+  let q = this.find(query)
+    .populate('uploadedBy', 'name avatar')
+    .sort({ createdAt: -1 });
+    
+  if (options.limit) q = q.limit(options.limit);
+  if (options.skip) q = q.skip(options.skip);
+  if (options.lean) q = q.lean();
+  
+  return q;
+};
+
+// Static method to find attachments by subtask
+attachmentSchema.statics.findBySubtask = function(subtaskId, options = {}) {
+  const query = { subtask: subtaskId, isDeleted: false };
+  
+  let q = this.find(query)
+    .populate('uploadedBy', 'name avatar')
+    .sort({ createdAt: -1 });
+    
+  if (options.limit) q = q.limit(options.limit);
+  if (options.skip) q = q.skip(options.skip);
+  if (options.lean) q = q.lean();
+  
+  return q;
+};
+
+// Static method to find attachments by nano-subtask
+attachmentSchema.statics.findByNanoSubtask = function(nanoSubtaskId, options = {}) {
+  const query = { nanoSubtask: nanoSubtaskId, isDeleted: false };
   
   let q = this.find(query)
     .populate('uploadedBy', 'name avatar')

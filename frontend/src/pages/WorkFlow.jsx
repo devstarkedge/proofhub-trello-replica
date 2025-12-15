@@ -132,14 +132,23 @@ const WorkFlow = memo(() => {
       }
     };
 
+    const handleCardCoverUpdated = (event) => {
+      const { cardId, coverImage } = event.detail || {};
+      if (cardId) {
+         updateCard(cardId, { coverImage });
+      }
+    };
+
     window.addEventListener('socket-recurrence-created', handleRecurrenceCreated);
     window.addEventListener('socket-recurrence-stopped', handleRecurrenceStopped);
     window.addEventListener('socket-recurrence-updated', handleRecurrenceUpdated);
+    window.addEventListener('socket-card-cover-updated', handleCardCoverUpdated);
 
     return () => {
       window.removeEventListener('socket-recurrence-created', handleRecurrenceCreated);
       window.removeEventListener('socket-recurrence-stopped', handleRecurrenceStopped);
       window.removeEventListener('socket-recurrence-updated', handleRecurrenceUpdated);
+      window.removeEventListener('socket-card-cover-updated', handleCardCoverUpdated);
     };
   }, [board, updateCardRecurrence]);
 

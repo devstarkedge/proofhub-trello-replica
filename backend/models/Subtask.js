@@ -96,6 +96,10 @@ const subtaskSchema = new mongoose.Schema({
     type: Date
   },
   attachments: [attachmentSchema],
+  coverImage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Attachment'
+  },
   estimationTime: [{
     id: { type: String, required: true },
     hours: { type: Number, required: true, min: 0 },

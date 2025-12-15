@@ -19,7 +19,7 @@ const Header = ({ boardName }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logoutUser } = useContext(AuthContext);
-  const { currentTeam, currentDepartment, teams, departments, setCurrentTeam, setCurrentDepartment } = useContext(DepartmentContext);
+  const { currentTeam, currentDepartment, teams, departments, hasNoDepartments, setCurrentTeam, setCurrentDepartment } = useContext(DepartmentContext);
   const { notifications, unreadCount, markAsRead, deleteNotification, handleNotificationClick, verificationModal, handleVerificationAction, closeVerificationModal } = useContext(NotificationContext);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   
@@ -129,7 +129,14 @@ const Header = ({ boardName }) => {
             </nav>
 
             {/* Department Selector */}
-            {departments.length > 0 && shouldShowDepartmentSelector && (
+            {shouldShowDepartmentSelector && (
+              hasNoDepartments ? (
+                // Fallback for users with no departments assigned
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg text-sm font-medium border border-amber-200">
+                  <Building2 size={16} className="text-amber-600" />
+                  <span className="text-amber-700">No departments assigned</span>
+                </div>
+              ) : departments.length > 0 ? (
               <div ref={deptRef} className="relative">
                 <motion.button
                   whileHover={{ scale: 1.02 }}
@@ -138,12 +145,12 @@ const Header = ({ boardName }) => {
                   className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 rounded-lg text-sm font-medium transition-all border border-blue-200"
                 >
                   <Building2 size={16} className="text-blue-600" />
-                  <span className="text-gray-700">{currentDepartment?.name || 'Department'}</span>
-                  <ChevronDown size={14} className="text-gray-500" />
+                  <span className="text-gray-700">{currentDepartment?.name || 'Select Department'}</span>
+                  {departments.length > 1 && <ChevronDown size={14} className="text-gray-500" />}
                 </motion.button>
 
                 <AnimatePresence>
-                  {showDepartmentSelector && (
+                  {showDepartmentSelector && departments.length > 1 && (
                     <motion.div
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -174,6 +181,7 @@ const Header = ({ boardName }) => {
                   )}
                 </AnimatePresence>
               </div>
+              ) : null
             )}
 
             {/* Team Selector */}

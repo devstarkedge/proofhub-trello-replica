@@ -15,6 +15,7 @@ import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import useModalHierarchyStore from "../store/modalHierarchyStore";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
+import DeletePopup from "./ui/DeletePopup";
 
 const overlayMap = {
   pink: "bg-pink-950/50"
@@ -65,6 +66,7 @@ const SubtaskNanoModal = ({
   const [parentTaskId, setParentTaskId] = useState(initialData.task || null);
   const [parentSubtaskId, setParentSubtaskId] = useState(initialData.subtask || null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deletePopup, setDeletePopup] = useState({ isOpen: false, type: null, data: null });
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
@@ -311,10 +313,23 @@ const SubtaskNanoModal = ({
   };
 
   const handleSidebarDelete = async () => {
-    if (!window.confirm("Are you sure you want to delete this Neno-Subtask? This action cannot be undone.")) {
-      return;
+    // Open DeletePopup instead of using browser confirm
+    setDeletePopup({ isOpen: true, type: 'subtaskNano', data: null });
+  };
+
+  const handleConfirmGlobalDelete = async () => {
+    const { type } = deletePopup;
+    if (type !== 'subtaskNano') return;
+    try {
+      setDeleteLoading(true);
+      await runDelete();
+    } catch (error) {
+      console.error('Error deleting nano subtask:', error);
+      toast.error('Failed to delete subtask-nano');
+    } finally {
+      setDeleteLoading(false);
+      setDeletePopup(prev => ({ ...prev, isOpen: false }));
     }
-    await runDelete();
   };
 
   const handleSelectMember = (memberId) => {
@@ -642,6 +657,7 @@ const SubtaskNanoModal = ({
     null;
 
   return (
+    <>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -723,8 +739,11 @@ const SubtaskNanoModal = ({
                 />
 
                 <AttachmentsSection
-                  attachments={attachments}
+                  entityType="nanoSubtask"
+                  entityId={entityId}
+                  boardId={currentProject?._id}
                   onDeleteAttachment={handleDeleteAttachment}
+                  readOnly={false}
                 />
 
                 <TimeTrackingSection
@@ -872,6 +891,14 @@ const SubtaskNanoModal = ({
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    <DeletePopup
+      isOpen={deletePopup.isOpen}
+      onCancel={() => setDeletePopup(prev => ({ ...prev, isOpen: false }))}
+      onConfirm={handleConfirmGlobalDelete}
+      itemType={deletePopup.type || 'subtaskNano'}
+      isLoading={deleteLoading}
+    />
+    </>
   );
 };
 

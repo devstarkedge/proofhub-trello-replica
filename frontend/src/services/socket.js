@@ -115,6 +115,21 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-nano-hierarchy', { detail: data }));
     });
 
+    this.socket.on('card-cover-updated', (data) => {
+      console.log('Card cover updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-card-cover-updated', { detail: data }));
+    });
+
+    this.socket.on('subtask-cover-updated', (data) => {
+      console.log('Subtask cover updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-subtask-cover-updated', { detail: data }));
+    });
+
+    this.socket.on('nanoSubtask-cover-updated', (data) => {
+      console.log('Nano-Subtask cover updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-nano-cover-updated', { detail: data }));
+    });
+
     // Recurring task events
     this.socket.on('recurrence-created', (data) => {
       console.log('Recurrence created:', data);
