@@ -380,6 +380,31 @@ const useWorkflowStore = create(
         }
       },
 
+      // Update card locally ONLY (no API call)
+      // Useful for syncing state when another store (like attachmentStore) handles the API call
+      updateCardLocal: (cardId, updates) => {
+        set((state) => {
+          const newCardsByList = { ...state.cardsByList };
+          let found = false;
+          
+          Object.keys(newCardsByList).forEach(listId => {
+            if (found) return;
+            
+            const cardIndex = newCardsByList[listId].findIndex(c => c._id === cardId);
+            if (cardIndex !== -1) {
+              found = true;
+              newCardsByList[listId] = newCardsByList[listId].map((card, idx) => 
+                idx === cardIndex ? { ...card, ...updates } : card
+              );
+            }
+          });
+          
+          if (!found) return {};
+          
+          return { cardsByList: newCardsByList, lastUpdated: Date.now() };
+        });
+      },
+
       // Move card with optimistic update
       moveCard: async (cardId, newListId, newPosition, newStatus) => {
         const state = get();

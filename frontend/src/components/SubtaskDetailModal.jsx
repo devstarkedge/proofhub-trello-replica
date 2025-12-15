@@ -153,12 +153,27 @@ const SubtaskDetailModal = ({
       ));
     };
 
+    const handleLocalEntityUpdate = (event) => {
+      const { entityType, entityId, updates } = event.detail || {};
+      
+      // Update Nanos in list
+      if ((entityType === 'nano' || entityType === 'subtaskNano') && updates.coverImage) {
+        setNanoItems(prev => prev.map(item => 
+          item._id === entityId
+            ? { ...item, coverImage: updates.coverImage }
+            : item
+        ));
+      }
+    };
+
     window.addEventListener("socket-nano-hierarchy", hierarchyHandler);
     window.addEventListener("socket-nano-cover-updated", coverUpdateHandler);
+    window.addEventListener('local-entity-update', handleLocalEntityUpdate);
     
     return () => {
       window.removeEventListener("socket-nano-hierarchy", hierarchyHandler);
       window.removeEventListener("socket-nano-cover-updated", coverUpdateHandler);
+      window.removeEventListener('local-entity-update', handleLocalEntityUpdate);
     };
   }, [entityId]);
 

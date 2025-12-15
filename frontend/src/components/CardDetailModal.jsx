@@ -381,12 +381,33 @@ const CardDetailModal = React.memo(({
       ));
     };
 
+    const handleLocalEntityUpdate = (event) => {
+      const { entityType, entityId, updates } = event.detail || {};
+      
+      // 1. Update Subtasks in list
+      if (entityType === 'subtask' && updates.coverImage) {
+        setSubtasks(prev => prev.map(item => 
+          item._id === entityId
+            ? { ...item, coverImage: updates.coverImage }
+            : item
+        ));
+      }
+      
+      // 2. Update Card Self (if not handled by socket-card-cover-updated or if this is faster)
+      // Note: card cover is also handled in handleCardCoverUpdate via socket, but this is instant.
+      if (entityType === 'card' && (entityId === card._id || entityId === card.id) && updates.coverImage) {
+        setCoverImage(updates.coverImage);
+      }
+    };
+
     window.addEventListener('socket-subtask-hierarchy', hierarchyHandler);
     window.addEventListener('socket-subtask-cover-updated', coverUpdateHandler);
+    window.addEventListener('local-entity-update', handleLocalEntityUpdate);
     
     return () => {
       window.removeEventListener('socket-subtask-hierarchy', hierarchyHandler);
       window.removeEventListener('socket-subtask-cover-updated', coverUpdateHandler);
+      window.removeEventListener('local-entity-update', handleLocalEntityUpdate);
     };
   }, [card?._id]);
 

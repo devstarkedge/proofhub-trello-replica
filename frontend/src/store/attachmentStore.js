@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import attachmentService from '../services/attachmentService';
+import useWorkflowStore from './workflowStore';
 
 // Helper to generate composite key for entity-based state management
 const getEntityKey = (entityType, entityId) => `${entityType}:${entityId}`;
@@ -236,6 +237,14 @@ const useAttachmentStore = create(
             };
           });
 
+          // Sync with workflow store if it's a card
+          if (entityType === 'card') {
+            const currentCount = get().attachments[entityKey]?.length || 0;
+            useWorkflowStore.getState().updateCardLocal(entityId, { 
+              attachmentsCount: currentCount 
+            });
+          }
+
           // Clear progress after delay and revoke object URL
           setTimeout(() => {
             const state = get();
@@ -352,6 +361,14 @@ const useAttachmentStore = create(
             };
           });
 
+          // Sync with workflow store if it's a card
+          if (entityType === 'card') {
+            const currentCount = get().attachments[entityKey]?.length || 0;
+            useWorkflowStore.getState().updateCardLocal(entityId, { 
+              attachmentsCount: currentCount 
+            });
+          }
+
           setTimeout(() => get().clearUploadProgress(uploadId), 1000);
 
           return attachment;
@@ -375,6 +392,15 @@ const useAttachmentStore = create(
         try {
           await attachmentService.deleteAttachment(attachmentId);
           get().removeAttachment(entityKey, attachmentId);
+          
+          // Sync with workflow store if it's a card
+          if (entityType === 'card') {
+            const currentCount = get().attachments[entityKey]?.length || 0;
+            useWorkflowStore.getState().updateCardLocal(entityId, { 
+              attachmentsCount: currentCount 
+            });
+          }
+
           return true;
         } catch (error) {
           // If 404/Not Found, allow removal from UI to fix synchronization
@@ -401,6 +427,24 @@ const useAttachmentStore = create(
             }
           });
           // Return the full attachment data from the response
+          
+          // Sync with workflow store if it's a card
+          if (entityType === 'card') {
+            useWorkflowStore.getState().updateCardLocal(entityId, { 
+              coverImage: result?.data || result 
+            });
+          }
+
+          // Dispatch global event for local UI updates (modals/lists)
+          const event = new CustomEvent('local-entity-update', {
+            detail: {
+              entityType,
+              entityId,
+              updates: { coverImage: result?.data || result }
+            }
+          });
+          window.dispatchEvent(event);
+
           return result?.data || result;
         } catch (error) {
           console.error('Set as cover error:', error);
@@ -419,6 +463,14 @@ const useAttachmentStore = create(
           await attachmentService.deleteMultiple(attachmentIds);
           get().removeAttachments(entityKey, attachmentIds);
           get().clearSelection();
+
+          // Sync with workflow store if it's a card
+          if (entityType === 'card') {
+            const currentCount = get().attachments[entityKey]?.length || 0;
+            useWorkflowStore.getState().updateCardLocal(entityId, { 
+              attachmentsCount: currentCount 
+            });
+          }
           return true;
         } catch (error) {
           console.error('Delete selected error:', error);
