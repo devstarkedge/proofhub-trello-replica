@@ -55,23 +55,27 @@ const RichTextEditor = ({
   modalContainerRef = null, // Ref to the modal container for click-outside detection
   collapsible = false, // Whether the editor is collapsible (used in modals)
   // New props for Cloudinary attachment integration
-  cardId = null, // Card ID for attachment uploads
-  contextType = null, // 'description' or 'comment' - determines source tag
-  contextRef = null, // Reference ID (cardId for description, commentId for comment)
-  enableAttachments = false, // Enable multi-file attachment button (images, PDFs, docs, etc.)
+  cardId = null, // Legacy Card ID (for backward compatibility)
+  entityType = 'card', // 'card' | 'subtask' | 'nanoSubtask'
+  entityId = null, // The entity ID (replaces cardId for generic support)
+  contextType = null, // 'description' or 'comment'
+  contextRef = null, // Reference ID
+  enableAttachments = false, // Enable multi-file attachment button
   enableAutoCover = true, // Auto-set first description image as cover
 }) => {
   const [isExpanded, setIsExpanded] = useState(startExpanded);
+  // ... state declarations ...
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [, forceUpdate] = useState(); // Force re-render for toolbar state
+  const [, forceUpdate] = useState(); 
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
   const attachmentInputRef = useRef(null);
-
-  // Editor instance ref for callbacks
   const editorInstanceRef = useRef(null);
+
+  // Helper to determine if we have a valid entity for attachments
+  const hasEntityContext = !!(entityId || cardId);
 
   // Callback to insert image into editor
   const handleInsertImage = useCallback((imageUrl) => {
@@ -98,7 +102,10 @@ const RichTextEditor = ({
     validateFile,
     getAcceptedFileTypes
   } = useEditorAttachment({
-    cardId,
+    entityType,
+    entityId: entityId || cardId,
+    // Legacy support handled by hook, but explicit passing helps clarity
+    cardId: cardId,
     contextType: contextType || (isComment ? 'comment' : 'description'),
     contextRef,
     onInsertImage: handleInsertImage,
@@ -325,8 +332,8 @@ const RichTextEditor = ({
         setUploadSuccess(false);
 
         try {
-          // Use new Cloudinary attachment upload if cardId is available
-          if (cardId && enableAttachments) {
+          // Use new Cloudinary attachment upload if valid entity context is available
+          if (hasEntityContext && enableAttachments) {
             await uploadAttachmentFile(file);
             setUploadSuccess(true);
             setTimeout(() => setUploadSuccess(false), 2000);
@@ -360,7 +367,7 @@ const RichTextEditor = ({
         return; // Only process the first image
       }
     }
-  }, [editor, onImageUpload, cardId, enableAttachments, uploadAttachmentFile]);
+  }, [editor, onImageUpload, hasEntityContext, enableAttachments, uploadAttachmentFile]);
 
   // Attach paste handler to editor
   useEffect(() => {
@@ -508,8 +515,8 @@ const RichTextEditor = ({
               setUploadSuccess(false);
 
               try {
-                // Use Cloudinary upload if cardId is available
-                if (cardId && enableAttachments) {
+                // Use Cloudinary upload if entity context is available
+                if (hasEntityContext && enableAttachments) {
                   // Fire and forget upload (handled by store/preview)
                   uploadAttachmentFile(file).catch(console.error);
                   
@@ -548,7 +555,7 @@ const RichTextEditor = ({
             }}
           />
           {/* Multi-file Attachment Button - only show when enableAttachments is true */}
-          {enableAttachments && cardId && (
+          {enableAttachments && hasEntityContext && (
             <>
               <button
                 onClick={() => {
@@ -672,9 +679,11 @@ const RichTextEditor = ({
 
 
         {/* Attachment Previews Integration */}
-        {cardId && (
+        {hasEntityContext && (
           <div className="px-3 pb-2">
             <EditorAttachmentPreview 
+              entityType={entityType}
+              entityId={entityId}
               cardId={cardId} 
               contextType={contextType || (isComment ? 'comment' : 'description')}
               contextRef={contextRef}

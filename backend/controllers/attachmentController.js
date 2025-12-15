@@ -599,8 +599,13 @@ export const deleteMultipleAttachments = asyncHandler(async (req, res) => {
     isDeleted: false
   });
 
+  // If no attachments found, just return success (idempotent)
   if (attachments.length === 0) {
-    throw new ErrorResponse('No attachments found', 404);
+    return res.status(200).json({
+      success: true,
+      message: 'No attachments found to delete',
+      deletedCount: 0
+    });
   }
 
   // Group by resource type for Cloudinary deletion
@@ -723,7 +728,8 @@ export const setAsCover = asyncHandler(async (req, res) => {
       cardId: entityType === 'card' ? entityId : null,
       subtaskId: entityType === 'subtask' ? entityId : null,
       nanoSubtaskId: entityType === 'nanoSubtask' ? entityId : null,
-      coverAttachment: attachment
+      coverImage: attachment,  // Use coverImage for consistency with frontend expectations
+      coverAttachment: attachment  // Keep for backward compatibility
     });
   }
 

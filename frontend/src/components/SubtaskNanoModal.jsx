@@ -736,6 +736,9 @@ const SubtaskNanoModal = ({
                   teamMembers={teamMembers}
                   onChange={setDescription}
                   modalContainerRef={modalContentRef}
+                  entityType="nanoSubtask"
+                  entityId={entityId}
+                  enableCloudinaryAttachments={true}
                 />
 
                 <AttachmentsSection
@@ -843,6 +846,9 @@ const SubtaskNanoModal = ({
                         onEditComment={handleEditComment}
                         onDeleteComment={handleDeleteComment}
                         modalContainerRef={modalContentRef}
+                        entityType="nanoSubtask"
+                        entityId={entityId}
+                        enableCloudinaryAttachments={true}
                       />
                     ) : (
                       <ActivitySection

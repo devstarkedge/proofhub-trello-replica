@@ -1,29 +1,44 @@
-import React, { useMemo, useState } from 'react';
-import { X, Loader, File, FileText, FileImage, FileSpreadsheet, Film, AlertCircle, Maximize2 } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { X, Loader, File, FileText, FileImage, FileSpreadsheet, Film, AlertCircle, RefreshCw } from 'lucide-react';
 import useAttachmentStore from '../store/attachmentStore';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const EditorAttachmentPreview = ({ cardId, contextType, contextRef }) => {
+const EditorAttachmentPreview = ({ 
+  entityType = 'card',
+  entityId,
+  cardId, // Legacy support
+  contextType, 
+  contextRef 
+}) => {
   const uploadProgress = useAttachmentStore(state => state.uploadProgress);
-  const [expanded, setExpanded] = useState(false);
-  const MAX_VISIBLE_PREVIEWS = 5;
+  const retryUpload = useAttachmentStore(state => state.retryUpload);
 
   // Filter uploads relevant to this specific editor context
   const activeUploads = useMemo(() => {
+    // Resolve entity info (Entity takes precedence over legacy cardId)
+    const targetEntityType = entityId ? entityType : 'card';
+    const targetEntityId = entityId || cardId;
+
+    if (!targetEntityId) return [];
+
     return Object.entries(uploadProgress)
       .map(([id, data]) => ({ id, ...data }))
+      .filter(upload => {
+        // Strict matching: Entity Type + Entity ID matching
+        const uploadEntityType = upload.entityType || 'card';
+        const uploadEntityId = upload.entityId || upload.cardId;
+
+        return uploadEntityType === targetEntityType && 
+               uploadEntityId === targetEntityId;
+      })
       .filter(upload => 
-        upload.cardId === cardId && 
         upload.contextType === contextType && 
-        (contextRef ? upload.contextRef === contextRef : true) &&
+        (!contextRef || upload.contextRef === contextRef) &&
         upload.status !== 'completed' // Only show pending/error states
       );
-  }, [uploadProgress, cardId, contextType, contextRef]);
+  }, [uploadProgress, cardId, entityId, entityType, contextType, contextRef]);
 
   if (activeUploads.length === 0) return null;
-
-  const visibleUploads = expanded ? activeUploads : activeUploads.slice(0, MAX_VISIBLE_PREVIEWS);
-  const remainingCount = activeUploads.length - MAX_VISIBLE_PREVIEWS;
 
   const getFileIcon = (fileType) => {
     switch (fileType) {
@@ -36,103 +51,98 @@ const EditorAttachmentPreview = ({ cardId, contextType, contextRef }) => {
   };
 
   return (
-    <div className="mt-2 flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
-      <AnimatePresence>
-        {visibleUploads.map((upload) => (
-          <motion.div
-            key={upload.id}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="relative group w-16 h-16 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow"
-            title={`${upload.fileName} (${Math.round(upload.progress)}%)`}
-          >
-            {/* Background Preview or Icon */}
-            {upload.preview && upload.fileType === 'image' ? (
-              <img 
-                src={upload.preview} 
-                alt={upload.fileName} 
-                className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-              />
-            ) : (
-              <div className="flex flex-col items-center gap-1 p-1">
-                {getFileIcon(upload.fileType)}
-                <span className="text-[9px] text-gray-500 text-center truncate w-full max-w-[50px] leading-tight">
-                  {upload.fileName.substring(0, 8)}...
-                </span>
-              </div>
-            )}
-
-            {/* Overlay Loader / Error */}
-            <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
-              {upload.status === 'error' ? (
-                <AlertCircle size={20} className="text-red-500 drop-shadow-sm" />
+    <div className="mt-2 w-full animate-in fade-in slide-in-from-top-1 duration-200">
+      <div className="flex flex-nowrap overflow-x-auto gap-2 py-2 px-1 custom-scrollbar items-center">
+        <AnimatePresence mode='popLayout'>
+          {activeUploads.map((upload) => (
+            <motion.div
+              key={upload.id}
+              initial={{ opacity: 0, scale: 0.8, width: 0 }}
+              animate={{ opacity: 1, scale: 1, width: 'auto' }}
+              exit={{ opacity: 0, scale: 0.8, width: 0, transition: { duration: 0.2 } }}
+              layout
+              className="relative group flex-shrink-0 w-16 h-16 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow"
+              title={`${upload.fileName} (${upload.status === 'error' ? 'Failed' : Math.round(upload.progress) + '%'})`}
+            >
+              {/* Background Preview or Icon */}
+              {upload.preview && upload.fileType === 'image' ? (
+                <img 
+                  src={upload.preview} 
+                  alt={upload.fileName} 
+                  className={`w-full h-full object-cover transition-opacity ${
+                    upload.status === 'uploading' ? 'opacity-50' : 'opacity-80'
+                  }`}
+                />
               ) : (
-                <div className="relative w-8 h-8 flex items-center justify-center">
-                  <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 36 36">
-                    <path
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke="white"
-                      strokeWidth="4"
-                      strokeOpacity="0.5"
-                    />
-                    <path
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke={upload.status === 'error' ? '#ef4444' : '#3b82f6'}
-                      strokeWidth="4"
-                      strokeDasharray={`${upload.progress}, 100`}
-                      className="transition-all duration-300 ease-out"
-                    />
-                  </svg>
-                  <span className="absolute text-[8px] font-bold text-white drop-shadow-md">
-                    {Math.round(upload.progress)}%
+                <div className="flex flex-col items-center gap-1 p-1">
+                  {getFileIcon(upload.fileType)}
+                  <span className="text-[9px] text-gray-500 text-center truncate w-full max-w-[50px] leading-tight">
+                    {upload.fileName.substring(0, 8)}...
                   </span>
                 </div>
               )}
-            </div>
 
-            {/* Cancel Button (on hover) */}
-            <button
-               onClick={(e) => {
-                 e.stopPropagation();
-                 // TODO: Implement cancel logic in store if supported, currently just hides locally
-                 // For now we rely on the component unmounting or status changing
-               }}
-               className="absolute top-0.5 right-0.5 p-0.5 bg-black/50 hover:bg-red-500 rounded-full text-white opacity-0 group-hover:opacity-100 transition-all transform scale-75 hover:scale-100"
-            >
-              <X size={10} />
-            </button>
-          </motion.div>
-        ))}
-      </AnimatePresence>
+              {/* Overlay Loader / Error / Retry */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                {upload.status === 'error' ? (
+                  <div className="bg-white/80 rounded-full p-1 cursor-pointer hover:bg-white transition-colors shadow-sm"
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         retryUpload(upload.id);
+                       }}
+                       title="Retry Upload"
+                  >
+                    <RefreshCw size={18} className="text-red-500" />
+                  </div>
+                ) : (
+                  <div className="relative w-8 h-8 flex items-center justify-center">
+                    {/* Simplified Circular Progress for compact view */}
+                    <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 36 36">
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="white"
+                        strokeWidth="4"
+                        strokeOpacity="0.8"
+                      />
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke={upload.status === 'error' ? '#ef4444' : '#3b82f6'}
+                        strokeWidth="4"
+                        strokeDasharray={`${upload.progress}, 100`}
+                        strokeLinecap="round"
+                        className="transition-all duration-300 ease-out"
+                      />
+                    </svg>
+                    {/* Text might be too small, maybe just show loader? User asked for % */}
+                     <span className="absolute text-[8px] font-bold text-white drop-shadow-md select-none">
+                      {Math.round(upload.progress)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
-      {/* Expand Button for +N items */}
-      {!expanded && remainingCount > 0 && (
-        <motion.button
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          onClick={() => setExpanded(true)}
-          className="w-16 h-16 rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors"
-        >
-          <span className="text-sm font-bold">+{remainingCount}</span>
-          <span className="text-[10px]">uploading</span>
-        </motion.button>
-      )}
-      
-      {/* Collapse button when expanded */}
-      {expanded && activeUploads.length > MAX_VISIBLE_PREVIEWS && (
-         <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            onClick={() => setExpanded(false)}
-            className="w-16 h-16 rounded-lg bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-            title="Show less"
-         >
-           <X size={20} />
-         </motion.button>
-      )}
+      <style jsx="true">{`
+        .custom-scrollbar::-webkit-scrollbar {
+          height: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #d1d5db;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #9ca3af;
+        }
+      `}</style>
     </div>
   );
 };

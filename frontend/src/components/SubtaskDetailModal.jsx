@@ -139,12 +139,16 @@ const SubtaskDetailModal = ({
     };
 
     const coverUpdateHandler = (event) => {
-      const { nanoSubtaskId, coverImage } = event.detail || {};
+      const { nanoSubtaskId, coverImage, coverAttachment } = event.detail || {};
       if (!nanoSubtaskId) return;
+      
+      // Use coverImage if provided, fallback to coverAttachment
+      const coverData = coverImage || coverAttachment;
+      if (coverData === undefined) return;
       
       setNanoItems(prev => prev.map(item => 
         item._id === nanoSubtaskId 
-          ? { ...item, coverImage } 
+          ? { ...item, coverImage: coverData } 
           : item
       ));
     };
@@ -871,7 +875,9 @@ const SubtaskDetailModal = ({
                   onChange={setDescription}
                   modalContainerRef={modalContentRef}
                   cardId={parentTaskId}
-                  enableCloudinaryAttachments={!!parentTaskId}
+                  entityType="subtask"
+                  entityId={entityId}
+                  enableCloudinaryAttachments={true}
                 />
 
                 <SubtasksSection
@@ -993,7 +999,9 @@ const SubtaskDetailModal = ({
                         onDeleteComment={handleDeleteComment}
                         modalContainerRef={modalContentRef}
                         cardId={parentTaskId}
-                        enableCloudinaryAttachments={!!parentTaskId}
+                        entityType="subtask"
+                        entityId={entityId}
+                        enableCloudinaryAttachments={true}
                       />
                     ) : (
                       <ActivitySection

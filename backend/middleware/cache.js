@@ -37,7 +37,9 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/reminders/dashboard', // Skip reminder dashboard stats
     '/api/reminders/calendar', // Skip reminder calendar data
     '/api/announcements', // Skip announcements to avoid clone issues with Mongoose documents
-    '/api/announcements/' // Skip all announcement-related endpoints
+    '/api/announcements/', // Skip all announcement-related endpoints
+    '/api/attachments', // Skip caching for all attachment endpoints
+    '/api/attachments/' // Skip caching for all attachment-related endpoints
   ];
   return (req, res, next) => {
     // Skip caching for non-GET requests

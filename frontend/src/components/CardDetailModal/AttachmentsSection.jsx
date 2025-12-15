@@ -3,6 +3,7 @@ import { Paperclip, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import useAttachmentStore, { getEntityKey } from "../../store/attachmentStore";
 import DeletePopup from "../ui/DeletePopup";
+import { toast } from "react-toastify";
 
 // Lazy load heavy components
 const AttachmentUploader = lazy(() => import("../AttachmentUploader"));
@@ -33,14 +34,18 @@ const AttachmentsSection = memo(({
   const loading = store.loading[entityKey] || false;
   const error = store.error[entityKey] || null;
   const pagination = store.pagination[entityKey] || {};
+  
+  
   const totalCount = pagination.totalCount || attachments.length;
   
-  const [deletePopup, setDeletePopup] = React.useState({ isOpen: false, attachmentId: null });
+  const [deletePopup, setDeletePopup] = React.useState({ isOpen: false, attachmentId: null, attachmentIds: null });
+  const [isDeleting, setIsDeleting] = React.useState(false);
   
   // Store actions
   const {
     fetchAttachments,
     deleteAttachment,
+    deleteSelected,
     setAsCover,
     setError,
     clearEntityData
@@ -70,19 +75,37 @@ const AttachmentsSection = memo(({
     setDeletePopup({ isOpen: true, attachmentId });
   }, []);
 
+  // Handle bulk delete
+  const handleBulkDelete = useCallback((ids) => {
+    setDeletePopup({ isOpen: true, attachmentIds: ids });
+  }, []);
+
   const handleConfirmDelete = async () => {
-    const { attachmentId } = deletePopup;
-    if (!attachmentId) return;
+    const { attachmentId, attachmentIds } = deletePopup;
+    if (!attachmentId && (!attachmentIds || attachmentIds.length === 0)) return;
     
+    setIsDeleting(true);
     try {
-      await deleteAttachment(entityType, entityId, attachmentId);
-      if (onDeleteAttachment) {
+      if (attachmentIds && attachmentIds.length > 0) {
+        await deleteSelected(entityType, entityId);
+        toast.success(`${attachmentIds.length} attachments deleted`);
+      } else {
+        await deleteAttachment(entityType, entityId, attachmentId);
+        toast.success('Attachment deleted');
+      }
+      
+      // Notify parent if needed (bulk notifications might need array support in parent handler, 
+      // but for now we basically verify sync)
+      if (onDeleteAttachment && attachmentId) {
         onDeleteAttachment(attachmentId);
       }
     } catch (error) {
       console.error('Delete failed:', error);
+      toast.error('Failed to delete attachment(s)');
+    } finally {
+      setIsDeleting(false);
+      setDeletePopup({ isOpen: false, attachmentId: null, attachmentIds: null });
     }
-    setDeletePopup({ isOpen: false, attachmentId: null });
   };
 
   // Handle set as cover - supports all entity types
@@ -194,6 +217,7 @@ const AttachmentsSection = memo(({
           <AttachmentList
             attachments={attachments}
             onDelete={readOnly ? undefined : handleDelete}
+            onDeleteMultiple={readOnly ? undefined : handleBulkDelete}
             onSetCover={readOnly || entityType !== 'card' ? undefined : handleSetCover}
             entityType={entityType}
             entityId={entityId}
@@ -203,9 +227,12 @@ const AttachmentsSection = memo(({
       
       <DeletePopup
         isOpen={deletePopup.isOpen}
-        onCancel={() => setDeletePopup({ isOpen: false, attachmentId: null })}
+        onCancel={() => !isDeleting && setDeletePopup({ isOpen: false, attachmentId: null, attachmentIds: null })}
         onConfirm={handleConfirmDelete}
         itemType="attachment"
+        title={deletePopup.attachmentIds ? `Delete ${deletePopup.attachmentIds.length} Attachments?` : undefined}
+        description={deletePopup.attachmentIds ? "Are you sure you want to delete these selected attachments?" : undefined}
+        isLoading={isDeleting}
       />
     </motion.div>
   );

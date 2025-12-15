@@ -21,19 +21,28 @@ const useAttachmentStore = create(
         attachments: { ...state.attachments, [entityKey]: attachments }
       })),
 
-      addAttachment: (entityKey, attachment) => set((state) => ({
-        attachments: {
-          ...state.attachments,
-          [entityKey]: [attachment, ...(state.attachments[entityKey] || [])]
-        }
-      })),
+      addAttachment: (entityKey, attachment) => set((state) => {
+        const current = state.attachments[entityKey] || [];
+        if (current.some(a => a._id === attachment._id)) return {};
+        return {
+          attachments: {
+            ...state.attachments,
+            [entityKey]: [attachment, ...current]
+          }
+        };
+      }),
 
-      addAttachments: (entityKey, newAttachments) => set((state) => ({
-        attachments: {
-          ...state.attachments,
-          [entityKey]: [...newAttachments, ...(state.attachments[entityKey] || [])]
-        }
-      })),
+      addAttachments: (entityKey, newAttachments) => set((state) => {
+        const current = state.attachments[entityKey] || [];
+        const uniqueNew = newAttachments.filter(n => !current.some(c => c._id === n._id));
+        if (uniqueNew.length === 0) return {};
+        return {
+          attachments: {
+            ...state.attachments,
+            [entityKey]: [...uniqueNew, ...current]
+          }
+        };
+      }),
 
       removeAttachment: (entityKey, attachmentId) => set((state) => ({
         attachments: {
@@ -158,7 +167,8 @@ const useAttachmentStore = create(
 
       uploadFile: async (file, entityType, entityId, options = {}) => {
         const entityKey = getEntityKey(entityType, entityId);
-        const uploadId = `${Date.now()}-${file.name}`;
+        // Use existing ID if retrying, otherwise generate new
+        const uploadId = options.existingUploadId || `${Date.now()}-${file.name}`;
         
         // Create preview URL for immediate display
         let preview = null;
@@ -178,7 +188,10 @@ const useAttachmentStore = create(
               size: file.size,
               entityType,
               entityId,
-              entityKey
+              entityKey,
+              contextType: options.contextType,
+              contextRef: options.contextRef,
+              file // Store file object for retry capability
             }
           }
         }));
@@ -200,20 +213,28 @@ const useAttachmentStore = create(
             }
           });
 
-          set((s) => ({
-            attachments: {
-              ...s.attachments,
-              [entityKey]: [attachment, ...(s.attachments[entityKey] || [])]
-            },
-            uploadProgress: {
-              ...s.uploadProgress,
-              [uploadId]: { 
-                ...s.uploadProgress[uploadId],
-                progress: 100, 
-                status: 'completed' 
+          set((s) => {
+            const current = s.attachments[entityKey] || [];
+            const exists = current.some(a => a._id === attachment._id);
+            const updatedList = exists
+              ? current.map(a => a._id === attachment._id ? attachment : a)
+              : [attachment, ...current];
+
+            return {
+              attachments: {
+                ...s.attachments,
+                [entityKey]: updatedList
+              },
+              uploadProgress: {
+                ...s.uploadProgress,
+                [uploadId]: { 
+                  ...s.uploadProgress[uploadId],
+                  progress: 100, 
+                  status: 'completed' 
+                }
               }
-            }
-          }));
+            };
+          });
 
           // Clear progress after delay and revoke object URL
           setTimeout(() => {
@@ -253,6 +274,35 @@ const useAttachmentStore = create(
         return { success: true, started: true, count: files.length };
       },
 
+      retryUpload: (uploadId) => {
+        const state = get();
+        const item = state.uploadProgress[uploadId];
+        if (!item || !item.file) return;
+
+        // Reset status to uploading immediately
+        set((s) => ({
+          uploadProgress: {
+            ...s.uploadProgress,
+            [uploadId]: { 
+              ...item, 
+              status: 'uploading', 
+              error: null, 
+              progress: 0 
+            }
+          }
+        }));
+        
+        // Retrigger upload with existing ID
+        get().uploadFile(item.file, item.entityType, item.entityId, {
+            contextType: item.contextType,
+            contextRef: item.contextRef,
+            existingUploadId: uploadId,
+            // Preserve original options if we stored them, or default
+        }).catch(err => {
+             console.error("Retry failed", err);
+        });
+      },
+
       uploadFromPaste: async (imageData, entityType, entityId, options = {}) => {
         const entityKey = getEntityKey(entityType, entityId);
         const uploadId = `paste-${Date.now()}`;
@@ -279,20 +329,28 @@ const useAttachmentStore = create(
             entityType
           });
 
-          set((s) => ({
-            attachments: {
-              ...s.attachments,
-              [entityKey]: [attachment, ...(s.attachments[entityKey] || [])]
-            },
-            uploadProgress: {
-              ...s.uploadProgress,
-              [uploadId]: { 
-                ...s.uploadProgress[uploadId],
-                progress: 100, 
-                status: 'completed' 
+          set((s) => {
+            const current = s.attachments[entityKey] || [];
+            const exists = current.some(a => a._id === attachment._id);
+            const updatedList = exists
+              ? current.map(a => a._id === attachment._id ? attachment : a)
+              : [attachment, ...current];
+
+            return {
+              attachments: {
+                ...s.attachments,
+                [entityKey]: updatedList
+              },
+              uploadProgress: {
+                ...s.uploadProgress,
+                [uploadId]: { 
+                  ...s.uploadProgress[uploadId],
+                  progress: 100, 
+                  status: 'completed' 
+                }
               }
-            }
-          }));
+            };
+          });
 
           setTimeout(() => get().clearUploadProgress(uploadId), 1000);
 
@@ -319,6 +377,12 @@ const useAttachmentStore = create(
           get().removeAttachment(entityKey, attachmentId);
           return true;
         } catch (error) {
+          // If 404/Not Found, allow removal from UI to fix synchronization
+          if (error.message && (error.message.toLowerCase().includes('not found') || error.message.includes('404'))) {
+             console.warn('Attachment not found on server, removing from UI:', attachmentId);
+             get().removeAttachment(entityKey, attachmentId);
+             return true;
+          }
           console.error('Delete attachment error:', error);
           throw error;
         }

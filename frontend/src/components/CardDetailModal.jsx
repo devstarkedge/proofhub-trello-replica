@@ -8,6 +8,7 @@ import { toast } from "react-toastify";
 import useWorkflowStore from "../store/workflowStore";
 import useDepartmentStore from "../store/departmentStore";
 import useModalHierarchyStore from "../store/modalHierarchyStore";
+import useAttachmentStore, { getEntityKey } from "../store/attachmentStore";
 import CardDescription from "./CardDetailModal/CardDescription";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
 import SubtasksSection from "./CardDetailModal/SubtasksSection";
@@ -302,9 +303,11 @@ const CardDetailModal = React.memo(({
     };
 
     const handleCardCoverUpdate = (event) => {
-      const { cardId, coverImage } = event.detail;
-      if (cardId === card._id) {
-        setCoverImage(coverImage);
+      const { cardId, coverImage, coverAttachment } = event.detail || {};
+      // Use coverImage if provided, fallback to coverAttachment (backend sends coverAttachment)
+      const coverData = coverImage || coverAttachment;
+      if (cardId === card._id && coverData !== undefined) {
+        setCoverImage(coverData);
       }
     };
 
@@ -364,12 +367,16 @@ const CardDetailModal = React.memo(({
     };
 
     const coverUpdateHandler = (event) => {
-      const { subtaskId, coverImage } = event.detail || {};
+      const { subtaskId, coverImage, coverAttachment } = event.detail || {};
       if (!subtaskId) return;
+      
+      // Use coverImage if provided, fallback to coverAttachment
+      const coverData = coverImage || coverAttachment;
+      if (coverData === undefined) return;
       
       setSubtasks(prev => prev.map(item => 
         item._id === subtaskId 
-          ? { ...item, coverImage } 
+          ? { ...item, coverImage: coverData } 
           : item
       ));
     };
@@ -856,8 +863,32 @@ const CardDetailModal = React.memo(({
     // Include full assignee objects for optimistic UI update
     backendUpdates._assigneesPopulated = assigneeObjects;
     // Include full coverImage object for optimistic UI update
-    if (coverImage && typeof coverImage === 'object') {
-      backendUpdates._coverImagePopulated = coverImage;
+    if (coverImage) {
+      if (typeof coverImage === 'object' && coverImage.url) {
+        // Already a full object with URL
+        backendUpdates._coverImagePopulated = coverImage;
+      } else {
+        // coverImage is an ID string or object without url - try to find the full object
+        const coverImageId = typeof coverImage === 'object' ? coverImage._id : coverImage;
+        
+        // First try from local attachments state
+        let coverAttachment = attachments.find(att => 
+          (att._id === coverImageId || att.id === coverImageId) && att.url
+        );
+        
+        // If not found in local state, try from attachment store
+        if (!coverAttachment) {
+          const entityKey = getEntityKey('card', card._id || card.id);
+          const storeAttachments = useAttachmentStore.getState().attachments[entityKey] || [];
+          coverAttachment = storeAttachments.find(att => 
+            (att._id === coverImageId || att.id === coverImageId) && att.url
+          );
+        }
+        
+        if (coverAttachment) {
+          backendUpdates._coverImagePopulated = coverAttachment;
+        }
+      }
     }
     
     const updates = backendUpdates;

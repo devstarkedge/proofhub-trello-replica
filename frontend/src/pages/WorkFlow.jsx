@@ -133,9 +133,15 @@ const WorkFlow = memo(() => {
     };
 
     const handleCardCoverUpdated = (event) => {
-      const { cardId, coverImage } = event.detail || {};
-      if (cardId) {
-         updateCard(cardId, { coverImage });
+      const { cardId, coverImage, coverAttachment } = event.detail || {};
+      // Use coverImage if provided, fallback to coverAttachment (backend sends coverAttachment)
+      const coverData = coverImage || coverAttachment;
+      // Only update if we have a valid cardId AND valid cover data (or explicitly null to remove)
+      if (cardId && coverData !== undefined) {
+         updateCard(cardId, { 
+           coverImage: coverData,
+           _coverImagePopulated: typeof coverData === 'object' ? coverData : undefined
+         });
       }
     };
 

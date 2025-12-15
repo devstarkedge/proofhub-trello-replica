@@ -581,17 +581,28 @@ export const getCard = asyncHandler(async (req, res, next) => {
         as: 'recurrence'
       }
     },
+    // Lookup coverImage from attachments collection
+    {
+      $lookup: {
+        from: 'attachments',
+        localField: 'coverImage',
+        foreignField: '_id',
+        as: 'coverImageArr',
+        pipeline: [{ $project: { url: 1, secureUrl: 1, thumbnailUrl: 1, fileName: 1, fileType: 1 } }]
+      }
+    },
     // Add computed fields
     {
       $addFields: {
         createdBy: { $arrayElemAt: ['$createdByArr', 0] },
         list: { $arrayElemAt: ['$listArr', 0] },
         board: { $arrayElemAt: ['$boardArr', 0] },
-        hasRecurrence: { $gt: [{ $size: '$recurrence' }, 0] }
+        hasRecurrence: { $gt: [{ $size: '$recurrence' }, 0] },
+        coverImage: { $arrayElemAt: ['$coverImageArr', 0] }
       }
     },
     // Clean up temporary fields
-    { $project: { createdByArr: 0, listArr: 0, boardArr: 0, recurrence: 0 } }
+    { $project: { createdByArr: 0, listArr: 0, boardArr: 0, recurrence: 0, coverImageArr: 0 } }
   ];
 
   const results = await Card.aggregate(pipeline);

@@ -14,6 +14,8 @@ const CardDescription = memo(({
   onImageUpload, 
   modalContainerRef,
   cardId,
+  entityType = 'card',
+  entityId,
   onVersionRollback,
   enableCloudinaryAttachments = true // Enable new Cloudinary attachment system
 }) => {
@@ -150,9 +152,11 @@ const CardDescription = memo(({
                   startExpanded={true}
                   // New Cloudinary attachment props
                   cardId={cardId}
+                  entityType={entityType}
+                  entityId={entityId}
                   contextType="description"
-                  contextRef={cardId}
-                  enableAttachments={enableCloudinaryAttachments && !!cardId}
+                  contextRef={entityId || cardId}
+                  enableAttachments={enableCloudinaryAttachments && !!(entityId || cardId)}
                   enableAutoCover={false} // Disabled - cover must be set explicitly
                 />
               </div>

@@ -31,6 +31,7 @@ const AttachmentList = ({
   entityId,
   attachments: propAttachments,
   onDelete,
+  onDeleteMultiple,
   onSetCover,
   showUploader = false,
   maxVisible = 6,
@@ -185,13 +186,16 @@ const AttachmentList = ({
     if (selectedAttachments.length === 0) return;
     // For bulk deletes we only support the internal store flow here. If
     // a parent wants to manage bulk deletions it should pass a handler.
-    if (onDelete) {
-      // If parent provided onDelete, delegate single deletes instead of bulk
-      // bulk deletion behavior is not delegated by default.
-      // Fallback to calling onDelete for each selected item.
+    if (onDeleteMultiple || onDelete) {
       try {
-        selectedAttachments.forEach(id => onDelete(id));
-        toast.success(`${selectedAttachments.length} attachment(s) deleted`);
+        if (onDeleteMultiple) {
+           await onDeleteMultiple(selectedAttachments);
+        } else {
+           // Fallback to sequential delete if only single delete handler provided
+           for (const id of selectedAttachments) {
+             await onDelete(id);
+           }
+        }
       } catch (error) {
         console.error('Delegated bulk delete failed:', error);
         toast.error('Failed to delete attachments');

@@ -168,7 +168,9 @@ const CommentsSection = memo(({
   modalContainerRef,
   onEditComment,
   onDeleteComment,
-  cardId, // For Cloudinary attachment integration
+  cardId, // Legacy Card ID
+  entityType = 'card', // Entity Type
+  entityId, // Entity Context ID
   enableCloudinaryAttachments = true, // Enable new attachment system
 }) => {
   const { user } = useContext(AuthContext);
@@ -337,8 +339,10 @@ const CommentsSection = memo(({
                       mentionContainer={document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50.flex.items-start.justify-center.z-60')}
                       // New Cloudinary attachment props
                       cardId={cardId}
+                      entityType={entityType}
+                      entityId={entityId}
                       contextType="comment"
-                      enableAttachments={enableCloudinaryAttachments && !!cardId}
+                      enableAttachments={enableCloudinaryAttachments && !!(entityId || cardId)}
                       enableAutoCover={false}
                     />
                   </div>
@@ -423,9 +427,11 @@ const CommentsSection = memo(({
                             onImageUpload={onImageUpload}
                             // New Cloudinary attachment props
                             cardId={cardId}
+                            entityType={entityType}
+                            entityId={entityId}
                             contextType="comment"
                             contextRef={comment._id || comment.id}
-                            enableAttachments={enableCloudinaryAttachments && !!cardId}
+                            enableAttachments={enableCloudinaryAttachments && !!(entityId || cardId)}
                             enableAutoCover={false}
                           />
                         </div>
