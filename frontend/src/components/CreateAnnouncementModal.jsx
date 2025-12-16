@@ -14,6 +14,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_FILES = 10;
 
 const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
+  const API_BASE = import.meta.env.VITE_BACKEND_URL || '';
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -160,7 +161,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
-        const response = await fetch('/api/departments', {
+        const response = await fetch(`${API_BASE}/api/departments`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           }
@@ -209,7 +210,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
         }
 
         if (endpoint) {
-          const response = await fetch(`${endpoint}${params}`, {
+          const response = await fetch(`${API_BASE}${endpoint}${params}`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
