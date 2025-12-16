@@ -83,13 +83,45 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Create multer instance
+// Create multer instance with disk storage (for local files)
 const upload = multer({
   storage: storage,
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 // 10MB default
   },
   fileFilter: fileFilter
+});
+
+// Memory storage for Cloudinary uploads
+const memoryStorage = multer.memoryStorage();
+
+// Cloudinary upload filter - supports images and documents
+const cloudinaryFileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx/;
+  const allowedMimeTypes = [
+    'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ];
+
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedMimeTypes.includes(file.mimetype);
+
+  if (mimetype && extname) {
+    return cb(null, true);
+  } else {
+    cb(new Error('Invalid file type. Allowed: JPG, JPEG, PNG, GIF, WEBP, PDF, DOC, DOCX'));
+  }
+};
+
+// Create multer instance with memory storage for Cloudinary uploads
+export const uploadToCloudinaryMiddleware = multer({
+  storage: memoryStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB for Cloudinary uploads
+  },
+  fileFilter: cloudinaryFileFilter
 });
 
 export function getFileUrl(file, req) {

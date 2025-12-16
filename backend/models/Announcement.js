@@ -37,6 +37,90 @@ const commentSchema = new mongoose.Schema({
   }
 });
 
+// Enhanced attachment schema for Cloudinary
+const attachmentSchema = new mongoose.Schema({
+  _id: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: () => new mongoose.Types.ObjectId()
+  },
+  url: {
+    type: String,
+    required: true
+  },
+  public_id: {
+    type: String,
+    required: true
+  },
+  resource_type: {
+    type: String,
+    enum: ['image', 'raw'],
+    required: true
+  },
+  format: {
+    type: String,
+    required: true
+  },
+  file_size: {
+    type: Number,
+    required: true
+  },
+  original_name: {
+    type: String,
+    required: true
+  },
+  mimetype: {
+    type: String,
+    required: true
+  },
+  width: {
+    type: Number,
+    default: null
+  },
+  height: {
+    type: Number,
+    default: null
+  },
+  thumbnail_url: {
+    type: String,
+    default: null
+  },
+  preview_url: {
+    type: String,
+    default: null
+  },
+  file_hash: {
+    type: String,
+    default: null
+  },
+  tag: {
+    type: String,
+    enum: ['notice', 'holiday', 'exam', 'general', 'policy', 'other'],
+    default: 'general'
+  },
+  uploadedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  uploadedAt: {
+    type: Date,
+    default: Date.now
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: {
+    type: Date,
+    default: null
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  }
+});
+
 const announcementSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -84,32 +168,7 @@ const announcementSchema = new mongoose.Schema({
       enum: ['admin', 'manager', 'hr', 'employee']
     }]
   },
-  attachments: [{
-    filename: {
-      type: String,
-      required: true
-    },
-    originalName: {
-      type: String,
-      required: true
-    },
-    mimetype: {
-      type: String,
-      required: true
-    },
-    size: {
-      type: Number,
-      required: true
-    },
-    url: {
-      type: String,
-      required: true
-    },
-    uploadedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
+  attachments: [attachmentSchema],
   reactions: [reactionSchema],
   comments: [commentSchema],
   commentsCount: {

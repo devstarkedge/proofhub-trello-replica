@@ -7,6 +7,14 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import notificationService from "../utils/notificationService.js";
 import { invalidateAnnouncementCache } from "../utils/cacheInvalidation.js";
 import { emitNotification, io } from "../server.js";
+import {
+  uploadAnnouncementAttachment,
+  uploadMultipleAnnouncementAttachments,
+  deleteAnnouncementAttachment,
+  deleteMultipleAnnouncementAttachments,
+  validateAnnouncementFile,
+  generateFileHash
+} from "../utils/cloudinary.js";
 
 // Helper function to calculate expiration date
 const calculateExpiryDate = (value, unit) => {
@@ -233,20 +241,10 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
   // Calculate expiry date
   const expiresAt = calculateExpiryDate(lastFor.value, lastFor.unit);
 
-  // Process uploaded files
+  // Prepare for attachments upload (we'll upload after creating the announcement)
   const attachments = [];
-  if (req.files && req.files.length > 0) {
-    req.files.forEach(file => {
-      const fileUrl = `${req.protocol}://${req.get('host')}/uploads/announcement-images/${file.filename}`;
-      attachments.push({
-        filename: file.filename,
-        originalName: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size,
-        url: fileUrl
-      });
-    });
-  }
+  const uploadErrors = [];
+  const filesToUpload = (req.files && Array.isArray(req.files)) ? req.files : [];
 
   // Create announcement object
   const announcementData = {
@@ -299,14 +297,47 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
 
   const announcement = await Announcement.create(announcementData);
 
+  // If there were files uploaded in the request, upload them directly into the
+  // announcement's permanent folder now that we have an announcement ID. This
+  // avoids Cloudinary renames and reduces background processing timeouts.
+  if (filesToUpload.length > 0) {
+    try {
+      const uploadResults = await uploadMultipleAnnouncementAttachments(
+        filesToUpload,
+        announcement._id.toString(),
+        req.user.id
+      );
+
+      // Attach successful uploads to the announcement
+      announcement.attachments = Array.isArray(uploadResults.successful) ? uploadResults.successful : [];
+      if (uploadResults.failed && uploadResults.failed.length > 0) {
+        uploadErrors.push(...uploadResults.failed);
+      }
+
+      await announcement.save();
+    } catch (err) {
+      console.error('Error uploading announcement attachments after create:', err);
+      // Do not block announcement creation on attachment upload failures
+    }
+  }
+
   await announcement.populate('createdBy', 'name email avatar role');
 
   // If not scheduled, broadcast immediately
   if (!announcementData.isScheduled) {
-    const subscriberIds = await getSubscriberUserIds(subscribers);
+    // Use the saved announcement's subscribers to avoid mismatches and ensure structure
+    const rawSubscribers = announcement.subscribers || subscribers || { type: 'all' };
+    let subscriberIds = [];
+    try {
+      const result = await getSubscriberUserIds(rawSubscribers);
+      subscriberIds = Array.isArray(result) ? result : [];
+    } catch (err) {
+      console.error('Error resolving subscriber IDs:', err);
+      subscriberIds = [];
+    }
 
     // Create notifications for all subscribers
-    const notifications = subscriberIds.map(userId => ({
+    const notifications = (subscriberIds || []).map(userId => ({
       type: 'announcement_created',
       title: 'New Announcement',
       message: `${req.user.name} posted: ${title}`,
@@ -345,7 +376,8 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     message: announcementData.isScheduled
       ? 'Announcement scheduled successfully'
       : 'Announcement created and broadcasted successfully',
-    data: announcement
+    data: announcement,
+    uploadErrors: uploadErrors.length > 0 ? uploadErrors : undefined
   });
 });
 
@@ -441,6 +473,25 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
   // Check authorization
   if (announcement.createdBy.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'manager') {
     return next(new ErrorResponse('Not authorized to delete this announcement', 403));
+  }
+
+  // Delete attachments from Cloudinary
+  if (announcement.attachments && announcement.attachments.length > 0) {
+    try {
+      const attachmentsToDelete = announcement.attachments
+        .filter(att => !att.isDeleted && att.public_id)
+        .map(att => ({
+          public_id: att.public_id,
+          resource_type: att.resource_type
+        }));
+      
+      if (attachmentsToDelete.length > 0) {
+        await deleteMultipleAnnouncementAttachments(attachmentsToDelete);
+      }
+    } catch (error) {
+      console.error('Error deleting Cloudinary attachments:', error);
+      // Continue with deletion even if Cloudinary cleanup fails
+    }
   }
 
   await Announcement.findByIdAndDelete(req.params.id);
@@ -832,6 +883,285 @@ export const getAnnouncementStats = asyncHandler(async (req, res, next) => {
       archived,
       pinned,
       byCategory
+    }
+  });
+});
+
+// @desc    Upload attachments to an existing announcement
+// @route   POST /api/announcements/:id/attachments
+// @access  Private/Admin/Manager
+export const uploadAttachments = asyncHandler(async (req, res, next) => {
+  const announcement = await Announcement.findById(req.params.id);
+
+  if (!announcement) {
+    return next(new ErrorResponse('Announcement not found', 404));
+  }
+
+  // Check authorization
+  if (announcement.createdBy.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return next(new ErrorResponse('Not authorized to add attachments to this announcement', 403));
+  }
+
+  if (!req.files || req.files.length === 0) {
+    return next(new ErrorResponse('No files uploaded', 400));
+  }
+
+  // Check for duplicate files by hash
+  const existingHashes = (announcement.attachments || [])
+    .filter(att => !att.isDeleted)
+    .map(att => att.file_hash);
+
+  const filesToUpload = [];
+  const duplicates = [];
+
+  for (const file of req.files) {
+    const hash = generateFileHash(file.buffer);
+    if (existingHashes.includes(hash)) {
+      duplicates.push(file.originalname);
+    } else {
+      filesToUpload.push(file);
+    }
+  }
+
+  if (filesToUpload.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'All files are duplicates',
+      duplicates
+    });
+  }
+
+  // Upload files to Cloudinary
+  const uploadResults = await uploadMultipleAnnouncementAttachments(
+    filesToUpload,
+    announcement._id.toString(),
+    req.user.id
+  );
+
+  // Add successful uploads to announcement
+  if (uploadResults.successful.length > 0) {
+    announcement.attachments.push(...uploadResults.successful);
+    await announcement.save();
+    await announcement.populate('createdBy', 'name email avatar role');
+  }
+
+  // Invalidate cache
+  invalidateAnnouncementCache({ announcementId: announcement._id });
+
+  // Emit real-time update
+  io.emit('announcement-attachments-added', {
+    announcementId: announcement._id,
+    newAttachments: uploadResults.successful
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `${uploadResults.successful.length} attachment(s) uploaded successfully`,
+    data: {
+      announcement,
+      uploaded: uploadResults.successful,
+      failed: uploadResults.failed,
+      duplicates: duplicates.length > 0 ? duplicates : undefined
+    }
+  });
+});
+
+// @desc    Delete attachment from announcement
+// @route   DELETE /api/announcements/:id/attachments/:attachmentId
+// @access  Private/Admin/Manager/Creator
+export const deleteAttachment = asyncHandler(async (req, res, next) => {
+  const { id, attachmentId } = req.params;
+  const { permanent = false } = req.query;
+
+  const announcement = await Announcement.findById(id);
+
+  if (!announcement) {
+    return next(new ErrorResponse('Announcement not found', 404));
+  }
+
+  if (!announcement.attachments || typeof announcement.attachments.id !== 'function') {
+    return next(new ErrorResponse('No attachments available for this announcement', 404));
+  }
+
+  const attachment = announcement.attachments.id(attachmentId);
+
+  if (!attachment) {
+    return next(new ErrorResponse('Attachment not found', 404));
+  }
+
+  // Check authorization - only creator, admin, or the uploader can delete
+  const isCreator = announcement.createdBy.toString() === req.user.id;
+  const isAdmin = req.user.role === 'admin';
+  const isUploader = attachment.uploadedBy?.toString() === req.user.id;
+
+  if (!isCreator && !isAdmin && !isUploader) {
+    return next(new ErrorResponse('Not authorized to delete this attachment', 403));
+  }
+
+  if (permanent === 'true') {
+    // Permanently delete from Cloudinary
+    try {
+      await deleteAnnouncementAttachment(attachment.public_id, attachment.resource_type);
+    } catch (error) {
+      console.error('Error deleting from Cloudinary:', error);
+    }
+
+    // Remove from database
+    announcement.attachments = announcement.attachments.filter(
+      att => att._id.toString() !== attachmentId
+    );
+  } else {
+    // Soft delete
+    attachment.isDeleted = true;
+    attachment.deletedAt = new Date();
+    attachment.deletedBy = req.user.id;
+  }
+
+  await announcement.save();
+
+  // Invalidate cache
+  invalidateAnnouncementCache({ announcementId: announcement._id });
+
+  // Emit real-time update
+  io.emit('announcement-attachment-deleted', {
+    announcementId: announcement._id,
+    attachmentId,
+    permanent: permanent === 'true'
+  });
+
+  res.status(200).json({
+    success: true,
+    message: permanent === 'true' ? 'Attachment permanently deleted' : 'Attachment deleted successfully',
+    data: announcement
+  });
+});
+
+// @desc    Restore soft-deleted attachment
+// @route   PUT /api/announcements/:id/attachments/:attachmentId/restore
+// @access  Private/Admin
+export const restoreAttachment = asyncHandler(async (req, res, next) => {
+  const { id, attachmentId } = req.params;
+
+  const announcement = await Announcement.findById(id);
+
+  if (!announcement) {
+    return next(new ErrorResponse('Announcement not found', 404));
+  }
+
+  // Only admin can restore
+  if (req.user.role !== 'admin') {
+    return next(new ErrorResponse('Not authorized to restore attachments', 403));
+  }
+
+  const attachment = announcement.attachments.id(attachmentId);
+
+  if (!attachment) {
+    return next(new ErrorResponse('Attachment not found', 404));
+  }
+
+  if (!attachment.isDeleted) {
+    return next(new ErrorResponse('Attachment is not deleted', 400));
+  }
+
+  attachment.isDeleted = false;
+  attachment.deletedAt = null;
+  attachment.deletedBy = null;
+
+  await announcement.save();
+
+  // Invalidate cache
+  invalidateAnnouncementCache({ announcementId: announcement._id });
+
+  // Emit real-time update
+  io.emit('announcement-attachment-restored', {
+    announcementId: announcement._id,
+    attachmentId
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Attachment restored successfully',
+    data: attachment
+  });
+});
+
+// @desc    Update attachment tag
+// @route   PUT /api/announcements/:id/attachments/:attachmentId/tag
+// @access  Private/Admin/Manager
+export const updateAttachmentTag = asyncHandler(async (req, res, next) => {
+  const { id, attachmentId } = req.params;
+  const { tag } = req.body;
+
+  const validTags = ['notice', 'holiday', 'exam', 'general', 'policy', 'other'];
+
+  if (!tag || !validTags.includes(tag)) {
+    return next(new ErrorResponse(`Invalid tag. Must be one of: ${validTags.join(', ')}`, 400));
+  }
+
+  const announcement = await Announcement.findById(id);
+
+  if (!announcement) {
+    return next(new ErrorResponse('Announcement not found', 404));
+  }
+
+  // Check authorization
+  if (announcement.createdBy.toString() !== req.user.id && req.user.role !== 'admin') {
+    return next(new ErrorResponse('Not authorized to update attachment tag', 403));
+  }
+
+  const attachment = announcement.attachments.id(attachmentId);
+
+  if (!attachment) {
+    return next(new ErrorResponse('Attachment not found', 404));
+  }
+
+  attachment.tag = tag;
+  await announcement.save();
+
+  // Invalidate cache
+  invalidateAnnouncementCache({ announcementId: announcement._id });
+
+  res.status(200).json({
+    success: true,
+    message: 'Attachment tag updated successfully',
+    data: attachment
+  });
+});
+
+// @desc    Get announcement attachments
+// @route   GET /api/announcements/:id/attachments
+// @access  Private
+export const getAttachments = asyncHandler(async (req, res, next) => {
+  const { includeDeleted = false } = req.query;
+
+  const announcement = await Announcement.findById(req.params.id)
+    .select('attachments createdBy')
+    .populate('attachments.uploadedBy', 'name avatar');
+
+  if (!announcement) {
+    return next(new ErrorResponse('Announcement not found', 404));
+  }
+
+  let attachments = Array.isArray(announcement.attachments) ? announcement.attachments : [];
+
+  // Filter out deleted attachments unless admin requests them
+  if (includeDeleted !== 'true' || req.user.role !== 'admin') {
+    attachments = attachments.filter(att => !att.isDeleted);
+  }
+
+  // Separate images and documents
+  const images = attachments.filter(att => att.resource_type === 'image');
+  const documents = attachments.filter(att => att.resource_type === 'raw');
+
+  res.status(200).json({
+    success: true,
+    data: {
+      all: attachments,
+      images,
+      documents,
+      totalCount: attachments.length,
+      imageCount: images.length,
+      documentCount: documents.length
     }
   });
 });

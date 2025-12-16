@@ -176,13 +176,21 @@ const Announcements = () => {
   }, [showArchived, sortBy, categoryFilter, searchTerm]);
 
   // Create announcement
-  const handleCreateAnnouncement = async (formData, files) => {
+  const handleCreateAnnouncement = async (formData, files, onProgress) => {
     try {
       setIsCreating(true);
-      const response = await announcementService.createAnnouncement(formData, files);
+      const response = await announcementService.createAnnouncement(formData, files, onProgress);
 
       if (response.success) {
         toast.success(response.message || 'Announcement created successfully');
+        
+        // Show upload errors if any
+        if (response.uploadErrors && response.uploadErrors.length > 0) {
+          response.uploadErrors.forEach(err => {
+            toast.warning(`Failed to upload: ${err.originalName} - ${err.error}`);
+          });
+        }
+        
         setShowCreateModal(false);
         fetchAnnouncements(showArchived);
       }
@@ -191,6 +199,27 @@ const Announcements = () => {
       toast.error(error.message || 'Failed to create announcement');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  // Handle attachment deleted in detail modal
+  const handleAttachmentDeleted = (attachmentId) => {
+    if (selectedAnnouncement) {
+      setSelectedAnnouncement(prev => ({
+        ...prev,
+        attachments: prev.attachments.filter(att => att._id !== attachmentId)
+      }));
+      
+      // Also update in the main list
+      setAnnouncements(prev => prev.map(ann => {
+        if (ann._id === selectedAnnouncement._id) {
+          return {
+            ...ann,
+            attachments: ann.attachments.filter(att => att._id !== attachmentId)
+          };
+        }
+        return ann;
+      }));
     }
   };
 
@@ -594,6 +623,7 @@ const Announcements = () => {
         onDeleteComment={handleDeleteComment}
         onAddReaction={handleAddReaction}
         onRemoveReaction={handleRemoveReaction}
+        onAttachmentDeleted={handleAttachmentDeleted}
         isLoading={false}
       />
     </div>

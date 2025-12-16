@@ -1,9 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { X, Upload, Calendar, Clock, Users, Pin, Sparkles, Send, FileText } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Upload, Calendar, Clock, Users, Pin, Sparkles, Send, FileText, Image, File, AlertCircle, CheckCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { toast } from 'react-toastify';
+
+// File type constants
+const ALLOWED_TYPES = {
+  images: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
+  documents: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+};
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILES = 10;
 
 const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   const [formData, setFormData] = useState({
@@ -27,8 +35,10 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   });
 
   const [files, setFiles] = useState([]);
-  const [fileNames, setFileNames] = useState([]);
-  const [imagePreviews, setImagePreviews] = useState([]);
+  const [fileStates, setFileStates] = useState({}); // Track upload state per file
+  const [isDragging, setIsDragging] = useState(false);
+  const dropZoneRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Target audience states
   const [departments, setDepartments] = useState([]);
@@ -36,16 +46,115 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   const [targetUsers, setTargetUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
+  // Upload progress tracking
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Validate file
+  const validateFile = (file) => {
+    const allAllowedTypes = [...ALLOWED_TYPES.images, ...ALLOWED_TYPES.documents];
+    
+    if (!allAllowedTypes.includes(file.type)) {
+      return { valid: false, error: `Invalid file type: ${file.name}. Allowed: JPG, PNG, WEBP, PDF, DOC, DOCX` };
+    }
+    
+    if (file.size > MAX_FILE_SIZE) {
+      return { valid: false, error: `File too large: ${file.name}. Max size: 10MB` };
+    }
+    
+    return { valid: true };
+  };
+
+  // Check for duplicate files
+  const isDuplicate = (newFile) => {
+    return files.some(f => f.name === newFile.name && f.size === newFile.size);
+  };
+
+  // Process files for adding
+  const processFiles = (newFiles) => {
+    const validFiles = [];
+    const errors = [];
+
+    Array.from(newFiles).forEach(file => {
+      if (files.length + validFiles.length >= MAX_FILES) {
+        errors.push(`Maximum ${MAX_FILES} files allowed`);
+        return;
+      }
+
+      if (isDuplicate(file)) {
+        errors.push(`Duplicate file: ${file.name}`);
+        return;
+      }
+
+      const validation = validateFile(file);
+      if (!validation.valid) {
+        errors.push(validation.error);
+        return;
+      }
+
+      validFiles.push(file);
+    });
+
+    if (errors.length > 0) {
+      errors.forEach(err => toast.error(err));
+    }
+
+    if (validFiles.length > 0) {
+      const newFileStates = {};
+      validFiles.forEach(file => {
+        newFileStates[file.name] = {
+          status: 'pending', // pending, uploading, success, error
+          progress: 0,
+          preview: ALLOWED_TYPES.images.includes(file.type) ? URL.createObjectURL(file) : null
+        };
+      });
+
+      setFiles(prev => [...prev, ...validFiles]);
+      setFileStates(prev => ({ ...prev, ...newFileStates }));
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === dropZoneRef.current) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const droppedFiles = e.dataTransfer.files;
+    if (droppedFiles.length > 0) {
+      processFiles(droppedFiles);
+    }
+  }, [files]);
+
   // Cleanup object URLs on unmount
   useEffect(() => {
     return () => {
-      imagePreviews.forEach(preview => {
-        if (preview.url) {
-          URL.revokeObjectURL(preview.url);
+      Object.values(fileStates).forEach(state => {
+        if (state.preview) {
+          URL.revokeObjectURL(state.preview);
         }
       });
     };
-  }, [imagePreviews]);
+  }, []);
 
   // Fetch departments on mount
   useEffect(() => {
@@ -152,49 +261,39 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   };
 
   const handleFileChange = (e) => {
-    const selectedFiles = Array.from(e.target.files || []);
-    setFiles(prev => [...prev, ...selectedFiles]);
-    setFileNames(prev => [...prev, ...selectedFiles.map(f => f.name)]);
-
-    // Create image previews for image files
-    const newPreviews = selectedFiles.map(file => {
-      if (file.type.startsWith('image/')) {
-        return {
-          url: URL.createObjectURL(file),
-          name: file.name,
-          type: 'image',
-          size: file.size
-        };
-      } else {
-        return {
-          name: file.name,
-          type: 'file',
-          size: file.size
-        };
-      }
-    });
-
-    setImagePreviews(prev => [...prev, ...newPreviews]);
+    const selectedFiles = e.target.files;
+    if (selectedFiles && selectedFiles.length > 0) {
+      processFiles(selectedFiles);
+    }
   };
 
-  const removeFile = (index) => {
-    // Clean up object URL for image previews
-    if (imagePreviews[index]?.url) {
-      URL.revokeObjectURL(imagePreviews[index].url);
+  const removeFile = (fileName) => {
+    // Clean up object URL if exists
+    if (fileStates[fileName]?.preview) {
+      URL.revokeObjectURL(fileStates[fileName].preview);
     }
 
-    // Remove from all arrays
-    setFiles(prev => prev.filter((_, i) => i !== index));
-    setFileNames(prev => prev.filter((_, i) => i !== index));
-    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+    setFiles(prev => prev.filter(f => f.name !== fileName));
+    setFileStates(prev => {
+      const newStates = { ...prev };
+      delete newStates[fileName];
+      return newStates;
+    });
+  };
 
-    // If no files remain, clear the file input
-    if (imagePreviews.length <= 1) {
-      const fileInput = document.querySelector('input[type="file"]');
-      if (fileInput) {
-        fileInput.value = '';
-      }
-    }
+  const retryFile = (fileName) => {
+    setFileStates(prev => ({
+      ...prev,
+      [fileName]: { ...prev[fileName], status: 'pending', progress: 0, error: null }
+    }));
+  };
+
+  // Check if all files are ready for submission
+  const allFilesReady = () => {
+    if (files.length === 0) return true;
+    return Object.values(fileStates).every(state => 
+      state.status === 'pending' || state.status === 'success'
+    );
   };
 
   const handleSubmit = async (e) => {
@@ -215,7 +314,14 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
       return;
     }
 
+    if (!allFilesReady()) {
+      toast.error('Please wait for all uploads to complete or remove failed files');
+      return;
+    }
+
     try {
+      setIsUploading(true);
+      
       // Update subscribers based on selected departments
       const updatedFormData = {
         ...formData,
@@ -225,42 +331,95 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
         }
       };
 
-      await onSubmit(updatedFormData, files);
-      // Reset form
-      setFormData({
-        title: '',
-        description: '',
-        category: 'General',
-        customCategory: '',
-        subscribers: {
-          type: 'all',
-          departments: [],
-          users: [],
-          roles: []
-        },
-        lastFor: {
-          value: 7,
-          unit: 'days'
-        },
-        scheduledFor: null,
-        allowComments: true,
-        isPinned: false
+      // Mark all files as uploading
+      const uploadingStates = {};
+      files.forEach(file => {
+        uploadingStates[file.name] = { ...fileStates[file.name], status: 'uploading' };
       });
-      // Clean up image preview URLs
-      imagePreviews.forEach(preview => {
-        if (preview.url) {
-          URL.revokeObjectURL(preview.url);
-        }
+      setFileStates(uploadingStates);
+
+      await onSubmit(updatedFormData, files, (progress) => {
+        setUploadProgress(progress);
       });
 
-      setFiles([]);
-      setFileNames([]);
-      setImagePreviews([]);
-      setSelectedDepartments([]);
-      setTargetUsers([]);
+      // Reset form on success
+      resetForm();
       onClose();
     } catch (error) {
       console.error('Error creating announcement:', error);
+      
+      // Mark files as error
+      const errorStates = {};
+      files.forEach(file => {
+        errorStates[file.name] = { 
+          ...fileStates[file.name], 
+          status: 'error',
+          error: 'Upload failed' 
+        };
+      });
+      setFileStates(errorStates);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const resetForm = () => {
+    // Clean up object URLs
+    Object.values(fileStates).forEach(state => {
+      if (state.preview) {
+        URL.revokeObjectURL(state.preview);
+      }
+    });
+
+    setFormData({
+      title: '',
+      description: '',
+      category: 'General',
+      customCategory: '',
+      subscribers: {
+        type: 'all',
+        departments: [],
+        users: [],
+        roles: []
+      },
+      lastFor: {
+        value: 7,
+        unit: 'days'
+      },
+      scheduledFor: null,
+      allowComments: true,
+      isPinned: false
+    });
+    setFiles([]);
+    setFileStates({});
+    setSelectedDepartments([]);
+    setTargetUsers([]);
+    setUploadProgress(0);
+  };
+
+  // Get file icon based on type
+  const getFileIcon = (file) => {
+    if (ALLOWED_TYPES.images.includes(file.type)) {
+      return <Image className="w-6 h-6 text-blue-500" />;
+    }
+    if (file.type === 'application/pdf') {
+      return <FileText className="w-6 h-6 text-red-500" />;
+    }
+    return <File className="w-6 h-6 text-gray-500" />;
+  };
+
+  // Get status icon
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'uploading':
+        return <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />;
+      case 'success':
+        return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 'error':
+        return <AlertCircle className="w-4 h-4 text-red-500" />;
+      default:
+        return null;
     }
   };
 
@@ -584,11 +743,46 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                                   transition={{ delay: index * 0.05 }}
                                   className="flex items-center gap-2 bg-white rounded-full px-3 py-1 border border-gray-200 shadow-sm"
                                 >
-                                  <img
-                                    src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user._id}`}
-                                    alt={user.name}
-                                    className="w-6 h-6 rounded-full"
-                                  />
+{user.avatar ? (
+                                    <img
+                                      src={user.avatar}
+                                      alt={user.name}
+                                      className="w-6 h-6 rounded-full object-cover border border-gray-200"
+                                    />
+                                  ) : (
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm border border-white/20 ${
+                                      (() => {
+                                        const colors = [
+                                          'bg-gradient-to-br from-red-500 to-red-600',
+                                          'bg-gradient-to-br from-orange-500 to-orange-600',
+                                          'bg-gradient-to-br from-amber-500 to-amber-600',
+                                          'bg-gradient-to-br from-green-500 to-green-600',
+                                          'bg-gradient-to-br from-emerald-500 to-emerald-600',
+                                          'bg-gradient-to-br from-teal-500 to-teal-600',
+                                          'bg-gradient-to-br from-cyan-500 to-cyan-600',
+                                          'bg-gradient-to-br from-blue-500 to-blue-600',
+                                          'bg-gradient-to-br from-indigo-500 to-indigo-600',
+                                          'bg-gradient-to-br from-violet-500 to-violet-600',
+                                          'bg-gradient-to-br from-purple-500 to-purple-600',
+                                          'bg-gradient-to-br from-fuchsia-500 to-fuchsia-600',
+                                          'bg-gradient-to-br from-pink-500 to-pink-600',
+                                          'bg-gradient-to-br from-rose-500 to-rose-600'
+                                        ];
+                                        let hash = 0;
+                                        for (let i = 0; i < user.name.length; i++) {
+                                          hash = user.name.charCodeAt(i) + ((hash << 5) - hash);
+                                        }
+                                        return colors[Math.abs(hash) % colors.length];
+                                      })()
+                                    }`}>
+                                      {user.name
+                                        .split(' ')
+                                        .map(n => n[0])
+                                        .join('')
+                                        .toUpperCase()
+                                        .slice(0, 2)}
+                                    </div>
+                                  )}
                                   <span className="text-sm text-gray-700 font-medium">{user.name}</span>
                                 </motion.div>
                               ))}
@@ -680,96 +874,208 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                     <p className="text-xs text-gray-500">Leave empty for immediate broadcast</p>
                   </motion.div>
 
-                  {/* Attachments */}
+                  {/* Attachments with Drag & Drop */}
                   <motion.div
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.7 }}
-                    className="space-y-2"
+                    className="space-y-3"
                   >
                     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                       <Upload className="w-4 h-4 text-indigo-600" />
                       Attachments (Optional)
+                      <span className="text-xs text-gray-400 font-normal">
+                        Max {MAX_FILES} files, 10MB each
+                      </span>
                     </label>
-                    <input
-                      type="file"
-                      multiple
-                      onChange={handleFileChange}
-                      accept="image/*"
-                      className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 bg-gray-50/50 backdrop-blur-sm transition-all duration-300 hover:border-blue-400 hover:bg-blue-50/50"
-                    />
-                    {imagePreviews.length === 0 && (
-                      <div className="text-center py-2">
-                        <span className="text-gray-500 text-sm">No files chosen - drop files here or click to browse</span>
-                      </div>
-                    )}
+                    
+                    {/* Drag & Drop Zone */}
+                    <div
+                      ref={dropZoneRef}
+                      onDragEnter={handleDragEnter}
+                      onDragLeave={handleDragLeave}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`relative border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-all duration-300 ${
+                        isDragging 
+                          ? 'border-blue-500 bg-blue-50/50 scale-[1.02]' 
+                          : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/30 bg-gray-50/50'
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        onChange={handleFileChange}
+                        accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx"
+                        className="hidden"
+                      />
+                      
+                      <motion.div
+                        animate={isDragging ? { scale: 1.02 } : { scale: 1 }}
+                        className="flex items-center justify-center gap-3"
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                          isDragging ? 'bg-blue-100' : 'bg-gray-100'
+                        }`}>
+                          <Upload className={`w-4 h-4 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
+                        </div>
+                        <div className="text-left">
+                          <p className={`text-sm font-medium ${isDragging ? 'text-blue-600' : 'text-gray-600'}`}>
+                            {isDragging ? 'Drop files' : 'Click to browse'}
+                          </p>
+                          <p className="text-[10px] text-gray-400">
+                             Supports: JPG, PNG, WEBP, PDF...
+                          </p>
+                        </div>
+                      </motion.div>
+                    </div>
+
+                    {/* Upload Progress Bar (during submission) */}
                     <AnimatePresence>
-                      {imagePreviews.length > 0 && (
+                      {isUploading && uploadProgress > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="space-y-1"
+                        >
+                          <div className="flex justify-between text-xs text-gray-600">
+                            <span>Uploading attachments...</span>
+                            <span>{uploadProgress}%</span>
+                          </div>
+                          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${uploadProgress}%` }}
+                              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                            />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* File List */}
+                    <AnimatePresence>
+                      {files.length > 0 && (
                         <motion.div
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: "auto" }}
                           exit={{ opacity: 0, height: 0 }}
-                          className="mt-4"
+                          className="space-y-2"
                         >
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            {imagePreviews.map((preview, idx) => (
-                              <motion.div
-                                key={idx}
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                transition={{ duration: 0.3, delay: idx * 0.1 }}
-                                className="relative group"
-                              >
-                                {preview.type === 'image' ? (
-                                  <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 border-2 border-gray-200 group-hover:border-blue-400 transition-all duration-300">
-                                    <img
-                                      src={preview.url}
-                                      alt={preview.name}
-                                      className="w-full h-full object-cover"
-                                      onLoad={() => {
-                                        // Image loaded successfully
-                                      }}
-                                      onError={() => {
-                                        // Handle image load error
-                                      }}
-                                    />
-                                    <motion.button
-                                      initial={{ opacity: 0, scale: 0.8 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      whileHover={{ scale: 1.1 }}
-                                      whileTap={{ scale: 0.9 }}
-                                      type="button"
-                                      onClick={() => removeFile(idx)}
-                                      className="absolute top-0.5 right-0.5 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:bg-red-600"
-                                    >
-                                      <X className="w-3 h-3" />
-                                    </motion.button>
-                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-                                      <p className="text-white text-xs font-medium truncate">{preview.name}</p>
-                                      <p className="text-white/80 text-xs">{(preview.size / 1024).toFixed(1)} KB</p>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600 font-medium">
+                              {files.length} file{files.length > 1 ? 's' : ''} selected
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                Object.values(fileStates).forEach(state => {
+                                  if (state.preview) URL.revokeObjectURL(state.preview);
+                                });
+                                setFiles([]);
+                                setFileStates({});
+                              }}
+                              className="text-red-500 hover:text-red-600 text-xs font-medium"
+                            >
+                              Clear all
+                            </button>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-64 overflow-y-auto p-1">
+                            {files.map((file, idx) => {
+                              const state = fileStates[file.name] || { status: 'pending', progress: 0 };
+                              const isImage = ALLOWED_TYPES.images.includes(file.type);
+                              
+                              return (
+                                <motion.div
+                                  key={file.name}
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.8 }}
+                                  transition={{ duration: 0.2, delay: idx * 0.05 }}
+                                  className={`relative group rounded-xl overflow-hidden border-2 transition-all duration-300 ${
+                                    state.status === 'error' 
+                                      ? 'border-red-300 bg-red-50' 
+                                      : state.status === 'success'
+                                      ? 'border-green-300 bg-green-50'
+                                      : 'border-gray-200 bg-white hover:border-blue-300'
+                                  }`}
+                                >
+                                  {/* Preview */}
+                                  <div className="aspect-square relative">
+                                    {isImage && state.preview ? (
+                                      <img
+                                        src={state.preview}
+                                        alt={file.name}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-3">
+                                        {getFileIcon(file)}
+                                        <p className="text-xs text-gray-600 font-medium text-center truncate w-full mt-2">
+                                          {file.name.length > 15 ? file.name.slice(0, 12) + '...' : file.name}
+                                        </p>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Overlay for uploading state */}
+                                    {state.status === 'uploading' && (
+                                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                        <div className="text-center">
+                                          <RefreshCw className="w-6 h-6 text-white animate-spin mx-auto" />
+                                          <span className="text-white text-xs mt-1">{state.progress}%</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Status Badge */}
+                                    <div className="absolute top-1 left-1">
+                                      {getStatusIcon(state.status)}
+                                    </div>
+                                    
+                                    {/* Action Buttons */}
+                                    <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      {state.status === 'error' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => retryFile(file.name)}
+                                          className="p-1 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg"
+                                          title="Retry"
+                                        >
+                                          <RefreshCw className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => removeFile(file.name)}
+                                        className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg"
+                                        title="Remove"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
                                     </div>
                                   </div>
-                                ) : (
-                                  <div className="relative aspect-square rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-gray-300 flex flex-col items-center justify-center p-3 group-hover:border-blue-400 transition-all duration-300">
-                                    <FileText className="w-8 h-8 text-gray-500 mb-2" />
-                                    <p className="text-xs text-gray-700 font-medium text-center truncate w-full">{preview.name}</p>
-                                    <p className="text-xs text-gray-500 mt-1">{(preview.size / 1024).toFixed(1)} KB</p>
-                                    <motion.button
-                                      initial={{ opacity: 0, scale: 0.8 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      whileHover={{ scale: 1.1 }}
-                                      whileTap={{ scale: 0.9 }}
-                                      type="button"
-                                      onClick={() => removeFile(idx)}
-                                      className="absolute top-0.5 right-0.5 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg hover:bg-red-600"
-                                    >
-                                      <X className="w-3 h-3" />
-                                    </motion.button>
+                                  
+                                  {/* File Info */}
+                                  <div className="p-2 bg-white/80 backdrop-blur-sm border-t border-gray-100">
+                                    <p className="text-xs text-gray-700 font-medium truncate" title={file.name}>
+                                      {file.name}
+                                    </p>
+                                    <p className="text-xs text-gray-400">
+                                      {(file.size / 1024).toFixed(1)} KB
+                                    </p>
+                                    {state.status === 'error' && state.error && (
+                                      <p className="text-xs text-red-500 truncate" title={state.error}>
+                                        {state.error}
+                                      </p>
+                                    )}
                                   </div>
-                                )}
-                              </motion.div>
-                            ))}
+                                </motion.div>
+                              );
+                            })}
                           </div>
                         </motion.div>
                       )}
@@ -790,7 +1096,8 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                   whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={onClose}
-                  className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all duration-300 bg-white/50 backdrop-blur-sm"
+                  disabled={isLoading || isUploading}
+                  className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all duration-300 bg-white/50 backdrop-blur-sm disabled:opacity-50"
                 >
                   Cancel
                 </motion.button>
@@ -798,17 +1105,17 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                   whileHover={{ scale: 1.02, boxShadow: "0 10px 25px rgba(59, 130, 246, 0.3)" }}
                   whileTap={{ scale: 0.98 }}
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || isUploading || !allFilesReady()}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg flex items-center justify-center gap-2"
                 >
-                  {isLoading ? (
+                  {isLoading || isUploading ? (
                     <>
                       <motion.div
                         animate={{ rotate: 360 }}
                         transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                         className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
                       />
-                      Creating...
+                      {isUploading ? `Uploading ${uploadProgress}%...` : 'Creating...'}
                     </>
                   ) : (
                     <>

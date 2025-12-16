@@ -1,11 +1,11 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config();
 
-// Configure Cloudinary
 // Configure Cloudinary
 const configureCloudinary = () => {
   if (cloudinary.config().cloud_name) return;
@@ -29,6 +29,297 @@ const configureCloudinary = () => {
 
 // Initialize on first load
 configureCloudinary();
+
+// Allowed file types for announcements
+const ANNOUNCEMENT_ALLOWED_TYPES = {
+  images: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
+  documents: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+};
+
+const MAX_ANNOUNCEMENT_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+/**
+ * Validate file for announcement upload
+ * @param {Object} file - The file object with mimetype and size
+ * @returns {Object} Validation result
+ */
+export const validateAnnouncementFile = (file) => {
+  const allAllowedTypes = [...ANNOUNCEMENT_ALLOWED_TYPES.images, ...ANNOUNCEMENT_ALLOWED_TYPES.documents];
+  
+  if (!allAllowedTypes.includes(file.mimetype)) {
+    return {
+      valid: false,
+      error: `Invalid file type: ${file.mimetype}. Allowed types: JPG, JPEG, PNG, WEBP, PDF, DOC, DOCX`
+    };
+  }
+  
+  if (file.size > MAX_ANNOUNCEMENT_FILE_SIZE) {
+    return {
+      valid: false,
+      error: `File too large: ${(file.size / 1024 / 1024).toFixed(2)}MB. Maximum size: 10MB`
+    };
+  }
+  
+  return { valid: true };
+};
+
+/**
+ * Generate a hash for file content to prevent duplicates
+ * @param {Buffer} buffer - File buffer
+ * @returns {string} MD5 hash
+ */
+export const generateFileHash = (buffer) => {
+  return crypto.createHash('md5').update(buffer).digest('hex');
+};
+
+/**
+ * Upload announcement attachment to Cloudinary
+ * @param {Buffer} fileBuffer - The file buffer
+ * @param {Object} options - Upload options
+ * @param {string} options.announcementId - The announcement ID for folder organization
+ * @param {string} options.originalName - Original file name
+ * @param {string} options.mimetype - File MIME type
+ * @param {string} options.uploadedBy - User ID who uploaded
+ * @returns {Promise<Object>} Cloudinary upload response with metadata
+ */
+export const uploadAnnouncementAttachment = async (fileBuffer, options = {}) => {
+  configureCloudinary();
+  
+  const { announcementId, originalName, mimetype, uploadedBy } = options;
+  const isImage = ANNOUNCEMENT_ALLOWED_TYPES.images.includes(mimetype);
+  const resourceType = isImage ? 'image' : 'raw';
+  const fileHash = generateFileHash(fileBuffer);
+  
+  // Create folder structure: /announcements/{announcementId}/attachments/
+  const folder = announcementId 
+    ? `flowtask/announcements/${announcementId}/attachments`
+    : 'flowtask/announcements/temp';
+
+  const uploadOptions = {
+    folder,
+    resource_type: resourceType,
+    use_filename: true,
+    unique_filename: true,
+    overwrite: false,
+    tags: ['announcement', 'attachment'],
+    context: {
+      original_name: originalName,
+      uploaded_by: uploadedBy,
+      file_hash: fileHash
+    }
+  };
+
+  // Add image-specific transformations
+  if (isImage) {
+    uploadOptions.eager = [
+      { width: 150, height: 150, crop: 'thumb', gravity: 'auto', quality: 'auto:low', format: 'webp' },
+      { width: 400, height: 400, crop: 'limit', quality: 'auto:good', format: 'webp' },
+      { width: 1200, height: 1200, crop: 'limit', quality: 'auto:best' }
+    ];
+    uploadOptions.eager_async = true;
+    uploadOptions.transformation = [
+      { quality: 'auto:good' },
+      { fetch_format: 'auto' }
+    ];
+  }
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      uploadOptions,
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          // Format the response with all needed metadata
+          resolve({
+            url: result.secure_url,
+            public_id: result.public_id,
+            resource_type: result.resource_type,
+            format: result.format,
+            file_size: result.bytes,
+            original_name: originalName,
+            mimetype: mimetype,
+            width: result.width || null,
+            height: result.height || null,
+            file_hash: fileHash,
+            thumbnail_url: isImage ? getThumbnailUrl(result.public_id, 150, 150) : null,
+            preview_url: isImage ? getOptimizedUrl(result.public_id, { width: 400, height: 400, crop: 'limit' }) : null,
+            uploadedBy,
+            uploadedAt: new Date()
+          });
+        }
+      }
+    );
+
+    const readable = new Readable();
+    readable._read = () => {};
+    readable.push(fileBuffer);
+    readable.push(null);
+    readable.pipe(uploadStream);
+  });
+};
+
+/**
+ * Upload multiple announcement attachments in parallel
+ * @param {Array} files - Array of file objects with buffer and metadata
+ * @param {string} announcementId - The announcement ID
+ * @param {string} uploadedBy - User ID
+ * @returns {Promise<Object>} Results with successful and failed uploads
+ */
+export const uploadMultipleAnnouncementAttachments = async (files, announcementId, uploadedBy) => {
+  const results = {
+    successful: [],
+    failed: []
+  };
+
+  const uploadPromises = files.map(async (file) => {
+    try {
+      // Validate file
+      const validation = validateAnnouncementFile(file);
+      if (!validation.valid) {
+        return { 
+          success: false, 
+          originalName: file.originalname, 
+          error: validation.error 
+        };
+      }
+
+      const result = await uploadAnnouncementAttachment(file.buffer, {
+        announcementId,
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        uploadedBy
+      });
+
+      return { success: true, data: result };
+    } catch (error) {
+      return { 
+        success: false, 
+        originalName: file.originalname, 
+        error: error.message 
+      };
+    }
+  });
+
+  const uploadResults = await Promise.all(uploadPromises);
+
+  uploadResults.forEach(result => {
+    if (result.success) {
+      results.successful.push(result.data);
+    } else {
+      results.failed.push({
+        originalName: result.originalName,
+        error: result.error
+      });
+    }
+  });
+
+  return results;
+};
+
+/**
+ * Delete announcement attachment from Cloudinary
+ * @param {string} publicId - The public ID of the file
+ * @param {string} resourceType - 'image' or 'raw'
+ * @returns {Promise<Object>} Deletion result
+ */
+export const deleteAnnouncementAttachment = async (publicId, resourceType = 'image') => {
+  configureCloudinary();
+  
+  try {
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: resourceType,
+      invalidate: true
+    });
+    return { success: result.result === 'ok', result };
+  } catch (error) {
+    console.error('Error deleting announcement attachment:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete multiple announcement attachments
+ * @param {Array} attachments - Array of attachment objects with public_id and resource_type
+ * @returns {Promise<Object>} Deletion results
+ */
+export const deleteMultipleAnnouncementAttachments = async (attachments) => {
+  configureCloudinary();
+  
+  const results = {
+    successful: [],
+    failed: []
+  };
+
+  // Group by resource type
+  const imageIds = attachments.filter(a => a.resource_type === 'image').map(a => a.public_id);
+  const rawIds = attachments.filter(a => a.resource_type === 'raw').map(a => a.public_id);
+
+  try {
+    if (imageIds.length > 0) {
+      const imageResult = await cloudinary.api.delete_resources(imageIds, {
+        resource_type: 'image',
+        invalidate: true
+      });
+      results.successful.push(...Object.keys(imageResult.deleted).filter(k => imageResult.deleted[k] === 'deleted'));
+      results.failed.push(...Object.keys(imageResult.deleted).filter(k => imageResult.deleted[k] !== 'deleted'));
+    }
+
+    if (rawIds.length > 0) {
+      const rawResult = await cloudinary.api.delete_resources(rawIds, {
+        resource_type: 'raw',
+        invalidate: true
+      });
+      results.successful.push(...Object.keys(rawResult.deleted).filter(k => rawResult.deleted[k] === 'deleted'));
+      results.failed.push(...Object.keys(rawResult.deleted).filter(k => rawResult.deleted[k] !== 'deleted'));
+    }
+  } catch (error) {
+    console.error('Error deleting multiple announcement attachments:', error);
+    throw error;
+  }
+
+  return results;
+};
+
+/**
+ * Move temp attachments to permanent folder after announcement creation
+ * @param {Array} attachments - Array of attachment objects
+ * @param {string} announcementId - The permanent announcement ID
+ * @returns {Promise<Array>} Updated attachments with new public_ids
+ */
+export const moveAnnouncementAttachments = async (attachments, announcementId) => {
+  configureCloudinary();
+  
+  const movedAttachments = [];
+  
+  for (const attachment of attachments) {
+    if (attachment.public_id.includes('/temp/')) {
+      try {
+        // Rename/move the resource
+        const newPublicId = attachment.public_id.replace('/temp/', `/${announcementId}/attachments/`);
+        
+        await cloudinary.uploader.rename(
+          attachment.public_id,
+          newPublicId,
+          { resource_type: attachment.resource_type, invalidate: true }
+        );
+        
+        movedAttachments.push({
+          ...attachment,
+          public_id: newPublicId,
+          url: attachment.url.replace(attachment.public_id, newPublicId)
+        });
+      } catch (error) {
+        console.error('Error moving attachment:', error);
+        movedAttachments.push(attachment);
+      }
+    } else {
+      movedAttachments.push(attachment);
+    }
+  }
+  
+  return movedAttachments;
+};
 
 /**
  * Upload a file to Cloudinary

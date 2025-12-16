@@ -13,11 +13,16 @@ import {
   togglePin,
   toggleArchive,
   extendExpiry,
-  getAnnouncementStats
+  getAnnouncementStats,
+  uploadAttachments,
+  deleteAttachment,
+  restoreAttachment,
+  updateAttachmentTag,
+  getAttachments
 } from '../controllers/announcementController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
-import upload from '../middleware/upload.js';
+import upload, { uploadToCloudinaryMiddleware } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -69,7 +74,7 @@ router.get('/:id', getAnnouncement);
 // Create announcement
 router.post(
   '/',
-  upload.array('attachments', 5),
+  uploadToCloudinaryMiddleware.array('attachments', 10),
   parseFormDataJSON,
   [
     body('title').trim().notEmpty().withMessage('Title is required').isLength({ max: 200 }),
@@ -162,6 +167,33 @@ router.put(
     validate
   ],
   extendExpiry
+);
+
+// Attachment routes
+// Get attachments for an announcement
+router.get('/:id/attachments', getAttachments);
+
+// Upload attachments to existing announcement
+router.post(
+  '/:id/attachments',
+  uploadToCloudinaryMiddleware.array('attachments', 10),
+  uploadAttachments
+);
+
+// Delete attachment
+router.delete('/:id/attachments/:attachmentId', deleteAttachment);
+
+// Restore soft-deleted attachment
+router.put('/:id/attachments/:attachmentId/restore', restoreAttachment);
+
+// Update attachment tag
+router.put(
+  '/:id/attachments/:attachmentId/tag',
+  [
+    body('tag').isIn(['notice', 'holiday', 'exam', 'general', 'policy', 'other']).withMessage('Invalid tag'),
+    validate
+  ],
+  updateAttachmentTag
 );
 
 export default router;
