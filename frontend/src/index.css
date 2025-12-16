@@ -217,15 +217,8 @@
 
 /* Moving shine overlay */
 .neon-shine-overlay {
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  animation: movingShine 3s linear infinite;
-  z-index: 4;
-  pointer-events: none;
+  /* Disabled the moving white shine overlay to remove the horizontal white band across the name */
+  display: none;
 }
 
 /* Description collapsed state - very small image previews */
