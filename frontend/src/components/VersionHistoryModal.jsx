@@ -15,6 +15,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import versionService from '../services/versionService';
+import sanitizeHtml from '../utils/sanitizeHtml';
 import { toast } from 'react-toastify';
 
 const VersionHistoryModal = ({ 
@@ -76,9 +77,9 @@ const VersionHistoryModal = ({
       setRollbackLoading(true);
       const result = await versionService.rollbackToVersion(entityType, entityId, version.versionNumber);
       toast.success(`Rolled back to version ${version.versionNumber}`);
-      
-      // Notify parent
-      onRollback?.(result.data.restoredContent || result.data.restoredHtmlContent);
+      // Notify parent - handle both old and new response shapes
+      const restored = result?.data?.restoredContent ?? result?.restoredContent ?? result?.data?.restoredHtmlContent ?? result?.restoredHtmlContent ?? null;
+      if (restored) onRollback?.(restored);
       
       // Reload versions
       loadVersions();
@@ -316,7 +317,7 @@ const VersionHistoryModal = ({
                                 <div 
                                   className="text-sm text-gray-700 prose prose-sm max-w-none"
                                   dangerouslySetInnerHTML={{ 
-                                    __html: version.htmlContent || version.content 
+                                    __html: sanitizeHtml(version.htmlContent || version.content)
                                   }}
                                 />
                               </div>
@@ -395,14 +396,14 @@ const VersionHistoryModal = ({
                 </div>
                 <div className="p-4 overflow-y-auto max-h-[calc(70vh-120px)]">
                   <div className="mb-4 text-sm text-gray-500">
-                    <p>Edited by {selectedVersion.editedBy?.name} on {formatDate(selectedVersion.editedAt)}</p>
+                      <p>Edited by {selectedVersion.editedBy?.name} on {formatDate(selectedVersion.editedAt)}</p>
                   </div>
-                  <div 
-                    className="prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ 
-                      __html: selectedVersion.htmlContent || selectedVersion.content 
-                    }}
-                  />
+                    <div 
+                      className="prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ 
+                        __html: sanitizeHtml(selectedVersion.htmlContent || selectedVersion.content)
+                      }}
+                    />
                 </div>
                 <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
                   <button

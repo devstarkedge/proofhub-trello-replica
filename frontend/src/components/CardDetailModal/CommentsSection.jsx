@@ -16,8 +16,9 @@ import AuthContext from "../../context/AuthContext";
 import versionService from "../../services/versionService";
 import DeletePopup from "../ui/DeletePopup";
 
-// Lazy load VersionHistoryModal
+// Lazy load modals
 const VersionHistoryModal = lazy(() => import("../VersionHistoryModal"));
+const DocumentViewerModal = lazy(() => import("../DocumentViewerModal"));
 
 // Memoized Comment Component for better performance
 const CommentItem = memo(({ 
@@ -26,11 +27,13 @@ const CommentItem = memo(({
   currentUserId, 
   onEdit, 
   onDelete, 
-  onShowHistory 
+  onShowHistory,
+  onImageClick 
 }) => {
   const [showActions, setShowActions] = useState(false);
   const [versionCount, setVersionCount] = useState(0);
   const actionsRef = useRef(null);
+  const contentRef = useRef(null);
   
   const commentId = comment._id || comment.id;
   const isOwner = currentUserId === comment.user?._id || currentUserId === comment.user?.id;
@@ -50,6 +53,31 @@ const CommentItem = memo(({
     };
     fetchVersionCount();
   }, [commentId]);
+
+  // Handle clicks on images within comment content
+  useEffect(() => {
+    const contentEl = contentRef.current;
+    if (!contentEl) return;
+
+    const handleImageClick = (e) => {
+      if (e.target.tagName === 'IMG') {
+        e.preventDefault();
+        e.stopPropagation();
+        const imgSrc = e.target.src;
+        const imgAlt = e.target.alt || 'Comment image';
+        onImageClick?.({
+          _id: `comment-img-${Date.now()}`,
+          fileType: 'image',
+          originalName: imgAlt,
+          secureUrl: imgSrc,
+          url: imgSrc
+        });
+      }
+    };
+
+    contentEl.addEventListener('click', handleImageClick);
+    return () => contentEl.removeEventListener('click', handleImageClick);
+  }, [onImageClick]);
 
   // Close actions on outside click
   useEffect(() => {
@@ -147,7 +175,8 @@ const CommentItem = memo(({
             )}
           </div>
           <div 
-            className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none comment-content" 
+            ref={contentRef}
+            className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none comment-content [&_img]:cursor-pointer [&_img]:hover:opacity-90 [&_img]:transition-opacity" 
             dangerouslySetInnerHTML={{ __html: comment.htmlContent || comment.text }} 
           />
         </div>
@@ -182,6 +211,22 @@ const CommentsSection = memo(({
   const [selectedCommentForHistory, setSelectedCommentForHistory] = useState(null);
   const [deletePopup, setDeletePopup] = useState({ isOpen: false, comment: null });
   const editorContainerRef = useRef(null);
+  
+  // Image preview state for comment images
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+
+  // Handle image click in comments - open preview
+  const handleCommentImageClick = useCallback((imageAttachment) => {
+    setSelectedImage(imageAttachment);
+    setImageViewerOpen(true);
+  }, []);
+
+  // Close image viewer
+  const handleCloseImageViewer = useCallback(() => {
+    setImageViewerOpen(false);
+    setSelectedImage(null);
+  }, []);
 
   // Handle clicking outside to collapse editor (scoped to modal)
   useEffect(() => {
@@ -473,6 +518,7 @@ const CommentsSection = memo(({
                     onEdit={handleEditStart}
                     onDelete={handleDelete}
                     onShowHistory={handleShowHistory}
+                    onImageClick={handleCommentImageClick}
                   />
                 );
               })
@@ -536,12 +582,29 @@ const CommentsSection = memo(({
           transform: scale(1.05);
         }
       `}</style>
+      
       <DeletePopup
         isOpen={deletePopup.isOpen}
         onCancel={() => setDeletePopup({ isOpen: false, comment: null })}
         onConfirm={handleConfirmDelete}
         itemType="comment"
       />
+
+      {/* Image Preview Modal for Comment Images */}
+      {imageViewerOpen && selectedImage && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80">
+            <Loader2 className="w-8 h-8 animate-spin text-white" />
+          </div>
+        }>
+          <DocumentViewerModal
+            attachment={selectedImage}
+            attachments={[selectedImage]}
+            initialIndex={0}
+            onClose={handleCloseImageViewer}
+          />
+        </Suspense>
+      )}
     </motion.div>
   );
 });

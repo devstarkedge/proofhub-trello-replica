@@ -58,7 +58,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     throw new ErrorResponse('No file uploaded', 400);
   }
 
-  const { cardId, subtaskId, nanoSubtaskId, contextType = 'card', contextRef, commentId, setCover } = req.body;
+  const { cardId, subtaskId, nanoSubtaskId, contextType = 'description', contextRef, commentId, setCover } = req.body;
 
   // Validate exactly one parent reference is provided
   const parentCount = [cardId, subtaskId, nanoSubtaskId].filter(Boolean).length;
@@ -138,8 +138,11 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     publicId: cloudinaryResult.public_id,
     resourceType: cloudinaryResult.resource_type,
     format: cloudinaryResult.format,
-    contextType: parentType,
-    contextRef: parentRefId,
+    // Use the frontend's contextType ('description' or 'comment') for proper separation
+    // If contextType is 'comment' and commentId is provided, use it
+    // Otherwise use contextRef or fallback to parentRefId
+    contextType: contextType || 'description',
+    contextRef: contextType === 'comment' ? (commentId || contextRef || parentRefId) : (contextRef || parentRefId),
     board: boardId,
     comment: commentId || null,
     uploadedBy: req.user.id,
@@ -227,7 +230,7 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
     throw new ErrorResponse('No files uploaded', 400);
   }
 
-  const { cardId, contextType = 'card', contextRef } = req.body;
+  const { cardId, contextType = 'description', contextRef } = req.body;
 
   // Validate card exists
   const card = await Card.findById(cardId).select('board').lean();
@@ -261,7 +264,8 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
         publicId: cloudinaryResult.public_id,
         resourceType: cloudinaryResult.resource_type,
         format: cloudinaryResult.format,
-        contextType: contextType || 'card',
+        // Use the frontend's contextType ('description' or 'comment') for proper separation
+        contextType: contextType || 'description',
         contextRef: contextRef || cardId,
         card: cardId,
         board: card.board,
@@ -821,8 +825,9 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
     publicId: cloudinaryResult.public_id,
     resourceType: 'image',
     format: cloudinaryResult.format,
-    contextType: parentType,
-    contextRef: contextRef || parentRefId,
+    // Use the frontend's contextType ('description' or 'comment') for proper separation
+    contextType: contextType || 'description',
+    contextRef: contextType === 'comment' ? (contextRef || parentRefId) : (contextRef || parentRefId),
     board: boardId,
     uploadedBy: req.user.id,
     width: cloudinaryResult.width,

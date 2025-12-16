@@ -119,13 +119,13 @@ const AddMemberModal = memo(({
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05)'
             }}
           >
-            <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 p-6 rounded-t-3xl z-10">
+            <div className="sticky top-0 bg-gradient-to-r from-green-600 to-blue-600 p-4 sm:p-6 rounded-t-3xl z-10">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
                     <UserPlus className="text-white" size={24} />
                   </div>
-                  <h3 className="text-2xl font-bold text-white">Add New Member</h3>
+                  <h3 className="text-xl sm:text-2xl font-bold text-white">Add New Member</h3>
                 </div>
                 <button
                   onClick={() => !isLoading && onClose()}
@@ -137,7 +137,7 @@ const AddMemberModal = memo(({
               </div>
             </div>
 
-            <form onSubmit={onSubmit} className="p-6 space-y-6">
+            <form onSubmit={onSubmit} className="p-4 sm:p-6 space-y-6">
               {/* Full Name Field */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">

@@ -59,7 +59,17 @@ const AttachmentsSection = memo(({
   // Fetch attachments on mount and when entity changes
   useEffect(() => {
     if (entityId) {
-      fetchAttachments(entityType, entityId, { forceRefresh: true });
+      // Wrap in async function to handle errors gracefully
+      const loadAttachments = async () => {
+        try {
+          await fetchAttachments(entityType, entityId, { forceRefresh: true });
+        } catch (error) {
+          // Error is already handled in the store, just log for debugging
+          console.warn(`Failed to load attachments for ${entityType} ${entityId}:`, error);
+        }
+      };
+      
+      loadAttachments();
     }
     
     // Cleanup on unmount - clear entity data to prevent stale state
@@ -129,9 +139,14 @@ const AttachmentsSection = memo(({
   }, [entityType, entityId, setAsCover, onCoverChange]);
 
   // Handle refresh
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     if (entityId) {
-      fetchAttachments(entityType, entityId, { forceRefresh: true });
+      try {
+        await fetchAttachments(entityType, entityId, { forceRefresh: true });
+      } catch (error) {
+        // Error is already handled in the store
+        console.warn('Refresh attachments failed:', error);
+      }
     }
   }, [entityType, entityId, fetchAttachments]);
 

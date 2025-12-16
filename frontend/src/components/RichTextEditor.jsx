@@ -27,7 +27,9 @@ import {
 } from 'lucide-react';
 import MentionList from './MentionList';
 import useEditorAttachment from '../hooks/useEditorAttachment';
+import useEditorAttachmentSync from '../hooks/useEditorAttachmentSync';
 import EditorAttachmentPreview from './EditorAttachmentPreview';
+import InlineAttachmentManager from './InlineAttachmentManager';
 import 'tippy.js/dist/tippy.css';
 
 const CustomImage = Image.extend({
@@ -77,18 +79,56 @@ const RichTextEditor = ({
   // Helper to determine if we have a valid entity for attachments
   const hasEntityContext = !!(entityId || cardId);
 
-  // Callback to insert image into editor
+  // Callback to insert image into editor with proper cursor positioning
+  // Images are inserted at the current position, then cursor moves to new line below
   const handleInsertImage = useCallback((imageUrl) => {
-    if (editorInstanceRef.current) {
-      editorInstanceRef.current.chain().focus().setImage({ src: imageUrl }).run();
-    }
+    const editor = editorInstanceRef.current;
+    if (!editor) return;
+
+    // Get current selection position
+    const { from, to } = editor.state.selection;
+    
+    // Check if there's any content after the cursor position
+    const docEnd = editor.state.doc.content.size;
+    const hasContentAfter = to < docEnd - 1;
+    
+    // Insert the image
+    editor.chain()
+      .focus()
+      .setImage({ src: imageUrl })
+      .run();
+    
+    // Move cursor to a new line after the image
+    // This creates a cleaner UX where text typed after upload appears below the image
+    setTimeout(() => {
+      if (editor && !editor.isDestroyed) {
+        editor.chain()
+          .focus()
+          .createParagraphNear()
+          .run();
+      }
+    }, 10);
   }, []);
 
-  // Callback to insert file preview into editor
+  // Callback to insert file preview into editor with new line
   const handleInsertFile = useCallback((html) => {
-    if (editorInstanceRef.current) {
-      editorInstanceRef.current.chain().focus().insertContent(html).run();
-    }
+    const editor = editorInstanceRef.current;
+    if (!editor) return;
+    
+    editor.chain()
+      .focus()
+      .insertContent(html)
+      .run();
+    
+    // Move cursor to new line after the file preview
+    setTimeout(() => {
+      if (editor && !editor.isDestroyed) {
+        editor.chain()
+          .focus()
+          .createParagraphNear()
+          .run();
+      }
+    }, 10);
   }, []);
 
   // Initialize useEditorAttachment hook for Cloudinary integration
@@ -264,6 +304,15 @@ const RichTextEditor = ({
         forceUpdate({});
       },
     });
+
+  // Sync editor content with attachment deletions
+  // When an attachment is deleted from any section, remove it from editor content
+  useEditorAttachmentSync({
+    editor,
+    entityType,
+    entityId: entityId || cardId,
+    onChange
+  });
 
   // Update editor attributes when isExpanded changes
   useEffect(() => {
@@ -678,7 +727,20 @@ const RichTextEditor = ({
 
 
 
-        {/* Attachment Previews Integration */}
+        {/* Inline Attachment Manager - Shows uploaded attachments with delete capability */}
+        {hasEntityContext && enableAttachments && isExpanded && (
+          <div className="px-3 pb-1 border-t border-gray-100">
+            <InlineAttachmentManager
+              entityType={entityType}
+              entityId={entityId || cardId}
+              contextType={contextType || (isComment ? 'comment' : 'description')}
+              contextRef={contextRef}
+              isExpanded={isExpanded}
+            />
+          </div>
+        )}
+
+        {/* Upload Progress Previews - Shows files being uploaded */}
         {hasEntityContext && (
           <div className="px-3 pb-2">
             <EditorAttachmentPreview 

@@ -61,7 +61,7 @@ const EmployeeAssignment = memo(({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-2xl shadow-sm p-16 text-center border border-gray-100"
+        className="bg-white rounded-2xl shadow-sm p-8 sm:p-16 text-center border border-gray-100"
       >
         <motion.div
           animate={{ 
@@ -233,10 +233,10 @@ const EmployeeAssignment = memo(({
           </AnimatePresence>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination - Responsive */}
         {currentTabEmployees.length > itemsPerPage && (
-          <div className="flex items-center justify-between gap-4 mt-6 p-4 bg-gray-50 rounded-xl">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 p-4 bg-gray-50 rounded-xl">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
               <label className="text-sm text-gray-600 font-medium">Items per page:</label>
               <select
                 value={itemsPerPage}
@@ -249,21 +249,21 @@ const EmployeeAssignment = memo(({
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between w-full sm:w-auto gap-2">
               <button
                 onClick={() => onPageChange(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
-                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
               >
                 Previous
               </button>
-              <span className="text-sm text-gray-600 font-medium">
+              <span className="text-sm text-gray-600 font-medium whitespace-nowrap">
                 Page {currentPage} of {totalPages}
               </span>
               <button
                 onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
-                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
               >
                 Next
               </button>

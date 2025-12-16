@@ -111,6 +111,8 @@ export const createComment = asyncHandler(async (req, res) => {
   // Invalidate relevant caches
   invalidateCache(`/api/cards/${cardId}`);
   invalidateCache(`/api/cards/${cardId}/comments`);
+  // Invalidate version count cache for this comment (if any)
+  invalidateCache(`/api/versions/comment/${comment._id}/count`);
 
   res.status(201).json(populatedComment);
 });
@@ -172,11 +174,15 @@ export const updateComment = asyncHandler(async (req, res) => {
   const previousContent = comment.text;
   const previousHtmlContent = comment.htmlContent;
   
-  // Create version history entry
+  // Create version history entry (content is required, use htmlContent stripped of tags if text is empty)
+  const contentForVersion = previousContent || 
+    (previousHtmlContent || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim() || 
+    '(empty)';
+  
   await VersionHistory.createVersion({
     entityType: 'comment',
     entityId: comment._id,
-    content: previousContent,
+    content: contentForVersion,
     htmlContent: previousHtmlContent,
     mentions: comment.mentions,
     editedBy: req.user.id,
@@ -211,43 +217,50 @@ export const updateComment = asyncHandler(async (req, res) => {
     contextType: comment.contextType === 'card' ? 'task' : comment.contextType,
   });
 
-  // Re-process mentions (notify new mentions)
-  try {
-    await notificationService.processMentions(comment.htmlContent || '', comment.card, req.user.id);
-  } catch (err) {
-    console.error('Error processing mentions on comment update:', err);
-  }
+    // Re-process mentions (notify new mentions)
+    try {
+      await notificationService.processMentions(comment.htmlContent || '', comment.card, req.user.id);
+    } catch (err) {
+      console.error('Error processing mentions on comment update:', err);
+    }
 
-  // Emit real-time update with version info
-  if (comment.card.board) {
-    emitToBoard(comment.card.board.toString(), 'comment-updated', {
-      cardId: comment.card._id,
-      commentId: comment._id,
-      updates: {
-        text: comment.text,
-        htmlContent: comment.htmlContent,
-        isEdited: true,
-        editedAt: comment.editedAt,
+    // Populate user details for the response
+    await comment.populate('user', 'name avatar');
+
+    // Emit real-time update with version info
+    if (comment.card.board) {
+      emitToBoard(comment.card.board.toString(), 'comment-updated', {
+        cardId: comment.card._id,
+        commentId: comment._id,
+        updates: {
+          text: comment.text,
+          htmlContent: comment.htmlContent,
+          isEdited: true,
+          editedAt: comment.editedAt,
+          versionCount,
+          // Include user details in the socket event as well, just in case
+          user: comment.user
+        },
+        updatedBy: {
+          id: req.user.id,
+          name: req.user.name
+        }
+      });
+    }
+
+    // Invalidate relevant caches
+    invalidateCache(`/api/cards/${comment.card._id}`); // Use ._id since it might be populated or not, but safer to access properly. Earlier code used comment.card which is populated above. Wait, comment.card is populated on line 165: .populate('card'). So comment.card is an object.
+    invalidateCache(`/api/cards/${comment.card._id}/comments`);
+    // Invalidate version count cache for this comment
+    invalidateCache(`/api/versions/comment/${comment._id}/count`);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        ...comment.toObject(),
         versionCount
       },
-      updatedBy: {
-        id: req.user.id,
-        name: req.user.name
-      }
     });
-  }
-
-  // Invalidate relevant caches
-  invalidateCache(`/api/cards/${comment.card}`);
-  invalidateCache(`/api/cards/${comment.card}/comments`);
-
-  res.status(200).json({
-    success: true,
-    data: {
-      ...comment.toObject(),
-      versionCount
-    },
-  });
 });
 
 export const deleteComment = asyncHandler(async (req, res) => {
@@ -277,6 +290,8 @@ export const deleteComment = asyncHandler(async (req, res) => {
   // Invalidate relevant caches
   invalidateCache(`/api/cards/${comment.card}`);
   invalidateCache(`/api/cards/${comment.card}/comments`);
+  // Invalidate version count cache for this comment
+  invalidateCache(`/api/versions/comment/${comment._id}/count`);
 
   res.status(200).json({
     success: true,

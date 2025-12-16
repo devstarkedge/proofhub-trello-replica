@@ -804,11 +804,15 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   }
 
   if (req.body.description !== undefined && req.body.description !== card.description) {
-    // Save version history for description
+    // Save version history for description (content is required, use stripped htmlContent or placeholder)
+    const descriptionContent = card.description 
+      ? card.description.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim() 
+      : '';
+    
     await VersionHistory.createVersion({
       entityType: 'card_description',
       entityId: card._id,
-      content: card.description ? card.description.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim() : '',
+      content: descriptionContent || '(empty)',
       htmlContent: card.description || '',
       mentions: card.descriptionMentions || [],
       editedBy: req.user.id,

@@ -729,7 +729,8 @@ const TeamManagement = () => {
           isOpen={state.showCreateModal}
           isLoading={state.isLoading}
           formData={state.formData}
-          managers={state.managers}
+            managers={state.managers}
+            departments={departments}
           onFormDataChange={(data) => dispatch({ type: ACTION_TYPES.UPDATE_FORM_DATA, payload: data })}
           onSubmit={handleCreateDepartment}
           onClose={() => dispatch({ type: ACTION_TYPES.CLOSE_CREATE_MODAL })}

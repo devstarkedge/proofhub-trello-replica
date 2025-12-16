@@ -4,8 +4,9 @@ import RichTextEditor from "../RichTextEditor";
 import { motion, AnimatePresence } from "framer-motion";
 import versionService from "../../services/versionService";
 
-// Lazy load VersionHistoryModal for performance
+// Lazy load modals for performance
 const VersionHistoryModal = lazy(() => import("../VersionHistoryModal"));
+const DocumentViewerModal = lazy(() => import("../DocumentViewerModal"));
 
 const CardDescription = memo(({ 
   description, 
@@ -23,6 +24,48 @@ const CardDescription = memo(({
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [versionCount, setVersionCount] = useState(0);
   const containerRef = useRef(null);
+  const collapsedContentRef = useRef(null);
+  
+  // Image preview state
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+
+  // Handle image click in collapsed description - open preview
+  const handleDescriptionImageClick = useCallback((imageAttachment) => {
+    setSelectedImage(imageAttachment);
+    setImageViewerOpen(true);
+  }, []);
+
+  // Close image viewer
+  const handleCloseImageViewer = useCallback(() => {
+    setImageViewerOpen(false);
+    setSelectedImage(null);
+  }, []);
+
+  // Handle clicks on images within collapsed description
+  useEffect(() => {
+    const contentEl = collapsedContentRef.current;
+    if (!contentEl || isExpanded) return;
+
+    const handleImageClick = (e) => {
+      if (e.target.tagName === 'IMG') {
+        e.preventDefault();
+        e.stopPropagation();
+        const imgSrc = e.target.src;
+        const imgAlt = e.target.alt || 'Description image';
+        handleDescriptionImageClick({
+          _id: `desc-img-${Date.now()}`,
+          fileType: 'image',
+          originalName: imgAlt,
+          secureUrl: imgSrc,
+          url: imgSrc
+        });
+      }
+    };
+
+    contentEl.addEventListener('click', handleImageClick);
+    return () => contentEl.removeEventListener('click', handleImageClick);
+  }, [isExpanded, handleDescriptionImageClick]);
 
   // Fetch version count on mount
   useEffect(() => {
@@ -168,11 +211,19 @@ const CardDescription = memo(({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              onClick={() => setIsExpanded(true)}
+              onClick={(e) => {
+                // Don't expand if clicking on an image (let image preview handle it)
+                if (e.target.tagName !== 'IMG') {
+                  setIsExpanded(true);
+                }
+              }}
               className="p-4 bg-white rounded-lg cursor-pointer hover:bg-gray-50 min-h-[60px] border border-gray-200 hover:border-gray-300 transition-all shadow-sm"
             >
               {description ? (
-                <div className="prose prose-sm max-w-none text-gray-800 line-clamp-2 overflow-hidden description-collapsed">
+                <div 
+                  ref={collapsedContentRef}
+                  className="prose prose-sm max-w-none text-gray-800 line-clamp-2 overflow-hidden description-collapsed [&_img]:cursor-pointer [&_img]:hover:opacity-90"
+                >
                   <div dangerouslySetInnerHTML={{ __html: description }} />
                 </div>
               ) : (
@@ -197,6 +248,22 @@ const CardDescription = memo(({
             onClose={() => setShowVersionHistory(false)}
             onRollback={handleVersionRollback}
             title="Description History"
+          />
+        </Suspense>
+      )}
+
+      {/* Image Preview Modal for Description Images */}
+      {imageViewerOpen && selectedImage && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80">
+            <Loader2 className="w-8 h-8 animate-spin text-white" />
+          </div>
+        }>
+          <DocumentViewerModal
+            attachment={selectedImage}
+            attachments={[selectedImage]}
+            initialIndex={0}
+            onClose={handleCloseImageViewer}
           />
         </Suspense>
       )}

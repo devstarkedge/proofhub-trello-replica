@@ -108,7 +108,7 @@ const useAttachmentStore = create(
       // Async Actions - updated for entity-based fetching
       fetchAttachments: async (entityType, entityId, options = {}) => {
         const entityKey = getEntityKey(entityType, entityId);
-        const { page = 1, limit = 20, fileType, forceRefresh = false } = options;
+        const { page = 1, limit = 20, fileType, forceRefresh = false, retryCount = 0, maxRetries = 3 } = options;
         const state = get();
 
         // Return cached if available and not forcing refresh
@@ -132,11 +132,40 @@ const useAttachmentStore = create(
 
           return result.data;
         } catch (error) {
+          // Handle 404 errors gracefully - card might be newly created
+          if (error.message?.includes('404') && retryCount < maxRetries) {
+            console.warn(`Attachment fetch failed (404) for ${entityType} ${entityId}, retry ${retryCount + 1}/${maxRetries}`);
+            
+            // Exponential backoff: 300ms, 600ms, 1200ms
+            const delay = 300 * Math.pow(2, retryCount);
+            
+            // Set a temporary state to show we're retrying
+            set((s) => ({
+              loading: { ...s.loading, [entityKey]: true },
+              error: { ...s.error, [entityKey]: null }
+            }));
+
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            // Retry the fetch
+            return get().fetchAttachments(entityType, entityId, { 
+              ...options, 
+              retryCount: retryCount + 1,
+              forceRefresh: true 
+            });
+          }
+
+          // If all retries failed or it's not a 404, just set empty state without throwing
+          console.warn(`Failed to fetch attachments for ${entityType} ${entityId}:`, error.message);
           set((s) => ({
+            attachments: { ...s.attachments, [entityKey]: [] },
+            pagination: { ...s.pagination, [entityKey]: { page: 1, totalPages: 0, totalCount: 0, hasNext: false, hasPrev: false } },
             loading: { ...s.loading, [entityKey]: false },
-            error: { ...s.error, [entityKey]: error.message }
+            error: { ...s.error, [entityKey]: null } // Don't set error to prevent crashes
           }));
-          throw error;
+
+          return [];
         }
       },
 
@@ -389,6 +418,11 @@ const useAttachmentStore = create(
 
       deleteAttachment: async (entityType, entityId, attachmentId) => {
         const entityKey = getEntityKey(entityType, entityId);
+        
+        // Get attachment data before deletion for event dispatch
+        const attachments = get().attachments[entityKey] || [];
+        const deletedAttachment = attachments.find(a => a._id === attachmentId);
+        
         try {
           await attachmentService.deleteAttachment(attachmentId);
           get().removeAttachment(entityKey, attachmentId);
@@ -401,12 +435,38 @@ const useAttachmentStore = create(
             });
           }
 
+          // Dispatch global event for real-time sync across all UI components
+          // This ensures Description, Comment, and Attachment sections stay in sync
+          const event = new CustomEvent('attachment-deleted', {
+            detail: {
+              entityType,
+              entityId,
+              attachmentId,
+              attachment: deletedAttachment,
+              url: deletedAttachment?.secureUrl || deletedAttachment?.url
+            }
+          });
+          window.dispatchEvent(event);
+
           return true;
         } catch (error) {
           // If 404/Not Found, allow removal from UI to fix synchronization
           if (error.message && (error.message.toLowerCase().includes('not found') || error.message.includes('404'))) {
              console.warn('Attachment not found on server, removing from UI:', attachmentId);
              get().removeAttachment(entityKey, attachmentId);
+             
+             // Still dispatch event for UI sync
+             const event = new CustomEvent('attachment-deleted', {
+               detail: {
+                 entityType,
+                 entityId,
+                 attachmentId,
+                 attachment: deletedAttachment,
+                 url: deletedAttachment?.secureUrl || deletedAttachment?.url
+               }
+             });
+             window.dispatchEvent(event);
+             
              return true;
           }
           console.error('Delete attachment error:', error);

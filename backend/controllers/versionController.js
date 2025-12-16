@@ -132,11 +132,18 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
     invalidateCache(`/api/cards/${entityId}`);
   } else if (entityType === 'comment') {
     invalidateCache(`/api/cards/${card}/comments`);
+    // Invalidate version count cache for this comment
+    invalidateCache(`/api/versions/comment/${entityId}/count`);
   }
 
+  // Return rollback info along with restored content so frontend can update UI
   res.status(200).json({
     success: true,
-    data: rollbackVersion,
+    data: {
+      rollbackVersion,
+      restoredContent,
+      restoredHtmlContent
+    },
     message: `Rolled back to version ${versionNumber}`
   });
 });

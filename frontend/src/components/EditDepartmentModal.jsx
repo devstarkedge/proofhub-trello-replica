@@ -222,7 +222,7 @@ const EditDepartmentModal = ({
           className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden"
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-8 py-6 text-white">
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-4 sm:px-8 py-4 sm:py-6 text-white">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <motion.div
@@ -234,12 +234,12 @@ const EditDepartmentModal = ({
                   <Edit2 className="h-6 w-6" />
                 </motion.div>
                 <div>
-                  <h2 className="text-2xl sm:text-3xl font-bold">
+                  <h2 className="text-xl sm:text-3xl font-bold">
                     Edit Department{" "}
                     <span className="text-orange-500">{department?.name}</span>
                   </h2>
 
-                  <p className="text-indigo-100 text-sm mt-0.5">
+                  <p className="text-indigo-100 text-sm mt-0.5 hidden sm:block">
                     Update{" "}
                     <span className="text-orange-400">{department?.name}</span>{" "}
                     department details and managers
@@ -259,7 +259,7 @@ const EditDepartmentModal = ({
           </div>
 
           {/* Form Content */}
-          <div className="overflow-y-auto max-h-[calc(95vh-180px)] px-8 py-6">
+          <div className="overflow-y-auto max-h-[calc(95vh-180px)] px-4 sm:px-8 py-4 sm:py-6">
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Manager Selection Section */}
               <motion.div
@@ -267,7 +267,7 @@ const EditDepartmentModal = ({
                 variants={fieldVariants}
                 initial="hidden"
                 animate="visible"
-                className="bg-gradient-to-br from-gray-50 to-purple-50 p-6 rounded-2xl border border-gray-200"
+                className="bg-gradient-to-br from-gray-50 to-purple-50 p-4 sm:p-6 rounded-2xl border border-gray-200"
               >
                 <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
                   <Shield className="h-5 w-5 text-purple-600" />
@@ -289,7 +289,7 @@ const EditDepartmentModal = ({
                 variants={fieldVariants}
                 initial="hidden"
                 animate="visible"
-                className="bg-gradient-to-br from-gray-50 to-indigo-50 p-6 rounded-2xl border border-gray-200"
+                className="bg-gradient-to-br from-gray-50 to-indigo-50 p-4 sm:p-6 rounded-2xl border border-gray-200"
               >
                 <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
                   <Building2 className="h-5 w-5 text-indigo-600" />
@@ -350,7 +350,7 @@ const EditDepartmentModal = ({
           </div>
 
           {/* Footer */}
-          <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex justify-between items-center">
+          <div className="bg-gray-50 px-4 sm:px-8 py-4 sm:py-5 border-t border-gray-200 flex justify-between items-center gap-3">
             <motion.button
               whileHover={{ scale: 1.02, x: -4 }}
               whileTap={{ scale: 0.98 }}

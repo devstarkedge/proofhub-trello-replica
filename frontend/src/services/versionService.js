@@ -27,7 +27,8 @@ class VersionService {
       }
 
       const result = await response.json();
-      return result.data || { versions: [], pagination: {} };
+      // Return the full response so callers can access `data` and `pagination`
+      return result;
     } catch (error) {
       console.error('Get version history error:', error);
       throw error;

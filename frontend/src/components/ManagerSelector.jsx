@@ -198,12 +198,13 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
                               {isAssigned && assignedDepartments.length > 1 && (
                                 <div className="mt-1 flex flex-wrap gap-1">
                                   {assignedDepartments.slice(0, 2).map((deptId, index) => {
-                                    // Find department name from departments array
-                                    const dept = departments.find(d => d._id === deptId);
+                                    const deptIdStr = normalizeId(deptId);
+                                    // Find department name from departments array using normalized IDs
+                                    const dept = departments.find(d => normalizeId(d._id) === deptIdStr);
                                     const deptName = dept ? dept.name : `Dept ${index + 1}`;
                                     return (
                                       <span
-                                        key={deptId}
+                                        key={deptIdStr}
                                         className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-medium"
                                       >
                                         {deptName}

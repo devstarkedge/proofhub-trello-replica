@@ -13,6 +13,7 @@ const CreateDepartmentModal = memo(({
   isLoading,
   formData,
   managers,
+  departments = [],
   onFormDataChange,
   onSubmit,
   onClose
@@ -91,6 +92,7 @@ const CreateDepartmentModal = memo(({
                 selectedManagers={formData.managers}
                 onChange={handleManagersChange}
                 disabled={isLoading}
+                departments={departments}
               />
 
               <div className="flex gap-3 pt-4">

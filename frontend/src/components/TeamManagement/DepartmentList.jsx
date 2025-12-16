@@ -186,7 +186,7 @@ const DepartmentListItem = memo(({
                 e.stopPropagation();
                 onEdit(dept);
               }}
-              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              className="p-3 sm:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
               title="Edit department"
             >
               <Edit2 size={16} />
@@ -196,7 +196,7 @@ const DepartmentListItem = memo(({
                 e.stopPropagation();
                 onDelete(dept);
               }}
-              className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              className="p-3 sm:p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
               title="Delete department"
             >
               <Trash2 size={16} />

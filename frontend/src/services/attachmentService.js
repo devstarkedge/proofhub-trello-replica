@@ -184,6 +184,15 @@ class AttachmentService {
         { headers: this.getHeaders() }
       );
 
+      // Handle 404 gracefully - card might be newly created
+      if (response.status === 404) {
+        console.warn(`Card ${cardId} not found or has no attachments yet. Returning empty array.`);
+        return {
+          data: [],
+          pagination: { page: 1, totalPages: 0, totalCount: 0, hasNext: false, hasPrev: false }
+        };
+      }
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -194,6 +203,14 @@ class AttachmentService {
         pagination: result.pagination || {}
       };
     } catch (error) {
+      // If it's a 404, return empty array instead of throwing
+      if (error.message.includes('404')) {
+        console.warn(`Card ${cardId} not found. Returning empty attachments.`);
+        return {
+          data: [],
+          pagination: { page: 1, totalPages: 0, totalCount: 0, hasNext: false, hasPrev: false }
+        };
+      }
       console.error('Get card attachments error:', error);
       throw error;
     }
@@ -212,6 +229,15 @@ class AttachmentService {
         { headers: this.getHeaders() }
       );
 
+      // Handle 404 gracefully - subtask might be newly created
+      if (response.status === 404) {
+        console.warn(`Subtask ${subtaskId} not found or has no attachments yet. Returning empty array.`);
+        return {
+          data: [],
+          pagination: { page: 1, totalPages: 0, totalCount: 0, hasNext: false, hasPrev: false }
+        };
+      }
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -222,6 +248,14 @@ class AttachmentService {
         pagination: result.pagination || {}
       };
     } catch (error) {
+      // If it's a 404, return empty array instead of throwing
+      if (error.message.includes('404')) {
+        console.warn(`Subtask ${subtaskId} not found. Returning empty attachments.`);
+        return {
+          data: [],
+          pagination: { page: 1, totalPages: 0, totalCount: 0, hasNext: false, hasPrev: false }
+        };
+      }
       console.error('Get subtask attachments error:', error);
       throw error;
     }
@@ -236,9 +270,18 @@ class AttachmentService {
 
     try {
       const response = await fetch(
-        `${baseURL}/api/attachments/nano/${nanoSubtaskId}?${params}`,
+        `${baseURL}/api/attachments/nano-subtask/${nanoSubtaskId}?${params}`,
         { headers: this.getHeaders() }
       );
+
+      // Handle 404 gracefully - nano-subtask might be newly created
+      if (response.status === 404) {
+        console.warn(`Nano-subtask ${nanoSubtaskId} not found or has no attachments yet. Returning empty array.`);
+        return {
+          data: [],
+          pagination: { page: 1, totalPages: 0, totalCount: 0, hasNext: false, hasPrev: false }
+        };
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -250,6 +293,14 @@ class AttachmentService {
         pagination: result.pagination || {}
       };
     } catch (error) {
+      // If it's a 404, return empty array instead of throwing
+      if (error.message.includes('404')) {
+        console.warn(`Nano-subtask ${nanoSubtaskId} not found. Returning empty attachments.`);
+        return {
+          data: [],
+          pagination: { page: 1, totalPages: 0, totalCount: 0, hasNext: false, hasPrev: false }
+        };
+      }
       console.error('Get nano-subtask attachments error:', error);
       throw error;
     }
