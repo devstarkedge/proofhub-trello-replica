@@ -314,6 +314,13 @@ useEffect(() => {
 
   const handleOpenCardModal = useCallback((card) => {
     if (!card) return;
+    
+    // Prevent opening modal for cards with temporary IDs (not yet saved to database)
+    if (card.isOptimistic || (card._id && card._id.toString().startsWith('temp-'))) {
+      console.log('Card is still being created. Please wait...');
+      return;
+    }
+    
     openHierarchyModal({
       type: 'task',
       entity: card,

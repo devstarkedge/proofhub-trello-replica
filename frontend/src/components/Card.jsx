@@ -29,6 +29,9 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   const [showDeletePopup, setShowDeletePopup] = React.useState(false);
   
+  // Check if card is optimistic/temporary (not yet saved to database)
+  const isOptimistic = card.isOptimistic || (card._id && card._id.toString().startsWith('temp-'));
+  
   // Memoize computed values
   const allLabels = useMemo(() => {
     const cardLabels = (card.labels || [])
@@ -141,17 +144,28 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
   return (
     <motion.div
       layoutId={card._id}
-      whileHover={{ y: -2 }}
-      onMouseEnter={() => setIsHovered(true)}
+      whileHover={{ y: isOptimistic ? 0 : -2 }}
+      onMouseEnter={() => !isOptimistic && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={onClick}
+      onClick={isOptimistic ? undefined : onClick}
       className={`
-        relative bg-white rounded-xl overflow-hidden group/card border border-gray-100/50 cursor-pointer
+        relative bg-white rounded-xl overflow-hidden group/card border border-gray-100/50
         bg-gradient-to-br from-white to-gray-50/50
+        ${isOptimistic ? 'cursor-wait opacity-60 animate-pulse' : 'cursor-pointer'}
         transition-all duration-200
         ${isDragging ? 'shadow-2xl ring-2 ring-purple-500/20 rotate-2 !opacity-90' : 'shadow-sm hover:shadow-md hover:border-gray-200'}
       `}
     >
+      {/* Loading overlay for optimistic cards */}
+      {isOptimistic && (
+        <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
+          <div className="flex items-center gap-2 text-gray-600">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            <span className="text-xs font-medium">Creating...</span>
+          </div>
+        </div>
+      )}
+
       {/* Cover Image */}
       {coverImageUrl && (
         <div className="relative h-32 w-full overflow-hidden">

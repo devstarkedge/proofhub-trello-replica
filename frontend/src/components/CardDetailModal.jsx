@@ -78,6 +78,7 @@ const CardDetailModal = React.memo(({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deletePopup, setDeletePopup] = useState({ isOpen: false, type: null, data: null });
+  const [cardDataLoading, setCardDataLoading] = useState(true);
   // Recurring Task States
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [existingRecurrence, setExistingRecurrence] = useState(null);
@@ -182,9 +183,19 @@ const CardDetailModal = React.memo(({
   const [editBilledMinutes, setEditBilledMinutes] = useState("");
   const [editBilledDescription, setEditBilledDescription] = useState("");
 
+  // Check if card has a real database ID (not temporary)
+  const isRealCard = card._id && !card._id.toString().startsWith('temp-');
+
   useEffect(() => {
+    // Only load data if card has a real database ID
+    if (!isRealCard) {
+      setCardDataLoading(false);
+      return;
+    }
+
     // Load fresh card data from server when modal opens
     const loadFreshCardData = async () => {
+      setCardDataLoading(true);
       try {
         const freshCard = await useWorkflowStore.getState().getFreshCard(card._id);
         if (freshCard) {
@@ -217,6 +228,8 @@ const CardDetailModal = React.memo(({
         }
       } catch (error) {
         console.error("Error loading fresh card data:", error);
+      } finally {
+        setCardDataLoading(false);
       }
     };
 
@@ -328,7 +341,7 @@ const CardDetailModal = React.memo(({
       window.removeEventListener('socket-comment-deleted', handleCommentDeleted);
       window.removeEventListener('socket-activity-added', handleActivityAdded);
     };
-  }, [card._id]);
+  }, [card._id, isRealCard]);
 
   // Subscribe to comment service updates for real-time UI synchronization
   useEffect(() => {
@@ -1213,6 +1226,37 @@ const CardDetailModal = React.memo(({
           transition={{ duration: 0.2 }}
           className="bg-white rounded-xl w-full max-w-7xl mt-4 mb-4 shadow-2xl max-h-[95vh] overflow-y-auto relative"
         >
+          {cardDataLoading ? (
+            <div className="p-6 lg:p-8 animate-pulse">
+              {/* Loading Skeleton */}
+              <div className="flex items-start justify-between mb-6 border-b border-gray-200 pb-4">
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-200 rounded w-1/3 mb-4"></div>
+                  <div className="h-8 bg-gray-200 rounded w-2/3"></div>
+                </div>
+                <div className="flex items-center gap-2 ml-4">
+                  <div className="h-10 w-32 bg-gray-200 rounded"></div>
+                  <div className="h-10 w-10 bg-gray-200 rounded"></div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="h-32 bg-gray-200 rounded"></div>
+                  <div className="h-48 bg-gray-200 rounded"></div>
+                  <div className="h-64 bg-gray-200 rounded"></div>
+                </div>
+                <div className="space-y-4">
+                  <div className="h-24 bg-gray-200 rounded"></div>
+                  <div className="h-24 bg-gray-200 rounded"></div>
+                  <div className="h-24 bg-gray-200 rounded"></div>
+                </div>
+              </div>
+              <div className="flex items-center justify-center mt-8">
+                <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />
+                <span className="ml-2 text-gray-600">Loading card details...</span>
+              </div>
+            </div>
+          ) : (
           <div className="p-6 lg:p-8">
             {/* Header */}
             <div className="flex items-start justify-between mb-6 border-b border-gray-200 pb-4">
@@ -1566,6 +1610,7 @@ const CardDetailModal = React.memo(({
               />
             </div>
           </div>
+          )}
         </motion.div>
       </motion.div>
     </AnimatePresence>
