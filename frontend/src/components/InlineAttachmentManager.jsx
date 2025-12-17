@@ -238,7 +238,6 @@ const InlineAttachmentManager = memo(({
         
         // Include attachments with contextType matching description or the entity type
         return attContextType === 'description' || 
-               attContextType === entityType ||
                !attContextType; // Legacy attachments without contextType
       }
       

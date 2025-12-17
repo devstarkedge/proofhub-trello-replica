@@ -350,8 +350,15 @@ const SubtaskNanoModal = ({
     }));
   };
 
-  const handleDeleteAttachment = (index) => {
-    setAttachments(attachments.filter((_, idx) => idx !== index));
+  const handleDeleteAttachment = (attachmentIdOrIndex) => {
+    // Remove attachment by comparing with both _id and index
+    const filteredAttachments = attachments.filter((a, idx) => {
+      const attachmentId = a._id || a.id;
+      if (attachmentIdOrIndex === idx) return false;
+      if (attachmentId === attachmentIdOrIndex) return false;
+      return true;
+    });
+    setAttachments(filteredAttachments);
   };
 
   const handleAddComment = async () => {

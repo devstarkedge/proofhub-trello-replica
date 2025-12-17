@@ -1005,7 +1005,6 @@ const CardDetailModal = React.memo(({
       return true;
     });
     setAttachments(filteredAttachments);
-    toast.info("Attachment removed");
   };
 
   // Handle comment edit

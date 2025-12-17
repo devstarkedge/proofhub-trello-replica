@@ -222,7 +222,35 @@ const HomePage = () => {
     setFilterStatus(status);
     setStatusDropdownOpen(false);
   }, []);
+  
+  // ref for the hand emoji to trigger animations
+  const handRef = useRef(null);
 
+  const triggerShake = useCallback((ms) => {
+    const el = handRef.current;
+    if (!el) return;
+    // restart animation by removing and re-adding class
+    el.classList.remove('hand-shake');
+    // ensure duration is updated
+    el.style.animationDuration = `${ms}ms`;
+    // force reflow
+    // eslint-disable-next-line no-unused-expressions
+    el.offsetWidth;
+    el.classList.add('hand-shake');
+    // clear after duration
+    clearTimeout(el._shakeTimeout);
+    el._shakeTimeout = setTimeout(() => {
+      el.classList.remove('hand-shake');
+      el.style.animationDuration = '';
+    }, ms);
+  }, []);
+
+  // On mount: shake for 5 seconds
+  useEffect(() => {
+    // small delay so entrance animations don't conflict
+    const t = setTimeout(() => triggerShake(5000), 300);
+    return () => clearTimeout(t);
+  }, [triggerShake]);
 
   if (loading) {
     return <HomePageSkeleton />;
@@ -274,7 +302,14 @@ const HomePage = () => {
                 <span className="text-sm font-medium">Welcome!</span>
               </div>
               <h1 className="text-4xl font-bold mb-2 animate-in fade-in slide-in-from-left-4 duration-500 delay-300">
-                Hello, <NeonSparkText text={user?.name || 'User'} className="text-4xl" />! 👋
+                Hello, <NeonSparkText text={user?.name || 'User'} className="text-4xl" />!{' '}
+                <span
+                  ref={handRef}
+                  className="inline-block hand-emoji"
+                  onMouseEnter={() => triggerShake(3000)}
+                >
+                  👋
+                </span>
               </h1>
               <p className="text-blue-100 text-lg animate-in fade-in duration-500 delay-500">Manage your projects and collaborate with your team</p>
             </div>

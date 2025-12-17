@@ -233,3 +233,34 @@
   border-radius: 4px !important;
   margin: 0 4px !important;
 }
+
+/* Hand wave / shake animation */
+@keyframes handWave {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-8deg); }
+  45% { transform: rotate(14deg); }
+  60% { transform: rotate(-4deg); }
+  75% { transform: rotate(10deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.hand-emoji {
+  display: inline-block;
+  transform-origin: 70% 70%;
+  cursor: default;
+  will-change: transform;
+  font-size: 3rem; /* larger hand emoji */
+  line-height: 1; /* keep emoji centered with text */
+  margin-left: 0.25rem;
+}
+
+.hand-shake {
+  animation-name: handWave;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: 1;
+}
+
+/* Utility classes to set animation duration quickly */
+.hand-shake-duration-3000 { animation-duration: 3s; }
+.hand-shake-duration-5000 { animation-duration: 5s; }

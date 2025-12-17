@@ -740,19 +740,6 @@ const RichTextEditor = ({
           </div>
         )}
 
-        {/* Upload Progress Previews - Shows files being uploaded */}
-        {hasEntityContext && (
-          <div className="px-3 pb-2">
-            <EditorAttachmentPreview 
-              entityType={entityType}
-              entityId={entityId}
-              cardId={cardId} 
-              contextType={contextType || (isComment ? 'comment' : 'description')}
-              contextRef={contextRef}
-            />
-          </div>
-        )}
-
         {/* Upload Status Messages */}
         {uploadError && (
           <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">

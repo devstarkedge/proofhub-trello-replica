@@ -218,6 +218,7 @@ const AttachmentsSection = memo(({
             <AttachmentUploader
               entityType={entityType}
               entityId={entityId}
+              contextType={entityType}
               onUploadComplete={() => {
                 fetchAttachments(entityType, entityId, { forceRefresh: true });
                 if (onAttachmentAdded) onAttachmentAdded([]);

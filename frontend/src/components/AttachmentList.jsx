@@ -159,7 +159,7 @@ const AttachmentList = ({
     if (window.confirm(`Delete "${attachment.originalName}"?`)) {
       try {
         await deleteAttachment(entityType, entityId, attachment._id);
-        toast.success('Attachment deleted');
+        toast.info('Attachment deleted');
       } catch (error) {
         toast.error('Failed to delete attachment');
       }
@@ -388,7 +388,7 @@ const AttachmentList = ({
                         {attachment.status === 'error' ? 'Upload failed' : `${Math.round(attachment.progress)}% • Uploading...`}
                       </span>
                     ) : (
-                      attachment.contextType && attachment.contextType !== 'card' && (
+                      attachment.contextType && attachment.contextType !== entityType && attachment.contextType !== 'card' && (
                         <InlineAttachmentBadge contextType={attachment.contextType} />
                       )
                     )}
