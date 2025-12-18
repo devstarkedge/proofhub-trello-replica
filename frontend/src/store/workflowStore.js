@@ -1,6 +1,22 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { shallow } from 'zustand/shallow';
 import Database from '../services/database';
+
+// Helper to build cardsById from cardsByList
+const buildCardsById = (cardsByList) => {
+  const cardsById = {};
+  Object.values(cardsByList || {}).forEach(cards => {
+    if (Array.isArray(cards)) {
+      cards.forEach(card => {
+        if (card && card._id) {
+          cardsById[card._id] = card;
+        }
+      });
+    }
+  });
+  return cardsById;
+};
 
 // Track the current request to prevent race conditions
 let currentRequestId = 0;
@@ -12,6 +28,7 @@ const useWorkflowStore = create(
       board: null,
       lists: [],
       cardsByList: {},
+      cardsById: {},  // Normalized card lookup for O(1) access
       loading: true,
       error: null,
       lastUpdated: null,
@@ -77,10 +94,12 @@ const useWorkflowStore = create(
           if (prefetched && (Date.now() - prefetched.timestamp < 300000)) { // 5 minutes validity
              console.log('Using prefetched data for', projectId);
              const { board, lists, cardsByList } = prefetched.data;
+             const cardsById = buildCardsById(cardsByList);
              set({ 
                 board, 
                 lists: lists || [], 
                 cardsByList: cardsByList || {}, 
+                cardsById,
                 loading: false,
                 lastUpdated: Date.now(),
                 error: null,
@@ -97,6 +116,7 @@ const useWorkflowStore = create(
             board: null,
             lists: [], 
             cardsByList: {},
+            cardsById: {},
             currentProjectId: projectId 
           });
         }
@@ -127,11 +147,13 @@ const useWorkflowStore = create(
             return;
           }
           
-          // Set all data at once
+          // Set all data at once with normalized cardsById
+          const cardsById = buildCardsById(cardsByList);
           set({ 
             board, 
             lists: lists || [], 
             cardsByList: cardsByList || {}, 
+            cardsById,
             lastUpdated: Date.now(),
             loading: false 
           });
@@ -174,7 +196,7 @@ const useWorkflowStore = create(
 
         // If no lists found, set empty state and return early
         if (!boardLists || boardLists.length === 0) {
-          set({ lists: [], cardsByList: {}, lastUpdated: Date.now() });
+          set({ lists: [], cardsByList: {}, cardsById: {}, lastUpdated: Date.now() });
           return;
         }
 
@@ -192,7 +214,8 @@ const useWorkflowStore = create(
           cardsMap[list._id] = Array.isArray(cardsData) ? cardsData : [];
         });
 
-        set({ lists: boardLists, cardsByList: cardsMap, lastUpdated: Date.now() });
+        const cardsById = buildCardsById(cardsMap);
+        set({ lists: boardLists, cardsByList: cardsMap, cardsById, lastUpdated: Date.now() });
       },
 
       // Update board (project) details
@@ -220,6 +243,7 @@ const useWorkflowStore = create(
             ...state.cardsByList,
             [listId]: [...(state.cardsByList[listId] || []), tempCard]
           },
+          cardsById: { ...state.cardsById, [tempId]: tempCard },
           lastUpdated: Date.now()
         }));
 
@@ -228,25 +252,36 @@ const useWorkflowStore = create(
           const realCard = newCard.data || newCard;
 
           // Replace temp card with real card
-          set((state) => ({
-            cardsByList: {
-              ...state.cardsByList,
-              [listId]: state.cardsByList[listId].map(card =>
-                card._id === tempId ? realCard : card
-              )
-            }
-          }));
+          set((state) => {
+            const newCardsById = { ...state.cardsById };
+            delete newCardsById[tempId];
+            newCardsById[realCard._id] = realCard;
+            return {
+              cardsByList: {
+                ...state.cardsByList,
+                [listId]: state.cardsByList[listId].map(card =>
+                  card._id === tempId ? realCard : card
+                )
+              },
+              cardsById: newCardsById
+            };
+          });
 
           return realCard;
         } catch (error) {
           console.error('Error adding card:', error);
           // Rollback optimistic update
-          set((state) => ({
-            cardsByList: {
-              ...state.cardsByList,
-              [listId]: state.cardsByList[listId].filter(card => card._id !== tempId)
-            }
-          }));
+          set((state) => {
+            const newCardsById = { ...state.cardsById };
+            delete newCardsById[tempId];
+            return {
+              cardsByList: {
+                ...state.cardsByList,
+                [listId]: state.cardsByList[listId].filter(card => card._id !== tempId)
+              },
+              cardsById: newCardsById
+            };
+          });
           throw error;
         }
       },
@@ -274,7 +309,9 @@ const useWorkflowStore = create(
         if (!deletedCard) return;
 
         // Optimistic update
-        set({ cardsByList: newCardsByList, lastUpdated: Date.now() });
+        const newCardsById = { ...state.cardsById };
+        delete newCardsById[cardId];
+        set({ cardsByList: newCardsByList, cardsById: newCardsById, lastUpdated: Date.now() });
 
         try {
           await Database.deleteCard(cardId);
@@ -285,7 +322,8 @@ const useWorkflowStore = create(
             cardsByList: {
               ...state.cardsByList,
               [sourceListId]: [...(state.cardsByList[sourceListId] || []), deletedCard]
-            }
+            },
+            cardsById: { ...state.cardsById, [cardId]: deletedCard }
           }));
           throw error;
         }
@@ -345,15 +383,20 @@ const useWorkflowStore = create(
           processedUpdates.coverImage = updates.coverImage;
         }
 
-        // Optimistic update
+        // Optimistic update - both cardsByList and cardsById
+        const updatedCard = { ...originalCard, ...processedUpdates };
         set((state) => {
           const newCardsByList = { ...state.cardsByList };
           Object.keys(newCardsByList).forEach(listId => {
             newCardsByList[listId] = newCardsByList[listId].map(card =>
-              card._id === cardId ? { ...card, ...processedUpdates } : card
+              card._id === cardId ? updatedCard : card
             );
           });
-          return { cardsByList: newCardsByList, lastUpdated: Date.now() };
+          return { 
+            cardsByList: newCardsByList, 
+            cardsById: { ...state.cardsById, [cardId]: updatedCard },
+            lastUpdated: Date.now() 
+          };
         });
 
         try {
@@ -374,7 +417,10 @@ const useWorkflowStore = create(
                 card._id === cardId ? originalCard : card
               );
             });
-            return { cardsByList: newCardsByList };
+            return { 
+              cardsByList: newCardsByList,
+              cardsById: { ...state.cardsById, [cardId]: originalCard }
+            };
           });
           throw error;
         }
@@ -384,24 +430,26 @@ const useWorkflowStore = create(
       // Useful for syncing state when another store (like attachmentStore) handles the API call
       updateCardLocal: (cardId, updates) => {
         set((state) => {
+          const existingCard = state.cardsById[cardId];
+          if (!existingCard) return {};
+          
+          const updatedCard = { ...existingCard, ...updates };
           const newCardsByList = { ...state.cardsByList };
-          let found = false;
           
           Object.keys(newCardsByList).forEach(listId => {
-            if (found) return;
-            
             const cardIndex = newCardsByList[listId].findIndex(c => c._id === cardId);
             if (cardIndex !== -1) {
-              found = true;
               newCardsByList[listId] = newCardsByList[listId].map((card, idx) => 
-                idx === cardIndex ? { ...card, ...updates } : card
+                idx === cardIndex ? updatedCard : card
               );
             }
           });
           
-          if (!found) return {};
-          
-          return { cardsByList: newCardsByList, lastUpdated: Date.now() };
+          return { 
+            cardsByList: newCardsByList, 
+            cardsById: { ...state.cardsById, [cardId]: updatedCard },
+            lastUpdated: Date.now() 
+          };
         });
       },
 
@@ -442,15 +490,17 @@ const useWorkflowStore = create(
           position: index
         }));
 
-        // Optimistic update
-        set({ cardsByList: newCardsByList, lastUpdated: Date.now() });
+        // Optimistic update - both cardsByList and cardsById
+        const newCardsById = buildCardsById(newCardsByList);
+        set({ cardsByList: newCardsByList, cardsById: newCardsById, lastUpdated: Date.now() });
 
         try {
           await Database.moveCard(cardId, newListId, newPosition, newStatus);
         } catch (error) {
           console.error('Error moving card:', error);
-          // Rollback to exact previous state
-          set({ cardsByList: originalCardsByList });
+          // Rollback to exact previous state including cardsById
+          const originalCardsById = buildCardsById(originalCardsByList);
+          set({ cardsByList: originalCardsByList, cardsById: originalCardsById });
           throw error;
         }
       },
@@ -678,19 +728,23 @@ const useWorkflowStore = create(
       // Update a card's hasRecurrence property
       updateCardRecurrence: (cardId, hasRecurrence) => {
         set((state) => {
+          const existingCard = state.cardsById[cardId];
+          if (!existingCard) return state;
+          
+          const updatedCard = { ...existingCard, hasRecurrence };
           const newCardsByList = { ...state.cardsByList };
-          let cardFound = false;
+          
           Object.keys(newCardsByList).forEach(listId => {
-            newCardsByList[listId] = newCardsByList[listId].map(card => {
-              if (card._id === cardId) {
-                cardFound = true;
-                return { ...card, hasRecurrence };
-              }
-              return card;
-            });
+            newCardsByList[listId] = newCardsByList[listId].map(card =>
+              card._id === cardId ? updatedCard : card
+            );
           });
-          if (!cardFound) return state;
-          return { cardsByList: newCardsByList, lastUpdated: Date.now() };
+          
+          return { 
+            cardsByList: newCardsByList, 
+            cardsById: { ...state.cardsById, [cardId]: updatedCard },
+            lastUpdated: Date.now() 
+          };
         });
       },
 
@@ -699,6 +753,7 @@ const useWorkflowStore = create(
         board: null,
         lists: [],
         cardsByList: {},
+        cardsById: {},
         loading: true,
         error: null,
         lastUpdated: null,
@@ -710,5 +765,63 @@ const useWorkflowStore = create(
     }
   )
 );
+
+// ============ SELECTOR HOOKS (with shallow comparison) ============
+
+/**
+ * Hook to get a single card by ID
+ * Uses shallow comparison to prevent unnecessary re-renders
+ */
+export const useCard = (cardId) => {
+  return useWorkflowStore(
+    state => state.cardsById[cardId],
+    shallow
+  );
+};
+
+/**
+ * Hook to get cards for a specific list
+ * Returns memoized array of card objects
+ */
+export const useCardsByList = (listId) => {
+  return useWorkflowStore(
+    state => state.cardsByList[listId] || [],
+    shallow
+  );
+};
+
+/**
+ * Hook to get all lists
+ */
+export const useLists = () => {
+  return useWorkflowStore(
+    state => state.lists,
+    shallow
+  );
+};
+
+/**
+ * Hook to get board data
+ */
+export const useBoard = () => {
+  return useWorkflowStore(
+    state => state.board,
+    shallow
+  );
+};
+
+/**
+ * Hook to get loading state
+ */
+export const useWorkflowLoading = () => {
+  return useWorkflowStore(state => state.loading);
+};
+
+/**
+ * Hook to get error state
+ */
+export const useWorkflowError = () => {
+  return useWorkflowStore(state => state.error);
+};
 
 export default useWorkflowStore;

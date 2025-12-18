@@ -167,20 +167,56 @@ const DocumentViewerModal = ({
       );
     }
 
-    // PDF preview
+    // PDF preview - Use Google Docs Viewer for reliable rendering
+    // Cloudinary often sends Content-Disposition: attachment which prevents inline display
     if (fileType === 'pdf') {
+      // Use Google Docs Viewer to embed PDF - works with external URLs
+      const googleDocsViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(displayUrl)}&embedded=true`;
+      
       return (
-        <div className="w-full h-full">
+        <div className="w-full h-full flex flex-col">
           <iframe
-            src={`${displayUrl}#toolbar=1&navpanes=0&scrollbar=1`}
-            className="w-full h-full border-0 rounded"
+            src={googleDocsViewerUrl}
+            className="w-full h-full border-0 rounded bg-white"
             title={currentAttachment.originalName}
             onLoad={() => setLoading(false)}
             onError={() => {
               setLoading(false);
               setError('Failed to load PDF');
             }}
+            sandbox="allow-scripts allow-same-origin allow-popups"
           />
+        </div>
+      );
+    }
+
+    // Audio preview
+    if (fileType === 'audio' || mimeType?.startsWith('audio/')) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-6 p-8">
+          <div className="w-32 h-32 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
+            <svg className="w-16 h-16 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+            </svg>
+          </div>
+          <div className="text-center text-white">
+            <h3 className="text-lg font-medium mb-2">{currentAttachment.originalName}</h3>
+            <p className="text-sm text-gray-300 mb-4">
+              {currentAttachment.formattedSize || formatFileSize(currentAttachment.fileSize)}
+            </p>
+          </div>
+          <audio
+            src={displayUrl}
+            controls
+            className="w-full max-w-md"
+            onLoadedData={() => setLoading(false)}
+            onError={() => {
+              setLoading(false);
+              setError('Failed to load audio');
+            }}
+          >
+            Your browser does not support audio playback.
+          </audio>
         </div>
       );
     }
@@ -206,17 +242,75 @@ const DocumentViewerModal = ({
       );
     }
 
-    // Document/Spreadsheet/Other - show info card
+    // Office documents - Use Google Docs Viewer for Word, Excel, PowerPoint
+    if (['document', 'spreadsheet', 'presentation'].includes(fileType)) {
+      const googleDocsViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(displayUrl)}&embedded=true`;
+      
+      return (
+        <div className="w-full h-full flex flex-col">
+          <iframe
+            src={googleDocsViewerUrl}
+            className="w-full h-full border-0 rounded bg-white"
+            title={currentAttachment.originalName}
+            onLoad={() => setLoading(false)}
+            onError={() => {
+              setLoading(false);
+              setError('Failed to load document');
+            }}
+            sandbox="allow-scripts allow-same-origin allow-popups"
+          />
+        </div>
+      );
+    }
+
+    // Text files - display content directly if small
+    if (fileType === 'text') {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8">
+          <div className="bg-gray-100 rounded-2xl p-8 text-center max-w-md">
+            <div className="w-24 h-24 mx-auto mb-6 bg-gray-200 rounded-xl flex items-center justify-center">
+              <FileText size={48} className="text-gray-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2 truncate">
+              {currentAttachment.originalName}
+            </h3>
+            <p className="text-gray-500 text-sm mb-4">
+              {currentAttachment.formattedSize || formatFileSize(currentAttachment.fileSize)}
+            </p>
+            <p className="text-gray-400 text-xs mb-6">
+              Text file preview
+            </p>
+            <div className="flex gap-3 justify-center">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleDownload}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors"
+              >
+                <Download size={18} />
+                Download
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleShare}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg flex items-center gap-2 hover:bg-gray-300 transition-colors"
+              >
+                <Share2 size={18} />
+                Share
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Other/Unknown file types - show download card
     return (
       <div className="flex flex-col items-center justify-center h-full p-8">
         <div className="bg-gray-100 rounded-2xl p-8 text-center max-w-md">
           <div className="w-24 h-24 mx-auto mb-6 bg-gray-200 rounded-xl flex items-center justify-center">
-            {fileType === 'document' && <FileText size={48} className="text-blue-500" />}
-            {fileType === 'spreadsheet' && <FileSpreadsheet size={48} className="text-green-500" />}
-            {fileType === 'presentation' && <FileText size={48} className="text-orange-500" />}
-            {!['document', 'spreadsheet', 'presentation'].includes(fileType) && (
-              <File size={48} className="text-gray-500" />
-            )}
+            <File size={48} className="text-gray-500" />
           </div>
           <h3 className="text-lg font-semibold text-gray-800 mb-2 truncate">
             {currentAttachment.originalName}

@@ -270,7 +270,7 @@ class AttachmentService {
 
     try {
       const response = await fetch(
-        `${baseURL}/api/attachments/nano-subtask/${nanoSubtaskId}?${params}`,
+        `${baseURL}/api/attachments/nano/${nanoSubtaskId}?${params}`,
         { headers: this.getHeaders() }
       );
 
@@ -486,6 +486,7 @@ class AttachmentService {
       spreadsheet: '📊',
       presentation: '📽️',
       video: '🎬',
+      audio: '🎵',
       text: '📋',
       other: '📎'
     };
@@ -494,9 +495,15 @@ class AttachmentService {
 
   // Helper to check if file type supports preview
   supportsPreview(fileType, mimeType) {
+    // Direct preview support
     if (fileType === 'image') return true;
     if (fileType === 'pdf') return true;
-    if (mimeType?.includes('video')) return true;
+    if (fileType === 'video' || mimeType?.includes('video')) return true;
+    if (fileType === 'audio' || mimeType?.includes('audio')) return true;
+    // Office documents via Google Docs Viewer
+    if (fileType === 'document') return true;
+    if (fileType === 'spreadsheet') return true;
+    if (fileType === 'presentation') return true;
     return false;
   }
 

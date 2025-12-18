@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlignLeft, Tag, AlertCircle, MessageSquare, Activity, RefreshCw } from "lucide-react";
 import Database from "../services/database";
