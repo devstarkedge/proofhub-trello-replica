@@ -265,7 +265,7 @@ const CardDetailModal = React.memo(({
     loadRecurrence();
 
     // Setup real-time update listeners
-    const handleCardUpdate = (event) => {
+      const handleCardUpdate = (event) => {
       const { cardId, updates } = event.detail;
       if (cardId === card._id) {
         if (updates.title) setTitle(updates.title);
@@ -274,8 +274,38 @@ const CardDetailModal = React.memo(({
         if (updates.priority) setPriority(updates.priority);
         if (updates.dueDate) setDueDate(new Date(updates.dueDate).toISOString().split('T')[0]);
         if (updates.startDate) setStartDate(new Date(updates.startDate).toISOString().split('T')[0]);
-        if (updates.labels) setLabels(updates.labels);
-        if (updates.assignees) setAssignees(updates.assignees.map(a => a._id).filter(Boolean));
+        
+        // Smart update for labels to prevent overwriting rich objects with IDs
+        if (updates.labels) {
+           // If incoming is array of objects, safe to use
+           if (updates.labels.length > 0 && typeof updates.labels[0] === 'object') {
+             setLabels(updates.labels);
+           } 
+           // If incoming is IDs, only update if we don't have rich data or if count mismatch
+           // Ideally, we shouldn't downgrade from Objects to IDs
+           else if (updates.labels.length === 0) {
+             setLabels([]);
+           }
+           // Note: If updates.labels are IDs, we prefer NOT to overwrite our local rich state 
+           // unless we can re-hydrate them. For now, ignoring ID-only updates to prevent regression
+           // as the store/parent component should handle re-fetching or providing rich props.
+        }
+
+        // Smart update for assignees
+        if (updates.assignees) {
+          // If incoming is Objects (populated)
+          if (updates.assignees.length > 0 && typeof updates.assignees[0] === 'object') {
+             setAssignees(updates.assignees.map(a => a._id).filter(Boolean));
+          }
+          // If incoming is IDs
+          else if (updates.assignees.length > 0 && typeof updates.assignees[0] === 'string') {
+             setAssignees(updates.assignees);
+          }
+           else if (updates.assignees.length === 0) {
+             setAssignees([]);
+          }
+        }
+
         if (updates.estimationTime) setEstimationEntries((updates.estimationTime || []).map((entry, idx) => {
           const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
           return { ...entry, id };
@@ -850,120 +880,116 @@ const CardDetailModal = React.memo(({
       return;
     }
 
-    setSaving(true);
+    // Optimistic Save: Close immediately, show success, then background sync
     try {
-    // Convert labels to IDs for backend, but keep full objects for optimistic update
-    const labelIds = labels.map(l => typeof l === 'object' ? l._id : l);
-    
-    // Get full assignee objects from teamMembers for optimistic UI
-    const assigneeObjects = assignees.map(assigneeId => {
-      // Check if it's already an object
-      if (typeof assigneeId === 'object' && assigneeId._id) return assigneeId;
-      // Find in team members
-      const member = teamMembers.find(m => m._id === assigneeId);
-      return member || { _id: assigneeId, name: 'Unknown', email: '' };
-    });
-    
-    // Create updates for backend (with IDs)
-    const backendUpdates = {
-      title,
-      description,
-      assignees: assignees.length > 0 ? assignees : null,
-      priority: priority || null,
-      status,
-      dueDate: dueDate ? new Date(dueDate).toISOString() : null,
-      startDate: startDate ? new Date(startDate).toISOString() : null,
-      labels: labelIds,
-      attachments: attachments.length > 0 ? attachments : [],
-      coverImage: coverImage ? (typeof coverImage === 'object' ? coverImage._id : coverImage) : null,
-      estimationTime: estimationEntries.map((entry) => ({
-        hours: entry.hours,
-        minutes: entry.minutes,
-        reason: entry.reason,
-        user: entry.user,
-        date: entry.date,
-      })),
-      loggedTime: loggedTime.map((entry) => ({
-        hours: entry.hours,
-        minutes: entry.minutes,
-        description: entry.description,
-        user: entry.user,
-        date: entry.date,
-      })),
-      billedTime: billedTime.map((entry) => ({
-        hours: entry.hours,
-        minutes: entry.minutes,
-        description: entry.description,
-        user: entry.user,
-        date: entry.date,
-      })),
-    };
-    
-    // Include full label objects for optimistic UI update
-    backendUpdates._labelsPopulated = labels.filter(l => typeof l === 'object' && l.name);
-    // Include full assignee objects for optimistic UI update
-    backendUpdates._assigneesPopulated = assigneeObjects;
-    // Include full coverImage object for optimistic UI update
-    if (coverImage) {
-      if (typeof coverImage === 'object' && coverImage.url) {
-        // Already a full object with URL
-        backendUpdates._coverImagePopulated = coverImage;
-      } else {
-        // coverImage is an ID string or object without url - try to find the full object
-        const coverImageId = typeof coverImage === 'object' ? coverImage._id : coverImage;
-        
-        // First try from local attachments state
-        let coverAttachment = attachments.find(att => 
-          (att._id === coverImageId || att.id === coverImageId) && att.url
-        );
-        
-        // If not found in local state, try from attachment store
-        if (!coverAttachment) {
-          const entityKey = getEntityKey('card', card._id || card.id);
-          const storeAttachments = useAttachmentStore.getState().attachments[entityKey] || [];
-          coverAttachment = storeAttachments.find(att => 
+      // Convert labels to IDs for backend, but keep full objects for optimistic update
+      const labelIds = labels.map(l => typeof l === 'object' ? l._id : l);
+      
+      // Get full assignee objects from teamMembers for optimistic UI
+      const assigneeObjects = assignees.map(assigneeId => {
+        // Check if it's already an object
+        if (typeof assigneeId === 'object' && assigneeId._id) return assigneeId;
+        // Find in team members
+        const member = teamMembers.find(m => m._id === assigneeId);
+        return member || { _id: assigneeId, name: 'Unknown', email: '' };
+      });
+      
+      // Create updates for backend (with IDs)
+      const backendUpdates = {
+        title,
+        description,
+        assignees: assignees.length > 0 ? assignees : null,
+        priority: priority || null,
+        status,
+        dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+        startDate: startDate ? new Date(startDate).toISOString() : null,
+        labels: labelIds,
+        attachments: attachments.length > 0 ? attachments : [],
+        coverImage: coverImage ? (typeof coverImage === 'object' ? coverImage._id : coverImage) : null,
+        estimationTime: estimationEntries.map((entry) => ({
+          hours: entry.hours,
+          minutes: entry.minutes,
+          reason: entry.reason,
+          user: entry.user,
+          date: entry.date,
+        })),
+        loggedTime: loggedTime.map((entry) => ({
+          hours: entry.hours,
+          minutes: entry.minutes,
+          description: entry.description,
+          user: entry.user,
+          date: entry.date,
+        })),
+        billedTime: billedTime.map((entry) => ({
+          hours: entry.hours,
+          minutes: entry.minutes,
+          description: entry.description,
+          user: entry.user,
+          date: entry.date,
+        })),
+      };
+      
+      // Include full label objects for optimistic UI update
+      backendUpdates._labelsPopulated = labels.filter(l => typeof l === 'object' && l.name);
+      // Include full assignee objects for optimistic UI update
+      backendUpdates._assigneesPopulated = assigneeObjects;
+      // Include full coverImage object for optimistic UI update
+      if (coverImage) {
+        if (typeof coverImage === 'object' && coverImage.url) {
+          // Already a full object with URL
+          backendUpdates._coverImagePopulated = coverImage;
+        } else {
+          // coverImage is an ID string or object without url - try to find the full object
+          const coverImageId = typeof coverImage === 'object' ? coverImage._id : coverImage;
+          
+          // First try from local attachments state
+          let coverAttachment = attachments.find(att => 
             (att._id === coverImageId || att.id === coverImageId) && att.url
           );
-        }
-        
-        if (coverAttachment) {
-          backendUpdates._coverImagePopulated = coverAttachment;
+          
+          // If not found in local state, try from attachment store
+          if (!coverAttachment) {
+            const entityKey = getEntityKey('card', card._id || card.id);
+            const storeAttachments = useAttachmentStore.getState().attachments[entityKey] || [];
+            coverAttachment = storeAttachments.find(att => 
+              (att._id === coverImageId || att.id === coverImageId) && att.url
+            );
+          }
+          
+          if (coverAttachment) {
+            backendUpdates._coverImagePopulated = coverAttachment;
+          }
         }
       }
-    }
-    
-    const updates = backendUpdates;
+      
+      const updates = backendUpdates;
 
       // Check if status has changed and move card if needed
+      // Note: This part is tricky to do optimistically if it fails, but for UI speed we proceed
       if (status !== card.status) {
-        try {
-          // Get all lists to find the target list ID
-          const boardId = card.board?._id || card.board;
-          const listsResponse = await Database.getLists(boardId);
-          const targetListObj = listsResponse.data.find(list =>
-            list.title.toLowerCase().replace(/\s+/g, '-') === status
-          );
-
-          if (targetListObj) {
-            // Move the card to the new list
-            const newPosition = 0; // Add to the beginning of the list
-            await onMoveCard(card._id, targetListObj._id, newPosition);
-            toast.success(`Card moved to "${targetListObj.title}" list`);
-          }
-        } catch (moveError) {
-          console.error("Error moving card:", moveError);
-          toast.error("Card status updated but failed to move to new list");
-        }
+        // Move card logic - we trigger this but don't await to block the UI close
+         Database.getLists(card.board?._id || card.board || currentProject?._id).then(listsResponse => {
+            const targetListObj = listsResponse.data.find(list =>
+              list.title.toLowerCase().replace(/\s+/g, '-') === status
+            );
+            if (targetListObj) {
+               onMoveCard(card._id, targetListObj._id, 0).catch(console.error);
+            }
+         }).catch(console.error);
       }
 
-      await onUpdate(updates);
-      toast.success("Task updated successfully!");
+      // Fire and forget (from UI perspective)
+      onUpdate(updates).catch(error => {
+         console.error("Background save failed:", error);
+         toast.error("Failed to save changes regarding the last update. Please refresh.");
+      });
+      
+      // Immediate feedback
+      toast.success("Task updated!");
       onClose();
     } catch (error) {
-      console.error("Error saving card:", error);
+      console.error("Error preparing save:", error);
       toast.error("Failed to save changes");
-    } finally {
-      setSaving(false);
     }
   };
 
