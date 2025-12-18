@@ -433,6 +433,65 @@ class DatabaseService {
     return await updateRes.json();
   }
 
+  async archiveCard(cardId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/archive`, {
+      method: 'PUT',
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to archive card');
+    }
+
+    return await res.json();
+  }
+
+  async restoreCard(cardId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/restore`, {
+      method: 'PUT',
+      headers,
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to restore card');
+    }
+
+    return await res.json();
+  }
+
+  async getArchivedCards(listId, boardId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const url = new URL(`${baseURL}/api/cards/list/${listId}/archived`);
+    if (boardId) {
+      url.searchParams.append('boardId', boardId);
+    }
+
+    const res = await fetch(url.toString(), { headers });
+
+    if (!res.ok) {
+      throw new Error('Failed to fetch archived cards');
+    }
+
+    return await res.json();
+  }
+
   // Subtask hierarchy operations
   async getSubtasks(taskId) {
     const token = localStorage.getItem('token');

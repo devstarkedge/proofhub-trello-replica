@@ -4,7 +4,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { toast } from 'react-toastify';
 import KanbanList from './List';
 
-const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onUpdateListTitle, onMoveCard, onMoveList }) => {
+const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, onAddList, onDeleteList, onUpdateListColor, onUpdateListTitle, onMoveCard, onMoveList, onRestoreCard, isArchivedView = false }) => {
   const [isAddingList, setIsAddingList] = useState(false);
   const [newListTitle, setNewListTitle] = useState('');
   
@@ -142,8 +142,10 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
                           onDeleteList={onDeleteList}
                           onUpdateListColor={onUpdateListColor}
                           onUpdateListTitle={onUpdateListTitle}
+                          onRestoreCard={onRestoreCard}
                           dragHandleProps={provided.dragHandleProps}
                           isDragging={snapshot.isDragging}
+                          isArchivedView={isArchivedView}
                         />
                       </div>
                     </div>

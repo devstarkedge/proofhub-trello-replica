@@ -13,7 +13,9 @@ const CardActionMenu = ({
   entityType = "task",
   ids = {},
   onDelete,
+  onArchive,
   isDeleting = false,
+  isArchiving = false,
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -130,13 +132,21 @@ const CardActionMenu = ({
                   <Copy size={16} className="text-gray-500" />
                   <span className="font-medium text-gray-800">Copy</span>
                 </button>
-                <button
-                  onClick={() => console.log("Archive button clicked")}
-                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                >
-                  <Archive size={16} className="text-gray-500" />
-                  <span className="font-medium text-gray-800">Archive</span>
-                </button>
+
+                {/* Archive button - only visible for tasks */}
+                {entityType === "task" && (
+                  <button
+                    onClick={() => {
+                      setIsOpen(false);
+                      onArchive?.();
+                    }}
+                    disabled={isArchiving}
+                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Archive size={16} className="text-gray-500" />
+                    <span className="font-medium text-gray-800">Archive</span>
+                  </button>
+                )}
                 <div
                   className="relative group"
                   onMouseEnter={() => shareLink && setShareOpen(true)}

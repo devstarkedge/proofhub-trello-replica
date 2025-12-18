@@ -255,6 +255,7 @@ import seedAdmin from './utils/seed.js';
 import { startBackgroundJobs } from './utils/backgroundTasks.js';
 import { startRecurringTaskScheduler } from './utils/recurrenceScheduler.js';
 import { startReminderScheduler } from './utils/reminderScheduler.js';
+import { startArchivedCardCleanup } from './utils/archiveCleanup.js';
 
 // MongoDB connection with connection pooling
 mongoose.connect(process.env.MONGO_URI, {
@@ -272,6 +273,8 @@ mongoose.connect(process.env.MONGO_URI, {
     startRecurringTaskScheduler();
     // Start reminder scheduler
     startReminderScheduler();
+    // Start archived card cleanup
+    startArchivedCardCleanup();
     server.listen(PORT, () => {
       if (process.env.NODE_ENV !== 'production') console.log(`Server running on port ${PORT}`);
     });

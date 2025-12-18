@@ -27,7 +27,7 @@ export const getCards = asyncHandler(async (req, res, next) => {
 
   // Use aggregation pipeline for single query with recurrence status
   const pipeline = [
-    { $match: { list: new mongoose.Types.ObjectId(listId) } },
+    { $match: { list: new mongoose.Types.ObjectId(listId), isArchived: false } },
     { $sort: { position: 1 } },
     { $skip: skip },
     { $limit: limitNum },
@@ -162,9 +162,9 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
   const limitNum = parseInt(limit, 10);
   const skip = (pageNum - 1) * limitNum;
 
-  // Use aggregation pipeline for single query with recurrence status
+  // Use aggregation pipeline for single query with recurrence status - EXCLUDE ARCHIVED CARDS
   const pipeline = [
-    { $match: { board: new mongoose.Types.ObjectId(boardId) } },
+    { $match: { board: new mongoose.Types.ObjectId(boardId), isArchived: false } },
     { $sort: { position: 1 } },
     { $skip: skip },
     { $limit: limitNum },
@@ -272,7 +272,7 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
 
   const [cards, countResult] = await Promise.all([
     Card.aggregate(pipeline),
-    Card.countDocuments({ board: boardId })
+    Card.countDocuments({ board: boardId, isArchived: false })
   ]);
 
   res.status(200).json({
@@ -324,7 +324,10 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
       }
     },
     {
-      $match: departmentMatch
+      $match: {
+        ...departmentMatch,
+        isArchived: false
+      }
     },
     {
       $lookup: {
@@ -1284,5 +1287,269 @@ export const getCardActivity = asyncHandler(async (req, res, next) => {
     page: parseInt(page),
     pages: Math.ceil(total / parseInt(limit)),
     data: activities,
+  });
+});
+
+// @desc    Archive a card (task only, not subtask/nano)
+// @route   PUT /api/cards/:id/archive
+// @access  Private
+export const archiveCard = asyncHandler(async (req, res, next) => {
+  const card = await Card.findById(req.params.id);
+
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  const now = new Date();
+
+  // Mark as archived
+  card.isArchived = true;
+  card.archivedAt = now;
+  // Auto-delete after 30 days
+  card.autoDeleteAt = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+  await card.save();
+
+  // Log activity
+  await Activity.create({
+    type: "card_archived",
+    description: `Archived card "${card.title}"`,
+    user: req.user.id,
+    board: card.board,
+    card: card._id,
+    list: card.list,
+    contextType: 'task',
+  });
+
+  // Emit real-time update
+  emitToBoard(card.board.toString(), 'card-archived', {
+    cardId: card._id,
+    listId: card.list,
+    archivedBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  // Invalidate caches
+  invalidateHierarchyCache({
+    boardId: card.board,
+    listId: card.list,
+    cardId: card._id
+  });
+  // CRITICAL: Invalidate workflow cache so archived card doesn't reappear on refresh
+  invalidateCache(`/api/boards/${card.board}/workflow-complete`);
+  invalidateCache(`/api/cards/board/${card.board}`);
+  invalidateCache(`/api/cards/list/${card.list}`);
+  invalidateCache("/api/departments");
+  invalidateCache(`/api/departments/${card.board?.department}/members-with-assignments`);
+  invalidateCache("/api/analytics/dashboard");
+
+  res.status(200).json({
+    success: true,
+    message: "Card archived successfully",
+    data: card,
+  });
+});
+
+// @desc    Restore an archived card
+// @route   PUT /api/cards/:id/restore
+// @access  Private
+export const restoreCard = asyncHandler(async (req, res, next) => {
+  const card = await Card.findById(req.params.id);
+
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  if (!card.isArchived) {
+    return next(new ErrorResponse("Card is not archived", 400));
+  }
+
+  const now = new Date();
+
+  if (card.autoDeleteAt && card.autoDeleteAt <= now) {
+    return next(new ErrorResponse("Archived task is past its restore window", 410));
+  }
+
+  // Unarchive the card
+  card.isArchived = false;
+  card.archivedAt = null;
+  card.autoDeleteAt = null;
+  
+  // Move to end of original list (or first position if list is empty)
+  const maxPositionCard = await Card.findOne({ 
+    list: card.list, 
+    isArchived: false 
+  }).sort({ position: -1 });
+  
+  card.position = (maxPositionCard?.position ?? -1) + 1;
+  await card.save();
+
+  // Log activity
+  await Activity.create({
+    type: "card_restored",
+    description: `Restored card "${card.title}" from archive`,
+    user: req.user.id,
+    board: card.board,
+    card: card._id,
+    list: card.list,
+    contextType: 'task',
+  });
+
+  // Emit real-time update
+  emitToBoard(card.board.toString(), 'card-restored', {
+    cardId: card._id,
+    listId: card.list,
+    restoredBy: {
+      id: req.user.id,
+      name: req.user.name
+    }
+  });
+
+  // Invalidate caches
+  invalidateHierarchyCache({
+    boardId: card.board,
+    listId: card.list,
+    cardId: card._id
+  });
+  // CRITICAL: Invalidate workflow cache so restored card appears on refresh
+  invalidateCache(`/api/boards/${card.board}/workflow-complete`);
+  invalidateCache(`/api/cards/board/${card.board}`);
+  invalidateCache(`/api/cards/list/${card.list}`);
+  invalidateCache("/api/departments");
+  invalidateCache(`/api/departments/${card.board?.department}/members-with-assignments`);
+  invalidateCache("/api/analytics/dashboard");
+
+  res.status(200).json({
+    success: true,
+    message: "Card restored successfully",
+    data: card,
+  });
+});
+
+// @desc    Get archived cards for a list or board
+// @route   GET /api/cards/list/:listId/archived
+// @access  Private
+export const getArchivedCards = asyncHandler(async (req, res, next) => {
+  const { listId } = req.params;
+  const { boardId } = req.query;
+  const { page = 1, limit = 50 } = req.query;
+
+  const now = new Date();
+
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
+
+  // Use aggregation pipeline for archived cards
+  const pipeline = [
+    { 
+      $match: { 
+        ...(listId && listId !== 'all' ? { list: new mongoose.Types.ObjectId(listId) } : {}),
+        ...(boardId ? { board: new mongoose.Types.ObjectId(boardId) } : {}),
+        isArchived: true,
+        $or: [
+          { autoDeleteAt: { $exists: false } },
+          { autoDeleteAt: null },
+          { autoDeleteAt: { $gt: now } }
+        ]
+      } 
+    },
+    { $sort: { position: 1 } },
+    { $skip: skip },
+    { $limit: limitNum },
+    // Lookup assignees
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'assignees',
+        foreignField: '_id',
+        as: 'assignees',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup members
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'members',
+        foreignField: '_id',
+        as: 'members',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    // Lookup labels
+    {
+      $lookup: {
+        from: 'labels',
+        let: { labelIds: { $ifNull: ['$labels', []] } },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $in: [
+                  { $toString: '$_id' },
+                  {
+                    $map: {
+                      input: '$$labelIds',
+                      as: 'lid',
+                      in: { $toString: '$$lid' }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          { $project: { name: 1, color: 1 } }
+        ],
+        as: 'labels'
+      }
+    },
+    // Lookup coverImage from attachments
+    {
+      $lookup: {
+        from: 'attachments',
+        localField: 'coverImage',
+        foreignField: '_id',
+        as: 'coverImageArr',
+        pipeline: [{ $project: { url: 1, secureUrl: 1, thumbnailUrl: 1, fileName: 1, fileType: 1, isCover: 1 } }]
+      }
+    },
+    // Add computed fields
+    {
+      $addFields: {
+        coverImage: { $arrayElemAt: ['$coverImageArr', 0] }
+      }
+    },
+    // Clean up temporary fields
+    { $project: { coverImageArr: 0 } }
+  ];
+
+  const countFilter = {
+    ...(listId && listId !== 'all' ? { list: listId } : {}),
+    ...(boardId ? { board: boardId } : {}),
+    isArchived: true,
+    $or: [
+      { autoDeleteAt: { $exists: false } },
+      { autoDeleteAt: null },
+      { autoDeleteAt: { $gt: now } }
+    ]
+  };
+
+  const [cards, countResult] = await Promise.all([
+    Card.aggregate(pipeline),
+    Card.countDocuments(countFilter)
+  ]);
+
+  res.status(200).json({
+    success: true,
+    count: countResult,
+    pagination: {
+      currentPage: pageNum,
+      totalPages: Math.ceil(countResult / limitNum),
+      hasNext: pageNum * limitNum < countResult,
+      hasPrev: pageNum > 1
+    },
+    data: cards,
   });
 });

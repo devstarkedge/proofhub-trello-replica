@@ -21,6 +21,8 @@ import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import RecurringSettingsModal from "./RecurringSettingsModal";
 import DeletePopup from "./ui/DeletePopup";
+import ArchiveConfirmationModal from "./ui/ArchiveConfirmationModal";
+import RestoreConfirmationModal from "./ui/RestoreConfirmationModal";
 
 const themeOverlay = {
   blue: 'bg-blue-950/60',
@@ -83,6 +85,11 @@ const CardDetailModal = React.memo(({
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [existingRecurrence, setExistingRecurrence] = useState(null);
   const [recurrenceLoading, setRecurrenceLoading] = useState(false);
+  
+  // Archive States
+  const [showArchiveConfirmation, setShowArchiveConfirmation] = useState(false);
+  const [showRestoreConfirmation, setShowRestoreConfirmation] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
   const initializeHierarchyTask = useModalHierarchyStore((state) => state.initializeTaskStack);
@@ -1182,6 +1189,72 @@ const CardDetailModal = React.memo(({
 
   const taskId = card?._id || card?.id;
 
+  // Archive handler
+  const handleArchiveCard = async () => {
+    if (!taskId) return;
+    setIsArchiving(true);
+    try {
+      const response = await Database.archiveCard(taskId);
+      if (response.success && response.data) {
+        // Update store with the full response data to ensure isArchived is set correctly
+        useWorkflowStore.getState().updateCard(taskId, { 
+          ...response.data,
+          isArchived: true 
+        });
+        toast.success("Task archived successfully");
+        onClose(); // Close modal
+      } else {
+        throw new Error('Archive failed');
+      }
+    } catch (error) {
+      console.error("Error archiving card:", error);
+      toast.error("Failed to archive task");
+    } finally {
+      setIsArchiving(false);
+      setShowArchiveConfirmation(false);
+    }
+  };
+
+  // Restore handler
+  const handleRestoreCard = async () => {
+    if (!taskId) return;
+    setIsArchiving(true);
+    try {
+      const response = await Database.restoreCard(taskId);
+      if (response.success && response.data) {
+        // Fetch fully populated card and update locally to avoid UI gaps
+        const full = await Database.getCard(taskId);
+        const hydrated = full.data || full;
+        useWorkflowStore.getState().updateCardLocal(taskId, {
+          isArchived: false,
+          archivedAt: null,
+          autoDeleteAt: null,
+          title: hydrated.title,
+          description: hydrated.description,
+          status: hydrated.status,
+          priority: hydrated.priority,
+          dueDate: hydrated.dueDate,
+          position: hydrated.position,
+          assignees: Array.isArray(hydrated.assignees) ? hydrated.assignees : undefined,
+          members: Array.isArray(hydrated.members) ? hydrated.members : undefined,
+          labels: Array.isArray(hydrated.labels) ? hydrated.labels : undefined,
+          coverImage: hydrated.coverImage !== undefined ? hydrated.coverImage : undefined,
+          hasRecurrence: hydrated.hasRecurrence,
+        });
+        toast.success("Task restored successfully");
+        onClose(); // Close modal
+      } else {
+        throw new Error('Restore failed');
+      }
+    } catch (error) {
+      console.error("Error restoring card:", error);
+      toast.error("Failed to restore task");
+    } finally {
+      setIsArchiving(false);
+      setShowRestoreConfirmation(false);
+    }
+  };
+
   const executeDelete = async () => {
     if (!taskId || !onDelete) return;
     setDeleteLoading(true);
@@ -1302,7 +1375,9 @@ const CardDetailModal = React.memo(({
                     taskId,
                   }}
                   onDelete={executeDelete}
+                  onArchive={() => setShowArchiveConfirmation(true)}
                   isDeleting={deleteLoading}
+                  isArchiving={isArchiving}
                   disabled={!taskId}
                 />
                 <motion.button
@@ -1630,6 +1705,24 @@ const CardDetailModal = React.memo(({
       existingRecurrence={existingRecurrence}
       onSave={handleSaveRecurrence}
       onDelete={handleDeleteRecurrence}
+    />
+
+    {/* Archive Confirmation Modal */}
+    <ArchiveConfirmationModal
+      isOpen={showArchiveConfirmation}
+      taskName={card?.title || 'Task'}
+      onConfirm={handleArchiveCard}
+      onCancel={() => setShowArchiveConfirmation(false)}
+      isLoading={isArchiving}
+    />
+
+    {/* Restore Confirmation Modal */}
+    <RestoreConfirmationModal
+      isOpen={showRestoreConfirmation}
+      taskName={card?.title || 'Task'}
+      onConfirm={handleRestoreCard}
+      onCancel={() => setShowRestoreConfirmation(false)}
+      isLoading={isArchiving}
     />
   </>
   );

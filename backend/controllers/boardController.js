@@ -112,9 +112,9 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Not authorized to access this board', 403));
   }
 
-  // Fetch all cards for all lists in one query
+  // Fetch all cards for all lists in one query - ONLY ACTIVE (NON-ARCHIVED) CARDS
   const listIds = lists.map(l => l._id);
-  const cards = await Card.find({ list: { $in: listIds } })
+  const cards = await Card.find({ list: { $in: listIds }, isArchived: false })
     .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime')
     .populate('assignees', 'name email avatar')
     .populate('members', 'name email avatar')
@@ -251,8 +251,8 @@ export const getBoard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Not authorized to access this board", 403));
   }
 
-  // Calculate progress based on cards
-  const cards = await Card.find({ board: board._id }).select('status');
+  // Calculate progress based on active (non-archived) cards only
+  const cards = await Card.find({ board: board._id, isArchived: false }).select('status');
   const totalCards = cards.length;
   const completedCards = cards.filter(card => card.status === 'done').length;
   const progress = totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0;

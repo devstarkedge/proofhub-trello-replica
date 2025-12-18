@@ -146,6 +146,14 @@ const cardSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  archivedAt: {
+    type: Date,
+    default: null
+  },
+  autoDeleteAt: {
+    type: Date,
+    default: null
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -177,6 +185,7 @@ cardSchema.index({ board: 1, priority: 1 });
 cardSchema.index({ createdAt: -1 });
 cardSchema.index({ updatedAt: -1 });
 cardSchema.index({ startDate: 1 });
+cardSchema.index({ isArchived: 1, autoDeleteAt: 1 });
 cardSchema.index({ 'estimationTime.user': 1 });
 cardSchema.index({ 'loggedTime.user': 1 });
 

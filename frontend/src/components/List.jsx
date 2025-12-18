@@ -36,7 +36,7 @@ const colorOptions = [
   { name: 'gray', class: 'bg-gray-400' }
 ];
 
-const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onUpdateListTitle, dragHandleProps, isDragging }) => {
+const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, onDeleteList, onUpdateListColor, onUpdateListTitle, onRestoreCard, dragHandleProps, isDragging, isArchivedView = false }) => {
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -191,7 +191,18 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
             }}
           >
             <div className="flex flex-col gap-2 pb-2">
-              {cards.filter(c => c && c._id).map((card, index) => (
+              {cards.filter(c => {
+                // Only render cards that match the archive view state
+                if (c && c._id) {
+                  // In archived view, show only archived cards
+                  if (isArchivedView) {
+                    return c.isArchived === true;
+                  }
+                  // In active view, show only non-archived cards
+                  return c.isArchived !== true;
+                }
+                return false;
+              }).map((card, index) => (
                 <Draggable key={card._id} draggableId={card._id} index={index}>
                   {(provided, snapshot) => (
                     <div
@@ -209,7 +220,9 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
                         card={card}
                         onClick={() => onCardClick(card)}
                         onDelete={onDeleteCard}
+                        onRestore={onRestoreCard}
                         isDragging={snapshot.isDragging}
+                        isArchivedView={isArchivedView}
                       />
                     </div>
                   )}

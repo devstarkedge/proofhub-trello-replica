@@ -8,7 +8,8 @@ import {
   CheckSquare,
   Clock,
   RefreshCw,
-  MoreHorizontal
+  MoreHorizontal,
+  RotateCcw
 } from "lucide-react";
 
 import DeletePopup from "./ui/DeletePopup";
@@ -25,9 +26,11 @@ const getTextColor = (bgColor) => {
   return luminance > 0.5 ? '#000000' : '#FFFFFF';
 };
 
-const Card = memo(({ card, onClick, onDelete, isDragging }) => {
+const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedView = false }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   const [showDeletePopup, setShowDeletePopup] = React.useState(false);
+  const [restoreLoading, setRestoreLoading] = React.useState(false);
+  const [deleteLoading, setDeleteLoading] = React.useState(false);
   
   // Check if card is optimistic/temporary (not yet saved to database)
   const isOptimistic = card.isOptimistic || (card._id && card._id.toString().startsWith('temp-'));
@@ -84,6 +87,17 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
     [card.dueDate, card.status]
   );
 
+  const autoDeleteCountdown = useMemo(() => {
+    if (!isArchivedView || !card.autoDeleteAt) return null;
+    const autoDeleteDate = new Date(card.autoDeleteAt);
+    if (Number.isNaN(autoDeleteDate.getTime())) return null;
+    const ms = autoDeleteDate.getTime() - Date.now();
+    const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
+    if (days <= 0) return 'Deleting soon';
+    if (days === 1) return 'Auto-deletes in 1 day';
+    return `Auto-deletes in ${days} days`;
+  }, [card.autoDeleteAt, isArchivedView]);
+
   const coverImageUrl = useMemo(() => {
     if (card.coverImage) {
       if (typeof card.coverImage === 'object') {
@@ -100,6 +114,17 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
     e.stopPropagation();
     setShowDeletePopup(true);
   }, []);
+
+  const handleRestore = useCallback(async (e) => {
+    e.stopPropagation();
+    if (!onRestore || restoreLoading) return;
+    setRestoreLoading(true);
+    try {
+      await onRestore(card._id);
+    } finally {
+      setRestoreLoading(false);
+    }
+  }, [card._id, onRestore, restoreLoading]);
 
   const renderLabels = (isOverlay = false) => {
     // Determine how many labels to show
@@ -182,16 +207,44 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
         
         {/* Floating Actions on Hover */}
         <div className={`absolute top-2 right-2 flex gap-1 z-20 transition-all duration-200 ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'}`}>
-           {/* Date moves here on hover */}
-           {card.dueDate && (
+           {/* Date moves here on hover (only show in active view) */}
+           {!isArchivedView && card.dueDate && (
              <div className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-1 rounded-md shadow-sm border backdrop-blur-md transition-colors ${isOverdue ? "bg-red-50 text-red-600 border-red-100" : "bg-white/90 text-gray-500 border-gray-200"}`}>
                <Clock size={11} strokeWidth={2.5} />
                <span>{new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
              </div>
            )}
-           <button onClick={handleDelete} className="p-1.5 bg-white/90 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg shadow-sm border border-gray-200 backdrop-blur-sm transition-colors">
-              <Trash2 size={13} />
-           </button>
+           
+           {/* Archive-specific buttons */}
+           {isArchivedView && (
+             <>
+               <button 
+                 onClick={handleRestore} 
+                 disabled={restoreLoading}
+                 className="p-1.5 bg-white/90 hover:bg-green-50 text-gray-400 hover:text-green-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-sm border border-gray-200 backdrop-blur-sm transition-colors"
+                 title="Restore task"
+               >
+                 <RotateCcw size={13} />
+               </button>
+               <button 
+                 onClick={handleDelete}
+                 className="p-1.5 bg-white/90 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg shadow-sm border border-gray-200 backdrop-blur-sm transition-colors"
+                 title="Delete task"
+               >
+                 <Trash2 size={13} />
+               </button>
+             </>
+           )}
+           
+           {/* Regular delete button for active view */}
+           {!isArchivedView && (
+             <button 
+               onClick={handleDelete} 
+               className="p-1.5 bg-white/90 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg shadow-sm border border-gray-200 backdrop-blur-sm transition-colors"
+             >
+               <Trash2 size={13} />
+             </button>
+           )}
         </div>
 
         {/* Labels (if no cover) */}
@@ -201,6 +254,14 @@ const Card = memo(({ card, onClick, onDelete, isDragging }) => {
         <h4 className={`text-[14px] leading-snug font-medium text-gray-800 line-clamp-2 mb-3 group-hover/card:text-purple-700 transition-colors ${!coverImageUrl && allLabels.length === 0 ? 'mt-1' : ''}`}>
           {card.title}
         </h4>
+
+        {/* Archive countdown (read-only) */}
+        {autoDeleteCountdown && (
+          <div className="mb-3 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-orange-700 bg-orange-50 border border-orange-100 rounded-md">
+            <Clock size={12} />
+            <span>{autoDeleteCountdown}</span>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-2 mt-auto border-t border-gray-100/60">

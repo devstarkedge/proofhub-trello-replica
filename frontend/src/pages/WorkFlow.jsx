@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, Suspense, memo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw, Archive } from 'lucide-react';
 import Database from '../services/database';
 import Header from '../components/Header';
 import Board from '../components/Board';
@@ -61,6 +61,9 @@ const WorkFlow = memo(() => {
   const [fullProjectData, setFullProjectData] = useState(null);
   const [shareAutoOpened, setShareAutoOpened] = useState(false);
   const [showRecurringPage, setShowRecurringPage] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedCardsByList, setArchivedCardsByList] = useState({});
+  const [loadingArchived, setLoadingArchived] = useState(false);
   const shareKey = `${taskId || ''}-${subtaskId || ''}-${nenoId || ''}`;
   const modalStack = useModalHierarchyStore((state) => state.stack);
   const openHierarchyModal = useModalHierarchyStore((state) => state.openModalByType);
@@ -84,6 +87,7 @@ const WorkFlow = memo(() => {
        setFullProjectData(null);
        setShareAutoOpened(false);
        setShowRecurringPage(false);
+       setShowArchived(false);
        closeHierarchy();
     }
     prevProjectIdRef.current = projectId;
@@ -164,6 +168,42 @@ useEffect(() => {
   }
 }, [board, setHierarchyProject]);
 
+// Load archived cards when archive view is toggled
+useEffect(() => {
+  if (showArchived && board && lists.length > 0) {
+    const loadArchivedCards = async () => {
+      setLoadingArchived(true);
+      try {
+        const archivedByList = {};
+        
+        // Fetch archived cards for each list
+        const archivePromises = lists.map(async (list) => {
+          try {
+            const response = await Database.getArchivedCards(list._id, board._id);
+            archivedByList[list._id] = response.data || [];
+          } catch (error) {
+            console.error(`Failed to load archived cards for list ${list._id}:`, error);
+            archivedByList[list._id] = [];
+          }
+        });
+        
+        await Promise.all(archivePromises);
+        setArchivedCardsByList(archivedByList);
+      } catch (error) {
+        console.error('Error loading archived cards:', error);
+        setArchivedCardsByList({});
+      } finally {
+        setLoadingArchived(false);
+      }
+    };
+    
+    loadArchivedCards();
+  } else if (!showArchived) {
+    // Clear archived cards when switching back to active view
+    setArchivedCardsByList({});
+  }
+}, [showArchived, board, lists]);
+
   // Memoize loadData to prevent recreation
   const loadData = useCallback(async () => {
     try {
@@ -220,6 +260,63 @@ useEffect(() => {
       throw error;
     }
   }, [deleteCard, closeHierarchy]);
+
+  const handleRestoreCard = useCallback(async (cardId) => {
+    if (!cardId) return;
+    try {
+      const response = await Database.restoreCard(cardId);
+      if (response.success) {
+        const restoredCard = response.data || response;
+        // Fetch fully populated card to avoid half-populated UI
+        const full = await Database.getCard(cardId);
+        const hydrated = full.data || full;
+        // Update store locally (no API call) with safe, populated fields
+        useWorkflowStore.getState().updateCardLocal(cardId, {
+          // core flags
+          isArchived: false,
+          archivedAt: null,
+          autoDeleteAt: null,
+          // basic fields
+          title: hydrated.title,
+          description: hydrated.description,
+          status: hydrated.status,
+          priority: hydrated.priority,
+          dueDate: hydrated.dueDate,
+          position: hydrated.position,
+          // hydrated relations
+          assignees: Array.isArray(hydrated.assignees) ? hydrated.assignees : undefined,
+          members: Array.isArray(hydrated.members) ? hydrated.members : undefined,
+          labels: Array.isArray(hydrated.labels) ? hydrated.labels : undefined,
+          coverImage: hydrated.coverImage !== undefined ? hydrated.coverImage : undefined,
+          hasRecurrence: hydrated.hasRecurrence,
+        });
+        
+        // If in archived view, refetch archived cards to remove the restored card
+        if (showArchived && board && lists.length > 0) {
+          const archivedByList = {};
+          
+          const archivePromises = lists.map(async (list) => {
+            try {
+              const archivedResponse = await Database.getArchivedCards(list._id, board._id);
+              archivedByList[list._id] = archivedResponse.data || [];
+            } catch (error) {
+              console.error(`Failed to reload archived cards for list ${list._id}:`, error);
+              archivedByList[list._id] = [];
+            }
+          });
+          
+          await Promise.all(archivePromises);
+          setArchivedCardsByList(archivedByList);
+        }
+        
+        toast.success('Task restored successfully');
+      }
+    } catch (error) {
+      console.error('Error restoring card:', error);
+      toast.error('Failed to restore task');
+      throw error;
+    }
+  }, [showArchived, board, lists]);
 
   const handleUpdateCard = useCallback(async (cardId, updates) => {
     try {
@@ -394,7 +491,8 @@ useEffect(() => {
 
     for (const list of lists) {
       const listId = list._id;
-      const cards = cardsByList[listId] || [];
+      // Use archived cards if showing archived view, otherwise use active cards
+      const cards = showArchived ? (archivedCardsByList[listId] || []) : (cardsByList[listId] || []);
 
       // Only filter if we have active filters
       const hasFilters = activeFilters.status || activeFilters.priority || activeFilters.search || activeFilters.selectedProjectId;
@@ -433,14 +531,14 @@ useEffect(() => {
         }
 
         return true;
-      }) : cards; // No filtering needed
+      }) : cards;
 
       result[listId] = filtered;
       total += filtered.length;
     }
 
     return { filteredCardsByList: result, totalFilteredCount: total };
-  }, [lists, cardsByList, activeFilters]);
+  }, [lists, cardsByList, archivedCardsByList, activeFilters, showArchived]);
 
   const autoOpenSharedPath = useCallback(async () => {
     if (!taskId || !board) return;
@@ -629,6 +727,22 @@ useEffect(() => {
                 Filters
               </motion.button>
 
+              {/* Archive View Toggle */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowArchived(!showArchived)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white transition-colors backdrop-blur-lg border ${
+                  showArchived
+                    ? 'bg-orange-600 border-orange-500 hover:bg-orange-700'
+                    : 'bg-white/10 hover:bg-white/20 border-white/20'
+                }`}
+                title={showArchived ? 'Show Active Tasks' : 'Show Archived Tasks'}
+              >
+                <Archive size={18} />
+                <span className="hidden lg:inline">{showArchived ? 'Archived' : 'View Archive'}</span>
+              </motion.button>
+
               {/* View All Recurring Tasks Button */}
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -793,6 +907,8 @@ useEffect(() => {
             onUpdateListTitle={updateListTitle}
             onMoveCard={handleMoveCard}
             onMoveList={handleMoveList}
+            onRestoreCard={handleRestoreCard}
+            isArchivedView={showArchived}
           />
         )}
       </main>
