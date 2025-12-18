@@ -263,60 +263,75 @@ useEffect(() => {
 
   const handleRestoreCard = useCallback(async (cardId) => {
     if (!cardId) return;
+
+    // Find the card in archived lists
+    let cardToRestore = null;
+    let originalListId = null;
+    
+    // Search in local archived state first
+    for (const listId in archivedCardsByList) {
+      const found = archivedCardsByList[listId]?.find(c => c._id === cardId);
+      if (found) {
+        cardToRestore = found;
+        originalListId = listId;
+        break;
+      }
+    }
+    
+    // If not found in local archived state, we can't do optimistic update easily
+    // without fetching it first. But usually it should be there if user is viewing it.
+    
+    if (cardToRestore) {
+      // 1. Optimistic Update: Add to active workflow immediately
+      useWorkflowStore.getState().restoreCardOptimistic(cardToRestore);
+      
+      // 2. Optimistic Update: Remove from archived view immediately
+      setArchivedCardsByList(prev => ({
+        ...prev,
+        [originalListId]: prev[originalListId].filter(c => c._id !== cardId)
+      }));
+      
+      toast.success('Task restored successfully');
+    }
+
     try {
+      // 3. API Call
       const response = await Database.restoreCard(cardId);
+      
       if (response.success) {
-        const restoredCard = response.data || response;
-        // Fetch fully populated card to avoid half-populated UI
+        // 4. Background Reconciliation
+        // Fetch fully populated card to ensure consistency (e.g. populated fields)
+        // This runs in background without blocking UI
         const full = await Database.getCard(cardId);
         const hydrated = full.data || full;
-        // Update store locally (no API call) with safe, populated fields
+        
+        // Update store locally with fresh data
         useWorkflowStore.getState().updateCardLocal(cardId, {
-          // core flags
+          ...hydrated,
           isArchived: false,
           archivedAt: null,
-          autoDeleteAt: null,
-          // basic fields
-          title: hydrated.title,
-          description: hydrated.description,
-          status: hydrated.status,
-          priority: hydrated.priority,
-          dueDate: hydrated.dueDate,
-          position: hydrated.position,
-          // hydrated relations
-          assignees: Array.isArray(hydrated.assignees) ? hydrated.assignees : undefined,
-          members: Array.isArray(hydrated.members) ? hydrated.members : undefined,
-          labels: Array.isArray(hydrated.labels) ? hydrated.labels : undefined,
-          coverImage: hydrated.coverImage !== undefined ? hydrated.coverImage : undefined,
-          hasRecurrence: hydrated.hasRecurrence,
+          autoDeleteAt: null
         });
-        
-        // If in archived view, refetch archived cards to remove the restored card
-        if (showArchived && board && lists.length > 0) {
-          const archivedByList = {};
-          
-          const archivePromises = lists.map(async (list) => {
-            try {
-              const archivedResponse = await Database.getArchivedCards(list._id, board._id);
-              archivedByList[list._id] = archivedResponse.data || [];
-            } catch (error) {
-              console.error(`Failed to reload archived cards for list ${list._id}:`, error);
-              archivedByList[list._id] = [];
-            }
-          });
-          
-          await Promise.all(archivePromises);
-          setArchivedCardsByList(archivedByList);
-        }
-        
-        toast.success('Task restored successfully');
+      } else {
+        throw new Error(response.message || 'Failed to restore');
       }
     } catch (error) {
       console.error('Error restoring card:', error);
       toast.error('Failed to restore task');
-      throw error;
+      
+      // 5. Rollback on error
+      if (cardToRestore && originalListId) {
+        // Remove from active workflow
+        useWorkflowStore.getState().restoreCardRollback(cardId, originalListId);
+        
+        // Add back to archived view
+        setArchivedCardsByList(prev => ({
+          ...prev,
+          [originalListId]: [...(prev[originalListId] || []), cardToRestore]
+        }));
+      }
     }
-  }, [showArchived, board, lists]);
+  }, [archivedCardsByList]);
 
   const handleUpdateCard = useCallback(async (cardId, updates) => {
     try {

@@ -748,6 +748,58 @@ const useWorkflowStore = create(
         });
       },
 
+      // Optimistically restore a card
+      restoreCardOptimistic: (card) => {
+        set((state) => {
+          if (!card || !card.list) return state;
+
+          const listId = typeof card.list === 'object' ? card.list._id : card.list;
+          
+          // Check if already in list
+          const currentList = state.cardsByList[listId] || [];
+          if (currentList.some(c => c._id === card._id)) return state;
+
+          // Prepare restored card
+          const restoredCard = {
+             ...card,
+             isArchived: false,
+             archivedAt: null,
+             autoDeleteAt: null
+          };
+
+          const newCardsByList = {
+            ...state.cardsByList,
+            [listId]: [...currentList, restoredCard]
+          };
+
+          return {
+            cardsByList: newCardsByList,
+            cardsById: { ...state.cardsById, [card._id]: restoredCard },
+            lastUpdated: Date.now()
+          };
+        });
+      },
+
+      // Rollback restore
+      restoreCardRollback: (cardId, originalListId) => {
+        set((state) => {
+           const newCardsByList = { ...state.cardsByList };
+           // Remove from list
+           if (newCardsByList[originalListId]) {
+             newCardsByList[originalListId] = newCardsByList[originalListId].filter(c => c._id !== cardId);
+           }
+           
+           const newCardsById = { ...state.cardsById };
+           delete newCardsById[cardId];
+           
+           return {
+             cardsByList: newCardsByList,
+             cardsById: newCardsById,
+             lastUpdated: Date.now()
+           };
+        });
+      },
+
       // Clear workflow data
       clearWorkflow: () => set({
         board: null,
