@@ -161,6 +161,17 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-attachment-deleted', { detail: data }));
     });
 
+    this.socket.on('attachment-restored', (data) => {
+      console.log('Attachment restored:', data);
+      // Reuse the same consumer path as added
+      window.dispatchEvent(new CustomEvent('socket-attachment-added', { detail: data }));
+    });
+
+    this.socket.on('attachment-permanently-deleted', (data) => {
+      console.log('Attachment permanently deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-attachment-permanently-deleted', { detail: data }));
+    });
+
     this.socket.on('time-logged', (data) => {
       console.log('Time logged:', data);
       window.dispatchEvent(new CustomEvent('socket-time-logged', { detail: data }));

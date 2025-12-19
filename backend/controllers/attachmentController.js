@@ -4,6 +4,7 @@ import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
+import Board from '../models/Board.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { emitToBoard } from '../server.js';
 import { invalidateCache } from '../middleware/cache.js';
@@ -516,16 +517,47 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
 
   const wasCover = attachment.isCover;
   const cardId = attachment.card;
-
-  // Delete from Cloudinary
+  
+  // Build originalContext on first delete
   try {
-    await deleteFromCloudinary(attachment.publicId, attachment.resourceType);
-  } catch (error) {
-    console.error('Cloudinary deletion error:', error);
-    // Continue with soft delete even if Cloudinary fails
+    if (!attachment.originalContext) {
+      const parentType = attachment.card
+        ? 'card'
+        : attachment.subtask
+          ? 'subtask'
+          : attachment.nanoSubtask
+            ? 'nenoSubtask'
+            : 'card';
+      const parentId = attachment.card || attachment.subtask || attachment.nanoSubtask;
+      const section = attachment.contextType === 'comment'
+        ? 'comment'
+        : attachment.contextType === 'description'
+          ? 'description'
+          : 'attachment';
+      const boardId = attachment.board;
+      let departmentId = attachment.departmentId;
+      if (!departmentId && boardId) {
+        const b = await Board.findById(boardId).select('department').lean();
+        departmentId = b?.department;
+      }
+      attachment.originalContext = {
+        departmentId,
+        projectId: boardId,
+        parentType,
+        parentId,
+        section,
+        commentId: attachment.comment || undefined,
+        indexPosition: undefined
+      };
+      if (departmentId && !attachment.departmentId) {
+        attachment.departmentId = departmentId;
+      }
+    }
+  } catch (e) {
+    console.error('Error building originalContext on delete:', e);
   }
 
-  // Soft delete the attachment
+  // Soft delete only (do not remove from Cloudinary here)
   await attachment.softDelete(req.user.id);
 
   // Auto-promote next description image to cover if deleted attachment was cover
@@ -577,6 +609,10 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
   // Invalidate cache
   invalidateCache(`/api/cards/${attachment.card}`);
   invalidateCache(`/api/attachments/card/${attachment.card}`);
+  // Also invalidate trash cache since attachment is now in trash
+  if (attachment.board) {
+    invalidateCache(`/api/projects/${attachment.board}/trash`);
+  }
 
   res.status(200).json({
     success: true,
@@ -612,35 +648,38 @@ export const deleteMultipleAttachments = asyncHandler(async (req, res) => {
     });
   }
 
-  // Group by resource type for Cloudinary deletion
-  const imageIds = attachments
-    .filter(a => a.resourceType === 'image')
-    .map(a => a.publicId);
-  const rawIds = attachments
-    .filter(a => a.resourceType === 'raw')
-    .map(a => a.publicId);
-
-  // Delete from Cloudinary
-  try {
-    if (imageIds.length > 0) {
-      await deleteMultipleFromCloudinary(imageIds, 'image');
+  // Prepare originalContext + soft delete (no Cloudinary deletion here)
+  const now = new Date();
+  for (const att of attachments) {
+    try {
+      if (!att.originalContext) {
+        const parentType = att.card ? 'card' : att.subtask ? 'subtask' : att.nanoSubtask ? 'nenoSubtask' : 'card';
+        const parentId = att.card || att.subtask || att.nanoSubtask;
+        const section = att.contextType === 'comment' ? 'comment' : att.contextType === 'description' ? 'description' : 'attachment';
+        let departmentId = att.departmentId;
+        if (!departmentId && att.board) {
+          const b = await Board.findById(att.board).select('department').lean();
+          departmentId = b?.department;
+        }
+        att.originalContext = {
+          departmentId,
+          projectId: att.board,
+          parentType,
+          parentId,
+          section,
+          commentId: att.comment || undefined,
+          indexPosition: undefined
+        };
+        if (departmentId && !att.departmentId) att.departmentId = departmentId;
+      }
+      att.isDeleted = true;
+      att.deletedAt = now;
+      att.deletedBy = req.user.id;
+      await att.save();
+    } catch (e) {
+      console.error('Error preparing originalContext in bulk delete:', e);
     }
-    if (rawIds.length > 0) {
-      await deleteMultipleFromCloudinary(rawIds, 'raw');
-    }
-  } catch (error) {
-    console.error('Cloudinary bulk deletion error:', error);
   }
-
-  // Soft delete all attachments
-  await Attachment.updateMany(
-    { _id: { $in: attachmentIds } },
-    {
-      isDeleted: true,
-      deletedAt: new Date(),
-      deletedBy: req.user.id
-    }
-  );
 
   // Get unique cards and boards for cache invalidation
   const uniqueCards = [...new Set(attachments.map(a => a.card?.toString()))].filter(Boolean);
@@ -661,6 +700,11 @@ export const deleteMultipleAttachments = asyncHandler(async (req, res) => {
   uniqueCards.forEach(cardId => {
     invalidateCache(`/api/cards/${cardId}`);
     invalidateCache(`/api/attachments/card/${cardId}`);
+  });
+
+  // Also invalidate trash caches for all affected boards
+  uniqueBoards.forEach(boardId => {
+    invalidateCache(`/api/projects/${boardId}/trash`);
   });
 
   res.status(200).json({

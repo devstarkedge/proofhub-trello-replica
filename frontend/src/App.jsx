@@ -32,6 +32,7 @@ const Announcements = lazy(() => import("./pages/Announcements"));
 const RemindersPage = lazy(() => import("./pages/RemindersPage"));
 const ClientReminderCalendarPage = lazy(() => import("./pages/ClientReminderCalendarPage"));
 const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
+const ProjectTrash = lazy(() => import("./pages/ProjectTrash"));
 
 function App() {
   return (
@@ -59,6 +60,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <WorkFlow />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/workflow/:deptId/:projectId/trash"
+              element={
+                <PrivateRoute>
+                  <ProjectTrash />
                 </PrivateRoute>
               }
             />

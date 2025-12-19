@@ -130,6 +130,37 @@ const attachmentSchema = new mongoose.Schema({
   deletedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+  // Trash + restore metadata
+  restoredAt: Date,
+  restoredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  originalContext: {
+    type: mongoose.Schema.Types.Mixed
+  },
+  departmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
+    index: true
+  },
+
+  // Enhanced trash metadata for precise restore
+  originalContext: {
+    type: mongoose.Schema.Types.Mixed,
+    description: 'Stores exact location metadata for restore: { departmentId, projectId, parentType, parentId, section, commentId, indexPosition }'
+  },
+
+  // Restore tracking
+  restoredAt: {
+    type: Date,
+    description: 'When attachment was last restored from trash'
+  },
+  restoredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    description: 'User who restored the attachment'
   }
 }, {
   timestamps: true
@@ -141,6 +172,8 @@ attachmentSchema.index({ contextType: 1, contextRef: 1, isDeleted: 1 });
 attachmentSchema.index({ board: 1, isDeleted: 1, createdAt: -1 });
 attachmentSchema.index({ uploadedBy: 1, createdAt: -1 });
 attachmentSchema.index({ fileType: 1, createdAt: -1 });
+attachmentSchema.index({ board: 1, isDeleted: 1, deletedAt: -1 });
+attachmentSchema.index({ board: 1, deletedAt: -1, fileType: 1 });
 
 // Virtual for formatted file size
 attachmentSchema.virtual('formattedSize').get(function() {

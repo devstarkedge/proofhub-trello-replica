@@ -14,6 +14,7 @@ import {
   uploadFromPaste,
   uploadMiddleware
 } from '../controllers/attachmentController.js';
+import { restoreAttachment, permanentlyDeleteAttachment, bulkRestore, bulkPermanentDelete } from '../controllers/trashController.js';
 
 const router = express.Router();
 
@@ -25,6 +26,14 @@ router.post('/upload', uploadMiddleware.single('file'), uploadAttachment);
 router.post('/upload-multiple', uploadMiddleware.array('files', 10), uploadMultipleAttachments);
 router.post('/paste', uploadFromPaste);
 
+// BULK ROUTES MUST COME BEFORE /:id ROUTES (order matters in Express)
+// Delete routes
+router.delete('/bulk', deleteMultipleAttachments);
+
+// Trash bulk routes
+router.post('/bulk/restore', bulkRestore);
+router.delete('/bulk/permanent', bulkPermanentDelete);
+
 // Get routes - specific entity routes first, then generic
 router.get('/card/:cardId', getCardAttachments);
 router.get('/subtask/:subtaskId', getSubtaskAttachments);
@@ -35,9 +44,12 @@ router.get('/:id', getAttachment);
 // Update routes
 router.patch('/:id/set-cover', setAsCover);
 
-// Delete routes
-router.delete('/bulk', deleteMultipleAttachments);
+// Individual Delete routes
 router.delete('/:id', deleteAttachment);
+
+// Trash individual routes (AFTER :id routes since they're more specific)
+router.post('/:id/restore', restoreAttachment);
+router.delete('/:id/permanent', permanentlyDeleteAttachment);
 
 export default router;
 

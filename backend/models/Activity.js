@@ -18,6 +18,8 @@ const activitySchema = new mongoose.Schema({
       'attachment_added',
       'attachments_added',
       'attachment_deleted',
+      'attachment_restored',
+      'attachment_permanently_deleted',
       'due_date_changed',
       'list_created',
       'list_updated',

@@ -28,6 +28,7 @@ import labelsRoutes from './routes/labels.js';
 import rolesRoutes from './routes/roles.js';
 import attachmentsRoutes from './routes/attachments.js';
 import versionsRoutes from './routes/versions.js';
+import projectsRoutes from './routes/projects.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
@@ -99,6 +100,7 @@ app.use('/api/labels', labelsRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/attachments', attachmentsRoutes);
 app.use('/api/versions', versionsRoutes);
+app.use('/api/projects', projectsRoutes);
 
 import jwt from 'jsonwebtoken';
 
@@ -256,6 +258,7 @@ import { startBackgroundJobs } from './utils/backgroundTasks.js';
 import { startRecurringTaskScheduler } from './utils/recurrenceScheduler.js';
 import { startReminderScheduler } from './utils/reminderScheduler.js';
 import { startArchivedCardCleanup } from './utils/archiveCleanup.js';
+import { startTrashCleanup } from './utils/trashCleanup.js';
 
 // MongoDB connection with connection pooling
 mongoose.connect(process.env.MONGO_URI, {
@@ -275,6 +278,8 @@ mongoose.connect(process.env.MONGO_URI, {
     startReminderScheduler();
     // Start archived card cleanup
     startArchivedCardCleanup();
+    // Start trashed attachments cleanup
+    startTrashCleanup();
     server.listen(PORT, () => {
       if (process.env.NODE_ENV !== 'production') console.log(`Server running on port ${PORT}`);
     });

@@ -4,7 +4,9 @@ import { sendPushNotification } from './pushNotification.js';
 import Announcement from '../models/Announcement.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
+import Attachment from '../models/Attachment.js';
 import { io } from '../server.js';
+import { deleteFromCloudinary, deleteMultipleFromCloudinary } from './cloudinary.js';
 
 // Schedule an async function to run in background without blocking request
 export const runBackground = (fn) => {
@@ -282,6 +284,60 @@ export const archiveExpiredAnnouncements = () => {
   });
 };
 
+// Cleanup trash - permanently delete attachments after 30 days
+export const cleanupTrash = () => {
+  setTimeout(async () => {
+    try {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const trashItems = await Attachment.find({
+        isDeleted: true,
+        deletedAt: { $lte: thirtyDaysAgo }
+      }).lean();
+
+      if (trashItems.length === 0) {
+        console.log('[Trash Cleanup] No items to clean up');
+        return;
+      }
+
+      console.log(`[Trash Cleanup] Found ${trashItems.length} items to permanently delete`);
+
+      // Separate by resource type for batch deletion
+      const imageIds = trashItems
+        .filter(a => a.resourceType === 'image')
+        .map(a => a.publicId);
+      const rawIds = trashItems
+        .filter(a => a.resourceType !== 'image')
+        .map(a => a.publicId);
+
+      // Delete from Cloudinary
+      try {
+        if (imageIds.length > 0) {
+          await deleteMultipleFromCloudinary(imageIds, 'image');
+          console.log(`[Trash Cleanup] Deleted ${imageIds.length} images from Cloudinary`);
+        }
+        if (rawIds.length > 0) {
+          await deleteMultipleFromCloudinary(rawIds, 'raw');
+          console.log(`[Trash Cleanup] Deleted ${rawIds.length} raw files from Cloudinary`);
+        }
+      } catch (error) {
+        console.error('[Trash Cleanup] Cloudinary deletion error:', error.message);
+      }
+
+      // Delete from MongoDB
+      const deleted = await Attachment.deleteMany({
+        _id: { $in: trashItems.map(a => a._id) }
+      });
+
+      console.log(`[Trash Cleanup] Deleted ${deleted.deletedCount} attachments from database`);
+
+      // Notify admins (optional)
+      // Could send email to admins about cleanup
+    } catch (error) {
+      console.error('[Trash Cleanup] Error during cleanup:', error);
+    }
+  }, 5000); // Start after 5 seconds
+};
+
 // Start background jobs (call from server initialization)
 export const startBackgroundJobs = () => {
   // Process scheduled announcements every 30 seconds
@@ -294,7 +350,15 @@ export const startBackgroundJobs = () => {
     archiveExpiredAnnouncements();
   }, 300000);
 
-  console.log('Background jobs started: scheduled announcements and expiry handler');
+  // Cleanup trash every 6 hours (check for items older than 30 days)
+  setInterval(() => {
+    cleanupTrash();
+  }, 6 * 60 * 60 * 1000);
+
+  // Run cleanup immediately on startup
+  cleanupTrash();
+
+  console.log('Background jobs started: scheduled announcements, expiry handler, and trash cleanup');
 };
 
 export default {
@@ -306,6 +370,7 @@ export default {
   sendPushInBackground,
   processScheduledAnnouncements,
   archiveExpiredAnnouncements,
+  cleanupTrash,
   startBackgroundJobs,
   notifyProjectCreatedInBackground,
   sendProjectEmailsInBackground,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, Suspense, memo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw, Archive } from 'lucide-react';
+import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw, Archive, Trash2 } from 'lucide-react';
 import Database from '../services/database';
 import Header from '../components/Header';
 import Board from '../components/Board';
@@ -756,6 +756,18 @@ useEffect(() => {
               >
                 <Archive size={18} />
                 <span className="hidden lg:inline">{showArchived ? 'Archived' : 'View Archive'}</span>
+              </motion.button>
+
+              {/* Project Trash Button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => navigate(`/workflow/${deptId}/${projectId}/trash`)}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500/80 hover:bg-red-500 rounded-lg text-white transition-colors backdrop-blur-lg border border-red-400/50"
+                title="Project Trash (Media)"
+              >
+                <Trash2 size={18} />
+                <span className="hidden lg:inline">Trash</span>
               </motion.button>
 
               {/* View All Recurring Tasks Button */}

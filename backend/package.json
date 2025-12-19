@@ -25,6 +25,7 @@
     "mongoose-paginate-v2": "^1.9.1",
     "multer": "^2.0.2",
     "node-cache": "^5.1.2",
+    "node-cron": "^4.2.1",
     "nodemailer": "^7.0.9",
     "socket.io": "^4.8.1",
     "terser": "^5.44.0",
