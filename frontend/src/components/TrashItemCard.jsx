@@ -12,7 +12,8 @@ import {
   CheckCircle2,
   MessageSquare,
   AlertCircle,
-  Eye
+  Eye,
+  Loader2
 } from 'lucide-react';
 
 /**
@@ -34,8 +35,17 @@ const TrashItemCard = ({
   onConfirmDelete,
   onPreview
 }) => {
-  const [showTooltip, setShowTooltip] = useState(null);
   const [thumbnailHovered, setThumbnailHovered] = useState(false);
+
+  // Helper to format bytes
+  const formatBytes = (bytes, decimals = 1) => {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
 
   // Get file type icon
   const getFileTypeIcon = (fileType) => {
@@ -58,7 +68,7 @@ const TrashItemCard = ({
 
   // Get source type icon
   const getSourceIcon = (parentType) => {
-    const iconClass = 'w-4 h-4';
+    const iconClass = 'w-3.5 h-3.5';
     switch (parentType) {
       case 'card':
         return <ClipboardList className={`${iconClass}`} />;
@@ -75,60 +85,73 @@ const TrashItemCard = ({
   };
 
   const parentType = item.originalContext?.parentType || item.parentType || item.contextType;
-  const taskName = item.card?.title || item.subtask?.title || item.nanoSubtask?.title || item.taskName || 'Unknown';
-  const section = item.originalContext?.section || 'attachment';
+  
+  let taskName = item.taskName || 'Unknown';
+  if (item.card?.title) {
+    taskName = item.card.title;
+  } else if (item.subtask?.title) {
+    const cardTitle = item.subtask.task?.title;
+    taskName = cardTitle ? `${cardTitle} - ${item.subtask.title}` : item.subtask.title;
+  } else if (item.nanoSubtask?.title) {
+    const cardTitle = item.nanoSubtask.subtask?.task?.title;
+    taskName = cardTitle ? `${cardTitle} - ${item.nanoSubtask.title}` : item.nanoSubtask.title;
+  }
+
+  // const section = item.originalContext?.section || 'attachment';
   const fileName = item.originalName || item.fileName || 'Unknown';
   const deletedDate = new Date(item.deletedAt);
   const daysAgo = Math.floor((Date.now() - deletedDate) / (1000 * 60 * 60 * 24));
+  
   const deletedByName = item.deletedBy?.name || 'Unknown';
+  const uploadedByName = item.uploadedBy?.name || 'Unknown';
+  const fileSize = formatBytes(item.fileSize || 0);
 
   return (
     <div
-      className={`group relative bg-white border rounded-lg transition-all duration-200 hover:shadow-md hover:border-blue-300 ${
-        isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+      className={`group relative bg-white border rounded-xl transition-all duration-200 hover:shadow-lg hover:border-blue-300 ${
+        isSelected ? 'border-blue-500 bg-blue-50/30' : 'border-gray-200'
       } ${isProcessing ? 'opacity-60' : ''}`}
     >
-      {/* Checkbox */}
-      <div className="absolute top-2 left-2 z-10">
+      {/* Checkbox (Absolute) */}
+      <div className="absolute top-3 left-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         <input
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelect(item._id)}
-          className="w-4 h-4 rounded cursor-pointer"
+          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm"
           disabled={isProcessing}
         />
       </div>
+      {isSelected && (
+        <div className="absolute top-3 left-3 z-10">
+           <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelect(item._id)}
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm"
+            disabled={isProcessing}
+          />
+        </div>
+      )}
 
-      {/* Main Container - Flex Row */}
-      <div className="flex items-center gap-3 p-3 h-20">
+      {/* Main Container */}
+      <div className="flex gap-4 p-4">
         {/* Thumbnail - Left Side */}
         <div 
-          className="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-gray-100 to-gray-200 rounded-md flex items-center justify-center overflow-hidden border border-gray-200 relative cursor-pointer hover:border-blue-400 hover:shadow-md transition-all"
+          className="flex-shrink-0 w-20 h-20 bg-gray-50 rounded-lg flex items-center justify-center overflow-hidden border border-gray-100 relative cursor-pointer group/thumb group-hover:border-blue-200 transition-colors"
           onClick={() => onPreview?.(item)}
-          title="Click to preview"
-          role="button"
-          tabIndex={0}
-          onMouseEnter={() => setThumbnailHovered(true)}
-          onMouseLeave={() => setThumbnailHovered(false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onPreview?.(item);
-            }
-          }}
         >
           {isProcessing && (
-            <div className="absolute inset-0 bg-white/50 flex items-center justify-center rounded-md">
-              <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <div className="absolute inset-0 bg-white/60 z-20 flex items-center justify-center">
+              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
             </div>
           )}
           
-          {/* Preview hint - Show on thumbnail hover only */}
-          {thumbnailHovered && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center transition-all duration-200 rounded-md">
-              <Eye className="w-5 h-5 text-white" />
-            </div>
-          )}
+          {/* Preview overlay */}
+          <div className={`absolute inset-0 bg-black/5 rounded-lg flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-all duration-200 z-10`}>
+             <Eye className={`w-6 h-6 drop-shadow-sm ${item.fileType === 'pdf' ? 'text-green-800' : 'text-gray-600'}`} />
+          </div>
+
           {item.fileType === 'image' && !item.imgError ? (
             <img
               src={item.thumbnailUrl || item.secureUrl || item.url}
@@ -137,119 +160,100 @@ const TrashItemCard = ({
               onError={() => (item.imgError = true)}
             />
           ) : (
-            <div className="flex items-center justify-center text-gray-500">
+            <div className="flex flex-col items-center justify-center text-gray-400">
               {getFileTypeIcon(item.fileType)}
             </div>
           )}
         </div>
 
-        {/* Middle Content - Stacked Info */}
-        <div className="flex-1 min-w-0">
-          {/* File Name - Primary Info */}
-          <h3 className="text-sm font-semibold text-gray-900 truncate mb-1" title={fileName}>
-            {fileName}
-          </h3>
+        {/* Content Column */}
+        <div className="flex-1 min-w-0 flex flex-col justify-between">
+          
+          {/* Header: Name + Date */}
+          <div className="flex justify-between items-start gap-2">
+            <h3 className="text-sm font-semibold text-gray-900 truncate leading-tight" title={fileName}>
+              {fileName}
+            </h3>
+            <span className="text-[10px] sm:text-xs text-gray-400 whitespace-nowrap flex-shrink-0" title={`Deleted: ${deletedDate.toLocaleString()}`}>
+              {daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}
+            </span>
+          </div>
 
-          {/* Meta Row - Icons + Text */}
-          <div className="flex items-center gap-3 text-xs text-gray-600">
-            {/* File Type + Size */}
-            <div
-              className="flex items-center gap-1"
-              onMouseEnter={() => setShowTooltip('fileType')}
-              onMouseLeave={() => setShowTooltip(null)}
-            >
-              {getFileTypeIcon(item.fileType)}
-              <span className="capitalize text-gray-500">{item.fileType}</span>
-              {showTooltip === 'fileType' && (
-                <div className="absolute bottom-24 left-20 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">
-                  {item.formattedSize || 'File'}
-                </div>
-              )}
-            </div>
-
-            {/* Source Type */}
-            <div
-              className="flex items-center gap-1"
-              onMouseEnter={() => setShowTooltip('source')}
-              onMouseLeave={() => setShowTooltip(null)}
-            >
-              {getSourceIcon(parentType)}
-              <span className="capitalize text-gray-500">
-                {parentType === 'nenoSubtask' ? 'Nano' : parentType}
-              </span>
-              {showTooltip === 'source' && (
-                <div className="absolute bottom-24 left-20 bg-gray-900 text-white text-xs px-2 py-1 rounded z-50">
-                  {section}
-                </div>
-              )}
-            </div>
-
-            {/* Task Name - Truncated */}
-            <div className="hidden sm:flex items-center gap-1 truncate">
-              <span className="truncate text-gray-500 max-w-[150px]" title={taskName}>
-                {taskName}
-              </span>
-            </div>
-
-            {/* Deleted Time */}
-            <div
-              className="flex items-center gap-1 ml-auto"
-              onMouseEnter={() => setShowTooltip('date')}
-              onMouseLeave={() => setShowTooltip(null)}
-            >
-              <Calendar className="w-4 h-4 text-gray-400" />
-              <span className="text-gray-500 whitespace-nowrap">
-                {daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}
-              </span>
-              {showTooltip === 'date' && (
-                <div className="absolute bottom-24 right-32 bg-gray-900 text-white text-xs px-2 py-1 rounded z-50">
-                  {deletedDate.toLocaleString()}
-                </div>
-              )}
+          {/* Metadata Row: Size • Type • Source */}
+          <div className="flex items-center flex-wrap gap-2 text-xs text-gray-500 mt-1">
+            <span className="font-medium text-gray-700">{fileSize}</span>
+            <span className="text-gray-300">•</span>
+            <span className="capitalize">{item.fileType}</span>
+            <span className="text-gray-300 hidden sm:inline">•</span>
+            
+            {/* Source Context Badge */}
+            <div className="flex items-center gap-1.5">
+               <span className="text-gray-400">From:-</span>
+               <div className="flex items-center gap-1.5 px-2 py-0.5 bg-gray-100 rounded-full border border-gray-200 max-w-[140px] sm:max-w-[180px]">
+                  <span className="text-gray-400 flex-shrink-0">
+                    {getSourceIcon(parentType)}
+                  </span>
+                  <span className="truncate text-[11px] font-medium text-gray-700" title={`From: ${taskName}`}>
+                    {taskName}
+                  </span>
+               </div>
             </div>
           </div>
 
-          {/* Secondary Info Row - Deleted By */}
-          <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
-            <User className="w-3.5 h-3.5" />
-            <span className="truncate">Deleted by {deletedByName}</span>
+          {/* Footer: User Info */}
+          <div className="flex items-center gap-4 mt-3 pt-2 border-t border-gray-50">
+             <div className="flex items-center gap-1.5 min-w-0">
+                <div className="w-5 h-5 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[9px] font-bold ring-1 ring-blue-100">
+                   {uploadedByName.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[9px] text-gray-400 leading-none">Uploaded by</span>
+                  <span className="text-[10px] font-medium text-gray-700 truncate max-w-[80px]" title={uploadedByName}>{uploadedByName}</span>
+                </div>
+             </div>
+             
+             <div className="w-px h-6 bg-gray-100 mx-1"></div>
+
+             <div className="flex items-center gap-1.5 min-w-0">
+                <div className="w-5 h-5 rounded-full bg-red-50 text-red-600 flex items-center justify-center text-[9px] font-bold ring-1 ring-red-100">
+                   {deletedByName.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[9px] text-gray-400 leading-none">Deleted by</span>
+                  <span className="text-[10px] font-medium text-gray-700 truncate max-w-[80px]" title={deletedByName}>{deletedByName}</span>
+                </div>
+             </div>
           </div>
         </div>
 
-        {/* Right Side - Actions */}
-        <div className="flex-shrink-0 flex items-center gap-2">
-          {/* Restore Button */}
+        {/* Actions Column */}
+        <div className="flex-shrink-0 flex flex-col items-end gap-2 pl-2 border-l border-gray-50">
           <button
             onClick={() => onRestore(item)}
             disabled={isProcessing}
-            className="p-2 rounded-md bg-green-50 hover:bg-green-100 text-green-600 hover:text-green-700 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center w-8 h-8 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 hover:text-green-700 transition-colors border border-green-100"
             title="Restore attachment"
-            aria-label="Restore attachment"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
 
-          {/* Delete Button with Confirmation */}
-          {!showDeleteConfirm ? (
+           {!showDeleteConfirm ? (
             <button
               onClick={() => onDelete(item)}
               disabled={isProcessing}
-              className="p-2 rounded-md bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 transition-colors border border-red-100"
               title="Delete permanently"
-              aria-label="Delete permanently"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           ) : (
-            <div className="flex items-center gap-2 bg-red-50 rounded-md px-2 py-1">
-              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
-              <button
+             <button
                 onClick={onConfirmDelete}
-                className="text-xs font-semibold text-red-600 hover:text-red-700"
-              >
-                Confirm?
-              </button>
-            </div>
+                className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-600 hover:bg-red-700 text-white animate-pulse shadow-sm"
+                title="Confirm Delete"
+             >
+                <AlertCircle className="w-4 h-4" />
+             </button>
           )}
         </div>
       </div>

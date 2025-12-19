@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Save,
@@ -13,6 +13,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import LabelDropdown from "../LabelDropdown";
+import DatePickerModal from "../DatePickerModal";
 
 const CardSidebar = ({
   saving,
@@ -45,6 +46,8 @@ const CardSidebar = ({
   entityType = 'card',
 }) => {
   const dropdownRef = useRef(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showDueDatePicker, setShowDueDatePicker] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -286,30 +289,88 @@ const CardSidebar = ({
           </div>
 
           {/* Dates */}
-          <div>
-            <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-              <Calendar size={14} />
-              Start Date
-            </label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => onStartDateChange(e.target.value)}
-              className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          <div className="space-y-2.5">
+            {/* Start Date */}
+            <motion.div
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="cursor-pointer"
+            >
+              <label className="flex items-center gap-2 text-xs text-gray-700 mb-1.5 font-medium">
+                <Calendar size={13} className="text-green-600" />
+                Start Date
+              </label>
+              <div 
+                onClick={() => setShowStartDatePicker(true)}
+                className="p-2.5 border-2 border-gray-300 rounded-lg hover:border-green-400 hover:bg-green-50 transition-all duration-200 bg-white flex items-center justify-between group"
+              >
+                <p className="text-xs font-medium text-gray-900">
+                  {startDate 
+                    ? new Date(startDate).toLocaleDateString('en-US', { 
+                        weekday: 'short',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })
+                    : 'Click to select date'
+                  }
+                </p>
+                {startDate && (
+                  <motion.button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStartDateChange(null);
+                    }}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <X size={14} />
+                  </motion.button>
+                )}
+              </div>
+            </motion.div>
 
-          <div>
-            <label className="flex items-center gap-2 text-sm text-gray-700 mb-1.5 font-medium">
-              <Calendar size={14} />
-              Due Date
-            </label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => onDueDateChange(e.target.value)}
-              className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            {/* Due Date */}
+            <motion.div
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="cursor-pointer"
+            >
+              <label className="flex items-center gap-2 text-xs text-gray-700 mb-1.5 font-medium">
+                <Calendar size={13} className="text-red-600" />
+                Due Date
+              </label>
+              <div 
+                onClick={() => setShowDueDatePicker(true)}
+                className="p-2.5 border-2 border-gray-300 rounded-lg hover:border-red-400 hover:bg-red-50 transition-all duration-200 bg-white flex items-center justify-between group"
+              >
+                <p className="text-xs font-medium text-gray-900">
+                  {dueDate 
+                    ? new Date(dueDate).toLocaleDateString('en-US', { 
+                        weekday: 'short',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })
+                    : 'Click to select date'
+                  }
+                </p>
+                {dueDate && (
+                  <motion.button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDueDateChange(null);
+                    }}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <X size={14} />
+                  </motion.button>
+                )}
+              </div>
+            </motion.div>
           </div>
 
           {/* Labels - Using LabelDropdown */}
@@ -335,6 +396,22 @@ const CardSidebar = ({
           Delete Task
         </motion.button>
       </div>
+
+      {/* Date Picker Modals */}
+      <DatePickerModal
+        isOpen={showStartDatePicker}
+        onClose={() => setShowStartDatePicker(false)}
+        onSelectDate={onStartDateChange}
+        selectedDate={startDate}
+        title="Select Start Date"
+      />
+      <DatePickerModal
+        isOpen={showDueDatePicker}
+        onClose={() => setShowDueDatePicker(false)}
+        onSelectDate={onDueDateChange}
+        selectedDate={dueDate}
+        title="Select Due Date"
+      />
 
       <style jsx="true">{`
         .custom-scrollbar::-webkit-scrollbar {

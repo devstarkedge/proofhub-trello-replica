@@ -182,7 +182,7 @@ const LabelDropdown = ({
         
         {/* Selected Labels Chips */}
         {selectedLabels.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
+          <div className="flex flex-wrap gap-1 mb-2">
             {selectedLabels.map((label, index) => {
               const labelObj = typeof label === 'object' ? label : allLabels.find(l => l._id === label);
               if (!labelObj) return null;
@@ -193,7 +193,7 @@ const LabelDropdown = ({
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   exit={{ scale: 0 }}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium shadow-sm"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm font-semibold shadow-sm whitespace-nowrap"
                   style={{
                     backgroundColor: labelObj.color,
                     color: getTextColor(labelObj.color)
@@ -202,9 +202,9 @@ const LabelDropdown = ({
                   {labelObj.name}
                   <button
                     onClick={(e) => removeLabel(labelObj._id, e)}
-                    className="hover:opacity-70 transition-opacity ml-0.5"
+                    className="hover:opacity-70 transition-opacity"
                   >
-                    <X size={12} />
+                    <X size={13} />
                   </button>
                 </motion.span>
               );
@@ -218,14 +218,14 @@ const LabelDropdown = ({
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.99 }}
           onClick={() => setIsOpen(!isOpen)}
-          className="w-full flex items-center justify-between gap-2 p-2.5 text-sm border border-gray-300 rounded-lg hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition-colors"
+          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs border border-gray-300 rounded-lg hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition-colors"
         >
-          <span className="text-gray-500">
+          <span className="text-gray-500 truncate">
             {selectedLabels.length > 0 
               ? `${selectedLabels.length} label${selectedLabels.length > 1 ? 's' : ''} selected`
               : 'Select labels...'}
           </span>
-          <Tag size={16} className="text-gray-400" />
+          <Tag size={14} className="text-gray-400 flex-shrink-0" />
         </motion.button>
       </div>
 
@@ -237,31 +237,31 @@ const LabelDropdown = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.15 }}
-            className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden"
+            className="absolute z-50 left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden w-1/2"
           >
             {/* Search Bar */}
-            <div className="p-3 border-b border-gray-100">
+            <div className="p-2 border-b border-gray-100">
               <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   ref={inputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search labels..."
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-8 pr-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
 
             {/* Labels List */}
-            <div className="max-h-60 overflow-y-auto custom-scrollbar">
+            <div className="max-h-56 overflow-y-auto custom-scrollbar">
               {loading ? (
-                <div className="p-4 text-center text-gray-500 text-sm">
+                <div className="p-3 text-center text-gray-500 text-xs">
                   Loading labels...
                 </div>
               ) : filteredLabels.length > 0 ? (
-                <div className="p-2">
+                <div className="p-1.5">
                   {filteredLabels.map((label) => {
                     const isSelected = isLabelSelected(label._id);
                     return (
@@ -270,20 +270,11 @@ const LabelDropdown = ({
                         type="button"
                         whileHover={{ backgroundColor: '#F3F4F6' }}
                         onClick={() => toggleLabel(label._id)}
-                        className="w-full flex items-center gap-3 p-2.5 rounded-lg transition-colors text-left"
+                        className="w-full px-2 py-1.5 rounded-lg transition-colors text-left hover:bg-gray-100 flex items-center justify-between"
                       >
-                        {/* Checkbox */}
-                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                          isSelected 
-                            ? 'bg-blue-500 border-blue-500' 
-                            : 'border-gray-300 bg-white'
-                        }`}>
-                          {isSelected && <Check size={12} className="text-white" />}
-                        </div>
-                        
                         {/* Label Chip */}
                         <span
-                          className="flex-1 px-3 py-1.5 rounded-md text-sm font-medium"
+                          className="px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap inline-block"
                           style={{
                             backgroundColor: label.color,
                             color: getTextColor(label.color)
@@ -291,27 +282,40 @@ const LabelDropdown = ({
                         >
                           {label.name}
                         </span>
+                        
+                        {/* Golden Checkmark - Show when selected */}
+                        {isSelected && (
+                          <motion.div
+                            initial={{ scale: 0, rotate: -90 }}
+                            animate={{ scale: 1, rotate: 0 }}
+                            exit={{ scale: 0, rotate: 90 }}
+                            transition={{ duration: 0.2 }}
+                            className="ml-2"
+                          >
+                            <Check size={18} className="text-yellow-500" strokeWidth={3} />
+                          </motion.div>
+                        )}
                       </motion.button>
                     );
                   })}
                 </div>
               ) : (
-                <div className="p-4 text-center text-gray-500 text-sm">
+                <div className="p-3 text-center text-gray-500 text-xs">
                   {searchQuery ? 'No labels found' : 'No labels yet'}
                 </div>
               )}
             </div>
 
             {/* Add Label Button */}
-            <div className="p-3 border-t border-gray-100">
+            <div className="p-2 border-t border-gray-100">
               <motion.button
                 type="button"
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
                 onClick={() => setShowAddModal(true)}
-                className="w-full flex items-center justify-center gap-2 p-2.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors font-medium"
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors font-medium"
               >
-                <Plus size={16} />
+                <Plus size={14} />
                 Add label
               </motion.button>
             </div>

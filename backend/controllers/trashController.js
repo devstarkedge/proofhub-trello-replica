@@ -61,8 +61,20 @@ export const getProjectTrash = asyncHandler(async (req, res) => {
       .populate('uploadedBy', 'name avatar')
       .populate('deletedBy', 'name avatar')
       .populate('card', 'title')
-      .populate('subtask', 'title')
-      .populate('nanoSubtask', 'title')
+      .populate({
+        path: 'subtask',
+        select: 'title task',
+        populate: { path: 'task', select: 'title' }
+      })
+      .populate({
+        path: 'nanoSubtask',
+        select: 'title subtask',
+        populate: {
+          path: 'subtask',
+          select: 'title task',
+          populate: { path: 'task', select: 'title' }
+        }
+      })
       .sort({ deletedAt: -1 })
       .skip(skip)
       .limit(limitNum)
