@@ -341,6 +341,123 @@ const useAttachmentStore = create(
         });
       },
 
+      // Upload single file from Google Drive
+      uploadFromGoogleDrive: async (driveFile, entityType, entityId, options = {}) => {
+        const entityKey = getEntityKey(entityType, entityId);
+        const uploadId = `gdrive-${Date.now()}-${driveFile.id}`;
+
+        // Set initial upload progress with Google Drive icon indicator
+        set((s) => ({
+          uploadProgress: {
+            ...s.uploadProgress,
+            [uploadId]: {
+              progress: 10,
+              status: 'uploading',
+              fileName: driveFile.name,
+              fileType: driveFile.mimeType?.startsWith('image/') ? 'image' : 'file',
+              preview: driveFile.iconUrl,
+              size: driveFile.size,
+              entityType,
+              entityId,
+              entityKey,
+              contextType: options.contextType,
+              contextRef: options.contextRef,
+              isGoogleDrive: true,
+              driveFile // Store for potential retry
+            }
+          }
+        }));
+
+        try {
+          // Simulate progress while uploading
+          const progressInterval = setInterval(() => {
+            const state = get();
+            const current = state.uploadProgress[uploadId];
+            if (current && current.status === 'uploading' && current.progress < 90) {
+              set((s) => ({
+                uploadProgress: {
+                  ...s.uploadProgress,
+                  [uploadId]: {
+                    ...s.uploadProgress[uploadId],
+                    progress: Math.min(90, (s.uploadProgress[uploadId]?.progress || 10) + 10)
+                  }
+                }
+              }));
+            }
+          }, 500);
+
+          const attachment = await attachmentService.uploadFromGoogleDrive(driveFile, entityId, {
+            ...options,
+            entityType
+          });
+
+          clearInterval(progressInterval);
+
+          set((s) => {
+            const current = s.attachments[entityKey] || [];
+            const exists = current.some(a => a._id === attachment._id);
+            const updatedList = exists
+              ? current.map(a => a._id === attachment._id ? attachment : a)
+              : [attachment, ...current];
+
+            return {
+              attachments: {
+                ...s.attachments,
+                [entityKey]: updatedList
+              },
+              uploadProgress: {
+                ...s.uploadProgress,
+                [uploadId]: {
+                  ...s.uploadProgress[uploadId],
+                  progress: 100,
+                  status: 'completed'
+                }
+              }
+            };
+          });
+
+          // Sync with workflow store if it's a card
+          if (entityType === 'card') {
+            const currentCount = get().attachments[entityKey]?.length || 0;
+            useWorkflowStore.getState().updateCardLocal(entityId, {
+              attachmentsCount: currentCount
+            });
+          }
+
+          // Clear progress after delay
+          setTimeout(() => {
+            get().clearUploadProgress(uploadId);
+          }, 1000);
+
+          return attachment;
+        } catch (error) {
+          set((s) => ({
+            uploadProgress: {
+              ...s.uploadProgress,
+              [uploadId]: {
+                ...s.uploadProgress[uploadId],
+                status: 'error',
+                error: error.message
+              }
+            }
+          }));
+          throw error;
+        }
+      },
+
+      // Upload multiple files from Google Drive
+      uploadMultipleFromGoogleDrive: async (driveFiles, entityType, entityId, options = {}) => {
+        // Handle each file individually to show individual progress bars
+        driveFiles.forEach(driveFile => {
+          get().uploadFromGoogleDrive(driveFile, entityType, entityId, options).catch(err => {
+            console.error(`Background Google Drive upload failed for ${driveFile.name}:`, err);
+          });
+        });
+
+        // Return immediately indicating uploads started
+        return { success: true, started: true, count: driveFiles.length };
+      },
+
       uploadFromPaste: async (imageData, entityType, entityId, options = {}) => {
         const entityKey = getEntityKey(entityType, entityId);
         const uploadId = `paste-${Date.now()}`;

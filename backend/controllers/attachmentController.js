@@ -936,3 +936,258 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Upload file from Google Drive to Cloudinary
+// @route   POST /api/attachments/upload-from-drive
+// @access  Private
+export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
+  const { 
+    fileId, 
+    fileName, 
+    mimeType, 
+    fileSize,
+    accessToken, 
+    cardId, 
+    subtaskId, 
+    nanoSubtaskId, 
+    contextType = 'description', 
+    contextRef,
+    commentId 
+  } = req.body;
+
+  // Validate required fields
+  if (!fileId || !accessToken) {
+    throw new ErrorResponse('File ID and access token are required', 400);
+  }
+
+  // Validate exactly one parent reference is provided
+  const parentCount = [cardId, subtaskId, nanoSubtaskId].filter(Boolean).length;
+  if (parentCount !== 1) {
+    throw new ErrorResponse('Exactly one parent reference (cardId, subtaskId, or nanoSubtaskId) is required', 400);
+  }
+
+  // Validate file size (10MB limit)
+  const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024;
+  if (fileSize && fileSize > MAX_FILE_SIZE) {
+    throw new ErrorResponse(`File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`, 400);
+  }
+
+  let boardId, parentType, parentRefId, folderPath;
+
+  if (cardId) {
+    const card = await Card.findById(cardId).select('board').lean();
+    if (!card) throw new ErrorResponse('Card not found', 404);
+    boardId = card.board;
+    parentType = 'card';
+    parentRefId = cardId;
+    folderPath = `flowtask/cards/${cardId}/attachments`;
+  } else if (subtaskId) {
+    const subtask = await Subtask.findById(subtaskId).populate('task', 'board').lean();
+    if (!subtask) throw new ErrorResponse('Subtask not found', 404);
+    boardId = subtask.task?.board;
+    parentType = 'subtask';
+    parentRefId = subtaskId;
+    folderPath = `flowtask/subtasks/${subtaskId}/attachments`;
+  } else if (nanoSubtaskId) {
+    const nano = await SubtaskNano.findById(nanoSubtaskId).populate({
+      path: 'subtask',
+      populate: { path: 'task', select: 'board' }
+    }).lean();
+    if (!nano) throw new ErrorResponse('Nano-subtask not found', 404);
+    boardId = nano.subtask?.task?.board;
+    parentType = 'nanoSubtask';
+    parentRefId = nanoSubtaskId;
+    folderPath = `flowtask/nanos/${nanoSubtaskId}/attachments`;
+  }
+
+  // Fetch file from Google Drive
+  let fileBuffer;
+  let actualMimeType = mimeType;
+  let actualFileName = fileName;
+
+  try {
+    // For Google Docs/Sheets/Slides, we need to export them
+    const googleDocsTypes = {
+      'application/vnd.google-apps.document': { 
+        exportMimeType: 'application/pdf', 
+        extension: '.pdf' 
+      },
+      'application/vnd.google-apps.spreadsheet': { 
+        exportMimeType: 'application/pdf', 
+        extension: '.pdf' 
+      },
+      'application/vnd.google-apps.presentation': { 
+        exportMimeType: 'application/pdf', 
+        extension: '.pdf' 
+      },
+      'application/vnd.google-apps.drawing': { 
+        exportMimeType: 'image/png', 
+        extension: '.png' 
+      }
+    };
+
+    let downloadUrl;
+    
+    if (googleDocsTypes[mimeType]) {
+      // Export Google Workspace files
+      const exportConfig = googleDocsTypes[mimeType];
+      actualMimeType = exportConfig.exportMimeType;
+      actualFileName = fileName.replace(/\.[^/.]+$/, '') + exportConfig.extension;
+      downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportConfig.exportMimeType)}`;
+    } else {
+      // Regular file download
+      downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+    }
+
+    const driveResponse = await fetch(downloadUrl, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (!driveResponse.ok) {
+      const errorText = await driveResponse.text();
+      console.error('Google Drive API error:', errorText);
+      
+      if (driveResponse.status === 401) {
+        throw new ErrorResponse('Google Drive access token expired. Please try again.', 401);
+      }
+      if (driveResponse.status === 403) {
+        throw new ErrorResponse('Access denied to Google Drive file', 403);
+      }
+      if (driveResponse.status === 404) {
+        throw new ErrorResponse('Google Drive file not found', 404);
+      }
+      
+      throw new ErrorResponse('Failed to fetch file from Google Drive', 500);
+    }
+
+    const arrayBuffer = await driveResponse.arrayBuffer();
+    fileBuffer = Buffer.from(arrayBuffer);
+
+    // Verify the file isn't empty
+    if (fileBuffer.length === 0) {
+      throw new ErrorResponse('Downloaded file is empty', 400);
+    }
+
+  } catch (error) {
+    if (error instanceof ErrorResponse) throw error;
+    console.error('Google Drive fetch error:', error);
+    throw new ErrorResponse(`Failed to fetch file from Google Drive: ${error.message}`, 500);
+  }
+
+  // Upload to Cloudinary
+  const fileType = getFileTypeCategory(actualMimeType);
+  const resourceType = getCloudinaryResourceType(actualMimeType);
+
+  let cloudinaryResult;
+  try {
+    cloudinaryResult = await uploadToCloudinary(fileBuffer, {
+      folder: folderPath,
+      resourceType,
+      context: {
+        [parentType]: parentRefId,
+        uploadedBy: req.user.id,
+        originalName: actualFileName,
+        source: 'google-drive',
+        driveFileId: fileId
+      }
+    });
+  } catch (error) {
+    console.error('Cloudinary upload failed:', error.message);
+    throw new ErrorResponse(
+      error.message.includes('Cloudinary configuration missing')
+        ? 'Server storage configuration error'
+        : 'File upload to storage failed',
+      500
+    );
+  }
+
+  // Create attachment record
+  const attachmentData = {
+    fileName: cloudinaryResult.public_id.split('/').pop(),
+    originalName: actualFileName,
+    fileType,
+    mimeType: actualMimeType,
+    fileSize: fileBuffer.length,
+    url: cloudinaryResult.url,
+    secureUrl: cloudinaryResult.secure_url,
+    publicId: cloudinaryResult.public_id,
+    resourceType: cloudinaryResult.resource_type,
+    format: cloudinaryResult.format,
+    contextType: contextType || 'description',
+    contextRef: contextType === 'comment' ? (commentId || contextRef || parentRefId) : (contextRef || parentRefId),
+    board: boardId,
+    comment: commentId || null,
+    uploadedBy: req.user.id,
+    width: cloudinaryResult.width,
+    height: cloudinaryResult.height,
+    pages: cloudinaryResult.pages,
+    duration: cloudinaryResult.duration
+  };
+
+  // Set the correct parent field
+  if (parentType === 'card') {
+    attachmentData.card = cardId;
+  } else if (parentType === 'subtask') {
+    attachmentData.subtask = subtaskId;
+  } else if (parentType === 'nanoSubtask') {
+    attachmentData.nanoSubtask = nanoSubtaskId;
+  }
+
+  // Add thumbnail URLs for images
+  if (fileType === 'image') {
+    attachmentData.thumbnailUrl = getThumbnailUrl(cloudinaryResult.public_id, 200, 200);
+    attachmentData.previewUrl = getOptimizedUrl(cloudinaryResult.public_id, {
+      width: 800,
+      height: 800,
+      crop: 'limit'
+    });
+  }
+
+  const attachment = await Attachment.create(attachmentData);
+  await attachment.populate('uploadedBy', 'name avatar');
+
+  // Log activity
+  const activityData = {
+    type: 'attachment_added',
+    description: `Added attachment from Google Drive: ${actualFileName}`,
+    user: req.user.id,
+    board: boardId
+  };
+  if (parentType === 'card') activityData.card = cardId;
+  await Activity.create(activityData);
+
+  // Emit real-time update
+  if (boardId) {
+    emitToBoard(boardId.toString(), 'attachment-added', {
+      parentType,
+      parentId: parentRefId,
+      cardId: parentType === 'card' ? cardId : null,
+      subtaskId: parentType === 'subtask' ? subtaskId : null,
+      nanoSubtaskId: parentType === 'nanoSubtask' ? nanoSubtaskId : null,
+      attachment,
+      addedBy: {
+        id: req.user.id,
+        name: req.user.name
+      },
+      source: 'google-drive'
+    });
+  }
+
+  // Invalidate cache
+  if (parentType === 'card') {
+    invalidateCache(`/api/cards/${cardId}`);
+    invalidateCache(`/api/attachments/card/${cardId}`);
+  } else if (parentType === 'subtask') {
+    invalidateCache(`/api/attachments/subtask/${subtaskId}`);
+  } else if (parentType === 'nanoSubtask') {
+    invalidateCache(`/api/attachments/nano/${nanoSubtaskId}`);
+  }
+
+  res.status(201).json({
+    success: true,
+    data: attachment,
+    source: 'google-drive'
+  });
+});
+

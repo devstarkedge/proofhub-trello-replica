@@ -1,9 +1,46 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Upload, Calendar, Clock, Users, Pin, Sparkles, Send, FileText, Image, File, AlertCircle, CheckCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { X, Upload, Calendar, Clock, Users, Pin, Sparkles, Send, FileText, Image, File as FileIcon, AlertCircle, CheckCircle, RefreshCw, Trash2, HardDrive, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { toast } from 'react-toastify';
+import useGoogleDrivePicker from '../hooks/useGoogleDrivePicker';
+
+// Google Drive SVG Icon component - Official Google Drive Logo
+const GoogleDriveIcon = ({ size = 16, className = '' }) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 87.3 78" 
+    className={className}
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path 
+      d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5l5.4 9.35z" 
+      fill="#0066DA"
+    />
+    <path 
+      d="M43.65 25L29.9 1.2c-1.35.8-2.5 1.9-3.3 3.3L1.2 52.35c-.8 1.4-1.2 2.95-1.2 4.5h27.5L43.65 25z" 
+      fill="#00AC47"
+    />
+    <path 
+      d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.85L73.55 76.8z" 
+      fill="#EA4335"
+    />
+    <path 
+      d="M43.65 25L57.4 1.2c-1.35-.8-2.9-1.2-4.5-1.2H34.15c-1.55 0-3.1.45-4.5 1.2L43.65 25z" 
+      fill="#00832D"
+    />
+    <path 
+      d="M59.85 53H27.5l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.55 0 3.1-.45 4.5-1.2L59.85 53z" 
+      fill="#2684FC"
+    />
+    <path 
+      d="M73.4 26.5L60.75 4.5c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.2 28h27.45c0-1.55-.4-3.1-1.2-4.5l-12.7-22z" 
+      fill="#FFBA00"
+    />
+  </svg>
+);
 
 // File type constants
 const ALLOWED_TYPES = {
@@ -50,6 +87,101 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   // Upload progress tracking
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Google Drive picker integration
+  const { openPicker, isLoading: isPickerLoading, isAvailable: isDriveAvailable } = useGoogleDrivePicker();
+
+  // Handle Google Drive file selection
+  const handleGoogleDriveSelect = useCallback(() => {
+    openPicker({
+      onSelect: async ({ files: driveFiles, accessToken }) => {
+        if (!driveFiles || driveFiles.length === 0) return;
+
+        // Convert Google Drive files to a format processable by our system
+        // For announcements, we'll fetch the file content from Drive and convert to File objects
+        const newFiles = [];
+        const newFileStates = {};
+
+        for (const driveFile of driveFiles) {
+          // Validate file count
+          if (files.length + newFiles.length >= MAX_FILES) {
+            toast.error(`Maximum ${MAX_FILES} files allowed`);
+            break;
+          }
+
+          // Validate file size
+          if (driveFile.size > MAX_FILE_SIZE) {
+            toast.error(`File "${driveFile.name}" exceeds 10MB limit`);
+            continue;
+          }
+
+          try {
+            // For Google Workspace files, they need to be exported
+            const googleDocsTypes = {
+              'application/vnd.google-apps.document': 'application/pdf',
+              'application/vnd.google-apps.spreadsheet': 'application/pdf',
+              'application/vnd.google-apps.presentation': 'application/pdf',
+            };
+
+            let downloadUrl;
+            let mimeType = driveFile.mimeType;
+            let fileName = driveFile.name;
+
+            if (googleDocsTypes[driveFile.mimeType]) {
+              // Export Google Workspace files as PDF
+              mimeType = 'application/pdf';
+              fileName = driveFile.name.replace(/\.[^/.]+$/, '') + '.pdf';
+              downloadUrl = `https://www.googleapis.com/drive/v3/files/${driveFile.id}/export?mimeType=${encodeURIComponent(mimeType)}`;
+            } else {
+              downloadUrl = `https://www.googleapis.com/drive/v3/files/${driveFile.id}?alt=media`;
+            }
+
+            // Fetch the file content
+            const response = await fetch(downloadUrl, {
+              headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to fetch ${driveFile.name}`);
+            }
+
+            const blob = await response.blob();
+            const file = new File([blob], fileName, { type: mimeType });
+
+            // Validate file type
+            const allAllowedTypes = [...ALLOWED_TYPES.images, ...ALLOWED_TYPES.documents];
+            if (!allAllowedTypes.includes(file.type)) {
+              toast.error(`File type not supported: ${fileName}`);
+              continue;
+            }
+
+            newFiles.push(file);
+            newFileStates[file.name] = {
+              status: 'pending',
+              progress: 0,
+              preview: ALLOWED_TYPES.images.includes(file.type) ? URL.createObjectURL(file) : null,
+              source: 'google-drive'
+            };
+          } catch (error) {
+            console.error(`Error fetching file from Google Drive:`, error);
+            toast.error(`Failed to load ${driveFile.name} from Google Drive`);
+          }
+        }
+
+        if (newFiles.length > 0) {
+          setFiles(prev => [...prev, ...newFiles]);
+          setFileStates(prev => ({ ...prev, ...newFileStates }));
+          toast.success(`Added ${newFiles.length} file(s) from Google Drive`);
+        }
+      },
+      onCancel: () => {
+        // User cancelled, no action needed
+      },
+      onError: (error) => {
+        toast.error(`Google Drive error: ${error}`);
+      }
+    });
+  }, [openPicker, files.length]);
 
   // Validate file
   const validateFile = (file) => {
@@ -407,7 +539,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
     if (file.type === 'application/pdf') {
       return <FileText className="w-6 h-6 text-red-500" />;
     }
-    return <File className="w-6 h-6 text-gray-500" />;
+    return <FileIcon className="w-6 h-6 text-gray-500" />;
   };
 
   // Get status icon
@@ -890,50 +1022,82 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                       </span>
                     </label>
                     
-                    {/* Drag & Drop Zone */}
-                    <div
-                      ref={dropZoneRef}
-                      onDragEnter={handleDragEnter}
-                      onDragLeave={handleDragLeave}
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
-                      className={`relative border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-all duration-300 ${
-                        isDragging 
-                          ? 'border-blue-500 bg-blue-50/50 scale-[1.02]' 
-                          : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/30 bg-gray-50/50'
-                      }`}
-                    >
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        onChange={handleFileChange}
-                        accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx"
-                        className="hidden"
-                      />
-                      
-                      <motion.div
-                        animate={isDragging ? { scale: 1.02 } : { scale: 1 }}
-                        className="flex items-center justify-center gap-3"
+                    {/* Upload source buttons */}
+                    <div className="flex gap-2">
+                      {/* Drag & Drop Zone */}
+                      <div
+                        ref={dropZoneRef}
+                        onDragEnter={handleDragEnter}
+                        onDragLeave={handleDragLeave}
+                        onDragOver={handleDragOver}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`flex-1 relative border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-all duration-300 ${
+                          isDragging 
+                            ? 'border-blue-500 bg-blue-50/50 scale-[1.02]' 
+                            : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/30 bg-gray-50/50'
+                        }`}
                       >
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                          isDragging ? 'bg-blue-100' : 'bg-gray-100'
-                        }`}>
-                          <Upload className={`w-4 h-4 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
-                        </div>
-                        <div className="text-left">
-                          <p className={`text-sm font-medium ${isDragging ? 'text-blue-600' : 'text-gray-600'}`}>
-                            {isDragging ? 'Drop files' : 'Click to browse'}
-                          </p>
-                          <p className="text-[10px] text-gray-400">
-                             Supports: JPG, PNG, WEBP, PDF...
-                          </p>
-                        </div>
-                      </motion.div>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          onChange={handleFileChange}
+                          accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx"
+                          className="hidden"
+                        />
+                        
+                        <motion.div
+                          animate={isDragging ? { scale: 1.02 } : { scale: 1 }}
+                          className="flex items-center justify-center gap-3"
+                        >
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                            isDragging ? 'bg-blue-100' : 'bg-gray-100'
+                          }`}>
+                            <HardDrive className={`w-4 h-4 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
+                          </div>
+                          <div className="text-left">
+                            <p className={`text-sm font-medium ${isDragging ? 'text-blue-600' : 'text-gray-600'}`}>
+                              {isDragging ? 'Drop files' : 'Device'}
+                            </p>
+                            <p className="text-[10px] text-gray-400">
+                               Click or drag files
+                            </p>
+                          </div>
+                        </motion.div>
+                      </div>
+
+                      {/* Google Drive Button */}
+                      {isDriveAvailable && (
+                        <motion.button
+                          type="button"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={handleGoogleDriveSelect}
+                          disabled={isPickerLoading}
+                          className="flex-1 flex items-center justify-center gap-3 px-4 py-3
+                                     bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100
+                                     border-2 border-blue-200 hover:border-blue-300 rounded-xl 
+                                     text-blue-700 font-medium transition-all
+                                     disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-white shadow-sm">
+                            {isPickerLoading ? (
+                              <Loader2 size={16} className="animate-spin text-blue-600" />
+                            ) : (
+                              <GoogleDriveIcon size={16} />
+                            )}
+                          </div>
+                          <div className="text-left">
+                            <p className="text-sm font-medium">Google Drive</p>
+                            <p className="text-[10px] text-blue-500">Pick from Drive</p>
+                          </div>
+                        </motion.button>
+                      )}
                     </div>
 
                     {/* Upload Progress Bar (during submission) */}
+
                     <AnimatePresence>
                       {isUploading && uploadProgress > 0 && (
                         <motion.div

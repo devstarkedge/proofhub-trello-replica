@@ -93,6 +93,65 @@ class AttachmentService {
     }
   }
 
+  // Upload file from Google Drive to Cloudinary via backend
+  async uploadFromGoogleDrive(driveFile, entityId, options = {}) {
+    const { 
+      entityType = 'card', 
+      accessToken, 
+      contextType, 
+      contextRef, 
+      commentId,
+      onProgress 
+    } = options;
+
+    // Build request body
+    const body = {
+      fileId: driveFile.id,
+      fileName: driveFile.name,
+      mimeType: driveFile.mimeType,
+      fileSize: driveFile.size,
+      accessToken,
+      contextType,
+      contextRef
+    };
+
+    // Add the appropriate entity ID based on entity type
+    switch (entityType) {
+      case 'card':
+        body.cardId = entityId;
+        break;
+      case 'subtask':
+        body.subtaskId = entityId;
+        break;
+      case 'nanoSubtask':
+        body.nanoSubtaskId = entityId;
+        break;
+      default:
+        body.cardId = entityId;
+    }
+
+    if (commentId) body.commentId = commentId;
+
+    try {
+      const response = await fetch(`${baseURL}/api/attachments/upload-from-drive`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Google Drive upload failed');
+      }
+
+      const result = await response.json();
+      return result.data;
+    } catch (error) {
+      console.error('Google Drive upload error:', error);
+      throw error;
+    }
+  }
+
   // Upload multiple files with batching
   async uploadMultiple(files, cardId, options = {}) {
     const { contextType = 'card', contextRef, onProgress, batchSize = 3 } = options;

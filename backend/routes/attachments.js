@@ -12,6 +12,7 @@ import {
   deleteMultipleAttachments,
   setAsCover,
   uploadFromPaste,
+  uploadFromGoogleDrive,
   uploadMiddleware
 } from '../controllers/attachmentController.js';
 import { restoreAttachment, permanentlyDeleteAttachment, bulkRestore, bulkPermanentDelete } from '../controllers/trashController.js';
@@ -25,6 +26,7 @@ router.use(protect);
 router.post('/upload', uploadMiddleware.single('file'), uploadAttachment);
 router.post('/upload-multiple', uploadMiddleware.array('files', 10), uploadMultipleAttachments);
 router.post('/paste', uploadFromPaste);
+router.post('/upload-from-drive', uploadFromGoogleDrive);
 
 // BULK ROUTES MUST COME BEFORE /:id ROUTES (order matters in Express)
 // Delete routes
