@@ -4,7 +4,7 @@ import {
   ChevronDown, Kanban, List, Calendar, BarChart3,
   Users, Building2, CheckCircle, AlertCircle, UserPlus,
   FolderPlus, Folder, ArrowRight, Trash2, ArrowLeft,
-  CreditCard, HelpCircle
+  CreditCard, HelpCircle, Palette
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,6 +15,7 @@ import Sidebar from './Sidebar';
 import Avatar from './Avatar';
 
 const UserVerificationModal = lazy(() => import('./UserVerificationModal'));
+const AppearanceModal = lazy(() => import('./AppearanceModal'));
 
 const Header = ({ boardName }) => {
   const navigate = useNavigate();
@@ -30,6 +31,7 @@ const Header = ({ boardName }) => {
   const [showDepartmentSelector, setShowDepartmentSelector] = useState(false);
   const [showNotificationExpand, setShowNotificationExpand] = useState(false);
   const [visibleNotifications, setVisibleNotifications] = useState(5);
+  const [showAppearanceModal, setShowAppearanceModal] = useState(false);
 
   const notificationRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -519,6 +521,16 @@ const Header = ({ boardName }) => {
                       </button>
                       <button
                         onClick={() => {
+                          setShowAppearanceModal(true);
+                          setShowUserMenu(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-3 text-gray-700"
+                      >
+                        <Palette size={16} />
+                        Appearance
+                      </button>
+                      <button
+                        onClick={() => {
                           navigate('/settings');
                           setShowUserMenu(false);
                         }}
@@ -581,6 +593,13 @@ const Header = ({ boardName }) => {
           />
         </Suspense>
       )}
+      {/* Appearance Modal */}
+      <Suspense fallback={null}>
+        <AppearanceModal
+          isOpen={showAppearanceModal}
+          onClose={() => setShowAppearanceModal(false)}
+        />
+      </Suspense>
     </header>
   );
 };

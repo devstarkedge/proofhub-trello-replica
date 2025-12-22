@@ -1,7 +1,1081 @@
+@import url('./theme/tokens.css');
 @import "tailwindcss";
 
-/* Performance-optimized animations */
+/* ============================================
+   GLOBAL THEME BASE STYLES
+   ============================================ */
+
+/* Apply theme background to root elements */
+html {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+  transition: background-color var(--motion-duration-normal) var(--motion-easing),
+    color var(--motion-duration-fast) var(--motion-easing);
+}
+
+/* Theme-aware scrollbar styles */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-thumb-hover);
+}
+
+/* Global selection styling */
+::selection {
+  background-color: var(--color-primary-subtle);
+  color: var(--color-text-primary);
+}
+
+/* Focus ring styling */
+:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+/* Placeholder text */
+::placeholder {
+  color: var(--color-text-placeholder);
+}
+
+/* HR styling */
+hr {
+  border-color: var(--color-border-default);
+}
+
+/* ============================================
+   GLOBAL DARK MODE OVERRIDES
+   These override common Tailwind classes to apply
+   dark mode styling application-wide automatically
+   ============================================ */
+
+/* === BACKGROUND OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .bg-white {
+  background-color: var(--color-bg-base) !important;
+}
+
+:root[data-theme="dark"] .bg-gray-50 {
+  background-color: var(--color-bg-subtle) !important;
+}
+
+:root[data-theme="dark"] .bg-gray-100 {
+  background-color: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] .bg-gray-200 {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+/* Gradient backgrounds */
+:root[data-theme="dark"] .from-gray-50,
+:root[data-theme="dark"] .from-gray-100 {
+  --tw-gradient-from: var(--color-bg-subtle) !important;
+}
+
+:root[data-theme="dark"] .to-gray-50,
+:root[data-theme="dark"] .to-gray-100 {
+  --tw-gradient-to: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] .via-gray-50 {
+  --tw-gradient-via: var(--color-bg-subtle) !important;
+}
+
+:root[data-theme="dark"] .from-blue-50,
+:root[data-theme="dark"] .from-indigo-50,
+:root[data-theme="dark"] .from-purple-50 {
+  --tw-gradient-from: var(--color-primary-subtle) !important;
+}
+
+:root[data-theme="dark"] .to-blue-50,
+:root[data-theme="dark"] .to-indigo-50,
+:root[data-theme="dark"] .to-purple-50 {
+  --tw-gradient-to: var(--color-primary-subtle) !important;
+}
+
+/* Hero/banner gradients */
+:root[data-theme="dark"] .from-blue-600,
+:root[data-theme="dark"] .from-indigo-600,
+:root[data-theme="dark"] .from-purple-600 {
+  --tw-gradient-from: var(--color-primary-800) !important;
+}
+
+:root[data-theme="dark"] .via-indigo-600,
+:root[data-theme="dark"] .via-purple-600 {
+  --tw-gradient-via: var(--color-primary-700) !important;
+}
+
+:root[data-theme="dark"] .to-purple-600,
+:root[data-theme="dark"] .to-indigo-600 {
+  --tw-gradient-to: var(--color-primary-900) !important;
+}
+
+/* === TEXT COLOR OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .text-gray-900 {
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] .text-gray-800 {
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] .text-gray-700 {
+  color: var(--color-text-secondary) !important;
+}
+
+:root[data-theme="dark"] .text-gray-600 {
+  color: var(--color-text-secondary) !important;
+}
+
+:root[data-theme="dark"] .text-gray-500 {
+  color: var(--color-text-muted) !important;
+}
+
+:root[data-theme="dark"] .text-gray-400 {
+  color: var(--color-text-placeholder) !important;
+}
+
+/* Primary colors */
+:root[data-theme="dark"] .text-blue-600,
+:root[data-theme="dark"] .text-blue-700 {
+  color: var(--color-primary) !important;
+}
+
+:root[data-theme="dark"] .text-indigo-600,
+:root[data-theme="dark"] .text-indigo-700 {
+  color: var(--color-primary) !important;
+}
+
+:root[data-theme="dark"] .text-purple-600,
+:root[data-theme="dark"] .text-purple-700 {
+  color: var(--color-primary) !important;
+}
+
+/* === BORDER OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .border-gray-100 {
+  border-color: var(--color-border-subtle) !important;
+}
+
+:root[data-theme="dark"] .border-gray-200 {
+  border-color: var(--color-border-default) !important;
+}
+
+:root[data-theme="dark"] .border-gray-300 {
+  border-color: var(--color-border-emphasis) !important;
+}
+
+:root[data-theme="dark"] .border-blue-200,
+:root[data-theme="dark"] .border-indigo-200,
+:root[data-theme="dark"] .border-purple-200 {
+  border-color: var(--color-primary-700) !important;
+}
+
+/* Divide colors */
+:root[data-theme="dark"] .divide-gray-100> :not([hidden])~ :not([hidden]),
+:root[data-theme="dark"] .divide-gray-200> :not([hidden])~ :not([hidden]) {
+  border-color: var(--color-border-default) !important;
+}
+
+/* === RING OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .ring-gray-100,
+:root[data-theme="dark"] .ring-gray-200 {
+  --tw-ring-color: var(--color-border-default) !important;
+}
+
+:root[data-theme="dark"] .ring-white {
+  --tw-ring-color: var(--color-bg-base) !important;
+}
+
+/* === HOVER STATE OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .hover\:bg-gray-50:hover {
+  background-color: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] .hover\:bg-gray-100:hover {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+:root[data-theme="dark"] .hover\:text-gray-900:hover {
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] .hover\:text-gray-700:hover {
+  color: var(--color-text-secondary) !important;
+}
+
+:root[data-theme="dark"] .hover\:bg-blue-50:hover,
+:root[data-theme="dark"] .hover\:bg-indigo-50:hover,
+:root[data-theme="dark"] .hover\:bg-purple-50:hover {
+  background-color: var(--color-primary-subtle-hover) !important;
+}
+
+:root[data-theme="dark"] .hover\:bg-red-50:hover {
+  background-color: var(--color-error-subtle) !important;
+}
+
+:root[data-theme="dark"] .hover\:from-blue-100:hover,
+:root[data-theme="dark"] .hover\:from-indigo-100:hover {
+  --tw-gradient-from: var(--color-primary-subtle-hover) !important;
+}
+
+:root[data-theme="dark"] .hover\:to-blue-100:hover,
+:root[data-theme="dark"] .hover\:to-indigo-100:hover {
+  --tw-gradient-to: var(--color-primary-subtle-hover) !important;
+}
+
+/* === FOCUS STATE OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .focus\:ring-blue-500:focus {
+  --tw-ring-color: var(--color-primary) !important;
+}
+
+:root[data-theme="dark"] .focus\:border-blue-500:focus,
+:root[data-theme="dark"] .focus\:border-indigo-500:focus {
+  border-color: var(--color-primary) !important;
+}
+
+/* === SEMANTIC COLOR BACKGROUNDS - Dark Mode === */
+:root[data-theme="dark"] .bg-blue-50,
+:root[data-theme="dark"] .bg-indigo-50 {
+  background-color: var(--color-primary-subtle) !important;
+}
+
+:root[data-theme="dark"] .bg-blue-100,
+:root[data-theme="dark"] .bg-indigo-100 {
+  background-color: var(--color-primary-subtle-hover) !important;
+}
+
+:root[data-theme="dark"] .bg-green-50 {
+  background-color: var(--color-success-subtle) !important;
+}
+
+:root[data-theme="dark"] .bg-red-50 {
+  background-color: var(--color-error-subtle) !important;
+}
+
+:root[data-theme="dark"] .bg-amber-50,
+:root[data-theme="dark"] .bg-yellow-50,
+:root[data-theme="dark"] .bg-orange-50 {
+  background-color: var(--color-warning-subtle) !important;
+}
+
+/* === SEMANTIC TEXT COLORS - Dark Mode === */
+:root[data-theme="dark"] .text-green-600,
+:root[data-theme="dark"] .text-green-700 {
+  color: var(--color-success-text) !important;
+}
+
+:root[data-theme="dark"] .text-red-600,
+:root[data-theme="dark"] .text-red-700 {
+  color: var(--color-error-text) !important;
+}
+
+:root[data-theme="dark"] .text-amber-600,
+:root[data-theme="dark"] .text-amber-700,
+:root[data-theme="dark"] .text-orange-600,
+:root[data-theme="dark"] .text-orange-700 {
+  color: var(--color-warning-text) !important;
+}
+
+/* === SHADOW OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .shadow-sm {
+  box-shadow: var(--shadow-sm) !important;
+}
+
+:root[data-theme="dark"] .shadow-md {
+  box-shadow: var(--shadow-md) !important;
+}
+
+:root[data-theme="dark"] .shadow-lg {
+  box-shadow: var(--shadow-lg) !important;
+}
+
+:root[data-theme="dark"] .shadow-xl {
+  box-shadow: var(--shadow-xl) !important;
+}
+
+:root[data-theme="dark"] .shadow-2xl {
+  box-shadow: var(--shadow-2xl) !important;
+}
+
+/* === SKELETON/LOADING OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .animate-pulse {
+  opacity: 0.6;
+}
+
+/* === INPUT OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select {
+  background-color: var(--color-input-bg) !important;
+  border-color: var(--color-input-border) !important;
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] textarea:focus,
+:root[data-theme="dark"] select:focus {
+  border-color: var(--color-input-border-focus) !important;
+}
+
+/* === CARD/PANEL OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] [class*="rounded"][class*="shadow"][class*="bg-white"],
+:root[data-theme="dark"] [class*="rounded"][class*="border"][class*="bg-white"] {
+  background-color: var(--color-card-bg) !important;
+  border-color: var(--color-card-border) !important;
+}
+
+/* === MODAL/DROPDOWN OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .bg-black\/30,
+:root[data-theme="dark"] .bg-black\/40,
+:root[data-theme="dark"] .bg-black\/50 {
+  background-color: var(--color-modal-overlay) !important;
+}
+
+/* === TABLE OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] table {
+  border-color: var(--color-border-default);
+}
+
+:root[data-theme="dark"] th {
+  background-color: var(--color-bg-muted) !important;
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-border-default) !important;
+}
+
+:root[data-theme="dark"] td {
+  background-color: var(--color-bg-base) !important;
+  color: var(--color-text-secondary) !important;
+  border-color: var(--color-border-subtle) !important;
+}
+
+:root[data-theme="dark"] tr:hover td {
+  background-color: var(--color-bg-subtle) !important;
+}
+
+/* === BUTTON PRIMARY OVERRIDES - Dark Mode === */
+:root[data-theme="dark"] .bg-blue-600,
+:root[data-theme="dark"] .bg-indigo-600 {
+  background-color: var(--color-primary) !important;
+}
+
+:root[data-theme="dark"] .hover\:bg-blue-700:hover,
+:root[data-theme="dark"] .hover\:bg-indigo-700:hover {
+  background-color: var(--color-primary-hover) !important;
+}
+
+:root[data-theme="dark"] .hover\:from-blue-700:hover,
+:root[data-theme="dark"] .hover\:from-indigo-700:hover {
+  --tw-gradient-from: var(--color-primary-hover) !important;
+}
+
+:root[data-theme="dark"] .hover\:to-indigo-700:hover {
+  --tw-gradient-to: var(--color-primary-active) !important;
+}
+
+/* === PLACEHOLDER TEXT - Dark Mode === */
+:root[data-theme="dark"] .placeholder-gray-400::placeholder,
+:root[data-theme="dark"] .placeholder-gray-500::placeholder {
+  color: var(--color-text-placeholder) !important;
+}
+
+/* === BACKDROP BLUR - Dark Mode adjustments === */
+:root[data-theme="dark"] .backdrop-blur-sm,
+:root[data-theme="dark"] .backdrop-blur-md,
+:root[data-theme="dark"] .backdrop-blur-lg {
+  --tw-backdrop-blur: blur(12px);
+}
+
+/* === SPECIAL: White backgrounds with transparency === */
+:root[data-theme="dark"] .bg-white\/90,
+:root[data-theme="dark"] .bg-white\/95 {
+  background-color: rgba(31, 41, 55, 0.95) !important;
+}
+
+:root[data-theme="dark"] .bg-white\/80 {
+  background-color: rgba(31, 41, 55, 0.8) !important;
+}
+
+:root[data-theme="dark"] .bg-white\/50 {
+  background-color: rgba(31, 41, 55, 0.5) !important;
+}
+
+:root[data-theme="dark"] .bg-white\/20,
+:root[data-theme="dark"] .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* === ACCENT COLOR ADJUSTMENTS === */
+:root[data-theme="dark"] .bg-purple-50 {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+}
+
+:root[data-theme="dark"] .bg-pink-50 {
+  background-color: rgba(236, 72, 153, 0.15) !important;
+}
+
+:root[data-theme="dark"] .from-purple-50,
+:root[data-theme="dark"] .to-pink-50 {
+  --tw-gradient-from: rgba(168, 85, 247, 0.15) !important;
+  --tw-gradient-to: rgba(236, 72, 153, 0.15) !important;
+}
+
+:root[data-theme="dark"] .hover\:from-purple-100:hover,
+:root[data-theme="dark"] .hover\:to-pink-100:hover {
+  --tw-gradient-from: rgba(168, 85, 247, 0.25) !important;
+  --tw-gradient-to: rgba(236, 72, 153, 0.25) !important;
+}
+
+:root[data-theme="dark"] .text-purple-600 {
+  color: #c084fc !important;
+}
+
+:root[data-theme="dark"] .border-purple-200 {
+  border-color: rgba(168, 85, 247, 0.4) !important;
+}
+
+/* === GRADIENT HERO SECTION === */
+:root[data-theme="dark"] .bg-gradient-to-r.from-blue-600.via-indigo-600.to-purple-600 {
+  background: linear-gradient(to right, #1e40af, #3730a3, #5b21b6) !important;
+}
+
+:root[data-theme="dark"] .bg-gradient-to-br.from-gray-50.via-blue-50.to-indigo-50 {
+  background: linear-gradient(to bottom right, var(--color-bg-base), var(--color-bg-subtle), var(--color-bg-base)) !important;
+}
+
+/* === ADDITIONAL DARK MODE OVERRIDES === */
+
+/* Header navigation pill backgrounds */
+:root[data-theme="dark"] nav.bg-gray-100 {
+  background-color: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] nav .bg-white {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+/* Gray solid backgrounds (common in headers/controls) */
+:root[data-theme="dark"] .bg-gray-300 {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+:root[data-theme="dark"] .bg-gray-400 {
+  background-color: #4b5563 !important;
+}
+
+:root[data-theme="dark"] .bg-gray-500 {
+  background-color: #6b7280 !important;
+}
+
+/* Status badges and solid color fills */
+:root[data-theme="dark"] .bg-green-100 {
+  background-color: var(--color-success-subtle) !important;
+}
+
+:root[data-theme="dark"] .bg-red-100 {
+  background-color: var(--color-error-subtle) !important;
+}
+
+:root[data-theme="dark"] .bg-yellow-100,
+:root[data-theme="dark"] .bg-amber-100,
+:root[data-theme="dark"] .bg-orange-100 {
+  background-color: var(--color-warning-subtle) !important;
+}
+
+:root[data-theme="dark"] .bg-blue-100,
+:root[data-theme="dark"] .bg-indigo-100,
+:root[data-theme="dark"] .bg-purple-100 {
+  background-color: var(--color-primary-subtle-hover) !important;
+}
+
+:root[data-theme="dark"] .bg-pink-100 {
+  background-color: rgba(236, 72, 153, 0.25) !important;
+}
+
+:root[data-theme="dark"] .bg-cyan-100,
+:root[data-theme="dark"] .bg-teal-100 {
+  background-color: rgba(6, 182, 212, 0.2) !important;
+}
+
+/* Status text colors for badges */
+:root[data-theme="dark"] .text-green-800 {
+  color: var(--color-success-text) !important;
+}
+
+:root[data-theme="dark"] .text-red-800 {
+  color: var(--color-error-text) !important;
+}
+
+:root[data-theme="dark"] .text-yellow-800,
+:root[data-theme="dark"] .text-amber-800,
+:root[data-theme="dark"] .text-orange-800 {
+  color: var(--color-warning-text) !important;
+}
+
+:root[data-theme="dark"] .text-blue-800,
+:root[data-theme="dark"] .text-indigo-800,
+:root[data-theme="dark"] .text-purple-800 {
+  color: #93c5fd !important;
+}
+
+/* View All Projects type gradient buttons */
+:root[data-theme="dark"] .bg-gradient-to-r.from-gray-50.to-blue-50,
+:root[data-theme="dark"] .bg-gradient-to-r.from-gray-50.to-indigo-50 {
+  background: linear-gradient(to right, var(--color-bg-muted), var(--color-primary-subtle)) !important;
+}
+
+/* Button backgrounds */
+:root[data-theme="dark"] .hover\:bg-white:hover {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+:root[data-theme="dark"] .focus\:bg-white:focus {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+/* Active/selected states */
+:root[data-theme="dark"] .active\:bg-gray-50:active {
+  background-color: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] .active\:bg-gray-100:active {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+/* Hover border colors */
+:root[data-theme="dark"] .hover\:border-gray-300:hover {
+  border-color: var(--color-border-emphasis) !important;
+}
+
+:root[data-theme="dark"] .hover\:border-gray-400:hover {
+  border-color: #6b7280 !important;
+}
+
+/* Secondary action buttons with light backgrounds */
+:root[data-theme="dark"] .bg-slate-100 {
+  background-color: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] .bg-zinc-100 {
+  background-color: var(--color-bg-muted) !important;
+}
+
+/* Navigation active state for workflow tabs */
+:root[data-theme="dark"] button.bg-white.text-blue-600 {
+  background-color: var(--color-bg-emphasis) !important;
+  color: var(--color-primary) !important;
+}
+
+/* Dropdown and popup backgrounds */
+:root[data-theme="dark"] [role="menu"],
+:root[data-theme="dark"] [role="listbox"],
+:root[data-theme="dark"] [role="dialog"] {
+  background-color: var(--color-bg-base) !important;
+  border-color: var(--color-border-default) !important;
+}
+
+/* Dropdown menu items */
+:root[data-theme="dark"] [role="menuitem"]:hover,
+:root[data-theme="dark"] [role="option"]:hover {
+  background-color: var(--color-bg-muted) !important;
+}
+
+/* Avatar ring adjustments */
+:root[data-theme="dark"] .ring-white\/50 {
+  --tw-ring-color: rgba(55, 65, 81, 0.5) !important;
+}
+
+/* Loading overlay backgrounds */
+:root[data-theme="dark"] .bg-white.bg-opacity-50,
+:root[data-theme="dark"] .bg-white\/60 {
+  background-color: rgba(31, 41, 55, 0.6) !important;
+}
+
+/* Tooltip backgrounds */
+:root[data-theme="dark"] [role="tooltip"] {
+  background-color: var(--color-bg-emphasis) !important;
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-border-default) !important;
+}
+
+/* Time/date inputs */
+:root[data-theme="dark"] input[type="date"],
+:root[data-theme="dark"] input[type="time"],
+:root[data-theme="dark"] input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+/* Checkboxes and radio buttons */
+/* Force white background in light mode to prevent dark system default leaks */
+:root:not([data-theme="dark"]) input[type="checkbox"],
+:root:not([data-theme="dark"]) input[type="radio"] {
+  background-color: #ffffff;
+}
+
+:root[data-theme="dark"] input[type="checkbox"],
+:root[data-theme="dark"] input[type="radio"] {
+  background-color: var(--color-bg-base);
+  border-color: var(--color-border-emphasis);
+}
+
+:root[data-theme="dark"] input[type="checkbox"]:checked,
+:root[data-theme="dark"] input[type="radio"]:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* Disabled states */
+:root[data-theme="dark"] .disabled\:bg-gray-100:disabled {
+  background-color: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] .disabled\:text-gray-400:disabled {
+  color: var(--color-text-muted) !important;
+}
+
+/* Icon containers */
+:root[data-theme="dark"] .rounded-full.bg-gray-50,
+:root[data-theme="dark"] .rounded-full.bg-gray-100 {
+  background-color: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] .rounded-full.bg-blue-50,
+:root[data-theme="dark"] .rounded-full.bg-indigo-50 {
+  background-color: var(--color-primary-subtle) !important;
+}
+
+/* Rich text editor backgrounds */
+:root[data-theme="dark"] .prose {
+  color: var(--color-text-primary);
+}
+
+:root[data-theme="dark"] .prose-headings {
+  color: var(--color-text-primary);
+}
+
+/* Charts and data visualization containers */
+:root[data-theme="dark"] .recharts-wrapper,
+:root[data-theme="dark"] .recharts-surface {
+  background-color: transparent !important;
+}
+
+:root[data-theme="dark"] .recharts-cartesian-grid line,
+:root[data-theme="dark"] .recharts-cartesian-axis line {
+  stroke: var(--color-border-default) !important;
+}
+
+:root[data-theme="dark"] .recharts-text {
+  fill: var(--color-text-muted) !important;
+}
+
+/* Notification panel */
+:root[data-theme="dark"] .notification-panel {
+  background-color: var(--color-bg-base) !important;
+  border-color: var(--color-border-default) !important;
+}
+
+/* Workflow page - Add List button and similar buttons with purple/indigo text */
+:root[data-theme="dark"] .text-purple-900 {
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] .text-indigo-900 {
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] .text-blue-900 {
+  color: var(--color-text-primary) !important;
+}
+
+/* Buttons with bg-white and dark text - make them dark with light text */
+:root[data-theme="dark"] button.bg-white.text-purple-900,
+:root[data-theme="dark"] button.bg-white.text-indigo-900,
+:root[data-theme="dark"] button.bg-white.text-blue-900 {
+  background-color: var(--color-primary) !important;
+  color: white !important;
+}
+
+:root[data-theme="dark"] button.bg-white.text-purple-900:hover,
+:root[data-theme="dark"] button.bg-white.text-indigo-900:hover,
+:root[data-theme="dark"] button.bg-white.text-blue-900:hover {
+  background-color: var(--color-primary-hover) !important;
+}
+
+/* ============================================
+   CARD COMPONENT DARK MODE OVERRIDES
+   ============================================ */
+
+/* Card container - dark surface with subtle border */
+:root[data-theme="dark"] .group\/card.bg-white,
+:root[data-theme="dark"] [class*="group/card"].bg-white {
+  background-color: var(--color-card-bg) !important;
+  background-image: linear-gradient(to bottom right, var(--color-card-bg), var(--color-bg-muted)) !important;
+  border-color: var(--color-card-border) !important;
+}
+
+/* Card gradient override */
+:root[data-theme="dark"] .bg-gradient-to-br.from-white.to-gray-50\/50 {
+  background: linear-gradient(to bottom right, var(--color-card-bg), var(--color-bg-muted)) !important;
+}
+
+/* Card title text */
+:root[data-theme="dark"] .text-gray-800 {
+  color: var(--color-text-primary) !important;
+}
+
+/* Card title hover state */
+:root[data-theme="dark"] .group-hover\/card\:text-purple-700:hover,
+:root[data-theme="dark"] [class*="group-hover/card:text-purple-700"] {
+  color: var(--color-primary) !important;
+}
+
+/* Card meta text and subtask counters */
+:root[data-theme="dark"] .text-gray-500 {
+  color: var(--color-text-muted) !important;
+}
+
+/* Card footer border */
+:root[data-theme="dark"] .border-gray-100\/60 {
+  border-color: var(--color-border-subtle) !important;
+}
+
+/* Card hover shadow */
+:root[data-theme="dark"] .hover\:shadow-md:hover {
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* Card hover border */
+:root[data-theme="dark"] .hover\:border-gray-200:hover {
+  border-color: var(--color-border-default) !important;
+}
+
+/* Date badge backgrounds */
+:root[data-theme="dark"] .bg-gray-50.text-gray-500 {
+  background-color: var(--color-bg-muted) !important;
+  color: var(--color-text-muted) !important;
+}
+
+/* Assignee avatar extra count */
+:root[data-theme="dark"] .ring-white.bg-gray-50 {
+  background-color: var(--color-bg-emphasis) !important;
+  --tw-ring-color: var(--color-bg-base) !important;
+}
+
+/* Floating action buttons on cards */
+:root[data-theme="dark"] .bg-white\/90 {
+  background-color: rgba(31, 41, 55, 0.95) !important;
+}
+
+:root[data-theme="dark"] .hover\:bg-red-50:hover {
+  background-color: var(--color-error-subtle) !important;
+}
+
+:root[data-theme="dark"] .hover\:bg-green-50:hover {
+  background-color: var(--color-success-subtle) !important;
+}
+
+/* Time logged badge */
+:root[data-theme="dark"] .bg-green-50.text-green-600 {
+  background-color: var(--color-success-subtle) !important;
+  color: var(--color-success-text) !important;
+}
+
+:root[data-theme="dark"] .border-green-100 {
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+/* Archive countdown badge */
+:root[data-theme="dark"] .bg-orange-50.text-orange-700 {
+  background-color: var(--color-warning-subtle) !important;
+  color: var(--color-warning-text) !important;
+}
+
+:root[data-theme="dark"] .border-orange-100 {
+  border-color: rgba(249, 115, 22, 0.3) !important;
+}
+
+/* Label badges with semi-transparent backgrounds */
+:root[data-theme="dark"] [class*="backdrop-blur-md"] {
+  backdrop-filter: blur(8px) !important;
+}
+
+/* Card loading overlay */
+:root[data-theme="dark"] .bg-white\/50.backdrop-blur-\[1px\] {
+  background-color: rgba(31, 41, 55, 0.5) !important;
+}
+
+/* List column headers and add card buttons */
+:root[data-theme="dark"] .flex.items-center.gap-2.text-gray-600 {
+  color: var(--color-text-secondary) !important;
+}
+
+/* Purple ring on dragging */
+:root[data-theme="dark"] .ring-purple-500\/20 {
+  --tw-ring-color: rgba(168, 85, 247, 0.3) !important;
+}
+
+/* Card border transparency fix */
+:root[data-theme="dark"] .border-gray-100\/50 {
+  border-color: var(--color-border-subtle) !important;
+}
+
+/* ============================================
+   RECURRING SETTINGS MODAL DARK MODE OVERRIDES
+   ============================================ */
+
+/* Modal header gradient - blue/indigo */
+:root[data-theme="dark"] .bg-gradient-to-r.from-blue-50.to-indigo-50 {
+  background: linear-gradient(to right, rgba(59, 130, 246, 0.15), rgba(99, 102, 241, 0.15)) !important;
+}
+
+/* Schedule summary section */
+:root[data-theme="dark"] .bg-gradient-to-r.from-blue-50.to-indigo-50.border-blue-200 {
+  background: linear-gradient(to right, rgba(59, 130, 246, 0.15), rgba(99, 102, 241, 0.15)) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Daily options - orange/yellow gradient */
+:root[data-theme="dark"] .bg-gradient-to-br.from-orange-50.to-yellow-50 {
+  background: linear-gradient(to bottom right, rgba(249, 115, 22, 0.15), rgba(234, 179, 8, 0.15)) !important;
+}
+
+:root[data-theme="dark"] .border-orange-200 {
+  border-color: rgba(249, 115, 22, 0.3) !important;
+}
+
+/* Weekly options - green/emerald gradient */
+:root[data-theme="dark"] .bg-gradient-to-br.from-green-50.to-emerald-50 {
+  background: linear-gradient(to bottom right, rgba(34, 197, 94, 0.15), rgba(16, 185, 129, 0.15)) !important;
+}
+
+:root[data-theme="dark"] .border-green-200 {
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+/* Monthly options - purple/indigo gradient */
+:root[data-theme="dark"] .bg-gradient-to-br.from-purple-50.to-indigo-50 {
+  background: linear-gradient(to bottom right, rgba(168, 85, 247, 0.15), rgba(99, 102, 241, 0.15)) !important;
+}
+
+:root[data-theme="dark"] .border-purple-200 {
+  border-color: rgba(168, 85, 247, 0.3) !important;
+}
+
+/* Sub-sections - white/transparent overlays */
+:root[data-theme="dark"] .bg-white\/70 {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+}
+
+:root[data-theme="dark"] .border-purple-100 {
+  border-color: rgba(168, 85, 247, 0.25) !important;
+}
+
+/* Creation trigger - teal/green gradient (selected state) */
+:root[data-theme="dark"] .bg-gradient-to-r.from-teal-50.to-green-50 {
+  background: linear-gradient(to right, rgba(20, 184, 166, 0.15), rgba(34, 197, 94, 0.15)) !important;
+}
+
+:root[data-theme="dark"] .border-teal-500 {
+  border-color: rgba(20, 184, 166, 0.5) !important;
+}
+
+/* End conditions - amber/orange gradient */
+:root[data-theme="dark"] .bg-gradient-to-br.from-amber-50.to-orange-50 {
+  background: linear-gradient(to bottom right, rgba(245, 158, 11, 0.15), rgba(249, 115, 22, 0.15)) !important;
+}
+
+:root[data-theme="dark"] .border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+/* Hover white overlay */
+:root[data-theme="dark"] .hover\:bg-white\/50:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Schedule type tabs (unselected) */
+:root[data-theme="dark"] button.border-gray-200.text-gray-700.bg-white {
+  background-color: var(--color-bg-muted) !important;
+  border-color: var(--color-border-default) !important;
+  color: var(--color-text-secondary) !important;
+}
+
+:root[data-theme="dark"] button.border-gray-200.text-gray-700.bg-white:hover {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+/* Icon colors in schedule tabs */
+:root[data-theme="dark"] .text-gray-500 {
+  color: var(--color-text-muted) !important;
+}
+
+/* Text colors in modal */
+:root[data-theme="dark"] .text-gray-700 {
+  color: var(--color-text-secondary) !important;
+}
+
+:root[data-theme="dark"] .text-gray-600 {
+  color: var(--color-text-secondary) !important;
+}
+
+/* Blue text */
+:root[data-theme="dark"] .text-blue-700 {
+  color: #93c5fd !important;
+}
+
+:root[data-theme="dark"] .text-blue-600 {
+  color: #60a5fa !important;
+}
+
+/* Icon container */
+:root[data-theme="dark"] .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+/* Input field borders */
+:root[data-theme="dark"] .border-gray-200 {
+  border-color: var(--color-border-default) !important;
+}
+
+:root[data-theme="dark"] .border-2.border-gray-200 {
+  border-color: var(--color-border-default) !important;
+}
+
+/* Input hover borders */
+:root[data-theme="dark"] .hover\:border-gray-300:hover {
+  border-color: var(--color-border-emphasis) !important;
+}
+
+/* Day/Week toggle buttons (unselected) */
+:root[data-theme="dark"] button.bg-white.border-2.border-gray-200.text-gray-700 {
+  background-color: var(--color-bg-muted) !important;
+  color: var(--color-text-secondary) !important;
+}
+
+:root[data-theme="dark"] button.bg-white.border.border-gray-300.text-gray-700 {
+  background-color: var(--color-bg-muted) !important;
+  color: var(--color-text-secondary) !important;
+}
+
+:root[data-theme="dark"] button.bg-white.border.border-gray-300.text-gray-700:hover {
+  background-color: var(--color-bg-emphasis) !important;
+}
+
+/* Cancel button */
+:root[data-theme="dark"] button.bg-gray-200 {
+  background-color: var(--color-bg-emphasis) !important;
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] button.bg-gray-200:hover {
+  background-color: var(--color-border-emphasis) !important;
+}
+
+/* bg-gray-50 sections (yearly, daysAfter, custom) */
+:root[data-theme="dark"] .bg-gray-50.rounded-lg.p-4 {
+  background-color: var(--color-bg-muted) !important;
+}
+
+/* Modal header text gradient correction - make lighter in dark mode */
+:root[data-theme="dark"] .bg-clip-text.text-transparent.bg-gradient-to-r.from-blue-600.to-indigo-600 {
+  background-image: linear-gradient(to right, #60a5fa, #818cf8) !important;
+  /* blue-400 to indigo-400 */
+}
+
+/* Modal sticky footer - fix white/gradient background */
+:root[data-theme="dark"] .sticky.bottom-0.bg-gradient-to-r.from-gray-50.to-white {
+  background: var(--color-bg-base) !important;
+  border-top-color: var(--color-border-default) !important;
+}
+
+/* Cancel button theming */
+:root[data-theme="dark"] button.border-gray-300.text-gray-700 {
+  border-color: var(--color-border-default) !important;
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] button.border-gray-300.text-gray-700:hover {
+  background-color: var(--color-bg-muted) !important;
+  border-color: var(--color-border-emphasis) !important;
+}
+
+/* ============================================
+   TIME TRACKING SECTION OVERRIDES
+   ============================================ */
+
+/* Main container gradient - dark mode */
+:root[data-theme="dark"] .bg-gradient-to-br.from-indigo-50.via-purple-50.to-pink-50 {
+  background: linear-gradient(to bottom right, rgba(79, 70, 229, 0.1), rgba(147, 51, 234, 0.1), rgba(236, 72, 153, 0.1)) !important;
+  border-color: rgba(99, 102, 241, 0.2) !important;
+}
+
+/* Time tracking text colors */
+:root[data-theme="dark"] .text-gray-800 {
+  color: var(--color-text-primary) !important;
+}
+
+/* ============================================
+   TASK LIST VIEW OVERRIDES
+   ============================================ */
+
+/* Page Background */
+:root[data-theme="dark"] .bg-gradient-to-br.from-slate-50.via-blue-50.to-indigo-50 {
+  background: var(--color-bg-base) !important;
+  background-image: none !important;
+}
+
+/* Decorative blobs - lower opacity in dark mode */
+:root[data-theme="dark"] .bg-blue-400\/10,
+:root[data-theme="dark"] .bg-purple-400\/10,
+:root[data-theme="dark"] .bg-indigo-400\/10 {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Filter Bar Container */
+:root[data-theme="dark"] .bg-white\/80 {
+  background-color: rgba(17, 24, 39, 0.8) !important;
+  /* gray-900/80 */
+  border-color: var(--color-border-default) !important;
+}
+
+/* Search Input */
+:root[data-theme="dark"] .bg-white\/50 {
+  background-color: rgba(31, 41, 55, 0.5) !important;
+  /* gray-800/50 */
+  border-color: var(--color-border-default) !important;
+  color: var(--color-text-primary) !important;
+}
+
+/* Page Title Gradient */
+:root[data-theme="dark"] .bg-gradient-to-r.from-gray-900.via-blue-900.to-purple-900 {
+  --tw-gradient-from: #93c5fd !important;
+  /* blue-300 */
+  --tw-gradient-via: #a5b4fc !important;
+  /* indigo-300 */
+  --tw-gradient-to: #d8b4fe !important;
+  /* purple-300 */
+  background-image: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to)) !important;
+  color: transparent !important;
+  /* Ensure text remains transparent for bg-clip */
+}
+
 @keyframes fadeIn {
+
   from {
     opacity: 0;
     transform: translateY(10px);
@@ -116,16 +1190,19 @@
 
 /* Neon Spark Text Effects - Enhanced CSS Version */
 @keyframes neonPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     text-shadow: 0 0 5px rgba(248, 47, 164, 0.7),
-                 0 0 10px rgba(168, 22, 112, 0.5),
-                 0 0 15px rgba(230, 16, 183, 0.3);
+      0 0 10px rgba(168, 22, 112, 0.5),
+      0 0 15px rgba(230, 16, 183, 0.3);
   }
+
   50% {
     text-shadow: 0 0 10px rgba(214, 62, 245, 0.9),
-                 0 0 20px rgba(211, 35, 196, 0.7),
-                 0 0 30px rgba(158, 19, 151, 0.5),
-                 0 0 40px rgba(187, 11, 119, 0.3);
+      0 0 20px rgba(211, 35, 196, 0.7),
+      0 0 30px rgba(158, 19, 151, 0.5),
+      0 0 40px rgba(187, 11, 119, 0.3);
   }
 }
 
@@ -133,16 +1210,20 @@
   0% {
     background-position: -200% 0;
   }
+
   100% {
     background-position: 200% 0;
   }
 }
 
 @keyframes sparkleTwinkle {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.3;
     transform: scale(0.8) translateY(0);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.2) translateY(-5px);
@@ -153,6 +1234,7 @@
   0% {
     left: -100%;
   }
+
   100% {
     left: 100%;
   }
@@ -236,13 +1318,33 @@
 
 /* Hand wave / shake animation */
 @keyframes handWave {
-  0% { transform: rotate(0deg); }
-  15% { transform: rotate(14deg); }
-  30% { transform: rotate(-8deg); }
-  45% { transform: rotate(14deg); }
-  60% { transform: rotate(-4deg); }
-  75% { transform: rotate(10deg); }
-  100% { transform: rotate(0deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  15% {
+    transform: rotate(14deg);
+  }
+
+  30% {
+    transform: rotate(-8deg);
+  }
+
+  45% {
+    transform: rotate(14deg);
+  }
+
+  60% {
+    transform: rotate(-4deg);
+  }
+
+  75% {
+    transform: rotate(10deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
 }
 
 .hand-emoji {
@@ -250,8 +1352,10 @@
   transform-origin: 70% 70%;
   cursor: default;
   will-change: transform;
-  font-size: 3rem; /* larger hand emoji */
-  line-height: 1; /* keep emoji centered with text */
+  font-size: 3rem;
+  /* larger hand emoji */
+  line-height: 1;
+  /* keep emoji centered with text */
   margin-left: 0.25rem;
 }
 
@@ -262,5 +1366,10 @@
 }
 
 /* Utility classes to set animation duration quickly */
-.hand-shake-duration-3000 { animation-duration: 3s; }
-.hand-shake-duration-5000 { animation-duration: 5s; }
+.hand-shake-duration-3000 {
+  animation-duration: 3s;
+}
+
+.hand-shake-duration-5000 {
+  animation-duration: 5s;
+}

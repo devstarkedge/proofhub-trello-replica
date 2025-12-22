@@ -1,14 +1,22 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link href="/src/index.css" rel="stylesheet">
-    <title>Task Manager</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowTask - Project Management</title>
+  <meta name="description" content="FlowTask - Enterprise Project Management System" />
+  <!-- Flash-free theme loader - runs before CSS loads -->
+  <script>
+    (function () { try { var s = 'flowtask-theme', d = 'light', c = 'blue', t = localStorage.getItem(s), a = d, b = c; if (t) { try { var p = JSON.parse(t); if (p && p.state) { a = p.state.appearance || d; b = p.state.themeColor || c } } catch (e) { } } var m = a; if (a === 'auto') { if (window.matchMedia && window.matchMedia('(prefers-color-scheme:dark)').matches) m = 'dark'; else if (window.matchMedia && window.matchMedia('(prefers-color-scheme:light)').matches) m = 'light'; else { var h = new Date().getHours(); m = (h >= 6 && h < 18) ? 'light' : 'dark' } } var r = document.documentElement; r.setAttribute('data-theme', m); r.setAttribute('data-color', b); if (m === 'dark') r.classList.add('dark'); r.style.backgroundColor = m === 'dark' ? '#111827' : '#ffffff'; r.style.colorScheme = m } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); document.documentElement.setAttribute('data-color', 'blue') } })();
+  </script>
+  <link href="/src/index.css" rel="stylesheet">
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>

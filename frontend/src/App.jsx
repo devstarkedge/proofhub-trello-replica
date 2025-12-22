@@ -9,6 +9,7 @@ import Loading from "./components/Loading";
 import NetworkStatusToast from "./components/NetworkStatusToast";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalFallback from "./components/GlobalFallback";
+import useThemeStore from "./store/themeStore";
 import "./App.css";
 
 // Lazy load components for code splitting
@@ -228,7 +229,7 @@ function App() {
               pauseOnFocusLoss
               draggable
               pauseOnHover
-              theme="light"
+              theme={useThemeStore.getState().effectiveMode === 'dark' ? 'dark' : 'light'}
             />
             <NetworkStatusToast />
           </NotificationProvider>

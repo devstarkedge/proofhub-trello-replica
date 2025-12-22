@@ -1,0 +1,474 @@
+/**
+ * FlowTask Enterprise Theme System - Design Tokens
+ * 
+ * This file defines all design tokens as CSS custom properties.
+ * Tokens are organized in layers:
+ * 1. Primitive tokens - raw color values
+ * 2. Semantic tokens - purpose-based references
+ * 3. Component tokens - specific component overrides
+ */
+
+/* ============================================
+   THEME COLOR PALETTES
+   ============================================ */
+
+:root {
+  /* === PRIMITIVE COLOR SCALES === */
+  
+  /* Gray Scale */
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+  --gray-950: #030712;
+
+  /* White & Black */
+  --white: #ffffff;
+  --black: #000000;
+
+  /* === SPACING SCALE === */
+  --space-0: 0;
+  --space-px: 1px;
+  --space-0-5: 0.125rem;
+  --space-1: 0.25rem;
+  --space-1-5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-2-5: 0.625rem;
+  --space-3: 0.75rem;
+  --space-3-5: 0.875rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+  --space-9: 2.25rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-14: 3.5rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+
+  /* === BORDER RADIUS === */
+  --radius-none: 0;
+  --radius-sm: 0.125rem;
+  --radius-default: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* === SHADOWS === */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+
+  /* === MOTION TOKENS === */
+  --duration-instant: 0ms;
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
+  
+  --easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-in: cubic-bezier(0.4, 0, 1, 1);
+  --easing-out: cubic-bezier(0, 0, 0.2, 1);
+  --easing-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* ============================================
+   THEME COLOR VARIANTS (Accent Colors)
+   ============================================ */
+
+/* Blue (Default) */
+:root, :root[data-color="blue"] {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+  --color-primary-950: #172554;
+}
+
+/* Purple */
+:root[data-color="purple"] {
+  --color-primary-50: #faf5ff;
+  --color-primary-100: #f3e8ff;
+  --color-primary-200: #e9d5ff;
+  --color-primary-300: #d8b4fe;
+  --color-primary-400: #c084fc;
+  --color-primary-500: #a855f7;
+  --color-primary-600: #9333ea;
+  --color-primary-700: #7e22ce;
+  --color-primary-800: #6b21a8;
+  --color-primary-900: #581c87;
+  --color-primary-950: #3b0764;
+}
+
+/* Emerald */
+:root[data-color="emerald"] {
+  --color-primary-50: #ecfdf5;
+  --color-primary-100: #d1fae5;
+  --color-primary-200: #a7f3d0;
+  --color-primary-300: #6ee7b7;
+  --color-primary-400: #34d399;
+  --color-primary-500: #10b981;
+  --color-primary-600: #059669;
+  --color-primary-700: #047857;
+  --color-primary-800: #065f46;
+  --color-primary-900: #064e3b;
+  --color-primary-950: #022c22;
+}
+
+/* Rose */
+:root[data-color="rose"] {
+  --color-primary-50: #fff1f2;
+  --color-primary-100: #ffe4e6;
+  --color-primary-200: #fecdd3;
+  --color-primary-300: #fda4af;
+  --color-primary-400: #fb7185;
+  --color-primary-500: #f43f5e;
+  --color-primary-600: #e11d48;
+  --color-primary-700: #be123c;
+  --color-primary-800: #9f1239;
+  --color-primary-900: #881337;
+  --color-primary-950: #4c0519;
+}
+
+/* Amber */
+:root[data-color="amber"] {
+  --color-primary-50: #fffbeb;
+  --color-primary-100: #fef3c7;
+  --color-primary-200: #fde68a;
+  --color-primary-300: #fcd34d;
+  --color-primary-400: #fbbf24;
+  --color-primary-500: #f59e0b;
+  --color-primary-600: #d97706;
+  --color-primary-700: #b45309;
+  --color-primary-800: #92400e;
+  --color-primary-900: #78350f;
+  --color-primary-950: #451a03;
+}
+
+/* Cyan */
+:root[data-color="cyan"] {
+  --color-primary-50: #ecfeff;
+  --color-primary-100: #cffafe;
+  --color-primary-200: #a5f3fc;
+  --color-primary-300: #67e8f9;
+  --color-primary-400: #22d3ee;
+  --color-primary-500: #06b6d4;
+  --color-primary-600: #0891b2;
+  --color-primary-700: #0e7490;
+  --color-primary-800: #155e75;
+  --color-primary-900: #164e63;
+  --color-primary-950: #083344;
+}
+
+/* Indigo */
+:root[data-color="indigo"] {
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+  --color-primary-950: #1e1b4b;
+}
+
+/* Slate (Neutral) */
+:root[data-color="slate"] {
+  --color-primary-50: #f8fafc;
+  --color-primary-100: #f1f5f9;
+  --color-primary-200: #e2e8f0;
+  --color-primary-300: #cbd5e1;
+  --color-primary-400: #94a3b8;
+  --color-primary-500: #64748b;
+  --color-primary-600: #475569;
+  --color-primary-700: #334155;
+  --color-primary-800: #1e293b;
+  --color-primary-900: #0f172a;
+  --color-primary-950: #020617;
+}
+
+/* ============================================
+   LIGHT THEME (Default)
+   ============================================ */
+
+:root, :root[data-theme="light"] {
+  /* === BACKGROUND SURFACES === */
+  --color-bg-base: var(--white);
+  --color-bg-subtle: var(--gray-50);
+  --color-bg-muted: var(--gray-100);
+  --color-bg-emphasis: var(--gray-200);
+  --color-bg-inverse: var(--gray-900);
+
+  /* === FOREGROUND / TEXT === */
+  --color-text-primary: var(--gray-900);
+  --color-text-secondary: var(--gray-600);
+  --color-text-muted: var(--gray-500);
+  --color-text-placeholder: var(--gray-400);
+  --color-text-inverse: var(--white);
+  --color-text-on-primary: var(--white);
+
+  /* === BORDERS === */
+  --color-border-default: var(--gray-200);
+  --color-border-subtle: var(--gray-100);
+  --color-border-emphasis: var(--gray-300);
+  --color-border-focus: var(--color-primary-500);
+
+  /* === PRIMARY ACTIONS === */
+  --color-primary: var(--color-primary-600);
+  --color-primary-hover: var(--color-primary-700);
+  --color-primary-active: var(--color-primary-800);
+  --color-primary-subtle: var(--color-primary-50);
+  --color-primary-subtle-hover: var(--color-primary-100);
+
+  /* === SEMANTIC COLORS === */
+  /* Success */
+  --color-success: #16a34a;
+  --color-success-subtle: #dcfce7;
+  --color-success-text: #15803d;
+  
+  /* Warning */
+  --color-warning: #d97706;
+  --color-warning-subtle: #fef3c7;
+  --color-warning-text: #b45309;
+  
+  /* Error/Danger */
+  --color-error: #dc2626;
+  --color-error-subtle: #fee2e2;
+  --color-error-text: #b91c1c;
+  
+  /* Info */
+  --color-info: #0284c7;
+  --color-info-subtle: #e0f2fe;
+  --color-info-text: #0369a1;
+
+  /* === COMPONENT-SPECIFIC === */
+  /* Cards */
+  --color-card-bg: var(--white);
+  --color-card-border: var(--gray-200);
+  --color-card-shadow: var(--shadow-sm);
+  --color-card-hover-shadow: var(--shadow-md);
+
+  /* Inputs */
+  --color-input-bg: var(--white);
+  --color-input-border: var(--gray-300);
+  --color-input-border-focus: var(--color-primary-500);
+  --color-input-placeholder: var(--gray-400);
+
+  /* Modals */
+  --color-modal-bg: var(--white);
+  --color-modal-overlay: rgba(0, 0, 0, 0.5);
+
+  /* Sidebar */
+  --color-sidebar-bg: var(--white);
+  --color-sidebar-border: var(--gray-200);
+  --color-sidebar-item-hover: var(--gray-100);
+  --color-sidebar-item-active: var(--color-primary-50);
+
+  /* Header */
+  --color-header-bg: var(--white);
+  --color-header-border: var(--gray-200);
+
+  /* Skeleton Loaders */
+  --color-skeleton: var(--gray-200);
+  --color-skeleton-shimmer: var(--gray-300);
+
+  /* Scrollbar */
+  --color-scrollbar-track: transparent;
+  --color-scrollbar-thumb: rgba(99, 102, 241, 0.3);
+  --color-scrollbar-thumb-hover: rgba(99, 102, 241, 0.5);
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-700));
+  --gradient-hero: linear-gradient(135deg, #3b82f6, #6366f1, #8b5cf6);
+  --gradient-surface: linear-gradient(180deg, var(--gray-50), var(--color-primary-50), var(--gray-100));
+
+  /* Motion (Light mode - crisp) */
+  --motion-duration-fast: 150ms;
+  --motion-duration-normal: 200ms;
+  --motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================
+   DARK THEME
+   ============================================ */
+
+:root[data-theme="dark"] {
+  /* === BACKGROUND SURFACES === */
+  --color-bg-base: var(--gray-900);
+  --color-bg-subtle: var(--gray-800);
+  --color-bg-muted: var(--gray-700);
+  --color-bg-emphasis: var(--gray-600);
+  --color-bg-inverse: var(--gray-50);
+
+  /* === FOREGROUND / TEXT === */
+  --color-text-primary: var(--gray-50);
+  --color-text-secondary: var(--gray-300);
+  --color-text-muted: var(--gray-400);
+  --color-text-placeholder: var(--gray-500);
+  --color-text-inverse: var(--gray-900);
+  --color-text-on-primary: var(--white);
+
+  /* === BORDERS === */
+  --color-border-default: var(--gray-700);
+  --color-border-subtle: var(--gray-800);
+  --color-border-emphasis: var(--gray-600);
+  --color-border-focus: var(--color-primary-400);
+
+  /* === PRIMARY ACTIONS === */
+  --color-primary: var(--color-primary-500);
+  --color-primary-hover: var(--color-primary-400);
+  --color-primary-active: var(--color-primary-300);
+  --color-primary-subtle: rgba(59, 130, 246, 0.15);
+  --color-primary-subtle-hover: rgba(59, 130, 246, 0.25);
+
+  /* === SEMANTIC COLORS === */
+  /* Success */
+  --color-success: #22c55e;
+  --color-success-subtle: rgba(34, 197, 94, 0.15);
+  --color-success-text: #4ade80;
+  
+  /* Warning */
+  --color-warning: #f59e0b;
+  --color-warning-subtle: rgba(245, 158, 11, 0.15);
+  --color-warning-text: #fbbf24;
+  
+  /* Error/Danger */
+  --color-error: #ef4444;
+  --color-error-subtle: rgba(239, 68, 68, 0.15);
+  --color-error-text: #f87171;
+  
+  /* Info */
+  --color-info: #0ea5e9;
+  --color-info-subtle: rgba(14, 165, 233, 0.15);
+  --color-info-text: #38bdf8;
+
+  /* === COMPONENT-SPECIFIC === */
+  /* Cards */
+  --color-card-bg: var(--gray-800);
+  --color-card-border: var(--gray-700);
+  --color-card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --color-card-hover-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+
+  /* Inputs */
+  --color-input-bg: var(--gray-800);
+  --color-input-border: var(--gray-600);
+  --color-input-border-focus: var(--color-primary-400);
+  --color-input-placeholder: var(--gray-500);
+
+  /* Modals */
+  --color-modal-bg: var(--gray-800);
+  --color-modal-overlay: rgba(0, 0, 0, 0.7);
+
+  /* Sidebar */
+  --color-sidebar-bg: var(--gray-900);
+  --color-sidebar-border: var(--gray-800);
+  --color-sidebar-item-hover: var(--gray-800);
+  --color-sidebar-item-active: rgba(59, 130, 246, 0.15);
+
+  /* Header */
+  --color-header-bg: var(--gray-900);
+  --color-header-border: var(--gray-800);
+
+  /* Skeleton Loaders */
+  --color-skeleton: var(--gray-700);
+  --color-skeleton-shimmer: var(--gray-600);
+
+  /* Scrollbar */
+  --color-scrollbar-track: transparent;
+  --color-scrollbar-thumb: rgba(99, 102, 241, 0.4);
+  --color-scrollbar-thumb-hover: rgba(99, 102, 241, 0.6);
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-800));
+  --gradient-hero: linear-gradient(135deg, #1e40af, #4338ca, #6b21a8);
+  --gradient-surface: linear-gradient(180deg, var(--gray-900), var(--gray-800), var(--gray-900));
+
+  /* Motion (Dark mode - softer) */
+  --motion-duration-fast: 180ms;
+  --motion-duration-normal: 250ms;
+  --motion-easing: cubic-bezier(0.4, 0, 0.1, 1);
+
+  /* Dark mode specific shadows */
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.5);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+}
+
+/* ============================================
+   THEME TRANSITIONS
+   ============================================ */
+
+/* Smooth theme transition class - applied during transitions */
+.theme-transitioning,
+.theme-transitioning *,
+.theme-transitioning *::before,
+.theme-transitioning *::after {
+  transition: 
+    background-color var(--motion-duration-normal) var(--motion-easing),
+    border-color var(--motion-duration-normal) var(--motion-easing),
+    color var(--motion-duration-fast) var(--motion-easing),
+    fill var(--motion-duration-fast) var(--motion-easing),
+    stroke var(--motion-duration-fast) var(--motion-easing),
+    box-shadow var(--motion-duration-normal) var(--motion-easing) !important;
+}
+
+/* ============================================
+   UTILITY CLASSES FOR THEMING
+   ============================================ */
+
+/* Background utilities */
+.bg-surface { background-color: var(--color-bg-base); }
+.bg-surface-subtle { background-color: var(--color-bg-subtle); }
+.bg-surface-muted { background-color: var(--color-bg-muted); }
+.bg-surface-emphasis { background-color: var(--color-bg-emphasis); }
+.bg-primary { background-color: var(--color-primary); }
+.bg-primary-subtle { background-color: var(--color-primary-subtle); }
+
+/* Text utilities */
+.text-primary { color: var(--color-text-primary); }
+.text-secondary { color: var(--color-text-secondary); }
+.text-muted { color: var(--color-text-muted); }
+.text-accent { color: var(--color-primary); }
+
+/* Border utilities */
+.border-default { border-color: var(--color-border-default); }
+.border-subtle { border-color: var(--color-border-subtle); }
+.border-emphasis { border-color: var(--color-border-emphasis); }
+
+/* Card utility */
+.card-themed {
+  background-color: var(--color-card-bg);
+  border-color: var(--color-card-border);
+  box-shadow: var(--color-card-shadow);
+}
+
+.card-themed:hover {
+  box-shadow: var(--color-card-hover-shadow);
+}
