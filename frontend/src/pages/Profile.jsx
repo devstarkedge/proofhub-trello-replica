@@ -11,6 +11,7 @@ import Header from '../components/Header';
 import Loading from '../components/Loading';
 import Avatar from '../components/Avatar';
 import useAvatar from '../hooks/useAvatar';
+import useThemeStore from '../store/themeStore';
 import { validateField, validateForm as validateFormUtil, debouncedEmailCheck, validationRules } from '../utils/validationUtils';
 
 // Lazy load the upload modal
@@ -19,6 +20,8 @@ const AvatarUploadModal = lazy(() => import('../components/AvatarUploadModal'));
 
 const Profile = () => {
   const { user, setUser } = useContext(AuthContext);
+  const { effectiveMode } = useThemeStore();
+  const isDarkMode = effectiveMode === 'dark';
   const { avatar, remove: removeAvatar, removing } = useAvatar();
   
   const [loading, setLoading] = useState(true);
@@ -153,7 +156,12 @@ const Profile = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100">
+    <div className={`
+      min-h-screen transition-colors duration-500
+      ${isDarkMode 
+        ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black text-gray-100' 
+        : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}
+    `}>
       <Header />
 
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -191,7 +199,6 @@ const Profile = () => {
                     isVerified={user?.isVerified}
                     size="2xl"
                     showBadge={false}
-                    className="ring-4 ring-white/30"
                   />
                   
                   {/* Camera Edit Button */}
@@ -260,7 +267,7 @@ const Profile = () => {
                   transition={{ duration: 0.5, delay: 0.2 }}
                   className="space-y-2"
                 >
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className={`block text-sm font-medium ${isDarkMode ? 'text-black' : 'text-gray-700'}`}>
                     Full Name *
                   </label>
                   <div className="relative">
@@ -294,7 +301,7 @@ const Profile = () => {
                   transition={{ duration: 0.5, delay: 0.3 }}
                   className="space-y-2"
                 >
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className={`block text-sm font-medium ${isDarkMode ? 'text-black' : 'text-gray-700'}`}>
                     Email Address *
                   </label>
                   <div className="relative">
@@ -338,7 +345,7 @@ const Profile = () => {
                   transition={{ duration: 0.5, delay: 0.4 }}
                   className="space-y-2 md:col-span-2"
                 >
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className={`block text-sm font-medium ${isDarkMode ? 'text-black' : 'text-gray-700'}`}>
                     Job Title
                   </label>
                   <div className="relative">
@@ -431,6 +438,14 @@ const Profile = () => {
           </motion.div>
         </motion.div>
       </div>
+
+      {/* Background Ambience for Dark Mode (Blurish effect) */}
+      {isDarkMode && (
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+           <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-blue-900/10 rounded-full blur-[120px]" />
+           <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-indigo-900/10 rounded-full blur-[120px]" />
+        </div>
+      )}
 
       {/* Avatar Upload Modal */}
       <Suspense fallback={null}>

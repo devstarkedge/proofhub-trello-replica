@@ -22,6 +22,7 @@ const AddProjectModal = lazy(() => import('../components/AddProjectModal'));
 const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
 const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
 import DeletePopup from '../components/ui/DeletePopup';
+import WelcomeHeader from '../components/WelcomeHeader';
 
 // Memoized modal loading fallback
 const ModalLoadingFallback = memo(() => (
@@ -295,26 +296,7 @@ const HomePage = () => {
         <Header />
         <main className="p-6 space-y-6">
           {/* Welcome Header */}
-          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl p-8 text-white shadow-2xl relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
-            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30"></div>
-            <div className="relative z-10">
-              <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mb-4 animate-in zoom-in duration-300 delay-200">
-                <Sparkles size={20} />
-                <span className="text-sm font-medium">Welcome!</span>
-              </div>
-              <h1 className="text-4xl font-bold mb-2 animate-in fade-in slide-in-from-left-4 duration-500 delay-300">
-                Hello, <NeonSparkText text={user?.name || 'User'} className="text-4xl" />!{' '}
-                <span
-                  ref={handRef}
-                  className="inline-block hand-emoji"
-                  onMouseEnter={() => triggerShake(3000)}
-                >
-                  👋
-                </span>
-              </h1>
-              <p className="text-blue-100 text-lg animate-in fade-in duration-500 delay-500">Manage your projects and collaborate with your team</p>
-            </div>
-          </div>
+          <WelcomeHeader user={user} />
 
           {/* Controls Bar */}
           <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">

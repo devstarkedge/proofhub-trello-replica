@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, memo, useContext } from 'react';
+import useThemeStore from '../store/themeStore';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -27,6 +28,7 @@ const ProjectCard = ({
 }) => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
+  const { themeColor } = useThemeStore();
   const [showMenu, setShowMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const menuRef = useRef(null);
@@ -76,9 +78,9 @@ const ProjectCard = ({
         description: 'Project is in planning phase'
       },
       'in-progress': {
-        bg: 'bg-gradient-to-r from-blue-50 to-cyan-50',
-        text: 'text-blue-700',
-        border: 'border-blue-200',
+        bg: '!bg-blue-50',
+        text: 'text-blue-800',
+        border: '!border-blue-200',
         icon: <Clock size={14} className="text-blue-600" />,
         gradient: 'from-blue-500 to-cyan-500',
         label: 'In Progress',
@@ -138,6 +140,52 @@ const ProjectCard = ({
   const priorityConfig = getPriorityBadge(projectData.priority);
   const isOptimistic = projectData.isOptimistic || String(projectData.id).startsWith('temp-');
 
+  // Theme-based gradient mappings
+  const themeGradients = {
+    blue: {
+      bg: 'bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600',
+      glow: 'rgba(59, 130, 246, 0.3)',
+      subtle: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)'
+    },
+    purple: {
+      bg: 'bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-600',
+      glow: 'rgba(168, 85, 247, 0.3)',
+      subtle: 'linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(236, 72, 153, 0.05) 100%)'
+    },
+    emerald: {
+      bg: 'bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600',
+      glow: 'rgba(16, 185, 129, 0.3)',
+      subtle: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(20, 184, 166, 0.05) 100%)'
+    },
+    rose: {
+      bg: 'bg-gradient-to-br from-rose-500 via-red-500 to-orange-600',
+      glow: 'rgba(244, 63, 94, 0.3)',
+      subtle: 'linear-gradient(135deg, rgba(244, 63, 94, 0.05) 0%, rgba(249, 115, 22, 0.05) 100%)'
+    },
+    amber: {
+      bg: 'bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-600',
+      glow: 'rgba(245, 158, 11, 0.3)',
+      subtle: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(234, 179, 8, 0.05) 100%)'
+    },
+    cyan: {
+      bg: 'bg-gradient-to-br from-cyan-500 via-sky-500 to-blue-600',
+      glow: 'rgba(6, 182, 212, 0.3)',
+      subtle: 'linear-gradient(135deg, rgba(6, 182, 212, 0.05) 0%, rgba(14, 165, 233, 0.05) 100%)'
+    },
+    indigo: {
+      bg: 'bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600',
+      glow: 'rgba(99, 102, 241, 0.3)',
+      subtle: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)'
+    },
+    slate: {
+      bg: 'bg-gradient-to-br from-slate-600 via-gray-600 to-zinc-700',
+      glow: 'rgba(100, 116, 139, 0.3)',
+      subtle: 'linear-gradient(135deg, rgba(100, 116, 139, 0.05) 0%, rgba(71, 85, 105, 0.05) 100%)'
+    }
+  };
+
+  const currentTheme = themeGradients[themeColor] || themeGradients['blue'];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -165,13 +213,14 @@ const ProjectCard = ({
       <motion.div
         className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
         style={{
-          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)'
+          background: currentTheme.subtle
         }}
+        // initial={{ opacity: 0 }}
       />
 
       {/* Project Image/Header */}
       <div className="relative h-40 overflow-hidden">
-        <div className={`absolute inset-0 ${color || 'bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600'}`}>
+        <div className={`absolute inset-0 ${color || currentTheme.bg}`}>
           {image ? (
             <img 
               src={image} 
@@ -578,8 +627,8 @@ const ProjectCard = ({
         className="absolute inset-0 rounded-2xl pointer-events-none"
         animate={{
           boxShadow: isHovered
-            ? '0 0 0 2px rgba(59, 130, 246, 0.3)'
-            : '0 0 0 0px rgba(59, 130, 246, 0)'
+            ? `0 0 0 2px ${currentTheme.glow}`
+            : `0 0 0 0px ${currentTheme.glow.replace('0.3', '0')}`
         }}
         transition={{ duration: 0.3 }}
       />
