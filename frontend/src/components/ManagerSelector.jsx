@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, X, User, CheckCircle } from 'lucide-react';
+import Avatar from './Avatar';
 
 const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = false, currentDepartment, departments = [] }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -103,9 +104,12 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
                 className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium"
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 bg-indigo-200 rounded-full flex items-center justify-center">
-                    <User size={12} />
-                  </div>
+                  <Avatar 
+                    src={manager?.avatar} 
+                    name={manager?.name || managerId} 
+                    size="xs"
+                    showBadge={false}
+                  />
                   <span>{manager ? manager.name : managerId}</span>
                 </div>
                 {!disabled && (
@@ -184,11 +188,14 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
                       className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-white font-bold text-sm">
-                            {manager.name?.[0]?.toUpperCase()}
-                          </span>
-                        </div>
+                        <Avatar 
+                          src={manager.avatar} 
+                          name={manager.name} 
+                          role={manager.role}
+                          isVerified={manager.isVerified}
+                          size="sm"
+                          showBadge={false}
+                        />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0">

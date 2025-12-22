@@ -28,8 +28,8 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
   }
 
   const departments = await Department.find(query)
-    .populate("managers", "name email")
-    .populate("members", "name email")
+    .populate("managers", "name email avatar")
+    .populate("members", "name email avatar")
     .populate("projects", "name description background members status")
     .sort("name");
 
@@ -93,7 +93,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         from: 'users',
         localField: 'managers',
         foreignField: '_id',
-        pipeline: [{ $project: { name: 1, email: 1 } }],
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }],
         as: 'managers'
       }
     },
@@ -103,7 +103,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         from: 'users',
         localField: 'members',
         foreignField: '_id',
-        pipeline: [{ $project: { name: 1, email: 1 } }],
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }],
         as: 'members'
       }
     },
@@ -284,7 +284,7 @@ async function getMembersWithAssignmentsData(departmentId) {
   // Populate the member details
   const populatedMembers = await User.find({
     _id: { $in: membersWithAssignments }
-  }).select('name email');
+  }).select('name email avatar');
 
   return populatedMembers;
 }
@@ -331,8 +331,8 @@ async function getProjectsWithMemberAssignmentsData(departmentId, memberId) {
 // @access  Private
 export const getDepartment = asyncHandler(async (req, res, next) => {
   const department = await Department.findById(req.params.id)
-    .populate("managers", "name email")
-    .populate("members", "name email");
+    .populate("managers", "name email avatar")
+    .populate("members", "name email avatar");
 
   if (!department) {
     return next(new ErrorResponse("Department not found", 404));
@@ -631,7 +631,7 @@ export const getMembersWithAssignments = asyncHandler(async (req, res, next) => 
   // Populate the member details
   const populatedMembers = await User.find({
     _id: { $in: membersWithAssignments }
-  }).select('name email');
+  }).select('name email avatar');
 
   res.status(200).json({
     success: true,

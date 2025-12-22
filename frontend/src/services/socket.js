@@ -240,6 +240,12 @@ class SocketService {
       console.log('Bulk users unassigned from department:', data);
       window.dispatchEvent(new CustomEvent('socket-department-bulk-unassigned', { detail: data }));
     });
+
+    // Avatar update event
+    this.socket.on('avatar-updated', (data) => {
+      console.log('Avatar updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-avatar-updated', { detail: data }));
+    });
   }
 
   disconnect() {

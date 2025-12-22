@@ -1,10 +1,31 @@
 import express from 'express';
+import multer from 'multer';
 import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser, getVerifiedUsers, getUsersByDepartments, getManagerUsers } from '../controllers/userController.js';
+import { uploadAvatar, uploadAvatarFromGoogleDrive, removeAvatar } from '../controllers/avatarController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
 import { getVapidKeys } from '../utils/pushNotification.js';
 
 const router = express.Router();
+
+// Configure multer for avatar upload (memory storage)
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPG, PNG, and WEBP allowed.'), false);
+    }
+  }
+});
+
+// Avatar routes
+router.post('/avatar', protect, avatarUpload.single('avatar'), uploadAvatar);
+router.post('/avatar/google-drive', protect, uploadAvatarFromGoogleDrive);
+router.delete('/avatar', protect, removeAvatar);
 
 router.get('/profile', protect, getProfile);
 router.put('/profile', protect, updateProfile);

@@ -250,6 +250,11 @@ export const emitToBoard = (boardId, event, data) => {
   io.to(`board-${boardId}`).emit(event, data);
 };
 
+// Helper function to emit to all connected clients
+export const emitToAll = (event, data) => {
+  io.emit(event, data);
+};
+
 // Export io for use in other modules
 export { io };
 

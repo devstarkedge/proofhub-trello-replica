@@ -1,19 +1,26 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useContext, useRef, lazy, Suspense } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import {
   User, Mail, Briefcase, Save, Loader2, Camera,
-  CheckCircle, XCircle, Edit3, Eye, EyeOff
+  CheckCircle, XCircle, Edit3, Eye, EyeOff, Trash2, ImagePlus
 } from 'lucide-react';
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import Header from '../components/Header';
 import Loading from '../components/Loading';
+import Avatar from '../components/Avatar';
+import useAvatar from '../hooks/useAvatar';
 import { validateField, validateForm as validateFormUtil, debouncedEmailCheck, validationRules } from '../utils/validationUtils';
+
+// Lazy load the upload modal
+const AvatarUploadModal = lazy(() => import('../components/AvatarUploadModal'));
 
 
 const Profile = () => {
   const { user, setUser } = useContext(AuthContext);
+  const { avatar, remove: removeAvatar, removing } = useAvatar();
+  
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profileData, setProfileData] = useState({
@@ -25,10 +32,26 @@ const Profile = () => {
   const [emailAvailable, setEmailAvailable] = useState(true);
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+  const avatarMenuRef = useRef(null);
 
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  // Close avatar menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (avatarMenuRef.current && !avatarMenuRef.current.contains(e.target)) {
+        setShowAvatarMenu(false);
+      }
+    };
+    if (showAvatarMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showAvatarMenu]);
 
   const fetchProfile = async () => {
     try {
@@ -39,6 +62,15 @@ const Profile = () => {
         email: userData.email || '',
         title: userData.title || ''
       });
+      
+      // Update AuthContext user with avatar (for global sync on refresh)
+      if (setUser && userData.avatar !== undefined) {
+        setUser(prev => ({
+          ...prev,
+          avatar: userData.avatar,
+          avatarMetadata: userData.avatarMetadata
+        }));
+      }
     } catch (error) {
       toast.error('Failed to load profile data');
       console.error('Profile fetch error:', error);
@@ -104,6 +136,11 @@ const Profile = () => {
     }
   };
 
+  const handleRemoveAvatar = async () => {
+    setShowAvatarMenu(false);
+    await removeAvatar();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -145,13 +182,65 @@ const Profile = () => {
             {/* Avatar Section */}
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-8 text-white">
               <div className="flex items-center gap-6">
-                <div className="relative">
-                  <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center text-3xl font-bold">
-                    {profileData.name ? profileData.name[0].toUpperCase() : 'U'}
-                  </div>
-                  <button className="absolute -bottom-2 -right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow">
-                    <Camera size={16} className="text-gray-600" />
-                  </button>
+                <div className="relative" ref={avatarMenuRef}>
+                  {/* Avatar with click handler */}
+                  <Avatar
+                    src={user?.avatar || avatar}
+                    name={profileData.name}
+                    role={user?.role}
+                    isVerified={user?.isVerified}
+                    size="2xl"
+                    showBadge={false}
+                    className="ring-4 ring-white/30"
+                  />
+                  
+                  {/* Camera Edit Button */}
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setShowAvatarMenu(!showAvatarMenu)}
+                    className="absolute -bottom-2 -right-2 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
+                    aria-label="Edit profile photo"
+                  >
+                    {removing ? (
+                      <Loader2 size={18} className="text-gray-600 animate-spin" />
+                    ) : (
+                      <Camera size={18} className="text-gray-600" />
+                    )}
+                  </motion.button>
+
+                  {/* Avatar Menu Dropdown */}
+                  <AnimatePresence>
+                    {showAvatarMenu && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                        className="absolute top-full left-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50"
+                      >
+                        <button
+                          onClick={() => {
+                            setShowAvatarMenu(false);
+                            setShowAvatarModal(true);
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          <ImagePlus size={18} />
+                          <span>{avatar ? 'Change Photo' : 'Add Photo'}</span>
+                        </button>
+                        {avatar && (
+                          <button
+                            onClick={handleRemoveAvatar}
+                            disabled={removing}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors border-t border-gray-100"
+                          >
+                            <Trash2 size={18} />
+                            <span>Remove Photo</span>
+                          </button>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold mb-1">{profileData.name || 'User'}</h2>
@@ -343,6 +432,13 @@ const Profile = () => {
         </motion.div>
       </div>
 
+      {/* Avatar Upload Modal */}
+      <Suspense fallback={null}>
+        <AvatarUploadModal 
+          isOpen={showAvatarModal} 
+          onClose={() => setShowAvatarModal(false)} 
+        />
+      </Suspense>
     </div>
   );
 };

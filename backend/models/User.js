@@ -40,6 +40,23 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  avatarPublicId: {
+    type: String,
+    default: ''
+  },
+  avatarMetadata: {
+    originalName: String,
+    uploadedAt: Date,
+    source: {
+      type: String,
+      enum: ['device', 'google_drive', 'google_profile'],
+      default: 'device'
+    },
+    googleDriveFileId: String,
+    format: String,
+    width: Number,
+    height: Number
+  },
   title: {
     type: String,
     trim: true,

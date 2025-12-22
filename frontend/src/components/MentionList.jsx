@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Avatar from './Avatar';
 
 const MentionList = ({ items = [], command }) => {
   const [selected, setSelected] = useState(0);
@@ -38,9 +39,12 @@ const MentionList = ({ items = [], command }) => {
               idx === selected ? 'bg-blue-50' : 'hover:bg-gray-50'
             }`}
           >
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
-              {item.label?.[0]?.toUpperCase() || '?'}
-            </div>
+            <Avatar 
+              src={item.avatar} 
+              name={item.label} 
+              size="xs"
+              showBadge={false}
+            />
             <span className="flex-1 truncate text-black">{item.label}</span>
           </div>
         ))

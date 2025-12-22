@@ -17,6 +17,7 @@ import HierarchyModalStack from '../components/hierarchy/HierarchyModalStack';
 import { WorkflowSkeleton } from '../components/LoadingSkeleton';
 import { toast } from 'react-toastify';
 import AllRecurringTasksPage from './AllRecurringTasksPage';
+import Avatar from '../components/Avatar';
 
 const WorkFlow = memo(() => {
   const { deptId, projectId, taskId, subtaskId, nenoId } = useParams();
@@ -821,9 +822,13 @@ useEffect(() => {
 
                       return (
                         <DropdownMenuItem key={member._id} className="flex items-center gap-3 px-3 py-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                            {member.name ? member.name.charAt(0).toUpperCase() : 'U'}
-                          </div>
+                          <Avatar
+                            src={member.avatar}
+                            name={member.name}
+                            role={member.role}
+                            size="md"
+                            showBadge={true}
+                          />
                           <div className="flex flex-col flex-1">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-gray-900">{member.name || 'Unknown'}</span>

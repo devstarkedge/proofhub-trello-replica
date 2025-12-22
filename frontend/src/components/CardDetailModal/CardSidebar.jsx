@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import LabelDropdown from "../LabelDropdown";
 import DatePickerModal from "../DatePickerModal";
+import Avatar from "../Avatar";
 
 const CardSidebar = ({
   saving,
@@ -113,9 +114,12 @@ const CardSidebar = ({
                         exit={{ scale: 0 }}
                         className="flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-2 rounded-full text-sm font-medium"
                       >
-                        <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                          {assignee?.name?.[0]?.toUpperCase() || assignee?.email?.[0]?.toUpperCase() || "U"}
-                        </div>
+                        <Avatar
+                          src={assignee?.avatar}
+                          name={assignee?.name || assignee?.email}
+                          size="xs"
+                          showBadge={false}
+                        />
                         <div className="flex flex-col items-start">
                           <span>{assignee?.name || assignee?.email || "Unknown"}</span>
                           <span className="text-xs text-blue-600 font-normal">{departmentName}</span>
@@ -208,9 +212,13 @@ const CardSidebar = ({
                                           isAssigned ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'cursor-pointer'
                                         }`}
                                       >
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center text-sm font-bold shadow-md">
-                                          {member.name?.[0]?.toUpperCase() || "U"}
-                                        </div>
+                                        <Avatar
+                                          src={member.avatar}
+                                          name={member.name}
+                                          role={member.role}
+                                          size="md"
+                                          showBadge={false}
+                                        />
                                         <div className="flex-1 min-w-0">
                                           <div className="text-sm font-semibold text-gray-900 truncate">
                                             {member.name}

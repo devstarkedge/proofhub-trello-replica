@@ -15,6 +15,7 @@ import RichTextEditor from "../RichTextEditor";
 import AuthContext from "../../context/AuthContext";
 import versionService from "../../services/versionService";
 import DeletePopup from "../ui/DeletePopup";
+import Avatar from "../Avatar";
 
 // Lazy load modals
 const VersionHistoryModal = lazy(() => import("../VersionHistoryModal"));
@@ -102,9 +103,12 @@ const CommentItem = memo(({
       transition={{ delay: index * 0.05 }}
       className="flex gap-3 mb-4 group"
     >
-      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white font-semibold shadow-md flex-shrink-0">
-        {comment.user?.name?.[0]?.toUpperCase() || "U"}
-      </div>
+      <Avatar 
+        src={comment.user?.avatar} 
+        name={comment.user?.name} 
+        size="md"
+        showBadge={false}
+      />
       <div className="flex-1">
         <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative">
           <div className="flex items-center justify-between mb-2">
@@ -357,9 +361,12 @@ const CommentsSection = memo(({
           animate={{ opacity: 1 }}
           transition={{ delay: 0.15 }}
         >
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold shadow-md flex-shrink-0">
-            {user?.name?.[0]?.toUpperCase() || "U"}
-          </div>
+          <Avatar 
+            src={user?.avatar} 
+            name={user?.name} 
+            size="md"
+            showBadge={false}
+          />
           <div className="flex-1">
             <AnimatePresence mode="wait">
               {isEditorExpanded ? (
@@ -455,9 +462,12 @@ const CommentsSection = memo(({
                       animate={{ opacity: 1 }}
                       className="flex gap-3 mb-4"
                     >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white font-semibold shadow-md flex-shrink-0">
-                        {comment.user?.name?.[0]?.toUpperCase() || "U"}
-                      </div>
+                      <Avatar 
+                        src={comment.user?.avatar} 
+                        name={comment.user?.name} 
+                        size="md"
+                        showBadge={false}
+                      />
                       <div className="flex-1">
                         <div className="border border-blue-300 rounded-lg overflow-hidden shadow-md">
                           <RichTextEditor

@@ -511,4 +511,106 @@ export const getSignedUrl = (publicId, options = {}) => {
   });
 };
 
+/**
+ * Upload user avatar to Cloudinary with optimizations
+ * @param {Buffer} fileBuffer - The image buffer
+ * @param {Object} options - Upload options
+ * @param {string} options.userId - User ID for folder organization
+ * @param {string} options.originalName - Original file name
+ * @returns {Promise<Object>} Upload result with URL and metadata
+ */
+export const uploadAvatarToCloudinary = async (fileBuffer, options = {}) => {
+  configureCloudinary();
+  
+  const { userId, originalName } = options;
+  
+  // Create folder structure: /avatars/{userId}/
+  const folder = `flowtask/avatars/${userId}`;
+  
+  const uploadOptions = {
+    folder,
+    resource_type: 'image',
+    use_filename: false,
+    unique_filename: true,
+    overwrite: true,
+    // Avatar-specific transformations
+    transformation: [
+      { width: 512, height: 512, crop: 'fill', gravity: 'face' },
+      { quality: 'auto:good' },
+      { fetch_format: 'webp' }
+    ],
+    // Generate eager transformations for different sizes
+    eager: [
+      // Thumbnail (for lists, mentions, etc.)
+      { width: 128, height: 128, crop: 'fill', gravity: 'face', quality: 'auto:good', format: 'webp' },
+      // Medium (for cards, comments)
+      { width: 256, height: 256, crop: 'fill', gravity: 'face', quality: 'auto:good', format: 'webp' }
+    ],
+    eager_async: false, // Wait for eager transforms to complete
+    tags: ['avatar', 'user-profile'],
+    context: {
+      original_name: originalName,
+      user_id: userId,
+      uploaded_at: new Date().toISOString()
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      uploadOptions,
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          // Build response with all needed URLs
+          const thumbnailUrl = result.eager && result.eager[0] 
+            ? result.eager[0].secure_url 
+            : getThumbnailUrl(result.public_id, 128, 128);
+          
+          const mediumUrl = result.eager && result.eager[1]
+            ? result.eager[1].secure_url
+            : getOptimizedUrl(result.public_id, { width: 256, height: 256, crop: 'fill' });
+
+          resolve({
+            url: result.secure_url,
+            public_id: result.public_id,
+            format: result.format,
+            width: result.width,
+            height: result.height,
+            bytes: result.bytes,
+            thumbnail_url: thumbnailUrl,
+            medium_url: mediumUrl
+          });
+        }
+      }
+    );
+
+    const readable = new Readable();
+    readable._read = () => {};
+    readable.push(fileBuffer);
+    readable.push(null);
+    readable.pipe(uploadStream);
+  });
+};
+
+/**
+ * Get avatar URL with specific size transformation
+ * @param {string} publicId - Avatar public ID
+ * @param {number} size - Desired size (width/height)
+ * @returns {string} Transformed avatar URL
+ */
+export const getAvatarUrl = (publicId, size = 256) => {
+  if (!publicId) return null;
+  
+  return cloudinary.url(publicId, {
+    width: size,
+    height: size,
+    crop: 'fill',
+    gravity: 'face',
+    quality: 'auto:good',
+    fetch_format: 'webp'
+  });
+};
+
 export default cloudinary;
+

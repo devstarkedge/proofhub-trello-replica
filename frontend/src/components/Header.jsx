@@ -12,6 +12,7 @@ import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
 import NotificationContext from '../context/NotificationContext';
 import Sidebar from './Sidebar';
+import Avatar from './Avatar';
 
 const UserVerificationModal = lazy(() => import('./UserVerificationModal'));
 
@@ -478,11 +479,14 @@ const Header = ({ boardName }) => {
                 onClick={() => setShowUserMenu(!showUserMenu)}
                 className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-bold">
-                    {user?.name?.[0]?.toUpperCase() || 'U'}
-                  </span>
-                </div>
+                <Avatar 
+                  src={user?.avatar} 
+                  name={user?.name} 
+                  role={user?.role}
+                  isVerified={user?.isVerified}
+                  size="sm"
+                  showBadge={true}
+                />
                 <div className="hidden md:block text-left">
                   <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
                   <p className="text-xs text-gray-500 capitalize">{user?.role || 'Member'}</p>

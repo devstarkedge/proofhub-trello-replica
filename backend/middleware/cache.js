@@ -39,7 +39,8 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/announcements', // Skip announcements to avoid clone issues with Mongoose documents
     '/api/announcements/', // Skip all announcement-related endpoints
     '/api/attachments', // Skip caching for all attachment endpoints
-    '/api/attachments/' // Skip caching for all attachment-related endpoints
+    '/api/attachments/', // Skip caching for all attachment-related endpoints
+    '/api/users/profile' // Skip caching for user profile (avatar updates)
   ];
   return (req, res, next) => {
     // Skip caching for non-GET requests

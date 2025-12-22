@@ -11,6 +11,7 @@ import {
 import { EmployeeListSkeleton } from './SkeletonLoaders';
 import { useDebounce } from '../../hooks/useDebounce';
 import PermissionGate from '../PermissionGate';
+import Avatar from '../Avatar';
 
 /**
  * EmployeeAssignment Component
@@ -361,11 +362,14 @@ const EmployeeListRow = memo(({
       />
       <div className="ml-4 flex-1">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
-            <span className="text-white font-bold text-lg">
-              {employee.name?.[0]?.toUpperCase()}
-            </span>
-          </div>
+          <Avatar 
+            src={employee.avatar} 
+            name={employee.name} 
+            role={employee.role}
+            isVerified={employee.isVerified}
+            size="lg"
+            showBadge={true}
+          />
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-gray-900 truncate">{employee.name}</p>
             <div className="flex items-center gap-2 mt-1">

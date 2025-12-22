@@ -23,6 +23,7 @@ import AuthContext from '../context/AuthContext';
 import useDepartmentStore from '../store/departmentStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
+import Avatar from '../components/Avatar';
 
 // Memoized User Row Component for better performance
 const UserRow = memo(({ 
@@ -39,9 +40,14 @@ const UserRow = memo(({
     <tr className="hover:bg-gray-50 transition-colors duration-150">
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="flex items-center">
-          <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-            {user.name.charAt(0).toUpperCase()}
-          </div>
+          <Avatar 
+            src={user.avatar} 
+            name={user.name} 
+            role={user.role}
+            isVerified={user.isVerified}
+            size="md"
+            showBadge={true}
+          />
           <div className="ml-4">
             <div className="text-sm font-semibold text-gray-900">{user.name}</div>
             <div className="text-sm text-gray-500">{user.email}</div>

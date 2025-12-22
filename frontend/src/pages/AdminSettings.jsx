@@ -1,9 +1,10 @@
 import React, { useState, useContext } from "react";
-import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, User, Shield } from "lucide-react";
+import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield } from "lucide-react";
 import AuthContext from "../context/AuthContext";
 import api from "../services/api";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
+import Avatar from "../components/Avatar";
 
 const AdminSettings = () => {
   const { user, token, setUser } = useContext(AuthContext);
@@ -152,12 +153,19 @@ const AdminSettings = () => {
             {/* Current User Info Card */}
             <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-xl shadow-lg mb-6 text-white">
               <div className="flex items-center gap-4">
-                <div className="bg-white/20 p-3 rounded-full">
-                  <User className="w-8 h-8" />
-                </div>
+                <Avatar 
+                  src={user?.avatar} 
+                  name={user?.name} 
+                  role={user?.role}
+                  isVerified={user?.isVerified}
+                  size="xl"
+                  showBadge={true}
+                  className="ring-4 ring-white/30"
+                />
                 <div>
-                  <h3 className="text-sm font-medium opacity-90">Current Account</h3>
-                  <p className="text-xl font-semibold">{user?.email}</p>
+                  <h3 className="text-lg font-semibold">{user?.name}</h3>
+                  <p className="text-sm opacity-90">Current Account</p>
+                  <p className="text-lg font-medium mt-1">{user?.email}</p>
                 </div>
               </div>
             </div>

@@ -14,6 +14,7 @@ import HomePageSkeleton from '../components/LoadingSkeleton';
 import NeonSparkText from '../components/NeonSparkText';
 import { useDebounce } from '../hooks/useDebounce';
 import useProjectStore from '../store/projectStore';
+import Avatar from '../components/Avatar';
 import { lazy, Suspense } from 'react';
 
 // Lazy load modals for better initial load
@@ -470,15 +471,14 @@ const HomePage = () => {
                               <Shield size={20} className="text-gray-500" />
                               <div className="flex -space-x-2">
                                 {department.managers.slice(0, 3).map((manager, index) => (
-                                  <div
+                                  <Avatar
                                     key={manager._id}
-                                    className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm"
-                                    title={manager.name}
-                                  >
-                                    <span className="text-xs font-semibold text-white">
-                                      {manager.name.charAt(0).toUpperCase()}
-                                    </span>
-                                  </div>
+                                    src={manager.avatar}
+                                    name={manager.name}
+                                    size="sm"
+                                    showBadge={false}
+                                    className=""
+                                  />
                                 ))}
                                 {department.managers.length > 3 && (
                                   <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
@@ -500,15 +500,14 @@ const HomePage = () => {
                             >
                               <div className="flex -space-x-2">
                                 {(membersWithAssignments[department._id] || []).slice(0, 5).map((member, index) => (
-                                  <div
+                                  <Avatar
                                     key={member._id}
-                                    className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm"
-                                    title={member.name}
-                                  >
-                                    <span className="text-xs font-semibold text-white">
-                                      {member.name.charAt(0).toUpperCase()}
-                                    </span>
-                                  </div>
+                                    src={member.avatar}
+                                    name={member.name}
+                                    size="sm"
+                                    showBadge={false}
+                                    className=""
+                                  />
                                 ))}
                                 {(membersWithAssignments[department._id] || []).length > 5 && (
                                   <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
@@ -560,11 +559,12 @@ const HomePage = () => {
                                           setMemberListExpanded(prev => ({ ...prev, [department._id]: false }));
                                         }}
                                       >
-                                        <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                                          <span className="text-xs font-semibold text-white">
-                                            {member.name.charAt(0).toUpperCase()}
-                                          </span>
-                                        </div>
+                                        <Avatar
+                                          src={member.avatar}
+                                          name={member.name}
+                                          size="xs"
+                                          showBadge={false}
+                                        />
                                         <span className="font-medium">{member.name}</span>
                                         {selectedMembers[department._id] === member._id && (
                                           <div className="w-2 h-2 bg-blue-600 rounded-full ml-auto"></div>

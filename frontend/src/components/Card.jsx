@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import DeletePopup from "./ui/DeletePopup";
+import Avatar from "./Avatar";
 
 // Helper to get text color based on background
 const getTextColor = (bgColor) => {
@@ -271,17 +272,13 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
             {card.assignees?.length === 1 ? (
               // Single Assignee - Show Name
               <>
-                <div
-                  className="w-6 h-6 rounded-full ring-2 ring-white bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center overflow-hidden shadow-sm"
-                >
-                  {card.assignees[0].avatar ? (
-                    <img src={card.assignees[0].avatar} alt={card.assignees[0].name} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-[9px] font-bold text-white">
-                      {card.assignees[0].name?.[0]?.toUpperCase()}
-                    </span>
-                  )}
-                </div>
+                <Avatar
+                  src={card.assignees[0].avatar}
+                  name={card.assignees[0].name}
+                  size="xs"
+                  showBadge={false}
+                  className=""
+                />
                 <span className="text-[11px] text-gray-600 font-medium truncate max-w-[100px]">{card.assignees[0].name}</span>
               </>
             ) : (
@@ -289,19 +286,14 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
               <>
                 <div className="flex -space-x-2">
                   {card.assignees?.slice(0, 3).map((assignee) => (
-                    <div
+                    <Avatar
                       key={assignee._id}
-                      className="w-6 h-6 rounded-full ring-2 ring-white bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center overflow-hidden shadow-sm"
-                      title={assignee.name}
-                    >
-                      {assignee.avatar ? (
-                        <img src={assignee.avatar} alt={assignee.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-[9px] font-bold text-white">
-                          {assignee.name?.[0]?.toUpperCase()}
-                        </span>
-                      )}
-                    </div>
+                      src={assignee.avatar}
+                      name={assignee.name}
+                      size="xs"
+                      showBadge={false}
+                      className=""
+                    />
                   ))}
                   {card.assignees?.length > 3 && (
                     <div className="w-6 h-6 rounded-full ring-2 ring-white bg-gray-50 flex items-center justify-center text-[9px] font-bold text-gray-500 shadow-sm">
