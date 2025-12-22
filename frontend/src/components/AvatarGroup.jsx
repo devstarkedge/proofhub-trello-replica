@@ -72,7 +72,7 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
           <div
             key={assignee._id || idx}
             style={{ left: `-${idx * 12}px` }}
-            className="border-2 border-white z-0"
+            className="z-0"
           >
             <Avatar 
               src={assignee?.avatar} 
