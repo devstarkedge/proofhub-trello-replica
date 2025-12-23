@@ -1188,13 +1188,35 @@ class DatabaseService {
   }
 
   // Notification operations
-  async getNotifications() {
+  async getNotifications(params = {}) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(`${baseURL}/api/notifications`, { headers });
+    
+    const queryParams = new URLSearchParams();
+    if (params.limit) queryParams.append('limit', params.limit);
+    if (params.skip) queryParams.append('skip', params.skip);
+    if (params.filter && params.filter !== 'all') queryParams.append('filter', params.filter);
+    if (params.type) queryParams.append('type', params.type);
+    if (params.priority) queryParams.append('priority', params.priority);
+    
+    const url = `${baseURL}/api/notifications${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async getUnreadCount() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/notifications/unread-count`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
@@ -1203,7 +1225,7 @@ class DatabaseService {
 
   async markNotificationAsRead(notificationId) {
     const token = localStorage.getItem('token');
-    const headers = {};
+    const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -1217,16 +1239,103 @@ class DatabaseService {
     return await res.json();
   }
 
-  async deleteNotification(notificationId) {
+  async markAllNotificationsAsRead() {
     const token = localStorage.getItem('token');
-    const headers = {};
+    const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    await fetch(`${baseURL}/api/notifications/${notificationId}`, {
+    const res = await fetch(`${baseURL}/api/notifications/read-all`, {
+      method: 'PUT',
+      headers
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async archiveNotification(notificationId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/notifications/${notificationId}/archive`, {
+      method: 'PUT',
+      headers
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async clearAllNotifications() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/notifications/clear-all`, {
+      method: 'PUT',
+      headers
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async deleteNotification(notificationId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/notifications/${notificationId}`, {
       method: 'DELETE',
       headers
     });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return { success: true };
+  }
+
+  async getArchivedNotifications(params = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const queryParams = new URLSearchParams();
+    if (params.limit) queryParams.append('limit', params.limit);
+    if (params.skip) queryParams.append('skip', params.skip);
+    
+    const url = `${baseURL}/api/notifications/archived${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async restoreNotification(notificationId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/notifications/${notificationId}/restore`, {
+      method: 'PUT',
+      headers
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
   }
 
   // Search operations

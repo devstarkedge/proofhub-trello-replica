@@ -11,10 +11,39 @@ class NotificationService {
     this.processing = false;
   }
 
+  // Priority mapping based on notification type
+  getPriorityForType(type) {
+    const highPriorityTypes = [
+      'task_overdue', 'deadline_approaching', 'task_due_soon', 
+      'reminder_missed', 'system_alert'
+    ];
+    const criticalPriorityTypes = ['user_registered', 'system_alert'];
+    const lowPriorityTypes = ['test_notification', 'announcement_created'];
+    
+    if (criticalPriorityTypes.includes(type)) return 'critical';
+    if (highPriorityTypes.includes(type)) return 'high';
+    if (lowPriorityTypes.includes(type)) return 'low';
+    return 'medium';
+  }
+
   // Main notification creation method
   async createNotification(notificationData, options = {}) {
     try {
-      const { type, title, message, user, sender, relatedCard, relatedBoard, relatedTeam } = notificationData;
+      const { 
+        type, 
+        title, 
+        message, 
+        user, 
+        sender, 
+        relatedCard, 
+        relatedBoard, 
+        relatedTeam,
+        entityId,
+        entityType,
+        action,
+        priority: explicitPriority,
+        metadata
+      } = notificationData;
 
       // Check user settings before creating notification
       const userDoc = await User.findById(user).select('settings role department team pushSubscription email name');
@@ -25,6 +54,9 @@ class NotificationService {
         return null;
       }
 
+      // Determine priority (explicit > auto-assigned)
+      const priority = explicitPriority || this.getPriorityForType(type);
+
       // Create the notification
       const notification = await Notification.create({
         type,
@@ -34,23 +66,35 @@ class NotificationService {
         sender,
         relatedCard,
         relatedBoard,
-        relatedTeam
+        relatedTeam,
+        entityId: entityId || relatedCard || relatedBoard || relatedTeam,
+        entityType: entityType || (relatedCard ? 'Card' : relatedBoard ? 'Board' : relatedTeam ? 'Team' : null),
+        action,
+        priority,
+        metadata: metadata || {}
       });
 
+      // Populate for socket emission
+      const populatedNotification = await Notification.findById(notification._id)
+        .populate('sender', 'name email avatar')
+        .populate('relatedCard', 'title')
+        .populate('relatedBoard', 'name')
+        .lean();
+
       // Send real-time notification via socket
-      emitNotification(user.toString(), notification);
+      emitNotification(user.toString(), populatedNotification);
 
       // Send email notification if enabled
-      if (userDoc.settings.notifications.email) {
+      if (userDoc.settings?.notifications?.email) {
         await this.sendEmailNotification(notification, userDoc);
       }
 
       // Send push notification if enabled and subscription exists
-      if (userDoc.settings.notifications.push && userDoc.pushSubscription) {
+      if (userDoc.settings?.notifications?.push && userDoc.pushSubscription) {
         await this.sendPushNotification(notification, userDoc);
       }
 
-      return notification;
+      return populatedNotification;
     } catch (error) {
       console.error('Error creating notification:', error);
       return null;

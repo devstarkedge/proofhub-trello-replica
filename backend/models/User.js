@@ -67,12 +67,23 @@ const userSchema = new mongoose.Schema({
     notifications: {
       email: { type: Boolean, default: true },
       push: { type: Boolean, default: true },
+      inApp: { type: Boolean, default: true },
       taskAssigned: { type: Boolean, default: true },
       taskUpdated: { type: Boolean, default: true },
+      taskCompleted: { type: Boolean, default: true },
       commentMention: { type: Boolean, default: true },
       projectUpdates: { type: Boolean, default: true },
       taskDeleted: { type: Boolean, default: true },
-      userCreated: { type: Boolean, default: true }
+      userCreated: { type: Boolean, default: true },
+      deadlineReminders: { type: Boolean, default: true },
+      announcements: { type: Boolean, default: true },
+      statusChanges: { type: Boolean, default: true },
+      // Quiet hours (Do Not Disturb)
+      quietHoursEnabled: { type: Boolean, default: false },
+      quietHoursStart: { type: String, default: '22:00' },
+      quietHoursEnd: { type: String, default: '08:00' },
+      // Grouping preference
+      groupSimilar: { type: Boolean, default: true }
     }
   },
   pushSubscription: {
