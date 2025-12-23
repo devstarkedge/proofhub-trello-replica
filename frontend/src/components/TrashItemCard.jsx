@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   MessageSquare,
   AlertCircle,
+  AlertTriangle,
   Eye,
   Loader2
 } from 'lucide-react';
@@ -33,6 +34,7 @@ const TrashItemCard = ({
   isProcessing = false,
   showDeleteConfirm = false,
   onConfirmDelete,
+  onCancelDelete,
   onPreview
 }) => {
   const [thumbnailHovered, setThumbnailHovered] = useState(false);
@@ -237,7 +239,6 @@ const TrashItemCard = ({
             <RotateCcw className="w-4 h-4" />
           </button>
 
-           {!showDeleteConfirm ? (
             <button
               onClick={() => onDelete(item)}
               disabled={isProcessing}
@@ -246,17 +247,44 @@ const TrashItemCard = ({
             >
               <Trash2 className="w-4 h-4" />
             </button>
-          ) : (
-             <button
-                onClick={onConfirmDelete}
-                className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-600 hover:bg-red-700 text-white animate-pulse shadow-sm"
-                title="Confirm Delete"
-             >
-                <AlertCircle className="w-4 h-4" />
-             </button>
-          )}
         </div>
       </div>
+
+      {/* Delete Confirmation Overlay */}
+      {showDeleteConfirm && (
+        <div className="absolute inset-0 z-20 backdrop-blur-md bg-white/70 rounded-xl flex items-center justify-between px-4 sm:px-6 animate-in fade-in duration-200">
+             <div className="flex items-center gap-3 min-w-0">
+                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 animate-bounce">
+                     <AlertTriangle className="w-5 h-5 text-red-600" />
+                 </div>
+                 <div className="flex flex-col">
+                     <h4 className="text-sm font-bold text-gray-900 leading-tight">Delete Permanently?</h4>
+                     <p className="text-[11px] text-gray-500 leading-tight mt-0.5">This action cannot be undone.</p>
+                 </div>
+             </div>
+             <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                 <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCancelDelete();
+                    }}
+                    className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-all duration-200"
+                 >
+                    Cancel
+                 </button>
+                 <button 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onConfirmDelete();
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-red-600 text-xs font-semibold text-white hover:bg-red-700 hover:shadow-md transition-all duration-200 shadow-sm flex items-center gap-1.5"
+                 >
+                    <Trash2 className="w-3 h-3" />
+                    Delete
+                 </button>
+             </div>
+        </div>
+      )}
     </div>
   );
 };

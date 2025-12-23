@@ -121,8 +121,12 @@ const LoginPage = () => {
             transition={{ delay: 0.2 }}
             className="text-center mb-8"
           >
-            <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <LogIn className="text-white" size={28} />
+            <div className="flex justify-center mb-8">
+              <img 
+                src="/footer-logo-new.webp" 
+                alt="Logo" 
+                className="w-24 h-24 object-contain drop-shadow-[0_0_15px_rgba(192,132,252,0.6)] hover:drop-shadow-[0_0_25px_rgba(192,132,252,0.8)] transition-all duration-300"
+              />
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Welcome Back</h2>
             <p className="text-white/70">Sign in to your account</p>

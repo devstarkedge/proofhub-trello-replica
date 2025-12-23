@@ -20,7 +20,7 @@ const WelcomeHeader = ({ user }) => {
     else setGreeting('Good Evening');
   }, []);
 
-  // Snowfall fade-in effect for dark mode
+  // Star fade-in effect for dark mode
   useEffect(() => {
     if (isDarkMode) {
       setTimeout(() => setSnowOpacity(1), 500);
@@ -35,11 +35,9 @@ const WelcomeHeader = ({ user }) => {
     if (!el) return;
     el.classList.remove('hand-shake');
     el.style.animationDuration = `${ms}ms`;
-    // Force reflow
     void el.offsetWidth;
     el.classList.add('hand-shake');
     
-    // Clear after duration
     setTimeout(() => {
       if (el) {
         el.classList.remove('hand-shake');
@@ -48,67 +46,62 @@ const WelcomeHeader = ({ user }) => {
     }, ms);
   };
 
-  // Initial hand shake on mount
   useEffect(() => {
     const t = setTimeout(() => triggerShake(5000), 800);
     return () => clearTimeout(t);
   }, []);
 
-  // Dynamic snowflake count based on window width
-  const snowflakeCount = typeof window !== 'undefined' && window.innerWidth < 768 ? 40 : 100;
+  // Stars configuration (was snowfall)
+  const snowflakeCount = typeof window !== 'undefined' && window.innerWidth < 768 ? 60 : 150;
 
   return (
     <div className={`
-      relative rounded-2xl p-8 shadow-2xl overflow-hidden
+      relative rounded-3xl p-8 shadow-2xl overflow-hidden
       transition-all duration-700
       animate-in fade-in slide-in-from-top-4
       ${isDarkMode 
-        ? 'bg-gradient-to-br from-[#1e293b] via-[#0f172a] to-[#020617] border border-indigo-900/40' 
+        ? 'bg-[#0f172a] border border-indigo-900/40' 
         : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white'}
     `}>
       {/* ==========================================
-          LAYER 1: ATMOSPHERE & BACKGROUND FX
+          LAYER 1: DEEP SPACE ATMOSPHERE
           ========================================== */}
       
-      {/* DARK MODE SPECIFIC LIGHTING */}
       {isDarkMode && (
         <>
-           {/* Deep atmospheric glow from top right (Moon source) */}
-           <div className="absolute -top-20 -right-20 w-[600px] h-[600px] bg-indigo-500/15 rounded-full blur-[100px] pointer-events-none z-0" />
+           {/* Deep Space Background Gradient */}
+           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(30,27,75,0.8),transparent_70%)] z-0" />
            
-           {/* Subtle gradient brightening towards the moon */}
-           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.15),transparent_50%)] z-0 pointer-events-none" />
+           {/* Nebula Clouds */}
+           <div className="absolute top-0 right-0 w-[800px] h-[600px] bg-purple-900/20 rounded-full blur-[120px] mix-blend-screen pointer-events-none animate-pulse-slow" />
+           <div className="absolute bottom-0 left-0 w-[600px] h-[500px] bg-blue-900/10 rounded-full blur-[100px] mix-blend-screen pointer-events-none" />
+           
+           {/* Shooting Stars Container */}
+           <div className="absolute inset-0 overflow-hidden pointer-events-none z-[1]">
+             <div className="shooting-star" style={{ top: '10%', left: '20%', animationDelay: '0s' }}></div>
+             <div className="shooting-star" style={{ top: '25%', left: '70%', animationDelay: '4s' }}></div>
+             <div className="shooting-star" style={{ top: '40%', left: '90%', animationDelay: '7s' }}></div>
+           </div>
         </>
       )}
 
-      {/* GRID PATTERN OVERLAY */}
-      <div 
-        className={`absolute inset-0 z-0 opacity-20 pointer-events-none transition-opacity duration-500
-          ${isDarkMode ? 'bg-[url("/grid-pattern-dark.svg")] opacity-10' : 'bg-[url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+")]'}
-        `}
-      ></div>
-
-      {/* REACT SNOWFALL (DARK MODE ONLY) */}
+      {/* REACT SNOWFALL configured as STARS */}
       <div 
         className="absolute inset-0 z-0 pointer-events-none transition-opacity duration-1000 ease-in-out"
         style={{ opacity: isDarkMode ? snowOpacity : 0 }}
       >
         {isDarkMode && (
           <Snowfall 
-            color="#e2e8f0" 
+            color="#ffffff" 
             snowflakeCount={snowflakeCount}
-            radius={[0.5, 2.0]} 
-            speed={[0.5, 2.0]}
-            wind={[-0.5, 1.0]}
+            radius={[0.5, 1.5]} // Smaller radius for stars
+            speed={[0.0, 0.2]} // Very slow movement for stars
+            wind={[0, 0.1]}     // Minimal wind
             style={{ position: 'absolute', width: '100%', height: '100%' }}
+            opacity={[0.4, 0.9]}
           />
         )}
       </div>
-
-      {/* LIGHTING OVERLAY FOR SNOW (Brightens snow near moon) */}
-      {isDarkMode && (
-        <div className="absolute -top-10 -right-10 w-[500px] h-[500px] bg-[radial-gradient(circle,rgba(255,255,255,0.1)_0%,transparent_70%)] blur-xl mix-blend-overlay z-[1] pointer-events-none" />
-      )}
 
       {/* ==========================================
           LAYER 2: CONTENT & FOREGROUND
@@ -119,32 +112,34 @@ const WelcomeHeader = ({ user }) => {
         <div className="flex-1">
           {/* Badge */}
           <div className={`
-             inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 
-             backdrop-blur-md transition-all duration-300
+             inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6
+             backdrop-blur-md transition-all duration-300 shadow-lg border
              ${isDarkMode 
-               ? 'bg-indigo-950/40 border border-indigo-500/20 text-indigo-200' 
-               : 'bg-white/20 text-white'}
+               ? 'bg-slate-900/50 border-indigo-500/30 text-indigo-300' 
+               : 'bg-white/20 border-white/20 text-white'}
           `}>
-             <Sparkles size={18} className={isDarkMode ? 'text-indigo-400' : 'text-white'} />
-             <span className="text-sm font-medium tracking-wide">
-               {isDarkMode ? 'Evening Flow' : 'Welcome!'}
+             <Sparkles size={16} className={isDarkMode ? 'text-indigo-400' : 'text-white'} />
+             <span className="text-xs font-bold uppercase tracking-widest">
+               {isDarkMode ? 'Late Night Flow' : 'Welcome'}
              </span>
           </div>
 
           {/* Heading */}
           <h1 className={`
             text-4xl md:text-5xl font-bold mb-3 tracking-tight
-            ${isDarkMode ? 'text-white' : 'text-white'}
+            ${isDarkMode ? 'text-white drop-shadow-lg' : 'text-white'}
           `}>
             {greeting},{' '}
-            <NeonSparkText 
-              text={user?.name?.split(' ')[0] || 'User'} 
-              className={isDarkMode ? 'text-indigo-300' : 'text-yellow-200'}
-            />
-            <span className="text-white">!</span>{' '}
+            <div className="inline-block">
+              <NeonSparkText 
+                text={user?.name?.split(' ')[0] || 'User'} 
+                className={isDarkMode ? 'text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-purple-300 to-indigo-300' : 'text-yellow-200'}
+              />
+            </div>
+            {' '}
             <span
               ref={handRef}
-              className="inline-block hand-emoji cursor-pointer select-none transition-transform hover:scale-110 active:scale-95 origin-bottom-right"
+              className="inline-block hand-emoji cursor-pointer select-none hover:rotate-12 transition-transform duration-300 origin-bottom-right"
               onMouseEnter={() => triggerShake(3000)}
               role="img" 
               aria-label="wave"
@@ -153,7 +148,7 @@ const WelcomeHeader = ({ user }) => {
             </span>
           </h1>
 
-          {/* Subtitle with Frosted Glass */}
+          {/* Subtitle */}
           <p className={`
             text-lg max-w-xl leading-relaxed py-2 pl-4 border-l-2
             ${isDarkMode 
@@ -164,39 +159,92 @@ const WelcomeHeader = ({ user }) => {
           </p>
         </div>
 
-        {/* MOON ICON (Visual Anchor for Dark Mode) */}
+        {/* REALISTIC MOON (CSS ART) */}
         {isDarkMode && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.8, y: -20, rotate: -20 }}
-            animate={{ 
-              opacity: 1, 
-              scale: 1, 
-              y: [0, -10, 0], // Gentle float
-              rotate: 0 
-            }}
-            transition={{ 
-              appearance: { duration: 1, delay: 0.5, type: 'spring' },
-              y: { duration: 5, repeat: Infinity, ease: "easeInOut", repeatType: "reverse" }
-            }}
-            className="hidden md:block relative mr-8"
-          >
-             <div className="relative w-32 h-32 flex items-center justify-center">
-                
-                {/* Moon itself */}
-                <Moon 
-                  size={80} 
-                  className="text-indigo-100 drop-shadow-[0_0_25px_rgba(199,210,254,0.6)] z-20" 
-                  strokeWidth={1.5} 
-                  fill="currentColor" // Fill helps it look more solid like a moon
-                />
-                
-                {/* Subtle orbit rings */}
-                <div className="absolute inset-0 border border-indigo-400/20 rounded-full w-full h-full animate-spin-slow z-10" style={{ animationDuration: '20s' }} />
-                <div className="absolute -inset-4 border border-indigo-500/10 rounded-full w-[calc(100%+32px)] h-[calc(100%+32px)] animate-spin-slow z-0" style={{ animationDuration: '30s', animationDirection: 'reverse' }} />
+          <div className="hidden md:block relative mr-12 perspective-1000">
+             {/* Glow behind moon */}
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl z-0"></div>
+             
+             {/* The Moon */}
+             <div className="moon-container relative w-32 h-32 z-10 animate-float-slow">
+                <div className="moon-surface w-full h-full rounded-full overflow-hidden relative shadow-[inset_-10px_-10px_30px_rgba(0,0,0,0.8),0_0_20px_rgba(200,200,255,0.4)]">
+                  {/* Craters */}
+                  <div className="absolute top-[20%] left-[25%] w-6 h-6 rounded-full bg-slate-400/20 shadow-[inset_2px_2px_4px_rgba(0,0,0,0.4)]"></div>
+                  <div className="absolute top-[60%] left-[60%] w-10 h-10 rounded-full bg-slate-400/20 shadow-[inset_2px_2px_5px_rgba(0,0,0,0.4)]"></div>
+                  <div className="absolute top-[35%] left-[65%] w-4 h-4 rounded-full bg-slate-400/30 shadow-[inset_1px_1px_3px_rgba(0,0,0,0.4)]"></div>
+                  <div className="absolute bottom-[20%] left-[30%] w-8 h-8 rounded-full bg-slate-400/10 shadow-[inset_2px_2px_4px_rgba(0,0,0,0.3)]"></div>
+                  
+                  {/* Texture Gradient overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-slate-100 via-slate-300 to-slate-500 opacity-90 mix-blend-overlay"></div>
+                </div>
              </div>
-          </motion.div>
+          </div>
         )}
       </div>
+
+      <style jsx="true">{`
+        .perspective-1000 { perspective: 1000px; }
+        
+        .moon-surface {
+          background: #e2e8f0;
+        }
+
+        @keyframes floatSlow {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-15px) rotate(2deg); }
+        }
+        .animate-float-slow {
+          animation: floatSlow 6s ease-in-out infinite;
+        }
+
+        @keyframes pulseSlow {
+          0%, 100% { opacity: 0.3; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(1.05); }
+        }
+        .animate-pulse-slow {
+          animation: pulseSlow 8s ease-in-out infinite;
+        }
+
+        /* Shooting Star Animation */
+        .shooting-star {
+          position: absolute;
+          width: 2px;
+          height: 2px;
+          background: white;
+          border-radius: 50%;
+          box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.4);
+          opacity: 0;
+          animation: shoot 5s linear infinite;
+        }
+        .shooting-star::before {
+          content: '';
+          position: absolute;
+          top: 50%;
+          transform: translateY(-50%);
+          left: 0;
+          width: 80px;
+          height: 3px;
+          background: linear-gradient(90deg, white, transparent);
+        }
+
+        @keyframes shoot {
+          0% {
+            transform: translate(0, 0) rotate(-45deg);
+            opacity: 0;
+          }
+          5% {
+             opacity: 1;
+          }
+          20% {
+            transform: translate(-200px, 200px) rotate(-45deg);
+            opacity: 0;
+          }
+          100% {
+            transform: translate(-200px, 200px) rotate(-45deg);
+            opacity: 0;
+          }
+        }
+      `}</style>
     </div>
   );
 };

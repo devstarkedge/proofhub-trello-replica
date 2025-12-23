@@ -117,7 +117,7 @@ const AvatarGroup = memo(function AvatarGroup({ assignees = [] }) {
                   size="xs"
                   showBadge={false}
                 />
-                <span className="text-gray-900 font-medium truncate max-w-[80px]">{assignee?.name || 'Unknown'}</span>
+                <span className="text-black font-medium truncate max-w-[80px]">{assignee?.name || 'Unknown'}</span>
               </li>
             ))}
           </ul>

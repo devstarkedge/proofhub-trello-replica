@@ -397,6 +397,7 @@ const ProjectTrash = () => {
                 onRestore={handleRestore}
                 onDelete={handleDeleteClick}
                 onConfirmDelete={() => handleConfirmDelete(item)}
+                onCancelDelete={() => setShowConfirm(null)}
                 isProcessing={processingItems.has(item._id)}
                 showDeleteConfirm={showConfirm === item._id}
                 onPreview={handlePreviewClick}
