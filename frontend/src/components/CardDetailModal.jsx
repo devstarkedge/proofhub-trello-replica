@@ -1245,6 +1245,16 @@ const CardDetailModal = React.memo(({
   const handleRestoreCard = async () => {
     if (!taskId) return;
     setIsArchiving(true);
+    
+    // Dispatch event BEFORE API call for optimistic UI update in WorkFlow.jsx
+    // This allows WorkFlow to immediately move the card from archived to active view
+    window.dispatchEvent(new CustomEvent('card-restored-from-modal', {
+      detail: {
+        cardId: taskId,
+        card: card // Pass full card data for optimistic update
+      }
+    }));
+    
     try {
       const response = await Database.restoreCard(taskId);
       if (response.success && response.data) {
@@ -1270,10 +1280,18 @@ const CardDetailModal = React.memo(({
         toast.success("Task restored successfully");
         onClose(); // Close modal
       } else {
+        // Rollback: dispatch event to revert the optimistic update
+        window.dispatchEvent(new CustomEvent('card-restore-failed', {
+          detail: { cardId: taskId, card }
+        }));
         throw new Error('Restore failed');
       }
     } catch (error) {
       console.error("Error restoring card:", error);
+      // Rollback: dispatch event to revert the optimistic update
+      window.dispatchEvent(new CustomEvent('card-restore-failed', {
+        detail: { cardId: taskId, card }
+      }));
       toast.error("Failed to restore task");
     } finally {
       setIsArchiving(false);
@@ -1402,6 +1420,8 @@ const CardDetailModal = React.memo(({
                   }}
                   onDelete={executeDelete}
                   onArchive={() => setShowArchiveConfirmation(true)}
+                  onUnarchive={() => setShowRestoreConfirmation(true)}
+                  isArchived={card?.isArchived || false}
                   isDeleting={deleteLoading}
                   isArchiving={isArchiving}
                   disabled={!taskId}

@@ -169,6 +169,51 @@ useEffect(() => {
   }
 }, [board, setHierarchyProject]);
 
+// Listen for card restore events from CardDetailModal for instant UI sync
+useEffect(() => {
+  const handleCardRestoredFromModal = (event) => {
+    const { cardId, card } = event.detail || {};
+    if (!cardId || !card) return;
+    
+    const listId = typeof card.list === 'object' ? card.list._id : card.list;
+    if (!listId) return;
+    
+    // 1. Optimistic Update: Add to active workflow immediately
+    useWorkflowStore.getState().restoreCardOptimistic(card);
+    
+    // 2. Optimistic Update: Remove from archived view immediately
+    setArchivedCardsByList(prev => ({
+      ...prev,
+      [listId]: (prev[listId] || []).filter(c => c._id !== cardId)
+    }));
+  };
+  
+  const handleCardRestoreFailed = (event) => {
+    const { cardId, card } = event.detail || {};
+    if (!cardId || !card) return;
+    
+    const listId = typeof card.list === 'object' ? card.list._id : card.list;
+    if (!listId) return;
+    
+    // Rollback: Remove from active workflow
+    useWorkflowStore.getState().restoreCardRollback(cardId, listId);
+    
+    // Rollback: Add back to archived view
+    setArchivedCardsByList(prev => ({
+      ...prev,
+      [listId]: [...(prev[listId] || []), card]
+    }));
+  };
+  
+  window.addEventListener('card-restored-from-modal', handleCardRestoredFromModal);
+  window.addEventListener('card-restore-failed', handleCardRestoreFailed);
+  
+  return () => {
+    window.removeEventListener('card-restored-from-modal', handleCardRestoredFromModal);
+    window.removeEventListener('card-restore-failed', handleCardRestoreFailed);
+  };
+}, []);
+
 // Load archived cards when archive view is toggled
 useEffect(() => {
   if (showArchived && board && lists.length > 0) {

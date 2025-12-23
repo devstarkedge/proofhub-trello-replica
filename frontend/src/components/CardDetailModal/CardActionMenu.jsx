@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MoreVertical, Share2, Link as LinkIcon, Trash2, ArrowRightLeft, Copy, Archive } from "lucide-react";
+import { MoreVertical, Share2, Link as LinkIcon, Trash2, ArrowRightLeft, Copy, Archive, ArchiveRestore } from "lucide-react";
 import DeletePopup from "../ui/DeletePopup";
 
 const ENTITY_LABEL = {
@@ -14,6 +14,8 @@ const CardActionMenu = ({
   ids = {},
   onDelete,
   onArchive,
+  onUnarchive,
+  isArchived = false,
   isDeleting = false,
   isArchiving = false,
   disabled = false,
@@ -133,19 +135,33 @@ const CardActionMenu = ({
                   <span className="font-medium text-gray-800">Copy</span>
                 </button>
 
-                {/* Archive button - only visible for tasks */}
+                {/* Archive/Unarchive button - only visible for tasks */}
                 {entityType === "task" && (
-                  <button
-                    onClick={() => {
-                      setIsOpen(false);
-                      onArchive?.();
-                    }}
-                    disabled={isArchiving}
-                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Archive size={16} className="text-gray-500" />
-                    <span className="font-medium text-gray-800">Archive</span>
-                  </button>
+                  isArchived ? (
+                    <button
+                      onClick={() => {
+                        setIsOpen(false);
+                        onUnarchive?.();
+                      }}
+                      disabled={isArchiving}
+                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ArchiveRestore size={16} className="text-green-600" />
+                      <span className="font-medium text-green-700">Unarchive</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setIsOpen(false);
+                        onArchive?.();
+                      }}
+                      disabled={isArchiving}
+                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Archive size={16} className="text-gray-500" />
+                      <span className="font-medium text-gray-800">Archive</span>
+                    </button>
+                  )
                 )}
                 <div
                   className="relative group"
