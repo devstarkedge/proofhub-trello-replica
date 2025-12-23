@@ -19,6 +19,8 @@ const AppearanceModal = ({ isOpen, onClose }) => {
     themeColor,
     effectiveMode,
     isPreviewMode,
+    previewAppearance,
+    previewThemeColor,
     setAppearance,
     setThemeColor,
     enterPreviewMode,
@@ -26,6 +28,14 @@ const AppearanceModal = ({ isOpen, onClose }) => {
     cancelPreview,
     resetToDefault,
   } = useThemeStore();
+
+  // Compute current values (preview-aware) for UI feedback
+  const currentAppearance = isPreviewMode 
+    ? (previewAppearance ?? appearance) 
+    : appearance;
+  const currentThemeColor = isPreviewMode 
+    ? (previewThemeColor ?? themeColor) 
+    : themeColor;
 
   // Enter preview mode when modal opens
   useEffect(() => {
@@ -150,20 +160,20 @@ const AppearanceModal = ({ isOpen, onClose }) => {
                       onClick={() => setAppearance(mode.id)}
                       className="relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all"
                       style={{
-                        borderColor: appearance === mode.id 
+                        borderColor: currentAppearance === mode.id 
                           ? 'var(--color-primary)' 
                           : 'var(--color-border-default)',
-                        backgroundColor: appearance === mode.id 
+                        backgroundColor: currentAppearance === mode.id 
                           ? 'var(--color-primary-subtle)' 
                           : 'var(--color-bg-subtle)',
-                        color: appearance === mode.id 
+                        color: currentAppearance === mode.id 
                           ? 'var(--color-primary)' 
                           : 'var(--color-text-secondary)',
                       }}
                     >
                       {getModeIcon(mode.id, 24)}
                       <span className="text-sm font-medium">{mode.name}</span>
-                      {appearance === mode.id && (
+                      {currentAppearance === mode.id && (
                         <motion.div
                           layoutId="mode-check"
                           className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
@@ -206,10 +216,10 @@ const AppearanceModal = ({ isOpen, onClose }) => {
                       onClick={() => setThemeColor(color.id)}
                       className="relative group flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all"
                       style={{
-                        borderColor: themeColor === color.id 
+                        borderColor: currentThemeColor === color.id 
                           ? color.color 
                           : 'var(--color-border-default)',
-                        backgroundColor: themeColor === color.id 
+                        backgroundColor: currentThemeColor === color.id 
                           ? `${color.color}15` 
                           : 'var(--color-bg-subtle)',
                       }}
@@ -218,7 +228,7 @@ const AppearanceModal = ({ isOpen, onClose }) => {
                         className="w-8 h-8 rounded-full shadow-md ring-2 ring-white/50 group-hover:ring-4 transition-all"
                         style={{ backgroundColor: color.color }}
                       >
-                        {themeColor === color.id && (
+                        {currentThemeColor === color.id && (
                           <motion.div
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
@@ -231,7 +241,7 @@ const AppearanceModal = ({ isOpen, onClose }) => {
                       <span 
                         className="text-xs font-medium"
                         style={{ 
-                          color: themeColor === color.id 
+                          color: currentThemeColor === color.id 
                             ? color.color 
                             : 'var(--color-text-secondary)' 
                         }}

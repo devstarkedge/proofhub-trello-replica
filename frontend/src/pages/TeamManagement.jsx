@@ -5,6 +5,7 @@ import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
+import useThemeStore from '../store/themeStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import DepartmentList from '../components/TeamManagement/DepartmentList';
@@ -40,6 +41,8 @@ const DeleteConfirmationModal = lazy(() => import('../components/TeamManagement/
  */
 const TeamManagement = () => {
   const { user } = useContext(AuthContext);
+  const { effectiveMode } = useThemeStore();
+  const isDarkMode = effectiveMode === 'dark';
   const {
     departments,
     currentDepartment,
@@ -549,7 +552,7 @@ const TeamManagement = () => {
 
   if (!isAdminOrManager) {
     return (
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100">
+      <div className={`flex min-h-screen ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
         <Sidebar />
         <div className="flex-1 lg:ml-64">
           <Header />
@@ -557,15 +560,15 @@ const TeamManagement = () => {
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-white border-l-4 border-red-500 shadow-xl rounded-2xl p-8"
+              className={`${isDarkMode ? 'bg-gray-800/80 backdrop-blur-sm border-gray-700' : 'bg-white'} border-l-4 border-red-500 shadow-xl rounded-2xl p-8`}
             >
               <div className="flex items-start gap-4">
                 <div className="p-3 bg-red-100 rounded-full">
                   <Shield className="text-red-600" size={28} />
                 </div>
                 <div>
-                  <p className="text-xl font-bold text-gray-900 mb-2">Access Denied</p>
-                  <p className="text-gray-600 leading-relaxed">
+                  <p className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'} mb-2`}>Access Denied</p>
+                  <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'} leading-relaxed`}>
                     Only administrators and managers can manage teams and departments. 
                     Please contact your administrator for access.
                   </p>
@@ -579,7 +582,7 @@ const TeamManagement = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100">
+    <div className={`flex min-h-screen ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
       <Sidebar />
       <div className="flex-1 lg:ml-64">
         <Header />
@@ -593,24 +596,24 @@ const TeamManagement = () => {
             >
               <div className="flex flex-col gap-4">
                 <div>
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 flex items-center gap-2 sm:gap-3 mb-2">
+                  <h1 className={`text-2xl sm:text-3xl md:text-4xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'} flex items-center gap-2 sm:gap-3 mb-2`}>
                     <div className="p-1.5 sm:p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg sm:rounded-xl shadow-lg">
                       <Building2 className="text-white" size={24} />
                     </div>
                     <span>Team Management</span>
                   </h1>
-                  <p className="text-sm sm:text-base text-gray-600 ml-10 sm:ml-11">Manage teams, departments, and roles</p>
+                  <p className={`text-sm sm:text-base ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} ml-10 sm:ml-11`}>Manage teams, departments, and roles</p>
                 </div>
                 
                 {/* Tab Navigation for Admin */}
                 {isAdmin && (
-                  <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-md border border-gray-100 w-fit">
+                  <div className={`flex items-center gap-2 ${isDarkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-gray-100'} rounded-xl p-1 shadow-md border w-fit`}>
                     <button
                       onClick={() => setActiveManagementTab('departments')}
                       className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
                         activeManagementTab === 'departments'
                           ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
-                          : 'text-gray-600 hover:bg-gray-100'
+                          : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
                       }`}
                     >
                       <Building2 size={18} />
@@ -621,7 +624,7 @@ const TeamManagement = () => {
                       className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
                         activeManagementTab === 'roles'
                           ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-md'
-                          : 'text-gray-600 hover:bg-gray-100'
+                          : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
                       }`}
                     >
                       <Shield size={18} />

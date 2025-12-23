@@ -625,18 +625,34 @@ hr {
 :root:not([data-theme="dark"]) input[type="checkbox"],
 :root:not([data-theme="dark"]) input[type="radio"] {
   background-color: #ffffff;
+  border-color: #d1d5db;
+  accent-color: #2563eb;
 }
 
 :root[data-theme="dark"] input[type="checkbox"],
 :root[data-theme="dark"] input[type="radio"] {
-  background-color: var(--color-bg-base);
-  border-color: var(--color-border-emphasis);
+  background-color: #374151 !important;
+  border-color: #6b7280 !important;
+  accent-color: #3b82f6 !important;
+  color-scheme: dark;
 }
 
 :root[data-theme="dark"] input[type="checkbox"]:checked,
 :root[data-theme="dark"] input[type="radio"]:checked {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+}
+
+/* Ensure checkbox hover states work in dark mode */
+:root[data-theme="dark"] input[type="checkbox"]:hover,
+:root[data-theme="dark"] input[type="radio"]:hover {
+  border-color: #9ca3af !important;
+}
+
+:root[data-theme="dark"] input[type="checkbox"]:focus,
+:root[data-theme="dark"] input[type="radio"]:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
 }
 
 /* Disabled states */

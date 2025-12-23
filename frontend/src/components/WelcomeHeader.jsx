@@ -120,7 +120,7 @@ const WelcomeHeader = ({ user }) => {
           `}>
              <Sparkles size={16} className={isDarkMode ? 'text-indigo-400' : 'text-white'} />
              <span className="text-xs font-bold uppercase tracking-widest">
-               {isDarkMode ? 'Late Night Flow' : 'Welcome'}
+               {isDarkMode ? 'Welcome in the Stars' : 'Welcome'}
              </span>
           </div>
 
@@ -223,7 +223,7 @@ const WelcomeHeader = ({ user }) => {
           transform: translateY(-50%);
           left: 0;
           width: 80px;
-          height: 3px;
+          height: 2px;
           background: linear-gradient(90deg, white, transparent);
         }
 

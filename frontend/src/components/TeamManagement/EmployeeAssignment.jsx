@@ -12,6 +12,7 @@ import { EmployeeListSkeleton } from './SkeletonLoaders';
 import { useDebounce } from '../../hooks/useDebounce';
 import PermissionGate from '../PermissionGate';
 import Avatar from '../Avatar';
+import useThemeStore from '../../store/themeStore';
 
 /**
  * EmployeeAssignment Component
@@ -42,6 +43,9 @@ const EmployeeAssignment = memo(({
   onPageChange,
   onItemsPerPageChange
 }) => {
+  const { effectiveMode } = useThemeStore();
+  const isDarkMode = effectiveMode === 'dark';
+
   // Debounce search query
   const debouncedSearch = useDebounce(searchQuery, 300);
 
@@ -62,7 +66,7 @@ const EmployeeAssignment = memo(({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-2xl shadow-sm p-8 sm:p-16 text-center border border-gray-100"
+        className={`${isDarkMode ? 'bg-gray-800/80 backdrop-blur-sm border-gray-700' : 'bg-white border-gray-100'} rounded-2xl shadow-sm p-8 sm:p-16 text-center border`}
       >
         <motion.div
           animate={{ 
@@ -75,10 +79,10 @@ const EmployeeAssignment = memo(({
             ease: "easeInOut"
           }}
         >
-          <Users size={80} className="mx-auto mb-6 text-gray-300" />
+          <Users size={80} className={`mx-auto mb-6 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
         </motion.div>
-        <h3 className="text-2xl font-bold text-gray-900 mb-2">Select a Department</h3>
-        <p className="text-gray-600 max-w-md mx-auto">
+        <h3 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'} mb-2`}>Select a Department</h3>
+        <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'} max-w-md mx-auto`}>
           Choose a department from the list to view and manage its members
         </p>
       </motion.div>
@@ -89,28 +93,28 @@ const EmployeeAssignment = memo(({
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="bg-white rounded-xl sm:rounded-2xl shadow-sm md:shadow-md border border-gray-100 overflow-hidden"
+      className={`${isDarkMode ? 'bg-gray-800/80 backdrop-blur-sm border-gray-700' : 'bg-white border-gray-100'} rounded-xl sm:rounded-2xl shadow-sm md:shadow-md border overflow-hidden`}
     >
       {/* Header */}
-      <div className="p-3 sm:p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50">
+      <div className={`p-3 sm:p-6 border-b ${isDarkMode ? 'border-gray-700 bg-gradient-to-r from-blue-900/30 via-indigo-900/30 to-purple-900/30' : 'border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50'}`}>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           {/* Left Side - Department Title and Description */}
           <div className="flex-1 min-w-0">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+            <h2 className={`text-xl sm:text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'} flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2`}>
               <div className="p-1.5 sm:p-2 bg-blue-600 rounded-lg sm:rounded-xl shadow-md md:shadow-lg flex-shrink-0">
                 <UserPlus className="text-white" size={20} />
               </div>
               <span className="truncate">{currentDepartment.name}</span>
             </h2>
-            <p className="text-xs sm:text-sm text-gray-600">Select employees to add to this department</p>
+            <p className={`text-xs sm:text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Select employees to add to this department</p>
           </div>
 
           {/* Right Side - Member Count and Add Member Button */}
           <div className="flex flex-col gap-2 sm:items-end">
             {/* Member Count Badge */}
-            <div className="flex items-center gap-2 text-xs sm:text-sm px-3 py-1.5 bg-white rounded-lg border border-purple-200 w-fit sm:ml-auto">
+            <div className={`flex items-center gap-2 text-xs sm:text-sm px-3 py-1.5 ${isDarkMode ? 'bg-gray-700/50 border-purple-500/30' : 'bg-white border-purple-200'} rounded-lg border w-fit sm:ml-auto`}>
               <Award className="text-purple-600 flex-shrink-0" size={18} />
-              <span className="font-semibold text-gray-900">
+              <span className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                 {currentDepartment.members?.length || 0} Members
               </span>
             </div>
@@ -132,13 +136,17 @@ const EmployeeAssignment = memo(({
       {/* Content */}
       <div className="p-3 sm:p-6">
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 mb-4 sm:mb-6 overflow-x-auto">
+        <div className={`flex border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'} mb-4 sm:mb-6 overflow-x-auto`}>
           <button
             onClick={() => onTabChange('assigned')}
             className={`px-3 sm:px-6 py-2 sm:py-3 font-semibold transition-all whitespace-nowrap text-sm sm:text-base ${
               activeTab === 'assigned'
-                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                ? isDarkMode 
+                  ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/10'
+                  : 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                : isDarkMode
+                  ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
             <span className="hidden sm:inline">Assigned Employees</span>
@@ -148,8 +156,12 @@ const EmployeeAssignment = memo(({
             onClick={() => onTabChange('all')}
             className={`px-3 sm:px-6 py-2 sm:py-3 font-semibold transition-all whitespace-nowrap text-sm sm:text-base ${
               activeTab === 'all'
-                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                ? isDarkMode 
+                  ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/10'
+                  : 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                : isDarkMode
+                  ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
             <span className="hidden sm:inline">Available Employees</span>
@@ -160,18 +172,22 @@ const EmployeeAssignment = memo(({
         {/* Search and Controls */}
         <div className="flex flex-col gap-2 sm:gap-3 mb-4 sm:mb-6">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 flex-shrink-0" size={18} />
+            <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'} flex-shrink-0`} size={18} />
             <input
               type="text"
               placeholder="Search by name or email..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 sm:py-3 border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm sm:text-base"
+              className={`w-full pl-10 pr-3 py-2 sm:py-3 border rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm sm:text-base ${
+                isDarkMode 
+                  ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-500' 
+                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+              }`}
             />
           </div>
           <button
             onClick={onSelectAll}
-            className="px-3 sm:px-4 py-2 sm:py-3 bg-gray-100 text-gray-700 rounded-lg sm:rounded-xl hover:bg-gray-200 transition-colors font-medium whitespace-nowrap text-sm sm:text-base"
+            className={`px-3 sm:px-4 py-2 sm:py-3 ${isDarkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} rounded-lg sm:rounded-xl transition-colors font-medium whitespace-nowrap text-sm sm:text-base`}
           >
             {selectedUsers.length === paginatedEmployees.length && paginatedEmployees.length > 0
               ? 'Deselect All'
@@ -180,7 +196,7 @@ const EmployeeAssignment = memo(({
         </div>
 
         {/* Employee List */}
-        <div className="border border-gray-200 rounded-lg sm:rounded-xl overflow-hidden">
+        <div className={`border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'} rounded-lg sm:rounded-xl overflow-hidden`}>
           <AnimatePresence mode="wait">
             {isLoading ? (
               <motion.div
@@ -197,9 +213,9 @@ const EmployeeAssignment = memo(({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="p-12 text-center text-gray-500"
+                className={`p-12 text-center ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
               >
-                <Users size={48} className="mx-auto mb-4 text-gray-300" />
+                <Users size={48} className={`mx-auto mb-4 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
                 <p className="font-semibold mb-2">
                   {activeTab === 'assigned' ? 'No assigned employees' : 'No available employees'}
                 </p>
@@ -227,6 +243,7 @@ const EmployeeAssignment = memo(({
                     activeTab={activeTab}
                     departments={departments}
                     onSelect={onSelectUser}
+                    isDarkMode={isDarkMode}
                   />
                 ))}
               </motion.div>
@@ -236,13 +253,17 @@ const EmployeeAssignment = memo(({
 
         {/* Pagination - Responsive */}
         {currentTabEmployees.length > itemsPerPage && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 p-4 bg-gray-50 rounded-xl">
+          <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 p-4 ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-50'} rounded-xl`}>
             <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
-              <label className="text-sm text-gray-600 font-medium">Items per page:</label>
+              <label className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} font-medium`}>Items per page:</label>
               <select
                 value={itemsPerPage}
                 onChange={(e) => onItemsPerPageChange(parseInt(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  isDarkMode 
+                    ? 'bg-gray-700 border-gray-600 text-white' 
+                    : 'bg-white border-gray-300 text-gray-900'
+                }`}
               >
                 <option value={25}>25</option>
                 <option value={50}>50</option>
@@ -254,17 +275,25 @@ const EmployeeAssignment = memo(({
               <button
                 onClick={() => onPageChange(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
-                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
+                className={`px-3 py-2 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none ${
+                  isDarkMode 
+                    ? 'border-gray-600 text-gray-200 hover:bg-gray-600' 
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                }`}
               >
                 Previous
               </button>
-              <span className="text-sm text-gray-600 font-medium whitespace-nowrap">
+              <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} font-medium whitespace-nowrap`}>
                 Page {currentPage} of {totalPages}
               </span>
               <button
                 onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
-                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none"
+                className={`px-3 py-2 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-none ${
+                  isDarkMode 
+                    ? 'border-gray-600 text-gray-200 hover:bg-gray-600' 
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                }`}
               >
                 Next
               </button>
@@ -308,19 +337,19 @@ const EmployeeAssignment = memo(({
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl flex items-center justify-between"
+              className={`mt-4 p-4 ${isDarkMode ? 'bg-blue-500/10 border-blue-500/30' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'} border rounded-xl flex items-center justify-between`}
             >
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-600 rounded-lg">
                   <CheckCircle className="text-white" size={20} />
                 </div>
-                <span className="font-semibold text-blue-900">
+                <span className={`font-semibold ${isDarkMode ? 'text-blue-300' : 'text-blue-900'}`}>
                   {selectedUsers.length} employee{selectedUsers.length !== 1 ? 's' : ''} selected
                 </span>
               </div>
               <button
                 onClick={onClearSelection}
-                className="text-sm text-blue-600 hover:text-blue-800 font-semibold hover:underline"
+                className={`text-sm ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'} font-semibold hover:underline`}
               >
                 Clear Selection
               </button>
@@ -342,7 +371,8 @@ const EmployeeListRow = memo(({
   index,
   activeTab,
   departments,
-  onSelect
+  onSelect,
+  isDarkMode = false
 }) => {
   return (
     <motion.label
@@ -350,15 +380,28 @@ const EmployeeListRow = memo(({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ delay: index * 0.02 }}
-      className={`flex items-center p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-all ${
-        isSelected ? 'bg-blue-50' : ''
+      className={`flex items-center p-4 cursor-pointer border-b last:border-b-0 transition-all ${
+        isDarkMode 
+          ? `border-gray-700 ${isSelected ? 'bg-blue-500/10' : 'hover:bg-gray-700/50'}`
+          : `border-gray-100 ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`
       }`}
     >
       <input
         type="checkbox"
         checked={isSelected}
         onChange={() => onSelect(employee._id)}
-        className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
+        key={`checkbox-${employee._id}-${isDarkMode}`}
+        className="w-5 h-5 rounded border-2 cursor-pointer transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+        style={{
+          backgroundColor: isSelected 
+            ? '#2563eb' 
+            : isDarkMode ? '#374151' : '#ffffff',
+          borderColor: isSelected 
+            ? '#2563eb' 
+            : isDarkMode ? '#6b7280' : '#d1d5db',
+          accentColor: '#2563eb',
+          colorScheme: isDarkMode ? 'dark' : 'light'
+        }}
       />
       <div className="ml-4 flex-1">
         <div className="flex items-center gap-3">
@@ -371,10 +414,10 @@ const EmployeeListRow = memo(({
             showBadge={true}
           />
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-gray-900 truncate">{employee.name}</p>
+            <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} truncate`}>{employee.name}</p>
             <div className="flex items-center gap-2 mt-1">
-              <Mail size={12} className="text-gray-400 flex-shrink-0" />
-              <p className="text-sm text-gray-600 truncate">{employee.email}</p>
+              <Mail size={12} className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'} flex-shrink-0`} />
+              <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} truncate`}>{employee.email}</p>
             </div>
             {/* Show assigned department names for employees with multiple assignments */}
             {activeTab === 'assigned' && employee.department && employee.department.length > 1 && (
@@ -384,7 +427,7 @@ const EmployeeListRow = memo(({
                   .map(dept => (
                     <span
                       key={dept._id}
-                      className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full font-medium"
+                      className={`px-2 py-1 text-xs ${isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700'} rounded-full font-medium`}
                     >
                       {dept.name}
                     </span>
@@ -401,7 +444,7 @@ const EmployeeListRow = memo(({
           animate={{ scale: 1 }}
           className="flex items-center gap-2"
         >
-          <span className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-full font-semibold shadow-sm">
+          <span className={`flex items-center gap-1 px-3 py-1.5 text-xs ${isDarkMode ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'} rounded-full font-semibold shadow-sm`}>
             <CheckCircle size={14} />
             Assigned
           </span>
@@ -415,3 +458,4 @@ EmployeeAssignment.displayName = 'EmployeeAssignment';
 EmployeeListRow.displayName = 'EmployeeListRow';
 
 export default EmployeeAssignment;
+

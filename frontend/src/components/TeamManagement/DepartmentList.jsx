@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { DepartmentListSkeleton } from './SkeletonLoaders';
 import PermissionGate from '../PermissionGate';
+import useThemeStore from '../../store/themeStore';
 
 /**
  * DepartmentList Component
@@ -27,6 +28,9 @@ const DepartmentList = memo(({
   isAdmin = false,
   isManager = false
 }) => {
+  const { effectiveMode } = useThemeStore();
+  const isDarkMode = effectiveMode === 'dark';
+  
   // Only Admin can edit/delete departments
   const canManageDepartment = isAdmin;
   return (
@@ -61,15 +65,15 @@ const DepartmentList = memo(({
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-white rounded-xl sm:rounded-2xl shadow-sm md:shadow-md border border-gray-100 overflow-hidden"
+        className={`${isDarkMode ? 'bg-gray-800/80 backdrop-blur-sm border-gray-700' : 'bg-white border-gray-100'} rounded-xl sm:rounded-2xl shadow-sm md:shadow-md border overflow-hidden`}
       >
-        <div className="p-3 sm:p-5 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
+        <div className={`p-3 sm:p-5 border-b ${isDarkMode ? 'border-gray-700 bg-gradient-to-r from-gray-800 to-gray-800/50' : 'border-gray-200 bg-gradient-to-r from-gray-50 to-white'}`}>
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center gap-2 min-w-0">
+            <h2 className={`text-base sm:text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} flex items-center gap-2 min-w-0`}>
               <Building2 size={18} className="text-blue-600 flex-shrink-0" />
               <span className="truncate">Departments</span>
             </h2>
-            <span className="px-2 sm:px-3 py-0.5 sm:py-1 bg-blue-100 text-blue-700 rounded-full text-xs sm:text-sm font-semibold flex-shrink-0">
+            <span className={`px-2 sm:px-3 py-0.5 sm:py-1 ${isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700'} rounded-full text-xs sm:text-sm font-semibold flex-shrink-0`}>
               {departments.length}
             </span>
           </div>
@@ -91,9 +95,9 @@ const DepartmentList = memo(({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="p-12 text-center text-gray-500"
+                className={`p-12 text-center ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
               >
-                <Building2 size={48} className="mx-auto mb-3 text-gray-300" />
+                <Building2 size={48} className={`mx-auto mb-3 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
                 <p className="font-medium">No departments yet</p>
                 <p className="text-sm mt-1">Create your first department to get started</p>
               </motion.div>
@@ -114,6 +118,7 @@ const DepartmentList = memo(({
                     onEdit={onEditClick}
                     onDelete={onDeleteClick}
                     canManageDepartment={canManageDepartment}
+                    isDarkMode={isDarkMode}
                   />
                 ))}
               </motion.div>
@@ -136,7 +141,8 @@ const DepartmentListItem = memo(({
   onSelect,
   onEdit,
   onDelete,
-  canManageDepartment = false
+  canManageDepartment = false,
+  isDarkMode = false
 }) => {
   return (
     <motion.div
@@ -145,9 +151,13 @@ const DepartmentListItem = memo(({
       exit={{ opacity: 0, x: -20 }}
       transition={{ delay: index * 0.05 }}
       onClick={() => onSelect(dept)}
-      className={`p-5 border-b border-gray-100 cursor-pointer transition-all hover:bg-gray-50 ${
+      className={`p-5 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'} cursor-pointer transition-all ${
+        isDarkMode ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'
+      } ${
         isSelected
-          ? 'bg-blue-50 border-l-4 border-l-blue-600 shadow-sm'
+          ? isDarkMode 
+            ? 'bg-blue-500/10 border-l-4 border-l-blue-500 shadow-sm' 
+            : 'bg-blue-50 border-l-4 border-l-blue-600 shadow-sm'
           : ''
       }`}
     >
@@ -157,23 +167,23 @@ const DepartmentListItem = memo(({
             <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex-shrink-0">
               <Building2 size={16} className="text-white" />
             </div>
-            <h3 className="font-semibold text-gray-900 truncate">
+            <h3 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} truncate`}>
               {dept.name}
             </h3>
           </div>
           {dept.description && (
-            <p className="text-sm text-gray-600 mb-3 line-clamp-2">{dept.description}</p>
+            <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} mb-3 line-clamp-2`}>{dept.description}</p>
           )}
           <div className="flex flex-wrap items-center gap-3 text-xs">
-            <span className="flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-lg font-medium">
+            <span className={`flex items-center gap-1 px-2 py-1 ${isDarkMode ? 'bg-purple-500/20 text-purple-400' : 'bg-purple-100 text-purple-700'} rounded-lg font-medium`}>
               <Shield size={12} />
               {dept.managers?.length ? `${dept.managers.length} manager${dept.managers.length > 1 ? 's' : ''}` : 'No manager'}
             </span>
-            <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg font-medium">
+            <span className={`flex items-center gap-1 px-2 py-1 ${isDarkMode ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'} rounded-lg font-medium`}>
               <Users size={12} />
               {dept.members?.length || 0} employees
             </span>
-            <span className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg font-medium">
+            <span className={`flex items-center gap-1 px-2 py-1 ${isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700'} rounded-lg font-medium`}>
               <Building2 size={12} />
               {dept.projectsCount || 0} projects
             </span>
@@ -186,7 +196,7 @@ const DepartmentListItem = memo(({
                 e.stopPropagation();
                 onEdit(dept);
               }}
-              className="p-3 sm:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              className={`p-3 sm:p-2 ${isDarkMode ? 'text-blue-400 hover:bg-blue-500/20' : 'text-blue-600 hover:bg-blue-50'} rounded-lg transition-colors`}
               title="Edit department"
             >
               <Edit2 size={16} />
@@ -196,7 +206,7 @@ const DepartmentListItem = memo(({
                 e.stopPropagation();
                 onDelete(dept);
               }}
-              className="p-3 sm:p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              className={`p-3 sm:p-2 ${isDarkMode ? 'text-red-400 hover:bg-red-500/20' : 'text-red-500 hover:bg-red-50'} rounded-lg transition-colors`}
               title="Delete department"
             >
               <Trash2 size={16} />
@@ -212,3 +222,4 @@ DepartmentList.displayName = 'DepartmentList';
 DepartmentListItem.displayName = 'DepartmentListItem';
 
 export default DepartmentList;
+
