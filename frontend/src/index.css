@@ -699,10 +699,99 @@ hr {
   fill: var(--color-text-muted) !important;
 }
 
-/* Notification panel */
+/* ============================================
+   NOTIFICATION PANEL STYLES
+   ============================================ */
+
+/* Notification scroll container */
+.notification-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
+}
+
+.notification-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.notification-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.notification-scroll::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 3px;
+}
+
+.notification-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}
+
+/* Notification panel base styles */
+.notification-panel {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 12px 24px -8px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode notification panel */
 :root[data-theme="dark"] .notification-panel {
   background-color: var(--color-bg-base) !important;
   border-color: var(--color-border-default) !important;
+}
+
+/* Dark mode notification header gradient - keep it vibrant */
+:root[data-theme="dark"] .notification-panel .bg-gradient-to-r.from-indigo-500.via-purple-500.to-pink-500 {
+  background: linear-gradient(to right, #4f46e5, #7c3aed, #db2777) !important;
+}
+
+/* Dark mode notification items */
+:root[data-theme="dark"] .notification-panel .bg-gradient-to-r.from-blue-50\/80.to-indigo-50\/50 {
+  background: linear-gradient(to right, rgba(59, 130, 246, 0.15), rgba(99, 102, 241, 0.1)) !important;
+}
+
+:root[data-theme="dark"] .notification-panel .hover\:bg-gray-50:hover {
+  background-color: var(--color-bg-subtle) !important;
+}
+
+/* Dark mode time group headers */
+:root[data-theme="dark"] .notification-panel .bg-gray-50.border-b {
+  background-color: var(--color-bg-muted) !important;
+  border-color: var(--color-border-subtle) !important;
+}
+
+/* Dark mode action buttons in notifications */
+:root[data-theme="dark"] .notification-panel .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+:root[data-theme="dark"] .notification-panel .bg-blue-100:hover,
+:root[data-theme="dark"] .notification-panel .hover\:bg-blue-200:hover {
+  background-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+:root[data-theme="dark"] .notification-panel .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+}
+
+:root[data-theme="dark"] .notification-panel .bg-red-100:hover,
+:root[data-theme="dark"] .notification-panel .hover\:bg-red-200:hover {
+  background-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+/* Dark mode footer */
+:root[data-theme="dark"] .notification-panel .bg-gradient-to-r.from-gray-50.to-white {
+  background: var(--color-bg-muted) !important;
+}
+
+:root[data-theme="dark"] .notification-panel .border-gray-100 {
+  border-color: var(--color-border-subtle) !important;
+}
+
+:root[data-theme="dark"] .notification-panel .border-gray-50 {
+  border-color: var(--color-border-subtle) !important;
+}
+
+/* Dark mode empty state */
+:root[data-theme="dark"] .notification-panel .bg-gradient-to-br.from-gray-100.to-gray-200 {
+  background: linear-gradient(to bottom right, var(--color-bg-muted), var(--color-bg-emphasis)) !important;
 }
 
 /* Workflow page - Add List button and similar buttons with purple/indigo text */
