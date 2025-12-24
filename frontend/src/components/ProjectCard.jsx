@@ -284,7 +284,7 @@ const ProjectCard = ({
       {/* Project Image/Header */}
       {/* Project Image/Header - Enlarged for visual impact */}
       {/* Project Image/Header - Compacted for better proportions */}
-      <div className={`relative h-40 overflow-hidden border-b ${currentTheme.border}`}>
+      <div className={`relative h-40 overflow-hidden`}>
         {/* Background: Theme gradient with glass effect */}
         <div className={`absolute inset-0 ${currentTheme.glass} backdrop-blur-sm z-0`}>
            {/* Animated Orbs for premium feel */}
@@ -401,7 +401,7 @@ const ProjectCard = ({
 
         {/* Glassy Accent Overlay for "Fade Glasses Effect" */}
         <div 
-          className={`absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t ${currentTheme.overlay} to-transparent backdrop-blur-[2px]`}
+          className={`absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t ${currentTheme.overlay} to-transparent ${ (image || projectData.coverImage?.url) ? '' : 'backdrop-blur-[2px]' }`}
           style={{ maskImage: 'linear-gradient(to top, black, transparent)', WebkitMaskImage: 'linear-gradient(to top, black, transparent)' }}
         />
 
@@ -762,7 +762,7 @@ const ProjectCard = ({
       <motion.div
         className={`absolute inset-0 rounded-2xl pointer-events-none transition-all duration-300 group-hover:shadow-[0_0_20px_-5px_var(--color-primary-subtle)]`}
         animate={{
-          borderColor: 'transparent',
+          borderColor: 'rgba(255, 255, 255, 0)',
         }}
       />
     </motion.div>
