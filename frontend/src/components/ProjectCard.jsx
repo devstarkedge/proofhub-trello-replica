@@ -7,7 +7,8 @@ import {
   CheckCircle2, AlertCircle, MoreVertical,
   Edit, Trash2, Eye, Target, Star,
   Activity, Layers, Sparkles, ArrowRight,
-  Briefcase, MapPin, Zap, Shield, Crown, Building2
+  Briefcase, MapPin, Zap, Shield, Crown, Building2,
+  ImageIcon, Pencil
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 
@@ -24,13 +25,16 @@ const ProjectCard = ({
   showManager = false,
   onEdit,
   onDelete,
-  onView
+  onView,
+  onEditCover // New prop for cover image editing
 }) => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
   const { themeColor } = useThemeStore();
   const [showMenu, setShowMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const menuRef = useRef(null);
 
   // Check if user can edit/delete projects (admin or manager only)
@@ -62,6 +66,15 @@ const ProjectCard = ({
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showMenu]);
+
+  // Reset image loading states when cover image URL changes
+  useEffect(() => {
+    const coverUrl = project?.coverImage?.url || image;
+    if (coverUrl) {
+      setImageLoaded(false);
+      setImageError(false);
+    }
+  }, [project?.coverImage?.url, image]);
 
   const getStatusConfig = (status) => {
     // Normalize status to handle both formats (database vs display)
@@ -220,54 +233,94 @@ const ProjectCard = ({
 
       {/* Project Image/Header */}
       <div className="relative h-40 overflow-hidden">
-        <div className={`absolute inset-0 ${color || currentTheme.bg}`}>
-          {image ? (
-            <img 
-              src={image} 
-              alt={projectData.name} 
-              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 0.15 }}
-                className="text-white text-7xl font-black"
-              >
-                {projectData.name?.[0]?.toUpperCase() || 'P'}
-              </motion.div>
-              
-              {/* Decorative Elements */}
-              <motion.div
-                animate={{ 
-                  rotate: 360,
-                  scale: [1, 1.2, 1]
-                }}
-                transition={{ 
-                  duration: 20, 
-                  repeat: Infinity,
-                  ease: "linear"
-                }}
-                className="absolute top-4 right-4 w-20 h-20 border-2 border-white/20 rounded-full"
-              />
-              <motion.div
-                animate={{ 
-                  rotate: -360,
-                  scale: [1, 0.8, 1]
-                }}
-                transition={{ 
-                  duration: 15, 
-                  repeat: Infinity,
-                  ease: "linear"
-                }}
-                className="absolute bottom-4 left-4 w-16 h-16 border-2 border-white/20 rounded-full"
-              />
-            </div>
+        {/* Background: Dominant color or theme gradient */}
+        <div 
+          className={`absolute inset-0 transition-all duration-500`}
+          style={{
+            background: projectData.coverImage?.dominantColor 
+              ? `linear-gradient(135deg, ${projectData.coverImage.dominantColor} 0%, ${projectData.coverImage.dominantColor}88 100%)`
+              : undefined
+          }}
+        >
+          {!projectData.coverImage?.dominantColor && (
+            <div className={`absolute inset-0 ${color || currentTheme.bg}`} />
           )}
         </div>
 
-        {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
+        {/* Cover Image with progressive loading */}
+        {(image || projectData.coverImage?.url) && !imageError ? (
+          <>
+            {/* Skeleton loader */}
+            {!imageLoaded && (
+              <div className="absolute inset-0 animate-pulse">
+                <div className="w-full h-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer" />
+              </div>
+            )}
+            
+            {/* Blur placeholder (tiny thumbnail) */}
+            {projectData.coverImage?.thumbnailUrl && !imageLoaded && (
+              <img
+                src={projectData.coverImage.thumbnailUrl}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover filter blur-xl scale-110"
+              />
+            )}
+            
+            {/* Main image */}
+            <motion.img 
+              src={image || projectData.coverImage?.url}
+              alt={projectData.name}
+              onLoad={() => setImageLoaded(true)}
+              onError={() => setImageError(true)}
+              initial={{ opacity: 0 }}
+              animate={{ 
+                opacity: imageLoaded ? 1 : 0,
+                scale: isHovered ? 1.08 : 1
+              }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className="relative w-full h-full object-cover"
+            />
+          </>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 0.15 }}
+              className="text-white text-7xl font-black"
+            >
+              {projectData.name?.[0]?.toUpperCase() || 'P'}
+            </motion.div>
+            
+            {/* Decorative Elements */}
+            <motion.div
+              animate={{ 
+                rotate: 360,
+                scale: [1, 1.2, 1]
+              }}
+              transition={{ 
+                duration: 20, 
+                repeat: Infinity,
+                ease: "linear"
+              }}
+              className="absolute top-4 right-4 w-20 h-20 border-2 border-white/20 rounded-full"
+            />
+            <motion.div
+              animate={{ 
+                rotate: -360,
+                scale: [1, 0.8, 1]
+              }}
+              transition={{ 
+                duration: 15, 
+                repeat: Infinity,
+                ease: "linear"
+              }}
+              className="absolute bottom-4 left-4 w-16 h-16 border-2 border-white/20 rounded-full"
+            />
+          </div>
+        )}
+
+        {/* Gradient Overlay for text readability (WCAG) */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-transparent" />
 
         {/* Status Badge */}
         {projectData.status && (

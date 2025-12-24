@@ -131,11 +131,36 @@ const useProjectStore = create(
              if (hasProject) {
                 return {
                  ...dept,
-                 projects: dept.projects.map(p => p._id === updatedProject._id ? updatedProject : p)
+                 projects: dept.projects.map(p => {
+                   if (p._id === updatedProject._id) {
+                     // Merge updates, preserving existing data
+                     return { ...p, ...updatedProject };
+                   }
+                   return p;
+                 })
                 };
              }
              return dept;
           })
+        }));
+      },
+
+      // Update project cover image specifically (optimistic update)
+      updateProjectCover: (projectId, coverImage, coverImageHistory) => {
+        set(state => ({
+          departments: state.departments.map(dept => ({
+            ...dept,
+            projects: dept.projects?.map(p => {
+              if (p._id === projectId) {
+                return {
+                  ...p,
+                  coverImage: coverImage,
+                  coverImageHistory: coverImageHistory || p.coverImageHistory
+                };
+              }
+              return p;
+            })
+          }))
         }));
       },
 

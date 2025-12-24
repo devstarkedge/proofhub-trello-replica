@@ -1,9 +1,21 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getBoards, getBoard, createBoard, updateBoard, deleteBoard, getBoardsByDepartment, getWorkflowData, getWorkflowComplete } from '../controllers/boardController.js';
+import { 
+  getBoards, 
+  getBoard, 
+  createBoard, 
+  updateBoard, 
+  deleteBoard, 
+  getBoardsByDepartment, 
+  getWorkflowData, 
+  getWorkflowComplete,
+  uploadCoverImage,
+  removeCoverImage,
+  restoreCoverImage
+} from '../controllers/boardController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
-import upload from '../middleware/upload.js';
+import upload, { uploadCoverImageMiddleware } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -20,5 +32,10 @@ router.post('/', protect, upload.array('attachments', 10), [
 
 router.put('/:id', protect, updateBoard);
 router.delete('/:id', protect, deleteBoard);
+
+// Cover image routes
+router.put('/:id/cover', protect, uploadCoverImageMiddleware.single('coverImage'), uploadCoverImage);
+router.delete('/:id/cover', protect, removeCoverImage);
+router.post('/:id/cover/restore/:versionIndex', protect, restoreCoverImage);
 
 export default router;

@@ -487,6 +487,9 @@ export const getDashboardData = asyncHandler(async (req, res, next) => {
         departmentId: { $arrayElemAt: ['$departmentInfo._id', 0] },
         members: 1,
         status: 1, // Include the actual status field from Board model
+        coverImage: 1, // Include cover image data
+        coverImageHistory: 1, // Include cover image history
+        priority: 1,
         totalCards: { $size: '$cards' },
         completedCards: {
           $size: {

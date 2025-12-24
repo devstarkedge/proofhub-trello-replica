@@ -39,6 +39,27 @@ const boardSchema = new mongoose.Schema({
     type: String,
     default: '#6366f1'
   },
+  // Cover image with Cloudinary metadata
+  coverImage: {
+    url: { type: String },
+    publicId: { type: String },
+    thumbnailUrl: { type: String },       // Low-res blur placeholder for progressive loading
+    dominantColor: { type: String },       // Extracted hex color for fallback gradient
+    width: { type: Number },
+    height: { type: Number },
+    format: { type: String },
+    bytes: { type: Number },
+    uploadedAt: { type: Date },
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  },
+  // Version history for cover images (last 3 for restore/undo)
+  coverImageHistory: [{
+    url: { type: String },
+    publicId: { type: String },
+    thumbnailUrl: { type: String },
+    dominantColor: { type: String },
+    archivedAt: { type: Date, default: Date.now }
+  }],
   isArchived: {
     type: Boolean,
     default: false

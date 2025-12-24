@@ -22,6 +22,11 @@ import {
   logProjectActivityInBackground,
   invalidateCacheInBackground 
 } from "../utils/backgroundTasks.js";
+import {
+  uploadProjectCover,
+  validateCoverImage,
+  deleteProjectCover
+} from "../utils/cloudinary.js";
 
 // @desc    Get all boards for user
 // @route   GET /api/boards
@@ -538,5 +543,234 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: "Board deleted successfully",
+  });
+});
+
+// =============================================
+// COVER IMAGE ENDPOINTS
+// =============================================
+
+// @desc    Upload/Update project cover image
+// @route   PUT /api/boards/:id/cover
+// @access  Private (Admin/Manager only)
+export const uploadCoverImage = asyncHandler(async (req, res, next) => {
+  const board = await Board.findById(req.params.id);
+
+  if (!board) {
+    return next(new ErrorResponse("Project not found", 404));
+  }
+
+  // Role-based permission check - only Admin and Manager can change cover
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return next(new ErrorResponse("Only admins and managers can modify project covers", 403));
+  }
+
+  // Check if file was uploaded
+  if (!req.file) {
+    return next(new ErrorResponse("Please upload an image file", 400));
+  }
+
+  // Validate the file
+  const validation = validateCoverImage({
+    mimetype: req.file.mimetype,
+    size: req.file.size,
+    buffer: req.file.buffer
+  });
+
+  if (!validation.valid) {
+    return next(new ErrorResponse(validation.error, 400));
+  }
+
+  try {
+    // Upload to Cloudinary
+    const uploadResult = await uploadProjectCover(req.file.buffer, {
+      projectId: board._id.toString(),
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      uploadedBy: req.user.id
+    });
+
+    // If there's an existing cover, move it to history
+    if (board.coverImage && board.coverImage.publicId) {
+      // Limit history to 3 items
+      const newHistory = [
+        {
+          url: board.coverImage.url,
+          publicId: board.coverImage.publicId,
+          thumbnailUrl: board.coverImage.thumbnailUrl,
+          dominantColor: board.coverImage.dominantColor,
+          archivedAt: new Date()
+        },
+        ...((board.coverImageHistory || []).slice(0, 2))
+      ];
+
+      board.coverImageHistory = newHistory;
+    }
+
+    // Set new cover image
+    board.coverImage = {
+      url: uploadResult.url,
+      publicId: uploadResult.publicId,
+      thumbnailUrl: uploadResult.thumbnailUrl,
+      dominantColor: uploadResult.dominantColor,
+      width: uploadResult.width,
+      height: uploadResult.height,
+      format: uploadResult.format,
+      bytes: uploadResult.bytes,
+      uploadedAt: uploadResult.uploadedAt,
+      uploadedBy: req.user.id
+    };
+
+    await board.save({ validateModifiedOnly: true });
+
+    // Invalidate caches
+    invalidateCache(`/api/boards`);
+    invalidateCache(`/api/boards/${req.params.id}`);
+    invalidateCache(`/api/boards/department/${board.department}`);
+    invalidateCache("/api/departments");
+
+    res.status(200).json({
+      success: true,
+      data: {
+        coverImage: board.coverImage,
+        coverImageHistory: board.coverImageHistory
+      }
+    });
+  } catch (error) {
+    console.error('Cover image upload error:', error);
+    return next(new ErrorResponse(`Failed to upload cover image: ${error.message}`, 500));
+  }
+});
+
+// @desc    Remove project cover image
+// @route   DELETE /api/boards/:id/cover
+// @access  Private (Admin/Manager only)
+export const removeCoverImage = asyncHandler(async (req, res, next) => {
+  const board = await Board.findById(req.params.id);
+
+  if (!board) {
+    return next(new ErrorResponse("Project not found", 404));
+  }
+
+  // Role-based permission check
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return next(new ErrorResponse("Only admins and managers can modify project covers", 403));
+  }
+
+  if (!board.coverImage || !board.coverImage.publicId) {
+    return next(new ErrorResponse("No cover image to remove", 400));
+  }
+
+  const previousCover = { ...board.coverImage };
+
+  try {
+    // Delete from Cloudinary
+    await deleteProjectCover(board.coverImage.publicId);
+
+    // Move to history before clearing (for undo functionality)
+    const newHistory = [
+      {
+        url: previousCover.url,
+        publicId: previousCover.publicId,
+        thumbnailUrl: previousCover.thumbnailUrl,
+        dominantColor: previousCover.dominantColor,
+        archivedAt: new Date()
+      },
+      ...((board.coverImageHistory || []).slice(0, 2))
+    ];
+
+    board.coverImageHistory = newHistory;
+    board.coverImage = undefined;
+
+    await board.save({ validateModifiedOnly: true });
+
+    // Invalidate caches
+    invalidateCache(`/api/boards`);
+    invalidateCache(`/api/boards/${req.params.id}`);
+    invalidateCache(`/api/boards/department/${board.department}`);
+    invalidateCache("/api/departments");
+
+    res.status(200).json({
+      success: true,
+      message: "Cover image removed successfully",
+      data: {
+        previousCover,
+        coverImageHistory: board.coverImageHistory
+      }
+    });
+  } catch (error) {
+    console.error('Cover image removal error:', error);
+    return next(new ErrorResponse(`Failed to remove cover image: ${error.message}`, 500));
+  }
+});
+
+// @desc    Restore cover image from history
+// @route   POST /api/boards/:id/cover/restore/:versionIndex
+// @access  Private (Admin/Manager only)
+export const restoreCoverImage = asyncHandler(async (req, res, next) => {
+  const { id, versionIndex } = req.params;
+  const index = parseInt(versionIndex, 10);
+
+  const board = await Board.findById(id);
+
+  if (!board) {
+    return next(new ErrorResponse("Project not found", 404));
+  }
+
+  // Role-based permission check
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return next(new ErrorResponse("Only admins and managers can modify project covers", 403));
+  }
+
+  if (!board.coverImageHistory || index < 0 || index >= board.coverImageHistory.length) {
+    return next(new ErrorResponse("Invalid version index", 400));
+  }
+
+  const historyItem = board.coverImageHistory[index];
+
+  // If there's a current cover, move it to history
+  if (board.coverImage && board.coverImage.publicId) {
+    // Remove the restored item and add current to beginning
+    const newHistory = [
+      {
+        url: board.coverImage.url,
+        publicId: board.coverImage.publicId,
+        thumbnailUrl: board.coverImage.thumbnailUrl,
+        dominantColor: board.coverImage.dominantColor,
+        archivedAt: new Date()
+      },
+      ...board.coverImageHistory.filter((_, i) => i !== index).slice(0, 2)
+    ];
+    board.coverImageHistory = newHistory;
+  } else {
+    // Just remove the restored item from history
+    board.coverImageHistory = board.coverImageHistory.filter((_, i) => i !== index);
+  }
+
+  // Set restored cover as current
+  board.coverImage = {
+    url: historyItem.url,
+    publicId: historyItem.publicId,
+    thumbnailUrl: historyItem.thumbnailUrl,
+    dominantColor: historyItem.dominantColor,
+    uploadedAt: new Date(),
+    uploadedBy: req.user.id
+  };
+
+  await board.save({ validateModifiedOnly: true });
+
+  // Invalidate caches
+  invalidateCache(`/api/boards`);
+  invalidateCache(`/api/boards/${id}`);
+  invalidateCache(`/api/boards/department/${board.department}`);
+  invalidateCache("/api/departments");
+
+  res.status(200).json({
+    success: true,
+    message: "Cover image restored successfully",
+    data: {
+      coverImage: board.coverImage,
+      coverImageHistory: board.coverImageHistory
+    }
   });
 });

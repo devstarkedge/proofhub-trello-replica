@@ -1906,6 +1906,88 @@ class DatabaseService {
     }
     return await res.json();
   }
+
+  // =============================================
+  // PROJECT COVER IMAGE OPERATIONS
+  // =============================================
+
+  /**
+   * Upload or update project cover image
+   * @param {string} projectId - Project/Board ID
+   * @param {File} file - Image file to upload
+   * @returns {Promise<Object>} Cover image data
+   */
+  async uploadProjectCoverImage(projectId, file) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const formData = new FormData();
+    formData.append('coverImage', file);
+
+    const res = await fetch(`${baseURL}/api/boards/${projectId}/cover`, {
+      method: 'PUT',
+      headers,
+      body: formData
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to upload cover image');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Remove project cover image
+   * @param {string} projectId - Project/Board ID
+   * @returns {Promise<Object>} Response with previous cover for undo
+   */
+  async removeProjectCoverImage(projectId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/boards/${projectId}/cover`, {
+      method: 'DELETE',
+      headers
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to remove cover image');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Restore cover image from version history
+   * @param {string} projectId - Project/Board ID
+   * @param {number} versionIndex - Index in coverImageHistory array (0 = most recent)
+   * @returns {Promise<Object>} Updated cover image data
+   */
+  async restoreProjectCoverImage(projectId, versionIndex) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/boards/${projectId}/cover/restore/${versionIndex}`, {
+      method: 'POST',
+      headers
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to restore cover image');
+    }
+    return await res.json();
+  }
 }
 
 // Create singleton instance

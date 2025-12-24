@@ -612,5 +612,225 @@ export const getAvatarUrl = (publicId, size = 256) => {
   });
 };
 
-export default cloudinary;
+// =============================================
+// PROJECT COVER IMAGE FUNCTIONS
+// =============================================
 
+// Allowed cover image types
+const COVER_ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_COVER_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+// Magic bytes for file type validation
+const FILE_SIGNATURES = {
+  'image/jpeg': [[0xFF, 0xD8, 0xFF]],
+  'image/jpg': [[0xFF, 0xD8, 0xFF]],
+  'image/png': [[0x89, 0x50, 0x4E, 0x47]],
+  'image/gif': [[0x47, 0x49, 0x46, 0x38]],
+  'image/webp': [[0x52, 0x49, 0x46, 0x46]] // RIFF header (WebP starts with RIFF)
+};
+
+/**
+ * Validate file using magic bytes (file header validation)
+ * @param {Buffer} buffer - File buffer
+ * @param {string} declaredMimetype - Declared MIME type
+ * @returns {Object} Validation result
+ */
+export const validateFileSignature = (buffer, declaredMimetype) => {
+  if (!buffer || buffer.length < 4) {
+    return { valid: false, error: 'Invalid file buffer' };
+  }
+
+  const signatures = FILE_SIGNATURES[declaredMimetype];
+  if (!signatures) {
+    return { valid: false, error: `Unsupported file type: ${declaredMimetype}` };
+  }
+
+  const headerBytes = buffer.slice(0, 12); // Get first 12 bytes for checking
+  const isValid = signatures.some(sig => 
+    sig.every((byte, index) => headerBytes[index] === byte)
+  );
+
+  if (!isValid) {
+    return { valid: false, error: 'File content does not match declared type' };
+  }
+
+  return { valid: true };
+};
+
+/**
+ * Validate cover image file
+ * @param {Object} file - File object with mimetype, size, and buffer
+ * @returns {Object} Validation result
+ */
+export const validateCoverImage = (file) => {
+  // Check MIME type
+  if (!COVER_ALLOWED_TYPES.includes(file.mimetype)) {
+    return {
+      valid: false,
+      error: `Invalid file type: ${file.mimetype}. Allowed: JPG, PNG, WebP, GIF`
+    };
+  }
+
+  // Check file size
+  if (file.size > MAX_COVER_FILE_SIZE) {
+    return {
+      valid: false,
+      error: `File too large: ${(file.size / 1024 / 1024).toFixed(2)}MB. Maximum: 5MB`
+    };
+  }
+
+  // Validate magic bytes if buffer is available
+  if (file.buffer) {
+    const signatureCheck = validateFileSignature(file.buffer, file.mimetype);
+    if (!signatureCheck.valid) {
+      return signatureCheck;
+    }
+  }
+
+  return { valid: true };
+};
+
+/**
+ * Upload project cover image to Cloudinary with optimizations
+ * @param {Buffer} fileBuffer - The image buffer
+ * @param {Object} options - Upload options
+ * @param {string} options.projectId - Project ID for folder organization
+ * @param {string} options.originalName - Original file name
+ * @param {string} options.mimetype - File MIME type
+ * @param {string} options.uploadedBy - User ID who uploaded
+ * @returns {Promise<Object>} Upload result with URLs and metadata
+ */
+export const uploadProjectCover = async (fileBuffer, options = {}) => {
+  configureCloudinary();
+  
+  const { projectId, originalName, mimetype, uploadedBy } = options;
+  const fileHash = generateFileHash(fileBuffer);
+  
+  // Folder structure: /projects/{projectId}/covers/
+  const folder = projectId 
+    ? `flowtask/projects/${projectId}/covers`
+    : 'flowtask/projects/temp/covers';
+
+  const uploadOptions = {
+    folder,
+    resource_type: 'image',
+    use_filename: false,
+    unique_filename: true,
+    overwrite: false,
+    // Transformations for optimization
+    transformation: [
+      { width: 1200, height: 800, crop: 'limit' }, // Max size
+      { quality: 'auto:good' },
+      { fetch_format: 'auto' } // WebP/AVIF where supported
+    ],
+    // Generate eager transformations for different sizes
+    eager: [
+      // Tiny blur placeholder for progressive loading (20px wide, heavily compressed)
+      { width: 20, height: 14, crop: 'fill', quality: 30, effect: 'blur:1000', format: 'webp' },
+      // Thumbnail for version history
+      { width: 100, height: 67, crop: 'fill', quality: 'auto:low', format: 'webp' },
+      // Card size (desktop)
+      { width: 400, height: 267, crop: 'fill', quality: 'auto:good', format: 'webp' },
+      // Card size (tablet)
+      { width: 300, height: 200, crop: 'fill', quality: 'auto:good', format: 'webp' },
+      // Card size (mobile)
+      { width: 200, height: 133, crop: 'fill', quality: 'auto:good', format: 'webp' }
+    ],
+    eager_async: true,
+    colors: true, // Extract dominant colors
+    tags: ['project-cover'],
+    context: {
+      original_name: originalName,
+      uploaded_by: uploadedBy,
+      file_hash: fileHash,
+      project_id: projectId
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      uploadOptions,
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          // Extract dominant color from Cloudinary's color analysis
+          let dominantColor = '#6366f1'; // Default fallback
+          if (result.colors && result.colors.length > 0) {
+            dominantColor = result.colors[0][0]; // First color is usually dominant
+          }
+
+          // Build thumbnail URL for blur placeholder
+          const thumbnailUrl = result.eager && result.eager[0] 
+            ? result.eager[0].secure_url 
+            : getThumbnailUrl(result.public_id, 20, 14);
+
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+            thumbnailUrl,
+            dominantColor,
+            width: result.width,
+            height: result.height,
+            format: result.format,
+            bytes: result.bytes,
+            originalName,
+            uploadedBy,
+            uploadedAt: new Date()
+          });
+        }
+      }
+    );
+
+    const readable = new Readable();
+    readable._read = () => {};
+    readable.push(fileBuffer);
+    readable.push(null);
+    readable.pipe(uploadStream);
+  });
+};
+
+/**
+ * Get cover image URL with responsive transformation
+ * @param {string} publicId - Cover image public ID
+ * @param {Object} options - Transformation options
+ * @returns {string} Transformed URL
+ */
+export const getCoverImageUrl = (publicId, options = {}) => {
+  if (!publicId) return null;
+  
+  const { width = 400, height = 267, quality = 'auto:good' } = options;
+  
+  return cloudinary.url(publicId, {
+    width,
+    height,
+    crop: 'fill',
+    gravity: 'auto',
+    quality,
+    fetch_format: 'auto'
+  });
+};
+
+/**
+ * Delete project cover image from Cloudinary
+ * @param {string} publicId - Cover image public ID
+ * @returns {Promise<Object>} Deletion result
+ */
+export const deleteProjectCover = async (publicId) => {
+  if (!publicId) return { success: true };
+  
+  configureCloudinary();
+  
+  try {
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: 'image',
+      invalidate: true
+    });
+    return { success: result.result === 'ok', result };
+  } catch (error) {
+    console.error('Error deleting project cover:', error);
+    throw error;
+  }
+};
+
+export default cloudinary;

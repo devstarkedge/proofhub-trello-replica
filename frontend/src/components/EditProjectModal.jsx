@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Save, AlertCircle, Loader, Calendar, Users, DollarSign,
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
-  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock, Plus, Bell
+  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock, Plus, Bell, Image
 } from 'lucide-react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select"
 import { Badge } from "../components/ui/badge"
@@ -12,6 +12,7 @@ import Database from '../services/database';
 import ReminderPanel from './ReminderPanel';
 import ReminderModal from './ReminderModal';
 import AuthContext from '../context/AuthContext';
+import CoverImageUploader from './CoverImageUploader';
 
 const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
   // Get user from AuthContext instead of localStorage
@@ -47,6 +48,10 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderKey, setReminderKey] = useState(0); // For forcing re-render of ReminderPanel
   
+  // Cover image state (managed locally for instant UI updates)
+  const [coverImage, setCoverImage] = useState(null);
+  const [coverImageHistory, setCoverImageHistory] = useState([]);
+  
   // Get user role from AuthContext
   const userRole = user?.role || 'employee';
   const canManageReminders = userRole === 'admin' || userRole === 'manager';
@@ -78,6 +83,9 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
             priority: fullProject.priority || 'medium',
             visibility: fullProject.visibility || 'public'
           });
+          // Set cover image state from fetched project
+          setCoverImage(fullProject.coverImage || null);
+          setCoverImageHistory(fullProject.coverImageHistory || []);
           await fetchEmployees(fullProject);
           await fetchCategories(fullProject);
         } catch (error) {
@@ -371,6 +379,48 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
                   rows={4}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all resize-none hover:border-indigo-300"
                   placeholder="Describe the project..."
+                />
+              </motion.div>
+
+              {/* Cover Image */}
+              <motion.div custom={1.5} variants={fieldVariants} initial="hidden" animate="visible">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <Image className="h-4 w-4 text-purple-600" />
+                  Cover Image
+                </label>
+                <CoverImageUploader
+                  projectId={project?.id || project?._id}
+                  currentCover={coverImage}
+                  coverHistory={coverImageHistory}
+                  onCoverChange={(data) => {
+                    if (data) {
+                      // Extract cover image from response
+                      const newCoverImage = data.coverImage || data;
+                      const newCoverHistory = data.coverImageHistory || coverImageHistory;
+                      
+                      // Update local state for instant preview
+                      setCoverImage(newCoverImage);
+                      setCoverImageHistory(newCoverHistory);
+                      
+                      // Update parent for global state sync
+                      if (onProjectUpdated) {
+                        onProjectUpdated({
+                          ...project,
+                          coverImage: newCoverImage,
+                          coverImageHistory: newCoverHistory
+                        });
+                      }
+                    } else {
+                      // Cover was removed
+                      setCoverImage(null);
+                      if (onProjectUpdated) {
+                        onProjectUpdated({
+                          ...project,
+                          coverImage: null
+                        });
+                      }
+                    }
+                  }}
                 />
               </motion.div>
 

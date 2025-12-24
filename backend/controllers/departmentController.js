@@ -114,7 +114,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         let: { deptId: '$_id' },
         pipeline: [
           { $match: { $expr: { $eq: ['$department', '$$deptId'] }, isArchived: false } },
-          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1 } }
+          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1 } }
         ],
         as: 'projects'
       }

@@ -1,18 +1,20 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, memo, useRef, useContext } from "react"
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from "framer-motion"
 import {
   X, Plus, AlertCircle, Loader, Calendar, Users, DollarSign,
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
-  CheckCircle2, ChevronDown, Shield, User, Crown, Search
+  CheckCircle2, ChevronDown, Shield, User, Crown, Search, Image
 } from "lucide-react"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select"
 import { Badge } from "../components/ui/badge"
 import { toast } from "react-toastify"
 import Database from "../services/database"
 import ReactCountryFlag from "react-country-flag"
+import CoverImageUploader from "./CoverImageUploader"
+import AuthContext from '../context/AuthContext'
 
 // Country codes data with ISO codes for flags
 const COUNTRY_CODES = [
@@ -119,6 +121,8 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
   const [visOpen, setVisOpen] = useState(false)
   const [projectUrlValid, setProjectUrlValid] = useState(false)
   const [countrySearchQuery, setCountrySearchQuery] = useState("")
+  const [coverImageFile, setCoverImageFile] = useState(null)
+  const [coverImagePreview, setCoverImagePreview] = useState(null)
   const countryDropdownRef = useRef(null)
   const visTriggerRef = useRef(null)
   const visMenuRef = useRef(null)
@@ -479,9 +483,27 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
       const response = await Database.createProject(projectData)
 
       if (response.success) {
-        // Replace optimistic project with real data
-        onProjectAdded(response.data, optimisticProject._id)
+        const createdProject = response.data;
+        
+        // Upload cover image if one was selected
+        if (coverImageFile) {
+          try {
+            const coverResult = await Database.uploadProjectCoverImage(createdProject._id, coverImageFile);
+            if (coverResult.success) {
+              // Merge cover image data with project
+              createdProject.coverImage = coverResult.data.coverImage;
+            }
+          } catch (coverError) {
+            console.error("Error uploading cover image:", coverError);
+            toast.warning("Project created but cover image upload failed. You can add it later.");
+          }
+        }
+        
+        // Replace optimistic project with real data (including cover image)
+        onProjectAdded(createdProject, optimisticProject._id)
         setFormData(initialFormData)
+        setCoverImageFile(null)
+        setCoverImagePreview(null)
         toast.success("Project created successfully!")
       } else {
         // Revert optimistic update on failure
@@ -496,7 +518,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
     } finally {
       setIsSaving(false)
     }
-  }, [formData, validateForm, fetchDepartmentTeams, departmentId, onProjectAdded, onClose, initialFormData, projectUrlValid])
+  }, [formData, validateForm, fetchDepartmentTeams, departmentId, onProjectAdded, onClose, initialFormData, projectUrlValid, coverImageFile])
 
   // Memoize available employees (those not already assigned)
   const availableEmployees = useMemo(() => 
@@ -648,6 +670,28 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                   rows={4}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none hover:border-blue-300"
                   placeholder="Describe the project goals, deliverables, and requirements..."
+                />
+              </motion.div>
+
+              {/* Cover Image */}
+              <motion.div custom={1.5} variants={fieldVariants} initial="hidden" animate="visible">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <Image className="h-4 w-4 text-purple-600" />
+                  Cover Image (Optional)
+                </label>
+                <CoverImageUploader
+                  projectId={null} // No project ID yet - new project
+                  currentCover={null}
+                  coverHistory={[]}
+                  onCoverChange={(data) => {
+                    if (data && data.file) {
+                      setCoverImageFile(data.file)
+                      setCoverImagePreview(data.previewUrl)
+                    } else {
+                      setCoverImageFile(null)
+                      setCoverImagePreview(null)
+                    }
+                  }}
                 />
               </motion.div>
 
