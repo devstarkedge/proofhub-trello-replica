@@ -153,51 +153,101 @@ const ProjectCard = ({
   const priorityConfig = getPriorityBadge(projectData.priority);
   const isOptimistic = projectData.isOptimistic || String(projectData.id).startsWith('temp-');
 
-  // Theme-based gradient mappings
+  // Theme-based gradient mappings with glassy/soft variants
   const themeGradients = {
     blue: {
-      bg: 'bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600',
-      glow: 'rgba(59, 130, 246, 0.3)',
-      subtle: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)'
+      bg: 'bg-blue-50/50',
+      glass: 'bg-gradient-to-br from-blue-500/10 via-blue-400/5 to-transparent',
+      border: 'border-blue-100',
+      text: 'text-blue-700',
+      icon: 'text-blue-500',
+      orb: 'bg-blue-400/20',
+      orb2: 'bg-indigo-400/20',
+      fallback: 'bg-gradient-to-br from-blue-100 via-blue-50 to-white',
+      overlay: 'from-blue-950/50 via-blue-900/10'
     },
     purple: {
-      bg: 'bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-600',
-      glow: 'rgba(168, 85, 247, 0.3)',
-      subtle: 'linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(236, 72, 153, 0.05) 100%)'
+      bg: 'bg-purple-50/50',
+      glass: 'bg-gradient-to-br from-purple-500/10 via-fuchsia-400/5 to-transparent',
+      border: 'border-purple-100',
+      text: 'text-purple-700',
+      icon: 'text-purple-500',
+      orb: 'bg-purple-400/20',
+      orb2: 'bg-fuchsia-400/20',
+      fallback: 'bg-gradient-to-br from-purple-100 via-purple-50 to-white',
+      overlay: 'from-purple-950/50 via-purple-900/10'
     },
     emerald: {
-      bg: 'bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600',
-      glow: 'rgba(16, 185, 129, 0.3)',
-      subtle: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(20, 184, 166, 0.05) 100%)'
+      bg: 'bg-emerald-50/50',
+      glass: 'bg-gradient-to-br from-emerald-500/10 via-teal-400/5 to-transparent',
+      border: 'border-emerald-100',
+      text: 'text-emerald-700',
+      icon: 'text-emerald-500',
+      orb: 'bg-emerald-400/20',
+      orb2: 'bg-teal-400/20',
+      fallback: 'bg-gradient-to-br from-emerald-100 via-emerald-50 to-white',
+      overlay: 'from-emerald-950/50 via-emerald-900/10'
     },
     rose: {
-      bg: 'bg-gradient-to-br from-rose-500 via-red-500 to-orange-600',
-      glow: 'rgba(244, 63, 94, 0.3)',
-      subtle: 'linear-gradient(135deg, rgba(244, 63, 94, 0.05) 0%, rgba(249, 115, 22, 0.05) 100%)'
+      bg: 'bg-rose-50/50',
+      glass: 'bg-gradient-to-br from-rose-500/10 via-red-400/5 to-transparent',
+      border: 'border-rose-100',
+      text: 'text-rose-700',
+      icon: 'text-rose-500',
+      orb: 'bg-rose-400/20',
+      orb2: 'bg-orange-400/20',
+      fallback: 'bg-gradient-to-br from-rose-100 via-rose-50 to-white',
+      overlay: 'from-rose-950/50 via-rose-900/10'
     },
     amber: {
-      bg: 'bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-600',
-      glow: 'rgba(245, 158, 11, 0.3)',
-      subtle: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(234, 179, 8, 0.05) 100%)'
+      bg: 'bg-amber-50/50',
+      glass: 'bg-gradient-to-br from-amber-500/10 via-orange-400/5 to-transparent',
+      border: 'border-amber-100',
+      text: 'text-amber-700',
+      icon: 'text-amber-500',
+      orb: 'bg-amber-400/20',
+      orb2: 'bg-yellow-400/20',
+      fallback: 'bg-gradient-to-br from-amber-100 via-amber-50 to-white',
+      overlay: 'from-amber-950/50 via-amber-900/10'
     },
     cyan: {
-      bg: 'bg-gradient-to-br from-cyan-500 via-sky-500 to-blue-600',
-      glow: 'rgba(6, 182, 212, 0.3)',
-      subtle: 'linear-gradient(135deg, rgba(6, 182, 212, 0.05) 0%, rgba(14, 165, 233, 0.05) 100%)'
+      bg: 'bg-cyan-50/50',
+      glass: 'bg-gradient-to-br from-cyan-500/10 via-sky-400/5 to-transparent',
+      border: 'border-cyan-100',
+      text: 'text-cyan-700',
+      icon: 'text-cyan-500',
+      orb: 'bg-cyan-400/20',
+      orb2: 'bg-blue-400/20',
+      fallback: 'bg-gradient-to-br from-cyan-100 via-cyan-50 to-white',
+      overlay: 'from-cyan-950/50 via-cyan-900/10'
     },
     indigo: {
-      bg: 'bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600',
-      glow: 'rgba(99, 102, 241, 0.3)',
-      subtle: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)'
+      bg: 'bg-indigo-50/50',
+      glass: 'bg-gradient-to-br from-indigo-500/10 via-violet-400/5 to-transparent',
+      border: 'border-indigo-100',
+      text: 'text-indigo-700',
+      icon: 'text-indigo-500',
+      orb: 'bg-indigo-400/20',
+      orb2: 'bg-purple-400/20',
+      fallback: 'bg-gradient-to-br from-indigo-100 via-indigo-50 to-white',
+      overlay: 'from-indigo-950/50 via-indigo-900/10'
     },
     slate: {
-      bg: 'bg-gradient-to-br from-slate-600 via-gray-600 to-zinc-700',
-      glow: 'rgba(100, 116, 139, 0.3)',
-      subtle: 'linear-gradient(135deg, rgba(100, 116, 139, 0.05) 0%, rgba(71, 85, 105, 0.05) 100%)'
+      bg: 'bg-slate-50/50',
+      glass: 'bg-gradient-to-br from-slate-500/10 via-gray-400/5 to-transparent',
+      border: 'border-slate-100',
+      text: 'text-slate-700',
+      icon: 'text-slate-500',
+      orb: 'bg-slate-400/20',
+      orb2: 'bg-gray-400/20',
+      fallback: 'bg-gradient-to-br from-slate-100 via-slate-50 to-white',
+      overlay: 'from-slate-950/50 via-slate-900/10'
     }
   };
 
   const currentTheme = themeGradients[themeColor] || themeGradients['blue'];
+
+
 
   return (
     <motion.div
@@ -232,19 +282,47 @@ const ProjectCard = ({
       />
 
       {/* Project Image/Header */}
-      <div className="relative h-40 overflow-hidden">
-        {/* Background: Dominant color or theme gradient */}
+      {/* Project Image/Header - Enlarged for visual impact */}
+      {/* Project Image/Header - Compacted for better proportions */}
+      <div className={`relative h-40 overflow-hidden border-b ${currentTheme.border}`}>
+        {/* Background: Theme gradient with glass effect */}
+        <div className={`absolute inset-0 ${currentTheme.glass} backdrop-blur-sm z-0`}>
+           {/* Animated Orbs for premium feel */}
+           <motion.div 
+             animate={{ 
+               scale: [1, 1.2, 1],
+               opacity: [0.3, 0.5, 0.3],
+               x: [0, 20, 0],
+               y: [0, -10, 0]
+             }}
+             transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+             className={`absolute -top-10 -right-10 w-40 h-40 rounded-full blur-[60px] ${currentTheme.orb}`}
+           />
+           <motion.div 
+             animate={{ 
+               scale: [1, 1.1, 1],
+               opacity: [0.3, 0.6, 0.3],
+               x: [0, -30, 0],
+               y: [0, 20, 0]
+             }}
+             transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+             className={`absolute -bottom-20 -left-10 w-48 h-48 rounded-full blur-[70px] ${currentTheme.orb2}`}
+           />
+        </div>
+
+        {/* Dynamic Background if no image */}
         <div 
-          className={`absolute inset-0 transition-all duration-500`}
-          style={{
-            background: projectData.coverImage?.dominantColor 
-              ? `linear-gradient(135deg, ${projectData.coverImage.dominantColor} 0%, ${projectData.coverImage.dominantColor}88 100%)`
-              : undefined
-          }}
+          className={`absolute inset-0 transition-opacity duration-500 ${image || projectData.coverImage?.url ? 'opacity-0' : 'opacity-100'}`}
         >
-          {!projectData.coverImage?.dominantColor && (
-            <div className={`absolute inset-0 ${color || currentTheme.bg}`} />
-          )}
+             {/* Rich gradient background for empty state */}
+             <div className={`absolute inset-0 ${currentTheme.fallback} opacity-90`} />
+             
+             {/* Subtle Pattern Overlay */}
+             <div className="absolute inset-0 opacity-[0.03]" 
+                style={{ 
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+                }} 
+             />
         </div>
 
         {/* Cover Image with progressive loading */}
@@ -283,44 +361,49 @@ const ProjectCard = ({
           </>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
+            {/* Large Initial when no image */}
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 0.15 }}
-              className="text-white text-7xl font-black"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className={`text-8xl font-black ${currentTheme.text} opacity-20 select-none`}
             >
               {projectData.name?.[0]?.toUpperCase() || 'P'}
             </motion.div>
             
-            {/* Decorative Elements */}
+            {/* Decorative Elements - subtle moving rings */}
             <motion.div
               animate={{ 
                 rotate: 360,
-                scale: [1, 1.2, 1]
+                scale: [1, 1.05, 1],
+                borderColor: ['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.4)', 'rgba(255,255,255,0.2)']
+              }}
+              transition={{ 
+                duration: 25, 
+                repeat: Infinity,
+                ease: "linear"
+              }}
+              className="absolute top-4 right-4 w-24 h-24 border border-white/40 rounded-full opacity-30"
+            />
+            <motion.div
+              animate={{ 
+                rotate: -360,
+                scale: [1, 0.95, 1]
               }}
               transition={{ 
                 duration: 20, 
                 repeat: Infinity,
                 ease: "linear"
               }}
-              className="absolute top-4 right-4 w-20 h-20 border-2 border-white/20 rounded-full"
-            />
-            <motion.div
-              animate={{ 
-                rotate: -360,
-                scale: [1, 0.8, 1]
-              }}
-              transition={{ 
-                duration: 15, 
-                repeat: Infinity,
-                ease: "linear"
-              }}
-              className="absolute bottom-4 left-4 w-16 h-16 border-2 border-white/20 rounded-full"
+              className="absolute bottom-[-10px] left-[-10px] w-32 h-32 border border-white/30 rounded-full opacity-30"
             />
           </div>
         )}
 
-        {/* Gradient Overlay for text readability (WCAG) */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-transparent" />
+        {/* Glassy Accent Overlay for "Fade Glasses Effect" */}
+        <div 
+          className={`absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t ${currentTheme.overlay} to-transparent backdrop-blur-[2px]`}
+          style={{ maskImage: 'linear-gradient(to top, black, transparent)', WebkitMaskImage: 'linear-gradient(to top, black, transparent)' }}
+        />
 
         {/* Status Badge */}
         {projectData.status && (
@@ -499,27 +582,27 @@ const ProjectCard = ({
           </div>
         )}
 
-        {/* Hover Overlay Effect */}
+        {/* Hover Overlay Effect - softer */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: isHovered ? 1 : 0 }}
-          className="absolute inset-0 bg-gradient-to-t from-blue-600/20 via-transparent to-transparent pointer-events-none"
+          className="absolute inset-0 bg-white/10 backdrop-blur-[1px] pointer-events-none transition-all duration-300"
         />
       </div>
 
-      {/* Project Content */}
-      <div className="p-5 relative">
+      {/* Project Content - Compacted */}
+      <div className="p-3 relative">
         {/* Title and Description */}
-        <div className="mb-4">
+        <div className="mb-2">
           <motion.h3
-            className="text-xl font-bold text-gray-900 mb-2 line-clamp-1 group-hover:text-blue-600 transition-colors"
-            whileHover={{ scale: 1.02 }}
+            className={`text-lg font-bold mb-1 line-clamp-1 group-hover:${currentTheme.text} transition-colors text-gray-900`}
+            whileHover={{ scale: 1.01 }}
             transition={{ duration: 0.2 }}
           >
             {projectData.name}
           </motion.h3>
           <motion.p
-            className="text-sm text-gray-600 line-clamp-2 leading-relaxed"
+            className="text-xs text-gray-500 line-clamp-2 leading-relaxed"
             initial={{ opacity: 0.8 }}
             whileHover={{ opacity: 1 }}
             transition={{ duration: 0.2 }}
@@ -530,8 +613,8 @@ const ProjectCard = ({
 
         {/* Progress Bar */}
         {projectData.progress !== undefined && (
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-2">
+          <div className="mb-3">
+            <div className="flex justify-between items-center mb-1">
               <span className="text-xs font-semibold text-gray-600 flex items-center gap-1">
                 <Activity size={14} />
                 Progress
@@ -563,7 +646,7 @@ const ProjectCard = ({
         )}
 
         {/* Project Meta Information */}
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex flex-wrap gap-2 mb-3">
           {projectData.dueDate && (
             <motion.div
               whileHover={{
@@ -627,7 +710,7 @@ const ProjectCard = ({
 
         {/* Department Badge */}
         {(projectData.department || departmentManager || departmentName) && (
-          <div className="pt-4 border-t border-gray-100">
+          <div className="pt-2 mt-1 border-t border-gray-100">
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500 font-medium flex items-center gap-1.5">
                 {showManager ? (
@@ -675,15 +758,12 @@ const ProjectCard = ({
         )}
       </div>
 
-      {/* Card Border Glow Effect on Hover */}
+      {/* Card Border Glow Effect on Hover - Subtle */ }
       <motion.div
-        className="absolute inset-0 rounded-2xl pointer-events-none"
+        className={`absolute inset-0 rounded-2xl pointer-events-none transition-all duration-300 group-hover:shadow-[0_0_20px_-5px_var(--color-primary-subtle)]`}
         animate={{
-          boxShadow: isHovered
-            ? `0 0 0 2px ${currentTheme.glow}`
-            : `0 0 0 0px ${currentTheme.glow.replace('0.3', '0')}`
+          borderColor: 'transparent',
         }}
-        transition={{ duration: 0.3 }}
       />
     </motion.div>
   );
