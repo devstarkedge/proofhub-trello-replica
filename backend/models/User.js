@@ -28,6 +28,10 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true
   },
+  roleId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Role'
+  },
   department: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Department'

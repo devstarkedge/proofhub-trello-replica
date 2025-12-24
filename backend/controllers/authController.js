@@ -41,12 +41,16 @@ export const register = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // Determine roleId for default 'employee' role
+  const employeeRole = await Role.findOne({ slug: 'employee' });
+
   // Create user (default role is 'employee' unless admin creates)
   const user = await User.create({
     name,
     email,
     password,
     role: 'employee',
+    roleId: employeeRole?._id,
     department: department || undefined,
     isVerified: false // Admin needs to verify
   });
@@ -160,6 +164,7 @@ export const login = asyncHandler(async (req, res, next) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      roleId: user.roleId,
       department: user.department,
       team: user.team,
       avatar: user.avatar,
@@ -259,13 +264,14 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
   // Validate role - check both system roles and custom roles from database
   const systemRoles = ['admin', 'manager', 'hr', 'employee'];
   let isValidRole = systemRoles.includes(role);
+  let roleId = null;
   
-  // If not a system role, check if it's a valid custom role
-  if (!isValidRole) {
-    const customRole = await Role.findOne({ slug: role });
-    if (customRole) {
-      isValidRole = true;
-    }
+  // Find the role document to get its ID
+  const roleDoc = await Role.findOne({ slug: role.toLowerCase() });
+  
+  if (roleDoc) {
+    isValidRole = true;
+    roleId = roleDoc._id;
   }
   
   if (!isValidRole) {
@@ -278,6 +284,7 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
     email,
     password,
     role,
+    roleId,
     department: department ? [department] : [],
     isVerified: true, // Admin-created users are automatically verified
     isActive: true

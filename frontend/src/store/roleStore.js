@@ -28,6 +28,14 @@ export const PERMISSION_CATEGORIES = {
       { key: 'canDeleteTasks', label: 'Delete tasks' },
       { key: 'canDeleteProjects', label: 'Delete projects' }
     ]
+  },
+  management: {
+    label: '⚙️ Management Permissions',
+    permissions: [
+      { key: 'canManageRoles', label: 'Manage roles' },
+      { key: 'canManageUsers', label: 'Manage users' },
+      { key: 'canManageSystem', label: 'Full system access (Admin equivalent)' }
+    ]
   }
 };
 
@@ -50,6 +58,27 @@ export const DEFAULT_PERMISSIONS = ALL_PERMISSION_KEYS.reduce((acc, key) => {
  */
 export const SYSTEM_ROLES = ['admin', 'manager', 'employee', 'hr'];
 
+/**
+ * Default permissions for system roles (for cloning/presets)
+ */
+export const SYSTEM_ROLE_PERMISSIONS = {
+  admin: ALL_PERMISSION_KEYS.reduce((acc, key) => ({ ...acc, [key]: true }), {}),
+  manager: {
+    ...DEFAULT_PERMISSIONS,
+    canCreateTask: true,
+    canCreateProject: true,
+    canCreateAnnouncement: true,
+    canCreateReminder: true,
+    canAssignMembers: true,
+    canDeleteTasks: true
+  },
+  employee: { ...DEFAULT_PERMISSIONS, canCreateTask: true },
+  hr: {
+    ...DEFAULT_PERMISSIONS,
+    canCreateAnnouncement: true,
+    canAssignMembers: true
+  }
+};
 /**
  * Zustand store for roles and permissions management
  */

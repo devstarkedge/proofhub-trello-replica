@@ -24,7 +24,7 @@ export const protect = async (req, res, next) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
       // Get user from database
-      req.user = await User.findById(decoded.id).select('-password');
+      req.user = await User.findById(decoded.id).select('-password').populate('roleId');
 
       if (!req.user) {
         return res.status(401).json({
@@ -81,8 +81,19 @@ export const authorize = (...roles) => {
       return next();
     }
 
-    // If the route requires 'admin' specifically and user is not admin, deny
+    // If the route requires 'admin' specifically and user is not admin
     if (normalizedRoles.length === 1 && normalizedRoles[0] === 'admin') {
+      // Check if custom role has admin-level permissions (canManageSystem)
+      try {
+        const userRoleDoc = req.user.roleId ? await Role.findById(req.user.roleId) : await Role.findOne({ slug: normalizedUserRole, isActive: true });
+        
+        if (userRoleDoc && userRoleDoc.permissions && userRoleDoc.permissions.canManageSystem) {
+          return next();
+        }
+      } catch (error) {
+        console.error('Error checking custom admin role:', error);
+      }
+      
       return res.status(403).json({
         success: false,
         message: `User role '${req.user.role}' is not authorized to access this route`
@@ -92,7 +103,7 @@ export const authorize = (...roles) => {
     // For custom roles not in the predefined list, 
     // check if the role exists and is active
     try {
-      const userRoleDoc = await Role.findOne({ slug: normalizedUserRole, isActive: true });
+      const userRoleDoc = req.user.roleId ? await Role.findById(req.user.roleId) : await Role.findOne({ slug: normalizedUserRole, isActive: true });
       if (userRoleDoc) {
         // Custom role exists and is active - allow access based on route requirements
         // More granular permission checks should be done using checkPermission middleware

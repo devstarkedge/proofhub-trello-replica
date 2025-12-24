@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, X, Check, AlertCircle, Loader2, Trash2 } from 'lucide-react';
-import { PERMISSION_CATEGORIES } from '../../../store/roleStore';
+import { Shield, X, Check, AlertCircle, Loader2, Trash2, Zap } from 'lucide-react';
+import { PERMISSION_CATEGORIES, SYSTEM_ROLE_PERMISSIONS } from '../../../store/roleStore';
 
 /**
  * EditRoleModal Component
@@ -22,6 +22,7 @@ const EditRoleModal = memo(({
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
   const [permissions, setPermissions] = useState({});
+  const [selectedPreset, setSelectedPreset] = useState('custom');
   const [errors, setErrors] = useState({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -31,6 +32,7 @@ const EditRoleModal = memo(({
       setRoleName(role.name || '');
       setRoleDescription(role.description || '');
       setPermissions(role.permissions || {});
+      setSelectedPreset('custom'); // Reset preset when role changes
       setErrors({});
       setShowDeleteConfirm(false);
     }
@@ -42,6 +44,7 @@ const EditRoleModal = memo(({
       ...prev,
       [permissionKey]: !prev[permissionKey]
     }));
+    setSelectedPreset('custom'); // Switch to custom if manually toggling
   }, []);
 
   // Select all permissions in a category
@@ -56,6 +59,7 @@ const EditRoleModal = memo(({
       });
       return updated;
     });
+    setSelectedPreset('custom'); // Switch to custom if manually using category select
   }, []);
 
   // Check if all permissions in a category are selected
@@ -119,8 +123,23 @@ const EditRoleModal = memo(({
   const handleClose = useCallback(() => {
     setErrors({});
     setShowDeleteConfirm(false);
+    setSelectedPreset('custom');
     onClose();
   }, [onClose]);
+
+  // Handle Preset Selection
+  const handlePresetChange = useCallback((preset) => {
+    setSelectedPreset(preset);
+    if (preset === 'custom') {
+      // Keep current permissions
+      return;
+    }
+    
+    // Apply preset permissions
+    if (SYSTEM_ROLE_PERMISSIONS[preset]) {
+      setPermissions({ ...SYSTEM_ROLE_PERMISSIONS[preset] });
+    }
+  }, []);
 
   // Count selected permissions
   const selectedPermissionsCount = Object.values(permissions).filter(Boolean).length;
@@ -255,6 +274,41 @@ const EditRoleModal = memo(({
                     </span>
                   </div>
                 </div>
+
+                {/* Permissions Section */}
+
+
+                {/* Role Power Presets */}
+                {!isSystemRole && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                      <Zap size={16} className="text-amber-500 fill-amber-500" />
+                      Role Power Presets
+                    </label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {['admin', 'manager', 'employee', 'custom'].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => handlePresetChange(preset)}
+                          className={`px-4 py-3 rounded-xl border transition-all flex flex-col items-center gap-2 ${
+                            selectedPreset === preset
+                              ? 'bg-amber-50 border-amber-500 text-amber-700 shadow-sm ring-1 ring-amber-500'
+                              : 'bg-white border-gray-200 text-gray-600 hover:border-amber-200 hover:bg-amber-50/50'
+                          }`}
+                        >
+                          <span className="font-semibold capitalize">{preset}</span>
+                          <span className="text-xs text-center opacity-70">
+                            {preset === 'admin' && 'Full access'}
+                            {preset === 'manager' && 'Manage team'}
+                            {preset === 'employee' && 'Standard access'}
+                            {preset === 'custom' && 'Manual setup'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Permissions Section */}
                 <div>

@@ -1,7 +1,7 @@
 import React, { memo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, X, Check, AlertCircle, Loader2 } from 'lucide-react';
-import { PERMISSION_CATEGORIES, DEFAULT_PERMISSIONS } from '../../../store/roleStore';
+import { Shield, X, Check, AlertCircle, Loader2, Zap } from 'lucide-react';
+import { PERMISSION_CATEGORIES, DEFAULT_PERMISSIONS, SYSTEM_ROLE_PERMISSIONS } from '../../../store/roleStore';
 
 /**
  * CreateRoleModal Component
@@ -19,6 +19,7 @@ const CreateRoleModal = memo(({
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
   const [permissions, setPermissions] = useState({ ...DEFAULT_PERMISSIONS });
+  const [selectedPreset, setSelectedPreset] = useState('custom');
   const [errors, setErrors] = useState({});
 
   // Handle permission toggle
@@ -27,6 +28,7 @@ const CreateRoleModal = memo(({
       ...prev,
       [permissionKey]: !prev[permissionKey]
     }));
+    setSelectedPreset('custom'); // Switch to custom if manually toggling
   }, []);
 
   // Select all permissions in a category
@@ -41,6 +43,7 @@ const CreateRoleModal = memo(({
       });
       return updated;
     });
+    setSelectedPreset('custom'); // Switch to custom if manually using category select
   }, []);
 
   // Check if all permissions in a category are selected
@@ -93,14 +96,29 @@ const CreateRoleModal = memo(({
     });
   }, [roleName, roleDescription, permissions, validateForm, onSubmit]);
 
-  // Reset form on close
-  const handleClose = useCallback(() => {
+    // Reset form on close
+    const handleClose = useCallback(() => {
     setRoleName('');
     setRoleDescription('');
     setPermissions({ ...DEFAULT_PERMISSIONS });
+    setSelectedPreset('custom');
     setErrors({});
     onClose();
   }, [onClose]);
+
+  // Handle Preset Selection
+  const handlePresetChange = useCallback((preset) => {
+    setSelectedPreset(preset);
+    if (preset === 'custom') {
+      // Keep current permissions
+      return;
+    }
+    
+    // Apply preset permissions
+    if (SYSTEM_ROLE_PERMISSIONS[preset]) {
+      setPermissions({ ...SYSTEM_ROLE_PERMISSIONS[preset] });
+    }
+  }, []);
 
   // Count selected permissions
   const selectedPermissionsCount = Object.values(permissions).filter(Boolean).length;
@@ -211,6 +229,36 @@ const CreateRoleModal = memo(({
                     <span className="text-xs text-gray-400 ml-auto">
                       {roleDescription.length}/200
                     </span>
+                  </div>
+                </div>
+
+                {/* Role Power Presets */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <Zap size={16} className="text-amber-500 fill-amber-500" />
+                    Role Power Presets
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {['admin', 'manager', 'employee', 'custom'].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => handlePresetChange(preset)}
+                        className={`px-4 py-3 rounded-xl border transition-all flex flex-col items-center gap-2 ${
+                          selectedPreset === preset
+                            ? 'bg-purple-50 border-purple-500 text-purple-700 shadow-sm ring-1 ring-purple-500'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-purple-200 hover:bg-purple-50/50'
+                        }`}
+                      >
+                        <span className="font-semibold capitalize">{preset}</span>
+                        <span className="text-xs text-center opacity-70">
+                          {preset === 'admin' && 'Full access'}
+                          {preset === 'manager' && 'Manage team'}
+                          {preset === 'employee' && 'Standard access'}
+                          {preset === 'custom' && 'Manual setup'}
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 </div>
 

@@ -17,7 +17,12 @@ const permissionSchema = new mongoose.Schema({
   
   // Delete Permissions
   canDeleteTasks: { type: Boolean, default: false },
-  canDeleteProjects: { type: Boolean, default: false }
+  canDeleteProjects: { type: Boolean, default: false },
+
+  // Management Permissions
+  canManageRoles: { type: Boolean, default: false },
+  canManageUsers: { type: Boolean, default: false },
+  canManageSystem: { type: Boolean, default: false }
 }, { _id: false });
 
 /**
@@ -95,7 +100,12 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canCreateReminder: true,
       canAssignMembers: true,
       canDeleteTasks: true,
-      canDeleteProjects: true
+      canAssignMembers: true,
+      canDeleteTasks: true,
+      canDeleteProjects: true,
+      canManageRoles: true,
+      canManageUsers: true,
+      canManageSystem: true
     },
     manager: {
       canCreateDepartment: false,

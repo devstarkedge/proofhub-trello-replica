@@ -68,7 +68,18 @@ export const updateUser = asyncHandler(async (req, res, next) => {
   // Update fields
   if (name) user.name = name;
   if (email) user.email = email;
-  if (role && (req.user.role === 'admin' || req.user.role === 'manager')) user.role = role;
+  if (role && (req.user.role === 'admin' || req.user.role === 'manager')) {
+    user.role = role;
+    
+    // Lookup roleId
+    const Role = (await import('../models/Role.js')).default;
+    const roleDoc = await Role.findOne({ slug: role.toLowerCase() });
+    if (roleDoc) {
+      user.roleId = roleDoc._id;
+    } else {
+      user.roleId = null;
+    }
+  }
   if (department !== undefined) user.department = department;
   if (team !== undefined) user.team = team;
   if (isVerified !== undefined && (req.user.role === 'admin' || req.user.role === 'manager')) user.isVerified = isVerified;
@@ -335,7 +346,16 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
 
   // Update verification status and role/department if provided
   user.isVerified = true;
-  if (role) user.role = role;
+  if (role) {
+    user.role = role;
+    
+    // Lookup roleId
+    const Role = (await import('../models/Role.js')).default;
+    const roleDoc = await Role.findOne({ slug: role.toLowerCase() });
+    if (roleDoc) {
+      user.roleId = roleDoc._id;
+    }
+  }
   if (department !== undefined) user.department = department; // Allow null to remove department
 
   await user.save();
