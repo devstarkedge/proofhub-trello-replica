@@ -16,6 +16,11 @@ const notificationSchema = new mongoose.Schema({
       'project_deleted',
       'comment_added',
       'comment_mention',
+      'comment_reaction',
+      'comment_reply',
+      'comment_pinned',
+      'role_mention',
+      'team_mention',
       'team_invite',
       'board_shared',
       'user_registered',
@@ -65,7 +70,7 @@ const notificationSchema = new mongoose.Schema({
   },
   entityType: {
     type: String,
-    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', null],
+    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', null],
     default: null
   },
   action: {
@@ -112,6 +117,29 @@ const notificationSchema = new mongoose.Schema({
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
+  },
+  // Deep linking for comment navigation
+  deepLink: {
+    commentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Comment'
+    },
+    contextType: {
+      type: String,
+      enum: ['card', 'subtask', 'subtaskNano', 'announcement', null],
+      default: null
+    },
+    contextRef: {
+      type: mongoose.Schema.Types.ObjectId
+    },
+    highlightDuration: {
+      type: Number,
+      default: 3000 // 3 seconds highlight
+    },
+    threadParentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Comment'
+    }
   },
   createdAt: {
     type: Date,

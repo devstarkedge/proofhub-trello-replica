@@ -1493,3 +1493,228 @@ hr {
 .hand-shake-duration-5000 {
   animation-duration: 5s;
 }
+
+/* ============================================
+   COMMENT SYSTEM STYLES
+   ============================================ */
+
+/* Comment highlight animation for deep linking */
+@keyframes commentHighlight {
+  0% {
+    background-color: rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+  }
+
+  50% {
+    background-color: rgba(99, 102, 241, 0.2);
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
+  }
+
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.comment-highlighted {
+  animation: commentHighlight 3s ease-out forwards;
+  border-radius: 12px;
+}
+
+/* Mention styling */
+.mention {
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.mention[data-type="user"] {
+  color: #2563eb;
+  /* blue-600 */
+}
+
+.mention[data-type="user"]:hover {
+  color: #1d4ed8;
+  /* blue-700 */
+}
+
+.mention[data-type="role"] {
+  color: #9333ea;
+  /* purple-600 */
+}
+
+.mention[data-type="role"]:hover {
+  color: #7c3aed;
+  /* purple-700 */
+}
+
+.mention[data-type="team"] {
+  color: #0d9488;
+  /* teal-600 */
+}
+
+.mention[data-type="team"]:hover {
+  color: #0f766e;
+  /* teal-700 */
+}
+
+/* Dark mode mention styles */
+:root[data-theme="dark"] .mention[data-type="user"] {
+  color: #60a5fa;
+  /* blue-400 */
+}
+
+:root[data-theme="dark"] .mention[data-type="user"]:hover {
+  color: #93c5fd;
+  /* blue-300 */
+}
+
+:root[data-theme="dark"] .mention[data-type="role"] {
+  color: #c084fc;
+  /* purple-400 */
+}
+
+:root[data-theme="dark"] .mention[data-type="role"]:hover {
+  color: #d8b4fe;
+  /* purple-300 */
+}
+
+:root[data-theme="dark"] .mention[data-type="team"] {
+  color: #2dd4bf;
+  /* teal-400 */
+}
+
+:root[data-theme="dark"] .mention[data-type="team"]:hover {
+  color: #5eead4;
+  /* teal-300 */
+}
+
+/* Bubble comment style */
+.comment-bubble {
+  position: relative;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 16px 16px 16px 4px;
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.comment-bubble:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="dark"] .comment-bubble {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(51, 65, 85, 0.6) 100%);
+  border-color: #334155;
+}
+
+/* Reaction bar hover effect */
+.reaction-bar button:hover {
+  transform: scale(1.05);
+}
+
+/* Comment skeleton shimmer */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+.comment-skeleton {
+  background: linear-gradient(90deg,
+      #f0f0f0 0px,
+      #e0e0e0 40px,
+      #f0f0f0 80px);
+  background-size: 200px 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+:root[data-theme="dark"] .comment-skeleton {
+  background: linear-gradient(90deg,
+      #374151 0px,
+      #4b5563 40px,
+      #374151 80px);
+  background-size: 200px 100%;
+}
+
+/* Edit history viewer prose styles */
+.edit-history-prose {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.edit-history-prose p {
+  margin-bottom: 0.5rem;
+}
+
+.edit-history-prose img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 0.5rem 0;
+}
+
+/* Threaded reply connector line */
+.reply-connector {
+  position: relative;
+}
+
+.reply-connector::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, #cbd5e1, #e2e8f0);
+}
+
+:root[data-theme="dark"] .reply-connector::before {
+  background: linear-gradient(to bottom, #475569, #334155);
+}
+
+/* Reaction popover animation */
+@keyframes reaction-pop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.1);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.reaction-add-animation {
+  animation: reaction-pop 0.3s ease-out;
+}
+
+/* Comment attachment preview styles */
+.comment-attachment-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.comment-attachment-thumb {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.comment-attachment-thumb:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}

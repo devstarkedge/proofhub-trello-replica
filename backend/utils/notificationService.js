@@ -324,42 +324,72 @@ class NotificationService {
   // Comment notifications
   async notifyCommentAdded(card, comment, commenterId) {
     const notifications = [];
+    const boardId = card.board?._id || card.board;
+    const boardName = card.board?.name || 'Project';
 
     // Notify assignees
     if (card.assignees && card.assignees.length > 0) {
       card.assignees.forEach(assigneeId => {
-        if (assigneeId.toString() !== commenterId) {
+        const assigneeIdStr = assigneeId._id?.toString() || assigneeId.toString();
+        if (assigneeIdStr !== commenterId) {
           notifications.push({
             type: 'comment_added',
             title: 'New Comment',
             message: `${comment.user.name} commented on "${card.title}"`,
-            user: assigneeId,
+            user: assigneeIdStr,
             sender: commenterId,
             relatedCard: card._id,
-            relatedBoard: card.board
+            relatedBoard: boardId,
+            entityId: comment._id,
+            entityType: 'Comment',
+            deepLink: {
+              commentId: comment._id,
+              contextType: comment.contextType,
+              contextRef: comment.contextRef,
+            },
+            metadata: {
+              projectName: boardName,
+              cardTitle: card.title,
+            }
           });
         }
       });
     }
 
     // Process mentions in comment
-    await this.processMentions(comment.htmlContent || comment.text, card, commenterId);
+    await this.processMentions(comment.htmlContent || comment.text, card, commenterId, comment);
 
     return this.createBulkNotifications(notifications);
   }
 
-  // Process mentions in text
-  async processMentions(text, card, senderId) {
-    const mentionRegex = /data-id=["']([^"']+)["']/g;
-    const mentions = new Set();
+  // Process mentions in text - supports @User, @Role, @Team
+  async processMentions(text, card, senderId, comment = null) {
+    // Enhanced regex to capture mention type
+    const mentionRegex = /data-id=["']([^"']+)["'](?:[^>]*data-type=["']([^"']+)["'])?/g;
+    const userMentions = new Set();
+    const roleMentions = new Set();
+    const teamMentions = new Set();
 
     let match;
     while ((match = mentionRegex.exec(text)) !== null) {
-      mentions.add(match[1]);
+      const targetId = match[1];
+      const mentionType = match[2] || 'user';
+
+      if (mentionType === 'role') {
+        roleMentions.add(targetId);
+      } else if (mentionType === 'team') {
+        teamMentions.add(targetId);
+      } else {
+        userMentions.add(targetId);
+      }
     }
 
     const notifications = [];
-    for (const mentionedId of mentions) {
+    const boardId = card.board?._id || card.board;
+    const boardName = card.board?.name || 'Project';
+
+    // Process user mentions
+    for (const mentionedId of userMentions) {
       if (mentionedId !== senderId) {
         notifications.push({
           type: 'comment_mention',
@@ -368,8 +398,97 @@ class NotificationService {
           user: mentionedId,
           sender: senderId,
           relatedCard: card._id,
-          relatedBoard: card.board
+          relatedBoard: boardId,
+          entityId: comment?._id,
+          entityType: 'Comment',
+          deepLink: comment ? {
+            commentId: comment._id,
+            contextType: comment.contextType,
+            contextRef: comment.contextRef,
+          } : undefined,
+          metadata: {
+            projectName: boardName,
+            cardTitle: card.title,
+          }
         });
+      }
+    }
+
+    // Process role mentions - notify all users with that role
+    for (const roleId of roleMentions) {
+      try {
+        const Role = (await import('../models/Role.js')).default;
+        const User = (await import('../models/User.js')).default;
+        
+        const role = await Role.findById(roleId);
+        if (role) {
+          const usersWithRole = await User.find({ roleRef: roleId, isVerified: true }).select('_id');
+          for (const user of usersWithRole) {
+            if (user._id.toString() !== senderId) {
+              notifications.push({
+                type: 'role_mention',
+                title: `@${role.name} mentioned`,
+                message: `Your role was mentioned in a comment on "${card.title}"`,
+                user: user._id,
+                sender: senderId,
+                relatedCard: card._id,
+                relatedBoard: boardId,
+                entityId: comment?._id,
+                entityType: 'Comment',
+                deepLink: comment ? {
+                  commentId: comment._id,
+                  contextType: comment.contextType,
+                  contextRef: comment.contextRef,
+                } : undefined,
+                metadata: {
+                  projectName: boardName,
+                  cardTitle: card.title,
+                  roleName: role.name,
+                }
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error processing role mention:', err);
+      }
+    }
+
+    // Process team mentions - notify all team members
+    for (const teamId of teamMentions) {
+      try {
+        const Team = (await import('../models/Team.js')).default;
+        
+        const team = await Team.findById(teamId).populate('members', '_id');
+        if (team && team.members) {
+          for (const member of team.members) {
+            if (member._id.toString() !== senderId) {
+              notifications.push({
+                type: 'team_mention',
+                title: `@${team.name} mentioned`,
+                message: `Your team was mentioned in a comment on "${card.title}"`,
+                user: member._id,
+                sender: senderId,
+                relatedCard: card._id,
+                relatedBoard: boardId,
+                entityId: comment?._id,
+                entityType: 'Comment',
+                deepLink: comment ? {
+                  commentId: comment._id,
+                  contextType: comment.contextType,
+                  contextRef: comment.contextRef,
+                } : undefined,
+                metadata: {
+                  projectName: boardName,
+                  cardTitle: card.title,
+                  teamName: team.name,
+                }
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error processing team mention:', err);
       }
     }
 

@@ -105,6 +105,32 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-comment-deleted', { detail: data }));
     });
 
+    // New comment events
+    this.socket.on('comment-reaction-added', (data) => {
+      console.log('Comment reaction added:', data);
+      window.dispatchEvent(new CustomEvent('socket-comment-reaction-added', { detail: data }));
+    });
+
+    this.socket.on('comment-reaction-removed', (data) => {
+      console.log('Comment reaction removed:', data);
+      window.dispatchEvent(new CustomEvent('socket-comment-reaction-removed', { detail: data }));
+    });
+
+    this.socket.on('comment-pinned', (data) => {
+      console.log('Comment pinned:', data);
+      window.dispatchEvent(new CustomEvent('socket-comment-pinned', { detail: data }));
+    });
+
+    this.socket.on('comment-unpinned', (data) => {
+      console.log('Comment unpinned:', data);
+      window.dispatchEvent(new CustomEvent('socket-comment-unpinned', { detail: data }));
+    });
+
+    this.socket.on('comment-reply-added', (data) => {
+      console.log('Comment reply added:', data);
+      window.dispatchEvent(new CustomEvent('socket-comment-reply-added', { detail: data }));
+    });
+
     this.socket.on('hierarchy-subtask-changed', (data) => {
       console.log('Subtask hierarchy changed:', data);
       window.dispatchEvent(new CustomEvent('socket-subtask-hierarchy', { detail: data }));

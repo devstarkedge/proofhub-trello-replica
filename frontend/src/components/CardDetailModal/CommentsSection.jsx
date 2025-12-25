@@ -9,17 +9,28 @@ import {
   Trash2, 
   MoreHorizontal, 
   X,
-  Loader2
+  Loader2,
+  Reply,
+  Pin,
+  PinOff,
+  ChevronDown,
+  ChevronUp,
+  SmilePlus
 } from "lucide-react";
 import RichTextEditor from "../RichTextEditor";
 import AuthContext from "../../context/AuthContext";
 import versionService from "../../services/versionService";
+import Database from "../../services/database";
 import DeletePopup from "../ui/DeletePopup";
 import Avatar from "../Avatar";
+import { toast } from "react-toastify";
 
 // Lazy load modals
 const VersionHistoryModal = lazy(() => import("../VersionHistoryModal"));
 const DocumentViewerModal = lazy(() => import("../DocumentViewerModal"));
+
+// Available reaction emojis
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '🚀', '😮', '😢'];
 
 // Memoized Comment Component for better performance
 const CommentItem = memo(({ 
@@ -388,7 +399,7 @@ const CommentsSection = memo(({
                       startExpanded={true}
                       className="min-h-[80px]"
                       onImageUpload={onImageUpload}
-                      mentionContainer={document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50.flex.items-start.justify-center.z-60')}
+                      mentionContainer={document.body}
                       // New Cloudinary attachment props
                       cardId={cardId}
                       entityType={entityType}

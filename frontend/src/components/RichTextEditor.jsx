@@ -204,11 +204,21 @@ const RichTextEditor = ({
         renderHTML: ({ node, HTMLAttributes }) => {
           const id = node.attrs.id || '';
           const label = node.attrs.label || '';
+          const mentionType = node.attrs.type || 'user';
+          
+          // Different styling for different mention types
+          const typeClasses = {
+            user: 'mention text-blue-600 font-semibold no-underline hover:text-blue-700',
+            role: 'mention text-purple-600 font-semibold no-underline hover:text-purple-700',
+            team: 'mention text-teal-600 font-semibold no-underline hover:text-teal-700'
+          };
+          
           return [
             'a',
             {
-              class: 'mention text-blue-600 font-semibold no-underline',
+              class: typeClasses[mentionType] || typeClasses.user,
               'data-id': id,
+              'data-type': mentionType,
               href: `#${id}`
             },
             `@${label}`
@@ -217,11 +227,52 @@ const RichTextEditor = ({
         suggestion: {
           items: ({ query }) => {
             const q = (query || '').toLowerCase();
-            const list = usersRef.current || [];
-            return list
+            const usersData = usersRef.current;
+            // Ensure usersList is always an array
+            const usersList = Array.isArray(usersData) ? usersData : [];
+            const results = [];
+            
+            // Filter and add users
+            const matchedUsers = usersList
               .filter(user => user && user.name && user.name.toLowerCase().includes(q))
               .slice(0, 6)
-              .map(user => ({ id: String(user._id || user.id || ''), label: user.name }));
+              .map(user => ({ 
+                id: String(user._id || user.id || ''), 
+                label: user.name,
+                avatar: user.avatar,
+                type: 'user'
+              }));
+            results.push(...matchedUsers);
+            
+            // Note: roles and teams can be added if usersData has .roles and .teams properties
+            // This is handled in CommentSystem.jsx with the mentionData object
+            if (usersData && usersData.roles) {
+              const rolesList = usersData.roles;
+              const matchedRoles = rolesList
+                .filter(role => role && role.name && role.name.toLowerCase().includes(q))
+                .slice(0, 2)
+                .map(role => ({
+                  id: String(role._id || role.id || ''),
+                  label: role.name,
+                  type: 'role'
+                }));
+              results.push(...matchedRoles);
+            }
+            
+            if (usersData && usersData.teams) {
+              const teamsList = usersData.teams;
+              const matchedTeams = teamsList
+                .filter(team => team && team.name && team.name.toLowerCase().includes(q))
+                .slice(0, 2)
+                .map(team => ({
+                  id: String(team._id || team.id || ''),
+                  label: team.name,
+                  type: 'team'
+                }));
+              results.push(...matchedTeams);
+            }
+            
+            return results.slice(0, 8);
           },
           render: () => {
             let component;
@@ -243,6 +294,7 @@ const RichTextEditor = ({
                   trigger: 'manual',
                   placement: 'bottom-start',
                   animation: 'shift-away',
+                  zIndex: 9999,
                 });
               },
               onUpdate(props) {

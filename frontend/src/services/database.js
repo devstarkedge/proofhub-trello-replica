@@ -1187,6 +1187,130 @@ class DatabaseService {
     return await res.json().catch(() => ({ success: true }));
   }
 
+  // Get single comment by ID (for deep linking)
+  async getComment(commentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/comments/${commentId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.data;
+  }
+
+  // Create threaded reply
+  async createReply(parentCommentId, htmlContent) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/comments/${parentCommentId}/reply`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ htmlContent })
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Failed to create reply' }));
+      throw new Error(error.message || 'Failed to create reply');
+    }
+    return await res.json();
+  }
+
+  // Get replies for a comment (paginated)
+  async getReplies(parentCommentId, page = 1, limit = 10) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(
+      `${baseURL}/api/comments/${parentCommentId}/replies?page=${page}&limit=${limit}`,
+      { headers }
+    );
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  // Add reaction to comment
+  async addReaction(commentId, emoji) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/comments/${commentId}/reactions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ emoji })
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Failed to add reaction' }));
+      throw new Error(error.message || 'Failed to add reaction');
+    }
+    return await res.json();
+  }
+
+  // Remove reaction from comment
+  async removeReaction(commentId, emoji) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/comments/${commentId}/reactions/${encodeURIComponent(emoji)}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Failed to remove reaction' }));
+      throw new Error(error.message || 'Failed to remove reaction');
+    }
+    return await res.json();
+  }
+
+  // Pin comment (admin/manager only)
+  async pinComment(commentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/comments/${commentId}/pin`, {
+      method: 'PATCH',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Failed to pin comment' }));
+      throw new Error(error.message || 'Failed to pin comment');
+    }
+    return await res.json();
+  }
+
+  // Unpin comment (admin/manager only)
+  async unpinComment(commentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/comments/${commentId}/unpin`, {
+      method: 'PATCH',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Failed to unpin comment' }));
+      throw new Error(error.message || 'Failed to unpin comment');
+    }
+    return await res.json();
+  }
+
   // Notification operations
   async getNotifications(params = {}) {
     const token = localStorage.getItem('token');
