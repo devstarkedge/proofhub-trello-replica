@@ -232,6 +232,7 @@ io.on('connection', (socket) => {
 
 // Helper function to emit notification to user
 export const emitNotification = (userId, notification) => {
+  console.log(`[Socket] Emitting notification to user-${userId}:`, notification?.title || notification?.type);
   io.to(`user-${userId}`).emit('notification', notification);
 };
 

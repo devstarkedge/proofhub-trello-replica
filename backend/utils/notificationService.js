@@ -273,22 +273,54 @@ class NotificationService {
     if (card.assignees && card.assignees.length > 0) {
       card.assignees.forEach(assigneeId => {
         if (assigneeId.toString() !== updaterId) {
+          // Determine notification title and message based on changes
+          let title = 'Task Updated';
           let message = `"${card.title}" has been updated`;
 
-          if (changes.dueDate) {
-            message = `Due date for "${card.title}" has been updated to ${new Date(changes.dueDate).toLocaleDateString()}`;
-          } else if (changes.status === 'done') {
-            message = `"${card.title}" has been marked as complete`;
+          // Use custom message if provided
+          if (changes.message) {
+            message = changes.message;
+          }
+
+          // Set field-specific titles
+          if (changes.description) {
+            title = 'Description Updated';
+          } else if (changes.labels) {
+            title = 'Labels Updated';
+          } else if (changes.priority) {
+            title = 'Priority Changed';
+          } else if (changes.title) {
+            title = 'Task Renamed';
+          } else if (changes.dueDate) {
+            title = 'Due Date Updated';
+            if (!changes.message) {
+              message = `Due date for "${card.title}" has been updated to ${new Date(changes.dueDate).toLocaleDateString()}`;
+            }
+          } else if (changes.startDate) {
+            title = 'Start Date Updated';
+          } else if (changes.status === 'done' || changes.special === 'done') {
+            title = 'Task Completed';
+            if (!changes.message) {
+              message = `"${card.title}" has been marked as complete`;
+            }
+          } else if (changes.status) {
+            title = 'Status Changed';
+          } else if (changes.multipleChanges) {
+            title = 'Task Updated';
+            message = `"${card.title}" has been updated (${changes.changedFields?.length || 'multiple'} fields changed)`;
           }
 
           notifications.push({
             type: 'task_updated',
-            title: 'Task Updated',
+            title,
             message,
             user: assigneeId,
             sender: updaterId,
             relatedCard: card._id,
-            relatedBoard: card.board
+            relatedBoard: card.board,
+            metadata: {
+              changedFields: changes.changedFields || (changes.multipleChanges ? [] : [Object.keys(changes)[0]])
+            }
           });
         }
       });

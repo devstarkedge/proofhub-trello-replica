@@ -40,17 +40,16 @@ export const NotificationProvider = ({ children }) => {
   // Background refresh interval
   const refreshIntervalRef = useRef(null);
 
-  // Initialize on user login
+  // Initialize on user login - load notifications and setup background refresh
+  // Note: Real-time socket listeners are handled in a separate useEffect below
   useEffect(() => {
     if (user) {
       loadNotifications(true);
-      setupRealtimeListeners();
       checkPushSupport();
       startBackgroundRefresh();
     }
 
     return () => {
-      cleanupListeners();
       stopBackgroundRefresh();
     };
   }, [user]);
@@ -99,29 +98,35 @@ export const NotificationProvider = ({ children }) => {
     }
   }, [hasMore, isLoading]);
 
-  // Setup real-time listeners
-  const setupRealtimeListeners = () => {
-    window.addEventListener('socket-notification', handleNewNotification);
-    window.addEventListener('socket-task-assigned', handleTaskAssigned);
-    window.addEventListener('socket-connected', handleReconnect);
-  };
-
-  const cleanupListeners = () => {
-    window.removeEventListener('socket-notification', handleNewNotification);
-    window.removeEventListener('socket-task-assigned', handleTaskAssigned);
-    window.removeEventListener('socket-connected', handleReconnect);
-  };
-
-  // Handle new notification from socket
-  const handleNewNotification = (event) => {
+  // Stable handler for new notifications via socket - uses functional updates so no deps needed
+  const handleNewNotification = useCallback((event) => {
     const notification = event.detail;
-    addNotification(notification);
-  };
+    if (!notification) return;
+    
+    console.log('[NotificationContext] Received socket notification:', notification?.title || notification?.type);
+    
+    // Use functional update to avoid stale state
+    setNotifications(prev => {
+      // Check for duplicates
+      const exists = prev.some(n => n._id === notification._id);
+      if (exists) return prev;
+      return [notification, ...prev];
+    });
+    
+    // Update unread count
+    setUnreadCount(prev => prev + 1);
+    
+    // Show toast (can safely call as it just triggers a toast)
+    showToast(notification);
+  }, []);
 
-  const handleTaskAssigned = (event) => {
+  // Stable handler for task assigned events
+  const handleTaskAssigned = useCallback((event) => {
     const data = event.detail;
+    if (!data) return;
+    
     const notification = {
-      _id: Date.now().toString(),
+      _id: data._id || Date.now().toString(),
       type: 'task_assigned',
       title: 'New Task Assigned',
       message: data.message || 'You have been assigned to a new task',
@@ -130,15 +135,51 @@ export const NotificationProvider = ({ children }) => {
       priority: 'medium',
       ...data
     };
-    addNotification(notification);
-  };
+    
+    setNotifications(prev => {
+      const exists = prev.some(n => n._id === notification._id);
+      if (exists) return prev;
+      return [notification, ...prev];
+    });
+    setUnreadCount(prev => prev + 1);
+    showToast(notification);
+  }, []);
 
   // Handle reconnection - sync missed notifications
-  const handleReconnect = async () => {
-    console.log('Socket reconnected, syncing notifications...');
-    await loadNotifications(true);
-    processPendingActions();
-  };
+  const handleReconnect = useCallback(async () => {
+    console.log('[NotificationContext] Socket reconnected, syncing notifications...');
+    // Reload notifications on reconnect to get any missed ones
+    try {
+      skipRef.current = 0;
+      const response = await Database.getNotifications({ limit: LIMIT, skip: 0 });
+      const { notifications: newNotifications, pagination, unreadCount: count } = response;
+      setNotifications(newNotifications);
+      setUnreadCount(count);
+      setHasMore(pagination.hasMore);
+      skipRef.current = newNotifications.length;
+    } catch (error) {
+      console.error('[NotificationContext] Error syncing on reconnect:', error);
+    }
+  }, []);
+
+  // Setup real-time listeners - stable references ensure listeners work across re-renders
+  useEffect(() => {
+    if (!user) return;
+
+    console.log('[NotificationContext] Setting up real-time listeners for user:', user._id);
+    
+    // Add listeners
+    window.addEventListener('socket-notification', handleNewNotification);
+    window.addEventListener('socket-task-assigned', handleTaskAssigned);
+    window.addEventListener('socket-connected', handleReconnect);
+
+    return () => {
+      console.log('[NotificationContext] Cleaning up real-time listeners');
+      window.removeEventListener('socket-notification', handleNewNotification);
+      window.removeEventListener('socket-task-assigned', handleTaskAssigned);
+      window.removeEventListener('socket-connected', handleReconnect);
+    };
+  }, [user, handleNewNotification, handleTaskAssigned, handleReconnect]);
 
   // Process queued actions when back online
   const processPendingActions = async () => {

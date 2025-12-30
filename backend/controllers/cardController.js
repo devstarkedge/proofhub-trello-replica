@@ -734,9 +734,15 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   const originalBoardId = card.board;
   const originalListId = card.list;
 
+  // Store old values for change detection
   const oldAssignees = card.assignees?.map(a => a.toString()) || [];
   const oldDueDate = card.dueDate;
   const oldStatus = card.status;
+  const oldDescription = card.description || '';
+  const oldLabels = card.labels?.map(l => l.toString()) || [];
+  const oldPriority = card.priority || '';
+  const oldTitle = card.title || '';
+  const oldStartDate = card.startDate;
 
   // Handle time tracking updates
   if (req.body.estimationTime) {
@@ -1018,14 +1024,78 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // Notify if due date changed (only if actually changed)
-  if (req.body.dueDate !== undefined && req.body.dueDate !== oldDueDate && card.assignees && card.assignees.length > 0) {
-    await notificationService.notifyTaskUpdated(card, req.user.id, { dueDate: req.body.dueDate });
+  // ============ COMPREHENSIVE NOTIFICATION LOGIC ============
+  // Track all field changes to send appropriate notifications
+  const changedFields = [];
+  
+  // Check description change
+  const newDescription = req.body.description !== undefined ? (req.body.description || '') : undefined;
+  if (newDescription !== undefined && newDescription !== oldDescription) {
+    changedFields.push({ field: 'description', message: `Description updated for "${card.title}"` });
   }
-
-  // Notify if status changed to done (only if actually changed)
-  if (req.body.status !== undefined && req.body.status === 'done' && oldStatus !== 'done' && card.assignees && card.assignees.length > 0) {
-    await notificationService.notifyTaskUpdated(card, req.user.id, { status: 'done' });
+  
+  // Check labels change
+  if (req.body.labels !== undefined) {
+    const newLabels = (req.body.labels || []).map(l => l.toString()).sort();
+    const sortedOldLabels = [...oldLabels].sort();
+    if (JSON.stringify(newLabels) !== JSON.stringify(sortedOldLabels)) {
+      changedFields.push({ field: 'labels', message: `Labels updated for "${card.title}"` });
+    }
+  }
+  
+  // Check priority change
+  if (req.body.priority !== undefined && (req.body.priority || '') !== oldPriority) {
+    changedFields.push({ field: 'priority', message: `Priority changed to "${req.body.priority || 'None'}" for "${card.title}"` });
+  }
+  
+  // Check title change  
+  if (req.body.title !== undefined && req.body.title !== oldTitle) {
+    changedFields.push({ field: 'title', message: `Task renamed to "${req.body.title}"` });
+  }
+  
+  // Check due date change (normalize to timestamps for proper comparison)
+  const oldDueDateMs = oldDueDate ? new Date(oldDueDate).getTime() : null;
+  const newDueDateMs = req.body.dueDate !== undefined ? (req.body.dueDate ? new Date(req.body.dueDate).getTime() : null) : undefined;
+  if (newDueDateMs !== undefined && oldDueDateMs !== newDueDateMs) {
+    const dateStr = req.body.dueDate ? new Date(req.body.dueDate).toLocaleDateString() : 'removed';
+    changedFields.push({ field: 'dueDate', message: `Due date ${req.body.dueDate ? 'changed to ' + dateStr : 'removed'} for "${card.title}"` });
+  }
+  
+  // Check start date change
+  const oldStartDateMs = oldStartDate ? new Date(oldStartDate).getTime() : null;
+  const newStartDateMs = req.body.startDate !== undefined ? (req.body.startDate ? new Date(req.body.startDate).getTime() : null) : undefined;
+  if (newStartDateMs !== undefined && oldStartDateMs !== newStartDateMs) {
+    changedFields.push({ field: 'startDate', message: `Start date updated for "${card.title}"` });
+  }
+  
+  // Check status change (special handling for 'done')
+  if (req.body.status !== undefined && req.body.status !== oldStatus) {
+    if (req.body.status === 'done') {
+      changedFields.push({ field: 'status', message: `"${card.title}" has been marked as complete`, special: 'done' });
+    } else {
+      changedFields.push({ field: 'status', message: `Status changed to "${req.body.status}" for "${card.title}"` });
+    }
+  }
+  
+  // Send notifications based on changes (only if card has assignees to notify)
+  if (changedFields.length > 0 && card.assignees && card.assignees.length > 0) {
+    // Exclude assignee changes from this count (they're handled separately above)
+    const notificationChanges = changedFields;
+    
+    if (notificationChanges.length === 1) {
+      // Single field changed - send specific notification
+      const change = notificationChanges[0];
+      await notificationService.notifyTaskUpdated(card, req.user.id, { 
+        [change.field]: true,
+        message: change.message 
+      });
+    } else if (notificationChanges.length > 1) {
+      // Multiple fields changed - send generic "Task Updated" notification
+      await notificationService.notifyTaskUpdated(card, req.user.id, { 
+        multipleChanges: true,
+        changedFields: notificationChanges.map(c => c.field)
+      });
+    }
   }
 
   // Invalidate cache for the board
