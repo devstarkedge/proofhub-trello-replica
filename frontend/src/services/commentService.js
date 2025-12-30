@@ -20,6 +20,140 @@ class CommentService {
     
     // Pending requests queue for batch operations
     this.pendingRequests = [];
+    
+    // Track pending saves to avoid duplicate from socket events
+    // Maps tempId -> { type, entityId, timestamp }
+    this.pendingSaves = new Map();
+
+    // Subscribe to socket events for real-time updates
+    this.initSocketListeners();
+  }
+
+  /**
+   * Initialize socket event listeners for real-time comment updates
+   */
+  initSocketListeners() {
+    // Handle new comments from other users
+    window.addEventListener('socket-comment-added', (event) => {
+      const { cardId, subtaskId, nanoId, comment } = event.detail || {};
+      if (!comment) return;
+
+      // Determine entity type and ID
+      let type, entityId;
+      if (nanoId) {
+        type = 'nano';
+        entityId = nanoId;
+      } else if (subtaskId) {
+        type = 'subtask';
+        entityId = subtaskId;
+      } else if (cardId) {
+        type = 'card';
+        entityId = cardId;
+      } else {
+        return;
+      }
+
+      const commentId = comment._id || comment.id;
+      
+      // Check if we have a pending save for this entity - if so, skip
+      // Our saveCommentToServer will handle updating the cache
+      const hasPendingSave = Array.from(this.pendingSaves.values()).some(
+        pending => pending.type === type && pending.entityId === entityId
+      );
+      if (hasPendingSave) {
+        // We're currently saving a comment for this entity
+        // The saveCommentToServer will replace the temp with server response
+        // Check if this is the comment we're saving (by comparing content or timestamp)
+        const cached = this.getFromCache(type, entityId) || [];
+        const hasTemp = cached.some(c => String(c._id || c.id).startsWith('temp-'));
+        if (hasTemp) {
+          // We have a temp comment, this socket event is likely for our own save
+          // Replace the temp comment with the server comment
+          const updated = cached.map(c => 
+            String(c._id || c.id).startsWith('temp-') ? { ...comment, isOptimistic: false } : c
+          );
+          this.setInCache(type, entityId, updated);
+          this.dispatchCommentUpdate(type, entityId, updated);
+          return;
+        }
+      }
+
+      // Check if we already have this comment (by ID)
+      const cached = this.getFromCache(type, entityId);
+      if (cached) {
+        const exists = cached.some(c => {
+          const cId = c._id || c.id;
+          return cId === commentId || cId === comment._id || cId === comment.id;
+        });
+        if (exists) {
+          // Comment already exists, skip
+          return;
+        }
+
+        // Add the new comment from socket (from another user)
+        const updated = [comment, ...cached];
+        this.setInCache(type, entityId, updated);
+        this.dispatchCommentUpdate(type, entityId, updated);
+      }
+    });
+
+    // Handle updated comments from other users
+    window.addEventListener('socket-comment-updated', (event) => {
+      const { cardId, subtaskId, nanoId, commentId, updates } = event.detail || {};
+      if (!commentId || !updates) return;
+
+      // Determine entity type and ID
+      let type, entityId;
+      if (nanoId) {
+        type = 'nano';
+        entityId = nanoId;
+      } else if (subtaskId) {
+        type = 'subtask';
+        entityId = subtaskId;
+      } else if (cardId) {
+        type = 'card';
+        entityId = cardId;
+      } else {
+        return;
+      }
+
+      const cached = this.getFromCache(type, entityId);
+      if (cached) {
+        const updated = cached.map(c =>
+          (c._id === commentId || c.id === commentId) ? { ...c, ...updates } : c
+        );
+        this.setInCache(type, entityId, updated);
+        this.dispatchCommentUpdate(type, entityId, updated);
+      }
+    });
+
+    // Handle deleted comments from other users
+    window.addEventListener('socket-comment-deleted', (event) => {
+      const { cardId, subtaskId, nanoId, commentId } = event.detail || {};
+      if (!commentId) return;
+
+      // Determine entity type and ID
+      let type, entityId;
+      if (nanoId) {
+        type = 'nano';
+        entityId = nanoId;
+      } else if (subtaskId) {
+        type = 'subtask';
+        entityId = subtaskId;
+      } else if (cardId) {
+        type = 'card';
+        entityId = cardId;
+      } else {
+        return;
+      }
+
+      const cached = this.getFromCache(type, entityId);
+      if (cached) {
+        const updated = cached.filter(c => c._id !== commentId && c.id !== commentId);
+        this.setInCache(type, entityId, updated);
+        this.dispatchCommentUpdate(type, entityId, updated);
+      }
+    });
   }
 
   /**
@@ -68,9 +202,10 @@ class CommentService {
     const { type, entityId, htmlContent, user } = entityData;
 
     // Generate temporary comment for immediate UI update
+    const tempId = `temp-${Date.now()}`;
     const tempComment = {
-      _id: `temp-${Date.now()}`,
-      id: `temp-${Date.now()}`,
+      _id: tempId,
+      id: tempId,
       htmlContent,
       text: htmlContent,
       user: {
@@ -80,6 +215,9 @@ class CommentService {
       createdAt: new Date().toISOString(),
       isOptimistic: true
     };
+
+    // Track this pending save to prevent socket duplicates
+    this.pendingSaves.set(tempId, { type, entityId, timestamp: Date.now() });
 
     // Get current cache
     const cachedComments = this.getFromCache(type, entityId) || [];
@@ -94,7 +232,7 @@ class CommentService {
     // Start background save operation
     const savePromise = this.saveCommentToServer(
       { type, entityId, htmlContent },
-      tempComment._id
+      tempId
     );
 
     return { tempComment, promise: savePromise };
@@ -141,6 +279,9 @@ class CommentService {
         throw new Error("Invalid comment response from server");
       }
 
+      // Remove from pending saves now that we have the server response
+      this.pendingSaves.delete(tempId);
+
       // Get current cache
       const cachedComments = this.getFromCache(type, entityId) || [];
 
@@ -158,6 +299,9 @@ class CommentService {
       return savedComment;
     } catch (error) {
       console.error("Error saving comment:", error);
+
+      // Remove from pending saves on error too
+      this.pendingSaves.delete(tempId);
 
       // On error, remove the optimistic comment from cache
       const cachedComments = this.getFromCache(type, entityId) || [];

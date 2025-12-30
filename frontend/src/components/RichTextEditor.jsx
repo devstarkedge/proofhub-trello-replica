@@ -308,8 +308,19 @@ const RichTextEditor = ({
                 return false;
               },
               onExit() {
-                if (popup) popup.forEach(p => p.destroy && p.destroy());
-                if (component) component.destroy();
+                // Guard against destroying already-destroyed instances
+                if (popup) {
+                  popup.forEach(p => {
+                    if (p && p.destroy && !p.state?.isDestroyed) {
+                      p.destroy();
+                    }
+                  });
+                  popup = null;
+                }
+                if (component && component.destroy) {
+                  component.destroy();
+                  component = null;
+                }
               }
             };
           }

@@ -322,28 +322,9 @@ const CardDetailModal = React.memo(({
       }
     };
 
-    const handleCommentAdded = (event) => {
-      const { cardId, comment } = event.detail;
-      if (cardId === card._id) {
-        setComments(prev => [...prev, comment]);
-      }
-    };
-
-    const handleCommentUpdated = (event) => {
-      const { cardId, commentId, updates } = event.detail;
-      if (cardId === card._id) {
-        setComments(prev => prev.map(c =>
-          c._id === commentId ? { ...c, ...updates } : c
-        ));
-      }
-    };
-
-    const handleCommentDeleted = (event) => {
-      const { cardId, commentId } = event.detail;
-      if (cardId === card._id) {
-        setComments(prev => prev.filter(c => c._id !== commentId));
-      }
-    };
+    // Note: Comment events (socket-comment-added, updated, deleted) are handled by
+    // commentService subscription in the next useEffect block. We don't add those
+    // listeners here to avoid duplicate comments.
 
     const handleActivityAdded = (event) => {
       const { cardId, activity } = event.detail;
@@ -364,18 +345,12 @@ const CardDetailModal = React.memo(({
     // Subscribe to events
     window.addEventListener('socket-card-updated', handleCardUpdate);
     window.addEventListener('socket-card-cover-updated', handleCardCoverUpdate);
-    window.addEventListener('socket-comment-added', handleCommentAdded);
-    window.addEventListener('socket-comment-updated', handleCommentUpdated);
-    window.addEventListener('socket-comment-deleted', handleCommentDeleted);
     window.addEventListener('socket-activity-added', handleActivityAdded);
 
     // Cleanup
     return () => {
       window.removeEventListener('socket-card-updated', handleCardUpdate);
       window.removeEventListener('socket-card-cover-updated', handleCardCoverUpdate);
-      window.removeEventListener('socket-comment-added', handleCommentAdded);
-      window.removeEventListener('socket-comment-updated', handleCommentUpdated);
-      window.removeEventListener('socket-comment-deleted', handleCommentDeleted);
       window.removeEventListener('socket-activity-added', handleActivityAdded);
     };
   }, [card._id, isRealCard]);

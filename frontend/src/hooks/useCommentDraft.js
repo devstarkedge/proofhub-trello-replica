@@ -3,51 +3,85 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 /**
  * useCommentDraft - Hook for auto-saving comment drafts to localStorage
  * Persists drafts across page reloads and browser sessions
+ * Also detects online/offline status for user feedback
  */
-const useCommentDraft = (entityType, entityId, options = {}) => {
+const useCommentDraft = (draftKey, options = {}) => {
   const {
     debounceMs = 1000,
     maxDraftAge = 7 * 24 * 60 * 60 * 1000, // 7 days
-    onDraftRestored = () => {},
+    enabled = true,
   } = options;
 
+  const [draft, setDraft] = useState(null);
   const [hasDraft, setHasDraft] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const saveTimeoutRef = useRef(null);
   
   // Generate storage key
   const getStorageKey = useCallback(() => {
-    return `comment_draft_${entityType}_${entityId}`;
-  }, [entityType, entityId]);
+    if (!draftKey) return null;
+    return `comment_draft_${draftKey}`;
+  }, [draftKey]);
+
+  // Handle online/offline status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Load draft from localStorage
   const loadDraft = useCallback(() => {
-    if (!entityId) return null;
+    if (!enabled || !draftKey) return null;
     
     try {
       const key = getStorageKey();
+      if (!key) return null;
+      
       const stored = localStorage.getItem(key);
       
-      if (!stored) return null;
+      if (!stored) {
+        setHasDraft(false);
+        setDraft(null);
+        return null;
+      }
       
-      const draft = JSON.parse(stored);
+      const draftData = JSON.parse(stored);
       
       // Check if draft is expired
-      if (Date.now() - draft.timestamp > maxDraftAge) {
+      if (Date.now() - draftData.timestamp > maxDraftAge) {
         localStorage.removeItem(key);
+        setHasDraft(false);
+        setDraft(null);
         return null;
       }
       
       setHasDraft(true);
-      return draft;
+      setDraft(draftData.content);
+      return draftData.content;
     } catch (error) {
       console.error('Error loading draft:', error);
       return null;
     }
-  }, [entityId, getStorageKey, maxDraftAge]);
+  }, [enabled, draftKey, getStorageKey, maxDraftAge]);
+
+  // Load draft on mount
+  useEffect(() => {
+    if (enabled && draftKey) {
+      loadDraft();
+    }
+  }, [enabled, draftKey, loadDraft]);
 
   // Save draft to localStorage (debounced)
-  const saveDraft = useCallback((content, htmlContent = '', attachments = []) => {
-    if (!entityId) return;
+  const saveDraft = useCallback((content) => {
+    if (!enabled || !draftKey) return;
     
     // Clear previous timeout
     if (saveTimeoutRef.current) {
@@ -57,26 +91,26 @@ const useCommentDraft = (entityType, entityId, options = {}) => {
     saveTimeoutRef.current = setTimeout(() => {
       try {
         // Don't save empty content
-        const plainText = (htmlContent || content || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+        const plainText = (content || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
         
-        if (!plainText && (!attachments || attachments.length === 0)) {
+        if (!plainText) {
           // If content is empty, clear the draft
           clearDraft();
           return;
         }
         
         const key = getStorageKey();
-        const draft = {
+        if (!key) return;
+        
+        const draftData = {
           content,
-          htmlContent,
-          attachments,
           timestamp: Date.now(),
-          entityType,
-          entityId
+          draftKey
         };
         
-        localStorage.setItem(key, JSON.stringify(draft));
+        localStorage.setItem(key, JSON.stringify(draftData));
         setHasDraft(true);
+        setDraft(content);
       } catch (error) {
         console.error('Error saving draft:', error);
         // Handle quota exceeded
@@ -85,20 +119,23 @@ const useCommentDraft = (entityType, entityId, options = {}) => {
         }
       }
     }, debounceMs);
-  }, [entityId, entityType, getStorageKey, debounceMs]);
+  }, [enabled, draftKey, getStorageKey, debounceMs]);
 
   // Clear draft from localStorage
   const clearDraft = useCallback(() => {
-    if (!entityId) return;
+    if (!draftKey) return;
     
     try {
       const key = getStorageKey();
-      localStorage.removeItem(key);
+      if (key) {
+        localStorage.removeItem(key);
+      }
       setHasDraft(false);
+      setDraft(null);
     } catch (error) {
       console.error('Error clearing draft:', error);
     }
-  }, [entityId, getStorageKey]);
+  }, [draftKey, getStorageKey]);
 
   // Cleanup old drafts to free up space
   const cleanupOldDrafts = useCallback(() => {
@@ -108,8 +145,8 @@ const useCommentDraft = (entityType, entityId, options = {}) => {
       const key = localStorage.key(i);
       if (key && key.startsWith('comment_draft_')) {
         try {
-          const draft = JSON.parse(localStorage.getItem(key));
-          if (Date.now() - draft.timestamp > maxDraftAge) {
+          const draftData = JSON.parse(localStorage.getItem(key));
+          if (Date.now() - draftData.timestamp > maxDraftAge) {
             keysToRemove.push(key);
           }
         } catch {
@@ -120,16 +157,6 @@ const useCommentDraft = (entityType, entityId, options = {}) => {
     
     keysToRemove.forEach(key => localStorage.removeItem(key));
   }, [maxDraftAge]);
-
-  // Restore draft on mount
-  const restoreDraft = useCallback(() => {
-    const draft = loadDraft();
-    if (draft) {
-      onDraftRestored(draft);
-      return draft;
-    }
-    return null;
-  }, [loadDraft, onDraftRestored]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -142,16 +169,20 @@ const useCommentDraft = (entityType, entityId, options = {}) => {
 
   // Cleanup old drafts periodically
   useEffect(() => {
-    cleanupOldDrafts();
-  }, [cleanupOldDrafts]);
+    if (enabled) {
+      cleanupOldDrafts();
+    }
+  }, [enabled, cleanupOldDrafts]);
 
   return {
+    draft,
     hasDraft,
+    isOnline,
     saveDraft,
     loadDraft,
     clearDraft,
-    restoreDraft,
   };
 };
 
 export default useCommentDraft;
+

@@ -92,32 +92,9 @@ const CommentSystem = ({
     return unsubscribe;
   }, [entityType, entityId, onCommentCountChange]);
 
-  // Subscribe to real-time socket events
+  // Subscribe to real-time socket events for reactions, pins, and replies
+  // Note: socket-comment-added, updated, deleted are now handled by commentService
   useEffect(() => {
-    const handleCommentAdded = (event) => {
-      const { contextRef: eventContextRef, comment } = event.detail;
-      if (eventContextRef === entityId || event.detail.cardId === entityId) {
-        setComments(prev => {
-          // Check if comment already exists
-          const exists = prev.some(c => c._id === comment._id);
-          if (exists) return prev;
-          return [comment, ...prev];
-        });
-      }
-    };
-
-    const handleCommentUpdated = (event) => {
-      const { commentId, updates } = event.detail;
-      setComments(prev => 
-        prev.map(c => c._id === commentId ? { ...c, ...updates } : c)
-      );
-    };
-
-    const handleCommentDeleted = (event) => {
-      const { commentId } = event.detail;
-      setComments(prev => prev.filter(c => c._id !== commentId));
-    };
-
     const handleReactionAdded = (event) => {
       const { commentId, reactions } = event.detail;
       setComments(prev =>
@@ -162,9 +139,6 @@ const CommentSystem = ({
       );
     };
 
-    window.addEventListener('socket-comment-added', handleCommentAdded);
-    window.addEventListener('socket-comment-updated', handleCommentUpdated);
-    window.addEventListener('socket-comment-deleted', handleCommentDeleted);
     window.addEventListener('socket-comment-reaction-added', handleReactionAdded);
     window.addEventListener('socket-comment-reaction-removed', handleReactionRemoved);
     window.addEventListener('socket-comment-pinned', handleCommentPinned);
@@ -172,9 +146,6 @@ const CommentSystem = ({
     window.addEventListener('socket-comment-reply-added', handleReplyAdded);
 
     return () => {
-      window.removeEventListener('socket-comment-added', handleCommentAdded);
-      window.removeEventListener('socket-comment-updated', handleCommentUpdated);
-      window.removeEventListener('socket-comment-deleted', handleCommentDeleted);
       window.removeEventListener('socket-comment-reaction-added', handleReactionAdded);
       window.removeEventListener('socket-comment-reaction-removed', handleReactionRemoved);
       window.removeEventListener('socket-comment-pinned', handleCommentPinned);

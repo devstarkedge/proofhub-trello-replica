@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MoreHorizontal, Edit2, Trash2, Pin, PinOff, Reply, 
@@ -9,6 +9,7 @@ import CommentEditor from './CommentEditor';
 import ReactionBar from './ReactionBar';
 import ThreadedReplies from './ThreadedReplies';
 import EditHistoryViewer from './EditHistoryViewer';
+import UserProfilePreview from './UserProfilePreview';
 
 /**
  * CommentItem - Single comment bubble with reactions, replies, and actions
@@ -36,6 +37,8 @@ const CommentItem = ({
   const [replyContent, setReplyContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showProfilePreview, setShowProfilePreview] = useState(false);
+  const avatarRef = useRef(null);
 
   const isDark = theme === 'dark';
   const isOwner = currentUser?._id === comment.user?._id || currentUser?.id === comment.user?._id;
@@ -130,22 +133,47 @@ const CommentItem = ({
 
       {/* Header */}
       <div className="flex items-start gap-3">
-        {/* Avatar */}
-        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0 ${
-          isDark ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700'
-        }`}>
-          {comment.user?.avatar ? (
-            <img 
-              src={comment.user.avatar} 
-              alt={comment.user.name} 
-              className="w-full h-full rounded-full object-cover"
-            />
-          ) : (
-            getInitials(comment.user?.name)
-          )}
+        {/* Avatar with Profile Preview */}
+        <div 
+          ref={avatarRef}
+          className="relative"
+          onMouseEnter={() => setShowProfilePreview(true)}
+          onMouseLeave={() => setShowProfilePreview(false)}
+        >
+          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0 cursor-pointer transition-transform hover:scale-110 ${
+            isDark ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700'
+          }`}>
+            {comment.user?.avatar ? (
+              <img 
+                src={comment.user.avatar} 
+                alt={comment.user.name} 
+                className="w-full h-full rounded-full object-cover"
+              />
+            ) : (
+              getInitials(comment.user?.name)
+            )}
+          </div>
+          
+          {/* Profile Preview Card */}
+          <AnimatePresence>
+            {showProfilePreview && comment.user && (
+              <motion.div
+                initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                className="absolute left-0 top-full mt-1 z-50"
+              >
+                <UserProfilePreview 
+                  user={comment.user} 
+                  theme={theme}
+                  onClose={() => setShowProfilePreview(false)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
           {/* Name & Time */}
           <div className="flex items-center gap-2 flex-wrap">
