@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tag, Search, X, Plus, Check } from 'lucide-react';
+import { Tag, Search, X, Plus, Check, Trash2 } from 'lucide-react';
 import useLabelStore from '../store/labelStore';
 import AddLabelModal from './AddLabelModal';
+import DeletePopup from './ui/DeletePopup';
+import { toast } from 'react-toastify';
 
 // Preset colors for labels
 const PRESET_COLORS = [
@@ -30,6 +32,9 @@ const LabelDropdown = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [allLabels, setAllLabels] = useState([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [labelToDelete, setLabelToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const dropdownRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -37,6 +42,7 @@ const LabelDropdown = ({
   const { 
     fetchLabels, 
     createLabel, 
+    deleteLabel,
     syncLabels,
     loading 
   } = useLabelStore();
@@ -127,14 +133,56 @@ const LabelDropdown = ({
     }
   }, [selectedLabels, onLabelsChange, entityId, entityType, syncLabels]);
 
+  // Open delete confirmation for a label
+  const handleDeleteLabel = useCallback((label, e) => {
+    e.stopPropagation();
+    setLabelToDelete(label);
+    setShowDeleteConfirm(true);
+  }, []);
+
+  // Confirm and execute label deletion
+  const confirmDeleteLabel = useCallback(async () => {
+    if (!labelToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      await deleteLabel(labelToDelete._id);
+      
+      // Remove from local state
+      setAllLabels(prev => prev.filter(l => l._id !== labelToDelete._id));
+      
+      // Remove from selected labels if it was selected
+      const newSelectedLabels = selectedLabels.filter(l => 
+        (typeof l === 'object' ? l._id : l) !== labelToDelete._id
+      );
+      if (newSelectedLabels.length !== selectedLabels.length) {
+        onLabelsChange(newSelectedLabels);
+        
+        // Sync with backend if entityId provided
+        if (entityId && entityType) {
+          const labelIds = newSelectedLabels.map(l => typeof l === 'object' ? l._id : l);
+          syncLabels(entityType, entityId, labelIds).catch(console.error);
+        }
+      }
+      
+      toast.success('Label deleted successfully');
+      setShowDeleteConfirm(false);
+      setLabelToDelete(null);
+    } catch (error) {
+      console.error('Failed to delete label:', error);
+      toast.error('Failed to delete label');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [labelToDelete, deleteLabel, selectedLabels, onLabelsChange, entityId, entityType, syncLabels]);
+
   // Handle creating a new label
   const handleCreateLabel = async (name, color) => {
     try {
       const newLabel = await createLabel(name, color, boardId);
       
-      // Refresh labels list
-      const updatedLabels = await fetchLabels(boardId);
-      setAllLabels(updatedLabels || []);
+      // Update local state immediately
+      setAllLabels(prev => [newLabel, ...prev]);
       
       // Auto-select the new label
       const newLabels = [...selectedLabels, newLabel];
@@ -265,37 +313,50 @@ const LabelDropdown = ({
                   {filteredLabels.map((label) => {
                     const isSelected = isLabelSelected(label._id);
                     return (
-                      <motion.button
+                      <motion.div
                         key={label._id}
-                        type="button"
                         whileHover={{ backgroundColor: '#F3F4F6' }}
-                        onClick={() => toggleLabel(label._id)}
-                        className="w-full px-2 py-1.5 rounded-lg transition-colors text-left hover:bg-gray-100 flex items-center justify-between"
+                        className="w-full px-2 py-1.5 rounded-lg transition-colors hover:bg-gray-100 flex items-center justify-between group"
                       >
-                        {/* Label Chip */}
-                        <span
-                          className="px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap inline-block"
-                          style={{
-                            backgroundColor: label.color,
-                            color: getTextColor(label.color)
-                          }}
+                        {/* Label Chip - Clickable to toggle selection */}
+                        <button
+                          type="button"
+                          onClick={() => toggleLabel(label._id)}
+                          className="flex-1 flex items-center gap-2 text-left"
                         >
-                          {label.name}
-                        </span>
-                        
-                        {/* Golden Checkmark - Show when selected */}
-                        {isSelected && (
-                          <motion.div
-                            initial={{ scale: 0, rotate: -90 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            exit={{ scale: 0, rotate: 90 }}
-                            transition={{ duration: 0.2 }}
-                            className="ml-2"
+                          <span
+                            className="px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap inline-block"
+                            style={{
+                              backgroundColor: label.color,
+                              color: getTextColor(label.color)
+                            }}
                           >
-                            <Check size={18} className="text-yellow-500" strokeWidth={3} />
-                          </motion.div>
-                        )}
-                      </motion.button>
+                            {label.name}
+                          </span>
+                          
+                          {/* Golden Checkmark - Show when selected */}
+                          {isSelected && (
+                            <motion.div
+                              initial={{ scale: 0, rotate: -90 }}
+                              animate={{ scale: 1, rotate: 0 }}
+                              exit={{ scale: 0, rotate: 90 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <Check size={18} className="text-yellow-500" strokeWidth={3} />
+                            </motion.div>
+                          )}
+                        </button>
+                        
+                        {/* Delete Button - Shows on hover */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteLabel(label, e)}
+                          className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-all duration-150"
+                          title="Delete label"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </motion.div>
                     );
                   })}
                 </div>
@@ -330,6 +391,18 @@ const LabelDropdown = ({
         onSubmit={handleCreateLabel}
         presetColors={PRESET_COLORS}
         existingLabels={allLabels}
+      />
+
+      {/* Delete Label Confirmation */}
+      <DeletePopup
+        isOpen={showDeleteConfirm}
+        onConfirm={confirmDeleteLabel}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setLabelToDelete(null);
+        }}
+        itemType="label"
+        isLoading={isDeleting}
       />
 
       <style jsx="true">{`

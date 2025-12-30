@@ -40,7 +40,10 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/announcements/', // Skip all announcement-related endpoints
     '/api/attachments', // Skip caching for all attachment endpoints
     '/api/attachments/', // Skip caching for all attachment-related endpoints
-    '/api/users/profile' // Skip caching for user profile (avatar updates)
+    '/api/attachments/', // Skip caching for all attachment-related endpoints
+    '/api/users/profile', // Skip caching for user profile (avatar updates)
+    '/api/labels', // Skip labels fetching to prevent stale data after delete
+    '/api/labels/' // Skip all label-related endpoints
   ];
   return (req, res, next) => {
     // Skip caching for non-GET requests

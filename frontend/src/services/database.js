@@ -1953,7 +1953,10 @@ class DatabaseService {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(`${baseURL}/api/labels/board/${boardId}`, { headers });
+    const res = await fetch(`${baseURL}/api/labels/board/${boardId}`, { 
+      headers,
+      cache: 'no-store'
+    });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }

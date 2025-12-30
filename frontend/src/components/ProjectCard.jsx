@@ -33,8 +33,11 @@ const ProjectCard = ({
   const { themeColor } = useThemeStore();
   const [showMenu, setShowMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  
+  // Image handling optimization
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const imgRef = useRef(null);
   const menuRef = useRef(null);
 
   // Check if user can edit/delete projects (admin or manager only)
@@ -67,14 +70,31 @@ const ProjectCard = ({
     }
   }, [showMenu]);
 
-  // Reset image loading states when cover image URL changes
+  // Handle Image Loading Logic
+  // When component mounts or URL changes
+  const coverUrl = project?.coverImage?.url || image;
+  
   useEffect(() => {
-    const coverUrl = project?.coverImage?.url || image;
     if (coverUrl) {
-      setImageLoaded(false);
+      // If we have an image URL
+      
+      // Reset states only if the URL is different from what might be cached?
+      // Actually, simple reset is fine, but we must check if already loaded.
       setImageError(false);
+      
+      // Check if image is already loaded in browser cache (essential for navigation back)
+      const img = new Image();
+      img.src = coverUrl;
+      if (img.complete) {
+        setImageLoaded(true);
+      } else {
+        // If not, ensure we reset to false to show skeleton/loading
+        setImageLoaded(false);
+        img.onload = () => setImageLoaded(true);
+        img.onerror = () => setImageError(true);
+      }
     }
-  }, [project?.coverImage?.url, image]);
+  }, [coverUrl]);
 
   const getStatusConfig = (status) => {
     // Normalize status to handle both formats (database vs display)
@@ -312,7 +332,7 @@ const ProjectCard = ({
 
         {/* Dynamic Background if no image */}
         <div 
-          className={`absolute inset-0 transition-opacity duration-500 ${image || projectData.coverImage?.url ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute inset-0 transition-opacity duration-500 ${coverUrl && !imageError ? 'opacity-0' : 'opacity-100'}`}
         >
              {/* Rich gradient background for empty state */}
              <div className={`absolute inset-0 ${currentTheme.fallback} opacity-90`} />
@@ -326,11 +346,11 @@ const ProjectCard = ({
         </div>
 
         {/* Cover Image with progressive loading */}
-        {(image || projectData.coverImage?.url) && !imageError ? (
+        {(coverUrl) && !imageError ? (
           <>
             {/* Skeleton loader */}
             {!imageLoaded && (
-              <div className="absolute inset-0 animate-pulse">
+              <div className="absolute inset-0 animate-pulse z-10">
                 <div className="w-full h-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer" />
               </div>
             )}
@@ -340,13 +360,14 @@ const ProjectCard = ({
               <img
                 src={projectData.coverImage.thumbnailUrl}
                 alt=""
-                className="absolute inset-0 w-full h-full object-cover filter blur-xl scale-110"
+                className="absolute inset-0 w-full h-full object-cover filter blur-xl scale-110 z-0"
               />
             )}
             
             {/* Main image */}
             <motion.img 
-              src={image || projectData.coverImage?.url}
+              ref={imgRef}
+              src={coverUrl}
               alt={projectData.name}
               onLoad={() => setImageLoaded(true)}
               onError={() => setImageError(true)}
@@ -356,7 +377,7 @@ const ProjectCard = ({
                 scale: isHovered ? 1.08 : 1
               }}
               transition={{ duration: 0.5, ease: "easeOut" }}
-              className="relative w-full h-full object-cover"
+              className="relative w-full h-full object-cover z-0"
             />
           </>
         ) : (
@@ -401,7 +422,7 @@ const ProjectCard = ({
 
         {/* Glassy Accent Overlay for "Fade Glasses Effect" */}
         <div 
-          className={`absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t ${currentTheme.overlay} to-transparent ${ (image || projectData.coverImage?.url) ? '' : 'backdrop-blur-[2px]' }`}
+          className={`absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t ${currentTheme.overlay} to-transparent ${ (coverUrl) ? '' : 'backdrop-blur-[2px]' }`}
           style={{ maskImage: 'linear-gradient(to top, black, transparent)', WebkitMaskImage: 'linear-gradient(to top, black, transparent)' }}
         />
 

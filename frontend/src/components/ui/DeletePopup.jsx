@@ -34,6 +34,11 @@ const ITEM_CONFIG = {
     description: "Are you sure you want to remove this attachment?",
     warning: "This file will be permanently deleted."
   },
+  label: {
+    title: "Delete Label?",
+    description: "Are you sure you want to delete this label? It will be removed from all items using it.",
+    warning: "This action cannot be undone."
+  },
   project: {
     title: "Delete Project?",
     description: "Are you sure you want to delete this project? All lists and cards within it will be permanently removed.",
