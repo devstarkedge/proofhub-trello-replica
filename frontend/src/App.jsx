@@ -1,39 +1,38 @@
-import React, { Suspense, lazy } from "react";
+import React from "react";
 import { Routes, Route } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from "./context/AuthContext";
 import { MeProvider } from "./context/MeContext";
 import { TeamProvider } from "./context/DepartmentContext";
 import { NotificationProvider } from "./context/NotificationContext";
-import Loading from "./components/Loading";
 import NetworkStatusToast from "./components/NetworkStatusToast";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalFallback from "./components/GlobalFallback";
 import useThemeStore from "./store/themeStore";
 import "./App.css";
 
-// Lazy load components for code splitting
-const WorkFlow = lazy(() => import("./pages/WorkFlow"));
-const LoginPage = lazy(() => import("./pages/LoginPage"));
-const RegisterPage = lazy(() => import("./pages/RegisterPage"));
-const VerifyPending = lazy(() => import("./pages/VerifyPending"));
-const TeamManagement = lazy(() => import("./pages/TeamManagement"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Search = lazy(() => import("./pages/Search"));
-const ListView = lazy(() => import("./pages/ListView"));
-const CalendarView = lazy(() => import("./pages/CalendarView"));
-const GanttView = lazy(() => import("./pages/GanttView"));
-const AdminSettings = lazy(() => import("./pages/AdminSettings"));
-const HRPanel = lazy(() => import("./pages/HRPanel"));
-const Analytics = lazy(() => import("./pages/Analytics"));
-const HomePage = lazy(() => import("./pages/HomePage"));
-const Profile = lazy(() => import("./pages/Profile"));
-const Settings = lazy(() => import("./pages/Settings"));
-const Announcements = lazy(() => import("./pages/Announcements"));
-const RemindersPage = lazy(() => import("./pages/RemindersPage"));
-const ClientReminderCalendarPage = lazy(() => import("./pages/ClientReminderCalendarPage"));
-const PrivateRoute = lazy(() => import("./components/PrivateRoute"));
-const ProjectTrash = lazy(() => import("./pages/ProjectTrash"));
+// Direct imports for instant navigation (no lazy loading)
+import WorkFlow from "./pages/WorkFlow";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import VerifyPending from "./pages/VerifyPending";
+import TeamManagement from "./pages/TeamManagement";
+import Dashboard from "./pages/Dashboard";
+import Search from "./pages/Search";
+import ListView from "./pages/ListView";
+import CalendarView from "./pages/CalendarView";
+import GanttView from "./pages/GanttView";
+import AdminSettings from "./pages/AdminSettings";
+import HRPanel from "./pages/HRPanel";
+import Analytics from "./pages/Analytics";
+import HomePage from "./pages/HomePage";
+import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
+import Announcements from "./pages/Announcements";
+import RemindersPage from "./pages/RemindersPage";
+import ClientReminderCalendarPage from "./pages/ClientReminderCalendarPage";
+import PrivateRoute from "./components/PrivateRoute";
+import ProjectTrash from "./pages/ProjectTrash";
 
 function App() {
   return (
@@ -41,7 +40,6 @@ function App() {
       <MeProvider>
         <TeamProvider>
           <NotificationProvider>
-            <Suspense fallback={<Loading size="lg" text="Loading application..." />}>
               <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
@@ -218,7 +216,6 @@ function App() {
             />
             <Route path="*" element={<GlobalFallback type="404" />} />
               </Routes>
-            </Suspense>
             <ToastContainer
               position="top-right"
               autoClose={5000}

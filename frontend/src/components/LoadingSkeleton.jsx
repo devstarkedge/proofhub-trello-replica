@@ -170,5 +170,66 @@ const HomePageSkeleton = () => (
   </div>
 );
 
-export { HomePageSkeleton, DepartmentSkeleton, SkeletonCard, WorkflowSkeleton };
+const DashboardSkeleton = () => (
+  <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <Sidebar />
+    <div className="flex-1 lg:ml-64">
+      <Header />
+      <main className="p-6 space-y-6">
+        {/* Header Section Skeleton */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 animate-pulse">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-8 h-8 bg-gray-200 rounded-lg"></div>
+              <div className="h-8 bg-gray-200 rounded w-40"></div>
+            </div>
+            <div className="h-5 bg-gray-200 rounded w-48"></div>
+          </div>
+        </div>
+
+        {/* Stats Grid Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 animate-pulse">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-12 h-12 bg-gray-200 rounded-lg"></div>
+                <div className="h-4 bg-gray-200 rounded w-12"></div>
+              </div>
+              <div className="h-8 bg-gray-200 rounded w-16 mb-2"></div>
+              <div className="h-4 bg-gray-200 rounded w-24"></div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters Skeleton */}
+        <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 animate-pulse">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1">
+              <div className="h-10 bg-gray-200 rounded-lg"></div>
+            </div>
+            <div className="h-10 bg-gray-200 rounded-lg w-40"></div>
+            <div className="h-10 bg-gray-200 rounded-lg w-32"></div>
+          </div>
+        </div>
+
+        {/* Projects Grid Skeleton */}
+        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+          <div className="flex justify-between items-center mb-6 animate-pulse">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-gray-200 rounded"></div>
+              <div className="h-6 bg-gray-200 rounded w-32"></div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+);
+
+export { HomePageSkeleton, DepartmentSkeleton, SkeletonCard, WorkflowSkeleton, DashboardSkeleton };
 export default HomePageSkeleton;

@@ -14,6 +14,7 @@ import Database from '../services/database';
 import useWorkflowStore from '../store/workflowStore';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
+import { DashboardSkeleton } from '../components/LoadingSkeleton';
 import ProjectCard from '../components/ProjectCard';
 import { lazy } from 'react';
 const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
@@ -337,21 +338,7 @@ const Dashboard = memo(() => {
   }, [filteredProjects, teamMembersCount]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        <Sidebar />
-        <div className="flex-1 lg:ml-64">
-          <Header />
-          <div className="flex items-center justify-center h-[calc(100vh-64px)]">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"
-            />
-          </div>
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (
