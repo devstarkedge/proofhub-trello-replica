@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, AlignLeft, FileText, AlertCircle } from "lucide-react";
+import { X, AlignLeft, FileText, AlertCircle, Tag } from "lucide-react";
 import { toast } from "react-toastify";
 import Database from "../services/database";
 import commentService from "../services/commentService";
@@ -891,6 +891,45 @@ const SubtaskDetailModal = ({
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
               <div className="lg:col-span-2 space-y-6 lg:space-y-8">
+                {/* Labels */}
+                {tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((label, index) => {
+                      // Handle both object labels (new) and string labels (legacy)
+                      const isObject = typeof label === 'object' && label !== null;
+                      const labelName = isObject ? label.name : String(label || '').trim();
+                      const labelColor = isObject && label.color ? label.color : '#3B82F6';
+                      const labelId = isObject ? label._id : `label-${index}`;
+                      
+                      if (!labelName) return null;
+                      
+                      // Calculate contrasting text color
+                      const hex = labelColor.replace('#', '');
+                      const r = parseInt(hex.substr(0, 2), 16);
+                      const g = parseInt(hex.substr(2, 2), 16);
+                      const b = parseInt(hex.substr(4, 2), 16);
+                      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                      const textColor = luminance > 0.5 ? '#1F2937' : '#FFFFFF';
+                      
+                      return (
+                        <motion.span
+                          key={labelId}
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+                          style={{
+                            backgroundColor: labelColor,
+                            color: textColor
+                          }}
+                        >
+                          <Tag size={14} />
+                          {labelName}
+                        </motion.span>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <CardDescription
                   description={description}
                   teamMembers={teamMembers}

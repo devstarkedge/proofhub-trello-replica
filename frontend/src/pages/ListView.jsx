@@ -39,6 +39,7 @@ import Database from '../services/database';
 import Header from '../components/Header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
+import { ListViewSkeleton } from '../components/LoadingSkeleton';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '../components/ui/dropdown-menu';
 import { Button } from '../components/ui/button';
 import { AdvancedSearch, debounce, highlightText } from '../utils/advancedSearch';
@@ -657,20 +658,18 @@ const ListView = () => {
     XLSX.writeFile(workbook, fileName);
   }, [filteredAndSortedCards, currentDepartment]);
 
-  const renderSkeleton = useCallback(() => (
-    [...Array(8)].map((_, i) => (
-      <TableRow key={i} className="animate-pulse">
-        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-3/4"></div></TableCell>
-        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2"></div></TableCell>
-        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2"></div></TableCell>
-        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/4"></div></TableCell>
-        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/3"></div></TableCell>
-        <TableCell><div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2"></div></TableCell>
-      </TableRow>
-    ))
-  ), []);
+
 
   const rowPaddingClass = viewMode === 'compact' ? 'py-2' : viewMode === 'comfortable' ? 'py-4' : 'py-6';
+
+  if (loading) {
+     return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+           <Header />
+           <ListViewSkeleton />
+        </div>
+     );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -1151,9 +1150,7 @@ const ListView = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (
-                  renderSkeleton()
-                ) : paginatedCards.length > 0 ? (
+                {paginatedCards.length > 0 ? (
                   paginatedCards.map((card, index) => (
                     <TableRow 
                       key={card._id} 

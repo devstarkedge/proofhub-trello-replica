@@ -17,6 +17,7 @@ import {
   Loader2,
   Trash2
 } from 'lucide-react';
+import { HRPanelSkeleton } from '../components/LoadingSkeleton';
 import api from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import AuthContext from '../context/AuthContext';
@@ -394,20 +395,7 @@ const HRPanel = () => {
   }), [users, departmentStore.departments.length]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        <Sidebar />
-        <div className="flex-1 lg:ml-64">
-          <Header />
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
-              <div className="text-xl font-semibold text-gray-700">Loading HR Panel...</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <HRPanelSkeleton />;
   }
 
   return (

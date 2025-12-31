@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
+import EmojiPicker from 'emoji-picker-react';
 import StarterKit from '@tiptap/starter-kit';
 import Mention from '@tiptap/extension-mention';
 import Image from '@tiptap/extension-image';
@@ -23,7 +24,8 @@ import {
   AlertCircle,
   Check,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Smile
 } from 'lucide-react';
 import MentionList from './MentionList';
 import useEditorAttachment from '../hooks/useEditorAttachment';
@@ -70,6 +72,10 @@ const RichTextEditor = ({
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0 });
+  const emojiPickerRef = useRef(null);
+  const emojiButtonRef = useRef(null);
   const [, forceUpdate] = useState(); 
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -407,6 +413,29 @@ const RichTextEditor = ({
     editorInstanceRef.current = editor;
   }, [editor]);
 
+  // Handle clicking outside emoji picker
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showEmojiPicker]);
+
+  const handleEmojiClick = (emojiData) => {
+    if (editor) {
+      editor.chain().focus().insertContent(emojiData.emoji).run();
+      setShowEmojiPicker(false);
+    }
+  };
+
   const handleFocus = () => {
     setIsExpanded(true);
   };
@@ -579,6 +608,56 @@ const RichTextEditor = ({
             title="Link"
           >
             <LinkIcon size={16} />
+          </button>
+          <button
+            ref={emojiButtonRef}
+            onClick={() => {
+              if (!showEmojiPicker) {
+                // Calculate position before showing
+                const btn = emojiButtonRef.current;
+                if (btn) {
+                  const rect = btn.getBoundingClientRect();
+                  // Default to bottom
+                  let top = rect.bottom + 5;
+                  let left = rect.left;
+                  
+                  // Check if it fits below (approx height 450px)
+                  if (top + 450 > window.innerHeight) {
+                    // Place above
+                    top = rect.top - 450 - 5;
+                  }
+                  
+                  setPickerPosition({ top, left });
+                }
+              }
+              setShowEmojiPicker(!showEmojiPicker);
+            }}
+            className={`p-2 rounded hover:bg-gray-200 transition-colors ${
+              showEmojiPicker ? 'bg-gray-200' : ''
+            }`}
+            title="Insert Emoji"
+          >
+            <Smile size={16} />
+            {showEmojiPicker && (
+              <div 
+                ref={emojiPickerRef} 
+                className="fixed z-[9999] shadow-2xl rounded-lg border border-gray-200 bg-white"
+                style={{ 
+                  top: `${pickerPosition.top}px`, 
+                  left: `${pickerPosition.left}px` 
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <EmojiPicker
+                  onEmojiClick={handleEmojiClick}
+                  width={300}
+                  height={400}
+                  previewConfig={{ showPreview: false }}
+                  lazyLoadEmojis={true}
+                />
+              </div>
+            )}
           </button>
           <button
             onClick={() => {

@@ -13,6 +13,7 @@ import EmployeeAssignment from '../components/TeamManagement/EmployeeAssignment'
 import TeamStats from '../components/TeamManagement/TeamStats';
 import RoleManagementPanel from '../components/TeamManagement/RoleManagementPanel';
 import Toast from '../components/TeamManagement/Toast';
+import { TeamManagementSkeleton } from '../components/LoadingSkeleton';
 import ErrorBoundary from '../components/TeamManagement/ErrorBoundary';
 import { teamManagementReducer, initialState, ACTION_TYPES } from '../components/TeamManagement/teamManagementReducer';
 import { validateForm } from '../utils/validationUtils';
@@ -549,6 +550,10 @@ const TeamManagement = () => {
 
   const isAdminOrManager = user && (user.role === 'admin' || user.role === 'manager');
   const isAdmin = user && user.role === 'admin';
+
+  if (departmentsLoading || state.isLoading) {
+    return <TeamManagementSkeleton />;
+  }
 
   if (!isAdminOrManager) {
     return (

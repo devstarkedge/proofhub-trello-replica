@@ -8,6 +8,7 @@ import AnnouncementCard from '../components/AnnouncementCard';
 import CreateAnnouncementModal from '../components/CreateAnnouncementModal';
 import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
 import Loading from '../components/Loading';
+import { AnnouncementsListSkeleton } from '../components/LoadingSkeleton';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import { io } from 'socket.io-client';
@@ -358,6 +359,9 @@ const Announcements = () => {
     }
   };
 
+
+
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       <Sidebar />
@@ -535,14 +539,14 @@ const Announcements = () => {
           >
             <AnimatePresence mode="wait">
               {isLoading ? (
-                <motion.div
-                  key="loading"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <Loading text="Loading announcements..." />
-                </motion.div>
+                 <motion.div
+                   key="loading"
+                   initial={{ opacity: 0 }}
+                   animate={{ opacity: 1 }}
+                   exit={{ opacity: 0 }}
+                 >
+                   <AnnouncementsListSkeleton />
+                 </motion.div>
               ) : announcements.length === 0 ? (
                 <motion.div
                   key="empty"

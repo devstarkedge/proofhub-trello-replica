@@ -10,6 +10,7 @@ import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import ReminderCalendar from '../components/ReminderCalendar';
 import { ModernCalendarGrid } from '../components/calendar';
+import { ClientRemindersSkeleton } from '../components/LoadingSkeleton';
 import ReminderModal from '../components/ReminderModal';
 import ViewProjectModal from '../components/ViewProjectModal';
 import AuthContext from '../context/AuthContext';
@@ -269,7 +270,11 @@ const RemindersPage = memo(() => {
             </div>
           </motion.div>
 
-          {/* Stats Cards */}
+          {loading && viewMode === 'list' ? (
+            <ClientRemindersSkeleton />
+          ) : (
+            <>
+              {/* Stats Cards */}
           {stats && viewMode === 'list' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -395,11 +400,7 @@ const RemindersPage = memo(() => {
           </AnimatePresence>
 
           {/* Main Content */}
-          {loading && viewMode !== 'calendar' ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader className="w-10 h-10 text-indigo-600 animate-spin" />
-            </div>
-          ) : viewMode === 'calendar' ? (
+          {viewMode === 'calendar' ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -546,6 +547,8 @@ const RemindersPage = memo(() => {
                 </div>
               )}
             </motion.div>
+          )}
+            </>
           )}
         </main>
       </div>
