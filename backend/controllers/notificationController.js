@@ -287,3 +287,63 @@ export const sendTestNotification = async (req, res) => {
     res.status(500).json({ message: 'Failed to send test notification' });
   }
 };
+
+// Subscribe to feature (Coming Soon)
+export const subscribeToFeature = async (req, res) => {
+  try {
+    const { email, feature } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ msg: 'Email is required' });
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ msg: 'Invalid email format' });
+    }
+
+    // Send confirmation email
+    const { sendComingSoonSubscriptionEmail } = await import('../utils/email.js');
+    await sendComingSoonSubscriptionEmail(email, feature);
+
+    // Notify admins about the interest (optional but good for tracking)
+    // We run this in background
+    const { runBackground } = await import('../utils/backgroundTasks.js');
+    runBackground(async () => {
+      try {
+        const admins = await User.find({ role: 'admin', isActive: true }).select('_id');
+        const adminIds = admins.map(a => a._id);
+        
+        await notificationService.createNotification({
+          type: 'system_alert',
+          title: 'New Feature Interest',
+          message: `A user (${email}) is interested in the feature: "${feature || 'Coming Soon Page'}"`,
+          user: adminIds[0], // Just notify first admin for now or usage a loop if needed, but 'createNotification' takes single user. 
+                             // Ideally we use a bulk notify method or loop. Let's loop.
+          sender: null,
+          priority: 'low'
+        });
+        
+        // Loop for other admins if any
+        for (let i = 1; i < adminIds.length; i++) {
+           await notificationService.createNotification({
+            type: 'system_alert',
+            title: 'New Feature Interest',
+            message: `A user (${email}) is interested in the feature: "${feature || 'Coming Soon Page'}"`,
+            user: adminIds[i],
+            sender: null,
+            priority: 'low'
+          });
+        }
+      } catch (err) {
+        console.error('Failed to notify admins of subscription:', err);
+      }
+    });
+
+    res.json({ success: true, message: 'Subscription successful' });
+  } catch (error) {
+    console.error('Subscription error:', error);
+    res.status(500).json({ msg: 'Server error during subscription' });
+  }
+};

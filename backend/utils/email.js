@@ -141,3 +141,60 @@ export const sendVerificationEmail = async (user) => {
     html: verificationHtml
   });
 };
+
+// Send Coming Soon Subscription Email
+export const sendComingSoonSubscriptionEmail = async (email, feature) => {
+  const subscriptionHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>You're on the list!</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 24px; }
+          .feature-badge { display: inline-block; background: #eff6ff; color: #3b82f6; padding: 4px 12px; border-radius: 9999px; font-size: 14px; font-weight: 600; margin-bottom: 20px; border: 1px solid #dbeafe; }
+          .button { display: inline-block; background: #0f172a; color: white; padding: 14px 28px; text-decoration: none; border-radius: 12px; font-weight: 600; transition: background 0.2s; }
+          .button:hover { background: #1e293b; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>✨ You're on the list!</h1>
+          </div>
+          <div class="content">
+            <div style="text-align: center;">
+              <span class="feature-badge">Coming Soon: ${feature || 'New Features'}</span>
+            </div>
+            <p class="message">Hi there,</p>
+            <p class="message">
+              Thank you for showing interest! We're thrilled that you're excited about what we're building.
+            </p>
+            <p class="message">
+              Our team is working hard to bring this feature to life. We've added <strong>${email}</strong> to our notification list, and you'll be the first to know as soon as it's ready for launch.
+            </p>
+            <div style="text-align: center; margin-top: 32px;">
+              <a href="${process.env.FRONTEND_URL}/" class="button">Back to Dashboard</a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask System. All rights reserved.</p>
+            <p>You received this email because you signed up for notifications on our website.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: email,
+    subject: `You're on the list! ✨ ${feature ? '- ' + feature : ''}`,
+    html: subscriptionHtml
+  });
+};

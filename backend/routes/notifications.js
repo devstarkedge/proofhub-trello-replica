@@ -11,11 +11,15 @@ import {
   deleteNotification, 
   bulkDelete,
   clearAll,
-  sendTestNotification 
+  sendTestNotification,
+  subscribeToFeature
 } from '../controllers/notificationController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
+
+// Public route for subscription - No protect middleware
+router.post('/subscribe', subscribeToFeature);
 
 // Get notifications with pagination & filters
 router.get('/', protect, getNotifications);
