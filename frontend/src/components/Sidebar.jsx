@@ -3,8 +3,20 @@ import { Home, Folder, Users, BarChart3, Settings, LayoutDashboard, UserCheck, B
 import { NavLink } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 
+// Icon color configuration for each nav item
+const iconColors = {
+  '/': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }, // Blue - Home
+  '/dashboard': { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }, // Purple - Dashboard
+  '/announcements': { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' }, // Amber - Announcements
+  '/reminders': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Reminders
+  '/teams': { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' }, // Cyan - Teams
+  '/hr-panel': { color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' }, // Pink - HR Panel
+  '/admin/settings': { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' }, // Indigo - Settings
+};
+
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   const { user } = useContext(AuthContext);
+  const [hoveredItem, setHoveredItem] = useState(null);
 
   const getNavItems = () => {
     // Base navigation visible to all authenticated users
@@ -57,6 +69,74 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     backgroundColor: 'var(--color-primary-subtle)',
   };
 
+  // Get icon color configuration
+  const getIconConfig = (path) => iconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
+
+  // Render nav item with colored icon
+  const renderNavItem = ({ path, icon: Icon, label }, isDesktop = true) => {
+    const iconConfig = getIconConfig(path);
+    const isHovered = hoveredItem === path;
+
+    return (
+      <NavLink
+        key={path}
+        to={path}
+        onClick={!isDesktop ? onClose : undefined}
+        className="sidebar-nav-item flex items-center px-3 py-2.5 text-sm font-medium rounded-lg group relative overflow-hidden"
+        onMouseEnter={() => setHoveredItem(path)}
+        onMouseLeave={() => setHoveredItem(null)}
+        style={({ isActive }) => ({
+          backgroundColor: isActive ? iconConfig.bg : isHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
+          color: isActive ? iconConfig.color : isHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+          borderLeft: isActive ? `3px solid ${iconConfig.color}` : '3px solid transparent',
+          marginLeft: '-3px',
+          paddingLeft: 'calc(0.75rem + 3px)',
+          transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+          transform: isHovered && !isActive ? 'translateX(4px)' : 'translateX(0)',
+        })}
+      >
+        {({ isActive }) => (
+          <>
+            {/* Icon container with colored background */}
+            <div 
+              className="flex items-center justify-center w-8 h-8 rounded-lg mr-3 transition-all duration-200"
+              style={{
+                backgroundColor: isActive || isHovered ? iconConfig.bg : 'transparent',
+                transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+              }}
+            >
+              <Icon 
+                className="h-[18px] w-[18px] transition-all duration-200" 
+                style={{ 
+                  color: isActive || isHovered ? iconConfig.color : 'var(--color-text-muted)',
+                  strokeWidth: isActive ? 2.5 : 2,
+                }}
+              />
+            </div>
+            
+            {/* Label */}
+            <span className="transition-all duration-200" style={{
+              fontWeight: isActive ? 600 : 500,
+            }}>
+              {label}
+            </span>
+
+            {/* Hover glow effect */}
+            {isHovered && !isActive && (
+              <div 
+                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                style={{
+                  background: `linear-gradient(90deg, ${iconConfig.bg} 0%, transparent 100%)`,
+                  opacity: 0.5,
+                }}
+              />
+            )}
+          </>
+        )}
+      </NavLink>
+    );
+  };
+
   return (
     <>
       {/* Desktop sidebar (hidden on small screens) */}
@@ -73,8 +153,11 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
             >
               <div className="flex items-center gap-3">
                 <div 
-                  className="flex items-center justify-center h-10 w-10 rounded-lg"
-                  style={logoContainerStyles}
+                  className="flex items-center justify-center h-10 w-10 rounded-xl shadow-sm"
+                  style={{
+                    ...logoContainerStyles,
+                    background: 'linear-gradient(135deg, var(--color-primary-100), var(--color-primary-50))',
+                  }}
                 >
                   <LayoutDashboard 
                     className="h-5 w-5" 
@@ -83,7 +166,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
                 </div>
                 <div>
                   <h1 
-                    className="text-lg font-semibold tracking-tight"
+                    className="text-lg font-bold tracking-tight"
                     style={{ color: 'var(--color-text-primary)' }}
                   >
                     FlowTask
@@ -98,36 +181,8 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
               </div>
             </div>
 
-            <nav className="mt-6 px-3 space-y-1">
-            {navItems.map(({ path, icon: Icon, label }) => (
-              <NavLink
-                key={path}
-                to={path}
-                className={({ isActive }) =>
-                  `flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors`
-                }
-                style={({ isActive }) => ({
-                  backgroundColor: isActive ? 'var(--color-sidebar-item-active)' : 'transparent',
-                  color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                })}
-                onMouseEnter={(e) => {
-                  if (!e.currentTarget.classList.contains('active')) {
-                    e.currentTarget.style.backgroundColor = 'var(--color-sidebar-item-hover)';
-                    e.currentTarget.style.color = 'var(--color-text-primary)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  const isActive = e.currentTarget.getAttribute('aria-current') === 'page';
-                  if (!isActive) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                    e.currentTarget.style.color = 'var(--color-text-secondary)';
-                  }
-                }}
-              >
-                <Icon className="mr-3 h-5 w-5" />
-                {label}
-              </NavLink>
-            ))}
+            <nav className="mt-5 px-3 space-y-1">
+              {navItems.map((item) => renderNavItem(item, true))}
             </nav>
           </div>
 
@@ -150,9 +205,9 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
                   onMouseEnter={() => setLogoHover(true)}
                   onMouseLeave={() => setLogoHover(false)}
                   style={{
-                    transition: 'transform 160ms ease, filter 160ms ease',
-                    transform: logoHover ? 'scale(1.08)' : 'scale(1)',
-                    filter: logoHover ? 'drop-shadow(0 0 10px var(--color-primary))' : 'none',
+                    transition: 'transform 200ms ease, filter 200ms ease',
+                    transform: logoHover ? 'scale(1.1)' : 'scale(1)',
+                    filter: logoHover ? 'drop-shadow(0 0 12px var(--color-primary))' : 'none',
                     cursor: 'pointer'
                   }}
                 />
@@ -166,8 +221,8 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       {isMobile && (
         <div className="lg:hidden">
           <div 
-            className="fixed inset-0 z-40" 
-            style={{ backgroundColor: 'var(--color-modal-overlay)' }}
+            className="fixed inset-0 z-40 backdrop-blur-sm" 
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)' }}
             onClick={onClose} 
             aria-hidden="true" 
           />
@@ -183,8 +238,11 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
             >
               <div className="flex items-center gap-3">
                 <div 
-                  className="flex items-center justify-center h-10 w-10 rounded-lg"
-                  style={logoContainerStyles}
+                  className="flex items-center justify-center h-10 w-10 rounded-xl shadow-sm"
+                  style={{
+                    ...logoContainerStyles,
+                    background: 'linear-gradient(135deg, var(--color-primary-100), var(--color-primary-50))',
+                  }}
                 >
                   <LayoutDashboard 
                     className="h-5 w-5" 
@@ -193,7 +251,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
                 </div>
                 <div>
                   <h1 
-                    className="text-lg font-semibold tracking-tight"
+                    className="text-lg font-bold tracking-tight"
                     style={{ color: 'var(--color-text-primary)' }}
                   >
                     FlowTask
@@ -202,31 +260,23 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
               </div>
               <button 
                 onClick={onClose} 
-                className="p-2 rounded-md transition-colors"
+                className="p-2 rounded-lg transition-all duration-200 hover:scale-105"
                 style={{ color: 'var(--color-text-secondary)' }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-muted)'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--color-bg-muted)';
+                  e.currentTarget.style.color = 'var(--color-error)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.color = 'var(--color-text-secondary)';
+                }}
               >
-                <X />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <nav className="mt-6 px-3 space-y-1 flex-1">
-            {navItems.map(({ path, icon: Icon, label }) => (
-              <NavLink
-                key={path}
-                to={path}
-                onClick={onClose}
-                className="flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors"
-                style={({ isActive }) => ({
-                  backgroundColor: isActive ? 'var(--color-sidebar-item-active)' : 'transparent',
-                  color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                })}
-              >
-                <Icon className="mr-3 h-5 w-5" />
-                {label}
-              </NavLink>
-            ))}
+            <nav className="mt-5 px-3 space-y-1 flex-1">
+              {navItems.map((item) => renderNavItem(item, false))}
             </nav>
 
             <div 
@@ -244,7 +294,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
                   <img
                     src="/starkedge.logo.webp"
                     alt="StarkEdge"
-                    className="h-4 w-auto object-contain"
+                    className="h-4 w-auto object-contain hover:scale-110 transition-transform duration-200"
                   />
                 </a>
               </div>

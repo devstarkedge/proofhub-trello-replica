@@ -160,7 +160,7 @@ const AdminSettings = () => {
                   isVerified={user?.isVerified}
                   size="xl"
                   showBadge={true}
-                  className="ring-4 ring-white/30"
+
                 />
                 <div>
                   <h3 className="text-lg font-semibold">{user?.name}</h3>

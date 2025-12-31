@@ -65,8 +65,10 @@ const CoverImageUploader = ({
     }
   }, [canModifyCover, disabled, projectId, onCoverChange]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
+    noClick: true, // We handle click manually for better control
+    noKeyboard: true,
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
@@ -170,6 +172,9 @@ const CoverImageUploader = ({
 
   return (
     <div className={`space-y-3 ${className}`}>
+      {/* Hidden input for file selection - always rendered */}
+      <input {...getInputProps()} id="cover-file-input" className="hidden" />
+
       {/* Current Cover / Preview */}
       <AnimatePresence mode="wait">
         {displayUrl ? (
@@ -203,6 +208,7 @@ const CoverImageUploader = ({
               {selectedFile && projectId && (
                 <>
                   <motion.button
+                    type="button"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={handleUpload}
@@ -217,6 +223,7 @@ const CoverImageUploader = ({
                     <span>Upload</span>
                   </motion.button>
                   <motion.button
+                    type="button"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={handleCancel}
@@ -230,15 +237,17 @@ const CoverImageUploader = ({
               {!selectedFile && currentCover && (
                 <>
                   <motion.button
+                    type="button"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => document.getElementById('cover-file-input')?.click()}
+                    onClick={open}
                     className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg font-medium shadow-lg hover:bg-blue-600"
                   >
                     <RefreshCw size={16} />
                     <span>Change</span>
                   </motion.button>
                   <motion.button
+                    type="button"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={handleRemove}
@@ -276,6 +285,7 @@ const CoverImageUploader = ({
             {/* Dropzone */}
             <div
               {...getRootProps()}
+              onClick={open}
               className={`
                 relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer
                 transition-all duration-200
@@ -286,7 +296,7 @@ const CoverImageUploader = ({
                 ${isLoading ? 'pointer-events-none opacity-60' : ''}
               `}
             >
-              <input {...getInputProps()} id="cover-file-input" />
+              {/* Input moved to top level */}
               
               <div className="flex flex-col items-center gap-3">
                 {isLoading ? (
@@ -312,7 +322,7 @@ const CoverImageUploader = ({
             <div className="flex items-center gap-2 mt-3">
               <button
                 type="button"
-                onClick={() => document.getElementById('cover-file-input')?.click()}
+                onClick={open}
                 className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <HardDrive size={16} />
@@ -365,6 +375,7 @@ const CoverImageUploader = ({
                     
                     return (
                       <motion.button
+                        type="button"
                         key={index}
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}

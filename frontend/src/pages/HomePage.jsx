@@ -320,7 +320,10 @@ const HomePage = () => {
                 {/* Status Filter */}
                 <div className="relative" ref={statusDropdownRef}>
                   <div className="flex items-center justify-between pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl transition-all hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <div className="flex items-center gap-2">
+                    <div 
+                      className="flex items-center gap-2 cursor-pointer"
+                      onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                    >
                       <Filter className="text-gray-400" size={18} />
                       <span className="text-gray-700 font-medium">{getStatusLabel(filterStatus)}</span>
                     </div>
