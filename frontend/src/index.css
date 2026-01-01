@@ -1778,7 +1778,7 @@ input:-webkit-autofill::first-line {
 :root[data-theme="dark"] .backdrop-blur-xl.bg-white\/70 {
   background: rgba(15, 23, 42, 0.85) !important;
   border-color: rgba(148, 163, 184, 0.15) !important;
-  box-shadow: 
+  box-shadow:
     0 25px 50px -12px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(148, 163, 184, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
@@ -1805,15 +1805,18 @@ input:-webkit-autofill::first-line {
 
 /* Icon colors - brighter for dark mode */
 :root[data-theme="dark"] .text-violet-600 {
-  color: #a78bfa !important; /* violet-400 */
+  color: #a78bfa !important;
+  /* violet-400 */
 }
 
 :root[data-theme="dark"] .text-amber-500 {
-  color: #fbbf24 !important; /* amber-400 */
+  color: #fbbf24 !important;
+  /* amber-400 */
 }
 
 :root[data-theme="dark"] .text-red-500 {
-  color: #f87171 !important; /* red-400 */
+  color: #f87171 !important;
+  /* red-400 */
 }
 
 /* Pulsing ring around icon */
@@ -1823,28 +1826,34 @@ input:-webkit-autofill::first-line {
 
 /* Title text - Premium gradient for dark mode */
 :root[data-theme="dark"] .text-slate-800 {
-  color: #f1f5f9 !important; /* slate-100 */
+  color: #f1f5f9 !important;
+  /* slate-100 */
 }
 
 :root[data-theme="dark"] .bg-clip-text.text-transparent.bg-gradient-to-r.from-slate-800.to-slate-600 {
-  background-image: linear-gradient(to right, #f1f5f9, #cbd5e1) !important; /* slate-100 to slate-300 */
+  background-image: linear-gradient(to right, #f1f5f9, #cbd5e1) !important;
+  /* slate-100 to slate-300 */
 }
 
 /* Description text */
 :root[data-theme="dark"] .text-slate-600 {
-  color: #94a3b8 !important; /* slate-400 */
+  color: #94a3b8 !important;
+  /* slate-400 */
 }
 
 /* Subtext */
 :root[data-theme="dark"] .text-slate-500 {
-  color: #64748b !important; /* slate-500 - slightly muted */
+  color: #64748b !important;
+  /* slate-500 - slightly muted */
 }
 
 /* Email notification form container */
 :root[data-theme="dark"] .bg-white.rounded-full.shadow-lg.border.border-slate-100 {
-  background-color: rgba(30, 41, 59, 0.9) !important; /* slate-800/90 */
-  border-color: rgba(71, 85, 105, 0.4) !important; /* slate-600/40 */
-  box-shadow: 
+  background-color: rgba(30, 41, 59, 0.9) !important;
+  /* slate-800/90 */
+  border-color: rgba(71, 85, 105, 0.4) !important;
+  /* slate-600/40 */
+  box-shadow:
     0 10px 25px -5px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
 }
@@ -1861,11 +1870,13 @@ input:-webkit-autofill::first-line {
 
 /* Email input styling */
 :root[data-theme="dark"] input.bg-transparent.text-slate-700 {
-  color: #e2e8f0 !important; /* slate-200 */
+  color: #e2e8f0 !important;
+  /* slate-200 */
 }
 
 :root[data-theme="dark"] input.bg-transparent::placeholder {
-  color: #64748b !important; /* slate-500 */
+  color: #64748b !important;
+  /* slate-500 */
 }
 
 /* Notify button */
@@ -1881,7 +1892,8 @@ input:-webkit-autofill::first-line {
 /* Success notification badge */
 :root[data-theme="dark"] .bg-green-50.text-green-600.border-green-100 {
   background-color: rgba(34, 197, 94, 0.15) !important;
-  color: #4ade80 !important; /* green-400 */
+  color: #4ade80 !important;
+  /* green-400 */
   border-color: rgba(34, 197, 94, 0.3) !important;
 }
 
@@ -1889,12 +1901,14 @@ input:-webkit-autofill::first-line {
 :root[data-theme="dark"] .bg-red-50\/80.border-red-100.text-red-600 {
   background-color: rgba(239, 68, 68, 0.1) !important;
   border-color: rgba(239, 68, 68, 0.3) !important;
-  color: #fca5a5 !important; /* red-300 */
+  color: #fca5a5 !important;
+  /* red-300 */
 }
 
 /* Go Back button */
 :root[data-theme="dark"] button.text-slate-600:hover {
-  background-color: rgba(51, 65, 85, 0.5) !important; /* slate-700/50 */
+  background-color: rgba(51, 65, 85, 0.5) !important;
+  /* slate-700/50 */
 }
 
 :root[data-theme="dark"] button.text-slate-600 {
@@ -1926,4 +1940,327 @@ input:-webkit-autofill::first-line {
 /* Hover effects for Go Back button */
 :root[data-theme="dark"] .hover\:bg-slate-50:hover {
   background-color: rgba(51, 65, 85, 0.4) !important;
+}
+
+/* ============================================
+   DASHBOARD PROJECT CARDS DARK MODE
+   Premium styling for project cards in dark mode
+   ============================================ */
+
+/* Main card container - Premium dark glassmorphism */
+:root[data-theme="dark"] .bg-white.rounded-2xl.shadow-md.border.border-gray-100 {
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98)) !important;
+  border-color: rgba(71, 85, 105, 0.3) !important;
+  box-shadow:
+    0 10px 40px -10px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(148, 163, 184, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+:root[data-theme="dark"] .bg-white.rounded-2xl.shadow-md.border.border-gray-100:hover {
+  box-shadow:
+    0 20px 60px -15px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(148, 163, 184, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Optimistic loading overlay */
+:root[data-theme="dark"] .bg-white\/50.z-20 {
+  background-color: rgba(15, 23, 42, 0.7) !important;
+}
+
+/* Card content section - Titles and text */
+:root[data-theme="dark"] .text-gray-900 {
+  color: #f1f5f9 !important;
+  /* slate-100 */
+}
+
+:root[data-theme="dark"] .text-gray-700 {
+  color: #cbd5e1 !important;
+  /* slate-300 */
+}
+
+:root[data-theme="dark"] .text-gray-600 {
+  color: #94a3b8 !important;
+  /* slate-400 */
+}
+
+:root[data-theme="dark"] .text-gray-500 {
+  color: #64748b !important;
+  /* slate-500 */
+}
+
+/* Progress bar background - make visible in dark mode */
+:root[data-theme="dark"] .bg-gray-200.rounded-full.h-2\.5 {
+  background-color: rgba(71, 85, 105, 0.5) !important;
+}
+
+/* Status badges - High Visibility for Dark Mode */
+/* In Progress badge - Enhanced Blue */
+:root[data-theme="dark"] .\!bg-blue-50 {
+  background: #1e3a8a !important;
+  /* blue-900 */
+  background-color: #1e3a8a !important;
+  color: #ffffff !important;
+  /* Pure White */
+  border-color: #05214e !important;
+  /* blue-500 */
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.4) !important;
+}
+
+:root[data-theme="dark"] .\!border-blue-200 {
+  border-color: #05214e !important;
+}
+
+:root[data-theme="dark"] .text-blue-800 {
+  color: #1e3a8a !important;
+  /* Pure White */
+}
+
+/* Planning badge - Changed to Purple for distinction from Medium Priority */
+:root[data-theme="dark"] .bg-gradient-to-r.from-amber-50.to-yellow-50 {
+  background: #581c87 !important;
+  /* purple-900 */
+  background-image: none !important;
+  border-color: #7e22ce !important;
+  /* purple-700 */
+}
+
+:root[data-theme="dark"] .text-amber-700 {
+  color: #e9d5ff !important;
+  /* purple-200 */
+}
+
+:root[data-theme="dark"] .border-amber-200 {
+  border-color: #7e22ce !important;
+}
+
+/* Completed badge */
+:root[data-theme="dark"] .bg-gradient-to-r.from-emerald-50.to-green-50 {
+  background: #064e3b !important;
+  /* emerald-900 */
+  background-image: none !important;
+  border-color: #047857 !important;
+  /* emerald-700 */
+}
+
+:root[data-theme="dark"] .text-emerald-700 {
+  color: #6ee7b7 !important;
+  /* emerald-300 */
+}
+
+:root[data-theme="dark"] .border-emerald-200 {
+  border-color: #047857 !important;
+}
+
+/* On Hold badge */
+:root[data-theme="dark"] .bg-gradient-to-r.from-slate-50.to-gray-50 {
+  background: #334155 !important;
+  /* slate-700 */
+  background-image: none !important;
+  border-color: #475569 !important;
+  /* slate-600 */
+}
+
+:root[data-theme="dark"] .text-slate-700 {
+  color: #cbd5e1 !important;
+  /* slate-300 */
+}
+
+:root[data-theme="dark"] .border-slate-200 {
+  border-color: #475569 !important;
+}
+
+/* Priority badges - High Visibility for Dark Mode */
+/* High Priority - Red */
+:root[data-theme="dark"] .bg-red-100.text-red-700,
+:root[data-theme="dark"] .rounded-full.bg-red-100 {
+  background-color: #7f1d1d !important;
+  /* red-900 */
+  color: #fca5a5 !important;
+  /* red-300 */
+  border: 1px solid #991b1b !important;
+  /* red-800 */
+  box-shadow: 0 4px 12px rgba(127, 29, 29, 0.4) !important;
+}
+
+/* Medium Priority - Yellow/Amber */
+:root[data-theme="dark"] .bg-yellow-100.text-yellow-700,
+:root[data-theme="dark"] .rounded-full.bg-yellow-100 {
+  background-color: #78350f !important;
+  /* amber-900 */
+  color: #fcd34d !important;
+  /* amber-300 */
+  border: 1px solid #92400e !important;
+  /* amber-800 */
+  box-shadow: 0 4px 12px rgba(120, 53, 15, 0.4) !important;
+}
+
+/* Low Priority - Green */
+:root[data-theme="dark"] .bg-green-100.text-green-700,
+:root[data-theme="dark"] .rounded-full.bg-green-100 {
+  background-color: #14532d !important;
+  /* green-900 */
+  color: #86efac !important;
+  /* green-300 */
+  border: 1px solid #166534 !important;
+  /* green-800 */
+  box-shadow: 0 4px 12px rgba(20, 83, 45, 0.4) !important;
+}
+
+/* Due date badge */
+:root[data-theme="dark"] .bg-gradient-to-r.from-blue-50.to-cyan-50 {
+  background: linear-gradient(to right, rgba(59, 130, 246, 0.15), rgba(6, 182, 212, 0.12)) !important;
+}
+
+:root[data-theme="dark"] .text-blue-700 {
+  color: #60a5fa !important;
+  /* blue-400 */
+}
+
+:root[data-theme="dark"] .border-blue-100 {
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Time logged & Tasks badge */
+:root[data-theme="dark"] .bg-gradient-to-r.from-green-50.to-emerald-50 {
+  background: linear-gradient(to right, rgba(34, 197, 94, 0.15), rgba(16, 185, 129, 0.12)) !important;
+}
+
+:root[data-theme="dark"] .text-green-700 {
+  color: #4ade80 !important;
+  /* green-400 */
+}
+
+:root[data-theme="dark"] .border-green-100 {
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+/* Department section border */
+:root[data-theme="dark"] .border-t.border-gray-100 {
+  border-color: rgba(71, 85, 105, 0.25) !important;
+}
+
+/* Department/Manager text */
+:root[data-theme="dark"] .text-xs.text-gray-500.font-medium {
+  color: #94a3b8 !important;
+}
+
+/* Actions menu button */
+:root[data-theme="dark"] .bg-white\/90.backdrop-blur-md.rounded-2xl {
+  background-color: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(71, 85, 105, 0.4) !important;
+}
+
+:root[data-theme="dark"] .bg-white\/90.backdrop-blur-md.rounded-2xl:hover {
+  background-color: rgba(51, 65, 85, 0.95) !important;
+}
+
+/* Actions dropdown menu */
+:root[data-theme="dark"] .bg-white\/95.backdrop-blur-xl.rounded-2xl.shadow-2xl {
+  background-color: rgba(30, 41, 59, 0.98) !important;
+  border-color: rgba(71, 85, 105, 0.3) !important;
+}
+
+/* Menu separator */
+:root[data-theme="dark"] .border-t.border-gray-200\/50 {
+  border-color: rgba(71, 85, 105, 0.4) !important;
+}
+
+/* Shimmer loading skeleton in dark mode */
+:root[data-theme="dark"] .bg-gradient-to-r.from-gray-200.via-gray-100.to-gray-200 {
+  background: linear-gradient(to right, rgba(51, 65, 85, 0.5), rgba(71, 85, 105, 0.3), rgba(51, 65, 85, 0.5)) !important;
+}
+
+/* Card hover overlay */
+:root[data-theme="dark"] .bg-white\/10.backdrop-blur-\[1px\] {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Featured badge - keep vibrant */
+:root[data-theme="dark"] .bg-gradient-to-r.from-yellow-400.to-orange-500 {
+  box-shadow: 0 4px 15px rgba(251, 191, 36, 0.3) !important;
+}
+
+/* Completion indicator */
+:root[data-theme="dark"] .bg-gradient-to-br.from-green-400.to-emerald-500 {
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4) !important;
+}
+
+/* Icon colors for meta badges */
+:root[data-theme="dark"] .text-blue-600 {
+  color: #60a5fa !important;
+}
+
+:root[data-theme="dark"] .text-emerald-600 {
+  color: #34d399 !important;
+}
+
+:root[data-theme="dark"] .text-amber-600 {
+  color: #fbbf24 !important;
+}
+
+:root[data-theme="dark"] .text-slate-600 {
+  color: #94a3b8 !important;
+}
+
+/* Animated orbs - enhanced glow in dark */
+:root[data-theme="dark"] .blur-\[60px\],
+:root[data-theme="dark"] .blur-\[70px\] {
+  opacity: 0.25 !important;
+}
+
+/* ==================================================================================
+   FINAL STATUS BADGE OVERRIDES - USING ROBUST SELECTORS
+   These rely on the data-status attribute added to ProjectCard.jsx
+   ================================================================================== */
+
+/* In Progress - High Contrast Dark Mode */
+:root[data-theme="dark"] .status-badge[data-status="in-progress"] {
+  background: #1e3a8a !important;
+  /* blue-900 */
+  background-color: #1e3a8a !important;
+  color: #ffffff !important;
+  /* Pure White */
+  border-color: #3b82f6 !important;
+  /* blue-500 */
+  box-shadow: 0 0 12px rgba(37, 99, 235, 0.5) !important;
+}
+
+/* Planning - Purple Theme */
+:root[data-theme="dark"] .status-badge[data-status="planning"] {
+  background: #581c87 !important;
+  /* purple-900 */
+  background-color: #581c87 !important;
+  color: #e9d5ff !important;
+  /* purple-200 */
+  border-color: #7e22ce !important;
+  /* purple-700 */
+  background-image: none !important;
+  box-shadow: 0 0 10px rgba(126, 34, 206, 0.4) !important;
+}
+
+/* Completed - Emerald Theme */
+:root[data-theme="dark"] .status-badge[data-status="completed"] {
+  background: #064e3b !important;
+  /* emerald-900 */
+  background-color: #064e3b !important;
+  color: #6ee7b7 !important;
+  /* emerald-300 */
+  border-color: #047857 !important;
+  /* emerald-700 */
+  background-image: none !important;
+  box-shadow: 0 0 10px rgba(4, 120, 87, 0.4) !important;
+}
+
+/* On Hold - Slate Theme */
+:root[data-theme="dark"] .status-badge[data-status="on-hold"] {
+  background: #1e293b !important;
+  /* slate-800 */
+  background-color: #1e293b !important;
+  color: #cbd5e1 !important;
+  /* slate-300 */
+  border-color: #475569 !important;
+  /* slate-600 */
+  background-image: none !important;
 }
