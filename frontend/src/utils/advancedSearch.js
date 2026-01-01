@@ -3,7 +3,7 @@
 
 export class AdvancedSearch {
   constructor() {
-    this.searchHistory = [];
+    this.searchHistory = JSON.parse(localStorage.getItem('flowtask_search_history') || '[]');
     this.maxHistorySize = 10;
     this.fuzzyThreshold = 0.6; // Similarity threshold for fuzzy search
   }
@@ -194,10 +194,10 @@ export class AdvancedSearch {
     const parsed = this.parseQuery(query);
     if (parsed.isEmpty) return cards;
 
-    // Add to search history
-    if (query.trim()) {
-      this.addToHistory(query);
-    }
+    // History is now handled manually when user presses Enter or selects a suggestion
+    // if (query.trim()) {
+    //   this.addToHistory(query);
+    // }
 
     const results = [];
     const highlights = new Map();
@@ -353,6 +353,8 @@ export class AdvancedSearch {
     if (this.searchHistory.length > this.maxHistorySize) {
       this.searchHistory = this.searchHistory.slice(0, this.maxHistorySize);
     }
+    
+    localStorage.setItem('flowtask_search_history', JSON.stringify(this.searchHistory));
   }
 
   // Get search suggestions based on current query
@@ -384,6 +386,7 @@ export class AdvancedSearch {
   // Clear search history
   clearHistory() {
     this.searchHistory = [];
+    localStorage.removeItem('flowtask_search_history');
   }
 }
 

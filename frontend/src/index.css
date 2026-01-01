@@ -1751,3 +1751,179 @@ input:-webkit-autofill::first-line {
   font-family: inherit;
   font-size: inherit;
 }
+
+/* ============================================
+   GLOBAL FALLBACK / COMING SOON PAGE DARK MODE
+   Premium styling for fallback pages in dark mode
+   ============================================ */
+
+/* Main page background: Premium dark gradient */
+:root[data-theme="dark"] .global-fallback-page {
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0c1220 100%) !important;
+}
+
+/* Fallback for .bg-slate-50 on the main container */
+:root[data-theme="dark"] .bg-slate-50 {
+  background-color: transparent !important;
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0c1220 100%) !important;
+}
+
+/* Animated background blobs - enhanced glow in dark mode */
+:root[data-theme="dark"] .mix-blend-multiply {
+  mix-blend-mode: screen !important;
+  opacity: 0.15 !important;
+}
+
+/* Card container: Glassmorphism dark effect */
+:root[data-theme="dark"] .backdrop-blur-xl.bg-white\/70 {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border-color: rgba(148, 163, 184, 0.15) !important;
+  box-shadow: 
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(148, 163, 184, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Decorative shine effect on card */
+:root[data-theme="dark"] .bg-gradient-to-r.from-transparent.via-white\/80.to-transparent {
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.1), transparent) !important;
+}
+
+/* Border on card with transparency */
+:root[data-theme="dark"] .border-white\/50 {
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+/* Icon container backgrounds */
+:root[data-theme="dark"] .bg-violet-50 {
+  background-color: rgba(139, 92, 246, 0.2) !important;
+}
+
+:root[data-theme="dark"] .bg-amber-50 {
+  background-color: rgba(251, 191, 36, 0.15) !important;
+}
+
+/* Icon colors - brighter for dark mode */
+:root[data-theme="dark"] .text-violet-600 {
+  color: #a78bfa !important; /* violet-400 */
+}
+
+:root[data-theme="dark"] .text-amber-500 {
+  color: #fbbf24 !important; /* amber-400 */
+}
+
+:root[data-theme="dark"] .text-red-500 {
+  color: #f87171 !important; /* red-400 */
+}
+
+/* Pulsing ring around icon */
+:root[data-theme="dark"] .animate-ping.border-2 {
+  opacity: 0.15 !important;
+}
+
+/* Title text - Premium gradient for dark mode */
+:root[data-theme="dark"] .text-slate-800 {
+  color: #f1f5f9 !important; /* slate-100 */
+}
+
+:root[data-theme="dark"] .bg-clip-text.text-transparent.bg-gradient-to-r.from-slate-800.to-slate-600 {
+  background-image: linear-gradient(to right, #f1f5f9, #cbd5e1) !important; /* slate-100 to slate-300 */
+}
+
+/* Description text */
+:root[data-theme="dark"] .text-slate-600 {
+  color: #94a3b8 !important; /* slate-400 */
+}
+
+/* Subtext */
+:root[data-theme="dark"] .text-slate-500 {
+  color: #64748b !important; /* slate-500 - slightly muted */
+}
+
+/* Email notification form container */
+:root[data-theme="dark"] .bg-white.rounded-full.shadow-lg.border.border-slate-100 {
+  background-color: rgba(30, 41, 59, 0.9) !important; /* slate-800/90 */
+  border-color: rgba(71, 85, 105, 0.4) !important; /* slate-600/40 */
+  box-shadow: 
+    0 10px 25px -5px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Focus ring on form */
+:root[data-theme="dark"] .focus-within\:ring-2.focus-within\:ring-violet-200 {
+  --tw-ring-color: rgba(139, 92, 246, 0.3) !important;
+}
+
+/* Bell icon in form */
+:root[data-theme="dark"] .text-slate-400 {
+  color: #64748b !important;
+}
+
+/* Email input styling */
+:root[data-theme="dark"] input.bg-transparent.text-slate-700 {
+  color: #e2e8f0 !important; /* slate-200 */
+}
+
+:root[data-theme="dark"] input.bg-transparent::placeholder {
+  color: #64748b !important; /* slate-500 */
+}
+
+/* Notify button */
+:root[data-theme="dark"] .bg-slate-900.text-white {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4) !important;
+}
+
+:root[data-theme="dark"] .bg-slate-900:hover {
+  background: linear-gradient(135deg, #818cf8, #a78bfa) !important;
+}
+
+/* Success notification badge */
+:root[data-theme="dark"] .bg-green-50.text-green-600.border-green-100 {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+  color: #4ade80 !important; /* green-400 */
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+/* Error trace container */
+:root[data-theme="dark"] .bg-red-50\/80.border-red-100.text-red-600 {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  color: #fca5a5 !important; /* red-300 */
+}
+
+/* Go Back button */
+:root[data-theme="dark"] button.text-slate-600:hover {
+  background-color: rgba(51, 65, 85, 0.5) !important; /* slate-700/50 */
+}
+
+:root[data-theme="dark"] button.text-slate-600 {
+  color: #94a3b8 !important;
+}
+
+/* Hover overlay inside gradient buttons */
+:root[data-theme="dark"] .absolute.inset-0.bg-white\/20 {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Slate color overrides for borders */
+:root[data-theme="dark"] .border-slate-100 {
+  border-color: rgba(71, 85, 105, 0.3) !important;
+}
+
+:root[data-theme="dark"] .border-violet-100 {
+  border-color: rgba(139, 92, 246, 0.25) !important;
+}
+
+:root[data-theme="dark"] .border-amber-100 {
+  border-color: rgba(251, 191, 36, 0.25) !important;
+}
+
+:root[data-theme="dark"] .border-red-100 {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+/* Hover effects for Go Back button */
+:root[data-theme="dark"] .hover\:bg-slate-50:hover {
+  background-color: rgba(51, 65, 85, 0.4) !important;
+}

@@ -125,7 +125,7 @@ const GlobalFallback = ({
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-6 overflow-hidden bg-slate-50">
+    <div className="global-fallback-page min-h-screen relative flex items-center justify-center p-6 overflow-hidden bg-slate-50 transition-all duration-300">
       
       {/* Animated Background Blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -147,7 +147,7 @@ const GlobalFallback = ({
         animate="visible"
         className="relative w-full max-w-2xl"
       >
-        <div className={`backdrop-blur-xl bg-white/70 rounded-3xl shadow-2xl border border-white/50 p-8 sm:p-12 text-center overflow-hidden relative z-10`}>
+        <div className={`backdrop-blur-xl bg-white/70 rounded-3xl shadow-2xl border border-white/50 p-8 sm:p-12 text-center overflow-hidden relative z-10 transition-all duration-300`}>
            {/* Decorative shine effect */}
            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50"></div>
 
@@ -183,7 +183,7 @@ const GlobalFallback = ({
           {/* Notify Me Section for Coming Soon */}
           {type === '404' && !isNotified && (
             <motion.form variants={itemVariants} onSubmit={handleNotify} className="max-w-md mx-auto mb-10 relative group">
-              <div className="flex items-center bg-white rounded-full shadow-lg border border-slate-100 p-1.5 focus-within:ring-2 focus-within:ring-violet-200 transition-all">
+              <div className="flex items-center bg-white rounded-full shadow-lg border border-slate-100 p-1.5 focus-within:ring-2 focus-within:ring-violet-200 transition-all duration-300">
                 <div className="pl-4 text-slate-400">
                   <Bell size={18} />
                 </div>

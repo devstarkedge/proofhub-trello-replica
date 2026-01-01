@@ -78,6 +78,7 @@ const ListView = () => {
   const [showSearchHelp, setShowSearchHelp] = useState(false);
   const helpPanelRef = useRef(null);
   const suggestionsRef = useRef(null);
+  const [historyUpdate, setHistoryUpdate] = useState(0); // Force re-render when history changes
 
   // Reset pagination to page 1 when department changes
   useEffect(() => {
@@ -371,12 +372,18 @@ const ListView = () => {
   // Handle search suggestion selection
   const handleSuggestionSelect = (suggestion) => {
     setFilters(prev => ({ ...prev, search: suggestion }));
+    advancedSearch.current.addToHistory(suggestion); // Add selected suggestion to history
     setShowSuggestions(false);
   };
 
   // Handle keyboard shortcuts
   const handleSearchKeyDown = (e) => {
-    if (e.key === 'Escape') {
+    if (e.key === 'Enter') {
+      if (filters.search && filters.search.trim()) {
+        advancedSearch.current.addToHistory(filters.search.trim());
+        setShowSuggestions(false);
+      }
+    } else if (e.key === 'Escape') {
       setShowSuggestions(false);
       setShowSearchHelp(false);
     } else if (e.key === '/' && e.ctrlKey) {
@@ -778,6 +785,12 @@ const ListView = () => {
                     onChange={(e) => handleSearchChange(e.target.value)}
                     onKeyDown={handleSearchKeyDown}
                     onFocus={() => filters.search && setShowSuggestions(true)}
+                    onBlur={() => {
+                      if (filters.search && filters.search.trim()) {
+                        advancedSearch.current.addToHistory(filters.search.trim());
+                        setHistoryUpdate(prev => prev + 1);
+                      }
+                    }}
                     className="w-full pl-11 pr-20 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white/50 hover:bg-white hover:border-gray-300"
                   />
 
@@ -886,7 +899,13 @@ const ListView = () => {
                           <DropdownMenuSeparator />
                         )}
                         <DropdownMenuItem
-                          onSelect={() => advancedSearch.current.clearHistory()}
+                          onSelect={(e) => {
+                            e.preventDefault(); // Prevent dropdown from closing immediately if desired, or let it close. 
+                            // The issue described is "clear history doesn't work", implying the list doesn't clear.
+                            // Standard behavior: clear history, list updates to empty.
+                            advancedSearch.current.clearHistory();
+                            setHistoryUpdate(prev => prev + 1);
+                          }}
                           className="cursor-pointer hover:bg-red-50 text-red-600 transition-colors"
                         >
                           <div className="flex items-center gap-2">
