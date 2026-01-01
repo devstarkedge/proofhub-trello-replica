@@ -8,6 +8,7 @@ import { emitToBoard } from '../server.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
+import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 
 const basePopulate = [
   { path: 'assignees', select: 'name email avatar' },
@@ -145,6 +146,8 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
   }
 
   const oldSubtask = { ...subtask.toObject() };
+  const taskId = subtask.task?._id || subtask.task;
+  const boardId = subtask.board?._id || subtask.board;
 
   const updates = {
     title: req.body.title ?? subtask.title,
@@ -174,81 +177,105 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
     { new: true }
   ).populate(basePopulate);
 
-  // Log activities
-  if (oldSubtask.title !== subtask.title) {
-    await Activity.create({
-      type: 'title_changed',
-      description: `Changed title from "${oldSubtask.title}" to "${subtask.title}"`,
-      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
-    });
-  }
-  if (oldSubtask.status !== subtask.status) {
-    await Activity.create({
-      type: 'status_changed',
-      description: `Changed status from ${oldSubtask.status} to ${subtask.status}`,
-      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
-    });
-    
-    // Handle recurring task completion triggers
-    if (subtask.status === 'done' || subtask.status === 'closed') {
-      await handleTaskCompletion(subtask._id, subtask.status);
-    }
-  }
-  if (oldSubtask.priority !== subtask.priority) {
-    await Activity.create({
-      type: 'priority_changed',
-      description: `Changed priority from ${oldSubtask.priority} to ${subtask.priority}`,
-      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
-    });
-  }
-  if (oldSubtask.description !== subtask.description) {
-    await Activity.create({
-      type: 'description_changed',
-      description: `Updated the description`,
-      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
-    });
-  }
-  if (oldSubtask.dueDate !== subtask.dueDate) {
-    await Activity.create({
-      type: 'due_date_changed',
-      description: `Changed due date to ${subtask.dueDate}`,
-      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
-    });
-  }
-  if (JSON.stringify(oldSubtask.assignees) !== JSON.stringify(subtask.assignees)) {
-    await Activity.create({
-      type: 'member_added',
-      description: `Updated assignees`,
-      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
-    });
-  }
-  if (JSON.stringify(oldSubtask.loggedTime) !== JSON.stringify(subtask.loggedTime)) {
-    await Activity.create({
-      type: 'time_logged',
-      description: `Updated logged time`,
-      user: req.user.id, board: subtask.board, card: subtask.task, subtask: subtask._id, contextType: 'subtask',
-    });
-  }
-
-  await refreshCardHierarchyStats(subtask.task);
-
-  emitToBoard(subtask.board.toString(), 'hierarchy-subtask-changed', {
-    type: 'updated',
-    taskId: subtask.task.toString(),
-    subtask
-  });
-  const parentCard = await Card.findById(subtask.task);
-  invalidateHierarchyCache({
-    boardId: parentCard?.board || subtask.board,
-    listId: parentCard?.list,
-    cardId: subtask.task,
-    subtaskId: subtask._id
-  });
-
+  // Send response immediately for better UX
   res.status(200).json({
     success: true,
     data: subtask
   });
+
+  // Execute background tasks after response is sent
+  executeBackgroundTasks([
+    // Batch activity logging
+    async () => {
+      const activities = [];
+      const baseActivity = {
+        user: req.user.id,
+        board: boardId,
+        card: taskId,
+        subtask: subtask._id,
+        contextType: 'subtask'
+      };
+
+      if (oldSubtask.title !== subtask.title) {
+        activities.push({
+          ...baseActivity,
+          type: 'title_changed',
+          description: `Changed title from "${oldSubtask.title}" to "${subtask.title}"`
+        });
+      }
+      if (oldSubtask.status !== subtask.status) {
+        activities.push({
+          ...baseActivity,
+          type: 'status_changed',
+          description: `Changed status from ${oldSubtask.status} to ${subtask.status}`
+        });
+        // Handle recurring task completion triggers
+        if (subtask.status === 'done' || subtask.status === 'closed') {
+          await handleTaskCompletion(subtask._id, subtask.status);
+        }
+      }
+      if (oldSubtask.priority !== subtask.priority) {
+        activities.push({
+          ...baseActivity,
+          type: 'priority_changed',
+          description: `Changed priority from ${oldSubtask.priority} to ${subtask.priority}`
+        });
+      }
+      if (oldSubtask.description !== subtask.description) {
+        activities.push({
+          ...baseActivity,
+          type: 'description_changed',
+          description: 'Updated the description'
+        });
+      }
+      if (oldSubtask.dueDate?.toString() !== subtask.dueDate?.toString()) {
+        activities.push({
+          ...baseActivity,
+          type: 'due_date_changed',
+          description: `Changed due date to ${subtask.dueDate}`
+        });
+      }
+      if (JSON.stringify(oldSubtask.assignees) !== JSON.stringify(subtask.assignees)) {
+        activities.push({
+          ...baseActivity,
+          type: 'member_added',
+          description: 'Updated assignees'
+        });
+      }
+      if (JSON.stringify(oldSubtask.loggedTime) !== JSON.stringify(subtask.loggedTime)) {
+        activities.push({
+          ...baseActivity,
+          type: 'time_logged',
+          description: 'Updated logged time'
+        });
+      }
+
+      if (activities.length > 0) {
+        await batchCreateActivities(activities);
+      }
+    },
+
+    // Refresh hierarchy stats
+    () => refreshCardHierarchyStats(taskId),
+
+    // Emit socket event
+    () => emitToBoard(boardId.toString(), 'hierarchy-subtask-changed', {
+      type: 'updated',
+      taskId: taskId.toString(),
+      subtask
+    }),
+
+    // Invalidate cache
+    async () => {
+      const parentCard = await Card.findById(taskId).select('board list').lean();
+      invalidateHierarchyCache({
+        boardId: parentCard?.board || boardId,
+        listId: parentCard?.list,
+        cardId: taskId,
+        subtaskId: subtask._id
+      });
+    }
+  ]);
 });
 
 export const deleteSubtask = asyncHandler(async (req, res, next) => {

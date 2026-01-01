@@ -1,7 +1,8 @@
 import React, { useContext, useState } from 'react';
-import { Home, Folder, Users, BarChart3, Settings, LayoutDashboard, UserCheck, Bell, CalendarClock, X } from 'lucide-react';
+import { Home, Folder, Users, BarChart3, Settings, UserCheck, Bell, CalendarClock, X } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
+import useThemeStore from '../store/themeStore';
 
 // Icon color configuration for each nav item
 const iconColors = {
@@ -16,6 +17,7 @@ const iconColors = {
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   const { user } = useContext(AuthContext);
+  const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const [hoveredItem, setHoveredItem] = useState(null);
 
   const getNavItems = () => {
@@ -65,9 +67,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     borderColor: 'var(--color-sidebar-border)',
   };
 
-  const logoContainerStyles = {
-    backgroundColor: 'var(--color-primary-subtle)',
-  };
+
 
   // Get icon color configuration
   const getIconConfig = (path) => iconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
@@ -148,36 +148,18 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
         >
           <div>
             <div 
-              className="p-4 border-b"
+              className="px-4 py-2 border-b"
               style={{ borderColor: 'var(--color-border-default)' }}
             >
-              <div className="flex items-center gap-3">
-                <div 
-                  className="flex items-center justify-center h-10 w-10 rounded-xl shadow-sm"
+              <div className="flex items-center">
+                <img 
+                  src={effectiveMode === 'dark' ? '/LogoDark.svg' : '/Logo.svg'}
+                  alt="FlowTask" 
+                  className="h-15 w-auto object-contain"
                   style={{
-                    ...logoContainerStyles,
-                    background: 'linear-gradient(135deg, var(--color-primary-100), var(--color-primary-50))',
+                    filter: effectiveMode === 'dark' ? 'brightness(1.1)' : 'none',
                   }}
-                >
-                  <LayoutDashboard 
-                    className="h-5 w-5" 
-                    style={{ color: 'var(--color-primary)' }}
-                  />
-                </div>
-                <div>
-                  <h1 
-                    className="text-lg font-bold tracking-tight"
-                    style={{ color: 'var(--color-text-primary)' }}
-                  >
-                    FlowTask
-                  </h1>
-                  <p 
-                    className="text-xs -mt-0.5"
-                    style={{ color: 'var(--color-text-muted)' }}
-                  >
-                    Team Productivity Suite
-                  </p>
-                </div>
+                />
               </div>
             </div>
 
@@ -233,30 +215,18 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
             aria-modal="true"
           >
             <div 
-              className="p-4 border-b flex items-center justify-between"
+              className="px-4 py-2 border-b flex items-center justify-between"
               style={{ borderColor: 'var(--color-border-default)' }}
             >
-              <div className="flex items-center gap-3">
-                <div 
-                  className="flex items-center justify-center h-10 w-10 rounded-xl shadow-sm"
+              <div className="flex items-center">
+                <img 
+                  src={effectiveMode === 'dark' ? '/LogoDark.svg' : '/Logo.svg'}
+                  alt="FlowTask" 
+                  className="h-25 w-auto object-contain"
                   style={{
-                    ...logoContainerStyles,
-                    background: 'linear-gradient(135deg, var(--color-primary-100), var(--color-primary-50))',
+                    filter: effectiveMode === 'dark' ? 'brightness(1.1)' : 'none',
                   }}
-                >
-                  <LayoutDashboard 
-                    className="h-5 w-5" 
-                    style={{ color: 'var(--color-primary)' }}
-                  />
-                </div>
-                <div>
-                  <h1 
-                    className="text-lg font-bold tracking-tight"
-                    style={{ color: 'var(--color-text-primary)' }}
-                  >
-                    FlowTask
-                  </h1>
-                </div>
+                />
               </div>
               <button 
                 onClick={onClose} 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlignLeft, FileText, AlertCircle, Tag } from "lucide-react";
 import { toast } from "react-toastify";
@@ -14,9 +14,10 @@ import CardSidebar from "./CardDetailModal/CardSidebar";
 import SubtasksSection from "./CardDetailModal/SubtasksSection";
 import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import useModalHierarchyStore from "../store/modalHierarchyStore";
+import useNanoSubtaskStore from "../store/nanoSubtaskStore";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
-import DeletePopup from "../components/ui/DeletePopup"
+import DeletePopup from "../components/ui/DeletePopup";
 
 const overlayMap = {
   purple: "bg-purple-950/50",
@@ -415,36 +416,37 @@ const SubtaskDetailModal = ({
     setDeletePopup(prev => ({ ...prev, isOpen: false }));
   };
 
-  const handleSelectMember = (memberId) => {
+  // Memoized member selection handlers
+  const handleSelectMember = useCallback((memberId) => {
     if (!memberId) return;
     if (!assignees.includes(memberId)) {
-      setAssignees([...assignees, memberId]);
+      setAssignees(prev => [...prev, memberId]);
     }
-  };
+  }, [assignees]);
 
-  const handleRemoveAssignee = (memberId) => {
-    setAssignees(assignees.filter(id => id !== memberId));
-  };
+  const handleRemoveAssignee = useCallback((memberId) => {
+    setAssignees(prev => prev.filter(id => id !== memberId));
+  }, []);
 
-  const handleToggleDepartment = (deptId) => {
+  const handleToggleDepartment = useCallback((deptId) => {
     setExpandedDepartments(prev => ({
       ...prev,
       [deptId]: !prev[deptId]
     }));
-  };
+  }, []);
 
-  const handleDeleteAttachment = (attachmentIdOrIndex) => {
+  const handleDeleteAttachment = useCallback((attachmentIdOrIndex) => {
     // Remove attachment by comparing with both _id and index
-    const filteredAttachments = attachments.filter((a, idx) => {
+    setAttachments(prev => prev.filter((a, idx) => {
       const attachmentId = a._id || a.id;
       if (attachmentIdOrIndex === idx) return false;
       if (attachmentId === attachmentIdOrIndex) return false;
       return true;
-    });
-    setAttachments(filteredAttachments);
-  };
+    }));
+  }, []);
 
-  const handleCreateNano = async () => {
+  // Memoized nano subtask handlers
+  const handleCreateNano = useCallback(async () => {
     if (!newNanoTitle.trim()) return;
     
     // Optimistic UI Update
@@ -475,9 +477,9 @@ const SubtaskDetailModal = ({
       // Revert optimization
       setNanoItems(prev => prev.filter(item => item._id !== tempId));
     }
-  };
+  }, [newNanoTitle, entityId, parentTaskId, currentProject?._id, initialData.board]);
 
-  const handleToggleNano = async (nano) => {
+  const handleToggleNano = useCallback(async (nano) => {
     if (!nano?._id) return;
     
     // Optimistic Toggle
@@ -498,18 +500,18 @@ const SubtaskDetailModal = ({
          item._id === nano._id ? { ...item, status: nano.status } : item
       ));
     }
-  };
+  }, []);
 
-  const handleDeleteNano = (nano) => {
+  const handleDeleteNano = useCallback((nano) => {
     if (!nano?._id) return;
     setDeletePopup({
       isOpen: true,
       type: 'subtaskNano',
       data: nano
     });
-  };
+  }, []);
 
-  const handleOpenNano = (nano) => {
+  const handleOpenNano = useCallback((nano) => {
     if (!nano?._id) return;
     onOpenChild?.({
       type: "subtaskNano",
@@ -519,7 +521,7 @@ const SubtaskDetailModal = ({
       parentId: entityId,
       taskId: parentTaskId
     });
-  };
+  }, [onOpenChild, entityId, parentTaskId]);
 
   const handleAddComment = async () => {
     const plain = (newComment || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();

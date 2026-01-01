@@ -206,8 +206,8 @@ const RegisterPage = () => {
                 Full Name *
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <User className="text-white/50" size={20} />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                  <User className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
                 </div>
                 <input
                   type="text"
@@ -243,8 +243,8 @@ const RegisterPage = () => {
                 Email Address *
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="text-white/50" size={20} />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                  <Mail className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
                 </div>
                 <input
                   type="email"
@@ -289,8 +289,8 @@ const RegisterPage = () => {
                 Password *
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="text-white/50" size={20} />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                  <Lock className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -336,8 +336,8 @@ const RegisterPage = () => {
                 Confirm Password *
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="text-white/50" size={20} />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                  <Lock className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
                 </div>
                 <input
                   type={showConfirmPassword ? 'text' : 'password'}
@@ -380,8 +380,8 @@ const RegisterPage = () => {
                 Department
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Building className="text-white/50" size={20} />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                  <Building className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
                 </div>
                 <select
                   name="department"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
+import React, { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlignLeft, Tag, AlertCircle, MessageSquare, Activity, RefreshCw } from "lucide-react";
 import Database from "../services/database";
@@ -485,23 +485,24 @@ const CardDetailModal = React.memo(({
     }
   }, [searchQuery, teamMembers, isDropdownOpen]);
 
-  const handleSelectMember = (memberId) => {
+  // Memoized member selection handlers
+  const handleSelectMember = useCallback((memberId) => {
     if (!memberId) return;
     if (!assignees.includes(memberId)) {
-      setAssignees([...assignees, memberId]);
+      setAssignees(prev => [...prev, memberId]);
     }
-  };
+  }, [assignees]);
 
-  const handleRemoveAssignee = (memberId) => {
-    setAssignees(assignees.filter(id => id !== memberId));
-  };
+  const handleRemoveAssignee = useCallback((memberId) => {
+    setAssignees(prev => prev.filter(id => id !== memberId));
+  }, []);
 
-  const toggleDepartment = (deptId) => {
+  const toggleDepartment = useCallback((deptId) => {
     setExpandedDepartments(prev => ({
       ...prev,
       [deptId]: !prev[deptId]
     }));
-  };
+  }, []);
 
   const loadProjectName = async () => {
     const boardId = card.board?._id || card.board;
@@ -620,7 +621,8 @@ const CardDetailModal = React.memo(({
     };
   };
 
-  const handleAddEstimation = () => {
+  // Memoized time tracking handlers
+  const handleAddEstimation = useCallback(() => {
     const hours = parseInt(newEstimationHours || 0);
     const minutes = parseInt(newEstimationMinutes || 0);
 
@@ -639,14 +641,14 @@ const CardDetailModal = React.memo(({
       date: new Date().toISOString(),
     };
 
-    setEstimationEntries([...estimationEntries, newEntry]);
+    setEstimationEntries(prev => [...prev, newEntry]);
     setNewEstimationHours("");
     setNewEstimationMinutes("");
     setNewEstimationReason("");
     toast.success("Estimation added successfully!");
-  };
+  }, [newEstimationHours, newEstimationMinutes, newEstimationReason, user._id]);
 
-  const handleAddLoggedTime = () => {
+  const handleAddLoggedTime = useCallback(() => {
     const hours = parseInt(newLoggedHours || 0);
     const minutes = parseInt(newLoggedMinutes || 0);
 
@@ -665,14 +667,14 @@ const CardDetailModal = React.memo(({
       date: new Date().toISOString(),
     };
 
-    setLoggedTime([...loggedTime, newEntry]);
+    setLoggedTime(prev => [...prev, newEntry]);
     setNewLoggedHours("");
     setNewLoggedMinutes("");
     setNewLoggedDescription("");
     toast.success("Time logged successfully!");
-  };
+  }, [newLoggedHours, newLoggedMinutes, newLoggedDescription, user._id]);
 
-  const handleAddBilledTime = () => {
+  const handleAddBilledTime = useCallback(() => {
     const hours = parseInt(newBilledHours || 0);
     const minutes = parseInt(newBilledMinutes || 0);
 
@@ -691,28 +693,28 @@ const CardDetailModal = React.memo(({
       date: new Date().toISOString(),
     };
 
-    setBilledTime([...billedTime, newEntry]);
+    setBilledTime(prev => [...prev, newEntry]);
     setNewBilledHours("");
     setNewBilledMinutes("");
     setNewBilledDescription("");
     toast.success("Billed time added successfully!");
-  };
+  }, [newBilledHours, newBilledMinutes, newBilledDescription, user._id]);
 
-  const startEditingEstimation = (entry) => {
+  const startEditingEstimation = useCallback((entry) => {
     setEditingEstimation(entry.id);
     setEditEstimationHours(entry.hours.toString());
     setEditEstimationMinutes(entry.minutes.toString());
     setEditEstimationReason(entry.reason);
-  };
+  }, []);
 
-  const startEditingLogged = (entry) => {
+  const startEditingLogged = useCallback((entry) => {
     setEditingLogged(entry.id);
     setEditLoggedHours(entry.hours.toString());
     setEditLoggedMinutes(entry.minutes.toString());
     setEditLoggedDescription(entry.description);
-  };
+  }, []);
 
-  const saveEstimationEdit = (id) => {
+  const saveEstimationEdit = useCallback((id) => {
     const hours = parseInt(editEstimationHours || 0);
     const minutes = parseInt(editEstimationMinutes || 0);
 
@@ -722,8 +724,8 @@ const CardDetailModal = React.memo(({
     }
 
     const normalized = normalizeTime(hours, minutes);
-    setEstimationEntries(
-      estimationEntries.map((entry) =>
+    setEstimationEntries(prev =>
+      prev.map((entry) =>
         entry.id === id
           ? {
               ...entry,
@@ -739,9 +741,9 @@ const CardDetailModal = React.memo(({
     setEditEstimationMinutes("");
     setEditEstimationReason("");
     toast.success("Estimation updated successfully!");
-  };
+  }, [editEstimationHours, editEstimationMinutes, editEstimationReason]);
 
-  const saveLoggedEdit = (id) => {
+  const saveLoggedEdit = useCallback((id) => {
     const hours = parseInt(editLoggedHours || 0);
     const minutes = parseInt(editLoggedMinutes || 0);
 
@@ -751,8 +753,8 @@ const CardDetailModal = React.memo(({
     }
 
     const normalized = normalizeTime(hours, minutes);
-    setLoggedTime(
-      loggedTime.map((entry) =>
+    setLoggedTime(prev =>
+      prev.map((entry) =>
         entry.id === id
           ? {
               ...entry,
@@ -768,30 +770,30 @@ const CardDetailModal = React.memo(({
     setEditLoggedMinutes("");
     setEditLoggedDescription("");
     toast.success("Logged time updated successfully!");
-  };
+  }, [editLoggedHours, editLoggedMinutes, editLoggedDescription]);
 
-  const cancelEstimationEdit = () => {
+  const cancelEstimationEdit = useCallback(() => {
     setEditingEstimation(null);
     setEditEstimationHours("");
     setEditEstimationMinutes("");
     setEditEstimationReason("");
-  };
+  }, []);
 
-  const cancelLoggedEdit = () => {
+  const cancelLoggedEdit = useCallback(() => {
     setEditingLogged(null);
     setEditLoggedHours("");
     setEditLoggedMinutes("");
     setEditLoggedDescription("");
-  };
+  }, []);
 
-  const startEditingBilled = (entry) => {
+  const startEditingBilled = useCallback((entry) => {
     setEditingBilled(entry.id);
     setEditBilledHours(entry.hours.toString());
     setEditBilledMinutes(entry.minutes.toString());
     setEditBilledDescription(entry.description);
-  };
+  }, []);
 
-  const saveBilledEdit = (id) => {
+  const saveBilledEdit = useCallback((id) => {
     const hours = parseInt(editBilledHours || 0);
     const minutes = parseInt(editBilledMinutes || 0);
 
@@ -801,8 +803,8 @@ const CardDetailModal = React.memo(({
     }
 
     const normalized = normalizeTime(hours, minutes);
-    setBilledTime(
-      billedTime.map((entry) =>
+    setBilledTime(prev =>
+      prev.map((entry) =>
         entry.id === id
           ? {
               ...entry,
@@ -818,35 +820,30 @@ const CardDetailModal = React.memo(({
     setEditBilledMinutes("");
     setEditBilledDescription("");
     toast.success("Billed time updated successfully!");
-  };
+  }, [editBilledHours, editBilledMinutes, editBilledDescription]);
 
-  const cancelBilledEdit = () => {
+  const cancelBilledEdit = useCallback(() => {
     setEditingBilled(null);
     setEditBilledHours("");
     setEditBilledMinutes("");
     setEditBilledDescription("");
-  };
+  }, []);
 
-  const confirmDeleteEstimation = (id) => {
-    if (window.confirm("Are you sure you want to delete this estimation entry?")) {
-      setEstimationEntries(estimationEntries.filter((entry) => entry.id !== id));
-      toast.info("Estimation entry removed");
-    }
-  };
+  // Memoized delete handlers for time tracking entries
+  const confirmDeleteEstimation = useCallback((id) => {
+    setEstimationEntries(prev => prev.filter((entry) => entry.id !== id));
+    toast.info("Estimation entry removed");
+  }, []);
 
-  const confirmDeleteLoggedTime = (id) => {
-    if (window.confirm("Are you sure you want to delete this logged time entry?")) {
-      setLoggedTime(loggedTime.filter((entry) => entry.id !== id));
-      toast.info("Time entry removed");
-    }
-  };
+  const confirmDeleteLoggedTime = useCallback((id) => {
+    setLoggedTime(prev => prev.filter((entry) => entry.id !== id));
+    toast.info("Time entry removed");
+  }, []);
 
-  const confirmDeleteBilledTime = (id) => {
-    if (window.confirm("Are you sure you want to delete this billed time entry?")) {
-      setBilledTime(billedTime.filter((entry) => entry.id !== id));
-      toast.info("Billed time entry removed");
-    }
-  };
+  const confirmDeleteBilledTime = useCallback((id) => {
+    setBilledTime(prev => prev.filter((entry) => entry.id !== id));
+    toast.info("Billed time entry removed");
+  }, []);
 
   const handleSave = async () => {
     const cardId = card._id || card.id;
@@ -1130,6 +1127,10 @@ const CardDetailModal = React.memo(({
         setDeleteLoading(true);
         await Database.deleteSubtask(data._id);
         await fetchSubtasks();
+        toast.success("Subtask deleted");
+      } else if (type === 'task') {
+        setDeleteLoading(true);
+        await executeDelete();
       }
     } catch (error) {
       console.error('Error deleting item:', error);
@@ -1151,7 +1152,8 @@ const CardDetailModal = React.memo(({
     });
   };
 
-  const getPriorityColor = (priority) => {
+  // Memoized utility functions
+  const getPriorityColor = useCallback((priority) => {
     const colors = {
       critical: "bg-red-100 text-red-700 border-red-300",
       high: "bg-orange-100 text-orange-700 border-orange-300",
@@ -1162,9 +1164,9 @@ const CardDetailModal = React.memo(({
       colors[priority?.toLowerCase()] ||
       "bg-gray-100 text-gray-700 border-gray-300"
     );
-  };
+  }, []);
 
-  const getStatusColor = (status) => {
+  const getStatusColor = useCallback((status) => {
     const colors = {
       done: "bg-green-100 text-green-700",
       "in-progress": "bg-blue-100 text-blue-700",
@@ -1172,7 +1174,7 @@ const CardDetailModal = React.memo(({
       todo: "bg-gray-100 text-gray-700",
     };
     return colors[status?.toLowerCase()] || "bg-gray-100 text-gray-700";
-  };
+  }, []);
 
   const modalVariants = {
     hidden: { opacity: 0, scale: 0.95 },
@@ -1290,11 +1292,8 @@ const CardDetailModal = React.memo(({
 
   const handleSidebarDelete = async () => {
     if (!taskId) return;
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this task? This action cannot be undone."
-    );
-    if (!confirmed) return;
-    await executeDelete();
+    // Use DeletePopup instead of window.confirm for consistent UX
+    setDeletePopup({ isOpen: true, type: 'task', data: { _id: taskId, title: card?.title } });
   };
 
   return (

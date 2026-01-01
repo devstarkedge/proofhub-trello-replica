@@ -2264,3 +2264,69 @@ input:-webkit-autofill::first-line {
   /* slate-600 */
   background-image: none !important;
 }
+
+/* ============================================
+   LOGO STYLING - LIGHT AND DARK MODE
+   ============================================ */
+
+/* Logo image styling for light mode */
+:root[data-theme="light"] img[alt="FlowTask"],
+:root[data-theme="light"] img[alt="Logo"] {
+  filter: brightness(1) contrast(1) !important;
+  transition: filter 300ms ease-in-out !important;
+}
+
+/* Logo image styling for dark mode - enhanced visibility */
+:root[data-theme="dark"] img[alt="FlowTask"],
+:root[data-theme="dark"] img[alt="Logo"] {
+  filter: brightness(1.15) contrast(1.1) !important;
+  transition: filter 300ms ease-in-out !important;
+}
+
+/* Logo hover effects in light mode */
+:root[data-theme="light"] img[alt="FlowTask"]:hover,
+:root[data-theme="light"] img[alt="Logo"]:hover {
+  filter: brightness(1.05) contrast(1.05) !important;
+}
+
+/* Logo hover effects in dark mode */
+:root[data-theme="dark"] img[alt="FlowTask"]:hover,
+:root[data-theme="dark"] img[alt="Logo"]:hover {
+  filter: brightness(1.25) contrast(1.15) !important;
+}
+
+/* Footer logo styling - light mode */
+.logo-image {
+  filter: drop-shadow(0 0 15px rgba(192, 132, 252, 0.6)) !important;
+  transition: filter 300ms ease !important;
+}
+
+:root[data-theme="light"] .logo-image {
+  filter: drop-shadow(0 0 15px rgba(192, 132, 252, 0.6)) brightness(1) !important;
+}
+
+/* Footer logo styling - dark mode with enhanced brightness and glow */
+:root[data-theme="dark"] .logo-image {
+  filter: brightness(1.15) contrast(1.1) drop-shadow(0 0 20px rgba(197, 217, 255, 0.8)) !important;
+}
+
+:root[data-theme="dark"] .logo-image:hover {
+  filter: brightness(1.3) contrast(1.2) drop-shadow(0 0 30px rgba(197, 217, 255, 1)) !important;
+}
+
+/* Logo SVG specific styles for dark mode */
+:root[data-theme="dark"] svg[alt="FlowTask"] {
+  filter: brightness(1.1) !important;
+}
+
+/* Ensure logo text remains sharp and visible */
+:root[data-theme="dark"] img,
+:root[data-theme="dark"] svg {
+  image-rendering: crisp-edges !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+:root[data-theme="light"] img,
+:root[data-theme="light"] svg {
+  image-rendering: auto !important;
+}

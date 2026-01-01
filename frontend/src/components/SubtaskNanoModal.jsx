@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlignLeft, FileText, Tag } from "lucide-react";
 import { toast } from "react-toastify";
@@ -312,10 +312,10 @@ const SubtaskNanoModal = ({
     }
   };
 
-  const handleSidebarDelete = async () => {
+  const handleSidebarDelete = useCallback(() => {
     // Open DeletePopup instead of using browser confirm
     setDeletePopup({ isOpen: true, type: 'subtaskNano', data: null });
-  };
+  }, []);
 
   const handleConfirmGlobalDelete = async () => {
     const { type } = deletePopup;
@@ -332,34 +332,34 @@ const SubtaskNanoModal = ({
     }
   };
 
-  const handleSelectMember = (memberId) => {
+  // Memoized member selection handlers
+  const handleSelectMember = useCallback((memberId) => {
     if (!memberId) return;
     if (!assignees.includes(memberId)) {
-      setAssignees([...assignees, memberId]);
+      setAssignees(prev => [...prev, memberId]);
     }
-  };
+  }, [assignees]);
 
-  const handleRemoveAssignee = (memberId) => {
-    setAssignees(assignees.filter(id => id !== memberId));
-  };
+  const handleRemoveAssignee = useCallback((memberId) => {
+    setAssignees(prev => prev.filter(id => id !== memberId));
+  }, []);
 
-  const handleToggleDepartment = (deptId) => {
+  const handleToggleDepartment = useCallback((deptId) => {
     setExpandedDepartments(prev => ({
       ...prev,
       [deptId]: !prev[deptId]
     }));
-  };
+  }, []);
 
-  const handleDeleteAttachment = (attachmentIdOrIndex) => {
+  const handleDeleteAttachment = useCallback((attachmentIdOrIndex) => {
     // Remove attachment by comparing with both _id and index
-    const filteredAttachments = attachments.filter((a, idx) => {
+    setAttachments(prev => prev.filter((a, idx) => {
       const attachmentId = a._id || a.id;
       if (attachmentIdOrIndex === idx) return false;
       if (attachmentId === attachmentIdOrIndex) return false;
       return true;
-    });
-    setAttachments(filteredAttachments);
-  };
+    }));
+  }, []);
 
   const handleAddComment = async () => {
     const plain = (newComment || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();

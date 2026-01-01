@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { Eye, EyeOff, Mail, Lock, LogIn, AlertCircle, CheckCircle } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
+import useThemeStore from '../store/themeStore';
 import { validateForm, validateField } from '../utils/validationUtils';
 
 const LoginPage = () => {
@@ -13,6 +14,7 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState({});
   const { login } = useContext(AuthContext);
+  const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const navigate = useNavigate();
 
   const { email, password } = formData;
@@ -125,7 +127,12 @@ const LoginPage = () => {
               <img 
                 src="/footer-logo-new.webp" 
                 alt="Logo" 
-                className="w-24 h-24 object-contain drop-shadow-[0_0_15px_rgba(192,132,252,0.6)] hover:drop-shadow-[0_0_25px_rgba(192,132,252,0.8)] transition-all duration-300"
+                className="w-24 h-24 object-contain transition-all duration-300 logo-image"
+                style={{
+                  filter: effectiveMode === 'dark' 
+                    ? 'brightness(1.15) contrast(1.1) drop-shadow(0 0 20px rgba(197, 217, 255, 0.8))' 
+                    : 'drop-shadow(0 0 15px rgba(192,132,252,0.6))',
+                }}
               />
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Welcome Back</h2>
@@ -143,8 +150,8 @@ const LoginPage = () => {
                 Email Address *
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="text-white/50" size={20} />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                  <Mail className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
                 </div>
                 <input
                   type="email"
@@ -180,8 +187,8 @@ const LoginPage = () => {
                 Password *
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="text-white/50" size={20} />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                  <Lock className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}

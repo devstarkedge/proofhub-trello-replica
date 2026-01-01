@@ -7,6 +7,7 @@ import Activity from '../models/Activity.js';
 import { emitToBoard } from '../server.js';
 import { refreshCardHierarchyStats, refreshSubtaskNanoStats } from '../utils/hierarchyStats.js';
 import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
+import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 
 const populateConfig = [
   { path: 'assignees', select: 'name email avatar' },
@@ -142,6 +143,9 @@ export const updateNano = asyncHandler(async (req, res, next) => {
   }
 
   const oldNano = { ...nano.toObject() };
+  const boardId = nano.board;
+  const taskId = nano.task;
+  const subtaskId = nano.subtask;
 
   const updates = {
     title: req.body.title ?? nano.title,
@@ -170,78 +174,106 @@ export const updateNano = asyncHandler(async (req, res, next) => {
     { new: true }
   ).populate(populateConfig);
 
-  // Log activities
-  if (oldNano.title !== nano.title) {
-    await Activity.create({
-      type: 'title_changed',
-      description: `Changed title from "${oldNano.title}" to "${nano.title}"`,
-      user: req.user.id, board: nano.board, card: nano.task, subtask: nano.subtask, nanoSubtask: nano._id, contextType: 'nanoSubtask',
-    });
-  }
-  if (oldNano.status !== nano.status) {
-    await Activity.create({
-      type: 'status_changed',
-      description: `Changed status from ${oldNano.status} to ${nano.status}`,
-      user: req.user.id, board: nano.board, card: nano.task, subtask: nano.subtask, nanoSubtask: nano._id, contextType: 'nanoSubtask',
-    });
-  }
-  if (oldNano.priority !== nano.priority) {
-    await Activity.create({
-      type: 'priority_changed',
-      description: `Changed priority from ${oldNano.priority} to ${nano.priority}`,
-      user: req.user.id, board: nano.board, card: nano.task, subtask: nano.subtask, nanoSubtask: nano._id, contextType: 'nanoSubtask',
-    });
-  }
-  if (oldNano.description !== nano.description) {
-    await Activity.create({
-      type: 'description_changed',
-      description: `Updated the description`,
-      user: req.user.id, board: nano.board, card: nano.task, subtask: nano.subtask, nanoSubtask: nano._id, contextType: 'nanoSubtask',
-    });
-  }
-  if (oldNano.dueDate !== nano.dueDate) {
-    await Activity.create({
-      type: 'due_date_changed',
-      description: `Changed due date to ${nano.dueDate}`,
-      user: req.user.id, board: nano.board, card: nano.task, subtask: nano.subtask, nanoSubtask: nano._id, contextType: 'nanoSubtask',
-    });
-  }
-  if (JSON.stringify(oldNano.assignees) !== JSON.stringify(nano.assignees)) {
-    await Activity.create({
-      type: 'member_added',
-      description: `Updated assignees`,
-      user: req.user.id, board: nano.board, card: nano.task, subtask: nano.subtask, nanoSubtask: nano._id, contextType: 'nanoSubtask',
-    });
-  }
-  if (JSON.stringify(oldNano.loggedTime) !== JSON.stringify(nano.loggedTime)) {
-    await Activity.create({
-      type: 'time_logged',
-      description: `Updated logged time`,
-      user: req.user.id, board: nano.board, card: nano.task, subtask: nano.subtask, nanoSubtask: nano._id, contextType: 'nanoSubtask',
-    });
-  }
-
-  await refreshSubtaskNanoStats(nano.subtask);
-  await refreshCardHierarchyStats(nano.task);
-
-  emitToBoard(nano.board.toString(), 'hierarchy-nano-changed', {
-    type: 'updated',
-    subtaskId: nano.subtask.toString(),
-    nano
-  });
-  const parentCard = await Card.findById(nano.task);
-  invalidateHierarchyCache({
-    boardId: parentCard?.board || nano.board,
-    listId: parentCard?.list,
-    cardId: nano.task,
-    subtaskId: nano.subtask,
-    subtaskNanoId: nano._id
-  });
-
+  // Send response immediately for better UX
   res.status(200).json({
     success: true,
     data: nano
   });
+
+  // Execute background tasks after response is sent
+  executeBackgroundTasks([
+    // Batch activity logging
+    async () => {
+      const activities = [];
+      const baseActivity = {
+        user: req.user.id,
+        board: boardId,
+        card: taskId,
+        subtask: subtaskId,
+        nanoSubtask: nano._id,
+        contextType: 'nanoSubtask'
+      };
+
+      if (oldNano.title !== nano.title) {
+        activities.push({
+          ...baseActivity,
+          type: 'title_changed',
+          description: `Changed title from "${oldNano.title}" to "${nano.title}"`
+        });
+      }
+      if (oldNano.status !== nano.status) {
+        activities.push({
+          ...baseActivity,
+          type: 'status_changed',
+          description: `Changed status from ${oldNano.status} to ${nano.status}`
+        });
+      }
+      if (oldNano.priority !== nano.priority) {
+        activities.push({
+          ...baseActivity,
+          type: 'priority_changed',
+          description: `Changed priority from ${oldNano.priority} to ${nano.priority}`
+        });
+      }
+      if (oldNano.description !== nano.description) {
+        activities.push({
+          ...baseActivity,
+          type: 'description_changed',
+          description: 'Updated the description'
+        });
+      }
+      if (oldNano.dueDate?.toString() !== nano.dueDate?.toString()) {
+        activities.push({
+          ...baseActivity,
+          type: 'due_date_changed',
+          description: `Changed due date to ${nano.dueDate}`
+        });
+      }
+      if (JSON.stringify(oldNano.assignees) !== JSON.stringify(nano.assignees)) {
+        activities.push({
+          ...baseActivity,
+          type: 'member_added',
+          description: 'Updated assignees'
+        });
+      }
+      if (JSON.stringify(oldNano.loggedTime) !== JSON.stringify(nano.loggedTime)) {
+        activities.push({
+          ...baseActivity,
+          type: 'time_logged',
+          description: 'Updated logged time'
+        });
+      }
+
+      if (activities.length > 0) {
+        await batchCreateActivities(activities);
+      }
+    },
+
+    // Refresh stats in parallel
+    () => Promise.all([
+      refreshSubtaskNanoStats(subtaskId),
+      refreshCardHierarchyStats(taskId)
+    ]),
+
+    // Emit socket event
+    () => emitToBoard(boardId.toString(), 'hierarchy-nano-changed', {
+      type: 'updated',
+      subtaskId: subtaskId.toString(),
+      nano
+    }),
+
+    // Invalidate cache
+    async () => {
+      const parentCard = await Card.findById(taskId).select('board list').lean();
+      invalidateHierarchyCache({
+        boardId: parentCard?.board || boardId,
+        listId: parentCard?.list,
+        cardId: taskId,
+        subtaskId,
+        subtaskNanoId: nano._id
+      });
+    }
+  ]);
 });
 
 export const deleteNano = asyncHandler(async (req, res, next) => {
