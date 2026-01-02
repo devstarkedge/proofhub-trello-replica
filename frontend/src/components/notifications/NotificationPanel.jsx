@@ -253,13 +253,15 @@ const NotificationPanel = ({
       className="notification-panel absolute right-0 top-full mt-2 w-[420px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl z-50 overflow-hidden"
     >
       {/* Header */}
-      <div className={`relative p-4 border-b border-gray-100 dark:border-gray-800 ${
-        showArchived 
-          ? 'bg-gradient-to-r from-gray-500 via-gray-600 to-gray-700' 
-          : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500'
-      }`}>
-        <div className="absolute inset-0 bg-white/10 backdrop-blur-sm" />
-        <div className="relative z-10">
+      <div 
+        className="notification-header p-4 border-b border-gray-100 dark:border-gray-800"
+        style={{
+          background: showArchived 
+            ? 'linear-gradient(to right, #6b7280, #4b5563, #374151)'
+            : 'linear-gradient(to right, #6366f1, #a855f7, #ec4899)'
+        }}
+      >
+        <div>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">

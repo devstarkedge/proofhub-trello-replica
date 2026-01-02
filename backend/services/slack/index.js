@@ -77,27 +77,67 @@ export async function shutdownSlackServices() {
 export async function slackHealthCheck() {
   const { getQueueStats } = await import('./SlackNotificationQueue.js');
   const SlackWorkspace = (await import('../../models/SlackWorkspace.js')).default;
+  const mongoose = (await import('mongoose')).default;
+  
+  let apiConnected = false;
+  let queueHealthy = true;
+  let dbConnected = false;
+  let rateLimitOk = true;
   
   try {
-    const [queueStats, workspaceStats] = await Promise.all([
-      getQueueStats(),
-      SlackWorkspace.aggregate([
+    // Check database connection
+    dbConnected = mongoose.connection.readyState === 1;
+    
+    // Get queue stats
+    let queueStats = null;
+    try {
+      queueStats = await getQueueStats();
+      // In-memory queue is always healthy if it returns stats
+      queueHealthy = queueStats !== null;
+    } catch (e) {
+      queueHealthy = false;
+    }
+    
+    // Get workspace stats
+    let workspaceStats = [];
+    try {
+      workspaceStats = await SlackWorkspace.aggregate([
         {
           $group: {
             _id: '$healthStatus',
             count: { $sum: 1 }
           }
         }
-      ])
-    ]);
+      ]);
+    } catch (e) {
+      // Database aggregation failed
+    }
     
     const workspaceHealth = workspaceStats.reduce((acc, s) => {
       acc[s._id] = s.count;
       return acc;
     }, {});
     
+    // Check if any workspace has healthy API connection
+    const healthyWorkspaces = await SlackWorkspace.countDocuments({
+      isActive: true,
+      healthStatus: 'healthy'
+    });
+    apiConnected = healthyWorkspaces > 0;
+    
+    // Check rate limit status from workspaces
+    const rateLimitedWorkspaces = await SlackWorkspace.countDocuments({
+      isActive: true,
+      healthStatus: 'rate_limited'
+    });
+    rateLimitOk = rateLimitedWorkspaces === 0;
+    
     return {
       status: 'ok',
+      apiConnected,
+      queueHealthy,
+      dbConnected,
+      rateLimitOk,
       queues: queueStats,
       workspaces: workspaceHealth,
       timestamp: new Date().toISOString()
@@ -105,6 +145,10 @@ export async function slackHealthCheck() {
   } catch (error) {
     return {
       status: 'error',
+      apiConnected: false,
+      queueHealthy: false,
+      dbConnected: mongoose.connection.readyState === 1,
+      rateLimitOk: true,
       error: error.message,
       timestamp: new Date().toISOString()
     };

@@ -119,7 +119,7 @@ const NotificationCard = ({
               )}
             </div>
             {!notification.isRead && (
-              <span className="flex-shrink-0 w-2.5 h-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full animate-pulse shadow-lg shadow-blue-500/50" />
+              <span className="flex-shrink-0 w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full animate-pulse ring-2 ring-blue-200 dark:ring-blue-400/30 shadow-md shadow-blue-500/40 dark:shadow-blue-500/50" />
             )}
           </div>
 
@@ -141,34 +141,52 @@ const NotificationCard = ({
         </div>
       </div>
 
-      {/* Hover Actions */}
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {!notification.isRead && (
+      {/* Hover Actions - Only visible on hover */}
+      <div 
+        className="notification-actions absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1"
+        style={{ 
+          opacity: 0,
+          visibility: 'hidden',
+          transition: 'opacity 0.2s ease, visibility 0.2s ease',
+          pointerEvents: 'none'
+        }}
+      >
+        <div className="flex items-center gap-1" style={{ pointerEvents: 'auto' }}>
+          {!notification.isRead && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMarkAsRead(notification._id);
+              }}
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                color: '#2563eb'
+              }}
+              title="Mark as read"
+            >
+              <CheckCircle size={14} />
+            </motion.button>
+          )}
           <motion.button
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={(e) => {
               e.stopPropagation();
-              onMarkAsRead(notification._id);
+              onArchive(notification._id);
             }}
-            className="p-2 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800 text-blue-600 dark:text-blue-400 rounded-lg transition-colors"
-            title="Mark as read"
+            className="p-2 rounded-lg transition-colors"
+            style={{
+              backgroundColor: 'rgba(107, 114, 128, 0.15)',
+              color: '#4b5563'
+            }}
+            title="Archive"
           >
-            <CheckCircle size={14} />
+            <Archive size={14} />
           </motion.button>
-        )}
-        <motion.button
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onArchive(notification._id);
-          }}
-          className="p-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-lg transition-colors"
-          title="Archive"
-        >
-          <Archive size={14} />
-        </motion.button>
+        </div>
       </div>
     </motion.div>
   );
