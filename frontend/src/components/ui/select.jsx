@@ -82,28 +82,28 @@ const SelectTrigger = forwardRef(({ className = '', children, onClick, isOpen, s
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex h-10 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer transition-all duration-200 hover:border-blue-400 active:scale-[0.99] ${className}`}
+      className={`flex h-10 w-full items-center justify-between rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white ring-offset-white dark:ring-offset-gray-900 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer transition-all duration-200 hover:border-blue-400 dark:hover:border-blue-500 active:scale-[0.99] ${className}`}
       ref={ref}
       {...props}
     >
-      <span className="truncate">{displayValue}</span>
-      <ChevronDown className={`h-4 w-4 opacity-50 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      <span className="truncate text-gray-900 dark:text-white">{displayValue}</span>
+      <ChevronDown className={`h-4 w-4 opacity-50 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
     </button>
   );
 });
 
 const SelectValue = ({ placeholder }) => {
-  return <span>{placeholder}</span>;
+  return <span className="text-gray-500 dark:text-gray-400">{placeholder}</span>;
 };
 
 const SelectContent = forwardRef(({ className = '', children, onSelect, selectedValue, onClose, ...props }, ref) => {
   return (
     <div
-      className={`absolute top-full left-0 right-0 z-50 min-w-[8rem] overflow-hidden rounded-md border border-gray-200 bg-white text-gray-950 shadow-lg mt-1 animate-in fade-in-0 zoom-in-95 duration-150 ${className}`}
+      className={`absolute top-full left-0 right-0 z-50 min-w-[8rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-950 dark:text-gray-100 shadow-lg mt-1 animate-in fade-in-0 zoom-in-95 duration-150 ${className}`}
       ref={ref}
       {...props}
     >
-      <div className="p-1 max-h-64 overflow-y-auto">
+      <div className="p-1 max-h-64 overflow-y-auto select-dropdown-scroll">
         {React.Children.map(children, (child) => {
           if (child?.type === SelectItem) {
             return React.cloneElement(child, {
@@ -127,13 +127,13 @@ const SelectItem = forwardRef(({ className = '', children, value, onSelect, sele
 
   return (
     <div
-      className={`relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 pl-8 pr-2 text-sm outline-none transition-colors duration-150 hover:bg-blue-50 focus:bg-blue-50 ${isSelected ? 'bg-blue-50 text-blue-700' : ''} ${className}`}
+      className={`relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 pl-8 pr-2 text-sm outline-none transition-colors duration-150 text-gray-900 dark:text-gray-100 hover:bg-blue-50 dark:hover:bg-blue-900/30 focus:bg-blue-50 dark:focus:bg-blue-900/30 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : ''} ${className}`}
       onClick={handleClick}
       ref={ref}
       {...props}
     >
       {isSelected && (
-        <Check className="absolute left-2 h-4 w-4 text-blue-600" />
+        <Check className="absolute left-2 h-4 w-4 text-blue-600 dark:text-blue-400" />
       )}
       <span className="truncate">{children}</span>
     </div>

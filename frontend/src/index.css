@@ -37,6 +37,43 @@ body {
   background: var(--color-scrollbar-thumb-hover);
 }
 
+/* Select dropdown scrollbar - thin and themed */
+.select-dropdown-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.4) transparent;
+}
+
+.select-dropdown-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.select-dropdown-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.select-dropdown-scroll::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4);
+  border-radius: 4px;
+}
+
+.select-dropdown-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.6);
+}
+
+/* Dark mode scrollbar colors */
+:root[data-theme="dark"] .select-dropdown-scroll {
+  scrollbar-color: rgba(147, 197, 253, 0.4) transparent;
+}
+
+:root[data-theme="dark"] .select-dropdown-scroll::-webkit-scrollbar-thumb {
+  background: rgba(147, 197, 253, 0.4);
+}
+
+:root[data-theme="dark"] .select-dropdown-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 197, 253, 0.6);
+}
+
 /* Global selection styling */
 ::selection {
   background-color: var(--color-primary-subtle);
@@ -2329,4 +2366,237 @@ input:-webkit-autofill::first-line {
 :root[data-theme="light"] img,
 :root[data-theme="light"] svg {
   image-rendering: auto !important;
+}
+
+/* ============================================
+   FORM ELEMENT THEMING - Light/Dark Mode
+   These styles ensure form elements have proper 
+   text visibility in both light and dark modes
+   ============================================ */
+
+/* === LIGHT MODE - Ensure dark text on light backgrounds === */
+:root:not([data-theme="dark"]) input:not([type="checkbox"]):not([type="radio"]),
+:root:not([data-theme="dark"]) textarea,
+:root:not([data-theme="dark"]) select {
+  color: #1f2937 !important;
+  background-color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) input::placeholder,
+:root:not([data-theme="dark"]) textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Select options for light mode - ensure dark text */
+:root:not([data-theme="dark"]) select option {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+:root:not([data-theme="dark"]) select option:checked,
+:root:not([data-theme="dark"]) select option:focus,
+:root:not([data-theme="dark"]) select option:hover {
+  background-color: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+/* Autofill styles for light mode */
+:root:not([data-theme="dark"]) input:-webkit-autofill,
+:root:not([data-theme="dark"]) input:-webkit-autofill:hover,
+:root:not([data-theme="dark"]) input:-webkit-autofill:focus,
+:root:not([data-theme="dark"]) input:-webkit-autofill:active,
+:root:not([data-theme="dark"]) textarea:-webkit-autofill,
+:root:not([data-theme="dark"]) select:-webkit-autofill {
+  -webkit-text-fill-color: #1f2937 !important;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* === DARK MODE - Ensure light text on dark backgrounds === */
+:root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select {
+  color: #f3f4f6 !important;
+  background-color: var(--color-input-bg, #1f2937) !important;
+  border-color: var(--color-input-border, #4b5563) !important;
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Select options for dark mode */
+:root[data-theme="dark"] select option {
+  background-color: #1f2937 !important;
+  color: #f3f4f6 !important;
+}
+
+:root[data-theme="dark"] select option:checked,
+:root[data-theme="dark"] select option:focus,
+:root[data-theme="dark"] select option:hover {
+  background-color: #374151 !important;
+  color: #93c5fd !important;
+}
+
+/* Autofill styles for dark mode */
+:root[data-theme="dark"] input:-webkit-autofill,
+:root[data-theme="dark"] input:-webkit-autofill:hover,
+:root[data-theme="dark"] input:-webkit-autofill:focus,
+:root[data-theme="dark"] input:-webkit-autofill:active,
+:root[data-theme="dark"] textarea:-webkit-autofill,
+:root[data-theme="dark"] select:-webkit-autofill {
+  -webkit-text-fill-color: #f3f4f6 !important;
+  -webkit-box-shadow: 0 0 0 1000px #1f2937 inset !important;
+  box-shadow: 0 0 0 1000px #1f2937 inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: #f3f4f6 !important;
+}
+
+/* === CUSTOM SELECT COMPONENT (non-native) - Common patterns === */
+
+/* Light mode - custom dropdown panels */
+:root:not([data-theme="dark"]) [class*="absolute"][class*="bg-white"],
+:root:not([data-theme="dark"]) [class*="dropdown"][class*="bg-white"] {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+:root:not([data-theme="dark"]) [class*="dropdown"] span,
+:root:not([data-theme="dark"]) [class*="dropdown"] div,
+:root:not([data-theme="dark"]) [class*="absolute"][class*="shadow"] span,
+:root:not([data-theme="dark"]) [class*="absolute"][class*="shadow"] div {
+  color: inherit;
+}
+
+/* Dark mode - custom dropdown panels */
+:root[data-theme="dark"] [class*="absolute"][class*="rounded"][class*="shadow"]:not([class*="text-white"]) span,
+:root[data-theme="dark"] [class*="absolute"][class*="rounded"][class*="shadow"]:not([class*="text-white"]) div:not([class*="bg-gradient"]) {
+  color: var(--color-text-primary, #f3f4f6);
+}
+
+/* === BADGE/CHIP ELEMENTS === */
+/* Light mode badges - ensure readable text */
+:root:not([data-theme="dark"]) .badge[class*="bg-"],
+:root:not([data-theme="dark"]) [class*="Badge"][class*="bg-"] {
+  color: inherit;
+}
+
+/* For light background badges in light mode */
+:root:not([data-theme="dark"]) [class*="bg-gray-100"],
+:root:not([data-theme="dark"]) [class*="bg-gray-200"],
+:root:not([data-theme="dark"]) [class*="bg-slate-100"] {
+  color: #374151 !important;
+}
+
+/* === PORTAL/FLOATING UI ELEMENTS === */
+/* Visibility dropdown and similar portals - light mode */
+:root:not([data-theme="dark"]) .bg-white.rounded-md.shadow-lg button,
+:root:not([data-theme="dark"]) .bg-white.rounded-md.shadow-lg a {
+  color: #374151 !important;
+}
+
+:root:not([data-theme="dark"]) .bg-white.rounded-md.shadow-lg button:hover,
+:root:not([data-theme="dark"]) .bg-white.rounded-md.shadow-lg a:hover {
+  background-color: #f3f4f6 !important;
+  color: #1f2937 !important;
+}
+
+/* Dark mode floating panels */
+:root[data-theme="dark"] .bg-white.rounded-md.shadow-lg {
+  background-color: var(--color-bg-base, #1f2937) !important;
+  border: 1px solid var(--color-border-default, #374151) !important;
+}
+
+:root[data-theme="dark"] .bg-white.rounded-md.shadow-lg button,
+:root[data-theme="dark"] .bg-white.rounded-md.shadow-lg a {
+  color: var(--color-text-primary, #f3f4f6) !important;
+}
+
+:root[data-theme="dark"] .bg-white.rounded-md.shadow-lg button:hover,
+:root[data-theme="dark"] .bg-white.rounded-md.shadow-lg a:hover {
+  background-color: var(--color-bg-muted, #374151) !important;
+}
+
+/* === MODAL SPECIFIC OVERRIDES === */
+/* Ensure modal content maintains proper text colors */
+:root:not([data-theme="dark"]) .rounded-3xl.shadow-2xl.bg-white {
+  background-color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) .rounded-3xl.shadow-2xl.bg-white input,
+:root:not([data-theme="dark"]) .rounded-3xl.shadow-2xl.bg-white textarea,
+:root:not([data-theme="dark"]) .rounded-3xl.shadow-2xl.bg-white select {
+  color: #1f2937 !important;
+  background-color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .rounded-3xl.shadow-2xl.bg-white {
+  background-color: var(--color-bg-base, #111827) !important;
+}
+
+:root[data-theme="dark"] .rounded-3xl.shadow-2xl input,
+:root[data-theme="dark"] .rounded-3xl.shadow-2xl textarea,
+:root[data-theme="dark"] .rounded-3xl.shadow-2xl select {
+  color: #f3f4f6 !important;
+  background-color: var(--color-input-bg, #1f2937) !important;
+}
+
+/* === COUNTRY DROPDOWN AND SIMILAR FLOATING PANELS === */
+:root:not([data-theme="dark"]) .bg-white.border.border-gray-200.rounded-xl.shadow-2xl {
+  background-color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) .bg-white.border.border-gray-200.rounded-xl.shadow-2xl span {
+  color: #374151 !important;
+}
+
+:root[data-theme="dark"] .bg-white.border.border-gray-200.rounded-xl.shadow-2xl {
+  background-color: var(--color-bg-base, #1f2937) !important;
+  border-color: var(--color-border-default, #374151) !important;
+}
+
+:root[data-theme="dark"] .bg-white.border.border-gray-200.rounded-xl.shadow-2xl span {
+  color: var(--color-text-primary, #f3f4f6) !important;
+}
+
+/* === CLIENT INFO SECTION BACKGROUNDS === */
+:root:not([data-theme="dark"]) .bg-gradient-to-br.from-gray-50.to-blue-50 {
+  background: linear-gradient(to bottom right, #f9fafb, #eff6ff) !important;
+}
+
+:root:not([data-theme="dark"]) .bg-gradient-to-br.from-gray-50.to-blue-50 input {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+:root[data-theme="dark"] .bg-gradient-to-br.from-gray-50.to-blue-50 {
+  background: linear-gradient(to bottom right, var(--color-bg-muted, #1f2937), var(--color-primary-subtle, rgba(59, 130, 246, 0.1))) !important;
+}
+
+:root[data-theme="dark"] .bg-gradient-to-br.from-gray-50.to-blue-50 input {
+  background-color: var(--color-input-bg, #374151) !important;
+  color: #f3f4f6 !important;
+}
+
+/* Add Category form section */
+:root:not([data-theme="dark"]) .bg-gradient-to-br.from-pink-50.to-purple-50 {
+  background: linear-gradient(to bottom right, #fdf2f8, #faf5ff) !important;
+}
+
+:root:not([data-theme="dark"]) .bg-gradient-to-br.from-pink-50.to-purple-50 input,
+:root:not([data-theme="dark"]) .bg-gradient-to-br.from-pink-50.to-purple-50 textarea {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+:root[data-theme="dark"] .bg-gradient-to-br.from-pink-50.to-purple-50 {
+  background: linear-gradient(to bottom right, rgba(236, 72, 153, 0.1), rgba(168, 85, 247, 0.1)) !important;
+}
+
+:root[data-theme="dark"] .bg-gradient-to-br.from-pink-50.to-purple-50 input,
+:root[data-theme="dark"] .bg-gradient-to-br.from-pink-50.to-purple-50 textarea {
+  background-color: var(--color-input-bg, #374151) !important;
+  color: #f3f4f6 !important;
 }

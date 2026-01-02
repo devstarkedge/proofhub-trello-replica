@@ -13,6 +13,7 @@ import { emitToBoard, emitNotification } from "../server.js";
 import { invalidateCache } from "../middleware/cache.js";
 import notificationService from "../utils/notificationService.js";
 import { invalidateHierarchyCache } from "../utils/cacheInvalidation.js";
+import { slackHooks } from "../utils/slackHooks.js";
 
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
@@ -693,6 +694,12 @@ export const createCard = asyncHandler(async (req, res, next) => {
   // Send notifications using the notification service
   await notificationService.notifyTaskAssigned(card, assignee, req.user.id);
 
+  // Send Slack notifications for task assignment
+  if (assignee) {
+    const boardData = await Board.findById(board).select('name').lean();
+    slackHooks.onTaskAssigned(card, boardData, [assignee], req.user).catch(console.error);
+  }
+
   // Notify all members
   if (members && members.length > 0) {
     for (const memberId of members) {
@@ -1010,6 +1017,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
         card: card._id,
         contextType: 'task',
       });
+      
+      // Send Slack notifications for new assignees
+      const boardData = await Board.findById(card.board).select('name').lean();
+      slackHooks.onTaskAssigned(card, boardData, addedAssignees, req.user).catch(console.error);
     }
 
     if (removedAssignees.length > 0) {
@@ -1075,6 +1086,14 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     } else {
       changedFields.push({ field: 'status', message: `Status changed to "${req.body.status}" for "${card.title}"` });
     }
+    
+    // Send Slack notification for status change
+    const boardData = await Board.findById(card.board).select('name').lean();
+    if (req.body.status === 'done') {
+      slackHooks.onTaskCompleted(card, boardData, req.user).catch(console.error);
+    } else {
+      slackHooks.onTaskStatusChanged(card, boardData, oldStatus, req.body.status, req.user).catch(console.error);
+    }
   }
   
   // Send notifications based on changes (only if card has assignees to notify)
@@ -1095,6 +1114,13 @@ export const updateCard = asyncHandler(async (req, res, next) => {
         multipleChanges: true,
         changedFields: notificationChanges.map(c => c.field)
       });
+    }
+    
+    // Send Slack notification for task updates (except status changes which are handled above)
+    const nonStatusChanges = changedFields.filter(c => c.field !== 'status');
+    if (nonStatusChanges.length > 0) {
+      const boardData = await Board.findById(card.board).select('name').lean();
+      slackHooks.onTaskUpdated(card, boardData, nonStatusChanges.map(c => c.field), req.user).catch(console.error);
     }
   }
 

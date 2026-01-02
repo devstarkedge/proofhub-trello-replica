@@ -2,6 +2,10 @@ import NodeCache from 'node-cache';
 
 const cache = new NodeCache({ stdTTL: 60 }); // 1 minute default TTL
 
+// Clear all cache on startup
+cache.flushAll();
+console.log('Cache cleared on startup');
+
 // Define paths that should have shorter cache times or no cache
 const DYNAMIC_PATHS = [
   '/api/cards/list/',
@@ -12,7 +16,9 @@ const DYNAMIC_PATHS = [
   '/api/users', // Skip caching for all user-related endpoints
   '/api/auth/admin-create-user', // Skip caching for admin user creation
   '/api/reminders', // Skip caching for all reminder endpoints
-  '/api/reminders/' // Skip caching for all reminder-related endpoints
+  '/api/reminders/', // Skip caching for all reminder-related endpoints
+  '/api/slack', // Skip caching for all Slack endpoints
+  '/api/slack/' // Skip caching for all Slack-related endpoints
 ];
 
 export const cacheMiddleware = (ttl = 60) => {
@@ -43,7 +49,9 @@ export const cacheMiddleware = (ttl = 60) => {
     '/api/attachments/', // Skip caching for all attachment-related endpoints
     '/api/users/profile', // Skip caching for user profile (avatar updates)
     '/api/labels', // Skip labels fetching to prevent stale data after delete
-    '/api/labels/' // Skip all label-related endpoints
+    '/api/labels/', // Skip all label-related endpoints
+    '/api/slack', // Skip caching for all Slack endpoints
+    '/api/slack/' // Skip caching for all Slack-related endpoints
   ];
   return (req, res, next) => {
     // Skip caching for non-GET requests

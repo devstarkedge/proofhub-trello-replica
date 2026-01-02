@@ -4,13 +4,14 @@ import { toast } from 'react-toastify';
 import {
   Settings as SettingsIcon, Moon, Sun, Monitor, Bell, BellOff,
   Shield, Eye, EyeOff, Lock, Save, Loader2, CheckCircle,
-  XCircle, Palette, Globe, UserCheck, Activity
+  XCircle, Palette, Globe, UserCheck, Activity, MessageSquare
 } from 'lucide-react';
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import NotificationContext from '../context/NotificationContext';
 import Header from '../components/Header';
 import Loading from '../components/Loading';
+import SlackSettings from '../components/SlackSettings';
 import { validateField, validatePasswordMatch, validateForm, validationRules } from '../utils/validationUtils';
 
 const Settings = () => {
@@ -361,6 +362,16 @@ const Settings = () => {
             </motion.div>
 
 
+
+            {/* Slack Integration Settings */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+            >
+              <SlackSettings />
+            </motion.div>
 
             {/* Save Button */}
             <motion.div

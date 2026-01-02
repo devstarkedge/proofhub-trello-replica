@@ -292,14 +292,8 @@ const ProjectCard = ({
         </div>
       )}
       
-      {/* Animated Background Gradient */}
-      <motion.div
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-        style={{
-          background: currentTheme.subtle
-        }}
-        // initial={{ opacity: 0 }}
-      />
+      {/* Animated Background Gradient - only applied to content section, not image */}
+      {/* Removed: This was causing the image to disappear on hover */}
 
       {/* Project Image/Header */}
       {/* Project Image/Header - Enlarged for visual impact */}
@@ -377,7 +371,7 @@ const ProjectCard = ({
                 scale: isHovered ? 1.08 : 1
               }}
               transition={{ duration: 0.5, ease: "easeOut" }}
-              className="relative w-full h-full object-cover z-0"
+              className="relative w-full h-full object-cover z-10"
             />
           </>
         ) : (
@@ -603,11 +597,11 @@ const ProjectCard = ({
           </div>
         )}
 
-        {/* Hover Overlay Effect - softer */}
+        {/* Hover Overlay Effect - subtle brightness enhancement without obscuring content */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: isHovered ? 1 : 0 }}
-          className="absolute inset-0 bg-white/10 backdrop-blur-[1px] pointer-events-none transition-all duration-300"
+          className="absolute inset-0 bg-gradient-to-t from-black/5 via-transparent to-white/5 pointer-events-none transition-all duration-300"
         />
       </div>
 

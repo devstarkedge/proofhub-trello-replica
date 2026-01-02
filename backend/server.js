@@ -29,6 +29,8 @@ import rolesRoutes from './routes/roles.js';
 import attachmentsRoutes from './routes/attachments.js';
 import versionsRoutes from './routes/versions.js';
 import projectsRoutes from './routes/projects.js';
+import slackRoutes from './routes/slack.js';
+import { captureRawBody } from './middleware/slackMiddleware.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
 import { fileURLToPath } from 'url';
@@ -63,6 +65,10 @@ app.use(cors({
   origin: process.env.FRONTEND_URL,
   credentials: true
 }));
+
+// Capture raw body for Slack signature verification (before JSON parsing)
+app.use('/api/slack', express.json({ verify: captureRawBody }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -72,9 +78,9 @@ import compression from 'compression';
 app.use(compression());
 
 
-// Caching middleware
-import { cacheMiddleware } from './middleware/cache.js';
-app.use('/api/', cacheMiddleware(300)); // 5 minutes cache
+// Caching middleware - DISABLED
+// import { cacheMiddleware } from './middleware/cache.js';
+// app.use('/api/', cacheMiddleware(300)); // 5 minutes cache
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -101,6 +107,7 @@ app.use('/api/roles', rolesRoutes);
 app.use('/api/attachments', attachmentsRoutes);
 app.use('/api/versions', versionsRoutes);
 app.use('/api/projects', projectsRoutes);
+app.use('/api/slack', slackRoutes);
 
 import jwt from 'jsonwebtoken';
 
@@ -265,6 +272,7 @@ import { startRecurringTaskScheduler } from './utils/recurrenceScheduler.js';
 import { startReminderScheduler } from './utils/reminderScheduler.js';
 import { startArchivedCardCleanup } from './utils/archiveCleanup.js';
 import { startTrashCleanup } from './utils/trashCleanup.js';
+import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
 
 // MongoDB connection with connection pooling
 mongoose.connect(process.env.MONGO_URI, {
@@ -286,6 +294,12 @@ mongoose.connect(process.env.MONGO_URI, {
     startArchivedCardCleanup();
     // Start trashed attachments cleanup
     startTrashCleanup();
+    // Initialize Slack services (queues, etc.)
+    initializeSlackServices().then(() => {
+      console.log('Slack services initialized');
+    }).catch(err => {
+      console.error('Slack services initialization error (non-fatal):', err.message);
+    });
     server.listen(PORT, () => {
       if (process.env.NODE_ENV !== 'production') console.log(`Server running on port ${PORT}`);
     });
@@ -293,6 +307,19 @@ mongoose.connect(process.env.MONGO_URI, {
   .catch((error) => {
     console.error('MongoDB connection error:', error);
   });
+
+// Graceful shutdown handler
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received. Shutting down gracefully...');
+  await shutdownSlackServices();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received. Shutting down gracefully...');
+  await shutdownSlackServices();
+  process.exit(0);
+});
 
 // Error handling middleware
 

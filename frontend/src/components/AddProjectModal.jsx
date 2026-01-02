@@ -15,6 +15,7 @@ import Database from "../services/database"
 import ReactCountryFlag from "react-country-flag"
 import CoverImageUploader from "./CoverImageUploader"
 import AuthContext from '../context/AuthContext'
+import DatePickerModal from "./DatePickerModal"
 
 // Country codes data with ISO codes for flags
 const COUNTRY_CODES = [
@@ -123,6 +124,8 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
   const [countrySearchQuery, setCountrySearchQuery] = useState("")
   const [coverImageFile, setCoverImageFile] = useState(null)
   const [coverImagePreview, setCoverImagePreview] = useState(null)
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false)
+  const [showDueDatePicker, setShowDueDatePicker] = useState(false)
   const countryDropdownRef = useRef(null)
   const visTriggerRef = useRef(null)
   const visMenuRef = useRef(null)
@@ -558,7 +561,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
           initial="hidden"
           animate="visible"
           exit="exit"
-          className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden"
+          className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -698,38 +701,151 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
               {/* Dates */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <motion.div custom={2} variants={fieldVariants} initial="hidden" animate="visible">
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
                     <Calendar className="h-4 w-4 text-green-600" />
                     Start Date *
                   </label>
-                  <input
-                    type="date"
-                    name="startDate"
-                    value={formData.startDate}
-                    onChange={handleInputChange}
-                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
-                      errors.startDate ? "border-red-500 bg-red-50" : "border-gray-300 focus:border-transparent hover:border-blue-300"
+                  <motion.div
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => setShowStartDatePicker(true)}
+                    className={`w-full px-4 py-3 border-2 rounded-xl cursor-pointer transition-all duration-200 flex items-center justify-between group bg-white dark:bg-gray-800 ${
+                      errors.startDate 
+                        ? "border-red-500 bg-red-50 dark:bg-red-900/20" 
+                        : "border-gray-300 dark:border-gray-600 hover:border-green-400 dark:hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20"
                     }`}
-                  />
-                  {errors.startDate && <p className="text-red-600 text-sm mt-2">{errors.startDate}</p>}
+                  >
+                    <span className={`text-sm font-medium ${
+                      formData.startDate 
+                        ? 'text-gray-900 dark:text-white' 
+                        : 'text-gray-400 dark:text-gray-500'
+                    }`}>
+                      {formData.startDate 
+                        ? new Date(formData.startDate).toLocaleDateString('en-US', { 
+                            weekday: 'short',
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          })
+                        : 'Click to select date'
+                      }
+                    </span>
+                    {formData.startDate && (
+                      <motion.button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFormData(prev => ({ ...prev, startDate: '' }));
+                          if (errors.startDate) setErrors(prev => ({ ...prev, startDate: '' }));
+                        }}
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <X size={16} />
+                      </motion.button>
+                    )}
+                  </motion.div>
+                  <AnimatePresence>
+                    {errors.startDate && (
+                      <motion.p
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="text-red-600 text-sm mt-2 flex items-center gap-1"
+                      >
+                        <AlertCircle size={14} /> {errors.startDate}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
                 <motion.div custom={3} variants={fieldVariants} initial="hidden" animate="visible">
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
                     <Calendar className="h-4 w-4 text-red-600" />
                     Due Date
                   </label>
-                  <input
-                    type="date"
-                    name="dueDate"
-                    value={formData.dueDate}
-                    onChange={handleInputChange}
-                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
-                      errors.dueDate ? "border-red-500 bg-red-50" : "border-gray-300 focus:border-transparent hover:border-blue-300"
+                  <motion.div
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => setShowDueDatePicker(true)}
+                    className={`w-full px-4 py-3 border-2 rounded-xl cursor-pointer transition-all duration-200 flex items-center justify-between group bg-white dark:bg-gray-800 ${
+                      errors.dueDate 
+                        ? "border-red-500 bg-red-50 dark:bg-red-900/20" 
+                        : "border-gray-300 dark:border-gray-600 hover:border-red-400 dark:hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                     }`}
-                  />
-                  {errors.dueDate && <p className="text-red-600 text-sm mt-2">{errors.dueDate}</p>}
+                  >
+                    <span className={`text-sm font-medium ${
+                      formData.dueDate 
+                        ? 'text-gray-900 dark:text-white' 
+                        : 'text-gray-400 dark:text-gray-500'
+                    }`}>
+                      {formData.dueDate 
+                        ? new Date(formData.dueDate).toLocaleDateString('en-US', { 
+                            weekday: 'short',
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          })
+                        : 'Click to select date'
+                      }
+                    </span>
+                    {formData.dueDate && (
+                      <motion.button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFormData(prev => ({ ...prev, dueDate: '' }));
+                          if (errors.dueDate) setErrors(prev => ({ ...prev, dueDate: '' }));
+                        }}
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <X size={16} />
+                      </motion.button>
+                    )}
+                  </motion.div>
+                  <AnimatePresence>
+                    {errors.dueDate && (
+                      <motion.p
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="text-red-600 text-sm mt-2 flex items-center gap-1"
+                      >
+                        <AlertCircle size={14} /> {errors.dueDate}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               </div>
+
+              {/* Date Picker Modals */}
+              <DatePickerModal
+                isOpen={showStartDatePicker}
+                onClose={() => setShowStartDatePicker(false)}
+                onSelectDate={(date) => {
+                  setFormData(prev => ({ ...prev, startDate: date || '' }));
+                  if (errors.startDate) setErrors(prev => ({ ...prev, startDate: '' }));
+                  // If due date is before new start date, clear it
+                  if (date && formData.dueDate && new Date(formData.dueDate) < new Date(date)) {
+                    setFormData(prev => ({ ...prev, dueDate: '' }));
+                  }
+                }}
+                selectedDate={formData.startDate}
+                title="Select Start Date"
+              />
+              <DatePickerModal
+                isOpen={showDueDatePicker}
+                onClose={() => setShowDueDatePicker(false)}
+                onSelectDate={(date) => {
+                  setFormData(prev => ({ ...prev, dueDate: date || '' }));
+                  if (errors.dueDate) setErrors(prev => ({ ...prev, dueDate: '' }));
+                }}
+                selectedDate={formData.dueDate}
+                title="Select Due Date"
+                minDate={formData.startDate || null}
+              />
 
               {/* Assignees */}
               <motion.div custom={4} variants={fieldVariants} initial="hidden" animate="visible">
@@ -742,7 +858,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                     <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors cursor-pointer">
                       <SelectValue placeholder="Click to select team members..." />
                     </SelectTrigger>
-                    <SelectContent className="max-h-64 max-w-xs overflow-y-auto">
+                    <SelectContent className="max-h-64 max-w-xs">
                       {availableEmployees.map((employee) => {
                           const getRoleIcon = (role) => {
                             switch (role) {

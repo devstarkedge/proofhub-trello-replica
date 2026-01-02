@@ -1,10 +1,11 @@
 import React, { useState, useContext } from "react";
-import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield } from "lucide-react";
+import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield, MessageSquare } from "lucide-react";
 import AuthContext from "../context/AuthContext";
 import api from "../services/api";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 import Avatar from "../components/Avatar";
+import SlackAdminPanel from "../components/SlackAdminPanel";
 
 const AdminSettings = () => {
   const { user, token, setUser } = useContext(AuthContext);
@@ -362,6 +363,11 @@ const AdminSettings = () => {
                   </>
                 )}
               </button>
+            </div>
+
+            {/* Slack Admin Panel */}
+            <div className="mt-8 bg-white p-6 rounded-xl shadow-md">
+              <SlackAdminPanel />
             </div>
           </div>
         </main>
