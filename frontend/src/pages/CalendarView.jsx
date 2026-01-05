@@ -30,6 +30,7 @@ import Header from '../components/Header';
 import ReminderCalendar from '../components/ReminderCalendar';
 import { ModernCalendarGrid } from '../components/calendar';
 import ReminderModal from '../components/ReminderModal';
+import HtmlContent from '../components/ui/HtmlContent';
 
 const CalendarView = () => {
   const { currentDepartment } = useContext(DepartmentContext);
@@ -94,10 +95,14 @@ const CalendarView = () => {
           backgroundColor: getPriorityColor(card.priority),
           borderColor: getPriorityColor(card.priority),
           extendedProps: {
-            assignee: card.assignees && card.assignees.length > 0 ? card.assignees[0].name : 'Unassigned',
+            cardId: card._id,
+            assignees: card.assignees || [], // Store complete assignees array
             status: card.list?.title || 'N/A',
             description: card.description,
-            priority: card.priority || 'Default'
+            priority: card.priority || 'Default',
+            projectName: card.board?.name || 'N/A',
+            labels: card.labels || [],
+            createdBy: card.createdBy
           }
         }));
 
@@ -646,7 +651,7 @@ const CalendarView = () => {
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+              className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -680,8 +685,21 @@ const CalendarView = () => {
                       <FileText size={18} className="text-blue-600" />
                       Title
                     </h4>
-                    <p className="text-gray-700 text-lg">{selectedEvent.title}</p>
+                    <p className="text-gray-700 text-lg font-medium">{selectedEvent.title}</p>
                   </motion.div>
+
+                  {/* Project Name */}
+                  {selectedEvent.extendedProps.projectName && selectedEvent.extendedProps.projectName !== 'N/A' && (
+                    <motion.div
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.12 }}
+                      className="flex items-center gap-2"
+                    >
+                      <span className="text-sm text-gray-500">Project:</span>
+                      <span className="text-sm font-medium text-blue-600">{selectedEvent.extendedProps.projectName}</span>
+                    </motion.div>
+                  )}
 
                   {/* Priority Badge */}
                   <motion.div
@@ -690,6 +708,7 @@ const CalendarView = () => {
                     transition={{ delay: 0.15 }}
                   >
                     <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                      <AlertCircle size={18} className="text-gray-600" />
                       Priority
                     </h4>
                     <div 
@@ -704,34 +723,64 @@ const CalendarView = () => {
                     </div>
                   </motion.div>
 
-                  {/* Assignee and Status Grid */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.2 }}
-                      className="bg-blue-50 p-4 rounded-xl border border-blue-100"
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <User size={16} className="text-blue-600" />
-                        <span className="font-semibold text-gray-900 text-sm">Assignee</span>
+                  {/* Assignees Section - Shows all assignees with avatars */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-blue-50 p-4 rounded-xl border border-blue-100"
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <User size={16} className="text-blue-600" />
+                      <span className="font-semibold text-gray-900 text-sm">
+                        Assignees ({selectedEvent.extendedProps.assignees?.length || 0})
+                      </span>
+                    </div>
+                    {selectedEvent.extendedProps.assignees && selectedEvent.extendedProps.assignees.length > 0 ? (
+                      <div className="flex flex-wrap gap-3">
+                        {selectedEvent.extendedProps.assignees.map((assignee, index) => (
+                          <motion.div
+                            key={assignee._id || index}
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.25 + index * 0.05 }}
+                            className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-blue-100"
+                          >
+                            {/* Avatar */}
+                            {assignee.avatar ? (
+                              <img 
+                                src={assignee.avatar} 
+                                alt={assignee.name}
+                                className="w-8 h-8 rounded-full object-cover border-2 border-blue-200"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-semibold border-2 border-blue-200">
+                                {assignee.name?.charAt(0)?.toUpperCase() || '?'}
+                              </div>
+                            )}
+                            {/* Name */}
+                            <span className="text-gray-700 font-medium text-sm">{assignee.name}</span>
+                          </motion.div>
+                        ))}
                       </div>
-                      <p className="text-gray-700 font-medium">{selectedEvent.extendedProps.assignee}</p>
-                    </motion.div>
+                    ) : (
+                      <p className="text-gray-500 text-sm italic">No assignees</p>
+                    )}
+                  </motion.div>
 
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.25 }}
-                      className="bg-purple-50 p-4 rounded-xl border border-purple-100"
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <Clock size={16} className="text-purple-600" />
-                        <span className="font-semibold text-gray-900 text-sm">Status</span>
-                      </div>
-                      <p className="text-gray-700 font-medium">{selectedEvent.extendedProps.status}</p>
-                    </motion.div>
-                  </div>
+                  {/* Status Section */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 }}
+                    className="bg-purple-50 p-4 rounded-xl border border-purple-100"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock size={16} className="text-purple-600" />
+                      <span className="font-semibold text-gray-900 text-sm">Status</span>
+                    </div>
+                    <p className="text-gray-700 font-medium">{selectedEvent.extendedProps.status}</p>
+                  </motion.div>
 
                   {/* Due Date */}
                   <motion.div
@@ -764,7 +813,7 @@ const CalendarView = () => {
                     )}
                   </motion.div>
 
-                  {/* Description */}
+                  {/* Description - Rendered as HTML */}
                   {selectedEvent.extendedProps.description && (
                     <motion.div
                       initial={{ opacity: 0, x: -20 }}
@@ -772,11 +821,17 @@ const CalendarView = () => {
                       transition={{ delay: 0.35 }}
                       className="bg-gray-50 p-4 rounded-xl border border-gray-200"
                     >
-                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                      <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                         <FileText size={16} className="text-gray-600" />
                         Description
                       </h4>
-                      <p className="text-gray-700 text-sm leading-relaxed">{selectedEvent.extendedProps.description}</p>
+                      <div className="bg-white rounded-lg p-4 border border-gray-100">
+                        <HtmlContent 
+                          html={selectedEvent.extendedProps.description}
+                          maxHeight="300px"
+                          className="text-gray-700"
+                        />
+                      </div>
                     </motion.div>
                   )}
                 </div>

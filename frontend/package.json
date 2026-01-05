@@ -37,6 +37,7 @@
     "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
     "date-fns": "^4.1.0",
+    "dompurify": "^3.3.1",
     "emoji-picker-react": "^4.16.1",
     "framer-motion": "^12.23.24",
     "fullcalendar": "^6.1.19",
