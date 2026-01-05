@@ -35,9 +35,18 @@ class SlackApiClient {
       throw new Error('Slack workspace not found');
     }
 
-    const token = this.workspace.botAccessToken;
+    // Get token from workspace (encrypted) or fall back to .env for development
+    let token = this.workspace.botAccessToken;
+    
+    if (!token && process.env.NODE_ENV === 'development') {
+      token = process.env.SLACK_BOT_TOKEN;
+      if (token) {
+        console.warn('⚠️ Using SLACK_BOT_TOKEN from .env (development mode only). In production, use encrypted tokens from OAuth flow.');
+      }
+    }
+
     if (!token) {
-      throw new Error('Bot access token not available');
+      throw new Error('Bot access token not available. Ensure OAuth flow is completed or SLACK_BOT_TOKEN is set in .env for development.');
     }
 
     this.client = new WebClient(token, {
@@ -148,6 +157,15 @@ class SlackApiClient {
         );
         await this.delay(delay);
         return this.executeWithRetry(apiMethod, params, retryCount + 1);
+      }
+
+      // Handle app_home not enabled gracefully
+      if (error.data?.error === 'not_enabled') {
+        console.warn('Slack API method not enabled', {
+          method: apiMethod.name || 'unknown',
+          error: error.data?.error
+        });
+        return { success: false, error: 'not_enabled' };
       }
 
       // Track failure

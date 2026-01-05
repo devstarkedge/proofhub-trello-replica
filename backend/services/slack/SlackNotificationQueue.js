@@ -392,6 +392,7 @@ async function processAppHomeUpdate(job) {
     };
 
     // Build App Home view
+    console.log('Building App Home view with stats:', taskStats);
     const homeView = blockBuilder.buildAppHome({
       user: slackUser.user,
       assignedTasks,
@@ -401,9 +402,43 @@ async function processAppHomeUpdate(job) {
       stats: taskStats
     });
 
+    // Validate view structure before sending
+    if (!homeView.type || homeView.type !== 'home') {
+      throw new Error('Invalid home view: missing type=home');
+    }
+    if (!Array.isArray(homeView.blocks) || homeView.blocks.length === 0) {
+      throw new Error('Invalid home view: blocks must be non-empty array');
+    }
+
+    console.log('App Home view blocks count:', homeView.blocks.length);
+    console.log('App Home view structure:', JSON.stringify(homeView, null, 2).substring(0, 500) + '...');
+
     // Publish to Slack
     const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
-    await slackClient.publishHomeView(slackUser.slackUserId, homeView);
+    try {
+      console.log('Publishing App Home for user:', slackUser.slackUserId);
+      const publishResult = await slackClient.publishHomeView(slackUser.slackUserId, homeView);
+      
+      if (publishResult?.success === false && publishResult.error === 'not_enabled') {
+        console.warn('App Home feature not enabled for workspace:', workspace.teamId);
+        // Continue anyway - test notification was sent successfully
+      } else if (publishResult?.success) {
+        console.log('✅ App Home published successfully');
+      }
+    } catch (error) {
+      // Handle not_enabled error gracefully (App Home feature not enabled in Slack app)
+      if (error.data?.error === 'not_enabled') {
+        console.warn('App Home feature not enabled for workspace:', workspace.teamId);
+        // Continue anyway - test notification was sent successfully
+      } else if (error.data?.error === 'invalid_arguments') {
+        console.error('❌ invalid_arguments error - view structure is invalid');
+        console.error('Error details:', error.data);
+        console.error('Response messages:', error.data?.response_metadata?.messages);
+        throw error;
+      } else {
+        throw error;
+      }
+    }
 
     // Update last viewed
     slackUser.appHomeState.lastViewedAt = new Date();
@@ -414,7 +449,8 @@ async function processAppHomeUpdate(job) {
   } catch (error) {
     console.error('App Home update failed:', error);
     stats.appHome.failed++;
-    throw error;
+    // Don't throw - allow notification to succeed even if App Home update fails
+    return { success: false, reason: error.message };
   }
 }
 

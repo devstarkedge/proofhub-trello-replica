@@ -249,14 +249,16 @@ class SlackBlockKitBuilder {
    * Create task URL
    */
   taskUrl(cardId, boardId) {
-    return `${this.appUrl}/boards/${boardId}?card=${cardId}`;
+    // Use existing project/task route which does not require departmentId
+    return `${this.appUrl}/workflow/${boardId}/${cardId}`;
   }
 
   /**
    * Create board URL
    */
-  boardUrl(boardId) {
-    return `${this.appUrl}/boards/${boardId}`;
+  boardUrl(boardId, departmentId) {
+    // Workflow route expects deptId and projectId (boardId)
+    return `${this.appUrl}/${departmentId || 'general'}/${boardId}`;
   }
 
   /**
@@ -409,7 +411,7 @@ class SlackBlockKitBuilder {
     blocks.push(this.divider());
     blocks.push(this.actions('completion_actions', [
       this.linkButton('📋 View Task', this.taskUrl(task._id, board._id), 'view_task'),
-      this.linkButton('📁 Open Project', this.boardUrl(board._id), 'open_project')
+      this.linkButton('📁 Open Project', this.boardUrl(board._id, board?.department), 'open_project')
     ]));
 
     return {
@@ -651,97 +653,56 @@ class SlackBlockKitBuilder {
    * Build App Home blocks
    */
   buildAppHome(data) {
-    const {
-      user,
-      assignedTasks = [],
-      dueTodayTasks = [],
-      overdueTasks = [],
-      recentlyUpdated = [],
-      stats
-    } = data;
+    // ULTRA-MINIMAL: Test with just essential blocks
+    // Build from simplest possible structure
+    const { user, stats = {} } = data;
 
-    const blocks = [
-      this.header(`👋 Welcome back, ${user.name}!`),
-      this.context([`Last updated: ${this.formatDate(new Date())}`]),
-      this.divider()
-    ];
+    const blocks = [];
 
-    // Quick stats
-    blocks.push(this.section(
-      `*📊 Your Dashboard*\n\n` +
-      `🔴 Overdue: *${stats?.overdue || 0}*  |  ` +
-      `🟠 Due Today: *${stats?.dueToday || 0}*  |  ` +
-      `🔵 In Progress: *${stats?.inProgress || 0}*  |  ` +
-      `🟢 Completed: *${stats?.completed || 0}*`
-    ));
+    // 1. Simple header - MUST be valid
+    blocks.push({
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: 'Welcome to FlowTask',
+        emoji: true
+      }
+    });
 
-    // Overdue tasks (high priority)
-    if (overdueTasks.length > 0) {
-      blocks.push(this.divider());
-      blocks.push(this.header('🚨 Overdue Tasks'));
-      overdueTasks.slice(0, 5).forEach(task => {
-        blocks.push(this.section(
-          `*${task.title}*\n${task.board?.name || 'Unknown project'} • Overdue by ${task.overdueDays} days`,
-          this.overflowMenu(`task_menu_${task._id}`, [
-            { text: '✅ Mark Complete', value: `complete_${task._id}` },
-            { text: '📅 Extend Deadline', value: `extend_${task._id}` },
-            { text: '👁️ View Task', value: `view_${task._id}` }
-          ])
-        ));
-      });
-    }
+    // 2. Simple section with stats
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*Your Tasks*\n• Overdue: ' + (stats.overdue || 0) + '\n• Due Today: ' + (stats.dueToday || 0)
+      }
+    });
 
-    // Due today
-    if (dueTodayTasks.length > 0) {
-      blocks.push(this.divider());
-      blocks.push(this.header('⏰ Due Today'));
-      dueTodayTasks.slice(0, 5).forEach(task => {
-        blocks.push(this.section(
-          `*${task.title}*\n${task.board?.name || 'Unknown project'}`,
-          this.button('✅ Done', `complete_task_${task._id}`, task._id.toString(), 'primary')
-        ));
-      });
-    }
+    // 3. Divider
+    blocks.push({
+      type: 'divider'
+    });
 
-    // Assigned tasks
-    if (assignedTasks.length > 0) {
-      blocks.push(this.divider());
-      blocks.push(this.header('📌 My Tasks'));
-      assignedTasks.slice(0, 10).forEach(task => {
-        const priorityEmoji = task.priority ? PRIORITY_EMOJI[task.priority] : '';
-        const statusEmoji = task.status ? STATUS_EMOJI[task.status.toLowerCase()] : '📋';
-        blocks.push(this.section(
-          `${priorityEmoji} *${task.title}*\n${statusEmoji} ${task.status || 'Todo'} • ${task.board?.name || 'Unknown project'}`,
-          this.staticSelect(`status_${task._id}`, 'Change Status', [
-            { text: '📋 Todo', value: 'todo' },
-            { text: '🔄 In Progress', value: 'in-progress' },
-            { text: '👀 In Review', value: 'in-review' },
-            { text: '✅ Completed', value: 'completed' }
-          ], task.status ? { text: `${statusEmoji} ${task.status}`, value: task.status } : null)
-        ));
-      });
-    }
+    // 4. Action buttons - MUST have url property for links
+    blocks.push({
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: 'View Tasks',
+            emoji: true
+          },
+          url: process.env.FRONTEND_URL + '/list-view'
+        }
+      ]
+    });
 
-    // Recently updated
-    if (recentlyUpdated.length > 0) {
-      blocks.push(this.divider());
-      blocks.push(this.header('🔄 Recently Updated'));
-      recentlyUpdated.slice(0, 5).forEach(task => {
-        blocks.push(this.context([
-          `• *${task.title}* - Updated ${this.formatDate(task.updatedAt, '{time}')} by ${task.updatedBy?.name || 'Unknown'}`
-        ]));
-      });
-    }
-
-    // Quick actions
-    blocks.push(this.divider());
-    blocks.push(this.actions('home_actions', [
-      this.linkButton('📋 All Tasks', `${this.appUrl}/tasks`, 'view_all_tasks'),
-      this.linkButton('📁 Projects', `${this.appUrl}/boards`, 'view_projects'),
-      this.button('🔔 Preferences', 'open_preferences', 'prefs')
-    ]));
-
-    return { type: 'home', blocks };
+    return {
+      type: 'home',
+      blocks: blocks
+    };
   }
 
   /**
@@ -1069,7 +1030,7 @@ class SlackBlockKitBuilder {
 
     // Add project link if available
     if (board?._id) {
-      buttons.push(this.linkButton('📁 Project', this.boardUrl(board._id), 'open_project'));
+      buttons.push(this.linkButton('📁 Project', this.boardUrl(board._id, board?.department), 'open_project'));
     }
 
     return buttons.slice(0, 5); // Slack limit is 5 buttons per action block

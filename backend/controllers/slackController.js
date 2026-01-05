@@ -8,7 +8,7 @@ import { ErrorResponse } from '../middleware/errorHandler.js';
 import SlackWorkspace from '../models/SlackWorkspace.js';
 import SlackUser from '../models/SlackUser.js';
 import SlackNotification from '../models/SlackNotification.js';
-import SlackAnalytics from '../models/SlackAnalytics.js';
+import mongoose from 'mongoose';
 import {
   slackOAuthHandler,
   slackInteractiveHandler,
@@ -257,8 +257,8 @@ export const handleInteractive = asyncHandler(async (req, res) => {
     
     case 'shortcut':
     case 'message_action':
-      // Handle shortcuts/message actions
-      result = { ok: true };
+      // Handle shortcuts/message actions - these need to open modals
+      result = await slackInteractiveHandler.handleShortcut(payload);
       break;
     
     default:
@@ -473,18 +473,99 @@ export const getAnalytics = asyncHandler(async (req, res) => {
   const { period = 'daily', days = 30 } = req.query;
   const startDate = new Date(Date.now() - parseInt(days) * 24 * 60 * 60 * 1000);
 
-  const [summary, trends, topTypes, deliveryStats] = await Promise.all([
-    SlackAnalytics.getSummary(workspace._id, period, startDate, new Date()),
-    SlackAnalytics.getTrends(workspace._id, period, parseInt(days)),
-    SlackAnalytics.getTopNotificationTypes(workspace._id, period),
-    SlackNotification.getDeliveryStats(workspace._id, 24)
+  // Get real analytics from SlackNotification collection
+  const [summaryStats, topTypes, deliveryStats, trendsData] = await Promise.all([
+    // Summary stats
+    SlackNotification.aggregate([
+      {
+        $match: {
+          workspace: workspace._id,
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalSent: { $sum: 1 },
+          totalDelivered: {
+            $sum: { $cond: [{ $in: ['$status', ['delivered', 'sent']] }, 1, 0] }
+          },
+          totalFailed: {
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+          },
+          totalPending: {
+            $sum: { $cond: [{ $in: ['$status', ['pending', 'queued']] }, 1, 0] }
+          },
+          totalInteractions: {
+            $sum: { $cond: ['$hasInteraction', 1, 0] }
+          },
+          avgDeliveryLatency: { $avg: '$metadata.deliveryLatencyMs' }
+        }
+      }
+    ]),
+    // Top notification types
+    SlackNotification.aggregate([
+      {
+        $match: {
+          workspace: workspace._id,
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 },
+          delivered: {
+            $sum: { $cond: [{ $in: ['$status', ['delivered', 'sent']] }, 1, 0] }
+          },
+          interactions: {
+            $sum: { $cond: ['$hasInteraction', 1, 0] }
+          }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]),
+    // Delivery stats (last 24 hours)
+    SlackNotification.getDeliveryStats(workspace._id, 24),
+    // Daily trends
+    SlackNotification.aggregate([
+      {
+        $match: {
+          workspace: workspace._id,
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          sent: { $sum: 1 },
+          delivered: {
+            $sum: { $cond: [{ $in: ['$status', ['delivered', 'sent']] }, 1, 0] }
+          },
+          interactions: {
+            $sum: { $cond: ['$hasInteraction', 1, 0] }
+          }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ])
   ]);
+
+  const summary = summaryStats[0] || {
+    totalSent: 0,
+    totalDelivered: 0,
+    totalFailed: 0,
+    totalPending: 0,
+    totalInteractions: 0,
+    avgDeliveryLatency: 0
+  };
 
   res.json({
     success: true,
     data: {
-      summary: summary[0] || {},
-      trends,
+      summary,
+      trends: trendsData,
       topTypes,
       deliveryStats,
       period,
@@ -581,19 +662,21 @@ export const testNotification = asyncHandler(async (req, res) => {
   }
 
   // Send a test notification
+  const fakeTaskId = new mongoose.Types.ObjectId();
+  const fakeBoardId = new mongoose.Types.ObjectId();
   const result = await slackNotificationService.sendNotification({
     userId: req.user._id,
     type: 'task_assigned',
     task: {
-      _id: 'test-task-id',
+      _id: fakeTaskId,
       title: 'Test Task - Slack Integration',
       description: 'This is a test notification from FlowTask!',
       priority: 'medium',
       status: 'todo',
-      board: 'test-board-id'
+      board: fakeBoardId
     },
     board: {
-      _id: 'test-board-id',
+      _id: fakeBoardId,
       name: 'Test Project'
     },
     triggeredBy: {

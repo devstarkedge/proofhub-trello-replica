@@ -112,7 +112,7 @@ const Header = ({ boardName }) => {
 
   const navItems = [
     { path: '/', icon: Kanban, label: 'Board' },
-    { path: '/list-view', icon: List, label: 'List' },
+    { path: '/list-view', icon: List, label: 'Task-List' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
   ];
@@ -708,8 +708,10 @@ const Header = ({ boardName }) => {
         <Sidebar isMobile={true} onClose={() => setMobileSidebarOpen(false)} />
       )}
       
-      {/* User Verification Modal */}
-      {verificationModal && (
+    </header>
+    
+    {/* User Verification Modal - Outside header for proper z-index stacking */}
+    {verificationModal && (
         <Suspense fallback={<div>Loading...</div>}>
           <UserVerificationModal
             notification={verificationModal}
@@ -718,7 +720,6 @@ const Header = ({ boardName }) => {
           />
         </Suspense>
       )}
-    </header>
     
     {/* Appearance Modal - Outside header for proper z-index stacking */}
     <Suspense fallback={null}>

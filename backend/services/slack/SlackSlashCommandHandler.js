@@ -156,7 +156,7 @@ class SlackSlashCommandHandler {
 
     blocks.push(blockBuilder.divider());
     blocks.push(blockBuilder.actions('mytasks_actions', [
-      blockBuilder.linkButton('📋 View All Tasks', `${process.env.FRONTEND_URL}/tasks`, 'view_all'),
+      blockBuilder.linkButton('📋 View All Tasks', `${process.env.FRONTEND_URL}/list-view`, 'view_all'),
       blockBuilder.button('🔄 Refresh', 'refresh_mytasks', filter)
     ]));
 
@@ -514,7 +514,7 @@ class SlackSlashCommandHandler {
       }[board.status] || '📁';
 
       blocks.push(blockBuilder.section(
-        `${statusEmoji} *${blockBuilder.link(board.name, blockBuilder.boardUrl(board._id))}*\n` +
+        `${statusEmoji} *${blockBuilder.link(board.name, blockBuilder.boardUrl(board._id, board.department))}*\n` +
         `${board.description?.substring(0, 100) || 'No description'}`,
         blockBuilder.overflowMenu(`project_menu_${board._id}`, [
           { text: '📊 View Stats', value: `stats_${board._id}` },
@@ -596,7 +596,7 @@ class SlackSlashCommandHandler {
 
     blocks.push(blockBuilder.divider());
     blocks.push(blockBuilder.actions('project_view_actions', [
-      blockBuilder.linkButton('📁 Open Project', blockBuilder.boardUrl(board._id), 'open_project')
+      blockBuilder.linkButton('📁 Open Project', blockBuilder.boardUrl(board._id, board.department), 'open_project')
     ]));
 
     return {

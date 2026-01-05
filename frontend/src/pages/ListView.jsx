@@ -234,22 +234,40 @@ const ListView = () => {
     }
   };
 
+  // Filter cards based on user role - Employee users only see their assigned tasks
+  const baseCards = useMemo(() => {
+    if (!user || !cards) return cards;
+    
+    // Admin and Manager roles: show all cards (filtered by department already from backend)
+    if (user.role === 'admin' || user.role === 'manager') {
+      return cards;
+    }
+    
+    // Employee role: filter to show only tasks where the logged-in user is assigned
+    return cards.filter(card => {
+      if (!card.assignees || card.assignees.length === 0) return false;
+      return card.assignees.some(assignee => 
+        assignee._id === user._id || assignee.email === user.email
+      );
+    });
+  }, [cards, user]);
+
   // Debounced search suggestions update
   const updateSearchSuggestions = useCallback(
     debounce((query) => {
       if (query.length >= 2) {
-        const suggestions = advancedSearch.current.getSuggestions(query, cards);
+        const suggestions = advancedSearch.current.getSuggestions(query, baseCards);
         setSearchSuggestions(suggestions);
         setShowSuggestions(suggestions.length > 0);
       } else {
         setShowSuggestions(false);
       }
     }, 300),
-    [cards]
+    [baseCards]
   );
 
   const filteredAndSortedCards = useMemo(() => {
-    let filtered = cards;
+    let filtered = baseCards;
 
     // Apply status filter
     if (filters.status !== 'all') {
@@ -331,7 +349,7 @@ const ListView = () => {
     });
 
     return sorted;
-  }, [cards, filters, sorting, searchMode]);
+  }, [baseCards, filters, sorting, searchMode]);
 
   // Pagination state (must be after filteredAndSortedCards)
   const [page, setPage] = useState(1);
@@ -455,12 +473,13 @@ const ListView = () => {
   const hasActiveFilters = filters.status !== 'all' || filters.priority !== 'all' || filters.search !== '' || filters.dateFrom !== '' || filters.dateTo !== '';
 
   // Memoized stats calculation to prevent recalculating on every render
+  // Uses baseCards to ensure Employee role users see stats only for their assigned tasks
   const stats = useMemo(() => {
-    const total = cards.length;
-    const completed = cards.filter(c => c.list?.title?.toLowerCase() === 'done').length;
-    const inProgress = cards.filter(c => c.list?.title?.toLowerCase() === 'in progress').length;
-    const highPriority = cards.filter(c => c.priority?.toLowerCase() === 'high').length;
-    const overdue = cards.filter(c => {
+    const total = baseCards.length;
+    const completed = baseCards.filter(c => c.list?.title?.toLowerCase() === 'done').length;
+    const inProgress = baseCards.filter(c => c.list?.title?.toLowerCase() === 'in progress').length;
+    const highPriority = baseCards.filter(c => c.priority?.toLowerCase() === 'high').length;
+    const overdue = baseCards.filter(c => {
       if (!c.dueDate) return false;
       const today = new Date();
       const due = new Date(c.dueDate);
@@ -468,7 +487,7 @@ const ListView = () => {
     }).length;
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { total, completed, inProgress, highPriority, overdue, completionRate };
-  }, [cards]);
+  }, [baseCards]);
 
   const getPriorityPill = useCallback((priority) => {
     if (!priority) {

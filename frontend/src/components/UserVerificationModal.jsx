@@ -166,7 +166,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]">
         <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
           <div className="text-center">
             <FaSpinner className="animate-spin text-blue-600 text-3xl mx-auto mb-4" />
@@ -180,7 +180,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
 
   if (!user) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]">
         <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
           <div className="text-center">
             <FaExclamationTriangle className="text-red-500 text-4xl mx-auto mb-4" />
@@ -199,7 +199,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
       <div className="bg-white rounded-xl p-6 max-w-3xl w-full mx-auto max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Header */}
         <div className="flex justify-between items-start mb-6 border-b pb-4">

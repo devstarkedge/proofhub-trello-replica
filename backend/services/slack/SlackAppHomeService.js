@@ -91,7 +91,12 @@ class SlackAppHomeService {
         ]
       };
 
-      await slackClient.publishHomeView(slackUserId, view);
+      const publishResult = await slackClient.publishHomeView(slackUserId, view);
+      if (publishResult?.success === false && publishResult.error === 'not_enabled') {
+        console.warn('App Home feature not enabled for workspace:', workspace.teamId);
+        return { ok: true, warning: 'app_home_not_enabled' };
+      }
+
       return { ok: true };
     } catch (error) {
       console.error('Error showing connect prompt:', error);
@@ -125,7 +130,12 @@ class SlackAppHomeService {
 
       // Publish
       const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
-      await slackClient.publishHomeView(slackUser.slackUserId, view);
+      const publishResult = await slackClient.publishHomeView(slackUser.slackUserId, view);
+
+      if (publishResult?.success === false && publishResult.error === 'not_enabled') {
+        console.warn('App Home feature not enabled for workspace:', workspace.teamId);
+        return { ok: true, warning: 'app_home_not_enabled' };
+      }
 
       return { ok: true };
     } catch (error) {
@@ -421,8 +431,8 @@ class SlackAppHomeService {
     // Quick actions footer
     blocks.push(blockBuilder.divider());
     blocks.push(blockBuilder.actions('home_quick_actions', [
-      blockBuilder.linkButton('📋 All Tasks', `${process.env.FRONTEND_URL}/tasks`, 'view_all_tasks'),
-      blockBuilder.linkButton('📁 Projects', `${process.env.FRONTEND_URL}/boards`, 'view_projects'),
+      blockBuilder.linkButton('📋 All Tasks', `${process.env.FRONTEND_URL}/list-view`, 'view_all_tasks'),
+      blockBuilder.linkButton('📁 Projects', `${process.env.FRONTEND_URL}/`, 'view_projects'),
       blockBuilder.button('🔔 Preferences', 'open_preferences', 'open_prefs')
     ]));
 

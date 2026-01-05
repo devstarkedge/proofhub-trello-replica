@@ -142,6 +142,168 @@ class SlackInteractiveHandler {
   }
 
   /**
+   * Handler for shortcuts and message actions
+   * This is called when user triggers a global shortcut or message shortcut from Slack
+   */
+  async handleShortcut(payload) {
+    const { callback_id, trigger_id, user, team, type, message } = payload;
+    
+    // Get workspace
+    const workspace = await SlackWorkspace.findByTeamId(team.id);
+    if (!workspace || !workspace.isActive) {
+      return { ok: false, error: 'Workspace not connected' };
+    }
+
+    if (!workspace.settings.interactiveActionsEnabled) {
+      return { ok: false, error: 'Interactive actions disabled' };
+    }
+
+    // Get Slack user
+    const slackUser = await SlackUser.findBySlackUserId(user.id, workspace._id);
+    if (!slackUser) {
+      // User not linked - open a modal to tell them to link their account
+      try {
+        const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+        await slackClient.openModal(trigger_id, {
+          type: 'modal',
+          title: {
+            type: 'plain_text',
+            text: '🔗 Account Required',
+            emoji: true
+          },
+          close: {
+            type: 'plain_text',
+            text: 'Close'
+          },
+          blocks: [
+            blockBuilder.section('*Please connect your FlowTask account first*'),
+            blockBuilder.divider(),
+            blockBuilder.section(
+              'To use FlowTask shortcuts, you need to link your Slack account with your FlowTask account.\n\n' +
+              '1. Go to FlowTask Settings → Integrations → Slack\n' +
+              '2. Click "Connect Slack Account"\n' +
+              '3. Authorize the connection'
+            ),
+            blockBuilder.divider(),
+            blockBuilder.actions('link_account_actions', [
+              blockBuilder.linkButton('🔗 Open FlowTask Settings', `${process.env.FRONTEND_URL}/settings`, 'open_settings')
+            ])
+          ]
+        });
+        return { ok: true };
+      } catch (error) {
+        console.error('Error showing account link modal:', error);
+        return { ok: false, error: 'Failed to show account link modal' };
+      }
+    }
+
+    try {
+      const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+
+      // Handle different shortcut callbacks
+      switch (callback_id) {
+        case 'create_task':
+        case 'flowtask_create_task':
+        case 'quick_task':
+          // Open task creation modal
+          await slackClient.openModal(trigger_id, blockBuilder.buildTaskCreationModal({}));
+          return { ok: true };
+
+        case 'my_tasks':
+        case 'flowtask_my_tasks':
+        case 'view_tasks':
+          // Open a modal showing user's tasks
+          await this.openMyTasksModal(slackClient, trigger_id, slackUser);
+          return { ok: true };
+
+        case 'create_task_from_message':
+        case 'flowtask_message_task':
+          // Message action - create task from message content
+          if (type === 'message_action' && message) {
+            await slackClient.openModal(trigger_id, blockBuilder.buildTaskCreationModal({
+              prefilledTitle: '',
+              prefilledDescription: message.text || ''
+            }));
+          } else {
+            await slackClient.openModal(trigger_id, blockBuilder.buildTaskCreationModal({}));
+          }
+          return { ok: true };
+
+        default:
+          // Default: open task creation modal for unknown shortcuts
+          console.log('Unknown shortcut callback_id:', callback_id);
+          await slackClient.openModal(trigger_id, blockBuilder.buildTaskCreationModal({}));
+          return { ok: true };
+      }
+    } catch (error) {
+      console.error('Error handling shortcut:', error);
+      return { ok: false, error: error.message };
+    }
+  }
+
+  /**
+   * Open a modal showing user's tasks
+   */
+  async openMyTasksModal(slackClient, triggerId, slackUser) {
+    // Fetch user's tasks
+    const tasks = await Card.find({
+      assignees: slackUser.user,
+      isArchived: false,
+      status: { $ne: 'completed' }
+    })
+      .populate('board', 'name')
+      .sort({ priority: -1, dueDate: 1 })
+      .limit(10)
+      .lean();
+
+    const blocks = [];
+    
+    if (tasks.length === 0) {
+      blocks.push(blockBuilder.section('🎉 *You have no pending tasks!*'));
+      blocks.push(blockBuilder.context(['You\'re all caught up. Great job!']));
+    } else {
+      blocks.push(blockBuilder.section(`📋 *Your Tasks (${tasks.length})*`));
+      blocks.push(blockBuilder.divider());
+
+      for (const task of tasks) {
+        const priorityEmoji = {
+          'critical': '🔴',
+          'high': '🟠',
+          'medium': '🟡',
+          'low': '🟢'
+        }[task.priority] || '⚪';
+
+        const dueInfo = task.dueDate 
+          ? `\n📅 Due: ${blockBuilder.formatDate(task.dueDate, '{date_short}')}` 
+          : '';
+
+        blocks.push(blockBuilder.section(
+          `${priorityEmoji} *${task.title}*\n📁 ${task.board?.name || 'Unknown Project'}${dueInfo}`
+        ));
+      }
+
+      blocks.push(blockBuilder.divider());
+      blocks.push(blockBuilder.actions('view_all_tasks', [
+        blockBuilder.linkButton('📋 View All Tasks', `${process.env.FRONTEND_URL}/list-view`, 'view_all')
+      ]));
+    }
+
+    await slackClient.openModal(triggerId, {
+      type: 'modal',
+      title: {
+        type: 'plain_text',
+        text: '📋 My Tasks',
+        emoji: true
+      },
+      close: {
+        type: 'plain_text',
+        text: 'Close'
+      },
+      blocks
+    });
+  }
+
+  /**
    * Find appropriate handler for action ID
    */
   findHandler(actionId) {
@@ -737,7 +899,7 @@ class SlackInteractiveHandler {
           blockBuilder.section(`✅ *Task Created*\n*${title}*`),
           blockBuilder.context([`📁 ${board.name}`]),
           blockBuilder.actions('task_created_actions', [
-            blockBuilder.linkButton('📋 View Task', `${process.env.FRONTEND_URL}/boards/${board._id}?card=${task._id}`, 'view_created_task')
+            blockBuilder.linkButton('📋 View Task', `${process.env.FRONTEND_URL}/workflow/${board._id}/${task._id}`, 'view_created_task')
           ])
         ]
       });
