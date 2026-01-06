@@ -247,10 +247,16 @@ class SlackBlockKitBuilder {
 
   /**
    * Create task URL
+   * Uses the direct task route /project/:projectId/task/:taskId which is already defined in frontend App.jsx
+   * If departmentId is available, uses /workflow/:deptId/:projectId?card=:taskId for opening modal on board
    */
-  taskUrl(cardId, boardId) {
-    // Use existing project/task route which does not require departmentId
-    return `${this.appUrl}/workflow/${boardId}/${cardId}`;
+  taskUrl(cardId, boardId, departmentId = null) {
+    // If departmentId is available, use the full workflow URL with card query param
+    if (departmentId) {
+      return `${this.appUrl}/workflow/${departmentId}/${boardId}?card=${cardId}`;
+    }
+    // Fallback: Use direct task route that doesn't require departmentId
+    return `${this.appUrl}/project/${boardId}/task/${cardId}`;
   }
 
   /**
@@ -289,7 +295,7 @@ class SlackBlockKitBuilder {
     blocks.push(this.header(`${emoji} ${headerText}`));
 
     // Task details section
-    let detailsText = `*${this.link(task.title, this.taskUrl(task._id, board?._id || task.board))}*`;
+    let detailsText = `*${this.link(task.title, this.taskUrl(task._id, board?._id || task.board, board?.department))}*`;
     
     if (task.description) {
       const truncatedDesc = task.description.length > 150 
@@ -410,7 +416,7 @@ class SlackBlockKitBuilder {
 
     blocks.push(this.divider());
     blocks.push(this.actions('completion_actions', [
-      this.linkButton('📋 View Task', this.taskUrl(task._id, board._id), 'view_task'),
+      this.linkButton('📋 View Task', this.taskUrl(task._id, board._id, board?.department), 'view_task'),
       this.linkButton('📁 Open Project', this.boardUrl(board._id, board?.department), 'open_project')
     ]));
 
@@ -452,7 +458,7 @@ class SlackBlockKitBuilder {
 
     const blocks = [
       this.header(`${emoji} ${headerText}`),
-      this.section(`*${this.link(task.title, this.taskUrl(task._id, board._id))}*`),
+      this.section(`*${this.link(task.title, this.taskUrl(task._id, board._id, board?.department))}*`),
       this.context([
         `📁 *Project:* ${board.name}`,
         `📅 *Due:* ${this.formatDate(dueDate)}`
@@ -465,7 +471,7 @@ class SlackBlockKitBuilder {
 
     blocks.push(this.divider());
     blocks.push(this.actions('deadline_actions', [
-      this.linkButton('📋 View Task', this.taskUrl(task._id, board._id), 'view_task'),
+      this.linkButton('📋 View Task', this.taskUrl(task._id, board._id, board?.department), 'view_task'),
       this.button('✅ Mark Complete', 'mark_complete', task._id.toString(), 'primary'),
       this.button('📅 Extend Deadline', 'extend_deadline', task._id.toString())
     ]));
@@ -488,7 +494,7 @@ class SlackBlockKitBuilder {
 
     const blocks = [
       this.header(`${emoji} ${headerText}`),
-      this.section(`On *${this.link(task.title, this.taskUrl(task._id, board._id))}*`),
+      this.section(`On *${this.link(task.title, this.taskUrl(task._id, board._id, board?.department))}*`),
       this.section(`> ${comment.text.substring(0, 500)}${comment.text.length > 500 ? '...' : ''}`),
       this.context([
         author.avatar 
@@ -507,7 +513,7 @@ class SlackBlockKitBuilder {
 
     blocks.push(this.divider());
     blocks.push(this.actions('comment_actions', [
-      this.linkButton('💬 View Comment', this.taskUrl(task._id, board._id), 'view_comment'),
+      this.linkButton('💬 View Comment', this.taskUrl(task._id, board._id, board?.department), 'view_comment'),
       this.button('↩️ Reply', 'reply_comment', JSON.stringify({ taskId: task._id, commentId: comment._id })),
       this.button('👍 Acknowledge', 'acknowledge', comment._id.toString())
     ]));
@@ -553,8 +559,10 @@ class SlackBlockKitBuilder {
       blocks.push(this.divider());
       blocks.push(this.section('*🚨 Overdue Tasks*'));
       overdueTasks.slice(0, 5).forEach(task => {
+        const boardId = task.board?._id || task.board;
+        const deptId = task.board?.department;
         blocks.push(this.context([
-          `• ${this.link(task.title, this.taskUrl(task._id, task.board))} - Overdue by ${task.overdueDays} days`
+          `• ${this.link(task.title, this.taskUrl(task._id, boardId, deptId))} - Overdue by ${task.overdueDays} days`
         ]));
       });
       if (overdueTasks.length > 5) {
@@ -567,8 +575,10 @@ class SlackBlockKitBuilder {
       blocks.push(this.divider());
       blocks.push(this.section('*⏰ Due Today*'));
       dueTodayTasks.slice(0, 5).forEach(task => {
+        const boardId = task.board?._id || task.board;
+        const deptId = task.board?.department;
         blocks.push(this.context([
-          `• ${this.link(task.title, this.taskUrl(task._id, task.board))}`
+          `• ${this.link(task.title, this.taskUrl(task._id, boardId, deptId))}`
         ]));
       });
     }
@@ -578,8 +588,10 @@ class SlackBlockKitBuilder {
       blocks.push(this.divider());
       blocks.push(this.section('*📌 Recently Assigned*'));
       assignedTasks.slice(0, 3).forEach(task => {
+        const boardId = task.board?._id || task.board;
+        const deptId = task.board?.department;
         blocks.push(this.context([
-          `• ${this.link(task.title, this.taskUrl(task._id, task.board))} - ${task.board?.name || 'Unknown project'}`
+          `• ${this.link(task.title, this.taskUrl(task._id, boardId, deptId))} - ${task.board?.name || 'Unknown project'}`
         ]));
       });
     }
@@ -1405,7 +1417,7 @@ class SlackBlockKitBuilder {
     const taskValue = JSON.stringify({ taskId: task._id, boardId: board?._id });
 
     // Always add View Task button
-    buttons.push(this.linkButton('📋 View Task', this.taskUrl(task._id, board?._id || task.board), 'view_task'));
+    buttons.push(this.linkButton('📋 View Task', this.taskUrl(task._id, board?._id || task.board, board?.department), 'view_task'));
 
     // Context-specific buttons
     switch (type) {

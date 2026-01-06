@@ -1093,7 +1093,7 @@ class SlackInteractiveHandler {
           blockBuilder.section(`✅ *Task Created*\n*${title}*`),
           blockBuilder.context([`📁 ${board.name}`]),
           blockBuilder.actions('task_created_actions', [
-            blockBuilder.linkButton('📋 View Task', `${process.env.FRONTEND_URL}/workflow/${board._id}/${task._id}`, 'view_created_task')
+            blockBuilder.linkButton('📋 View Task', blockBuilder.taskUrl(task._id, board._id, board.department), 'view_created_task')
           ])
         ]
       });
