@@ -335,16 +335,16 @@ async function processAppHomeUpdate(job) {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
 
-    // Get user's tasks
+    // Get user's tasks with board populated (including department for proper URLs)
     const [assignedTasks, overdueTasks, dueTodayTasks, recentlyUpdated] = await Promise.all([
       Card.find({
         assignees: slackUser.user._id,
         isArchived: false,
         status: { $ne: 'completed' }
       })
-        .populate('board', 'name')
+        .populate('board', 'name department')
         .sort({ priority: -1, dueDate: 1 })
-        .limit(20)
+        .limit(25)
         .lean(),
       
       Card.find({
@@ -353,7 +353,7 @@ async function processAppHomeUpdate(job) {
         status: { $ne: 'completed' },
         dueDate: { $lt: now }
       })
-        .populate('board', 'name')
+        .populate('board', 'name department')
         .sort({ dueDate: 1 })
         .limit(10)
         .lean(),
@@ -364,7 +364,7 @@ async function processAppHomeUpdate(job) {
         status: { $ne: 'completed' },
         dueDate: { $gte: startOfToday, $lt: endOfToday }
       })
-        .populate('board', 'name')
+        .populate('board', 'name department')
         .lean(),
       
       Card.find({
@@ -372,7 +372,7 @@ async function processAppHomeUpdate(job) {
         isArchived: false,
         updatedAt: { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) }
       })
-        .populate('board', 'name')
+        .populate('board', 'name department')
         .sort({ updatedAt: -1 })
         .limit(5)
         .lean()

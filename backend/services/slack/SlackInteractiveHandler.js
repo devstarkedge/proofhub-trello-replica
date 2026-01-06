@@ -38,6 +38,8 @@ class SlackInteractiveHandler {
       // App Home actions
       'complete_task': this.handleMarkComplete.bind(this),
       'open_preferences': this.handleOpenPreferences.bind(this),
+      'refresh_home': this.handleRefreshHome.bind(this),
+      'create_task_modal': this.handleCreateTaskModal.bind(this),
       
       // Digest actions
       'mark_all_read': this.handleMarkAllRead.bind(this),
@@ -319,8 +321,8 @@ class SlackInteractiveHandler {
       }
     }
 
-    // Check for status select
-    if (actionId.startsWith('status_')) {
+    // Check for status select (change_status_<taskId> or status_<taskId>)
+    if (actionId.startsWith('change_status_') || actionId.startsWith('status_')) {
       return this.handleStatusSelect.bind(this);
     }
 
@@ -329,6 +331,7 @@ class SlackInteractiveHandler {
       return this.handleTaskMenu.bind(this);
     }
 
+    console.log('No handler found for actionId:', actionId);
     return null;
   }
 
@@ -353,31 +356,16 @@ class SlackInteractiveHandler {
       task.completedAt = new Date();
       await task.save();
 
-      // Emit real-time update
+      console.log(`Task ${taskId} marked complete by ${user.slackUserId}`);
+
+      // Emit real-time update to FlowTask frontend
       emitToBoard(task.board.toString(), 'card-updated', {
         cardId: task._id,
         updates: { status: 'completed', completedAt: task.completedAt }
       });
 
-      // Send celebration notification
-      await slackNotificationService.sendTaskCompletionCelebration(
-        task,
-        await User.findById(user.user),
-        await Board.findById(task.board)
-      );
-
-      // Update the original message
-      if (responseUrl) {
-        const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
-        await slackClient.respondToInteraction(responseUrl, {
-          replace_original: true,
-          text: `✅ Task "${task.title}" marked as complete!`,
-          blocks: [
-            blockBuilder.section(`✅ *Task Completed*\n~${task.title}~`),
-            blockBuilder.context([`Completed by <@${user.slackUserId}>`])
-          ]
-        });
-      }
+      // Refresh App Home to show updated tasks
+      await queueAppHomeUpdate(user._id, workspace._id);
 
       return { success: true, message: 'Task marked as complete' };
     } catch (error) {
@@ -402,18 +390,15 @@ class SlackInteractiveHandler {
       task.status = 'in-progress';
       await task.save();
 
+      console.log(`Task ${taskId} started by ${user.slackUserId}`);
+
       emitToBoard(task.board.toString(), 'card-updated', {
         cardId: task._id,
         updates: { status: 'in-progress' }
       });
 
-      if (responseUrl) {
-        const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
-        await slackClient.respondToInteraction(responseUrl, {
-          replace_original: false,
-          text: `🔄 Started working on "${task.title}"`
-        });
-      }
+      // Refresh App Home
+      await queueAppHomeUpdate(user._id, workspace._id);
 
       return { success: true, message: 'Task started' };
     } catch (error) {
@@ -586,7 +571,17 @@ class SlackInteractiveHandler {
    */
   async handleStatusSelect({ action, user, workspace, responseUrl }) {
     try {
-      const taskId = action.action_id.replace('status_', '');
+      // Parse taskId from action_id (format: change_status_<taskId> or status_<taskId>)
+      const actionId = action.action_id;
+      let taskId;
+      if (actionId.startsWith('change_status_')) {
+        taskId = actionId.replace('change_status_', '');
+      } else if (actionId.startsWith('status_')) {
+        taskId = actionId.replace('status_', '');
+      } else {
+        taskId = actionId;
+      }
+      
       const newStatus = action.selected_option.value;
 
       const task = await Card.findById(taskId);
@@ -594,27 +589,24 @@ class SlackInteractiveHandler {
         return this.errorResponse('Task not found');
       }
 
+      const oldStatus = task.status;
       task.status = newStatus;
       if (newStatus === 'completed') {
         task.completedAt = new Date();
       }
       await task.save();
 
+      console.log(`Task ${taskId} status changed: ${oldStatus} → ${newStatus}`);
+
       emitToBoard(task.board.toString(), 'card-updated', {
         cardId: task._id,
         updates: { status: newStatus }
       });
 
-      if (responseUrl) {
-        const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
-        await slackClient.respondToInteraction(responseUrl, {
-          replace_original: false,
-          response_type: 'ephemeral',
-          text: `✅ Status updated to "${newStatus}"`
-        });
-      }
+      // Refresh App Home to show updated status
+      await queueAppHomeUpdate(user._id, workspace._id);
 
-      return { success: true };
+      return { success: true, message: `Status updated to ${newStatus}` };
     } catch (error) {
       console.error('Error updating status:', error);
       return this.errorResponse('Failed to update status');
@@ -781,6 +773,208 @@ class SlackInteractiveHandler {
     } catch (error) {
       console.error('Error opening preferences modal:', error);
       return this.errorResponse('Failed to open preferences');
+    }
+  }
+
+  /**
+   * Handle refresh App Home - triggers immediate update
+   */
+  async handleRefreshHome({ action, user, workspace }) {
+    try {
+      console.log('Refreshing App Home for user:', user.slackUserId);
+      
+      // Queue immediate App Home update
+      await queueAppHomeUpdate(user._id, workspace._id);
+      
+      return { success: true, message: 'App Home refreshed' };
+    } catch (error) {
+      console.error('Error refreshing App Home:', error);
+      return this.errorResponse('Failed to refresh App Home');
+    }
+  }
+
+  /**
+   * Handle Create Task button - opens modal
+   */
+  async handleCreateTaskModal({ action, user, workspace, triggerId }) {
+    try {
+      const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+      
+      // Get user's boards for the dropdown
+      const boards = await Board.find({
+        $or: [
+          { owner: user.user._id },
+          { members: user.user._id }
+        ],
+        isArchived: { $ne: true }
+      }).select('name _id department').limit(20).lean();
+
+      const boardOptions = boards.map(board => ({
+        text: { type: 'plain_text', text: board.name.substring(0, 75) },
+        value: board._id.toString()
+      }));
+
+      // If no boards, show error
+      if (boardOptions.length === 0) {
+        await slackClient.openModal(triggerId, {
+          type: 'modal',
+          title: {
+            type: 'plain_text',
+            text: '❌ No Projects',
+            emoji: true
+          },
+          close: {
+            type: 'plain_text',
+            text: 'Close'
+          },
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '*You need at least one project to create a task.*\n\nPlease create a project in FlowTask first, then come back here to create tasks.'
+              }
+            },
+            {
+              type: 'actions',
+              elements: [{
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '📁 Open FlowTask',
+                  emoji: true
+                },
+                url: `${process.env.FRONTEND_URL}/`,
+                action_id: 'open_flowtask'
+              }]
+            }
+          ]
+        });
+        return { success: true };
+      }
+
+      // Open create task modal
+      await slackClient.openModal(triggerId, {
+        type: 'modal',
+        callback_id: 'create_task_modal',
+        title: {
+          type: 'plain_text',
+          text: '➕ Create Task',
+          emoji: true
+        },
+        submit: {
+          type: 'plain_text',
+          text: 'Create',
+          emoji: true
+        },
+        close: {
+          type: 'plain_text',
+          text: 'Cancel'
+        },
+        blocks: [
+          {
+            type: 'input',
+            block_id: 'task_title',
+            label: {
+              type: 'plain_text',
+              text: 'Task Title',
+              emoji: true
+            },
+            element: {
+              type: 'plain_text_input',
+              action_id: 'title_input',
+              placeholder: {
+                type: 'plain_text',
+                text: 'Enter task title...'
+              }
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'task_description',
+            optional: true,
+            label: {
+              type: 'plain_text',
+              text: 'Description',
+              emoji: true
+            },
+            element: {
+              type: 'plain_text_input',
+              action_id: 'description_input',
+              multiline: true,
+              placeholder: {
+                type: 'plain_text',
+                text: 'Add description (optional)...'
+              }
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'task_project',
+            label: {
+              type: 'plain_text',
+              text: 'Project',
+              emoji: true
+            },
+            element: {
+              type: 'static_select',
+              action_id: 'project_select',
+              placeholder: {
+                type: 'plain_text',
+                text: 'Select a project...'
+              },
+              options: boardOptions
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'task_priority',
+            optional: true,
+            label: {
+              type: 'plain_text',
+              text: 'Priority',
+              emoji: true
+            },
+            element: {
+              type: 'static_select',
+              action_id: 'priority_select',
+              initial_option: {
+                text: { type: 'plain_text', text: '🟡 Medium' },
+                value: 'medium'
+              },
+              options: [
+                { text: { type: 'plain_text', text: '🔴 Critical' }, value: 'critical' },
+                { text: { type: 'plain_text', text: '🟠 High' }, value: 'high' },
+                { text: { type: 'plain_text', text: '🟡 Medium' }, value: 'medium' },
+                { text: { type: 'plain_text', text: '🟢 Low' }, value: 'low' }
+              ]
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'task_due_date',
+            optional: true,
+            label: {
+              type: 'plain_text',
+              text: 'Due Date',
+              emoji: true
+            },
+            element: {
+              type: 'datepicker',
+              action_id: 'due_date_picker',
+              placeholder: {
+                type: 'plain_text',
+                text: 'Select due date...'
+              }
+            }
+          }
+        ]
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error opening create task modal:', error);
+      return this.errorResponse('Failed to open create task modal');
     }
   }
 

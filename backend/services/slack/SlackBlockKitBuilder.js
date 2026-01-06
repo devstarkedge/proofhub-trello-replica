@@ -258,7 +258,7 @@ class SlackBlockKitBuilder {
    */
   boardUrl(boardId, departmentId) {
     // Workflow route expects deptId and projectId (boardId)
-    return `${this.appUrl}/${departmentId || 'general'}/${boardId}`;
+    return `${this.appUrl}/workflow/${departmentId}/${boardId}`;
   }
 
   /**
@@ -653,37 +653,382 @@ class SlackBlockKitBuilder {
    * Build App Home blocks
    */
   buildAppHome(data) {
-    // ULTRA-MINIMAL: Test with just essential blocks
-    // Build from simplest possible structure
-    const { user, stats = {} } = data;
+    const {
+      user,
+      assignedTasks = [],
+      dueTodayTasks = [],
+      overdueTasks = [],
+      recentlyUpdated = [],
+      stats = {}
+    } = data;
 
     const blocks = [];
+    const frontendUrl = this.appUrl || process.env.FRONTEND_URL || 'http://localhost:5173';
 
-    // 1. Simple header - MUST be valid
+    // ═══════════════════════════════════════════════════════════════
+    // HEADER SECTION
+    // ═══════════════════════════════════════════════════════════════
     blocks.push({
       type: 'header',
       text: {
         type: 'plain_text',
-        text: 'Welcome to FlowTask',
+        text: `👋 Welcome back, ${user?.name || 'User'}!`,
         emoji: true
       }
     });
 
-    // 2. Simple section with stats
+    blocks.push({
+      type: 'context',
+      elements: [{
+        type: 'mrkdwn',
+        text: `📅 ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} • Last updated: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+      }]
+    });
+
+    blocks.push({ type: 'divider' });
+
+    // ═══════════════════════════════════════════════════════════════
+    // STATS DASHBOARD
+    // ═══════════════════════════════════════════════════════════════
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: '*Your Tasks*\n• Overdue: ' + (stats.overdue || 0) + '\n• Due Today: ' + (stats.dueToday || 0)
+        text: '*📊 Task Overview*'
       }
     });
 
-    // 3. Divider
+    // Stats in fields format (2x2 grid)
     blocks.push({
-      type: 'divider'
+      type: 'section',
+      fields: [
+        {
+          type: 'mrkdwn',
+          text: `🔴 *Overdue*\n${stats.overdue || 0} tasks`
+        },
+        {
+          type: 'mrkdwn',
+          text: `⏰ *Due Today*\n${stats.dueToday || 0} tasks`
+        },
+        {
+          type: 'mrkdwn',
+          text: `🔄 *In Progress*\n${stats.inProgress || 0} tasks`
+        },
+        {
+          type: 'mrkdwn',
+          text: `📋 *Total Active*\n${assignedTasks.length} tasks`
+        }
+      ]
     });
 
-    // 4. Action buttons - MUST have url property for links
+    // ═══════════════════════════════════════════════════════════════
+    // OVERDUE TASKS (Critical - Show First)
+    // ═══════════════════════════════════════════════════════════════
+    if (overdueTasks && overdueTasks.length > 0) {
+      blocks.push({ type: 'divider' });
+      
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `🚨 *Overdue Tasks* (${overdueTasks.length})`
+        }
+      });
+
+      overdueTasks.slice(0, 5).forEach(task => {
+        if (task && task.title) {
+          const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+          const daysOverdue = task.overdueDays || Math.ceil((new Date() - new Date(task.dueDate)) / (1000 * 60 * 60 * 24));
+          
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*<${taskUrl}|${task.title}>*\n📁 ${task.board?.name || 'Unknown Project'} • ⚠️ ${daysOverdue} day${daysOverdue > 1 ? 's' : ''} overdue`
+            },
+            accessory: {
+              type: 'button',
+              text: {
+                type: 'plain_text',
+                text: '✅ Complete',
+                emoji: true
+              },
+              style: 'primary',
+              action_id: `complete_task_${task._id}`,
+              value: task._id.toString()
+            }
+          });
+        }
+      });
+
+      if (overdueTasks.length > 5) {
+        blocks.push({
+          type: 'context',
+          elements: [{
+            type: 'mrkdwn',
+            text: `_+${overdueTasks.length - 5} more overdue tasks..._`
+          }]
+        });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // DUE TODAY
+    // ═══════════════════════════════════════════════════════════════
+    if (dueTodayTasks && dueTodayTasks.length > 0) {
+      blocks.push({ type: 'divider' });
+      
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `⏰ *Due Today* (${dueTodayTasks.length})`
+        }
+      });
+
+      dueTodayTasks.slice(0, 5).forEach(task => {
+        if (task && task.title) {
+          const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+          const priorityEmoji = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' }[task.priority] || '';
+          
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `${priorityEmoji} *<${taskUrl}|${task.title}>*\n📁 ${task.board?.name || 'Unknown Project'}`
+            },
+            accessory: {
+              type: 'button',
+              text: {
+                type: 'plain_text',
+                text: '✅ Done',
+                emoji: true
+              },
+              style: 'primary',
+              action_id: `complete_task_${task._id}`,
+              value: task._id.toString()
+            }
+          });
+        }
+      });
+
+      if (dueTodayTasks.length > 5) {
+        blocks.push({
+          type: 'context',
+          elements: [{
+            type: 'mrkdwn',
+            text: `_+${dueTodayTasks.length - 5} more due today..._`
+          }]
+        });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ALL ASSIGNED TASKS (Grouped by Status)
+    // ═══════════════════════════════════════════════════════════════
+    if (assignedTasks && assignedTasks.length > 0) {
+      blocks.push({ type: 'divider' });
+      
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `📌 *My Tasks* (${assignedTasks.length})`
+        }
+      });
+
+      // Group by status
+      const inProgress = assignedTasks.filter(t => t.status === 'in-progress');
+      const todo = assignedTasks.filter(t => t.status === 'todo' || !t.status);
+      const inReview = assignedTasks.filter(t => t.status === 'in-review');
+
+      // In Progress Tasks
+      if (inProgress.length > 0) {
+        blocks.push({
+          type: 'context',
+          elements: [{
+            type: 'mrkdwn',
+            text: `*🔄 In Progress (${inProgress.length})*`
+          }]
+        });
+
+        inProgress.slice(0, 3).forEach(task => {
+          if (task && task.title) {
+            const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+            const priorityEmoji = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' }[task.priority] || '⚪';
+            const dueDateStr = task.dueDate ? ` • 📅 ${new Date(task.dueDate).toLocaleDateString()}` : '';
+            
+            blocks.push({
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `${priorityEmoji} *<${taskUrl}|${task.title}>*\n${task.board?.name || 'Project'}${dueDateStr}`
+              },
+              accessory: {
+                type: 'static_select',
+                action_id: `change_status_${task._id}`,
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Status'
+                },
+                initial_option: {
+                  text: { type: 'plain_text', text: '🔄 In Progress' },
+                  value: 'in-progress'
+                },
+                options: [
+                  { text: { type: 'plain_text', text: '📋 Todo' }, value: 'todo' },
+                  { text: { type: 'plain_text', text: '🔄 In Progress' }, value: 'in-progress' },
+                  { text: { type: 'plain_text', text: '👀 In Review' }, value: 'in-review' },
+                  { text: { type: 'plain_text', text: '✅ Completed' }, value: 'completed' }
+                ]
+              }
+            });
+          }
+        });
+      }
+
+      // Todo Tasks
+      if (todo.length > 0) {
+        blocks.push({
+          type: 'context',
+          elements: [{
+            type: 'mrkdwn',
+            text: `*📋 Todo (${todo.length})*`
+          }]
+        });
+
+        todo.slice(0, 3).forEach(task => {
+          if (task && task.title) {
+            const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+            const priorityEmoji = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' }[task.priority] || '⚪';
+            
+            blocks.push({
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `${priorityEmoji} *<${taskUrl}|${task.title}>*\n${task.board?.name || 'Project'}`
+              },
+              accessory: {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '▶️ Start',
+                  emoji: true
+                },
+                action_id: `start_task_${task._id}`,
+                value: task._id.toString()
+              }
+            });
+          }
+        });
+      }
+
+      // In Review Tasks
+      if (inReview.length > 0) {
+        blocks.push({
+          type: 'context',
+          elements: [{
+            type: 'mrkdwn',
+            text: `*👀 In Review (${inReview.length})*`
+          }]
+        });
+
+        inReview.slice(0, 2).forEach(task => {
+          if (task && task.title) {
+            const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+            
+            blocks.push({
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `👀 *<${taskUrl}|${task.title}>*\n${task.board?.name || 'Project'}`
+              },
+              accessory: {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '✅ Approve',
+                  emoji: true
+                },
+                style: 'primary',
+                action_id: `complete_task_${task._id}`,
+                value: task._id.toString()
+              }
+            });
+          }
+        });
+      }
+
+      // Show "more tasks" count
+      const totalShown = Math.min(inProgress.length, 3) + Math.min(todo.length, 3) + Math.min(inReview.length, 2);
+      if (assignedTasks.length > totalShown) {
+        blocks.push({
+          type: 'context',
+          elements: [{
+            type: 'mrkdwn',
+            text: `_View all ${assignedTasks.length} tasks in FlowTask →_`
+          }]
+        });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // RECENTLY UPDATED
+    // ═══════════════════════════════════════════════════════════════
+    if (recentlyUpdated && recentlyUpdated.length > 0) {
+      blocks.push({ type: 'divider' });
+      
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `🔄 *Recently Updated*`
+        }
+      });
+
+      const recentItems = recentlyUpdated.slice(0, 3).map(task => {
+        const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+        const timeAgo = this.getTimeAgo(task.updatedAt);
+        return `• *<${taskUrl}|${task.title}>* - ${timeAgo}`;
+      });
+
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: recentItems.join('\n')
+        }
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // EMPTY STATE
+    // ═══════════════════════════════════════════════════════════════
+    if ((!assignedTasks || assignedTasks.length === 0) && 
+        (!overdueTasks || overdueTasks.length === 0) && 
+        (!dueTodayTasks || dueTodayTasks.length === 0)) {
+      blocks.push({ type: 'divider' });
+      
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '🎉 *All caught up!*\n\nYou have no pending tasks. Time to relax or pick up something new!'
+        }
+      });
+
+      blocks.push({
+        type: 'image',
+        image_url: 'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',
+        alt_text: 'Celebration'
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // QUICK ACTIONS FOOTER
+    // ═══════════════════════════════════════════════════════════════
+    blocks.push({ type: 'divider' });
+
     blocks.push({
       type: 'actions',
       elements: [
@@ -691,18 +1036,70 @@ class SlackBlockKitBuilder {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'View Tasks',
+            text: '📋 All Tasks',
             emoji: true
           },
-          url: process.env.FRONTEND_URL + '/list-view'
+          url: `${frontendUrl}/list-view`,
+          action_id: 'view_all_tasks'
+        },
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '📁 Projects',
+            emoji: true
+          },
+          url: `${frontendUrl}/`,
+          action_id: 'view_projects'
+        },
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '➕ Create Task',
+            emoji: true
+          },
+          style: 'primary',
+          action_id: 'create_task_modal'
+        },
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '🔄 Refresh',
+            emoji: true
+          },
+          action_id: 'refresh_home'
         }
       ]
     });
 
+    // Footer with preferences link
+    blocks.push({
+      type: 'context',
+      elements: [{
+        type: 'mrkdwn',
+        text: `🔔 Notifications enabled • <${frontendUrl}/settings/integrations/slack|⚙️ Settings>`
+      }]
+    });
+
     return {
       type: 'home',
-      blocks: blocks
+      blocks
     };
+  }
+
+  /**
+   * Helper: Get human-readable time ago string
+   */
+  getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+    return new Date(date).toLocaleDateString();
   }
 
   /**
