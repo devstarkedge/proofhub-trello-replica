@@ -73,7 +73,7 @@ class SlackAppHomeService {
           blockBuilder.actions('connect_account', [
             blockBuilder.linkButton(
               '🔗 Connect FlowTask Account',
-              `${process.env.FRONTEND_URL}/settings/integrations/slack`,
+              `${process.env.FRONTEND_URL}/settings`,
               'connect_account_btn'
             )
           ]),

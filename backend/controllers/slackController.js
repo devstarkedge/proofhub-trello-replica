@@ -48,20 +48,20 @@ export const handleOAuthCallback = asyncHandler(async (req, res) => {
 
   if (error) {
     console.error('Slack OAuth error:', error);
-    return res.redirect(`${process.env.FRONTEND_URL}/settings/integrations/slack?error=${error}`);
+    return res.redirect(`${process.env.FRONTEND_URL}/settings?error=${error}`);
   }
 
   if (!code || !state) {
-    return res.redirect(`${process.env.FRONTEND_URL}/settings/integrations/slack?error=missing_params`);
+    return res.redirect(`${process.env.FRONTEND_URL}/settings?error=missing_params`);
   }
 
   try {
     const result = await slackOAuthHandler.handleCallback(code, state);
     
-    res.redirect(`${process.env.FRONTEND_URL}/settings/integrations/slack?success=true&team=${result.teamName}`);
+    res.redirect(`${process.env.FRONTEND_URL}/settings?success=true&team=${result.teamName}`);
   } catch (error) {
     console.error('OAuth callback error:', error);
-    res.redirect(`${process.env.FRONTEND_URL}/settings/integrations/slack?error=${encodeURIComponent(error.message)}`);
+    res.redirect(`${process.env.FRONTEND_URL}/settings?error=${encodeURIComponent(error.message)}`);
   }
 });
 
@@ -184,21 +184,27 @@ export const updatePreferences = asyncHandler(async (req, res) => {
 export const handleEvents = asyncHandler(async (req, res) => {
   const payload = req.body;
 
+  console.log('📥 Slack event received:', payload.type, payload.event?.type || '');
+
   // Handle URL verification challenge
   if (payload.type === 'url_verification') {
+    console.log('✅ URL verification challenge received');
     return res.json({ challenge: payload.challenge });
   }
 
   // Handle events
   if (payload.type === 'event_callback') {
     const event = payload.event;
+    console.log('📨 Processing event:', event.type, 'from user:', event.user);
 
     // Process asynchronously to respond quickly
     setImmediate(async () => {
       try {
         switch (event.type) {
           case 'app_home_opened':
+            console.log('🏠 app_home_opened event - processing...');
             await slackAppHomeService.handleAppHomeOpened(payload);
+            console.log('🏠 app_home_opened event - done');
             break;
           
           case 'app_uninstalled':

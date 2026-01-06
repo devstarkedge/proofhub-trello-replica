@@ -773,7 +773,7 @@ class SlackSlashCommandHandler {
         blockBuilder.actions('connect_actions', [
           blockBuilder.linkButton(
             '🔗 Connect Account',
-            `${process.env.FRONTEND_URL}/settings/integrations/slack`,
+            `${process.env.FRONTEND_URL}/settings`,
             'connect_account'
           )
         ])

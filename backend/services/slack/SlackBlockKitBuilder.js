@@ -1079,7 +1079,7 @@ class SlackBlockKitBuilder {
       type: 'context',
       elements: [{
         type: 'mrkdwn',
-        text: `🔔 Notifications enabled • <${frontendUrl}/settings/integrations/slack|⚙️ Settings>`
+        text: `🔔 Notifications enabled • <${frontendUrl}/settings|⚙️ Settings>`
       }]
     });
 
