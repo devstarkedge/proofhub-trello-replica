@@ -14,6 +14,8 @@ import Card from '../../models/Card.js';
 import Board from '../../models/Board.js';
 import Comment from '../../models/Comment.js';
 import User from '../../models/User.js';
+import Department from '../../models/Department.js';
+import List from '../../models/List.js';
 import { emitToBoard } from '../../server.js';
 
 const blockBuilder = new SlackBlockKitBuilder(process.env.FRONTEND_URL);
@@ -800,17 +802,36 @@ class SlackInteractiveHandler {
     try {
       const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
       
-      // Get user's boards for the dropdown
+      // Null-safety check for user data
+      const userId = user?.user?._id || user?.user;
+      if (!userId) {
+        console.error('User ID not found for create task modal');
+        return this.errorResponse('User data not available. Please reconnect your account.');
+      }
+      
+      // Get all departments the user has access to
+      const departments = await Department.find({
+        $or: [
+          { manager: userId },
+          { members: userId }
+        ]
+      }).select('name _id').lean();
+
+      // Get user's boards with department info populated
       const boards = await Board.find({
         $or: [
-          { owner: user.user._id },
-          { members: user.user._id }
+          { owner: userId },
+          { members: userId }
         ],
         isArchived: { $ne: true }
-      }).select('name _id department').limit(20).lean();
+      }).populate('department', 'name').select('name _id department').limit(50).lean();
 
+      // Create project options with department context
       const boardOptions = boards.map(board => ({
-        text: { type: 'plain_text', text: board.name.substring(0, 75) },
+        text: { 
+          type: 'plain_text', 
+          text: `${board.name.substring(0, 50)}${board.department?.name ? ` (${board.department.name.substring(0, 20)})` : ''}`.substring(0, 75)
+        },
         value: board._id.toString()
       }));
 
@@ -853,7 +874,14 @@ class SlackInteractiveHandler {
         return { success: true };
       }
 
-      // Open create task modal
+      // Status/List options (predefined workflow statuses)
+      const statusOptions = [
+        { text: { type: 'plain_text', text: '📋 To Do' }, value: 'todo' },
+        { text: { type: 'plain_text', text: '🔄 In Progress' }, value: 'in-progress' },
+        { text: { type: 'plain_text', text: '👀 In Review' }, value: 'in-review' }
+      ];
+
+      // Open create task modal with enhanced fields
       await slackClient.openModal(triggerId, {
         type: 'modal',
         callback_id: 'create_task_modal',
@@ -872,12 +900,13 @@ class SlackInteractiveHandler {
           text: 'Cancel'
         },
         blocks: [
+          // Task Title
           {
             type: 'input',
             block_id: 'task_title',
             label: {
               type: 'plain_text',
-              text: 'Task Title',
+              text: '📝 Task Title',
               emoji: true
             },
             element: {
@@ -889,13 +918,14 @@ class SlackInteractiveHandler {
               }
             }
           },
+          // Description
           {
             type: 'input',
             block_id: 'task_description',
             optional: true,
             label: {
               type: 'plain_text',
-              text: 'Description',
+              text: '📄 Description',
               emoji: true
             },
             element: {
@@ -908,12 +938,15 @@ class SlackInteractiveHandler {
               }
             }
           },
+          // Divider
+          { type: 'divider' },
+          // Project Selection (with department context in name)
           {
             type: 'input',
             block_id: 'task_project',
             label: {
               type: 'plain_text',
-              text: 'Project',
+              text: '📁 Project',
               emoji: true
             },
             element: {
@@ -926,13 +959,33 @@ class SlackInteractiveHandler {
               options: boardOptions
             }
           },
+          // Status/List Selection
+          {
+            type: 'input',
+            block_id: 'task_status',
+            optional: true,
+            label: {
+              type: 'plain_text',
+              text: '📊 Status',
+              emoji: true
+            },
+            element: {
+              type: 'static_select',
+              action_id: 'status_select',
+              initial_option: statusOptions[0],
+              options: statusOptions
+            }
+          },
+          // Divider
+          { type: 'divider' },
+          // Priority
           {
             type: 'input',
             block_id: 'task_priority',
             optional: true,
             label: {
               type: 'plain_text',
-              text: 'Priority',
+              text: '🎯 Priority',
               emoji: true
             },
             element: {
@@ -950,13 +1003,14 @@ class SlackInteractiveHandler {
               ]
             }
           },
+          // Due Date
           {
             type: 'input',
             block_id: 'task_due_date',
             optional: true,
             label: {
               type: 'plain_text',
-              text: 'Due Date',
+              text: '📅 Due Date',
               emoji: true
             },
             element: {
@@ -1029,18 +1083,45 @@ class SlackInteractiveHandler {
       const priority = values.task_priority?.priority_select?.selected_option?.value;
       const dueDate = values.task_due_date?.due_date_picker?.selected_date;
       const boardId = values.task_project?.project_select?.selected_option?.value;
+      const selectedStatus = values.task_status?.status_select?.selected_option?.value || 'todo';
       const assigneeSlackIds = values.task_assignees?.assignees_select?.selected_users || [];
 
-      // Get board and default list
+      // Get board
       const board = await Board.findById(boardId);
       if (!board) {
         return { response_action: 'errors', errors: { task_project: 'Please select a valid project' } };
       }
 
-      const List = (await import('../../models/List.js')).default;
-      const defaultList = await List.findOne({ board: board._id }).sort({ position: 1 });
-      if (!defaultList) {
+      // Get lists for this board
+      const lists = await List.find({ board: board._id }).sort({ position: 1 }).lean();
+      if (!lists || lists.length === 0) {
         return { response_action: 'errors', errors: { task_project: 'No list found in this project' } };
+      }
+
+      // Find appropriate list based on selected status
+      // Try to match list name with status, otherwise use first list
+      let targetList = lists.find(list => 
+        list.name?.toLowerCase().includes(selectedStatus.replace('-', ' ')) ||
+        list.name?.toLowerCase().includes(selectedStatus.replace('-', ''))
+      );
+      
+      // If no match found, use default mappings
+      if (!targetList) {
+        const statusListMap = {
+          'todo': ['to do', 'todo', 'backlog', 'new'],
+          'in-progress': ['in progress', 'doing', 'working', 'active'],
+          'in-review': ['in review', 'review', 'testing', 'qa']
+        };
+        
+        const searchTerms = statusListMap[selectedStatus] || [];
+        targetList = lists.find(list => 
+          searchTerms.some(term => list.name?.toLowerCase().includes(term))
+        );
+      }
+      
+      // Fallback to first list if no match
+      if (!targetList) {
+        targetList = lists[0];
       }
 
       // Map Slack user IDs to FlowTask users
@@ -1057,7 +1138,7 @@ class SlackInteractiveHandler {
       }
 
       // Create the task
-      const maxPosition = await Card.findOne({ list: defaultList._id })
+      const maxPosition = await Card.findOne({ list: targetList._id })
         .sort({ position: -1 })
         .select('position');
       
@@ -1065,8 +1146,9 @@ class SlackInteractiveHandler {
         title,
         description,
         board: board._id,
-        list: defaultList._id,
-        priority,
+        list: targetList._id,
+        status: selectedStatus,
+        priority: priority || 'medium',
         dueDate: dueDate ? new Date(dueDate) : undefined,
         assignees,
         createdBy: user.user,
@@ -1091,12 +1173,15 @@ class SlackInteractiveHandler {
         text: `✅ Task "${title}" created successfully!`,
         blocks: [
           blockBuilder.section(`✅ *Task Created*\n*${title}*`),
-          blockBuilder.context([`📁 ${board.name}`]),
+          blockBuilder.context([`📁 ${board.name} • 📊 ${selectedStatus}`]),
           blockBuilder.actions('task_created_actions', [
             blockBuilder.linkButton('📋 View Task', blockBuilder.taskUrl(task._id, board._id, board.department), 'view_created_task')
           ])
         ]
       });
+
+      // Refresh App Home
+      await queueAppHomeUpdate(user._id, workspace._id);
 
       return { response_action: 'clear' };
     } catch (error) {
