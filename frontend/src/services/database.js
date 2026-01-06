@@ -2115,6 +2115,135 @@ class DatabaseService {
     }
     return await res.json();
   }
+
+  // =============================================
+  // TEAM ANALYTICS OPERATIONS
+  // =============================================
+
+  /**
+   * Get team logged time analytics with role-based access
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Team logged time data
+   */
+  async getTeamLoggedTime(params = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params.departmentId) queryParams.append('departmentId', params.departmentId);
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+    if (params.userId) queryParams.append('userId', params.userId);
+
+    const res = await fetch(`${baseURL}/api/team-analytics/logged-time?${queryParams}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch team logged time');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get smart insights and AI analytics
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Smart insights data
+   */
+  async getTeamInsights(params = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params.departmentId) queryParams.append('departmentId', params.departmentId);
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+
+    const res = await fetch(`${baseURL}/api/team-analytics/insights?${queryParams}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch team insights');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get department-wise analytics
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Department analytics data
+   */
+  async getDepartmentAnalytics(params = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+
+    const res = await fetch(`${baseURL}/api/team-analytics/departments?${queryParams}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch department analytics');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get daily/weekly/monthly trends
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Trends data
+   */
+  async getTeamTrends(params = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params.departmentId) queryParams.append('departmentId', params.departmentId);
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+    if (params.granularity) queryParams.append('granularity', params.granularity);
+
+    const res = await fetch(`${baseURL}/api/team-analytics/trends?${queryParams}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch team trends');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get personal logged time summary
+   * @param {Object} params - Query parameters
+   * @returns {Promise<Object>} Personal summary data
+   */
+  async getMyLoggedTimeSummary(params = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const queryParams = new URLSearchParams();
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+
+    const res = await fetch(`${baseURL}/api/team-analytics/my-summary?${queryParams}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch personal summary');
+    }
+    return await res.json();
+  }
 }
 
 // Create singleton instance

@@ -30,7 +30,9 @@ import {
   Lightbulb,
   Command,
   FileText,
-  Globe
+  Globe,
+  LayoutList,
+  Users2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DepartmentContext from '../context/DepartmentContext';
@@ -46,6 +48,7 @@ import { AdvancedSearch, debounce, highlightText } from '../utils/advancedSearch
 import AvatarGroup from '../components/AvatarGroup';
 
 const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
+const TeamLoggedTimeView = lazy(() => import('../components/TeamAnalytics/TeamLoggedTimeView'));
 
 const ListView = () => {
   const { currentDepartment, departments, setCurrentDepartment } = useContext(DepartmentContext);
@@ -68,6 +71,9 @@ const ListView = () => {
   });
   const [sorting, setSorting] = useState({ key: 'dueDate', order: 'asc' });
   const [viewMode, setViewMode] = useState('comfortable'); // compact, comfortable, spacious
+  
+  // Tab state: 'tasks' or 'team'
+  const [activeTab, setActiveTab] = useState('tasks');
 
   // Advanced search state
   const [searchSuggestions, setSearchSuggestions] = useState([]);
@@ -98,9 +104,22 @@ const ListView = () => {
 
   // Optional: prefetch workflow data for unique projects when cards load
   // Skip prefetching when "All Departments" is selected since the API doesn't support it
+  // Also skip if we're in Team view tab
   useEffect(() => {
-    if (!loading && cards && currentDepartment && currentDepartment._id !== 'all') {
-      const uniqueProjects = Array.from(new Set(cards.map(c => c.board?._id).filter(Boolean)));
+    if (!loading && cards && currentDepartment && currentDepartment._id !== 'all' && activeTab === 'tasks') {
+      // Only prefetch for projects that actually belong to the current department
+      const uniqueProjects = Array.from(
+        new Set(
+          cards
+            .filter(c => {
+              // Check if the card's board belongs to the current department
+              const cardDeptId = c.board?.department?._id || c.board?.department;
+              return cardDeptId && cardDeptId.toString() === currentDepartment._id.toString();
+            })
+            .map(c => c.board?._id)
+            .filter(Boolean)
+        )
+      );
       // Prefetch up to first 5 projects to avoid spamming network
       uniqueProjects.slice(0, 5).forEach(projectId => {
         const key = ['workflow', currentDepartment._id, projectId];
@@ -110,7 +129,7 @@ const ListView = () => {
         }).catch(() => {});
       });
     }
-  }, [loading, cards, currentDepartment, queryClient]);
+  }, [loading, cards, currentDepartment, queryClient, activeTab]);
 
   // Set default department to "All Departments" if not set
   useEffect(() => {
@@ -719,7 +738,7 @@ const ListView = () => {
               </div>
               <div>
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
-                  Task List View
+                  {activeTab === 'tasks' ? 'Task List View' : 'Team Logged Time'}
                 </h1>
                 <p className="text-gray-600 mt-1.5">
                   {currentDepartment ? (
@@ -737,8 +756,42 @@ const ListView = () => {
                 </p>
               </div>
             </div>
+            
+            {/* Task / Team Toggle Button */}
+            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-xl">
+              <button
+                onClick={() => setActiveTab('tasks')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all duration-300 ${
+                  activeTab === 'tasks'
+                    ? 'bg-white text-blue-600 shadow-md'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <LayoutList className="w-4 h-4" />
+                Tasks
+              </button>
+              <button
+                onClick={() => setActiveTab('team')}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all duration-300 ${
+                  activeTab === 'team'
+                    ? 'bg-white text-blue-600 shadow-md'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <Users2 className="w-4 h-4" />
+                Team
+              </button>
+            </div>
           </div>
+        </div>
 
+        {/* Conditional Rendering: Tasks View or Team View */}
+        {activeTab === 'team' ? (
+          <Suspense fallback={<ListViewSkeleton />}>
+            <TeamLoggedTimeView />
+          </Suspense>
+        ) : (
+          <div className="space-y-6">
           {/* Enhanced Stats Cards */}
           {currentDepartment && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
@@ -1170,9 +1223,8 @@ const ListView = () => {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Enhanced Table */}
+          {/* Enhanced Table */}
         <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/50 overflow-hidden hover:shadow-3xl transition-all duration-300 z-[10]">
           <div className="overflow-x-auto">
             <Table>
@@ -1321,6 +1373,8 @@ const ListView = () => {
                 ))}
               </select>
             </div>
+          </div>
+        )}
           </div>
         )}
       </main>
