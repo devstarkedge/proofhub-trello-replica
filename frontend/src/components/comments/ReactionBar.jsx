@@ -42,8 +42,33 @@ const ReactionBar = ({
     return reactions.find(r => r.emoji === emoji);
   };
 
-  // Get displayed reactions (only those with counts)
-  const displayedReactions = reactions.filter(r => r.count > 0);
+  // Deduplicate reactions to prevent duplicate key errors
+  const displayedReactions = React.useMemo(() => {
+    if (!reactions || reactions.length === 0) return [];
+    
+    const reactionMap = {};
+    
+    reactions.forEach(reaction => {
+      // Skip potentially invalid reactions
+      if (!reaction || !reaction.emoji) return;
+
+      if (!reactionMap[reaction.emoji]) {
+        reactionMap[reaction.emoji] = { ...reaction };
+      } else {
+        // Merge counts
+        reactionMap[reaction.emoji].count += (reaction.count || 0);
+        
+        // Merge users for tooltip
+        if (reaction.users) {
+          const existingIds = new Set((reactionMap[reaction.emoji].users || []).map(u => (u._id || u).toString()));
+          const newUsers = reaction.users.filter(u => !existingIds.has((u._id || u).toString()));
+          reactionMap[reaction.emoji].users = [...(reactionMap[reaction.emoji].users || []), ...newUsers];
+        }
+      }
+    });
+
+    return Object.values(reactionMap).filter(r => r.count > 0);
+  }, [reactions]);
 
   // Handle hover enter
   const handleHoverEnter = (emoji) => {
