@@ -5,6 +5,7 @@ import Notification from '../models/Notification.js';
 import { sendEmail } from './email.js';
 import { emitNotification } from '../server.js';
 import { runBackground } from './backgroundTasks.js';
+import { slackHooks } from './slackHooks.js';
 
 // Interval for checking reminders (every 15 minutes)
 const CHECK_INTERVAL = 15 * 60 * 1000;
@@ -101,6 +102,10 @@ export const sendReminderNotification = async (reminder) => {
     // Update reminder with notification timestamp
     reminder.notificationSentAt = new Date();
     await reminder.save();
+
+    // Send Slack notification
+    const board = await Board.findById(reminder.project._id || reminder.project).select('name');
+    slackHooks.onReminder(reminder, null, board).catch(console.error);
 
     console.log(`Notification sent for reminder ${reminder._id}`);
   } catch (error) {

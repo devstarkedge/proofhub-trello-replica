@@ -109,16 +109,22 @@ const SlackSettings = () => {
 
   // Update preference
   const handlePreferenceChange = async (key, value) => {
+    const previousPreferences = { ...preferences };
     const newPreferences = { ...preferences, [key]: value };
     setPreferences(newPreferences);
     
     try {
       setSaving(true);
-      await slackService.updatePreferences({ [key]: value });
+      const response = await slackService.updatePreferences({ [key]: value });
+      // Update with server response to ensure sync
+      if (response.data?.preferences) {
+        setPreferences(response.data.preferences);
+      }
+      toast.success('Setting saved', { autoClose: 1500 });
     } catch (error) {
       console.error('Failed to save preference:', error);
       toast.error('Failed to save preference');
-      setPreferences(preferences); // Revert on error
+      setPreferences(previousPreferences); // Revert on error
     } finally {
       setSaving(false);
     }
@@ -299,63 +305,97 @@ const SlackSettings = () => {
             expanded={expandedSections.notifications}
             onToggle={() => toggleSection('notifications')}
           >
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Choose which types of notifications you want to receive in Slack.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <PreferenceToggle
                 label="Task Assignments"
+                description="When you're assigned to a task"
                 checked={preferences.taskAssigned !== false}
                 onChange={(v) => handlePreferenceChange('taskAssigned', v)}
                 disabled={saving}
               />
               <PreferenceToggle
                 label="Task Updates"
+                description="When tasks you're on are modified"
                 checked={preferences.taskUpdated !== false}
                 onChange={(v) => handlePreferenceChange('taskUpdated', v)}
                 disabled={saving}
               />
               <PreferenceToggle
                 label="Task Completions"
+                description="When tasks are marked complete"
                 checked={preferences.taskCompleted !== false}
                 onChange={(v) => handlePreferenceChange('taskCompleted', v)}
                 disabled={saving}
               />
               <PreferenceToggle
+                label="Status Changes"
+                description="When task status changes (Todo → In Progress, etc.)"
+                checked={preferences.statusChanges !== false}
+                onChange={(v) => handlePreferenceChange('statusChanges', v)}
+                disabled={saving}
+              />
+              <PreferenceToggle
                 label="Overdue Alerts"
+                description="When your tasks become overdue"
                 checked={preferences.taskOverdue !== false}
                 onChange={(v) => handlePreferenceChange('taskOverdue', v)}
                 disabled={saving}
               />
               <PreferenceToggle
                 label="Due Soon Reminders"
+                description="Reminders before task deadlines"
                 checked={preferences.taskDueSoon !== false}
                 onChange={(v) => handlePreferenceChange('taskDueSoon', v)}
                 disabled={saving}
               />
               <PreferenceToggle
+                label="Custom Reminders"
+                description="Personal reminders you set on tasks"
+                checked={preferences.reminders !== false}
+                onChange={(v) => handlePreferenceChange('reminders', v)}
+                disabled={saving}
+              />
+              <PreferenceToggle
                 label="New Comments"
+                description="When comments are added to your tasks"
                 checked={preferences.commentAdded !== false}
                 onChange={(v) => handlePreferenceChange('commentAdded', v)}
                 disabled={saving}
               />
               <PreferenceToggle
                 label="Mentions"
+                description="When someone @mentions you"
                 checked={preferences.commentMention !== false}
                 onChange={(v) => handlePreferenceChange('commentMention', v)}
                 disabled={saving}
               />
               <PreferenceToggle
                 label="Subtask Updates"
+                description="Updates to subtasks on your tasks"
                 checked={preferences.subtaskUpdates !== false}
                 onChange={(v) => handlePreferenceChange('subtaskUpdates', v)}
                 disabled={saving}
               />
               <PreferenceToggle
                 label="Project Updates"
+                description="Changes to projects you're in"
                 checked={preferences.projectUpdates !== false}
                 onChange={(v) => handlePreferenceChange('projectUpdates', v)}
                 disabled={saving}
               />
               <PreferenceToggle
+                label="Team Updates"
+                description="When you're added/removed from teams"
+                checked={preferences.teamUpdates !== false}
+                onChange={(v) => handlePreferenceChange('teamUpdates', v)}
+                disabled={saving}
+              />
+              <PreferenceToggle
                 label="Announcements"
+                description="Team and company announcements"
                 checked={preferences.announcements !== false}
                 onChange={(v) => handlePreferenceChange('announcements', v)}
                 disabled={saving}
@@ -378,33 +418,62 @@ const SlackSettings = () => {
               disabled={saving}
             />
             {preferences.digestEnabled && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Frequency
-                  </label>
-                  <select
-                    value={preferences.digestFrequency || 'daily'}
-                    onChange={(e) => handlePreferenceChange('digestFrequency', e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                    disabled={saving}
-                  >
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                  </select>
+              <div className="space-y-4 mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Frequency
+                    </label>
+                    <select
+                      value={preferences.digestFrequency || 'daily'}
+                      onChange={(e) => handlePreferenceChange('digestFrequency', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
+                      disabled={saving}
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Time
+                    </label>
+                    <input
+                      type="time"
+                      value={preferences.digestTime || '09:00'}
+                      onChange={(e) => handlePreferenceChange('digestTime', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
+                      disabled={saving}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Time
-                  </label>
-                  <input
-                    type="time"
-                    value={preferences.digestTime || '09:00'}
-                    onChange={(e) => handlePreferenceChange('digestTime', e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                    disabled={saving}
-                  />
-                </div>
+                {preferences.digestFrequency === 'weekly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Day of Week
+                    </label>
+                    <select
+                      value={preferences.digestDay || 'monday'}
+                      onChange={(e) => handlePreferenceChange('digestDay', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
+                      disabled={saving}
+                    >
+                      <option value="monday">Monday</option>
+                      <option value="tuesday">Tuesday</option>
+                      <option value="wednesday">Wednesday</option>
+                      <option value="thursday">Thursday</option>
+                      <option value="friday">Friday</option>
+                      <option value="saturday">Saturday</option>
+                      <option value="sunday">Sunday</option>
+                    </select>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {preferences.digestFrequency === 'weekly' 
+                    ? `You'll receive a digest every ${preferences.digestDay || 'Monday'} at ${preferences.digestTime || '09:00'}`
+                    : `You'll receive a digest every day at ${preferences.digestTime || '09:00'}`
+                  }
+                </p>
               </div>
             )}
           </PreferenceSection>
@@ -418,36 +487,45 @@ const SlackSettings = () => {
           >
             <PreferenceToggle
               label="Enable Quiet Hours"
-              description="Pause notifications during specific hours"
+              description="Pause notifications during specific hours (non-critical only)"
               checked={preferences.quietHoursEnabled === true}
               onChange={(v) => handlePreferenceChange('quietHoursEnabled', v)}
               disabled={saving}
             />
             {preferences.quietHoursEnabled && (
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    value={preferences.quietHoursStart || '22:00'}
-                    onChange={(e) => handlePreferenceChange('quietHoursStart', e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                    disabled={saving}
-                  />
+              <div className="space-y-4 mt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={preferences.quietHoursStart || '22:00'}
+                      onChange={(e) => handlePreferenceChange('quietHoursStart', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
+                      disabled={saving}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={preferences.quietHoursEnd || '08:00'}
+                      onChange={(e) => handlePreferenceChange('quietHoursEnd', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
+                      disabled={saving}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    End Time
-                  </label>
-                  <input
-                    type="time"
-                    value={preferences.quietHoursEnd || '08:00'}
-                    onChange={(e) => handlePreferenceChange('quietHoursEnd', e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                    disabled={saving}
-                  />
+                <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <Moon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Notifications will be silenced from {preferences.quietHoursStart || '22:00'} to {preferences.quietHoursEnd || '08:00'}. 
+                    Critical notifications will still be delivered immediately.
+                  </p>
                 </div>
               </div>
             )}
@@ -460,36 +538,41 @@ const SlackSettings = () => {
             expanded={expandedSections.advanced}
             onToggle={() => toggleSection('advanced')}
           >
-            <PreferenceToggle
-              label="Batch Similar Notifications"
-              description="Group similar notifications to reduce noise"
-              checked={preferences.batchingEnabled === true}
-              onChange={(v) => handlePreferenceChange('batchingEnabled', v)}
-              disabled={saving}
-            />
-            <PreferenceToggle
-              label="Thread Related Notifications"
-              description="Reply in threads for related task updates"
-              checked={preferences.preferThreadedReplies !== false}
-              onChange={(v) => handlePreferenceChange('preferThreadedReplies', v)}
-              disabled={saving}
-            />
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Minimum Priority Level
-              </label>
-              <select
-                value={preferences.minPriorityLevel || 'all'}
-                onChange={(e) => handlePreferenceChange('minPriorityLevel', e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+            <div className="space-y-4">
+              <PreferenceToggle
+                label="Batch Similar Notifications"
+                description="Group similar notifications (e.g., multiple updates to the same task) to reduce noise"
+                checked={preferences.batchingEnabled === true}
+                onChange={(v) => handlePreferenceChange('batchingEnabled', v)}
                 disabled={saving}
-              >
-                <option value="all">All priorities</option>
-                <option value="low">Low and above</option>
-                <option value="medium">Medium and above</option>
-                <option value="high">High and above</option>
-                <option value="critical">Critical only</option>
-              </select>
+              />
+              <PreferenceToggle
+                label="Thread Related Notifications"
+                description="Keep task updates in Slack threads for better organization"
+                checked={preferences.preferThreadedReplies !== false}
+                onChange={(v) => handlePreferenceChange('preferThreadedReplies', v)}
+                disabled={saving}
+              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Minimum Priority Level
+                </label>
+                <select
+                  value={preferences.minPriorityLevel || 'all'}
+                  onChange={(e) => handlePreferenceChange('minPriorityLevel', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
+                  disabled={saving}
+                >
+                  <option value="all">All priorities</option>
+                  <option value="low">Low and above</option>
+                  <option value="medium">Medium and above</option>
+                  <option value="high">High and above</option>
+                  <option value="critical">Critical only</option>
+                </select>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Only receive notifications for tasks at or above this priority level
+                </p>
+              </div>
             </div>
           </PreferenceSection>
         </div>
@@ -563,7 +646,7 @@ const PreferenceSection = ({ title, icon, expanded, onToggle, children }) => (
 
 // Preference Toggle Component
 const PreferenceToggle = ({ label, description, checked, onChange, disabled }) => (
-  <label className="flex items-start gap-3 cursor-pointer group">
+  <label className={`flex items-start gap-3 cursor-pointer group ${disabled ? 'opacity-70' : ''}`}>
     <div className="relative mt-1">
       <input
         type="checkbox"
@@ -574,7 +657,7 @@ const PreferenceToggle = ({ label, description, checked, onChange, disabled }) =
       />
       <div className={`w-10 h-6 rounded-full transition-colors ${
         checked ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
-      }`}>
+      } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
         <motion.div
           animate={{ x: checked ? 16 : 2 }}
           transition={{ type: 'spring', stiffness: 500, damping: 30 }}

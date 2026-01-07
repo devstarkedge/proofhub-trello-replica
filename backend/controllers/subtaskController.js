@@ -9,6 +9,7 @@ import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
+import { slackHooks } from '../utils/slackHooks.js';
 
 const basePopulate = [
   { path: 'assignees', select: 'name email avatar' },
@@ -241,6 +242,21 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
         // Handle recurring task completion triggers
         if (subtask.status === 'done' || subtask.status === 'closed') {
           await handleTaskCompletion(subtask._id, subtask.status);
+          
+          // Send Slack notification for subtask completion
+          const parentTask = await Card.findById(taskId).populate('board', 'name');
+          if (parentTask) {
+            slackHooks.onSubtaskCompleted(subtask, parentTask, parentTask.board, req.user).catch(console.error);
+            
+            // Check if all subtasks are completed
+            const remainingSubtasks = await Subtask.countDocuments({ 
+              task: taskId, 
+              status: { $nin: ['done', 'closed'] }
+            });
+            if (remainingSubtasks === 0) {
+              slackHooks.onAllSubtasksCompleted(parentTask, parentTask.board, req.user).catch(console.error);
+            }
+          }
         }
       }
       if (oldSubtask.priority !== subtask.priority) {

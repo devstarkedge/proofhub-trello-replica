@@ -51,7 +51,18 @@ class SlackNotificationService {
         comment,
         customMessage,
         priority,
-        forceImmediate = false
+        forceImmediate = false,
+        // Additional fields for specific notification types
+        oldStatus,
+        newStatus,
+        subtask,
+        announcement,
+        team,
+        reminder,
+        attachment,
+        assignees,
+        changes,
+        hoursRemaining
       } = notificationData;
 
       // Get user and their Slack connection
@@ -356,7 +367,7 @@ class SlackNotificationService {
    * Build notification payload based on type
    */
   async buildNotificationPayload(data) {
-    const { type, task, board, triggeredBy, comment, customMessage, assignees } = data;
+    const { type, task, board, triggeredBy, comment, customMessage, assignees, oldStatus, newStatus, subtask, announcement, team, reminder, attachment } = data;
 
     switch (type) {
       case 'task_assigned':
@@ -384,8 +395,21 @@ class SlackNotificationService {
           board
         });
 
+      case 'status_change':
+      case 'status_changed':
+        return blockBuilder.buildTaskNotification({
+          type: 'status_change',
+          task,
+          triggeredBy,
+          board,
+          priority: task?.priority,
+          status: newStatus || task?.status,
+          customMessage: customMessage || `Status changed from ${oldStatus || 'Unknown'} to ${newStatus || task?.status}`
+        });
+
       case 'task_due_soon':
       case 'task_overdue':
+      case 'deadline_reminder':
         const urgency = type === 'task_overdue' ? 'overdue' : 
           this.calculateUrgency(task?.dueDate);
         return blockBuilder.buildDeadlineReminder({
@@ -404,6 +428,87 @@ class SlackNotificationService {
           author: triggeredBy,
           isMention: type === 'comment_mention',
           mentionedUsers: assignees
+        });
+
+      case 'subtask_completed':
+      case 'subtask_updated':
+      case 'subtask_created':
+      case 'all_subtasks_completed':
+        return blockBuilder.buildTaskNotification({
+          type,
+          task,
+          triggeredBy,
+          board,
+          priority: task?.priority,
+          subtaskInfo: subtask || task?.subtaskStats,
+          customMessage: customMessage || (type === 'all_subtasks_completed' ? '🎉 All subtasks completed!' : `Subtask "${subtask?.title || 'Unknown'}" updated`)
+        });
+
+      case 'project_update':
+      case 'project_updated':
+      case 'project_created':
+      case 'board_updated':
+        return blockBuilder.buildTaskNotification({
+          type: 'project_update',
+          task: null,
+          triggeredBy,
+          board,
+          customMessage: customMessage || `Project "${board?.name}" has been updated`
+        });
+
+      case 'team_member_added':
+      case 'team_invite':
+        return {
+          text: `You've been added to team "${team?.name || 'Unknown'}"`,
+          blocks: [
+            blockBuilder.header(`👥 Welcome to ${team?.name || 'the team'}!`),
+            blockBuilder.section(`${triggeredBy?.name || 'Someone'} added you to the team.`),
+            blockBuilder.divider(),
+            blockBuilder.context([`Team: ${team?.name || 'Unknown'}`])
+          ]
+        };
+
+      case 'announcement':
+      case 'announcement_created':
+        return {
+          text: `📢 New Announcement: ${announcement?.title || 'New announcement'}`,
+          blocks: [
+            blockBuilder.header(`📢 ${announcement?.title || 'Announcement'}`),
+            blockBuilder.section(announcement?.content || 'No content'),
+            blockBuilder.divider(),
+            blockBuilder.context([
+              `Posted by ${triggeredBy?.name || 'Admin'}`,
+              announcement?.createdAt ? `at ${new Date(announcement.createdAt).toLocaleString()}` : ''
+            ])
+          ]
+        };
+
+      case 'reminder':
+      case 'reminder_due_soon':
+        return {
+          text: `⏰ Reminder: ${task?.title || reminder?.message || 'Task reminder'}`,
+          blocks: [
+            blockBuilder.header('⏰ Reminder'),
+            blockBuilder.section(`*${task?.title || reminder?.message || 'You have a reminder'}*`),
+            task && blockBuilder.context([
+              `📁 ${board?.name || 'Unknown Project'}`,
+              task.dueDate ? `📅 Due: ${new Date(task.dueDate).toLocaleDateString()}` : ''
+            ]),
+            blockBuilder.divider(),
+            task && blockBuilder.actions('reminder_actions', [
+              blockBuilder.linkButton('📋 View Task', blockBuilder.taskUrl(task._id, board?._id), 'view_task'),
+              blockBuilder.button('✅ Mark Complete', 'mark_complete', task._id?.toString(), 'primary')
+            ])
+          ].filter(Boolean)
+        };
+
+      case 'attachment_added':
+        return blockBuilder.buildTaskNotification({
+          type: 'task_updated',
+          task,
+          triggeredBy,
+          board,
+          customMessage: `New attachment added: ${attachment?.fileName || 'file'}`
         });
 
       default:

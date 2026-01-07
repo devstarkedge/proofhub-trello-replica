@@ -4,6 +4,7 @@ import Notification from '../models/Notification.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { invalidateCache } from '../middleware/cache.js';
+import { slackHooks } from '../utils/slackHooks.js';
 
 // @desc    Get teams for current user
 // @route   GET /api/teams
@@ -163,6 +164,9 @@ export const addMember = asyncHandler(async (req, res, next) => {
       user: userId,
       sender: req.user.id
     });
+    
+    // Send Slack notification
+    slackHooks.onTeamMemberAdded(team, user, req.user).catch(console.error);
   }
 
   res.status(200).json({

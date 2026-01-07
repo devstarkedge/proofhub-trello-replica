@@ -74,6 +74,11 @@ const slackUserSchema = new mongoose.Schema({
       default: 'never' 
     },
     digestTime: { type: String, default: '09:00' },
+    digestDay: {
+      type: String,
+      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      default: 'monday'
+    },
     
     // Quiet hours (overrides workspace settings)
     quietHoursEnabled: { type: Boolean, default: false },
@@ -209,25 +214,53 @@ slackUserSchema.methods.shouldReceiveNotification = function(type, priority) {
   if (!this.preferences.notificationsEnabled) return false;
   if (!this.isActive) return false;
   
-  // Check notification type preference
+  // Check notification type preference - map all notification types to preferences
   const typePreferences = {
+    // Task notifications
     'task_assigned': this.preferences.taskAssigned,
     'task_updated': this.preferences.taskUpdated,
     'task_completed': this.preferences.taskCompleted,
     'task_deleted': this.preferences.taskDeleted,
     'task_overdue': this.preferences.taskOverdue,
     'task_due_soon': this.preferences.taskDueSoon,
+    'deadline_reminder': this.preferences.taskDueSoon, // Map to due soon preference
+    
+    // Comment notifications
     'comment_added': this.preferences.commentAdded,
     'comment_mention': this.preferences.commentMention,
+    
+    // Subtask notifications - all map to subtaskUpdates
     'subtask_updated': this.preferences.subtaskUpdates,
+    'subtask_completed': this.preferences.subtaskUpdates,
+    'subtask_created': this.preferences.subtaskUpdates,
+    'all_subtasks_completed': this.preferences.subtaskUpdates,
+    
+    // Project notifications
     'project_created': this.preferences.projectUpdates,
     'project_updated': this.preferences.projectUpdates,
+    'project_update': this.preferences.projectUpdates,
+    'board_updated': this.preferences.projectUpdates,
+    
+    // Team notifications
     'team_invite': this.preferences.teamUpdates,
+    'team_member_added': this.preferences.teamUpdates,
+    'team_member_removed': this.preferences.teamUpdates,
+    
+    // Announcement notifications
     'announcement_created': this.preferences.announcements,
+    'announcement': this.preferences.announcements,
+    
+    // Reminder notifications
     'reminder_due_soon': this.preferences.reminders,
-    'status_change': this.preferences.statusChanges
+    'reminder': this.preferences.reminders,
+    
+    // Status change notifications
+    'status_change': this.preferences.statusChanges,
+    'status_changed': this.preferences.statusChanges
   };
   
+  // If the type is not in our map, allow it by default (for new notification types)
+  if (typePreferences[type] === undefined) return true;
   if (typePreferences[type] === false) return false;
   
   // Check priority filter

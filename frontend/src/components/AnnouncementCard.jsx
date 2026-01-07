@@ -16,6 +16,31 @@ const AnnouncementCard = ({
     onOpen?.(announcement._id);
   };
 
+  const uniqueReactions = React.useMemo(() => {
+    if (!announcement.reactions || announcement.reactions.length === 0) return [];
+    
+    // Deduplicate reactions to prevent duplicate key errors
+    const reactionMap = {};
+    
+    announcement.reactions.forEach(reaction => {
+      if (!reactionMap[reaction.emoji]) {
+        reactionMap[reaction.emoji] = { ...reaction };
+      } else {
+        // Validation: Merge counts
+        reactionMap[reaction.emoji].count += reaction.count;
+        
+        // Merge users for tooltip
+        if (reaction.users) {
+          const existingIds = new Set((reactionMap[reaction.emoji].users || []).map(u => (u._id || u).toString()));
+          const newUsers = reaction.users.filter(u => !existingIds.has((u._id || u).toString()));
+          reactionMap[reaction.emoji].users = [...(reactionMap[reaction.emoji].users || []), ...newUsers];
+        }
+      }
+    });
+
+    return Object.values(reactionMap);
+  }, [announcement.reactions]);
+
   const canEdit = isUserAdmin || announcement.createdBy?._id === userId;
 
   return (
@@ -98,8 +123,8 @@ const AnnouncementCard = ({
       <div className="flex items-center justify-between pt-3 border-t border-gray-200">
         {/* Reactions */}
         <div className="flex gap-2 items-center">
-          {announcement.reactions && announcement.reactions.length > 0 ? (
-            announcement.reactions.map((reaction) => (
+          {uniqueReactions.length > 0 ? (
+            uniqueReactions.map((reaction) => (
               <button
                 key={reaction.emoji}
                 onClick={(e) => {

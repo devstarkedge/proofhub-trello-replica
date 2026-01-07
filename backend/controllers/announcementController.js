@@ -7,6 +7,7 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import notificationService from "../utils/notificationService.js";
 import { invalidateAnnouncementCache } from "../utils/cacheInvalidation.js";
 import { emitNotification, io } from "../server.js";
+import { slackHooks } from "../utils/slackHooks.js";
 import {
   uploadAnnouncementAttachment,
   uploadMultipleAnnouncementAttachments,
@@ -367,6 +368,9 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
 
     // Send background email notifications
     notificationService.sendAnnouncementEmails(announcement, subscriberIds);
+    
+    // Send Slack notifications
+    slackHooks.onAnnouncementPosted(announcement, subscriberIds, req.user).catch(console.error);
   }
 
   invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });

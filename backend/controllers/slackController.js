@@ -153,7 +153,7 @@ export const updatePreferences = asyncHandler(async (req, res) => {
     'taskOverdue', 'taskDueSoon', 'commentAdded', 'commentMention',
     'subtaskUpdates', 'projectUpdates', 'teamUpdates', 'announcements',
     'reminders', 'statusChanges',
-    'digestEnabled', 'digestFrequency', 'digestTime',
+    'digestEnabled', 'digestFrequency', 'digestTime', 'digestDay',
     'quietHoursEnabled', 'quietHoursStart', 'quietHoursEnd',
     'minPriorityLevel', 'groupSimilarNotifications',
     'batchingEnabled', 'batchIntervalMinutes', 'preferThreadedReplies'
@@ -166,11 +166,18 @@ export const updatePreferences = asyncHandler(async (req, res) => {
     }
   }
 
-  await SlackUser.findByIdAndUpdate(slackUser._id, { $set: updates });
+  const updatedUser = await SlackUser.findByIdAndUpdate(
+    slackUser._id, 
+    { $set: updates },
+    { new: true }
+  );
 
   res.json({
     success: true,
-    message: 'Preferences updated successfully'
+    message: 'Preferences updated successfully',
+    data: {
+      preferences: updatedUser.preferences
+    }
   });
 });
 
