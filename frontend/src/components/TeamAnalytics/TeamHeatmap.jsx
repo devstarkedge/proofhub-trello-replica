@@ -136,7 +136,7 @@ const SummaryRow = memo(({ dateRange, teamData }) => {
         </div>
         <span className="text-sm font-semibold text-gray-700">Daily Total</span>
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="flex gap-2 overflow-x-auto overflow-y-hidden">
         {dailySummary.map((day) => {
           const intensity = day.totalMinutes / maxTotal;
           const hours = Math.floor(day.totalMinutes / 60);
@@ -208,7 +208,7 @@ const UserHeatmapRow = memo(({ member, maxMinutes }) => {
       </div>
 
       {/* Heatmap Cells */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="flex gap-1 pb-2">
         {member.dailyTimeline.map((day) => (
           <HeatmapCell 
             key={day.date}
@@ -231,23 +231,23 @@ const UserHeatmapRow = memo(({ member, maxMinutes }) => {
 
 // Date Header Row
 const DateHeaderRow = memo(({ dateRange }) => (
-  <div className="flex items-center gap-2 mb-2">
-    <div className="w-40 pr-3">
+  <div className="flex items-center gap-1 mb-2">
+    <div className="w-40 pr-3 flex-shrink-0">
       <span className="text-xs font-semibold text-gray-500 uppercase">Team Member</span>
     </div>
-    <div className="flex gap-2 overflow-x-auto pb-1">
+    <div className="flex gap-1 flex-1">
       {dateRange.map((date) => (
         <div key={date} className="w-12 text-center flex-shrink-0">
-          <div className="text-xs font-medium text-gray-600">
+          <div className="text-[11px] font-semibold text-gray-600">
             {new Date(date).toLocaleDateString('en-US', { weekday: 'short' })}
           </div>
-          <div className="text-xs text-gray-400">
+          <div className="text-[11px] text-gray-400">
             {new Date(date).toLocaleDateString('en-US', { day: 'numeric' })}
           </div>
         </div>
       ))}
     </div>
-    <div className="w-24 pl-3 text-right">
+    <div className="w-24 pl-3 text-right flex-shrink-0">
       <span className="text-xs font-semibold text-gray-500 uppercase">Total</span>
     </div>
   </div>
@@ -286,7 +286,7 @@ const TeamHeatmap = memo(({ teamData, filteredMembers }) => {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-xl shadow-lg p-6"
+      className="bg-white rounded-xl shadow-lg p-6 overflow-hidden"
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -319,21 +319,24 @@ const TeamHeatmap = memo(({ teamData, filteredMembers }) => {
         </div>
       </div>
 
-      {/* Date Header */}
-      <DateHeaderRow dateRange={dateRange} />
+      {/* Date Header + Grid with single horizontal scroll */}
+      <div className="overflow-x-auto">
+        <div className="min-w-max">
+          <DateHeaderRow dateRange={dateRange} />
 
-      {/* Heatmap Grid */}
-      <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
-        {filteredMembers.map((member, index) => (
-          <motion.div
-            key={member.user._id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.03 }}
-          >
-            <UserHeatmapRow member={member} maxMinutes={maxMinutes} />
-          </motion.div>
-        ))}
+          <div className="space-y-2 pr-2">
+            {filteredMembers.map((member, index) => (
+              <motion.div
+                key={member.user._id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.03 }}
+              >
+                <UserHeatmapRow member={member} maxMinutes={maxMinutes} />
+              </motion.div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Summary Row */}
@@ -341,6 +344,14 @@ const TeamHeatmap = memo(({ teamData, filteredMembers }) => {
 
       {/* Legend */}
       <HeatmapLegend />
+
+      {/* Scroll styling */}
+      <style jsx="true">{`
+        .custom-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 9999px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+      `}</style>
     </motion.div>
   );
 });

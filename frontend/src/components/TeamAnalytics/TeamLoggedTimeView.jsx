@@ -64,18 +64,93 @@ const DATE_PRESETS = [
   }}
 ];
 
-// Productivity status colors and styles
+// Modern Status Badge Styles - Soft, accessible, dark mode compatible
 const getStatusStyle = (status) => {
   const styles = {
-    green: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-300', gradient: 'from-emerald-500 to-green-500' },
-    emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', gradient: 'from-emerald-400 to-teal-500' },
-    yellow: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300', gradient: 'from-amber-400 to-yellow-500' },
-    orange: { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300', gradient: 'from-orange-400 to-red-400' },
-    red: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300', gradient: 'from-red-500 to-rose-500' },
-    gray: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-300', gradient: 'from-gray-400 to-gray-500' }
+    // Top Performers / Excellent - Soft emerald green
+    green: { 
+      bg: 'bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/30 dark:to-green-900/30',
+      text: 'text-emerald-700 dark:text-emerald-300',
+      border: 'border-emerald-200/60 dark:border-emerald-700/50',
+      shadow: 'shadow-emerald-100/50 dark:shadow-emerald-900/20',
+      icon: '✨'
+    },
+    // Good Performance - Teal accent
+    emerald: { 
+      bg: 'bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-900/30 dark:to-cyan-900/30',
+      text: 'text-teal-700 dark:text-teal-300',
+      border: 'border-teal-200/60 dark:border-teal-700/50',
+      shadow: 'shadow-teal-100/50 dark:shadow-teal-900/20',
+      icon: '👍'
+    },
+    // Medium Productivity - Soft blue/indigo
+    yellow: { 
+      bg: 'bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-900/30 dark:to-indigo-900/30',
+      text: 'text-sky-700 dark:text-sky-300',
+      border: 'border-sky-200/60 dark:border-sky-700/50',
+      shadow: 'shadow-sky-100/50 dark:shadow-sky-900/20',
+      icon: '📊'
+    },
+    // Needs Attention - Soft amber/orange warning
+    orange: { 
+      bg: 'bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30',
+      text: 'text-amber-700 dark:text-amber-300',
+      border: 'border-amber-200/60 dark:border-amber-700/50',
+      shadow: 'shadow-amber-100/50 dark:shadow-amber-900/20',
+      icon: '⚠️'
+    },
+    // Critical / Low - Soft rose
+    red: { 
+      bg: 'bg-gradient-to-r from-rose-50 to-pink-50 dark:from-rose-900/30 dark:to-pink-900/30',
+      text: 'text-rose-700 dark:text-rose-300',
+      border: 'border-rose-200/60 dark:border-rose-700/50',
+      shadow: 'shadow-rose-100/50 dark:shadow-rose-900/20',
+      icon: '🔴'
+    },
+    // No Activity - Calm neutral slate/blue
+    gray: { 
+      bg: 'bg-gradient-to-r from-slate-50 to-gray-100 dark:from-slate-800/50 dark:to-gray-800/50',
+      text: 'text-slate-600 dark:text-slate-300',
+      border: 'border-slate-200/60 dark:border-slate-600/50',
+      shadow: 'shadow-slate-100/50 dark:shadow-slate-900/20',
+      icon: '💤'
+    }
   };
   return styles[status?.color] || styles.gray;
 };
+
+// Modern Status Badge Component
+const StatusBadge = memo(({ status, className = '' }) => {
+  const style = getStatusStyle(status);
+  
+  return (
+    <span 
+      className={`
+        inline-flex items-center gap-1.5
+        px-3 py-1
+        text-xs font-semibold
+        rounded-full
+        border
+        shadow-sm
+        transition-all duration-200 ease-out
+        hover:scale-105 hover:shadow-md
+        active:scale-100
+        cursor-default
+        select-none
+        ${style.bg}
+        ${style.text}
+        ${style.border}
+        ${style.shadow}
+        ${className}
+      `}
+    >
+      <span className="text-[10px]">{style.icon}</span>
+      <span>{status?.label || 'Unknown'}</span>
+    </span>
+  );
+});
+
+StatusBadge.displayName = 'StatusBadge';
 
 // Progress Ring Component
 const ProgressRing = memo(({ progress, size = 60, strokeWidth = 6, color = 'blue' }) => {
@@ -159,9 +234,7 @@ const UserRow = memo(({ member, dateRange, isCompact, onUserClick }) => {
             <h3 className={`${isCompact ? 'text-sm' : 'text-base'} font-semibold text-gray-900 truncate`}>
               {member.user.name}
             </h3>
-            <Badge className={`${statusStyle.bg} ${statusStyle.text} text-xs px-2 py-0.5`}>
-              {member.summary.productivityStatus?.label}
-            </Badge>
+            <StatusBadge status={member.summary.productivityStatus} />
           </div>
           <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
             <span className="flex items-center gap-1">
@@ -394,6 +467,68 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
     return members;
   }, [teamData, searchQuery, filterPreset, sortBy, sortOrder]);
 
+  // Date columns for table view
+  const dateColumns = useMemo(() => {
+    if (teamData?.analytics?.dailyTotals?.length) {
+      return teamData.analytics.dailyTotals.map(d => d.date);
+    }
+    if (filteredMembers.length && filteredMembers[0].dailyTimeline) {
+      return filteredMembers[0].dailyTimeline.map(d => d.date);
+    }
+    return [];
+  }, [teamData, filteredMembers]);
+
+  const formatDateLabel = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const formatMinutes = (minutes = 0) => {
+    const hrs = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    return `${hrs}h ${mins}m`;
+  };
+
+  const getDayData = (member, date) => {
+    if (!member?.dailyTimeline) return null;
+    return member.dailyTimeline.find(d => d.date === date) || null;
+  };
+
+  const getDayCellStyle = (day) => {
+    if (!day || !day.hasData) {
+      return {
+        bg: 'bg-gray-50',
+        text: 'text-gray-400',
+        border: 'border-gray-100'
+      };
+    }
+
+    const hours = (day.totalMinutes || 0) / 60;
+
+    if (hours >= 9) {
+      return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100' };
+    }
+    if (hours >= 7) {
+      return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100' };
+    }
+    if (hours >= 4) {
+      return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100' };
+    }
+    return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-100' };
+  };
+
+  const getDayTotalMinutes = (date) => {
+    if (teamData?.analytics?.dailyTotals?.length) {
+      const match = teamData.analytics.dailyTotals.find(d => d.date === date);
+      if (match) return match.totalMinutes || 0;
+    }
+    return filteredMembers.reduce((sum, member) => {
+      const day = getDayData(member, date);
+      return sum + (day?.totalMinutes || 0);
+    }, 0);
+  };
+
   // Export functions
   const handleExportXLSX = useCallback(() => {
     if (!filteredMembers.length) {
@@ -401,21 +536,30 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
       return;
     }
 
-    const exportData = filteredMembers.map(m => ({
-      'Name': m.user.name,
-      'Email': m.user.email,
-      'Department': Array.isArray(m.user.department) 
-        ? m.user.department.map(d => d.name).join(', ')
-        : m.user.department?.name || 'N/A',
-      'Role': m.user.role,
-      'Total Time': m.summary.formattedTotal,
-      'Total Minutes': m.summary.totalMinutes,
-      'Days Logged': m.summary.daysWithLogs,
-      'Total Days': m.summary.totalDays,
-      'Avg Daily': m.summary.avgDailyFormatted,
-      'Productivity Score': `${m.summary.productivityScore}%`,
-      'Status': m.summary.productivityStatus?.label
-    }));
+    const exportData = filteredMembers.map(m => {
+      const row = {
+        'Name': m.user.name,
+        'Email': m.user.email,
+        'Role': m.user.role,
+        'Department': Array.isArray(m.user.department) 
+          ? m.user.department.map(d => d.name).join(', ')
+          : m.user.department?.name || 'N/A',
+        'Total Time': m.summary.formattedTotal,
+        'Total Minutes': m.summary.totalMinutes,
+        'Days Logged': m.summary.daysWithLogs,
+        'Total Days': m.summary.totalDays,
+        'Avg Daily': m.summary.avgDailyFormatted,
+        'Productivity Score': `${m.summary.productivityScore}%`,
+        'Status': m.summary.productivityStatus?.label
+      };
+
+      dateColumns.forEach(date => {
+        const day = getDayData(m, date);
+        row[formatDateLabel(date)] = day?.hasData ? `${day.hours}h ${day.minutes}m` : '0h 0m';
+      });
+
+      return row;
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
@@ -423,9 +567,18 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
 
     // Add header styling
     worksheet['!cols'] = [
-      { wch: 25 }, { wch: 30 }, { wch: 20 }, { wch: 12 },
-      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-      { wch: 12 }, { wch: 15 }, { wch: 15 }
+      { wch: 24 }, // Name
+      { wch: 28 }, // Email
+      { wch: 12 }, // Role
+      { wch: 18 }, // Department
+      ...dateColumns.map(() => ({ wch: 12 })),
+      { wch: 12 }, // Total Time
+      { wch: 14 }, // Total Minutes
+      { wch: 10 }, // Days Logged
+      { wch: 10 }, // Total Days
+      { wch: 12 }, // Avg Daily
+      { wch: 16 }, // Productivity
+      { wch: 12 }  // Status
     ];
 
     const fileName = `team_logged_time_${dateRange.start}_to_${dateRange.end}.xlsx`;
@@ -439,65 +592,132 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
       return;
     }
 
-    const doc = new jsPDF('landscape');
-    
-    // Header
-    doc.setFontSize(20);
-    doc.setTextColor(59, 130, 246);
-    doc.text('Team Logged Time Report', 14, 22);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Period: ${dateRange.start} to ${dateRange.end}`, 14, 30);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 36);
+    try {
+      const doc = new jsPDF('landscape');
+      
+      // Header
+      doc.setFontSize(20);
+      doc.setTextColor(59, 130, 246);
+      doc.text('Team Logged Time Report', 14, 22);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Period: ${new Date(dateRange.start).toLocaleDateString()} to ${new Date(dateRange.end).toLocaleDateString()}`, 14, 30);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 36);
 
-    // Summary stats
-    if (teamData?.analytics) {
-      doc.setFontSize(12);
-      doc.setTextColor(0);
-      doc.text(`Total Team Hours: ${teamData.analytics.summary.totalTeamHours}h`, 14, 46);
-      doc.text(`Team Members: ${teamData.analytics.summary.totalMembers}`, 100, 46);
-      doc.text(`Avg Productivity: ${teamData.analytics.summary.avgProductivity}%`, 180, 46);
-    }
-
-    // Table
-    const tableData = filteredMembers.map(m => [
-      m.user.name,
-      m.user.email,
-      m.summary.formattedTotal,
-      `${m.summary.daysWithLogs}/${m.summary.totalDays}`,
-      m.summary.avgDailyFormatted,
-      `${m.summary.productivityScore}%`,
-      m.summary.productivityStatus?.label
-    ]);
-
-    doc.autoTable({
-      startY: 55,
-      head: [['Name', 'Email', 'Total Time', 'Days Logged', 'Avg Daily', 'Productivity', 'Status']],
-      body: tableData,
-      theme: 'striped',
-      headStyles: { fillColor: [59, 130, 246] },
-      styles: { fontSize: 9 },
-      columnStyles: {
-        0: { cellWidth: 40 },
-        1: { cellWidth: 50 },
-        6: { cellWidth: 25 }
+      // Summary stats
+      if (teamData?.analytics) {
+        doc.setFontSize(12);
+        doc.setTextColor(0);
+        doc.text(`Total Team Hours: ${teamData.analytics.summary.totalTeamHours}h`, 14, 46);
+        doc.text(`Team Members: ${teamData.analytics.summary.totalMembers}`, 100, 46);
+        doc.text(`Avg Productivity: ${teamData.analytics.summary.avgProductivity}%`, 180, 46);
       }
-    });
 
-    // Footer
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(150);
-      doc.text(`Page ${i} of ${pageCount}`, doc.internal.pageSize.width - 30, doc.internal.pageSize.height - 10);
-      doc.text('FlowTask - Team Analytics', 14, doc.internal.pageSize.height - 10);
+      // Create table head and data (table format: Name | Email/Role/Dept | date columns | Total)
+      const headRow = [
+        'Name',
+        'Email / Role / Dept',
+        ...dateColumns.map(formatDateLabel),
+        'Total Time'
+      ];
+
+      const tableData = filteredMembers.map(m => {
+        const roleDept = `${m.user.role || ''} | ${Array.isArray(m.user.department) 
+          ? m.user.department.map(d => d.name).join(', ')
+          : m.user.department?.name || 'N/A'}`;
+
+        const dayValues = dateColumns.map(date => {
+          const day = getDayData(m, date);
+          return day?.hasData ? `${day.hours}h ${day.minutes}m` : '0h 0m';
+        });
+
+        return [
+          m.user.name,
+          `${m.user.email}\n${roleDept}`,
+          ...dayValues,
+          m.summary.formattedTotal
+        ];
+      });
+
+      // Use autoTable if available, otherwise use basic table
+      if (doc.autoTable) {
+        const dynamicColumnStyles = {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 55 }
+        };
+
+        dateColumns.forEach((_, idx) => {
+          dynamicColumnStyles[idx + 2] = { cellWidth: 20 };
+        });
+        dynamicColumnStyles[headRow.length - 1] = { cellWidth: 25 };
+
+        doc.autoTable({
+          startY: 55,
+          head: [headRow],
+          body: tableData,
+          theme: 'striped',
+          headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold' },
+          bodyStyles: { textColor: [0, 0, 0] },
+          alternateRowStyles: { fillColor: [245, 248, 255] },
+          styles: { fontSize: 9, cellPadding: 3, overflow: 'linebreak' },
+          columnStyles: dynamicColumnStyles
+        });
+      } else {
+        // Fallback: Create simple table without autoTable
+        const margin = 10;
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const availableWidth = pageWidth - margin * 2;
+        const colWidth = availableWidth / headRow.length;
+        const cellHeight = 8;
+        let yPosition = 50;
+
+        // Headers
+        doc.setFillColor(59, 130, 246);
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+
+        let xPosition = margin;
+        headRow.forEach((header) => {
+          doc.rect(xPosition, yPosition, colWidth, cellHeight, 'F');
+          doc.text(String(header).substring(0, 18), xPosition + 2, yPosition + 5.5);
+          xPosition += colWidth;
+        });
+
+        yPosition += cellHeight;
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+
+        // Data rows
+        tableData.forEach((row, rowIndex) => {
+          if (yPosition > doc.internal.pageSize.height - 20) {
+            doc.addPage();
+            yPosition = margin;
+          }
+
+          doc.setFillColor(rowIndex % 2 === 0 ? 245 : 255, rowIndex % 2 === 0 ? 248 : 255, rowIndex % 2 === 0 ? 255 : 255);
+          doc.setTextColor(0, 0, 0);
+
+          xPosition = margin;
+          row.forEach((cell) => {
+            doc.rect(xPosition, yPosition, colWidth, cellHeight, 'F');
+            doc.text(String(cell).substring(0, 20), xPosition + 2, yPosition + 5.5);
+            xPosition += colWidth;
+          });
+
+          yPosition += cellHeight;
+        });
+      }
+
+      const fileName = `team_logged_time_${new Date(dateRange.start).toISOString().split('T')[0]}_to_${new Date(dateRange.end).toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+      toast.success('PDF report exported successfully');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      toast.error('Failed to export PDF');
     }
-
-    doc.save(`team_logged_time_${dateRange.start}_to_${dateRange.end}.pdf`);
-    toast.success('PDF report exported successfully');
-  }, [filteredMembers, dateRange, teamData]);
+  }, [filteredMembers, teamData, dateRange]);
 
   // Loading skeleton
   if (loading) {
@@ -565,9 +785,9 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
               {' - '}
               {new Date(dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </span>
-            <Badge className="bg-blue-100 text-blue-700 text-xs">
+            <span className="inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border border-blue-200/60 shadow-sm dark:from-blue-900/30 dark:to-indigo-900/30 dark:text-blue-300 dark:border-blue-700/50">
               {Math.ceil((new Date(dateRange.end) - new Date(dateRange.start)) / (1000 * 60 * 60 * 24)) + 1} days
-            </Badge>
+            </span>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -999,23 +1219,99 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
               />
             </div>
           ) : viewMode === 'table' ? (
-            <AnimatePresence>
-              {filteredMembers.map((member, index) => (
-                <motion.div
-                  key={member.user._id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ delay: index * 0.05 }}
-                >
-                  <UserRow 
-                    member={member} 
-                    dateRange={teamData?.dateRange || []}
-                    isCompact={false}
-                  />
-                </motion.div>
-              ))}
-            </AnimatePresence>
+              <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-56">User</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-64">Email / Role / Department</th>
+                        {dateColumns.map(date => (
+                          <th key={date} className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            {formatDateLabel(date)}
+                          </th>
+                        ))}
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">Total Logged Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filteredMembers.map((member, idx) => {
+                        const deptLabel = Array.isArray(member.user.department)
+                          ? member.user.department.map(d => d.name).join(', ')
+                          : member.user.department?.name || 'N/A';
+
+                        return (
+                          <tr key={member.user._id} className="hover:bg-blue-50/40 transition-colors">
+                            <td className="px-4 py-3 align-top">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {member.user.avatar ? (
+                                  <img src={member.user.avatar} alt={member.user.name} className="w-10 h-10 rounded-full object-cover border border-gray-200" />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-white font-semibold flex items-center justify-center border border-white shadow-sm">
+                                    {member.user.name?.[0]?.toUpperCase() || '?' }
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-semibold text-gray-900 truncate">{member.user.name}</p>
+                                    <StatusBadge status={member.summary.productivityStatus} />
+                                  </div>
+                                  <p className="text-xs text-gray-500">{member.summary.productivityScore}% productivity</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <div className="text-sm text-gray-900 truncate">{member.user.email}</div>
+                              <div className="text-xs text-gray-500">{member.user.role} · {deptLabel}</div>
+                            </td>
+                            {dateColumns.map((date) => {
+                              const day = getDayData(member, date);
+                              const style = getDayCellStyle(day);
+                              const value = day?.hasData ? `${day.hours}h ${day.minutes}m` : '0h 0m';
+                              return (
+                                <td key={date} className={`px-3 py-2 text-center font-semibold border ${style.bg} ${style.text} ${style.border} rounded-md`}> 
+                                  <span className="whitespace-nowrap text-xs">{value}</span>
+                                </td>
+                              );
+                            })}
+                            <td className="px-4 py-3 text-right font-bold text-gray-900 align-top whitespace-nowrap">
+                              {member.summary.formattedTotal}
+                              <div className="text-xs text-gray-500">{member.summary.daysWithLogs}/{member.summary.totalDays} days</div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {/* Totals row */}
+                      {dateColumns.length > 0 && (
+                        <tr className="bg-gray-50 font-semibold border-t border-gray-200">
+                          <td className="px-4 py-3" colSpan={2}>Totals</td>
+                          {dateColumns.map((date) => (
+                            <td key={date} className="px-3 py-3 text-center text-gray-700">
+                              {formatMinutes(getDayTotalMinutes(date))}
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 text-right text-gray-900">
+                            {teamData?.analytics?.summary?.totalTeamHours ? `${teamData.analytics.summary.totalTeamHours}h` : '—'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Grand total summary */}
+                <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200">
+                  <div className="text-sm text-gray-600">
+                    Showing {filteredMembers.length} of {teamData?.teamData?.length || filteredMembers.length} team members
+                  </div>
+                  {teamData?.analytics?.summary?.totalTeamHours !== undefined && (
+                    <div className="text-sm font-semibold text-gray-900">
+                      Grand Total Working Hours: <span className="text-blue-700">{teamData.analytics.summary.totalTeamHours}h</span>
+                    </div>
+                  )}
+                </div>
+              </div>
           ) : viewMode === 'heatmap' ? (
             <TeamHeatmap teamData={teamData} filteredMembers={filteredMembers} />
           ) : (

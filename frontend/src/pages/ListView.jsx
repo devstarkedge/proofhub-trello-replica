@@ -745,10 +745,10 @@ const ListView = () => {
                     <span className="flex items-center gap-2">
                       <FolderKanban className="w-4 h-4 text-blue-600" />
                       <span className="font-medium text-gray-700">{currentDepartment.name}</span>
-                      <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-700 border-blue-200">
-                        <Sparkles className="w-3 h-3 mr-1" />
+                      <span className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 border border-emerald-200/60 shadow-sm hover:scale-105 transition-all duration-200 dark:from-emerald-900/30 dark:to-green-900/30 dark:text-emerald-300 dark:border-emerald-700/50">
+                        <Sparkles className="w-3 h-3" />
                         Active
-                      </Badge>
+                      </span>
                     </span>
                   ) : (
                     'Select a department to view tasks'
