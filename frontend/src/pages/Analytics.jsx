@@ -108,18 +108,20 @@ const Analytics = memo(() => {
       return { priorityData: [], statusData: [] };
     }
 
+    const priorityBreakdown = analyticsData.priorityBreakdown || {};
+    
     return {
       priorityData: [
-        { name: 'Low', value: analyticsData.priorityBreakdown.low, color: priorityColors.low },
-        { name: 'Medium', value: analyticsData.priorityBreakdown.medium, color: priorityColors.medium },
-        { name: 'High', value: analyticsData.priorityBreakdown.high, color: priorityColors.high },
-        { name: 'Critical', value: analyticsData.priorityBreakdown.critical, color: priorityColors.critical }
+        { name: 'Low', value: priorityBreakdown.low || 0, color: priorityColors.low },
+        { name: 'Medium', value: priorityBreakdown.medium || 0, color: priorityColors.medium },
+        { name: 'High', value: priorityBreakdown.high || 0, color: priorityColors.high },
+        { name: 'Critical', value: priorityBreakdown.critical || 0, color: priorityColors.critical }
       ],
       statusData: [
-        { name: 'To Do', value: analyticsData.todoTasks, color: statusColors.todo },
-        { name: 'In Progress', value: analyticsData.inProgressTasks, color: statusColors['in-progress'] },
-        { name: 'Review', value: analyticsData.reviewTasks, color: statusColors.review },
-        { name: 'Done', value: analyticsData.completedTasks, color: statusColors.done }
+        { name: 'To Do', value: analyticsData.todoTasks || 0, color: statusColors.todo },
+        { name: 'In Progress', value: analyticsData.inProgressTasks || 0, color: statusColors['in-progress'] },
+        { name: 'Review', value: analyticsData.reviewTasks || 0, color: statusColors.review },
+        { name: 'Done', value: analyticsData.completedTasks || 0, color: statusColors.done }
       ]
     };
   }, [analyticsData]);

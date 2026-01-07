@@ -2172,11 +2172,11 @@ class DatabaseService {
   }
 
   /**
-   * Get department-wise analytics
+   * Get department-wise team analytics (logged time based)
    * @param {Object} params - Query parameters
-   * @returns {Promise<Object>} Department analytics data
+   * @returns {Promise<Object>} Department team analytics data
    */
-  async getDepartmentAnalytics(params = {}) {
+  async getTeamDepartmentAnalytics(params = {}) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
