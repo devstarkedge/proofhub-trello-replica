@@ -12,7 +12,10 @@ import { batchCreateActivities, executeBackgroundTasks } from '../utils/activity
 const populateConfig = [
   { path: 'assignees', select: 'name email avatar' },
   { path: 'tags', select: 'name color' },
-  { path: 'coverImage', select: 'url secureUrl publicId height width' }
+  { path: 'coverImage', select: 'url secureUrl publicId height width' },
+  { path: 'estimationTime.user', select: 'name email avatar' },
+  { path: 'loggedTime.user', select: 'name email avatar' },
+  { path: 'billedTime.user', select: 'name email avatar' }
 ];
 
 const getOrderedNanos = (subtaskId) => {
@@ -147,6 +150,32 @@ export const updateNano = asyncHandler(async (req, res, next) => {
   const taskId = nano.task;
   const subtaskId = nano.subtask;
 
+  // Helper function to extract user ID from object or string
+  const extractUserId = (user, fallbackUserId) => {
+    if (!user) return fallbackUserId;
+    if (typeof user === 'object' && user._id) return user._id;
+    if (typeof user === 'string') return user;
+    return fallbackUserId;
+  };
+
+  // Process time tracking entries to ensure proper user IDs
+  const processTimeEntries = (entries, existingEntries) => {
+    if (!entries) return existingEntries;
+    return entries.map(entry => {
+      // For new entries (no _id), always use authenticated user for security
+      if (!entry._id && !entry.id?.includes('-')) {
+        return { ...entry, user: req.user.id };
+      }
+      // Check if this is a new entry with frontend-generated id
+      const isNewEntry = entry.id && typeof entry.id === 'string' && entry.id.includes('-');
+      if (isNewEntry) {
+        return { ...entry, user: req.user.id };
+      }
+      // For existing entries, extract user ID if it's an object
+      return { ...entry, user: extractUserId(entry.user, entry.user) };
+    });
+  };
+
   const updates = {
     title: req.body.title ?? nano.title,
     description: req.body.description ?? nano.description,
@@ -158,9 +187,9 @@ export const updateNano = asyncHandler(async (req, res, next) => {
     tags: req.body.tags ?? nano.tags,
     attachments: req.body.attachments ?? nano.attachments,
     colorToken: req.body.colorToken ?? nano.colorToken,
-    estimationTime: req.body.estimationTime ?? nano.estimationTime,
-    loggedTime: req.body.loggedTime ?? nano.loggedTime,
-    billedTime: req.body.billedTime ?? nano.billedTime,
+    estimationTime: processTimeEntries(req.body.estimationTime, nano.estimationTime),
+    loggedTime: processTimeEntries(req.body.loggedTime, nano.loggedTime),
+    billedTime: processTimeEntries(req.body.billedTime, nano.billedTime),
     updatedBy: req.user.id
   };
 

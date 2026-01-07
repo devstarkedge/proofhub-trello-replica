@@ -75,6 +75,28 @@ const TimeTrackingSection = ({
   card,
 }) => {
   const { user } = useContext(AuthContext);
+
+  // Helper function to get user display name from time entry
+  // Handles both populated user objects and unpopulated user IDs
+  const getUserDisplayName = (entry) => {
+    // If entry.user is a populated object with name
+    if (entry.user && typeof entry.user === 'object' && entry.user.name) {
+      return entry.user.name;
+    }
+    // If entry.userName was explicitly stored
+    if (entry.userName) {
+      return entry.userName;
+    }
+    // If entry.user is just an ID, check if it matches current user
+    if (entry.user && user) {
+      const entryUserId = typeof entry.user === 'object' ? entry.user._id : entry.user;
+      if (entryUserId === user._id || entryUserId === user.id) {
+        return user.name || user.email || 'You';
+      }
+    }
+    // Fallback
+    return 'Unknown';
+  };
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState("estimate");
 
@@ -424,7 +446,7 @@ const TimeTrackingSection = ({
                                       <div className="flex items-center gap-1 text-gray-500">
                                         <User size={12} />
                                         <span>
-                                          {card.createdBy?.name || "Unknown"}
+                                          {getUserDisplayName(entry)}
                                         </span>
                                       </div>
                                       <span className="text-gray-600">
@@ -650,7 +672,7 @@ const TimeTrackingSection = ({
                                       <div className="flex items-center gap-1 text-gray-500">
                                         <User size={12} />
                                         <span>
-                                          {card.createdBy?.name || "Unknown"}
+                                          {getUserDisplayName(entry)}
                                         </span>
                                       </div>
                                       <span className="text-gray-600">
@@ -880,7 +902,7 @@ const TimeTrackingSection = ({
                                       <div className="flex items-center gap-1 text-gray-500">
                                         <User size={12} />
                                         <span>
-                                          {card.createdBy?.name || "Unknown"}
+                                          {getUserDisplayName(entry)}
                                         </span>
                                       </div>
                                       <span className="text-gray-600">

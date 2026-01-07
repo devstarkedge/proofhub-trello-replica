@@ -595,6 +595,34 @@ export const getCard = asyncHandler(async (req, res, next) => {
         pipeline: [{ $project: { url: 1, secureUrl: 1, thumbnailUrl: 1, fileName: 1, fileType: 1 } }]
       }
     },
+    // Lookup users for time tracking entries
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'estimationTime.user',
+        foreignField: '_id',
+        as: 'estimationTimeUsers',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'loggedTime.user',
+        foreignField: '_id',
+        as: 'loggedTimeUsers',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'billedTime.user',
+        foreignField: '_id',
+        as: 'billedTimeUsers',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+      }
+    },
     // Add computed fields
     {
       $addFields: {
@@ -602,11 +630,71 @@ export const getCard = asyncHandler(async (req, res, next) => {
         list: { $arrayElemAt: ['$listArr', 0] },
         board: { $arrayElemAt: ['$boardArr', 0] },
         hasRecurrence: { $gt: [{ $size: '$recurrence' }, 0] },
-        coverImage: { $arrayElemAt: ['$coverImageArr', 0] }
+        coverImage: { $arrayElemAt: ['$coverImageArr', 0] },
+        // Populate user in estimationTime entries
+        estimationTime: {
+          $map: {
+            input: { $ifNull: ['$estimationTime', []] },
+            as: 'entry',
+            in: {
+              $mergeObjects: [
+                '$$entry',
+                {
+                  user: {
+                    $arrayElemAt: [
+                      { $filter: { input: '$estimationTimeUsers', cond: { $eq: ['$$this._id', '$$entry.user'] } } },
+                      0
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        // Populate user in loggedTime entries
+        loggedTime: {
+          $map: {
+            input: { $ifNull: ['$loggedTime', []] },
+            as: 'entry',
+            in: {
+              $mergeObjects: [
+                '$$entry',
+                {
+                  user: {
+                    $arrayElemAt: [
+                      { $filter: { input: '$loggedTimeUsers', cond: { $eq: ['$$this._id', '$$entry.user'] } } },
+                      0
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        // Populate user in billedTime entries
+        billedTime: {
+          $map: {
+            input: { $ifNull: ['$billedTime', []] },
+            as: 'entry',
+            in: {
+              $mergeObjects: [
+                '$$entry',
+                {
+                  user: {
+                    $arrayElemAt: [
+                      { $filter: { input: '$billedTimeUsers', cond: { $eq: ['$$this._id', '$$entry.user'] } } },
+                      0
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     },
     // Clean up temporary fields
-    { $project: { createdByArr: 0, listArr: 0, boardArr: 0, recurrence: 0, coverImageArr: 0 } }
+    { $project: { createdByArr: 0, listArr: 0, boardArr: 0, recurrence: 0, coverImageArr: 0, estimationTimeUsers: 0, loggedTimeUsers: 0, billedTimeUsers: 0 } }
   ];
 
   const results = await Card.aggregate(pipeline);
@@ -751,16 +839,26 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   const oldTitle = card.title || '';
   const oldStartDate = card.startDate;
 
-  // Handle time tracking updates
+  // Helper function to extract user ID from object or string
+  const extractUserId = (user, fallbackUserId) => {
+    if (!user) return fallbackUserId;
+    if (typeof user === 'object' && user._id) return user._id;
+    if (typeof user === 'string') return user;
+    return fallbackUserId;
+  };
+
+  // Handle time tracking updates - ensure user is always the authenticated user for new entries
   if (req.body.estimationTime) {
     req.body.estimationTime.forEach(entry => {
       if (!entry._id) { // Only for new entries
-        if (!entry.user) {
-          entry.user = req.user.id;
-        }
+        // Always use authenticated user for new entries (security)
+        entry.user = req.user.id;
         if (!entry.reason) {
           return next(new ErrorResponse("Reason is required for new estimation entries", 400));
         }
+      } else {
+        // For existing entries, extract user ID if it's an object
+        entry.user = extractUserId(entry.user, entry.user);
       }
     });
   }
@@ -768,12 +866,14 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   if (req.body.loggedTime) {
     req.body.loggedTime.forEach(entry => {
       if (!entry._id) { // Only for new entries
-        if (!entry.user) {
-          entry.user = req.user.id;
-        }
+        // Always use authenticated user for new entries (security)
+        entry.user = req.user.id;
         if (!entry.description) {
           return next(new ErrorResponse("Description is required for new logged time entries", 400));
         }
+      } else {
+        // For existing entries, extract user ID if it's an object
+        entry.user = extractUserId(entry.user, entry.user);
       }
     });
   }
@@ -781,12 +881,14 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   if (req.body.billedTime) {
     req.body.billedTime.forEach(entry => {
       if (!entry._id) { // Only for new entries
-        if (!entry.user) {
-          entry.user = req.user.id;
-        }
+        // Always use authenticated user for new entries (security)
+        entry.user = req.user.id;
         if (!entry.description) {
           return next(new ErrorResponse("Description is required for new billed time entries", 400));
         }
+      } else {
+        // For existing entries, extract user ID if it's an object
+        entry.user = extractUserId(entry.user, entry.user);
       }
     });
   }

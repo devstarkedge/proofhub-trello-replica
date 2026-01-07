@@ -637,7 +637,7 @@ const CardDetailModal = React.memo(({
       hours: normalized.hours,
       minutes: normalized.minutes,
       reason: newEstimationReason,
-      user: user._id,
+      user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
       date: new Date().toISOString(),
     };
 
@@ -646,7 +646,7 @@ const CardDetailModal = React.memo(({
     setNewEstimationMinutes("");
     setNewEstimationReason("");
     toast.success("Estimation added successfully!");
-  }, [newEstimationHours, newEstimationMinutes, newEstimationReason, user._id]);
+  }, [newEstimationHours, newEstimationMinutes, newEstimationReason, user._id, user.name, user.email, user.avatar]);
 
   const handleAddLoggedTime = useCallback(() => {
     const hours = parseInt(newLoggedHours || 0);
@@ -663,7 +663,7 @@ const CardDetailModal = React.memo(({
       hours: normalized.hours,
       minutes: normalized.minutes,
       description: newLoggedDescription,
-      user: user._id,
+      user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
       date: new Date().toISOString(),
     };
 
@@ -672,7 +672,7 @@ const CardDetailModal = React.memo(({
     setNewLoggedMinutes("");
     setNewLoggedDescription("");
     toast.success("Time logged successfully!");
-  }, [newLoggedHours, newLoggedMinutes, newLoggedDescription, user._id]);
+  }, [newLoggedHours, newLoggedMinutes, newLoggedDescription, user._id, user.name, user.email, user.avatar]);
 
   const handleAddBilledTime = useCallback(() => {
     const hours = parseInt(newBilledHours || 0);
@@ -689,7 +689,7 @@ const CardDetailModal = React.memo(({
       hours: normalized.hours,
       minutes: normalized.minutes,
       description: newBilledDescription,
-      user: user._id,
+      user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
       date: new Date().toISOString(),
     };
 
@@ -698,7 +698,7 @@ const CardDetailModal = React.memo(({
     setNewBilledMinutes("");
     setNewBilledDescription("");
     toast.success("Billed time added successfully!");
-  }, [newBilledHours, newBilledMinutes, newBilledDescription, user._id]);
+  }, [newBilledHours, newBilledMinutes, newBilledDescription, user._id, user.name, user.email, user.avatar]);
 
   const startEditingEstimation = useCallback((entry) => {
     setEditingEstimation(entry.id);

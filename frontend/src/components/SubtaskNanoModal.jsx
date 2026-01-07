@@ -438,7 +438,7 @@ const SubtaskNanoModal = ({
         reason: newEstimationReason,
         totalMinutes,
         createdAt: new Date().toISOString(),
-        user: user?._id
+        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null
       };
       const updatedEntries = [...estimationEntries, newEntry];
       setEstimationEntries(updatedEntries);
@@ -512,7 +512,7 @@ const SubtaskNanoModal = ({
         description: newLoggedDescription,
         totalMinutes,
         createdAt: new Date().toISOString(),
-        user: user?._id
+        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null
       };
       const updatedEntries = [...loggedTime, newEntry];
       setLoggedTime(updatedEntries);
@@ -586,7 +586,7 @@ const SubtaskNanoModal = ({
         description: newBilledDescription,
         totalMinutes,
         createdAt: new Date().toISOString(),
-        user: user?._id
+        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null
       };
       const updatedEntries = [...billedTime, newEntry];
       setBilledTime(updatedEntries);
