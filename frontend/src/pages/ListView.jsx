@@ -733,11 +733,10 @@ const ListView = () => {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
               <div className="bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-600 p-4 rounded-2xl shadow-xl shadow-blue-500/30 hover:shadow-2xl hover:shadow-blue-500/40 transition-all duration-300 hover:scale-105 relative overflow-hidden group">
-                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
                 <ClipboardList className="w-8 h-8 text-white relative z-10" />
               </div>
               <div>
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
+                <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent pb-1">
                   {activeTab === 'tasks' ? 'Task List View' : 'Team Logged Time'}
                 </h1>
                 <p className="text-gray-600 mt-1.5">

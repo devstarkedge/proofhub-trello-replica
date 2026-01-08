@@ -23,18 +23,40 @@ body {
     color var(--motion-duration-fast) var(--motion-easing);
 }
 
-/* Theme-aware scrollbar styles */
+/* Global Scrollbar Styles - "Very Very Thin & Blueish" */
+::-webkit-scrollbar {
+  width: 4px;
+  /* Very thin */
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.5);
+  /* Blueish user-friendly color */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(29, 78, 216, 0.6);
+  /* Slightly darker on hover */
+}
+
+/* Theme-aware scrollbar styles - keeping utility for specific forcing if needed */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+  scrollbar-color: rgba(59, 130, 246, 0.5) transparent;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--color-scrollbar-thumb);
+  background: rgba(59, 130, 246, 0.5);
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: var(--color-scrollbar-thumb-hover);
+  background: rgba(29, 78, 216, 0.6);
 }
 
 /* Select dropdown scrollbar - thin and themed */

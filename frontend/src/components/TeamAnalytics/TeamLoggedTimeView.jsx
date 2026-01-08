@@ -267,7 +267,7 @@ const UserRow = memo(({ member, dateRange, isCompact, onUserClick }) => {
 
       {/* Timeline Grid */}
       <div className="relative">
-        <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+        <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-thin">
           {member.dailyTimeline.map((day, index) => {
             const intensity = day.totalMinutes > 0 ? Math.min(day.totalMinutes / 480, 1) : 0;
             const bgColor = day.hasData 

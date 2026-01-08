@@ -303,7 +303,7 @@ const LabelDropdown = ({
             </div>
 
             {/* Labels List */}
-            <div className="max-h-56 overflow-y-auto custom-scrollbar">
+            <div className="max-h-56 overflow-y-auto">
               {loading ? (
                 <div className="p-3 text-center text-gray-500 text-xs">
                   Loading labels...
@@ -405,22 +405,7 @@ const LabelDropdown = ({
         isLoading={isDeleting}
       />
 
-      <style jsx="true">{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #888;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #555;
-        }
-      `}</style>
+      {/* Scroll styling - Inherits from global index.css now */}
     </div>
   );
 };
