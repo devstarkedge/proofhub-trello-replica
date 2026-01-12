@@ -76,24 +76,34 @@ const SubtaskDetailModal = ({
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
-   // Time Tracking States
+  /**
+   * Helper to normalize time entries from server response
+   * CRITICAL: Preserve MongoDB _id for existing entries to maintain ownership integrity
+   * The 'id' field is only for React key purposes, never used for backend identification
+   */
+  const normalizeTimeEntries = (entries, prefix) => {
+    return (entries || []).map((entry, idx) => {
+      // Use MongoDB _id as the primary identifier if available
+      const mongoId = entry._id ? entry._id.toString() : null;
+      return {
+        ...entry,
+        // Keep MongoDB _id intact for backend operations
+        _id: entry._id,
+        // 'id' is only for React keys - prefer MongoDB _id
+        id: mongoId || `temp-${prefix}-${idx}-${Date.now()}`,
+      };
+    });
+  };
+
+   // Time Tracking States - preserve MongoDB _id for proper backend sync
   const [estimationEntries, setEstimationEntries] = useState(
-    (initialData.estimationTime || []).map((entry, idx) => {
-      const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
-      return { ...entry, id };
-    })
+    normalizeTimeEntries(initialData.estimationTime, 'estimation')
   );
   const [loggedTime, setLoggedTime] = useState(
-    (initialData.loggedTime || []).map((entry, idx) => {
-      const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
-      return { ...entry, id };
-    })
+    normalizeTimeEntries(initialData.loggedTime, 'logged')
   );
   const [billedTime, setBilledTime] = useState(
-    (initialData.billedTime || []).map((entry, idx) => {
-      const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
-      return { ...entry, id };
-    })
+    normalizeTimeEntries(initialData.billedTime, 'billed')
   );
   const [newEstimationHours, setNewEstimationHours] = useState("");
   const [newEstimationMinutes, setNewEstimationMinutes] = useState("");
@@ -271,18 +281,10 @@ const SubtaskDetailModal = ({
       setTags(data.tags || []);
       setAttachments(data.attachments || []);
       setParentTaskId(data.task);
-      setEstimationEntries((data.estimationTime || []).map((entry, idx) => {
-        const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
-        return { ...entry, id };
-      }));
-      setLoggedTime((data.loggedTime || []).map((entry, idx) => {
-        const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
-        return { ...entry, id };
-      }));
-      setBilledTime((data.billedTime || []).map((entry, idx) => {
-        const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
-        return { ...entry, id };
-      }));
+      // Use normalizeTimeEntries to preserve MongoDB _id for ownership tracking
+      setEstimationEntries(normalizeTimeEntries(data.estimationTime, 'estimation'));
+      setLoggedTime(normalizeTimeEntries(data.loggedTime, 'logged'));
+      setBilledTime(normalizeTimeEntries(data.billedTime, 'billed'));
       setHierarchyActiveItem("subtask", data);
     } catch (error) {
       console.error("Error loading subtask:", error);
@@ -341,6 +343,43 @@ const SubtaskDetailModal = ({
       // Convert tags (labels) to IDs if they are objects
       const tagIds = tags.map(t => typeof t === 'object' ? t._id : t);
       
+      /**
+       * Helper to prepare time entry for backend
+       * CRITICAL: Include _id for existing entries to preserve ownership
+       * Exclude _id for new entries so backend assigns current user
+       */
+      const prepareTimeEntry = (entry, type) => {
+        const userId = entry.user
+          ? (typeof entry.user === 'object' ? entry.user._id : entry.user)
+          : null;
+        
+        const prepared = {
+          hours: entry.hours,
+          minutes: entry.minutes,
+          date: entry.date,
+        };
+        
+        // Include _id only for existing entries (valid MongoDB ObjectId)
+        // This tells backend to preserve original ownership
+        if (entry._id && /^[a-fA-F0-9]{24}$/.test(entry._id.toString())) {
+          prepared._id = entry._id;
+        }
+        
+        // Include user reference
+        if (userId) {
+          prepared.user = userId;
+        }
+        
+        // Include type-specific fields
+        if (type === 'estimation') {
+          prepared.reason = entry.reason;
+        } else {
+          prepared.description = entry.description;
+        }
+        
+        return prepared;
+      };
+      
       const payload = {
         title,
         description,
@@ -351,9 +390,10 @@ const SubtaskDetailModal = ({
         assignees,
         tags: tagIds,
         attachments,
-        estimationTime: estimationEntries,
-        loggedTime: loggedTime,
-        billedTime: billedTime
+        // Properly prepare time entries with _id preservation for ownership
+        estimationTime: estimationEntries.map(entry => prepareTimeEntry(entry, 'estimation')),
+        loggedTime: loggedTime.map(entry => prepareTimeEntry(entry, 'logged')),
+        billedTime: billedTime.map(entry => prepareTimeEntry(entry, 'billed'))
       };
       await Database.updateSubtask(entityId, payload);
       toast.success("Subtask updated");
@@ -585,6 +625,11 @@ const SubtaskDetailModal = ({
   };
 
   // Time Tracking Handlers
+  /**
+   * Time tracking handlers
+   * CRITICAL: New entries must NOT have _id field - this tells the backend it's a new entry
+   * The backend will assign req.user.id as the owner for entries without _id
+   */
   const handleAddEstimation = async () => {
     if (!newEstimationHours && !newEstimationMinutes) return;
     try {
@@ -592,13 +637,16 @@ const SubtaskDetailModal = ({
       const minutes = parseInt(newEstimationMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
       const newEntry = {
-        id: `estimation-${Date.now()}`,
+        // NO _id field - backend will detect this as new entry and assign current user
+        id: `new-estimation-${Date.now()}`, // Only for React key, not for backend
         hours,
         minutes,
         reason: newEstimationReason,
         totalMinutes,
-        createdAt: new Date().toISOString(),
-        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null
+        date: new Date().toISOString(),
+        // Store user info for immediate UI display (backend will override with req.user)
+        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
+        userName: user?.name // Denormalized for display
       };
       const updatedEntries = [...estimationEntries, newEntry];
       setEstimationEntries(updatedEntries);
@@ -666,13 +714,16 @@ const SubtaskDetailModal = ({
       const minutes = parseInt(newLoggedMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
       const newEntry = {
-        id: `logged-${Date.now()}`,
+        // NO _id field - backend will detect this as new entry and assign current user
+        id: `new-logged-${Date.now()}`, // Only for React key, not for backend
         hours,
         minutes,
         description: newLoggedDescription,
         totalMinutes,
-        createdAt: new Date().toISOString(),
-        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null
+        date: new Date().toISOString(),
+        // Store user info for immediate UI display (backend will override with req.user)
+        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
+        userName: user?.name // Denormalized for display
       };
       const updatedEntries = [...loggedTime, newEntry];
       setLoggedTime(updatedEntries);
@@ -740,13 +791,16 @@ const SubtaskDetailModal = ({
       const minutes = parseInt(newBilledMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
       const newEntry = {
-        id: `billed-${Date.now()}`,
+        // NO _id field - backend will detect this as new entry and assign current user
+        id: `new-billed-${Date.now()}`, // Only for React key, not for backend
         hours,
         minutes,
         description: newBilledDescription,
         totalMinutes,
-        createdAt: new Date().toISOString(),
-        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null
+        date: new Date().toISOString(),
+        // Store user info for immediate UI display (backend will override with req.user)
+        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
+        userName: user?.name // Denormalized for display
       };
       const updatedEntries = [...billedTime, newEntry];
       setBilledTime(updatedEntries);

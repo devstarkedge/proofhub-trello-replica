@@ -149,24 +149,35 @@ const CardDetailModal = React.memo(({
     };
   }, []);
 
-  // Time Tracking States
+  /**
+   * Helper to normalize time entries from server response
+   * CRITICAL: Preserve MongoDB _id for existing entries to maintain ownership integrity
+   * The 'id' field is only for React key purposes, never used for backend identification
+   */
+  const normalizeTimeEntries = (entries, prefix) => {
+    return (entries || []).map((entry, idx) => {
+      // Use MongoDB _id as the primary identifier if available
+      // Only generate a temp ID for truly new entries (which shouldn't happen from server data)
+      const mongoId = entry._id ? entry._id.toString() : null;
+      return {
+        ...entry,
+        // Keep MongoDB _id intact for backend operations
+        _id: entry._id,
+        // 'id' is only for React keys - prefer MongoDB _id
+        id: mongoId || `temp-${prefix}-${idx}-${Date.now()}`,
+      };
+    });
+  };
+
+  // Time Tracking States - preserve MongoDB _id for proper backend sync
   const [estimationEntries, setEstimationEntries] = useState(
-    (card.estimationTime || []).map((entry, idx) => {
-      const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
-      return { ...entry, id };
-    })
+    normalizeTimeEntries(card.estimationTime, 'estimation')
   );
   const [loggedTime, setLoggedTime] = useState(
-    (card.loggedTime || []).map((entry, idx) => {
-      const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
-      return { ...entry, id };
-    })
+    normalizeTimeEntries(card.loggedTime, 'logged')
   );
   const [billedTime, setBilledTime] = useState(
-    (card.billedTime || []).map((entry, idx) => {
-      const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
-      return { ...entry, id };
-    })
+    normalizeTimeEntries(card.billedTime, 'billed')
   );
   const [newEstimationHours, setNewEstimationHours] = useState("");
   const [newEstimationMinutes, setNewEstimationMinutes] = useState("");
@@ -621,7 +632,13 @@ const CardDetailModal = React.memo(({
     };
   };
 
-  // Memoized time tracking handlers
+  /**
+   * Time tracking entry handlers
+   * CRITICAL: New entries must NOT have _id field - this tells the backend it's a new entry
+   * The backend will:
+   * 1. Assign req.user.id as the owner for entries without _id
+   * 2. Preserve the original user for entries WITH _id
+   */
   const handleAddEstimation = useCallback(() => {
     const hours = parseInt(newEstimationHours || 0);
     const minutes = parseInt(newEstimationMinutes || 0);
@@ -633,11 +650,14 @@ const CardDetailModal = React.memo(({
 
     const normalized = normalizeTime(hours, minutes);
     const newEntry = {
-      id: Date.now(),
+      // NO _id field - backend will detect this as new entry and assign current user
+      id: `new-estimation-${Date.now()}`, // Only for React key, not for backend
       hours: normalized.hours,
       minutes: normalized.minutes,
       reason: newEstimationReason,
+      // Store user info for immediate UI display (backend will override with req.user)
       user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
+      userName: user.name, // Denormalized for display
       date: new Date().toISOString(),
     };
 
@@ -659,11 +679,14 @@ const CardDetailModal = React.memo(({
 
     const normalized = normalizeTime(hours, minutes);
     const newEntry = {
-      id: Date.now(),
+      // NO _id field - backend will detect this as new entry and assign current user
+      id: `new-logged-${Date.now()}`, // Only for React key, not for backend
       hours: normalized.hours,
       minutes: normalized.minutes,
       description: newLoggedDescription,
+      // Store user info for immediate UI display (backend will override with req.user)
       user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
+      userName: user.name, // Denormalized for display
       date: new Date().toISOString(),
     };
 
@@ -685,11 +708,14 @@ const CardDetailModal = React.memo(({
 
     const normalized = normalizeTime(hours, minutes);
     const newEntry = {
-      id: Date.now(),
+      // NO _id field - backend will detect this as new entry and assign current user
+      id: `new-billed-${Date.now()}`, // Only for React key, not for backend
       hours: normalized.hours,
       minutes: normalized.minutes,
       description: newBilledDescription,
+      // Store user info for immediate UI display (backend will override with req.user)
       user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
+      userName: user.name, // Denormalized for display
       date: new Date().toISOString(),
     };
 
@@ -866,6 +892,43 @@ const CardDetailModal = React.memo(({
         return member || { _id: assigneeId, name: 'Unknown', email: '' };
       });
       
+      /**
+       * Helper to prepare time entry for backend
+       * CRITICAL: Include _id for existing entries to preserve ownership
+       * Exclude _id for new entries so backend assigns current user
+       */
+      const prepareTimeEntry = (entry, type) => {
+        const userId = entry.user
+          ? (typeof entry.user === 'object' ? entry.user._id : entry.user)
+          : null;
+        
+        const prepared = {
+          hours: entry.hours,
+          minutes: entry.minutes,
+          date: entry.date,
+        };
+        
+        // Include _id only for existing entries (valid MongoDB ObjectId)
+        // This tells backend to preserve original ownership
+        if (entry._id && /^[a-fA-F0-9]{24}$/.test(entry._id.toString())) {
+          prepared._id = entry._id;
+        }
+        
+        // Include user reference
+        if (userId) {
+          prepared.user = userId;
+        }
+        
+        // Include type-specific fields
+        if (type === 'estimation') {
+          prepared.reason = entry.reason;
+        } else {
+          prepared.description = entry.description;
+        }
+        
+        return prepared;
+      };
+      
       // Create updates for backend (with IDs)
       const backendUpdates = {
         title,
@@ -878,27 +941,10 @@ const CardDetailModal = React.memo(({
         labels: labelIds,
         attachments: attachments.length > 0 ? attachments : [],
         coverImage: coverImage ? (typeof coverImage === 'object' ? coverImage._id : coverImage) : null,
-        estimationTime: estimationEntries.map((entry) => ({
-          hours: entry.hours,
-          minutes: entry.minutes,
-          reason: entry.reason,
-          user: entry.user,
-          date: entry.date,
-        })),
-        loggedTime: loggedTime.map((entry) => ({
-          hours: entry.hours,
-          minutes: entry.minutes,
-          description: entry.description,
-          user: entry.user,
-          date: entry.date,
-        })),
-        billedTime: billedTime.map((entry) => ({
-          hours: entry.hours,
-          minutes: entry.minutes,
-          description: entry.description,
-          user: entry.user,
-          date: entry.date,
-        })),
+        // Properly prepare time entries with _id preservation for ownership
+        estimationTime: estimationEntries.map(entry => prepareTimeEntry(entry, 'estimation')),
+        loggedTime: loggedTime.map(entry => prepareTimeEntry(entry, 'logged')),
+        billedTime: billedTime.map(entry => prepareTimeEntry(entry, 'billed')),
       };
       
       // Include full label objects for optimistic UI update

@@ -92,30 +92,30 @@ const subtaskNanoSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Attachment'
   },
-  estimationTime: [{
-    id: { type: String, required: true },
+  estimationTime: [new mongoose.Schema({
     hours: { type: Number, required: true, min: 0 },
     minutes: { type: Number, required: true, min: 0, max: 59 },
     reason: { type: String, trim: true, maxlength: 500 },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    userName: { type: String, trim: true }, // Denormalized for display
     date: { type: Date, default: Date.now }
-  }],
-  loggedTime: [{
-    id: { type: String, required: true },
+  }, { _id: true })],
+  loggedTime: [new mongoose.Schema({
     hours: { type: Number, required: true, min: 0 },
     minutes: { type: Number, required: true, min: 0, max: 59 },
     description: { type: String, trim: true, maxlength: 500 },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    userName: { type: String, trim: true }, // Denormalized for display
     date: { type: Date, default: Date.now }
-  }],
-  billedTime: [{
-    id: { type: String, required: true },
+  }, { _id: true })],
+  billedTime: [new mongoose.Schema({
     hours: { type: Number, required: true, min: 0 },
     minutes: { type: Number, required: true, min: 0, max: 59 },
     description: { type: String, trim: true, maxlength: 500 },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    userName: { type: String, trim: true }, // Denormalized for display
     date: { type: Date, default: Date.now }
-  }],
+  }, { _id: true })],
   order: {
     type: Number,
     default: 0

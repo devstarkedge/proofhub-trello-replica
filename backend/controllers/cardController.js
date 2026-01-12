@@ -840,57 +840,92 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   const oldStartDate = card.startDate;
 
   // Helper function to extract user ID from object or string
-  const extractUserId = (user, fallbackUserId) => {
-    if (!user) return fallbackUserId;
-    if (typeof user === 'object' && user._id) return user._id;
+  const extractUserId = (user) => {
+    if (!user) return null;
+    if (typeof user === 'object' && user._id) return user._id.toString();
     if (typeof user === 'string') return user;
-    return fallbackUserId;
+    return null;
   };
 
-  // Handle time tracking updates - ensure user is always the authenticated user for new entries
-  if (req.body.estimationTime) {
-    req.body.estimationTime.forEach(entry => {
-      if (!entry._id) { // Only for new entries
-        // Always use authenticated user for new entries (security)
-        entry.user = req.user.id;
-        if (!entry.reason) {
-          return next(new ErrorResponse("Reason is required for new estimation entries", 400));
-        }
-      } else {
-        // For existing entries, extract user ID if it's an object
-        entry.user = extractUserId(entry.user, entry.user);
-      }
-    });
-  }
+  // Helper function to check if a string is a valid MongoDB ObjectId
+  const isValidObjectId = (id) => {
+    if (!id) return false;
+    const str = id.toString();
+    return /^[a-fA-F0-9]{24}$/.test(str);
+  };
 
-  if (req.body.loggedTime) {
-    req.body.loggedTime.forEach(entry => {
-      if (!entry._id) { // Only for new entries
-        // Always use authenticated user for new entries (security)
-        entry.user = req.user.id;
-        if (!entry.description) {
-          return next(new ErrorResponse("Description is required for new logged time entries", 400));
-        }
-      } else {
-        // For existing entries, extract user ID if it's an object
-        entry.user = extractUserId(entry.user, entry.user);
+  /**
+   * Process time tracking entries with strict ownership preservation
+   * - New entries (no valid MongoDB _id): Always use authenticated user
+   * - Existing entries (valid MongoDB _id): NEVER modify the user field - preserve original owner
+   * This prevents the "last user overwrites all" bug
+   */
+  const processTimeEntries = (incomingEntries, existingEntries, entryType) => {
+    if (!incomingEntries) return existingEntries || [];
+    
+    // Create a map of existing entries by their _id for quick lookup
+    const existingMap = new Map();
+    (existingEntries || []).forEach(entry => {
+      if (entry._id) {
+        existingMap.set(entry._id.toString(), entry);
       }
     });
-  }
 
-  if (req.body.billedTime) {
-    req.body.billedTime.forEach(entry => {
-      if (!entry._id) { // Only for new entries
-        // Always use authenticated user for new entries (security)
-        entry.user = req.user.id;
-        if (!entry.description) {
-          return next(new ErrorResponse("Description is required for new billed time entries", 400));
-        }
+    return incomingEntries.map(entry => {
+      const entryId = entry._id ? entry._id.toString() : null;
+      const isExistingEntry = entryId && isValidObjectId(entryId) && existingMap.has(entryId);
+
+      if (isExistingEntry) {
+        // EXISTING ENTRY: Preserve original owner, only allow updating time/description
+        const originalEntry = existingMap.get(entryId);
+        return {
+          _id: entry._id,
+          hours: entry.hours,
+          minutes: entry.minutes,
+          reason: entry.reason,
+          description: entry.description,
+          // CRITICAL: Always preserve original user from database
+          user: originalEntry.user,
+          userName: originalEntry.userName,
+          date: originalEntry.date // Preserve original date
+        };
       } else {
-        // For existing entries, extract user ID if it's an object
-        entry.user = extractUserId(entry.user, entry.user);
+        // NEW ENTRY: Always use authenticated user (security enforcement)
+        // Validate required fields
+        if (entryType === 'estimation' && !entry.reason) {
+          throw new Error("Reason is required for new estimation entries");
+        }
+        if ((entryType === 'logged' || entryType === 'billed') && !entry.description) {
+          throw new Error(`Description is required for new ${entryType} time entries`);
+        }
+        
+        return {
+          hours: entry.hours,
+          minutes: entry.minutes,
+          reason: entry.reason,
+          description: entry.description,
+          // CRITICAL: New entries always get authenticated user
+          user: req.user.id,
+          userName: req.user.name,
+          date: entry.date || new Date()
+        };
       }
     });
+  };
+
+  // Process time tracking updates with strict ownership rules
+  try {
+    if (req.body.estimationTime !== undefined) {
+      req.body.estimationTime = processTimeEntries(req.body.estimationTime, card.estimationTime, 'estimation');
+    }
+    if (req.body.loggedTime !== undefined) {
+      req.body.loggedTime = processTimeEntries(req.body.loggedTime, card.loggedTime, 'logged');
+    }
+    if (req.body.billedTime !== undefined) {
+      req.body.billedTime = processTimeEntries(req.body.billedTime, card.billedTime, 'billed');
+    }
+  } catch (validationError) {
+    return next(new ErrorResponse(validationError.message, 400));
   }
 
   card = await Card.findByIdAndUpdate(req.params.id, req.body, {

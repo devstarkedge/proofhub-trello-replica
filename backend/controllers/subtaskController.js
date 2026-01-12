@@ -153,29 +153,61 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
   const taskId = subtask.task?._id || subtask.task;
   const boardId = subtask.board?._id || subtask.board;
 
-  // Helper function to extract user ID from object or string
-  const extractUserId = (user, fallbackUserId) => {
-    if (!user) return fallbackUserId;
-    if (typeof user === 'object' && user._id) return user._id;
-    if (typeof user === 'string') return user;
-    return fallbackUserId;
+  // Helper function to check if a string is a valid MongoDB ObjectId
+  const isValidObjectId = (id) => {
+    if (!id) return false;
+    const str = id.toString();
+    return /^[a-fA-F0-9]{24}$/.test(str);
   };
 
-  // Process time tracking entries to ensure proper user IDs
-  const processTimeEntries = (entries, existingEntries) => {
-    if (!entries) return existingEntries;
-    return entries.map(entry => {
-      // For new entries (no _id), always use authenticated user for security
-      if (!entry._id && !entry.id?.includes('-')) {
-        return { ...entry, user: req.user.id };
+  /**
+   * Process time tracking entries with strict ownership preservation
+   * - New entries (no valid MongoDB _id): Always use authenticated user
+   * - Existing entries (valid MongoDB _id): NEVER modify the user field - preserve original owner
+   * This prevents the "last user overwrites all" bug
+   */
+  const processTimeEntries = (incomingEntries, existingEntries, entryType) => {
+    if (!incomingEntries) return existingEntries || [];
+    
+    // Create a map of existing entries by their _id for quick lookup
+    const existingMap = new Map();
+    (existingEntries || []).forEach(entry => {
+      if (entry._id) {
+        existingMap.set(entry._id.toString(), entry);
       }
-      // Check if this is a new entry with frontend-generated id
-      const isNewEntry = entry.id && typeof entry.id === 'string' && entry.id.includes('-');
-      if (isNewEntry) {
-        return { ...entry, user: req.user.id };
+    });
+
+    return incomingEntries.map(entry => {
+      const entryId = entry._id ? entry._id.toString() : null;
+      const isExistingEntry = entryId && isValidObjectId(entryId) && existingMap.has(entryId);
+
+      if (isExistingEntry) {
+        // EXISTING ENTRY: Preserve original owner, only allow updating time/description
+        const originalEntry = existingMap.get(entryId);
+        return {
+          _id: entry._id,
+          hours: entry.hours,
+          minutes: entry.minutes,
+          reason: entry.reason,
+          description: entry.description,
+          // CRITICAL: Always preserve original user from database
+          user: originalEntry.user,
+          userName: originalEntry.userName,
+          date: originalEntry.date // Preserve original date
+        };
+      } else {
+        // NEW ENTRY: Always use authenticated user (security enforcement)
+        return {
+          hours: entry.hours,
+          minutes: entry.minutes,
+          reason: entry.reason,
+          description: entry.description,
+          // CRITICAL: New entries always get authenticated user
+          user: req.user.id,
+          userName: req.user.name,
+          date: entry.date || new Date()
+        };
       }
-      // For existing entries, extract user ID if it's an object
-      return { ...entry, user: extractUserId(entry.user, entry.user) };
     });
   };
 
@@ -191,9 +223,9 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
     startDate: req.body.startDate ?? subtask.startDate,
     attachments: req.body.attachments ?? subtask.attachments,
     colorToken: req.body.colorToken ?? subtask.colorToken,
-    estimationTime: processTimeEntries(req.body.estimationTime, subtask.estimationTime),
-    loggedTime: processTimeEntries(req.body.loggedTime, subtask.loggedTime),
-    billedTime: processTimeEntries(req.body.billedTime, subtask.billedTime),
+    estimationTime: processTimeEntries(req.body.estimationTime, subtask.estimationTime, 'estimation'),
+    loggedTime: processTimeEntries(req.body.loggedTime, subtask.loggedTime, 'logged'),
+    billedTime: processTimeEntries(req.body.billedTime, subtask.billedTime, 'billed'),
     updatedBy: req.user.id
   };
 

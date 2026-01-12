@@ -121,27 +121,30 @@ const cardSchema = new mongoose.Schema({
     nanoCompleted: { type: Number, default: 0 }
   },
   attachments: [attachmentSchema],
-  estimationTime: [{
+  estimationTime: [new mongoose.Schema({
     hours: { type: Number, required: true, min: 0 },
     minutes: { type: Number, required: true, min: 0, max: 59 },
     reason: { type: String, trim: true, maxlength: 500 },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    userName: { type: String, trim: true }, // Denormalized for display without population
     date: { type: Date, default: Date.now }
-  }],
-  loggedTime: [{
+  }, { _id: true })],
+  loggedTime: [new mongoose.Schema({
     hours: { type: Number, required: true, min: 0 },
     minutes: { type: Number, required: true, min: 0, max: 59 },
     description: { type: String, trim: true, maxlength: 500 },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    userName: { type: String, trim: true }, // Denormalized for display without population
     date: { type: Date, default: Date.now }
-  }],
-  billedTime: [{
+  }, { _id: true })],
+  billedTime: [new mongoose.Schema({
     hours: { type: Number, required: true, min: 0 },
     minutes: { type: Number, required: true, min: 0, max: 59 },
     description: { type: String, trim: true, maxlength: 500 },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    userName: { type: String, trim: true }, // Denormalized for display without population
     date: { type: Date, default: Date.now }
-  }],
+  }, { _id: true })],
   isArchived: {
     type: Boolean,
     default: false
