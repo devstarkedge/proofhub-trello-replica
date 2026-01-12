@@ -1,6 +1,6 @@
-import React, { useContext, useState } from 'react';
-import { Home, Folder, Users, BarChart3, Settings, UserCheck, Bell, CalendarClock, X } from 'lucide-react';
-import { NavLink } from 'react-router-dom';
+import React, { useContext, useState, useEffect } from 'react';
+import { Home, Folder, Users, BarChart3, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 import useThemeStore from '../store/themeStore';
 
@@ -13,12 +13,33 @@ const iconColors = {
   '/teams': { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' }, // Cyan - Teams
   '/hr-panel': { color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' }, // Pink - HR Panel
   '/admin/settings': { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' }, // Indigo - Settings
+  '/pm-sheet': { color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' }, // Teal - PM Sheet
 };
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   const { user } = useContext(AuthContext);
   const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const [hoveredItem, setHoveredItem] = useState(null);
+  const [pmSheetExpanded, setPmSheetExpanded] = useState(false);
+  const location = useLocation();
+
+  // Check if current path is under PM Sheet
+  const isPMSheetActive = location.pathname.startsWith('/pm-sheet');
+
+  // Auto-expand PM Sheet when on a PM Sheet page
+  useEffect(() => {
+    if (isPMSheetActive) {
+      setPmSheetExpanded(true);
+    }
+  }, [isPMSheetActive]);
+
+  // PM Sheet child pages
+  const pmSheetChildren = [
+    { path: '/pm-sheet', label: 'Dashboard' },
+    { path: '/pm-sheet/month-wise', label: 'Month Wise Report' },
+    { path: '/pm-sheet/coordinator', label: 'Coordinator Report' },
+    { path: '/pm-sheet/approach', label: 'Approach Page' },
+  ];
 
   const getNavItems = () => {
     // Base navigation visible to all authenticated users
@@ -40,6 +61,11 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
 
     if (dashboardRoles.includes(userRole)) {
       items.splice(1, 0, { path: '/dashboard', icon: BarChart3, label: 'Dashboard' });
+    }
+
+    // PM Sheet - Admin and Manager only
+    if (userRole === 'admin' || userRole === 'manager') {
+      items.push({ path: '/pm-sheet', icon: FileSpreadsheet, label: 'PM Sheet', hasChildren: true });
     }
 
     if (userRole === 'admin') {
@@ -72,8 +98,106 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   // Get icon color configuration
   const getIconConfig = (path) => iconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
 
+  // Render PM Sheet children
+  const renderPMSheetChildren = (isDesktop = true) => {
+    const iconConfig = getIconConfig('/pm-sheet');
+    
+    return (
+      <div className="ml-6 mt-1 space-y-1 border-l-2 pl-3" style={{ borderColor: iconConfig.bg }}>
+        {pmSheetChildren.map((child) => {
+          const isChildActive = location.pathname === child.path;
+          const isChildHovered = hoveredItem === child.path;
+          
+          return (
+            <NavLink
+              key={child.path}
+              to={child.path}
+              onClick={!isDesktop ? onClose : undefined}
+              className="flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200"
+              onMouseEnter={() => setHoveredItem(child.path)}
+              onMouseLeave={() => setHoveredItem(null)}
+              style={{
+                backgroundColor: isChildActive ? iconConfig.bg : isChildHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
+                color: isChildActive ? iconConfig.color : isChildHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+              }}
+            >
+              <span style={{ fontWeight: isChildActive ? 600 : 500 }}>{child.label}</span>
+            </NavLink>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Render PM Sheet parent with expandable children
+  const renderPMSheetItem = (item, isDesktop = true) => {
+    const { icon: Icon, label } = item;
+    const iconConfig = getIconConfig('/pm-sheet');
+    const isHovered = hoveredItem === '/pm-sheet-parent';
+    const isActive = isPMSheetActive;
+
+    return (
+      <div key="/pm-sheet">
+        <button
+          onClick={() => setPmSheetExpanded(!pmSheetExpanded)}
+          className="w-full sidebar-nav-item flex items-center px-3 py-2.5 text-sm font-medium rounded-lg group relative overflow-hidden"
+          onMouseEnter={() => setHoveredItem('/pm-sheet-parent')}
+          onMouseLeave={() => setHoveredItem(null)}
+          style={{
+            backgroundColor: isActive ? iconConfig.bg : isHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
+            color: isActive ? iconConfig.color : isHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+            borderLeft: isActive ? `3px solid ${iconConfig.color}` : '3px solid transparent',
+            marginLeft: '-3px',
+            paddingLeft: 'calc(0.75rem + 3px)',
+            transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
+          {/* Icon container with colored background */}
+          <div 
+            className="flex items-center justify-center w-8 h-8 rounded-lg mr-3 transition-all duration-200"
+            style={{
+              backgroundColor: isActive || isHovered ? iconConfig.bg : 'transparent',
+              transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+            }}
+          >
+            <Icon 
+              className="h-[18px] w-[18px] transition-all duration-200" 
+              style={{ 
+                color: isActive || isHovered ? iconConfig.color : 'var(--color-text-muted)',
+                strokeWidth: isActive ? 2.5 : 2,
+              }}
+            />
+          </div>
+          
+          {/* Label */}
+          <span className="transition-all duration-200 flex-1 text-left" style={{
+            fontWeight: isActive ? 600 : 500,
+          }}>
+            {label}
+          </span>
+
+          {/* Expand/Collapse chevron */}
+          {pmSheetExpanded ? (
+            <ChevronDown className="h-4 w-4 transition-transform duration-200" style={{ color: isActive ? iconConfig.color : 'var(--color-text-muted)' }} />
+          ) : (
+            <ChevronRight className="h-4 w-4 transition-transform duration-200" style={{ color: isActive ? iconConfig.color : 'var(--color-text-muted)' }} />
+          )}
+        </button>
+
+        {/* Children */}
+        {pmSheetExpanded && renderPMSheetChildren(isDesktop)}
+      </div>
+    );
+  };
+
   // Render nav item with colored icon
-  const renderNavItem = ({ path, icon: Icon, label }, isDesktop = true) => {
+  const renderNavItem = (item, isDesktop = true) => {
+    // Handle PM Sheet with children separately
+    if (item.hasChildren) {
+      return renderPMSheetItem(item, isDesktop);
+    }
+
+    const { path, icon: Icon, label } = item;
     const iconConfig = getIconConfig(path);
     const isHovered = hoveredItem === path;
 

@@ -34,6 +34,13 @@ import ClientReminderCalendarPage from "./pages/ClientReminderCalendarPage";
 import PrivateRoute from "./components/PrivateRoute";
 import ProjectTrash from "./pages/ProjectTrash";
 
+// PM Sheet Pages
+import PMSheetDashboard from "./pages/PMSheetDashboard";
+import MonthWisePMReport from "./pages/MonthWisePMReport";
+import ProjectCoordinatorReport from "./pages/ProjectCoordinatorReport";
+import ApproachPage from "./pages/ApproachPage";
+import PMSheetLayout from "./layouts/PMSheetLayout";
+
 function App() {
   return (
     <AuthProvider>
@@ -214,6 +221,20 @@ function App() {
                 </PrivateRoute>
               }
             />
+            {/* PM Sheet Routes - Admin and Manager only */}
+            <Route
+              path="/pm-sheet"
+              element={
+                <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                  <PMSheetLayout />
+                </PrivateRoute>
+              }
+            >
+              <Route index element={<PMSheetDashboard />} />
+              <Route path="month-wise" element={<MonthWisePMReport />} />
+              <Route path="coordinator" element={<ProjectCoordinatorReport />} />
+              <Route path="approach" element={<ApproachPage />} />
+            </Route>
             <Route path="*" element={<GlobalFallback type="404" />} />
               </Routes>
             <ToastContainer

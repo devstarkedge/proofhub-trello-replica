@@ -31,6 +31,7 @@ import versionsRoutes from './routes/versions.js';
 import projectsRoutes from './routes/projects.js';
 import slackRoutes from './routes/slack.js';
 import teamAnalyticsRoutes from './routes/teamAnalytics.js';
+import pmSheetRoutes from './routes/pmSheet.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -116,6 +117,7 @@ app.use('/api/versions', versionsRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api/slack', slackRoutes);
 app.use('/api/team-analytics', teamAnalyticsRoutes);
+app.use('/api/pm-sheet', pmSheetRoutes);
 
 import jwt from 'jsonwebtoken';
 
