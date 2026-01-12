@@ -161,9 +161,19 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
   };
 
   /**
-   * Process time tracking entries with strict ownership preservation
+   * Helper function to get date string in YYYY-MM-DD format
+   */
+  const getDateString = (date) => {
+    const d = new Date(date);
+    return d.toISOString().split('T')[0];
+  };
+
+  /**
+   * Process time tracking entries with strict ownership preservation and 24h validation
    * - New entries (no valid MongoDB _id): Always use authenticated user
    * - Existing entries (valid MongoDB _id): NEVER modify the user field - preserve original owner
+   * - Validates 24h maximum per user per date
+   * - Blocks future dates
    * This prevents the "last user overwrites all" bug
    */
   const processTimeEntries = (incomingEntries, existingEntries, entryType) => {
@@ -174,6 +184,23 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
     (existingEntries || []).forEach(entry => {
       if (entry._id) {
         existingMap.set(entry._id.toString(), entry);
+      }
+    });
+
+    // Get today's date for future date validation
+    const todayString = getDateString(new Date());
+
+    // Track total time per date for 24h validation (for new entries only)
+    // Start with existing entries' time
+    const timePerDate = new Map();
+    (existingEntries || []).forEach(entry => {
+      const entryUserId = entry.user ? entry.user.toString() : null;
+      if (entryUserId === req.user.id) {
+        const entryDate = entry.date ? getDateString(entry.date) : todayString;
+        const hours = parseInt(entry.hours || 0);
+        const minutes = parseInt(entry.minutes || 0);
+        const currentTotal = timePerDate.get(entryDate) || 0;
+        timePerDate.set(entryDate, currentTotal + (hours * 60) + minutes);
       }
     });
 
@@ -197,9 +224,36 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
         };
       } else {
         // NEW ENTRY: Always use authenticated user (security enforcement)
+        // Parse and validate date
+        const entryDate = entry.date ? getDateString(entry.date) : todayString;
+        
+        // Block future dates
+        if (entryDate > todayString) {
+          throw new Error(`Cannot add time entries for future dates. Selected date: ${entryDate}`);
+        }
+
+        // Calculate new entry time
+        const newHours = parseInt(entry.hours || 0);
+        const newMinutes = parseInt(entry.minutes || 0);
+        const newTimeMinutes = (newHours * 60) + newMinutes;
+
+        // Get existing time for this date
+        const existingMinutes = timePerDate.get(entryDate) || 0;
+        const totalMinutes = existingMinutes + newTimeMinutes;
+        const maxMinutes = 24 * 60; // 24 hours
+
+        if (totalMinutes > maxMinutes) {
+          const existingHours = Math.floor(existingMinutes / 60);
+          const existingMins = existingMinutes % 60;
+          throw new Error(`Total time for ${entryDate} cannot exceed 24 hours. You have already logged ${existingHours}h ${existingMins}m.`);
+        }
+
+        // Update tracked time for this date
+        timePerDate.set(entryDate, totalMinutes);
+
         return {
-          hours: entry.hours,
-          minutes: entry.minutes,
+          hours: newHours,
+          minutes: newMinutes,
           reason: entry.reason,
           description: entry.description,
           // CRITICAL: New entries always get authenticated user
@@ -210,6 +264,19 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
       }
     });
   };
+
+  // Process time entries with try-catch for validation errors
+  let processedEstimationTime, processedLoggedTime, processedBilledTime;
+  try {
+    processedEstimationTime = processTimeEntries(req.body.estimationTime, subtask.estimationTime, 'estimation');
+    processedLoggedTime = processTimeEntries(req.body.loggedTime, subtask.loggedTime, 'logged');
+    processedBilledTime = processTimeEntries(req.body.billedTime, subtask.billedTime, 'billed');
+  } catch (validationError) {
+    return res.status(400).json({
+      success: false,
+      error: validationError.message
+    });
+  }
 
   const updates = {
     title: req.body.title ?? subtask.title,
@@ -223,9 +290,9 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
     startDate: req.body.startDate ?? subtask.startDate,
     attachments: req.body.attachments ?? subtask.attachments,
     colorToken: req.body.colorToken ?? subtask.colorToken,
-    estimationTime: processTimeEntries(req.body.estimationTime, subtask.estimationTime, 'estimation'),
-    loggedTime: processTimeEntries(req.body.loggedTime, subtask.loggedTime, 'logged'),
-    billedTime: processTimeEntries(req.body.billedTime, subtask.billedTime, 'billed'),
+    estimationTime: processedEstimationTime,
+    loggedTime: processedLoggedTime,
+    billedTime: processedBilledTime,
     updatedBy: req.user.id
   };
 

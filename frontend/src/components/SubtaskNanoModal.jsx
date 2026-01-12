@@ -102,12 +102,15 @@ const SubtaskNanoModal = ({
   const [newEstimationHours, setNewEstimationHours] = useState("");
   const [newEstimationMinutes, setNewEstimationMinutes] = useState("");
   const [newEstimationReason, setNewEstimationReason] = useState("");
+  const [newEstimationDate, setNewEstimationDate] = useState("");
   const [newLoggedHours, setNewLoggedHours] = useState("");
   const [newLoggedMinutes, setNewLoggedMinutes] = useState("");
   const [newLoggedDescription, setNewLoggedDescription] = useState("");
+  const [newLoggedDate, setNewLoggedDate] = useState("");
   const [newBilledHours, setNewBilledHours] = useState("");
   const [newBilledMinutes, setNewBilledMinutes] = useState("");
   const [newBilledDescription, setNewBilledDescription] = useState("");
+  const [newBilledDate, setNewBilledDate] = useState("");
   const [editingEstimation, setEditingEstimation] = useState(null);
   const [editingLogged, setEditingLogged] = useState(null);
   const [editingBilled, setEditingBilled] = useState(null);
@@ -120,6 +123,86 @@ const SubtaskNanoModal = ({
   const [editBilledHours, setEditBilledHours] = useState("");
   const [editBilledMinutes, setEditBilledMinutes] = useState("");
   const [editBilledDescription, setEditBilledDescription] = useState("");
+
+  // Helper to get today's date in YYYY-MM-DD format
+  const getTodayDate = () => new Date().toISOString().split('T')[0];
+
+  /**
+   * Calculate total time for a user on a specific date from time entries
+   * Returns total minutes for that user on that date
+   */
+  const calculateUserTimeForDate = (entries, userId, dateString, currentEntryId = null) => {
+    const targetDate = dateString || getTodayDate();
+    let totalMinutes = 0;
+
+    entries.forEach(entry => {
+      // Skip the current entry being edited (if editing)
+      if (currentEntryId && (entry._id === currentEntryId || entry.id === currentEntryId)) {
+        return;
+      }
+
+      // Get entry user ID
+      const entryUserId = typeof entry.user === 'object' ? (entry.user._id || entry.user.id) : entry.user;
+      
+      // Get entry date (normalize to YYYY-MM-DD)
+      const entryDate = entry.date ? new Date(entry.date).toISOString().split('T')[0] : getTodayDate();
+
+      // Check if same user and same date
+      if (entryUserId === userId && entryDate === targetDate) {
+        const hours = parseInt(entry.hours || 0);
+        const minutes = parseInt(entry.minutes || 0);
+        totalMinutes += (hours * 60) + minutes;
+      }
+    });
+
+    return totalMinutes;
+  };
+
+  /**
+   * Validate if adding new time would exceed 24h limit for user on that date
+   * Returns error message or null if valid
+   */
+  const validateTimeLimit = (entries, newHours, newMinutes, dateString, entryType) => {
+    const hours = parseInt(newHours || 0);
+    const minutes = parseInt(newMinutes || 0);
+    const newTimeMinutes = (hours * 60) + minutes;
+
+    if (newTimeMinutes === 0) {
+      return null; // No time entered yet, no validation needed
+    }
+
+    const existingMinutes = calculateUserTimeForDate(entries, user._id, dateString);
+    const totalMinutes = existingMinutes + newTimeMinutes;
+    const maxMinutes = 24 * 60; // 24 hours in minutes
+
+    if (totalMinutes > maxMinutes) {
+      const existingHours = Math.floor(existingMinutes / 60);
+      const existingMins = existingMinutes % 60;
+      const remainingMinutes = maxMinutes - existingMinutes;
+      const remainingHours = Math.floor(remainingMinutes / 60);
+      const remainingMins = remainingMinutes % 60;
+      
+      return `Total time for ${dateString || 'today'} cannot exceed 24 hours. You have already logged ${existingHours}h ${existingMins}m. Maximum you can add: ${remainingHours}h ${remainingMins}m.`;
+    }
+
+    return null;
+  };
+
+  // Validation error states
+  const estimationValidationError = useMemo(() => 
+    validateTimeLimit(estimationEntries, newEstimationHours, newEstimationMinutes, newEstimationDate, 'estimation'),
+    [estimationEntries, newEstimationHours, newEstimationMinutes, newEstimationDate, user._id]
+  );
+
+  const loggedValidationError = useMemo(() => 
+    validateTimeLimit(loggedTime, newLoggedHours, newLoggedMinutes, newLoggedDate, 'logged'),
+    [loggedTime, newLoggedHours, newLoggedMinutes, newLoggedDate, user._id]
+  );
+
+  const billedValidationError = useMemo(() => 
+    validateTimeLimit(billedTime, newBilledHours, newBilledMinutes, newBilledDate, 'billed'),
+    [billedTime, newBilledHours, newBilledMinutes, newBilledDate, user._id]
+  );
 
   const overlayClass = overlayMap[theme] || overlayMap.pink;
 
@@ -470,11 +553,21 @@ const SubtaskNanoModal = ({
    * The backend will assign req.user.id as the owner for entries without _id
    */
   const handleAddEstimation = async () => {
+    // Check validation error first
+    if (estimationValidationError) {
+      toast.error(estimationValidationError);
+      return;
+    }
     if (!newEstimationHours && !newEstimationMinutes) return;
     try {
       const hours = parseInt(newEstimationHours) || 0;
       const minutes = parseInt(newEstimationMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
+      
+      // Use selected date or default to today
+      const selectedDate = newEstimationDate || getTodayDate();
+      const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
+      
       const newEntry = {
         // NO _id field - backend will detect this as new entry and assign current user
         id: `new-estimation-${Date.now()}`, // Only for React key, not for backend
@@ -482,7 +575,7 @@ const SubtaskNanoModal = ({
         minutes,
         reason: newEstimationReason,
         totalMinutes,
-        date: new Date().toISOString(),
+        date: dateObj.toISOString(),
         // Store user info for immediate UI display (backend will override with req.user)
         user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
         userName: user?.name // Denormalized for display
@@ -492,6 +585,7 @@ const SubtaskNanoModal = ({
       setNewEstimationHours("");
       setNewEstimationMinutes("");
       setNewEstimationReason("");
+      setNewEstimationDate("");
       toast.success("Estimation added");
     } catch (error) {
       console.error("Error adding estimation:", error);
@@ -547,11 +641,21 @@ const SubtaskNanoModal = ({
   };
 
   const handleAddLoggedTime = async () => {
+    // Check validation error first
+    if (loggedValidationError) {
+      toast.error(loggedValidationError);
+      return;
+    }
     if (!newLoggedHours && !newLoggedMinutes) return;
     try {
       const hours = parseInt(newLoggedHours) || 0;
       const minutes = parseInt(newLoggedMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
+      
+      // Use selected date or default to today
+      const selectedDate = newLoggedDate || getTodayDate();
+      const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
+      
       const newEntry = {
         // NO _id field - backend will detect this as new entry and assign current user
         id: `new-logged-${Date.now()}`, // Only for React key, not for backend
@@ -559,7 +663,7 @@ const SubtaskNanoModal = ({
         minutes,
         description: newLoggedDescription,
         totalMinutes,
-        date: new Date().toISOString(),
+        date: dateObj.toISOString(),
         // Store user info for immediate UI display (backend will override with req.user)
         user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
         userName: user?.name // Denormalized for display
@@ -569,6 +673,7 @@ const SubtaskNanoModal = ({
       setNewLoggedHours("");
       setNewLoggedMinutes("");
       setNewLoggedDescription("");
+      setNewLoggedDate("");
       toast.success("Logged time added");
     } catch (error) {
       console.error("Error adding logged time:", error);
@@ -624,11 +729,21 @@ const SubtaskNanoModal = ({
   };
 
   const handleAddBilledTime = async () => {
+    // Check validation error first
+    if (billedValidationError) {
+      toast.error(billedValidationError);
+      return;
+    }
     if (!newBilledHours && !newBilledMinutes) return;
     try {
       const hours = parseInt(newBilledHours) || 0;
       const minutes = parseInt(newBilledMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
+      
+      // Use selected date or default to today
+      const selectedDate = newBilledDate || getTodayDate();
+      const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
+      
       const newEntry = {
         // NO _id field - backend will detect this as new entry and assign current user
         id: `new-billed-${Date.now()}`, // Only for React key, not for backend
@@ -636,7 +751,7 @@ const SubtaskNanoModal = ({
         minutes,
         description: newBilledDescription,
         totalMinutes,
-        date: new Date().toISOString(),
+        date: dateObj.toISOString(),
         // Store user info for immediate UI display (backend will override with req.user)
         user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
         userName: user?.name // Denormalized for display
@@ -646,6 +761,7 @@ const SubtaskNanoModal = ({
       setNewBilledHours("");
       setNewBilledMinutes("");
       setNewBilledDescription("");
+      setNewBilledDate("");
       toast.success("Billed time added");
     } catch (error) {
       console.error("Error adding billed time:", error);
@@ -855,12 +971,15 @@ const SubtaskNanoModal = ({
                   newEstimationHours={newEstimationHours}
                   newEstimationMinutes={newEstimationMinutes}
                   newEstimationReason={newEstimationReason}
+                  newEstimationDate={newEstimationDate}
                   newLoggedHours={newLoggedHours}
                   newLoggedMinutes={newLoggedMinutes}
                   newLoggedDescription={newLoggedDescription}
+                  newLoggedDate={newLoggedDate}
                   newBilledHours={newBilledHours}
                   newBilledMinutes={newBilledMinutes}
                   newBilledDescription={newBilledDescription}
+                  newBilledDate={newBilledDate}
                   editingEstimation={editingEstimation}
                   editingLogged={editingLogged}
                   editingBilled={editingBilled}
@@ -876,12 +995,15 @@ const SubtaskNanoModal = ({
                   onEstimationHoursChange={setNewEstimationHours}
                   onEstimationMinutesChange={setNewEstimationMinutes}
                   onEstimationReasonChange={setNewEstimationReason}
+                  onEstimationDateChange={setNewEstimationDate}
                   onLoggedHoursChange={setNewLoggedHours}
                   onLoggedMinutesChange={setNewLoggedMinutes}
                   onLoggedDescriptionChange={setNewLoggedDescription}
+                  onLoggedDateChange={setNewLoggedDate}
                   onBilledHoursChange={setNewBilledHours}
                   onBilledMinutesChange={setNewBilledMinutes}
                   onBilledDescriptionChange={setNewBilledDescription}
+                  onBilledDateChange={setNewBilledDate}
                   onEditEstimationHoursChange={setEditEstimationHours}
                   onEditEstimationMinutesChange={setEditEstimationMinutes}
                   onEditEstimationReasonChange={setEditEstimationReason}
@@ -907,6 +1029,9 @@ const SubtaskNanoModal = ({
                   onConfirmDeleteLoggedTime={handleDeleteLoggedTime}
                   onConfirmDeleteBilledTime={handleDeleteBilledTime}
                   card={{ _id: entityId }}
+                  estimationValidationError={estimationValidationError}
+                  loggedValidationError={loggedValidationError}
+                  billedValidationError={billedValidationError}
                 />
 
                 <div className="mt-8">

@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Timer,
@@ -11,6 +11,7 @@ import {
   Clock,
   X,
   DollarSign,
+  Calendar,
 } from "lucide-react";
 import AuthContext from "../../context/AuthContext";
 
@@ -21,12 +22,15 @@ const TimeTrackingSection = ({
   newEstimationHours,
   newEstimationMinutes,
   newEstimationReason,
+  newEstimationDate,
   newLoggedHours,
   newLoggedMinutes,
   newLoggedDescription,
+  newLoggedDate,
   newBilledHours,
   newBilledMinutes,
   newBilledDescription,
+  newBilledDate,
   editingEstimation,
   editingLogged,
   editingBilled,
@@ -42,12 +46,15 @@ const TimeTrackingSection = ({
   onEstimationHoursChange,
   onEstimationMinutesChange,
   onEstimationReasonChange,
+  onEstimationDateChange,
   onLoggedHoursChange,
   onLoggedMinutesChange,
   onLoggedDescriptionChange,
+  onLoggedDateChange,
   onBilledHoursChange,
   onBilledMinutesChange,
   onBilledDescriptionChange,
+  onBilledDateChange,
   onEditEstimationHoursChange,
   onEditEstimationMinutesChange,
   onEditEstimationReasonChange,
@@ -73,8 +80,18 @@ const TimeTrackingSection = ({
   onConfirmDeleteLoggedTime,
   onConfirmDeleteBilledTime,
   card,
+  // Validation props
+  estimationValidationError,
+  loggedValidationError,
+  billedValidationError,
 }) => {
   const { user } = useContext(AuthContext);
+
+  // Get today's date in YYYY-MM-DD format for max date restriction
+  const todayDate = useMemo(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  }, []);
 
   // Helper function to get user display name from time entry
   // Handles both populated user objects and unpopulated user IDs
@@ -236,7 +253,7 @@ const TimeTrackingSection = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           >
             <motion.div
               initial={{ scale: 0.9, y: -20 }}
@@ -280,7 +297,11 @@ const TimeTrackingSection = ({
                               onEstimationHoursChange(e.target.value)
                             }
                             placeholder="0"
-                            className="w-full p-2 pr-7 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                              estimationValidationError
+                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                : 'border-indigo-200 focus:ring-indigo-500'
+                            }`}
                           />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                             h
@@ -295,11 +316,28 @@ const TimeTrackingSection = ({
                               onEstimationMinutesChange(e.target.value)
                             }
                             placeholder="0"
-                            className="w-full p-2 pr-7 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                              estimationValidationError
+                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                : 'border-indigo-200 focus:ring-indigo-500'
+                            }`}
                           />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                             m
                           </span>
+                        </div>
+                      </div>
+                      {/* Date Picker for Estimation */}
+                      <div className="relative">
+                        <div className="flex items-center gap-2">
+                          <Calendar size={14} className="text-indigo-500" />
+                          <input
+                            type="date"
+                            value={newEstimationDate || todayDate}
+                            onChange={(e) => onEstimationDateChange(e.target.value)}
+                            max={todayDate}
+                            className="flex-1 p-2 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                          />
                         </div>
                       </div>
                       <textarea
@@ -311,11 +349,25 @@ const TimeTrackingSection = ({
                         className="w-full p-2 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
                         rows="2"
                       />
+                      {/* Validation Error Message */}
+                      {estimationValidationError && (
+                        <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                          <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+                          <span className="text-red-600 text-xs font-medium">
+                            {estimationValidationError}
+                          </span>
+                        </div>
+                      )}
                       <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                        whileHover={!estimationValidationError ? { scale: 1.05 } : {}}
+                        whileTap={!estimationValidationError ? { scale: 0.95 } : {}}
                         onClick={onAddEstimation}
-                        className="px-3 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-md text-sm font-semibold"
+                        disabled={!!estimationValidationError}
+                        className={`px-3 py-2 rounded-lg shadow-md text-sm font-semibold transition-all ${
+                          estimationValidationError
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700'
+                        }`}
                       >
                         Add Estimate
                       </motion.button>
@@ -499,7 +551,11 @@ const TimeTrackingSection = ({
                               onLoggedHoursChange(e.target.value)
                             }
                             placeholder="0"
-                            className="w-full p-2 pr-7 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                              loggedValidationError
+                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                : 'border-green-200 focus:ring-green-500'
+                            }`}
                           />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                             h
@@ -514,11 +570,28 @@ const TimeTrackingSection = ({
                               onLoggedMinutesChange(e.target.value)
                             }
                             placeholder="0"
-                            className="w-full p-2 pr-7 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                              loggedValidationError
+                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                : 'border-green-200 focus:ring-green-500'
+                            }`}
                           />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                             m
                           </span>
+                        </div>
+                      </div>
+                      {/* Date Picker for Logged Time */}
+                      <div className="relative">
+                        <div className="flex items-center gap-2">
+                          <Calendar size={14} className="text-green-500" />
+                          <input
+                            type="date"
+                            value={newLoggedDate || todayDate}
+                            onChange={(e) => onLoggedDateChange(e.target.value)}
+                            max={todayDate}
+                            className="flex-1 p-2 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                          />
                         </div>
                       </div>
                       <textarea
@@ -530,11 +603,25 @@ const TimeTrackingSection = ({
                         className="w-full p-2 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                         rows="2"
                       />
+                      {/* Validation Error Message */}
+                      {loggedValidationError && (
+                        <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                          <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+                          <span className="text-red-600 text-xs font-medium">
+                            {loggedValidationError}
+                          </span>
+                        </div>
+                      )}
                       <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                        whileHover={!loggedValidationError ? { scale: 1.05 } : {}}
+                        whileTap={!loggedValidationError ? { scale: 0.95 } : {}}
                         onClick={onAddLoggedTime}
-                        className="px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 shadow-md text-sm font-semibold"
+                        disabled={!!loggedValidationError}
+                        className={`px-3 py-2 rounded-lg shadow-md text-sm font-semibold transition-all ${
+                          loggedValidationError
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700'
+                        }`}
                       >
                         Log Time
                       </motion.button>
@@ -729,7 +816,11 @@ const TimeTrackingSection = ({
                               onBilledHoursChange(e.target.value)
                             }
                             placeholder="0"
-                            className="w-full p-2 pr-7 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                              billedValidationError
+                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                : 'border-yellow-200 focus:ring-yellow-500'
+                            }`}
                           />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                             h
@@ -744,11 +835,28 @@ const TimeTrackingSection = ({
                               onBilledMinutesChange(e.target.value)
                             }
                             placeholder="0"
-                            className="w-full p-2 pr-7 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                              billedValidationError
+                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                : 'border-yellow-200 focus:ring-yellow-500'
+                            }`}
                           />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                             m
                           </span>
+                        </div>
+                      </div>
+                      {/* Date Picker for Billed Time */}
+                      <div className="relative">
+                        <div className="flex items-center gap-2">
+                          <Calendar size={14} className="text-yellow-500" />
+                          <input
+                            type="date"
+                            value={newBilledDate || todayDate}
+                            onChange={(e) => onBilledDateChange(e.target.value)}
+                            max={todayDate}
+                            className="flex-1 p-2 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                          />
                         </div>
                       </div>
                       <textarea
@@ -760,11 +868,25 @@ const TimeTrackingSection = ({
                         className="w-full p-2 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
                         rows="2"
                       />
+                      {/* Validation Error Message */}
+                      {billedValidationError && (
+                        <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                          <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+                          <span className="text-red-600 text-xs font-medium">
+                            {billedValidationError}
+                          </span>
+                        </div>
+                      )}
                       <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                        whileHover={!billedValidationError ? { scale: 1.05 } : {}}
+                        whileTap={!billedValidationError ? { scale: 0.95 } : {}}
                         onClick={onAddBilledTime}
-                        className="px-3 py-2 bg-gradient-to-r from-yellow-600 to-amber-600 text-white rounded-lg hover:from-yellow-700 hover:to-amber-700 shadow-md text-sm font-semibold"
+                        disabled={!!billedValidationError}
+                        className={`px-3 py-2 rounded-lg shadow-md text-sm font-semibold transition-all ${
+                          billedValidationError
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-yellow-600 to-amber-600 text-white hover:from-yellow-700 hover:to-amber-700'
+                        }`}
                       >
                         Bill Time
                       </motion.button>
