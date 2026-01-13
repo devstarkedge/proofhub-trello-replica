@@ -67,7 +67,11 @@ const DatePickerModal = ({
     // Check if date is disabled (before minDate)
     if (isDateDisabled(day)) return;
     
-    const dateString = clickedDate.toISOString().split('T')[0];
+    // Format as YYYY-MM-DD using local date (not UTC to avoid timezone shift)
+    const year = clickedDate.getFullYear();
+    const month = String(clickedDate.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(clickedDate.getDate()).padStart(2, '0');
+    const dateString = `${year}-${month}-${dayStr}`;
     onSelectDate(dateString);
     onClose();
   };
@@ -243,7 +247,11 @@ const DatePickerModal = ({
                         if (quickDisabled) return;
                         const date = new Date();
                         date.setDate(date.getDate() + option.offset);
-                        const dateString = date.toISOString().split('T')[0];
+                        // Format as YYYY-MM-DD using local date (not UTC to avoid timezone shift)
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const dateString = `${year}-${month}-${day}`;
                         onSelectDate(dateString);
                         onClose();
                       }}

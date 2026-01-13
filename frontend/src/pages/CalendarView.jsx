@@ -28,7 +28,7 @@ import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import Header from '../components/Header';
 import ReminderCalendar from '../components/ReminderCalendar';
-import { ModernCalendarGrid } from '../components/calendar';
+import { ModernCalendarGrid, CalendarTaskModal } from '../components/calendar';
 import ReminderModal from '../components/ReminderModal';
 import HtmlContent from '../components/ui/HtmlContent';
 
@@ -55,6 +55,10 @@ const CalendarView = () => {
   
   // Check if user can see reminders tab
   const canViewReminders = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+
+  // Task creation from calendar state
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [selectedDateForTask, setSelectedDateForTask] = useState(null);
 
   const handleSelectReminder = (reminder) => {
     setSelectedReminder(reminder);
@@ -170,6 +174,46 @@ const CalendarView = () => {
   };
 
   const handleRefresh = () => {
+    loadEvents();
+  };
+
+  // Handle date click to create task
+  const handleDateClick = (info) => {
+    setSelectedDateForTask(info.dateStr);
+    setShowTaskModal(true);
+  };
+
+  // Handle task created from calendar
+  const handleTaskCreated = (newTask) => {
+    // Optimistically add the new task to the calendar
+    if (newTask) {
+      const newEvent = {
+        id: newTask._id,
+        title: newTask.title,
+        start: newTask.startDate ? new Date(newTask.startDate) : (newTask.dueDate ? new Date(newTask.dueDate) : null),
+        end: newTask.dueDate ? new Date(newTask.dueDate) : null,
+        backgroundColor: getPriorityColor(newTask.priority),
+        borderColor: getPriorityColor(newTask.priority),
+        extendedProps: {
+          cardId: newTask._id,
+          assignees: newTask.assignees || [],
+          status: newTask.list?.title || newTask.listTitle || 'N/A',
+          description: newTask.description,
+          priority: newTask.priority || 'Default',
+          projectName: newTask.board?.name || newTask.project?.name || 'N/A',
+          labels: newTask.labels || [],
+          createdBy: newTask.createdBy,
+          startDate: newTask.startDate,
+          dueDate: newTask.dueDate,
+          isStart: !!newTask.startDate,
+          isDue: !!newTask.dueDate
+        }
+      };
+      setEvents(prev => [...prev, newEvent]);
+      calculateStats([...events, newEvent]);
+    }
+    setShowTaskModal(false);
+    // Also refresh to get accurate data
     loadEvents();
   };
 
@@ -574,6 +618,7 @@ const CalendarView = () => {
               initialView="dayGridMonth"
               events={filteredEvents}
               eventClick={handleEventClick}
+              dateClick={handleDateClick}
               headerToolbar={{
                 left: 'prev,next today',
                 center: 'title',
@@ -856,6 +901,18 @@ const CalendarView = () => {
           onReminderSaved={() => {}}
         />
       )}
+
+      {/* Task Creation Modal */}
+      <CalendarTaskModal
+        isOpen={showTaskModal}
+        onClose={() => {
+          setShowTaskModal(false);
+          setSelectedDateForTask(null);
+        }}
+        selectedDate={selectedDateForTask}
+        departmentId={currentDepartment?._id}
+        onTaskCreated={handleTaskCreated}
+      />
     </div>
   );
 };

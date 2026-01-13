@@ -2244,9 +2244,132 @@ class DatabaseService {
     }
     return await res.json();
   }
+
+  // ==========================================
+  // Calendar API Methods
+  // ==========================================
+
+  /**
+   * Get calendar tasks for a date range
+   * @param {string} startDate - Start date ISO string
+   * @param {string} endDate - End date ISO string
+   * @param {string} departmentId - Optional department filter
+   * @returns {Promise<Object>} Calendar tasks data
+   */
+  async getCalendarTasks(startDate, endDate, departmentId = null) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const queryParams = new URLSearchParams();
+    queryParams.append('start', startDate);
+    queryParams.append('end', endDate);
+    if (departmentId && departmentId !== 'all') {
+      queryParams.append('departmentId', departmentId);
+    }
+
+    const res = await fetch(`${baseURL}/api/calendar/tasks?${queryParams}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch calendar tasks');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Create a task from calendar
+   * @param {Object} taskData - Task data
+   * @returns {Promise<Object>} Created task
+   */
+  async createCalendarTask(taskData) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/calendar/tasks`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(taskData)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to create calendar task');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Update task dates from calendar
+   * @param {string} taskId - Task ID
+   * @param {Object} dates - { startDate, dueDate }
+   * @returns {Promise<Object>} Updated task
+   */
+  async updateTaskDates(taskId, dates) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/calendar/tasks/${taskId}/dates`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(dates)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to update task dates');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get projects for a department (for calendar task creation)
+   * @param {string} departmentId - Department ID
+   * @returns {Promise<Object>} Projects list
+   */
+  async getCalendarProjects(departmentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/calendar/projects/${departmentId}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch projects');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get lists/statuses for a project (for calendar task creation)
+   * @param {string} projectId - Project ID
+   * @returns {Promise<Object>} Lists/statuses
+   */
+  async getCalendarLists(projectId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/calendar/lists/${projectId}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch lists');
+    }
+    return await res.json();
+  }
 }
 
 // Create singleton instance
 const Database = new DatabaseService();
 
 export default Database;
+

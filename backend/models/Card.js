@@ -162,6 +162,11 @@ const cardSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  createdFrom: {
+    type: String,
+    enum: ['calendar', 'project', 'board', 'slack', 'api', null],
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
