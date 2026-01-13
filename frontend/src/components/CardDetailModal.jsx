@@ -239,6 +239,33 @@ const CardDetailModal = React.memo(({
   };
 
   /**
+   * Check if the current user owns a time entry
+   * Only owners can edit or delete their own entries
+   * @param {Object} entry - The time entry to check
+   * @returns {boolean} - True if current user owns the entry
+   */
+  const userOwnsTimeEntry = useCallback((entry) => {
+    if (!entry || !user) return false;
+    
+    // Get the entry's user ID
+    let entryUserId = null;
+    if (entry.user) {
+      if (typeof entry.user === 'object' && entry.user._id) {
+        entryUserId = entry.user._id.toString();
+      } else if (typeof entry.user === 'string') {
+        entryUserId = entry.user;
+      } else if (entry.user.id) {
+        entryUserId = entry.user.id.toString();
+      }
+    }
+    
+    // Get current user ID
+    const currentUserId = (user._id || user.id || '').toString();
+    
+    return entryUserId === currentUserId;
+  }, [user]);
+
+  /**
    * Validate if adding new time would exceed 24h limit for user on that date
    * Returns error message or null if valid
    */
@@ -843,18 +870,28 @@ const CardDetailModal = React.memo(({
   }, [newBilledHours, newBilledMinutes, newBilledDescription, newBilledDate, billedValidationError, user._id, user.name, user.email, user.avatar]);
 
   const startEditingEstimation = useCallback((entry) => {
+    // Ownership check - only allow editing own entries
+    if (!userOwnsTimeEntry(entry)) {
+      toast.error("You can only edit your own time entries");
+      return;
+    }
     setEditingEstimation(entry.id);
     setEditEstimationHours(entry.hours.toString());
     setEditEstimationMinutes(entry.minutes.toString());
     setEditEstimationReason(entry.reason);
-  }, []);
+  }, [userOwnsTimeEntry]);
 
   const startEditingLogged = useCallback((entry) => {
+    // Ownership check - only allow editing own entries
+    if (!userOwnsTimeEntry(entry)) {
+      toast.error("You can only edit your own time entries");
+      return;
+    }
     setEditingLogged(entry.id);
     setEditLoggedHours(entry.hours.toString());
     setEditLoggedMinutes(entry.minutes.toString());
     setEditLoggedDescription(entry.description);
-  }, []);
+  }, [userOwnsTimeEntry]);
 
   const saveEstimationEdit = useCallback((id) => {
     const hours = parseInt(editEstimationHours || 0);
@@ -929,11 +966,16 @@ const CardDetailModal = React.memo(({
   }, []);
 
   const startEditingBilled = useCallback((entry) => {
+    // Ownership check - only allow editing own entries
+    if (!userOwnsTimeEntry(entry)) {
+      toast.error("You can only edit your own time entries");
+      return;
+    }
     setEditingBilled(entry.id);
     setEditBilledHours(entry.hours.toString());
     setEditBilledMinutes(entry.minutes.toString());
     setEditBilledDescription(entry.description);
-  }, []);
+  }, [userOwnsTimeEntry]);
 
   const saveBilledEdit = useCallback((id) => {
     const hours = parseInt(editBilledHours || 0);
@@ -971,21 +1013,39 @@ const CardDetailModal = React.memo(({
     setEditBilledDescription("");
   }, []);
 
-  // Memoized delete handlers for time tracking entries
+  // Memoized delete handlers for time tracking entries with ownership validation
   const confirmDeleteEstimation = useCallback((id) => {
-    setEstimationEntries(prev => prev.filter((entry) => entry.id !== id));
+    // Find the entry and check ownership
+    const entry = estimationEntries.find(e => e.id === id || e._id === id);
+    if (entry && !userOwnsTimeEntry(entry)) {
+      toast.error("You can only delete your own time entries");
+      return;
+    }
+    setEstimationEntries(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
     toast.info("Estimation entry removed");
-  }, []);
+  }, [estimationEntries, userOwnsTimeEntry]);
 
   const confirmDeleteLoggedTime = useCallback((id) => {
-    setLoggedTime(prev => prev.filter((entry) => entry.id !== id));
+    // Find the entry and check ownership
+    const entry = loggedTime.find(e => e.id === id || e._id === id);
+    if (entry && !userOwnsTimeEntry(entry)) {
+      toast.error("You can only delete your own time entries");
+      return;
+    }
+    setLoggedTime(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
     toast.info("Time entry removed");
-  }, []);
+  }, [loggedTime, userOwnsTimeEntry]);
 
   const confirmDeleteBilledTime = useCallback((id) => {
-    setBilledTime(prev => prev.filter((entry) => entry.id !== id));
+    // Find the entry and check ownership
+    const entry = billedTime.find(e => e.id === id || e._id === id);
+    if (entry && !userOwnsTimeEntry(entry)) {
+      toast.error("You can only delete your own time entries");
+      return;
+    }
+    setBilledTime(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
     toast.info("Billed time entry removed");
-  }, []);
+  }, [billedTime, userOwnsTimeEntry]);
 
   const handleSave = async () => {
     const cardId = card._id || card.id;

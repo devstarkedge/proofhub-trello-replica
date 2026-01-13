@@ -1,4 +1,4 @@
-import React, { useState, useContext, useMemo } from "react";
+import React, { useState, useContext, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Timer,
@@ -12,6 +12,7 @@ import {
   X,
   DollarSign,
   Calendar,
+  Lock,
 } from "lucide-react";
 import AuthContext from "../../context/AuthContext";
 
@@ -114,6 +115,34 @@ const TimeTrackingSection = ({
     // Fallback
     return 'Unknown';
   };
+
+  /**
+   * Check if the current user owns a time entry
+   * Only owners can edit or delete their own entries
+   * @param {Object} entry - The time entry to check
+   * @returns {boolean} - True if current user owns the entry
+   */
+  const userOwnsEntry = useCallback((entry) => {
+    if (!entry || !user) return false;
+    
+    // Get the entry's user ID
+    let entryUserId = null;
+    if (entry.user) {
+      if (typeof entry.user === 'object' && entry.user._id) {
+        entryUserId = entry.user._id.toString();
+      } else if (typeof entry.user === 'string') {
+        entryUserId = entry.user;
+      } else if (entry.user.id) {
+        entryUserId = entry.user.id.toString();
+      }
+    }
+    
+    // Get current user ID
+    const currentUserId = (user._id || user.id || '').toString();
+    
+    return entryUserId === currentUserId;
+  }, [user]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState("estimate");
 
@@ -465,30 +494,42 @@ const TimeTrackingSection = ({
                                         <span className="font-bold text-indigo-700 text-base">
                                           {formatTime(entry.hours, entry.minutes)}
                                         </span>
+                                        {/* Show lock icon for other users' entries */}
+                                        {!userOwnsEntry(entry) && (
+                                          <span className="flex items-center gap-1 text-gray-400" title="You can only view this entry">
+                                            <Lock size={12} />
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="flex items-center gap-1">
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            onStartEditingEstimation(entry)
-                                          }
-                                          className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-md transition-all duration-200 border border-indigo-200 hover:border-indigo-300"
-                                          title="Edit estimation"
-                                        >
-                                          <Pencil size={14} />
-                                        </motion.button>
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            onConfirmDeleteEstimation(entry.id)
-                                          }
-                                          className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
-                                          title="Delete estimation"
-                                        >
-                                          <Trash2 size={14} />
-                                        </motion.button>
+                                        {userOwnsEntry(entry) ? (
+                                          <>
+                                            <motion.button
+                                              whileHover={{ scale: 1.1 }}
+                                              whileTap={{ scale: 0.9 }}
+                                              onClick={() =>
+                                                onStartEditingEstimation(entry)
+                                              }
+                                              className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-md transition-all duration-200 border border-indigo-200 hover:border-indigo-300"
+                                              title="Edit estimation"
+                                            >
+                                              <Pencil size={14} />
+                                            </motion.button>
+                                            <motion.button
+                                              whileHover={{ scale: 1.1 }}
+                                              whileTap={{ scale: 0.9 }}
+                                              onClick={() =>
+                                                onConfirmDeleteEstimation(entry.id)
+                                              }
+                                              className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
+                                              title="Delete estimation"
+                                            >
+                                              <Trash2 size={14} />
+                                            </motion.button>
+                                          </>
+                                        ) : (
+                                          <span className="text-xs text-gray-400 italic px-2">View only</span>
+                                        )}
                                       </div>
                                     </div>
                                     <p className="text-gray-700 mb-1 p-1 bg-indigo-100 rounded">
@@ -724,32 +765,44 @@ const TimeTrackingSection = ({
                                             entry.minutes
                                           )}
                                         </span>
+                                        {/* Show lock icon for other users' entries */}
+                                        {!userOwnsEntry(entry) && (
+                                          <span className="flex items-center gap-1 text-gray-400" title="You can only view this entry">
+                                            <Lock size={12} />
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="flex items-center gap-1">
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            onStartEditingLogged(entry)
-                                          }
-                                          className="p-1.5 text-green-600 hover:bg-green-100 rounded-md transition-all duration-200 border border-green-200 hover:border-green-300"
-                                          title="Edit logged time"
-                                        >
-                                          <Pencil size={14} />
-                                        </motion.button>
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            onConfirmDeleteLoggedTime(
-                                              entry.id
-                                            )
-                                          }
-                                          className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
-                                          title="Delete logged time"
-                                        >
-                                          <Trash2 size={14} />
-                                        </motion.button>
+                                        {userOwnsEntry(entry) ? (
+                                          <>
+                                            <motion.button
+                                              whileHover={{ scale: 1.1 }}
+                                              whileTap={{ scale: 0.9 }}
+                                              onClick={() =>
+                                                onStartEditingLogged(entry)
+                                              }
+                                              className="p-1.5 text-green-600 hover:bg-green-100 rounded-md transition-all duration-200 border border-green-200 hover:border-green-300"
+                                              title="Edit logged time"
+                                            >
+                                              <Pencil size={14} />
+                                            </motion.button>
+                                            <motion.button
+                                              whileHover={{ scale: 1.1 }}
+                                              whileTap={{ scale: 0.9 }}
+                                              onClick={() =>
+                                                onConfirmDeleteLoggedTime(
+                                                  entry.id
+                                                )
+                                              }
+                                              className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
+                                              title="Delete logged time"
+                                            >
+                                              <Trash2 size={14} />
+                                            </motion.button>
+                                          </>
+                                        ) : (
+                                          <span className="text-xs text-gray-400 italic px-2">View only</span>
+                                        )}
                                       </div>
                                     </div>
                                     <p className="text-gray-700 mb-1 p-1 bg-green-100 rounded">
@@ -989,32 +1042,44 @@ const TimeTrackingSection = ({
                                             entry.minutes
                                           )}
                                         </span>
+                                        {/* Show lock icon for other users' entries */}
+                                        {!userOwnsEntry(entry) && (
+                                          <span className="flex items-center gap-1 text-gray-400" title="You can only view this entry">
+                                            <Lock size={12} />
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="flex items-center gap-1">
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            onStartEditingBilled(entry)
-                                          }
-                                          className="p-1.5 text-yellow-600 hover:bg-yellow-100 rounded-md transition-all duration-200 border border-yellow-200 hover:border-yellow-300"
-                                          title="Edit billed time"
-                                        >
-                                          <Pencil size={14} />
-                                        </motion.button>
-                                        <motion.button
-                                          whileHover={{ scale: 1.1 }}
-                                          whileTap={{ scale: 0.9 }}
-                                          onClick={() =>
-                                            onConfirmDeleteBilledTime(
-                                              entry.id
-                                            )
-                                          }
-                                          className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
-                                          title="Delete billed time"
-                                        >
-                                          <Trash2 size={14} />
-                                        </motion.button>
+                                        {userOwnsEntry(entry) ? (
+                                          <>
+                                            <motion.button
+                                              whileHover={{ scale: 1.1 }}
+                                              whileTap={{ scale: 0.9 }}
+                                              onClick={() =>
+                                                onStartEditingBilled(entry)
+                                              }
+                                              className="p-1.5 text-yellow-600 hover:bg-yellow-100 rounded-md transition-all duration-200 border border-yellow-200 hover:border-yellow-300"
+                                              title="Edit billed time"
+                                            >
+                                              <Pencil size={14} />
+                                            </motion.button>
+                                            <motion.button
+                                              whileHover={{ scale: 1.1 }}
+                                              whileTap={{ scale: 0.9 }}
+                                              onClick={() =>
+                                                onConfirmDeleteBilledTime(
+                                                  entry.id
+                                                )
+                                              }
+                                              className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
+                                              title="Delete billed time"
+                                            >
+                                              <Trash2 size={14} />
+                                            </motion.button>
+                                          </>
+                                        ) : (
+                                          <span className="text-xs text-gray-400 italic px-2">View only</span>
+                                        )}
                                       </div>
                                     </div>
                                     <p className="text-gray-700 mb-1 p-1 bg-yellow-100 rounded">

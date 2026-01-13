@@ -77,6 +77,22 @@ const SubtaskDetailModal = ({
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
   /**
+   * Check if the current user owns a time entry
+   * Used to prevent users from editing/deleting other users' time entries
+   */
+  const userOwnsTimeEntry = useCallback((entry) => {
+    if (!entry || !user) return false;
+    
+    // Extract user ID from entry (handles both populated and unpopulated cases)
+    const entryUserId = typeof entry.user === 'object' 
+      ? (entry.user?._id || entry.user?.id) 
+      : entry.user;
+    
+    // Compare with current user's ID
+    return entryUserId?.toString() === user._id?.toString();
+  }, [user]);
+
+  /**
    * Helper to normalize time entries from server response
    * CRITICAL: Preserve MongoDB _id for existing entries to maintain ownership integrity
    * The 'id' field is only for React key purposes, never used for backend identification
@@ -754,6 +770,11 @@ const SubtaskDetailModal = ({
   };
 
   const handleEditEstimation = (entry) => {
+    // Ownership check: Only allow editing own time entries
+    if (!userOwnsTimeEntry(entry)) {
+      toast.error("You can only edit your own time entries");
+      return;
+    }
     setEditingEstimation(entry.id);
     setEditEstimationHours(entry.hours || 0);
     setEditEstimationMinutes(entry.minutes || 0);
@@ -791,6 +812,12 @@ const SubtaskDetailModal = ({
 
   const handleDeleteEstimation = async (entryId) => {
     try {
+      // Find the entry to check ownership
+      const entry = estimationEntries.find(e => e.id === entryId);
+      if (entry && !userOwnsTimeEntry(entry)) {
+        toast.error("You can only delete your own time entries");
+        return;
+      }
       const updatedEntries = estimationEntries.filter(entry => entry.id !== entryId);
       setEstimationEntries(updatedEntries);
       toast.success("Estimation deleted");
@@ -842,6 +869,11 @@ const SubtaskDetailModal = ({
   };
 
   const handleEditLoggedTime = (entry) => {
+    // Ownership check: Only allow editing own time entries
+    if (!userOwnsTimeEntry(entry)) {
+      toast.error("You can only edit your own time entries");
+      return;
+    }
     setEditingLogged(entry.id);
     setEditLoggedHours(entry.hours || 0);
     setEditLoggedMinutes(entry.minutes || 0);
@@ -879,6 +911,12 @@ const SubtaskDetailModal = ({
 
   const handleDeleteLoggedTime = async (entryId) => {
     try {
+      // Find the entry to check ownership
+      const entry = loggedTime.find(e => e.id === entryId);
+      if (entry && !userOwnsTimeEntry(entry)) {
+        toast.error("You can only delete your own time entries");
+        return;
+      }
       const updatedEntries = loggedTime.filter(entry => entry.id !== entryId);
       setLoggedTime(updatedEntries);
       toast.success("Logged time deleted");
@@ -930,6 +968,11 @@ const SubtaskDetailModal = ({
   };
 
   const handleEditBilledTime = (entry) => {
+    // Ownership check: Only allow editing own time entries
+    if (!userOwnsTimeEntry(entry)) {
+      toast.error("You can only edit your own time entries");
+      return;
+    }
     setEditingBilled(entry.id);
     setEditBilledHours(entry.hours || 0);
     setEditBilledMinutes(entry.minutes || 0);
@@ -967,6 +1010,12 @@ const SubtaskDetailModal = ({
 
   const handleDeleteBilledTime = async (entryId) => {
     try {
+      // Find the entry to check ownership
+      const entry = billedTime.find(e => e.id === entryId);
+      if (entry && !userOwnsTimeEntry(entry)) {
+        toast.error("You can only delete your own time entries");
+        return;
+      }
       const updatedEntries = billedTime.filter(entry => entry.id !== entryId);
       setBilledTime(updatedEntries);
       toast.success("Billed time deleted");
@@ -1197,6 +1246,7 @@ const SubtaskDetailModal = ({
                   onConfirmDeleteEstimation={handleDeleteEstimation}
                   onConfirmDeleteLoggedTime={handleDeleteLoggedTime}
                   onConfirmDeleteBilledTime={handleDeleteBilledTime}
+                  userOwnsEntry={userOwnsTimeEntry}
                   card={{ _id: entityId }}
                   estimationValidationError={estimationValidationError}
                   loggedValidationError={loggedValidationError}

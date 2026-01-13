@@ -14,6 +14,7 @@ import { invalidateCache } from "../middleware/cache.js";
 import notificationService from "../utils/notificationService.js";
 import { invalidateHierarchyCache } from "../utils/cacheInvalidation.js";
 import { slackHooks } from "../utils/slackHooks.js";
+import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
 
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
@@ -839,162 +840,55 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   const oldTitle = card.title || '';
   const oldStartDate = card.startDate;
 
-  // Helper function to extract user ID from object or string
-  const extractUserId = (user) => {
-    if (!user) return null;
-    if (typeof user === 'object' && user._id) return user._id.toString();
-    if (typeof user === 'string') return user;
-    return null;
-  };
-
-  // Helper function to check if a string is a valid MongoDB ObjectId
-  const isValidObjectId = (id) => {
-    if (!id) return false;
-    const str = id.toString();
-    return /^[a-fA-F0-9]{24}$/.test(str);
-  };
-
   /**
-   * Helper function to get date string in YYYY-MM-DD format
+   * Process time tracking updates with strict ownership preservation
+   * Uses centralized utility for consistent ownership rules across all entities
+   * 
+   * CRITICAL RULES:
+   * - Only the creator can edit/delete their entries
+   * - Other users' entries are always preserved
+   * - New entries are always assigned to req.user
    */
-  const getDateString = (date) => {
-    const d = new Date(date);
-    return d.toISOString().split('T')[0];
-  };
-
-  /**
-   * Helper function to calculate total minutes for a user on a specific date
-   */
-  const calculateUserTimeForDate = (entries, userId, dateString) => {
-    let totalMinutes = 0;
-    (entries || []).forEach(entry => {
-      const entryUserId = entry.user ? entry.user.toString() : null;
-      const entryDate = entry.date ? getDateString(entry.date) : getDateString(new Date());
-      
-      if (entryUserId === userId && entryDate === dateString) {
-        const hours = parseInt(entry.hours || 0);
-        const minutes = parseInt(entry.minutes || 0);
-        totalMinutes += (hours * 60) + minutes;
-      }
-    });
-    return totalMinutes;
-  };
-
-  /**
-   * Process time tracking entries with strict ownership preservation and 24h validation
-   * - New entries (no valid MongoDB _id): Always use authenticated user
-   * - Existing entries (valid MongoDB _id): NEVER modify the user field - preserve original owner
-   * - Validates 24h maximum per user per date
-   * - Blocks future dates
-   * This prevents the "last user overwrites all" bug
-   */
-  const processTimeEntries = (incomingEntries, existingEntries, entryType) => {
-    if (!incomingEntries) return existingEntries || [];
-    
-    // Create a map of existing entries by their _id for quick lookup
-    const existingMap = new Map();
-    (existingEntries || []).forEach(entry => {
-      if (entry._id) {
-        existingMap.set(entry._id.toString(), entry);
-      }
-    });
-
-    // Get today's date for future date validation
-    const todayString = getDateString(new Date());
-
-    // Track total time per date for 24h validation (for new entries only)
-    // Start with existing entries' time
-    const timePerDate = new Map();
-    (existingEntries || []).forEach(entry => {
-      const entryUserId = entry.user ? entry.user.toString() : null;
-      if (entryUserId === req.user.id) {
-        const entryDate = entry.date ? getDateString(entry.date) : todayString;
-        const hours = parseInt(entry.hours || 0);
-        const minutes = parseInt(entry.minutes || 0);
-        const currentTotal = timePerDate.get(entryDate) || 0;
-        timePerDate.set(entryDate, currentTotal + (hours * 60) + minutes);
-      }
-    });
-
-    return incomingEntries.map(entry => {
-      const entryId = entry._id ? entry._id.toString() : null;
-      const isExistingEntry = entryId && isValidObjectId(entryId) && existingMap.has(entryId);
-
-      if (isExistingEntry) {
-        // EXISTING ENTRY: Preserve original owner, only allow updating time/description
-        const originalEntry = existingMap.get(entryId);
-        return {
-          _id: entry._id,
-          hours: entry.hours,
-          minutes: entry.minutes,
-          reason: entry.reason,
-          description: entry.description,
-          // CRITICAL: Always preserve original user from database
-          user: originalEntry.user,
-          userName: originalEntry.userName,
-          date: originalEntry.date // Preserve original date
-        };
-      } else {
-        // NEW ENTRY: Always use authenticated user (security enforcement)
-        // Validate required fields
-        if (entryType === 'estimation' && !entry.reason) {
-          throw new Error("Reason is required for new estimation entries");
-        }
-        if ((entryType === 'logged' || entryType === 'billed') && !entry.description) {
-          throw new Error(`Description is required for new ${entryType} time entries`);
-        }
-
-        // Parse and validate date
-        const entryDate = entry.date ? getDateString(entry.date) : todayString;
-        
-        // Block future dates
-        if (entryDate > todayString) {
-          throw new Error(`Cannot add time entries for future dates. Selected date: ${entryDate}`);
-        }
-
-        // Calculate new entry time
-        const newHours = parseInt(entry.hours || 0);
-        const newMinutes = parseInt(entry.minutes || 0);
-        const newTimeMinutes = (newHours * 60) + newMinutes;
-
-        // Get existing time for this date
-        const existingMinutes = timePerDate.get(entryDate) || 0;
-        const totalMinutes = existingMinutes + newTimeMinutes;
-        const maxMinutes = 24 * 60; // 24 hours
-
-        if (totalMinutes > maxMinutes) {
-          const existingHours = Math.floor(existingMinutes / 60);
-          const existingMins = existingMinutes % 60;
-          throw new Error(`Total time for ${entryDate} cannot exceed 24 hours. You have already logged ${existingHours}h ${existingMins}m.`);
-        }
-
-        // Update tracked time for this date
-        timePerDate.set(entryDate, totalMinutes);
-        
-        return {
-          hours: newHours,
-          minutes: newMinutes,
-          reason: entry.reason,
-          description: entry.description,
-          // CRITICAL: New entries always get authenticated user
-          user: req.user.id,
-          userName: req.user.name,
-          date: entry.date || new Date()
-        };
-      }
-    });
-  };
+  const currentUser = { id: req.user.id, name: req.user.name };
+  const timeEntryWarnings = [];
 
   // Process time tracking updates with strict ownership rules
   try {
     if (req.body.estimationTime !== undefined) {
-      req.body.estimationTime = processTimeEntries(req.body.estimationTime, card.estimationTime, 'estimation');
+      const result = processTimeEntriesWithOwnership(
+        req.body.estimationTime, 
+        card.estimationTime, 
+        currentUser, 
+        'estimation'
+      );
+      req.body.estimationTime = result.entries;
+      if (result.errors.length > 0) {
+        timeEntryWarnings.push(...result.errors);
+      }
     }
     if (req.body.loggedTime !== undefined) {
-      req.body.loggedTime = processTimeEntries(req.body.loggedTime, card.loggedTime, 'logged');
+      const result = processTimeEntriesWithOwnership(
+        req.body.loggedTime, 
+        card.loggedTime, 
+        currentUser, 
+        'logged'
+      );
+      req.body.loggedTime = result.entries;
+      if (result.errors.length > 0) {
+        timeEntryWarnings.push(...result.errors);
+      }
     }
     if (req.body.billedTime !== undefined) {
-      req.body.billedTime = processTimeEntries(req.body.billedTime, card.billedTime, 'billed');
+      const result = processTimeEntriesWithOwnership(
+        req.body.billedTime, 
+        card.billedTime, 
+        currentUser, 
+        'billed'
+      );
+      req.body.billedTime = result.entries;
+      if (result.errors.length > 0) {
+        timeEntryWarnings.push(...result.errors);
+      }
     }
   } catch (validationError) {
     return next(new ErrorResponse(validationError.message, 400));
