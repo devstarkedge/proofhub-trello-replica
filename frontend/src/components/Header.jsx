@@ -415,34 +415,6 @@ const Header = ({ boardName }) => {
 
           {/* Right Section */}
           <div className="flex items-center gap-2">
-            {/* Dashboard Button - Enhanced */}
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => navigate('/dashboard')}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200"
-              style={{
-                backgroundColor: 'transparent',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(139, 92, 246, 0.1)';
-                e.currentTarget.style.color = '#8b5cf6';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
-            >
-              <div 
-                className="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200"
-                style={{ backgroundColor: 'rgba(139, 92, 246, 0.1)' }}
-              >
-                <BarChart3 size={17} style={{ color: '#8b5cf6' }} />
-              </div>
-              <span className="hidden sm:inline">Dashboard</span>
-            </motion.button>
-
             {/* Notifications - Enhanced */}
             <div ref={notificationRef} className="relative">
               <motion.button

@@ -189,86 +189,6 @@ const HomePageSkeleton = () => (
   </div>
 );
 
-const DashboardSkeleton = () => (
-  <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-    <Sidebar />
-    <div className="flex-1 lg:ml-64">
-      <Header />
-      <main className="p-6 space-y-6">
-        {/* Header Section Skeleton */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-8 h-8 rounded-lg skeleton-loader"></div>
-              <div className="h-8 rounded w-40 skeleton-loader"></div>
-            </div>
-            <div className="h-5 rounded w-48 skeleton-loader"></div>
-          </div>
-        </div>
-
-        {/* Stats Grid Skeleton */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-100 dark:border-gray-700">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-lg skeleton-loader"></div>
-                <div className="h-4 rounded w-12 skeleton-loader"></div>
-              </div>
-              <div className="h-8 rounded w-16 mb-2 skeleton-loader"></div>
-              <div className="h-4 rounded w-24 skeleton-loader"></div>
-            </div>
-          ))}
-        </div>
-
-        {/* Filters Skeleton */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-100 dark:border-gray-700">
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1">
-              <div className="h-10 rounded-lg skeleton-loader"></div>
-            </div>
-            <div className="h-10 rounded-lg w-40 skeleton-loader"></div>
-            <div className="h-10 rounded-lg w-32 skeleton-loader"></div>
-          </div>
-        </div>
-
-        {/* Projects Grid Skeleton */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-100 dark:border-gray-700">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded skeleton-loader"></div>
-              <div className="h-6 rounded w-32 skeleton-loader"></div>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map(i => (
-              <div key={i} className="bg-white dark:bg-gray-700 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <div className="h-6 rounded w-3/4 mb-2 skeleton-loader"></div>
-                    <div className="h-4 rounded w-1/2 skeleton-loader"></div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg skeleton-loader"></div>
-                </div>
-                <div className="space-y-3">
-                  <div className="h-4 rounded w-full skeleton-loader"></div>
-                  <div className="h-4 rounded w-2/3 skeleton-loader"></div>
-                </div>
-                <div className="flex items-center justify-between mt-6">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-6 h-6 rounded-full skeleton-loader"></div>
-                    <div className="h-4 rounded w-16 skeleton-loader"></div>
-                  </div>
-                  <div className="h-8 rounded w-20 skeleton-loader"></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </main>
-    </div>
-  </div>
-);
-
 const TeamManagementSkeleton = () => (
   <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
     <Sidebar />
@@ -680,7 +600,7 @@ const ListViewSkeleton = () => (
   </div>
 );
 
-export { HomePageSkeleton, DepartmentSkeleton, SkeletonCard, WorkflowSkeleton, DashboardSkeleton, HRPanelSkeleton, TeamManagementSkeleton, ClientRemindersSkeleton, AnnouncementsSkeleton, AnnouncementsListSkeleton, ListViewSkeleton };
+export { HomePageSkeleton, DepartmentSkeleton, SkeletonCard, WorkflowSkeleton, HRPanelSkeleton, TeamManagementSkeleton, ClientRemindersSkeleton, AnnouncementsSkeleton, AnnouncementsListSkeleton, ListViewSkeleton };
 
 
 export default HomePageSkeleton;

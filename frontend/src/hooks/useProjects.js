@@ -1,17 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Database from '../services/database';
 
-// Hook for fetching dashboard data fresh (no caching to ensure real-time data)
-export function useDashboardData() {
-  return useQuery({
-    queryKey: ['dashboard'],
-    queryFn: () => Database.getDashboardDataFresh(),
-    staleTime: 0, // Always fetch fresh data
-    gcTime: 0, // No garbage collection delay
-    refetchOnWindowFocus: true, // Refetch when user returns to tab
-  });
-}
-
 // Hook for fetching projects by department
 export function useProjectsByDepartment(departmentId) {
   return useQuery({
@@ -58,7 +47,6 @@ export function useCreateProject() {
     // Always refetch after error or success:
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }
@@ -72,8 +60,6 @@ export function useUpdateProject() {
     onSuccess: (data, variables) => {
       // Update the specific project in cache
       queryClient.setQueryData(['project', variables.projectId], data);
-      // Invalidate dashboard data
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       // Invalidate department projects
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
@@ -87,8 +73,8 @@ export function useDeleteProject() {
   return useMutation({
     mutationFn: (projectId) => Database.deleteProject(projectId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });
 }
+

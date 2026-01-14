@@ -1500,24 +1500,6 @@ class DatabaseService {
     return await res.json();
   }
 
-  async getDashboardData() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const res = await fetch(`${baseURL}/api/analytics/dashboard`, { headers });
-    if (!res.ok) {
-      throw new Error(`HTTP error! status: ${res.status}`);
-    }
-    return await res.json();
-  }
-
-  // Removed caching mechanism for real-time dashboard data
-  async getDashboardDataFresh() {
-    return await this.getDashboardData();
-  }
-
   // Category operations
   async getCategoriesByDepartment(departmentId) {
     const token = localStorage.getItem('token');

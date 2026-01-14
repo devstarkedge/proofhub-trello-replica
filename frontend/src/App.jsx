@@ -17,7 +17,6 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import VerifyPending from "./pages/VerifyPending";
 import TeamManagement from "./pages/TeamManagement";
-import Dashboard from "./pages/Dashboard";
 import Search from "./pages/Search";
 import ListView from "./pages/ListView";
 import CalendarView from "./pages/CalendarView";
@@ -117,14 +116,7 @@ function App() {
                 </PrivateRoute>
               }
             />
-            <Route
-              path="/dashboard"
-              element={
-                <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>
-                  <Dashboard />
-                </PrivateRoute>
-              }
-            />
+
             <Route
               path="/admin/settings"
               element={

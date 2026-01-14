@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { Home, Folder, Users, BarChart3, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight } from 'lucide-react';
+import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 import useThemeStore from '../store/themeStore';
@@ -7,7 +7,6 @@ import useThemeStore from '../store/themeStore';
 // Icon color configuration for each nav item
 const iconColors = {
   '/': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }, // Blue - Home
-  '/dashboard': { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }, // Purple - Dashboard
   '/announcements': { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' }, // Amber - Announcements
   '/reminders': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Reminders
   '/teams': { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' }, // Cyan - Teams
@@ -53,15 +52,8 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
 
     const userRole = (user.role || '').toLowerCase();
 
-    // Roles that should see the Dashboard
-    const dashboardRoles = ['admin', 'manager'];
-
-    // Start with base and conditionally add dashboard and other items
+    // Start with base and conditionally add other items
     const items = [...baseItems];
-
-    if (dashboardRoles.includes(userRole)) {
-      items.splice(1, 0, { path: '/dashboard', icon: BarChart3, label: 'Dashboard' });
-    }
 
     // PM Sheet - Admin and Manager only
     if (userRole === 'admin' || userRole === 'manager') {
