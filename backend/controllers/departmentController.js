@@ -114,21 +114,94 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         let: { deptId: '$_id' },
         pipeline: [
           { $match: { $expr: { $eq: ['$department', '$$deptId'] }, isArchived: false } },
-          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1 } }
+          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1, dueDate: 1 } }
         ],
         as: 'projects'
       }
     },
-    // Lookup all cards for this department's projects
+    // Lookup all cards for this department's projects (include status and isArchived for progress calculation)
     {
       $lookup: {
         from: 'cards',
         let: { projectIds: '$projects._id' },
         pipeline: [
           { $match: { $expr: { $in: ['$board', '$$projectIds'] } } },
-          { $project: { board: 1, assignees: 1, members: 1 } }
+          { $project: { board: 1, assignees: 1, members: 1, status: 1, isArchived: 1 } }
         ],
         as: 'allCards'
+      }
+    },
+    // Add progress fields to each project
+    {
+      $addFields: {
+        projects: {
+          $map: {
+            input: '$projects',
+            as: 'project',
+            in: {
+              $let: {
+                vars: {
+                  projectCards: {
+                    $filter: {
+                      input: '$allCards',
+                      as: 'card',
+                      cond: {
+                        $and: [
+                          { $eq: ['$$card.board', '$$project._id'] },
+                          { $ne: ['$$card.isArchived', true] }
+                        ]
+                      }
+                    }
+                  }
+                },
+                in: {
+                  $mergeObjects: [
+                    '$$project',
+                    {
+                      totalCards: { $size: '$$projectCards' },
+                      completedCards: {
+                        $size: {
+                          $filter: {
+                            input: '$$projectCards',
+                            as: 'c',
+                            cond: { $eq: ['$$c.status', 'done'] }
+                          }
+                        }
+                      },
+                      progress: {
+                        $cond: {
+                          if: { $gt: [{ $size: '$$projectCards' }, 0] },
+                          then: {
+                            $round: {
+                              $multiply: [
+                                {
+                                  $divide: [
+                                    {
+                                      $size: {
+                                        $filter: {
+                                          input: '$$projectCards',
+                                          as: 'c',
+                                          cond: { $eq: ['$$c.status', 'done'] }
+                                        }
+                                      }
+                                    },
+                                    { $size: '$$projectCards' }
+                                  ]
+                                },
+                                100
+                              ]
+                            }
+                          },
+                          else: 0
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     },
     // Compute derived fields
