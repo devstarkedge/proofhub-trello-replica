@@ -906,6 +906,15 @@ export const getCoordinatorReport = asyncHandler(async (req, res, next) => {
         ? (item.fixedPrice || 0)
         : (item.billedMinutes / 60) * (item.hourlyRate || 0);
 
+      // Get coordinators from the pre-populated boardMap instead of raw ObjectIds from aggregation
+      const boardData = boardMap[item.boardId?.toString()];
+      const populatedCoordinators = boardData?.members?.map(m => ({
+        _id: m._id,
+        name: m.name,
+        email: m.email,
+        avatar: m.avatar
+      })) || [];
+
       weeklyGroups[weekKey].projects.push({
         projectId: item.boardId,
         projectName: item.projectName,
@@ -913,7 +922,7 @@ export const getCoordinatorReport = asyncHandler(async (req, res, next) => {
         hourlyRate: item.hourlyRate,
         billedTime: formatTime(item.billedMinutes),
         payment: Math.round(payment * 100) / 100,
-        coordinators: item.coordinators
+        coordinators: populatedCoordinators
       });
 
       weeklyGroups[weekKey].totalBilledMinutes += item.billedMinutes;
