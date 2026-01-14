@@ -65,7 +65,17 @@ const CalendarTaskModal = memo(({
   const [submitting, setSubmitting] = useState(false);
 
   // Date picker state
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
+
+  // Get today's date in YYYY-MM-DD format for minDate validation
+  const getTodayString = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   // Reset form when modal opens
   useEffect(() => {
@@ -204,6 +214,21 @@ const CalendarTaskModal = memo(({
     setShowDueDatePicker(false);
   }, []);
 
+  // Handle start date selection
+  const handleStartDateSelect = useCallback((date) => {
+    setFormData(prev => {
+      const newStartDate = date ? new Date(date).toISOString().split('T')[0] : '';
+      // If due date is before new start date, clear it
+      const newDueDate = prev.dueDate && newStartDate && prev.dueDate < newStartDate ? '' : prev.dueDate;
+      return {
+        ...prev,
+        startDate: newStartDate,
+        dueDate: newDueDate
+      };
+    });
+    setShowStartDatePicker(false);
+  }, []);
+
   // Validation
   const isValid = formData.title.trim() &&
     formData.departmentId &&
@@ -306,20 +331,29 @@ const CalendarTaskModal = memo(({
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
               {/* Date Section */}
               <div className="grid grid-cols-2 gap-4">
-                {/* Start Date (Auto-filled) */}
+                {/* Start Date */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Start Date
                   </label>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      name="startDate"
-                      value={formData.startDate}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-xl text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowStartDatePicker(true)}
+                    className="w-full px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-xl text-left text-gray-900 dark:text-gray-100 hover:border-blue-300 dark:hover:border-blue-500 transition-colors flex items-center justify-between"
+                  >
+                    <span className={formData.startDate ? '' : 'text-gray-400'}>
+                      {formData.startDate
+                        ? (() => {
+                            const date = new Date(formData.startDate + 'T00:00:00');
+                            const day = String(date.getDate()).padStart(2, '0');
+                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                            const year = date.getFullYear();
+                            return `${day}-${month}-${year}`;
+                          })()
+                        : 'Select start date'}
+                    </span>
+                    <Calendar className="w-4 h-4 text-blue-500" />
+                  </button>
                 </div>
 
                 {/* Due Date */}
@@ -334,7 +368,13 @@ const CalendarTaskModal = memo(({
                   >
                     <span className={formData.dueDate ? '' : 'text-gray-400'}>
                       {formData.dueDate
-                        ? new Date(formData.dueDate).toLocaleDateString()
+                        ? (() => {
+                            const date = new Date(formData.dueDate + 'T00:00:00');
+                            const day = String(date.getDate()).padStart(2, '0');
+                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                            const year = date.getFullYear();
+                            return `${day}-${month}-${year}`;
+                          })()
                         : 'Select due date'}
                     </span>
                     <Calendar className="w-4 h-4 text-gray-400" />
@@ -514,6 +554,17 @@ const CalendarTaskModal = memo(({
         onSelectDate={handleDueDateSelect}
         selectedDate={formData.dueDate}
         title="Select Due Date"
+        minDate={formData.startDate}
+      />
+
+      {/* Start Date Picker Modal */}
+      <DatePickerModal
+        isOpen={showStartDatePicker}
+        onClose={() => setShowStartDatePicker(false)}
+        onSelectDate={handleStartDateSelect}
+        selectedDate={formData.startDate}
+        title="Select Start Date"
+        minDate={getTodayString()}
       />
     </>,
     document.body

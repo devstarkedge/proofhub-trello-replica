@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -21,8 +22,13 @@ import {
   TrendingUp,
   BarChart3,
   Bell,
-  CalendarDays
+  CalendarDays,
+  PlayCircle,
+  Target,
+  Flame,
+  Repeat
 } from 'lucide-react';
+import '../components/calendar/CalendarTask.css';
 import DepartmentContext from '../context/DepartmentContext';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
@@ -60,6 +66,10 @@ const CalendarView = () => {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [selectedDateForTask, setSelectedDateForTask] = useState(null);
 
+  // Tooltip state for hover preview
+  const [tooltipData, setTooltipData] = useState(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
   const handleSelectReminder = (reminder) => {
     setSelectedReminder(reminder);
     setSelectedProject({
@@ -84,31 +94,101 @@ const CalendarView = () => {
     applyFilters();
   }, [events, filterPriority, filterStatus]);
 
+  // Hide tooltip on scroll to prevent stale positioning
+  useEffect(() => {
+    const handleScroll = () => {
+      if (tooltipData) {
+        setTooltipData(null);
+      }
+    };
+
+    // Listen to scroll on window and any scrollable parent
+    window.addEventListener('scroll', handleScroll, true);
+    
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [tooltipData]);
+
   const loadEvents = async () => {
     try {
       setLoading(true);
       const response = await Database.getCardsByDepartment(currentDepartment._id);
       const allCards = response.data || [];
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
 
-      const calendarEvents = allCards
-        .filter(card => card.dueDate)
-        .map(card => ({
-          id: card._id,
-          title: card.title,
-          start: new Date(card.dueDate),
-          backgroundColor: getPriorityColor(card.priority),
-          borderColor: getPriorityColor(card.priority),
-          extendedProps: {
-            cardId: card._id,
-            assignees: card.assignees || [], // Store complete assignees array
-            status: card.list?.title || 'N/A',
-            description: card.description,
-            priority: card.priority || 'Default',
-            projectName: card.board?.name || 'N/A',
-            labels: card.labels || [],
-            createdBy: card.createdBy
-          }
-        }));
+      const calendarEvents = [];
+
+      allCards.forEach(card => {
+        const hasStartDate = card.startDate;
+        const hasDueDate = card.dueDate;
+        
+        // Skip cards with no dates
+        if (!hasStartDate && !hasDueDate) return;
+
+        const dueDate = hasDueDate ? new Date(card.dueDate) : null;
+        const isOverdue = dueDate && dueDate < now && card.list?.title?.toLowerCase() !== 'done';
+        const hasRecurrence = card.hasRecurrence || card.recurringTask;
+
+        // Create START DATE event
+        if (hasStartDate) {
+          calendarEvents.push({
+            id: `${card._id}-start`,
+            title: card.title,
+            start: new Date(card.startDate),
+            allDay: true,
+            backgroundColor: '#3B82F6', // Blue for start
+            borderColor: '#1D4ED8',
+            textColor: '#FFFFFF',
+            classNames: ['calendar-task-start'],
+            extendedProps: {
+              cardId: card._id,
+              eventType: 'start',
+              assignees: card.assignees || [],
+              status: card.list?.title || 'N/A',
+              description: card.description,
+              priority: card.priority || 'Default',
+              projectName: card.board?.name || 'N/A',
+              labels: card.labels || [],
+              createdBy: card.createdBy,
+              startDate: card.startDate,
+              dueDate: card.dueDate,
+              isOverdue: false,
+              hasRecurrence
+            }
+          });
+        }
+
+        // Create DUE DATE event
+        if (hasDueDate) {
+          calendarEvents.push({
+            id: `${card._id}-due`,
+            title: card.title,
+            start: dueDate,
+            allDay: true,
+            backgroundColor: isOverdue ? '#EF4444' : '#10B981', // Red if overdue, Green for due
+            borderColor: isOverdue ? '#DC2626' : '#059669',
+            textColor: '#FFFFFF',
+            classNames: [isOverdue ? 'calendar-task-overdue' : 'calendar-task-due'],
+            extendedProps: {
+              cardId: card._id,
+              eventType: 'due',
+              assignees: card.assignees || [],
+              status: card.list?.title || 'N/A',
+              description: card.description,
+              priority: card.priority || 'Default',
+              projectName: card.board?.name || 'N/A',
+              labels: card.labels || [],
+              createdBy: card.createdBy,
+              startDate: card.startDate,
+              dueDate: card.dueDate,
+              isOverdue,
+              hasRecurrence
+            }
+          });
+        }
+      });
 
       setEvents(calendarEvents);
       calculateStats(calendarEvents);
@@ -120,13 +200,36 @@ const CalendarView = () => {
   };
 
   const calculateStats = (eventList) => {
-    const now = new Date();
+    // Deduplicate by cardId to count unique tasks (not start+due events separately)
+    const uniqueTasks = new Map();
+    eventList.forEach(e => {
+      const cardId = e.extendedProps.cardId;
+      if (!uniqueTasks.has(cardId)) {
+        uniqueTasks.set(cardId, e);
+      } else {
+        // If we already have this task, update with overdue info if this event is overdue
+        const existing = uniqueTasks.get(cardId);
+        if (e.extendedProps.isOverdue) {
+          uniqueTasks.set(cardId, e);
+        }
+      }
+    });
+
+    const uniqueTaskList = Array.from(uniqueTasks.values());
+    
     const stats = {
-      total: eventList.length,
-      high: eventList.filter(e => e.extendedProps.priority === 'High').length,
-      medium: eventList.filter(e => e.extendedProps.priority === 'Medium').length,
-      low: eventList.filter(e => e.extendedProps.priority === 'Low').length,
-      overdue: eventList.filter(e => new Date(e.start) < now).length
+      total: uniqueTaskList.length,
+      high: uniqueTaskList.filter(e => 
+        e.extendedProps.priority?.toLowerCase() === 'high' || 
+        e.extendedProps.priority?.toLowerCase() === 'critical'
+      ).length,
+      medium: uniqueTaskList.filter(e => 
+        e.extendedProps.priority?.toLowerCase() === 'medium'
+      ).length,
+      low: uniqueTaskList.filter(e => 
+        e.extendedProps.priority?.toLowerCase() === 'low'
+      ).length,
+      overdue: uniqueTaskList.filter(e => e.extendedProps.isOverdue).length
     };
     setStats(stats);
   };
@@ -135,7 +238,9 @@ const CalendarView = () => {
     let filtered = [...events];
 
     if (filterPriority !== 'all') {
-      filtered = filtered.filter(event => event.extendedProps.priority === filterPriority);
+      filtered = filtered.filter(event => 
+        event.extendedProps.priority?.toLowerCase() === filterPriority.toLowerCase()
+      );
     }
 
     if (filterStatus !== 'all') {
@@ -163,6 +268,64 @@ const CalendarView = () => {
     }
   };
 
+  // Custom event content rendering for enterprise calendar
+  const renderEventContent = useCallback((eventInfo) => {
+    const { extendedProps, title } = eventInfo.event;
+    const eventType = extendedProps.eventType || 'due';
+    const isOverdue = extendedProps.isOverdue;
+    const hasRecurrence = extendedProps.hasRecurrence;
+
+    // Determine indicator icon
+    const getIndicator = () => {
+      if (isOverdue) {
+        return <Flame className="w-3 h-3 flex-shrink-0" />;
+      }
+      if (eventType === 'start') {
+        return <PlayCircle className="w-3 h-3 flex-shrink-0" />;
+      }
+      return <Target className="w-3 h-3 flex-shrink-0" />;
+    };
+
+    // Mouse event handlers for tooltip
+    const handleMouseEnter = (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setTooltipPosition({
+        x: rect.left + rect.width / 2,
+        y: rect.bottom + 8
+      });
+      setTooltipData({
+        title,
+        eventType,
+        isOverdue,
+        projectName: extendedProps.projectName,
+        status: extendedProps.status,
+        startDate: extendedProps.startDate,
+        dueDate: extendedProps.dueDate,
+        assignees: extendedProps.assignees || []
+      });
+    };
+
+    const handleMouseLeave = () => {
+      setTooltipData(null);
+    };
+
+    return (
+      <div 
+        className="fc-event-custom w-full cursor-pointer"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <div className="flex items-center gap-1 px-1.5 py-0.5 w-full overflow-hidden">
+          {getIndicator()}
+          <span className="truncate text-[11px] font-medium flex-1">{title}</span>
+          {hasRecurrence && (
+            <Repeat className="w-2.5 h-2.5 flex-shrink-0 opacity-75" />
+          )}
+        </div>
+      </div>
+    );
+  }, []);
+
   const handleEventClick = (info) => {
     setSelectedEvent(info.event);
     setShowEventModal(true);
@@ -179,6 +342,18 @@ const CalendarView = () => {
 
   // Handle date click to create task
   const handleDateClick = (info) => {
+    // Prevent creating tasks on past dates
+    const clickedDate = new Date(info.dateStr);
+    const today = new Date();
+    // Reset time to compare only dates
+    clickedDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    
+    if (clickedDate < today) {
+      // Optionally show a toast/alert that past dates are not allowed
+      return; // Don't open modal for past dates
+    }
+    
     setSelectedDateForTask(info.dateStr);
     setShowTaskModal(true);
   };
@@ -533,62 +708,100 @@ const CalendarView = () => {
               <motion.div
                 initial={{ y: -20 }}
                 animate={{ y: 0 }}
-                className="bg-white rounded-xl shadow-md p-6 mb-6"
+                className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 border border-gray-100"
               >
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Filter className="w-5 h-5" />
-                  Filter Tasks
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Priority Level
-                    </label>
-                    <select
-                      value={filterPriority}
-                      onChange={(e) => setFilterPriority(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    >
-                      <option value="all">All Priorities</option>
-                      <option value="High">High Priority</option>
-                      <option value="Medium">Medium Priority</option>
-                      <option value="Low">Low Priority</option>
-                      <option value="Default">Default</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Status
-                    </label>
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => setFilterStatus(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    >
-                      <option value="all">All Statuses</option>
-                      {uniqueStatuses.map(status => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </select>
-                  </div>
+                {/* Header with gradient matching calendar toolbar */}
+                <div className="bg-gradient-to-r from-[#1E3A5F] to-[#2C5282] px-6 py-4">
+                  <h3 className="text-lg font-semibold text-white flex items-center gap-3">
+                    <div className="p-2 bg-white/15 rounded-lg">
+                      <Filter className="w-5 h-5" />
+                    </div>
+                    Filter Tasks
+                  </h3>
                 </div>
 
-                {(filterPriority !== 'all' || filterStatus !== 'all') && (
-                  <motion.button
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      setFilterPriority('all');
-                      setFilterStatus('all');
-                    }}
-                    className="mt-4 px-4 py-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Clear all filters
-                  </motion.button>
-                )}
+                {/* Filter Controls */}
+                <div className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Priority Level */}
+                    <div>
+                      <label className=" text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-gradient-to-r from-red-500 to-yellow-500"></span>
+                        Priority Level
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={filterPriority}
+                          onChange={(e) => setFilterPriority(e.target.value)}
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all appearance-none cursor-pointer hover:border-gray-300"
+                        >
+                          <option value="all">All Priorities</option>
+                          <option value="High">🔴 High Priority</option>
+                          <option value="Medium">🟡 Medium Priority</option>
+                          <option value="Low">🟢 Low Priority</option>
+                          <option value="Default">⚪ Default</option>
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <div>
+                      <label className=" text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500"></span>
+                        Status
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={filterStatus}
+                          onChange={(e) => setFilterStatus(e.target.value)}
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all appearance-none cursor-pointer hover:border-gray-300"
+                        >
+                          <option value="all">All Statuses</option>
+                          {uniqueStatuses.map(status => (
+                            <option key={status} value={status}>{status}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Active Filters & Clear Button */}
+                  {(filterPriority !== 'all' || filterStatus !== 'all') && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-5 pt-5 border-t border-gray-100 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm text-gray-500">Active filters:</span>
+                        {filterPriority !== 'all' && (
+                          <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                            {filterPriority}
+                          </span>
+                        )}
+                        {filterStatus !== 'all' && (
+                          <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-medium">
+                            {filterStatus}
+                          </span>
+                        )}
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => {
+                          setFilterPriority('all');
+                          setFilterStatus('all');
+                        }}
+                        className="px-4 py-2 text-sm bg-red-50 text-red-600 hover:bg-red-100 rounded-lg font-semibold transition-colors flex items-center gap-2"
+                      >
+                        <X className="w-4 h-4" />
+                        Clear Filters
+                      </motion.button>
+                    </motion.div>
+                  )}
+                </div>
               </motion.div>
             </motion.div>
           )}
@@ -602,15 +815,62 @@ const CalendarView = () => {
           className="bg-white rounded-xl shadow-xl p-6 backdrop-blur-sm border border-gray-100"
         >
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-96">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="mb-4"
-              >
-                <RefreshCw className="w-8 h-8 text-blue-600" />
-              </motion.div>
-              <div className="text-xl font-medium text-gray-700">Loading calendar...</div>
+            <div className="animate-pulse">
+              {/* Skeleton Toolbar */}
+              <div className="bg-gradient-to-r from-[#1E3A5F] to-[#2C5282] rounded-2xl p-4 mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-lg"></div>
+                  <div className="w-10 h-10 bg-white/20 rounded-lg"></div>
+                  <div className="w-20 h-10 bg-white/20 rounded-lg"></div>
+                </div>
+                <div className="w-48 h-8 bg-white/20 rounded-lg"></div>
+                <div className="flex items-center gap-2">
+                  <div className="w-20 h-10 bg-white/20 rounded-lg"></div>
+                  <div className="w-20 h-10 bg-white/20 rounded-lg"></div>
+                  <div className="w-16 h-10 bg-white/20 rounded-lg"></div>
+                </div>
+              </div>
+              
+              {/* Skeleton Calendar Grid */}
+              <div className="border border-gray-100 rounded-2xl overflow-hidden">
+                {/* Day Headers */}
+                <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-100">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                    <div key={day} className="py-4 px-2 text-center">
+                      <div className="h-4 bg-gray-200 rounded w-12 mx-auto"></div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Calendar Body - 5 weeks */}
+                {[...Array(5)].map((_, weekIndex) => (
+                  <div key={weekIndex} className="grid grid-cols-7 border-b border-gray-100 last:border-b-0">
+                    {[...Array(7)].map((_, dayIndex) => (
+                      <div key={dayIndex} className="min-h-[100px] p-2 border-r border-gray-100 last:border-r-0">
+                        <div className="h-6 w-6 bg-gray-100 rounded-lg mb-2"></div>
+                        {/* Random event placeholders */}
+                        {(weekIndex + dayIndex) % 3 === 0 && (
+                          <div className="h-6 bg-blue-100 rounded mb-1"></div>
+                        )}
+                        {(weekIndex + dayIndex) % 4 === 0 && (
+                          <div className="h-6 bg-green-100 rounded"></div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              
+              {/* Loading Text */}
+              <div className="flex items-center justify-center gap-3 mt-6">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                >
+                  <RefreshCw className="w-5 h-5 text-blue-600" />
+                </motion.div>
+                <span className="text-gray-500 font-medium">Loading your tasks...</span>
+              </div>
             </div>
           ) : (
             <FullCalendar
@@ -619,6 +879,7 @@ const CalendarView = () => {
               events={filteredEvents}
               eventClick={handleEventClick}
               dateClick={handleDateClick}
+              eventContent={renderEventContent}
               headerToolbar={{
                 left: 'prev,next today',
                 center: 'title',
@@ -628,13 +889,26 @@ const CalendarView = () => {
               eventDisplay="block"
               selectable={true}
               selectMirror={true}
-              dayMaxEvents={true}
-              eventClassNames="cursor-pointer hover:opacity-80 transition-opacity"
+              dayMaxEvents={3}
+              dayMaxEventRows={3}
+              moreLinkClick="popover"
+              moreLinkContent={(args) => `+${args.num} more`}
+              eventClassNames={(info) => {
+                const classes = ['cursor-pointer', 'transition-all', 'duration-150'];
+                if (info.event.extendedProps.isOverdue) {
+                  classes.push('calendar-task-overdue');
+                } else if (info.event.extendedProps.eventType === 'start') {
+                  classes.push('calendar-task-start');
+                } else {
+                  classes.push('calendar-task-due');
+                }
+                return classes;
+              }}
             />
           )}
         </motion.div>
 
-        {/* Priority Legend */}
+        {/* Date Indicator Legend */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -642,39 +916,50 @@ const CalendarView = () => {
           className="mt-6 bg-white rounded-xl shadow-lg p-6 border border-gray-100"
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-blue-600" />
-            Priority Legend
+            <Calendar className="w-5 h-5 text-blue-600" />
+            Calendar Legend
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <motion.div 
               whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-100"
+              className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100"
             >
-              <div className="w-4 h-4 bg-red-500 rounded-full shadow-md"></div>
-              <span className="text-sm font-medium text-gray-700">High Priority</span>
-            </motion.div>
-            <motion.div 
-              whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-3 p-3 rounded-lg bg-yellow-50 border border-yellow-100"
-            >
-              <div className="w-4 h-4 bg-yellow-500 rounded-full shadow-md"></div>
-              <span className="text-sm font-medium text-gray-700">Medium Priority</span>
+              <div className="flex items-center justify-center w-6 h-6 bg-gradient-to-r from-blue-500 to-blue-600 rounded shadow-md">
+                <PlayCircle className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Start Date</span>
             </motion.div>
             <motion.div 
               whileHover={{ scale: 1.05 }}
               className="flex items-center gap-3 p-3 rounded-lg bg-green-50 border border-green-100"
             >
-              <div className="w-4 h-4 bg-green-500 rounded-full shadow-md"></div>
-              <span className="text-sm font-medium text-gray-700">Low Priority</span>
+              <div className="flex items-center justify-center w-6 h-6 bg-gradient-to-r from-green-500 to-green-600 rounded shadow-md">
+                <Target className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Due Date</span>
             </motion.div>
             <motion.div 
               whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100"
+              className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-100"
             >
-              <div className="w-4 h-4 bg-gray-500 rounded-full shadow-md"></div>
-              <span className="text-sm font-medium text-gray-700">Default</span>
+              <div className="flex items-center justify-center w-6 h-6 bg-gradient-to-r from-red-500 to-red-600 rounded shadow-md">
+                <Flame className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Overdue</span>
+            </motion.div>
+            <motion.div 
+              whileHover={{ scale: 1.05 }}
+              className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100"
+            >
+              <div className="flex items-center justify-center w-6 h-6 bg-gradient-to-r from-purple-500 to-purple-600 rounded shadow-md">
+                <Repeat className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="text-sm font-medium text-gray-700">Recurring</span>
             </motion.div>
           </div>
+          <p className="text-xs text-gray-500 mt-4">
+            💡 Tip: Click on any date to create a new task. Hover over tasks to see details.
+          </p>
         </motion.div>
           </>
         )}
@@ -913,6 +1198,110 @@ const CalendarView = () => {
         departmentId={currentDepartment?._id}
         onTaskCreated={handleTaskCreated}
       />
+
+      {/* Portal-based Tooltip for Calendar Events */}
+      {tooltipData && createPortal(
+        <div 
+          className="fixed z-[99999] pointer-events-none"
+          style={{
+            left: tooltipPosition.x,
+            top: tooltipPosition.y,
+            transform: 'translateX(-50%)'
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -5 }}
+            transition={{ duration: 0.15 }}
+            className="relative min-w-[260px] max-w-[340px] p-4 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100"
+          >
+            {/* Arrow */}
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 border-l border-t border-gray-200 dark:border-gray-700 rotate-45" />
+            
+            {/* Header with badge */}
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <h4 className="font-semibold text-sm text-gray-900 dark:text-white line-clamp-2 flex-1">
+                {tooltipData.title}
+              </h4>
+              <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+                tooltipData.isOverdue 
+                  ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300' 
+                  : tooltipData.eventType === 'start' 
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                    : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+              }`}>
+                {tooltipData.isOverdue ? 'Overdue' : tooltipData.eventType === 'start' ? 'Start' : 'Due'}
+              </span>
+            </div>
+            
+            {/* Content */}
+            <div className="space-y-2.5 text-xs">
+              {/* Project */}
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 w-14 flex-shrink-0">Project</span>
+                <span className="font-semibold text-blue-600 dark:text-blue-400 truncate">{tooltipData.projectName}</span>
+              </div>
+              
+              {/* Status */}
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 w-14 flex-shrink-0">Status</span>
+                <span className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-md font-semibold">{tooltipData.status}</span>
+              </div>
+              
+              {/* Dates */}
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 w-14 flex-shrink-0">Dates</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {tooltipData.startDate && (
+                    <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-medium">
+                      {new Date(tooltipData.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  )}
+                  {tooltipData.startDate && tooltipData.dueDate && (
+                    <span className="text-gray-300 dark:text-gray-600 font-bold">→</span>
+                  )}
+                  {tooltipData.dueDate && (
+                    <span className={`px-2 py-0.5 rounded font-medium ${
+                      tooltipData.isOverdue 
+                        ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300' 
+                        : 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                    }`}>
+                      {new Date(tooltipData.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+              </div>
+              
+              {/* Assignees */}
+              {tooltipData.assignees && tooltipData.assignees.length > 0 && (
+                <div className="flex items-center gap-3 pt-2.5 mt-1 border-t border-gray-100 dark:border-gray-700">
+                  <span className="text-gray-400 w-14 flex-shrink-0">Team</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tooltipData.assignees.slice(0, 3).map((a, i) => (
+                      <span key={i} className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded font-medium">
+                        {a.name?.split(' ')[0] || 'User'}
+                      </span>
+                    ))}
+                    {tooltipData.assignees.length > 3 && (
+                      <span className="text-gray-400 font-medium">+{tooltipData.assignees.length - 3}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* Overdue warning */}
+              {tooltipData.isOverdue && (
+                <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-red-100 dark:border-red-900/30">
+                  <Flame className="w-4 h-4 text-red-500" />
+                  <span className="text-red-600 dark:text-red-400 font-bold">This task is overdue!</span>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
