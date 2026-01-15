@@ -397,22 +397,44 @@ const ListViewTasks = () => {
     );
   }, []);
 
-  const getDueDateColor = useCallback((dueDate) => {
+  const getDueDateColor = useCallback((dueDate, status) => {
     if (!dueDate) return 'text-gray-400';
+    if (status && status.toLowerCase() === 'done') return 'text-gray-600';
+    
     const today = new Date();
     const due = new Date(dueDate);
-    const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return 'text-red-600 font-semibold';
+    due.setHours(23, 59, 59, 999); // Compare with end of due date
+    const todayEnd = new Date();
+    todayEnd.setHours(0, 0, 0, 0); // Compare with start of today for overdue calculation
+    
+    // If due date is strictly before today (yesterday or earlier), it's overdue
+    if (due < todayEnd) return 'text-red-600 font-semibold';
+    
+    const diffTime = due - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
     if (diffDays === 0) return 'text-orange-600 font-semibold';
     if (diffDays <= 3) return 'text-amber-600 font-semibold';
     return 'text-gray-600';
   }, []);
 
-  const formatDueDate = useCallback((dueDate) => {
+  const formatDueDate = useCallback((dueDate, status) => {
     if (!dueDate) return 'No due date';
+    
     const date = new Date(dueDate);
+    
+    if (status && status.toLowerCase() === 'done') {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
     const today = new Date();
-    const diffDays = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
+    today.setHours(0, 0, 0, 0);
+    const checkDate = new Date(dueDate);
+    checkDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = checkDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
     if (diffDays < 0) return `${Math.abs(diffDays)} days overdue`;
     if (diffDays === 0) return 'Due today';
     if (diffDays === 1) return 'Due tomorrow';
@@ -575,9 +597,9 @@ const ListViewTasks = () => {
                       <TableCell>{getPriorityPill(card.priority)}</TableCell>
                       <TableCell>{getStatusBadge(card.list?.title || 'N/A')}</TableCell>
                       <TableCell>
-                        <div className={`flex items-center gap-2 ${getDueDateColor(card.dueDate)}`}>
+                        <div className={`flex items-center gap-2 ${getDueDateColor(card.dueDate, card.list?.title)}`}>
                           <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100"><Calendar className="w-4 h-4" /></div>
-                          <span className="font-medium">{formatDueDate(card.dueDate)}</span>
+                          <span className="font-medium">{formatDueDate(card.dueDate, card.list?.title)}</span>
                         </div>
                       </TableCell>
                       <TableCell>

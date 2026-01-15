@@ -785,12 +785,16 @@ function calculateTeamAnalytics(teamData, dateRange) {
     .sort((a, b) => b.summary.productivityScore - a.summary.productivityScore)
     .slice(0, 5);
 
+  // Active users (users with at least one log entry)
+  const activeUsersCount = teamData.filter(m => m.summary.daysWithLogs > 0).length;
+
   // Members needing attention
   const needsAttention = teamData.filter(m => m.summary.productivityScore < 50);
 
   return {
     summary: {
       totalMembers,
+      activeUsersCount, // Added active users count
       totalTeamMinutes,
       totalTeamHours: Math.floor(totalTeamMinutes / 60),
       avgProductivity,

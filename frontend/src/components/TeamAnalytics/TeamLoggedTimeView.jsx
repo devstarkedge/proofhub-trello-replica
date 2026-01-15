@@ -1058,11 +1058,11 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-500">Top Performers</p>
-                  <p className="text-3xl font-bold text-gray-900">{teamData.analytics.topPerformers?.length || 0}</p>
+                  <p className="text-sm font-medium text-gray-500">Active Users</p>
+                  <p className="text-3xl font-bold text-gray-900">{teamData.analytics.summary.activeUsersCount || 0}</p>
                 </div>
                 <div className="p-3 bg-amber-100 rounded-xl">
-                  <Award className="w-6 h-6 text-amber-600" />
+                  <Activity className="w-6 h-6 text-amber-600" />
                 </div>
               </div>
             </motion.div>
