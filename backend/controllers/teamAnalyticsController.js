@@ -927,10 +927,525 @@ function calculateTeamHealthScore(userInsights) {
   return Math.round((avgProductivity * 0.4 + consistencyScore * 0.3 + balanceScore * 0.3));
 }
 
+/**
+ * Generate consistent color from string (task ID)
+ * Uses hash-based approach for deterministic colors
+ */
+function generateTaskColor(taskId) {
+  const colors = [
+    '#4F46E5', // Indigo
+    '#7C3AED', // Violet
+    '#EC4899', // Pink
+    '#EF4444', // Red
+    '#F97316', // Orange
+    '#EAB308', // Yellow
+    '#22C55E', // Green
+    '#14B8A6', // Teal
+    '#06B6D4', // Cyan
+    '#3B82F6', // Blue
+    '#8B5CF6', // Purple
+    '#D946EF', // Fuchsia
+    '#F43F5E', // Rose
+    '#10B981', // Emerald
+    '#6366F1', // Indigo-alt
+    '#0EA5E9', // Sky
+  ];
+  
+  let hash = 0;
+  const id = taskId.toString();
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i);
+    hash = hash & hash;
+  }
+  
+  return colors[Math.abs(hash) % colors.length];
+}
+
+/**
+ * @desc    Get lightweight task-wise summary for hover preview
+ * @route   GET /api/team-analytics/date-hover/:userId/:date
+ * @access  Private
+ */
+export const getDateHoverDetails = asyncHandler(async (req, res, next) => {
+  const { userId, date } = req.params;
+  const user = req.user;
+
+  // Validate parameters
+  if (!userId || !date) {
+    return next(new ErrorResponse('userId and date are required', 400));
+  }
+
+  const targetUserId = new mongoose.Types.ObjectId(userId);
+  const targetDate = new Date(date);
+  targetDate.setHours(0, 0, 0, 0);
+  const nextDate = new Date(targetDate);
+  nextDate.setDate(nextDate.getDate() + 1);
+
+  // Role-based access check
+  if (user.role === 'employee' && user._id.toString() !== userId) {
+    return next(new ErrorResponse('Not authorized to view other users data', 403));
+  }
+
+  // For managers, verify they have access to this user's department
+  if (user.role === 'manager') {
+    const targetUser = await User.findById(targetUserId).select('department').lean();
+    if (!targetUser) {
+      return next(new ErrorResponse('User not found', 404));
+    }
+    const userDeptIds = Array.isArray(user.department) ? user.department.map(d => d.toString()) : [user.department?.toString()];
+    const targetDeptIds = Array.isArray(targetUser.department) ? targetUser.department.map(d => d.toString()) : [targetUser.department?.toString()];
+    const hasAccess = targetDeptIds.some(d => userDeptIds.includes(d));
+    if (!hasAccess) {
+      return next(new ErrorResponse('Not authorized to view this user data', 403));
+    }
+  }
+
+  // Aggregation to get task-wise logged time
+  const taskAggregation = [
+    {
+      $match: {
+        'loggedTime.user': targetUserId,
+        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+      }
+    },
+    { $unwind: '$loggedTime' },
+    {
+      $match: {
+        'loggedTime.user': targetUserId,
+        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+      }
+    },
+    {
+      $group: {
+        _id: '$_id',
+        title: { $first: '$title' },
+        totalMinutes: {
+          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+        },
+        entryCount: { $sum: 1 }
+      }
+    },
+    { $sort: { totalMinutes: -1 } }
+  ];
+
+  // Get task-wise data from cards
+  const cardTasks = await Card.aggregate(taskAggregation);
+
+  // Subtask aggregation - group by parent task
+  const subtaskTasks = await Subtask.aggregate([
+    {
+      $match: {
+        'loggedTime.user': targetUserId,
+        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+      }
+    },
+    { $unwind: '$loggedTime' },
+    {
+      $match: {
+        'loggedTime.user': targetUserId,
+        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+      }
+    },
+    {
+      $lookup: {
+        from: 'cards',
+        localField: 'task',
+        foreignField: '_id',
+        as: 'parentTask'
+      }
+    },
+    { $unwind: { path: '$parentTask', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: '$parentTask._id',
+        title: { $first: '$parentTask.title' },
+        totalMinutes: {
+          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+        },
+        entryCount: { $sum: 1 }
+      }
+    },
+    { $sort: { totalMinutes: -1 } }
+  ]);
+
+  // Nano subtask aggregation - group by grandparent task (Card)
+  const nanoTasks = await SubtaskNano.aggregate([
+    {
+      $match: {
+        'loggedTime.user': targetUserId,
+        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+      }
+    },
+    { $unwind: '$loggedTime' },
+    {
+      $match: {
+        'loggedTime.user': targetUserId,
+        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+      }
+    },
+    {
+      $lookup: {
+        from: 'subtasks',
+        localField: 'subtask',
+        foreignField: '_id',
+        as: 'parentSubtask'
+      }
+    },
+    { $unwind: { path: '$parentSubtask', preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: 'cards',
+        localField: 'parentSubtask.task',
+        foreignField: '_id',
+        as: 'parentTask'
+      }
+    },
+    { $unwind: { path: '$parentTask', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: '$parentTask._id',
+        title: { $first: '$parentTask.title' },
+        totalMinutes: {
+          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+        },
+        entryCount: { $sum: 1 }
+      }
+    },
+    { $sort: { totalMinutes: -1 } }
+  ]);
+
+  // Merge all tasks by task ID
+  const taskMap = new Map();
+  
+  const mergeTasks = (tasks) => {
+    tasks.forEach(task => {
+      if (!task._id) return;
+      const id = task._id.toString();
+      const existing = taskMap.get(id) || {
+        taskId: id,
+        taskTitle: task.title || 'Untitled Task',
+        minutes: 0,
+        entryCount: 0
+      };
+      existing.minutes += task.totalMinutes || 0;
+      existing.entryCount += task.entryCount || 0;
+      taskMap.set(id, existing);
+    });
+  };
+
+  mergeTasks(cardTasks);
+  mergeTasks(subtaskTasks);
+  mergeTasks(nanoTasks);
+
+  // Sort by minutes and add colors
+  const allTasks = Array.from(taskMap.values())
+    .sort((a, b) => b.minutes - a.minutes)
+    .map(task => ({
+      ...task,
+      color: generateTaskColor(task.taskId),
+      formatted: `${Math.floor(task.minutes / 60)}h ${task.minutes % 60}m`
+    }));
+
+  const totalMinutes = allTasks.reduce((sum, t) => sum + t.minutes, 0);
+  const expectedMinutes = 480; // 8 hours default
+  
+  let status = 'normal';
+  if (totalMinutes < expectedMinutes * 0.75) status = 'under-logged';
+  else if (totalMinutes > expectedMinutes * 1.25) status = 'over-logged';
+
+  res.status(200).json({
+    success: true,
+    data: {
+      userId,
+      date: date,
+      totalMinutes,
+      expectedMinutes,
+      status,
+      tasks: allTasks.slice(0, 3),
+      hasMore: allTasks.length > 3,
+      totalTasks: allTasks.length,
+      remainingCount: Math.max(0, allTasks.length - 3)
+    }
+  });
+});
+
+/**
+ * @desc    Get full hierarchical breakdown for modal view
+ * @route   GET /api/team-analytics/date-details/:userId/:date
+ * @access  Private
+ */
+export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
+  const { userId, date } = req.params;
+  const user = req.user;
+
+  // Validate parameters
+  if (!userId || !date) {
+    return next(new ErrorResponse('userId and date are required', 400));
+  }
+
+  const targetUserId = new mongoose.Types.ObjectId(userId);
+  const targetDate = new Date(date);
+  targetDate.setHours(0, 0, 0, 0);
+  const nextDate = new Date(targetDate);
+  nextDate.setDate(nextDate.getDate() + 1);
+
+  // Role-based access check (same as hover)
+  if (user.role === 'employee' && user._id.toString() !== userId) {
+    return next(new ErrorResponse('Not authorized to view other users data', 403));
+  }
+
+  if (user.role === 'manager') {
+    const targetUser = await User.findById(targetUserId).select('department').lean();
+    if (!targetUser) {
+      return next(new ErrorResponse('User not found', 404));
+    }
+    const userDeptIds = Array.isArray(user.department) ? user.department.map(d => d.toString()) : [user.department?.toString()];
+    const targetDeptIds = Array.isArray(targetUser.department) ? targetUser.department.map(d => d.toString()) : [targetUser.department?.toString()];
+    const hasAccess = targetDeptIds.some(d => userDeptIds.includes(d));
+    if (!hasAccess) {
+      return next(new ErrorResponse('Not authorized to view this user data', 403));
+    }
+  }
+
+  // Get user info
+  const targetUser = await User.findById(targetUserId)
+    .select('name email avatar')
+    .lean();
+
+  if (!targetUser) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  // Get all cards with logged time for this user on this date
+  const cards = await Card.find({
+    'loggedTime.user': targetUserId,
+    'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+  })
+    .select('_id title loggedTime board')
+    .populate('board', 'name')
+    .lean();
+
+  // Get all subtasks with logged time
+  const subtasks = await Subtask.find({
+    'loggedTime.user': targetUserId,
+    'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+  })
+    .select('_id title task loggedTime')
+    .lean();
+
+  // Get all nano subtasks with logged time
+  const nanos = await SubtaskNano.find({
+    'loggedTime.user': targetUserId,
+    'loggedTime.date': { $gte: targetDate, $lt: nextDate }
+  })
+    .select('_id title subtask loggedTime')
+    .lean();
+
+  // Get parent task info for subtasks
+  const subtaskTaskIds = [...new Set(subtasks.map(s => s.task?.toString()).filter(Boolean))];
+  const parentCards = await Card.find({ _id: { $in: subtaskTaskIds } })
+    .select('_id title board')
+    .populate('board', 'name')
+    .lean();
+  const cardMap = new Map(parentCards.map(c => [c._id.toString(), c]));
+
+  // Get parent subtask info for nanos
+  const nanoSubtaskIds = [...new Set(nanos.map(n => n.subtask?.toString()).filter(Boolean))];
+  const parentSubtasks = await Subtask.find({ _id: { $in: nanoSubtaskIds } })
+    .select('_id title task')
+    .lean();
+  const subtaskMap = new Map(parentSubtasks.map(s => [s._id.toString(), s]));
+
+  // Build hierarchy: Task -> Subtask -> Nano -> Entries
+  const hierarchyMap = new Map();
+
+  // Helper to filter entries for target date
+  const filterEntries = (entries) => {
+    return entries
+      .filter(e => {
+        const entryDate = new Date(e.date);
+        return e.user.toString() === userId && 
+               entryDate >= targetDate && 
+               entryDate < nextDate;
+      })
+      .map(e => ({
+        _id: e._id,
+        hours: e.hours,
+        minutes: e.minutes,
+        totalMinutes: (e.hours * 60) + e.minutes,
+        formatted: `${e.hours}h ${e.minutes}m`,
+        description: e.description || '',
+        date: e.date,
+        userName: e.userName
+      }));
+  };
+
+  // Process cards (direct task entries)
+  cards.forEach(card => {
+    const taskId = card._id.toString();
+    if (!hierarchyMap.has(taskId)) {
+      hierarchyMap.set(taskId, {
+        task: {
+          _id: card._id,
+          title: card.title,
+          color: generateTaskColor(taskId),
+          projectName: card.board?.name || 'Unknown Project'
+        },
+        directEntries: [],
+        subtasks: new Map(),
+        totalMinutes: 0
+      });
+    }
+    const taskData = hierarchyMap.get(taskId);
+    const entries = filterEntries(card.loggedTime || []);
+    taskData.directEntries.push(...entries.map(e => ({ ...e, source: 'Task' })));
+    taskData.totalMinutes += entries.reduce((sum, e) => sum + e.totalMinutes, 0);
+  });
+
+  // Process subtasks
+  subtasks.forEach(subtask => {
+    const parentCard = cardMap.get(subtask.task?.toString());
+    if (!parentCard) return;
+
+    const taskId = parentCard._id.toString();
+    if (!hierarchyMap.has(taskId)) {
+      hierarchyMap.set(taskId, {
+        task: {
+          _id: parentCard._id,
+          title: parentCard.title,
+          color: generateTaskColor(taskId),
+          projectName: parentCard.board?.name || 'Unknown Project'
+        },
+        directEntries: [],
+        subtasks: new Map(),
+        totalMinutes: 0
+      });
+    }
+    const taskData = hierarchyMap.get(taskId);
+
+    const subtaskId = subtask._id.toString();
+    if (!taskData.subtasks.has(subtaskId)) {
+      taskData.subtasks.set(subtaskId, {
+        subtask: {
+          _id: subtask._id,
+          title: subtask.title
+        },
+        directEntries: [],
+        nanoSubtasks: new Map(),
+        totalMinutes: 0
+      });
+    }
+    const subtaskData = taskData.subtasks.get(subtaskId);
+    const entries = filterEntries(subtask.loggedTime || []);
+    subtaskData.directEntries.push(...entries.map(e => ({ ...e, source: 'Subtask' })));
+    subtaskData.totalMinutes += entries.reduce((sum, e) => sum + e.totalMinutes, 0);
+    taskData.totalMinutes += entries.reduce((sum, e) => sum + e.totalMinutes, 0);
+  });
+
+  // Process nanos
+  nanos.forEach(nano => {
+    const parentSubtask = subtaskMap.get(nano.subtask?.toString());
+    if (!parentSubtask) return;
+
+    const parentCard = cardMap.get(parentSubtask.task?.toString());
+    if (!parentCard) {
+      // Try to find the card directly
+      const directCard = cards.find(c => c._id.toString() === parentSubtask.task?.toString());
+      if (!directCard) return;
+    }
+
+    const taskId = parentCard?._id.toString() || parentSubtask.task?.toString();
+    if (!hierarchyMap.has(taskId)) {
+      hierarchyMap.set(taskId, {
+        task: {
+          _id: parentCard?._id || parentSubtask.task,
+          title: parentCard?.title || 'Unknown Task',
+          color: generateTaskColor(taskId),
+          projectName: parentCard?.board?.name || 'Unknown Project'
+        },
+        directEntries: [],
+        subtasks: new Map(),
+        totalMinutes: 0
+      });
+    }
+    const taskData = hierarchyMap.get(taskId);
+
+    const subtaskId = parentSubtask._id.toString();
+    if (!taskData.subtasks.has(subtaskId)) {
+      taskData.subtasks.set(subtaskId, {
+        subtask: {
+          _id: parentSubtask._id,
+          title: parentSubtask.title
+        },
+        directEntries: [],
+        nanoSubtasks: new Map(),
+        totalMinutes: 0
+      });
+    }
+    const subtaskData = taskData.subtasks.get(subtaskId);
+
+    const nanoId = nano._id.toString();
+    if (!subtaskData.nanoSubtasks.has(nanoId)) {
+      subtaskData.nanoSubtasks.set(nanoId, {
+        nano: {
+          _id: nano._id,
+          title: nano.title
+        },
+        entries: [],
+        totalMinutes: 0
+      });
+    }
+    const nanoData = subtaskData.nanoSubtasks.get(nanoId);
+    const entries = filterEntries(nano.loggedTime || []);
+    nanoData.entries.push(...entries.map(e => ({ ...e, source: 'Neno Subtask' })));
+    nanoData.totalMinutes += entries.reduce((sum, e) => sum + e.totalMinutes, 0);
+    subtaskData.totalMinutes += entries.reduce((sum, e) => sum + e.totalMinutes, 0);
+    taskData.totalMinutes += entries.reduce((sum, e) => sum + e.totalMinutes, 0);
+  });
+
+  // Convert Maps to arrays and sort
+  const hierarchy = Array.from(hierarchyMap.values())
+    .map(taskData => ({
+      ...taskData,
+      subtasks: Array.from(taskData.subtasks.values()).map(subtaskData => ({
+        ...subtaskData,
+        nanoSubtasks: Array.from(subtaskData.nanoSubtasks.values())
+          .sort((a, b) => b.totalMinutes - a.totalMinutes)
+      })).sort((a, b) => b.totalMinutes - a.totalMinutes)
+    }))
+    .sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+  const totalMinutes = hierarchy.reduce((sum, t) => sum + t.totalMinutes, 0);
+  const expectedMinutes = 480;
+  
+  let status = 'normal';
+  if (totalMinutes < expectedMinutes * 0.75) status = 'under-logged';
+  else if (totalMinutes > expectedMinutes * 1.25) status = 'over-logged';
+
+  res.status(200).json({
+    success: true,
+    data: {
+      userId,
+      userName: targetUser.name,
+      userAvatar: targetUser.avatar,
+      userEmail: targetUser.email,
+      date: date,
+      totalMinutes,
+      totalFormatted: `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
+      expectedMinutes,
+      status,
+      hierarchy
+    }
+  });
+});
+
 export default {
   getTeamLoggedTime,
   getSmartInsights,
   getDepartmentAnalytics,
   getDailyTrends,
-  getMyLoggedTimeSummary
+  getMyLoggedTimeSummary,
+  getDateHoverDetails,
+  getDateDetailedLogs
 };
+

@@ -2227,6 +2227,48 @@ class DatabaseService {
     return await res.json();
   }
 
+  /**
+   * Get lightweight task-wise summary for hover preview
+   * @param {string} userId - User ID
+   * @param {string} date - Date string (YYYY-MM-DD)
+   * @returns {Promise<Object>} Hover preview data
+   */
+  async getDateHoverDetails(userId, date) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/team-analytics/date-hover/${userId}/${date}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch date hover details');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get full hierarchical breakdown for modal view
+   * @param {string} userId - User ID
+   * @param {string} date - Date string (YYYY-MM-DD)
+   * @returns {Promise<Object>} Full detail data with hierarchy
+   */
+  async getDateDetailedLogs(userId, date) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${baseURL}/api/team-analytics/date-details/${userId}/${date}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch date details');
+    }
+    return await res.json();
+  }
+
   // ==========================================
   // Calendar API Methods
   // ==========================================

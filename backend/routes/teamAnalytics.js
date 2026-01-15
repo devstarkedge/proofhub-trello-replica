@@ -5,7 +5,9 @@ import {
   getSmartInsights,
   getDepartmentAnalytics,
   getDailyTrends,
-  getMyLoggedTimeSummary
+  getMyLoggedTimeSummary,
+  getDateHoverDetails,
+  getDateDetailedLogs
 } from '../controllers/teamAnalyticsController.js';
 
 const router = express.Router();
@@ -28,4 +30,11 @@ router.get('/trends', getDailyTrends);
 // Personal summary for logged-in user
 router.get('/my-summary', getMyLoggedTimeSummary);
 
+// Date-specific hover details (lightweight task summary)
+router.get('/date-hover/:userId/:date', getDateHoverDetails);
+
+// Date-specific detailed logs (full hierarchy for modal)
+router.get('/date-details/:userId/:date', getDateDetailedLogs);
+
 export default router;
+

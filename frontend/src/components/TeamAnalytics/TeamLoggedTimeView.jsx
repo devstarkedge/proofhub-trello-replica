@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback, memo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, Clock, Calendar, TrendingUp, TrendingDown, AlertTriangle,
@@ -30,6 +30,8 @@ import {
 import TeamAnalyticsCharts from './TeamAnalyticsCharts';
 import SmartInsightsPanel from './SmartInsightsPanel';
 import TeamHeatmap from './TeamHeatmap';
+import DateCellHoverCard from './DateCellHoverCard';
+import DateDetailModal from './DateDetailModal';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -328,6 +330,85 @@ const UserRow = memo(({ member, dateRange, isCompact, onUserClick }) => {
   );
 });
 
+// Enhanced Date Cell with Hover Preview
+const EnhancedDateCell = memo(({ 
+  member, 
+  date, 
+  day, 
+  style, 
+  status, 
+  value, 
+  onOpenModal
+}) => {
+  const [showHoverCard, setShowHoverCard] = useState(false);
+  const hoverTimeoutRef = useRef(null);
+  const cellRef = useRef(null);
+
+  // Handle hover with delay
+  const handleMouseEnter = useCallback(() => {
+    // Clear any existing timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    // Show hover card after 300ms delay
+    if (day?.hasData) {
+      hoverTimeoutRef.current = setTimeout(() => {
+        setShowHoverCard(true);
+      }, 300);
+    }
+  }, [day?.hasData]);
+
+  const handleMouseLeave = useCallback(() => {
+    // Clear timeout and hide hover card
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setShowHoverCard(false);
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <td 
+      ref={cellRef}
+      className={`px-2 py-2 text-center font-medium border ${style.bg} ${style.text} ${style.border} ${style.gradient || ''} rounded-md cursor-pointer transition-all hover:scale-105 hover:shadow-md hover:z-10 relative`}
+      onClick={() => day?.hasData && onOpenModal(member, date)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div className="relative flex items-center justify-center gap-0.5">
+        {/* Over/Under indicator */}
+        {status === 'over-logged' && (
+          <Flame className="w-3 h-3 text-orange-600 flex-shrink-0" />
+        )}
+        {status === 'under-logged' && day?.hasData && (
+          <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
+        )}
+        <span className="whitespace-nowrap text-xs">{value}</span>
+      </div>
+      
+      {/* Hover Card */}
+      {showHoverCard && day?.hasData && (
+        <DateCellHoverCard
+          userId={member.user._id}
+          date={date}
+          isVisible={showHoverCard}
+          anchorRef={cellRef}
+        />
+      )}
+    </td>
+  );
+});
+
+EnhancedDateCell.displayName = 'EnhancedDateCell';
+
 // Empty State Component
 const EmptyState = memo(({ message, submessage }) => (
   <motion.div
@@ -365,6 +446,9 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
   // View state
   const [viewMode, setViewMode] = useState('table'); // table, heatmap, chart
   const [showInsights, setShowInsights] = useState(true);
+  
+  // Modal state for detailed date view
+  const [detailModal, setDetailModal] = useState({ isOpen: false, userId: null, date: null, userName: null, userAvatar: null });
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -495,27 +579,89 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
     return member.dailyTimeline.find(d => d.date === date) || null;
   };
 
+  // Enhanced cell style with heat-intensity gradients
   const getDayCellStyle = (day) => {
     if (!day || !day.hasData) {
       return {
         bg: 'bg-gray-50',
         text: 'text-gray-400',
-        border: 'border-gray-100'
+        border: 'border-gray-100',
+        gradient: ''
       };
     }
 
     const hours = (day.totalMinutes || 0) / 60;
+    const expectedHours = 8;
+    const intensity = Math.min(hours / expectedHours, 1.5);
 
-    if (hours >= 9) {
-      return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100' };
+    // Heat-intensity based on percentage of expected hours
+    if (hours >= expectedHours * 1.25) {
+      // Over-logged (>10h) - Strong orange/red heat
+      return { 
+        bg: 'bg-gradient-to-br from-orange-100 to-red-100', 
+        text: 'text-orange-800', 
+        border: 'border-orange-200',
+        gradient: 'shadow-inner shadow-orange-200/50'
+      };
     }
-    if (hours >= 7) {
-      return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100' };
+    if (hours >= expectedHours) {
+      // On target (8h+) - Strong green
+      return { 
+        bg: 'bg-gradient-to-br from-emerald-100 to-green-100', 
+        text: 'text-emerald-800', 
+        border: 'border-emerald-200',
+        gradient: 'shadow-inner shadow-emerald-200/50'
+      };
     }
-    if (hours >= 4) {
-      return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100' };
+    if (hours >= expectedHours * 0.75) {
+      // Near target (6-8h) - Medium blue
+      return { 
+        bg: 'bg-gradient-to-br from-blue-50 to-indigo-50', 
+        text: 'text-blue-700', 
+        border: 'border-blue-200',
+        gradient: ''
+      };
     }
-    return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-100' };
+    if (hours >= expectedHours * 0.5) {
+      // Below target (4-6h) - Light amber
+      return { 
+        bg: 'bg-gradient-to-br from-amber-50 to-yellow-50', 
+        text: 'text-amber-700', 
+        border: 'border-amber-200',
+        gradient: ''
+      };
+    }
+    // Very low (<4h) - Light rose
+    return { 
+      bg: 'bg-gradient-to-br from-rose-50 to-pink-50', 
+      text: 'text-rose-700', 
+      border: 'border-rose-200',
+      gradient: ''
+    };
+  };
+
+  // Get over/under status for a day
+  const getDateStatus = (day) => {
+    if (!day || !day.hasData) return 'no-data';
+    const hours = (day.totalMinutes || 0) / 60;
+    if (hours >= 10) return 'over-logged';
+    if (hours < 6) return 'under-logged';
+    return 'normal';
+  };
+
+  // Open detail modal for a date cell
+  const openDetailModal = (member, date) => {
+    setDetailModal({
+      isOpen: true,
+      userId: member.user._id,
+      date: date,
+      userName: member.user.name,
+      userAvatar: member.user.avatar
+    });
+  };
+
+  const closeDetailModal = () => {
+    setDetailModal({ isOpen: false, userId: null, date: null, userName: null, userAvatar: null });
   };
 
   const getDayTotalMinutes = (date) => {
@@ -1235,7 +1381,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredMembers.map((member, idx) => {
+                      {filteredMembers.map((member) => {
                         const deptLabel = Array.isArray(member.user.department)
                           ? member.user.department.map(d => d.name).join(', ')
                           : member.user.department?.name || 'N/A';
@@ -1267,11 +1413,19 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                             {dateColumns.map((date) => {
                               const day = getDayData(member, date);
                               const style = getDayCellStyle(day);
-                              const value = day?.hasData ? `${day.hours}h ${day.minutes}m` : '0h 0m';
+                              const status = getDateStatus(day);
+                              const value = day?.hasData ? `${day.hours}h ${day.minutes}m` : '-';
                               return (
-                                <td key={date} className={`px-3 py-2 text-center font-semibold border ${style.bg} ${style.text} ${style.border} rounded-md`}> 
-                                  <span className="whitespace-nowrap text-xs">{value}</span>
-                                </td>
+                                <EnhancedDateCell
+                                  key={date}
+                                  member={member}
+                                  date={date}
+                                  day={day}
+                                  style={style}
+                                  status={status}
+                                  value={value}
+                                  onOpenModal={openDetailModal}
+                                />
                               );
                             })}
                             <td className="px-4 py-3 text-right font-bold text-gray-900 align-top whitespace-nowrap">
@@ -1349,6 +1503,16 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
         .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
       `}</style>
+
+      {/* Date Detail Modal */}
+      <DateDetailModal
+        userId={detailModal.userId}
+        date={detailModal.date}
+        isOpen={detailModal.isOpen}
+        onClose={closeDetailModal}
+        userName={detailModal.userName}
+        userAvatar={detailModal.userAvatar}
+      />
     </div>
   );
 });
