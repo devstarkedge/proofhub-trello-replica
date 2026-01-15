@@ -117,11 +117,11 @@ const Header = ({ boardName }) => {
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
   ];
 
-  const isActive = (path) => location.pathname === path;
+  const isActive = (path) => path === '/list-view' ? location.pathname.startsWith('/list-view') : location.pathname === path;
   const isAdminOrManager = user && (user.role === 'admin' || user.role === 'manager');
 
   // Show department selector only on specific pages
-  const shouldShowDepartmentSelector = ['/list-view', '/calendar', '/analytics'].includes(location.pathname);
+  const shouldShowDepartmentSelector = location.pathname.startsWith('/list-view') || ['/calendar', '/analytics'].includes(location.pathname);
 
   // Get icon config for nav items
   const getNavIconConfig = (path) => navIconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
@@ -164,7 +164,7 @@ const Header = ({ boardName }) => {
             </motion.button>
 
             {/* Back Button */}
-            {['/list-view', '/calendar', '/analytics'].includes(location.pathname) && (
+            {(location.pathname.startsWith('/list-view') || ['/calendar', '/analytics'].includes(location.pathname)) && (
               <motion.button
                 whileHover={{ scale: 1.03, x: -2 }}
                 whileTap={{ scale: 0.97 }}

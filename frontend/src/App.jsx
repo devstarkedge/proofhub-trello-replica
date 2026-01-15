@@ -18,7 +18,9 @@ import RegisterPage from "./pages/RegisterPage";
 import VerifyPending from "./pages/VerifyPending";
 import TeamManagement from "./pages/TeamManagement";
 import Search from "./pages/Search";
-import ListView from "./pages/ListView";
+import ListViewLayout from "./layouts/ListViewLayout";
+import ListViewTasks from "./pages/ListViewTasks";
+import ListViewTeams from "./pages/ListViewTeams";
 import CalendarView from "./pages/CalendarView";
 import GanttView from "./pages/GanttView";
 import AdminSettings from "./pages/AdminSettings";
@@ -145,10 +147,13 @@ function App() {
               path="/list-view"
               element={
                 <PrivateRoute>
-                  <ListView />
+                  <ListViewLayout />
                 </PrivateRoute>
               }
-            />
+            >
+              <Route index element={<ListViewTasks />} />
+              <Route path="teams" element={<ListViewTeams />} />
+            </Route>
             <Route
               path="/calendar"
               element={
