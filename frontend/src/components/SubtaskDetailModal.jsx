@@ -18,6 +18,7 @@ import useNanoSubtaskStore from "../store/nanoSubtaskStore";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
 import DeletePopup from "../components/ui/DeletePopup";
+import useBilledTimeAccess from "../hooks/useBilledTimeAccess";
 
 const overlayMap = {
   purple: "bg-purple-950/50",
@@ -75,6 +76,11 @@ const SubtaskDetailModal = ({
   const [deletePopup, setDeletePopup] = useState({ isOpen: false, type: null, data: null });
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
+
+  // Check if user can access billed time based on project client info and user role
+  const { canAccessBilledTime, hiddenReason: billedTimeHiddenReason } = useBilledTimeAccess(
+    currentProject?.clientDetails
+  );
 
   /**
    * Check if the current user owns a time entry
@@ -1251,6 +1257,8 @@ const SubtaskDetailModal = ({
                   estimationValidationError={estimationValidationError}
                   loggedValidationError={loggedValidationError}
                   billedValidationError={billedValidationError}
+                  canAccessBilledTime={canAccessBilledTime}
+                  billedTimeHiddenReason={billedTimeHiddenReason}
                 />
 
                 <div className="mt-8">

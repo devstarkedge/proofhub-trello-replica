@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Save, AlertCircle, Loader, Calendar, Users, DollarSign,
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
-  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock, Plus, Bell, Image
+  CheckCircle2, ChevronDown, Edit3, TrendingUp, Lock, Plus, Bell, Image, Shield
 } from 'lucide-react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select"
 import { Badge } from "../components/ui/badge"
@@ -15,7 +15,7 @@ import AuthContext from '../context/AuthContext';
 import CoverImageUploader from './CoverImageUploader';
 import DatePickerModal from './DatePickerModal';
 
-const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
+const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated, departmentManagers = [] }) => {
   // Get user from AuthContext instead of localStorage
   const { user } = useContext(AuthContext);
   
@@ -40,7 +40,8 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
     priority: 'medium',
     visibility: 'public'
   });
-  const [employees, setEmployees] = useState([]);
+  // Use departmentManagers prop directly instead of fetching employees
+  const managers = useMemo(() => departmentManagers || [], [departmentManagers]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -91,7 +92,7 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
           // Set cover image state from fetched project
           setCoverImage(fullProject.coverImage || null);
           setCoverImageHistory(fullProject.coverImageHistory || []);
-          await fetchEmployees(fullProject);
+          // fetchEmployees removed - now using departmentManagers prop directly
           await fetchCategories(fullProject);
         } catch (error) {
           console.error('Error fetching full project:', error);
@@ -101,35 +102,7 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
     }
   }, [isOpen, project]);
 
-  const fetchEmployees = async (projectData) => {
-    try {
-      // Get department ID from the project
-      const departmentId = projectData.department?._id || projectData.department;
-      
-      if (!departmentId) {
-        console.warn('No department ID found in project data');
-        setEmployees([]);
-        return;
-      }
-
-      // Use the departmentId to fetch employees from that department
-      const response = await Database.getUsers(departmentId);
-      
-      if (response.success || response.data) {
-        // Filter for verified employees only
-        const deptEmployees = (response.data || []).filter(user => 
-          user.role === 'employee' && user.isVerified
-        );
-        setEmployees(deptEmployees);
-      } else {
-        console.warn('Failed to fetch employees:', response.message);
-        setEmployees([]);
-      }
-    } catch (error) {
-      console.error('Error fetching employees:', error);
-      setEmployees([]);
-    }
-  };
+  // fetchEmployees removed - now using departmentManagers prop directly
 
   const fetchCategories = async (project) => {
     try {
@@ -894,46 +867,63 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated }) => {
                 </div>
               </motion.div>
 
-              {/* Assignees */}
+              {/* Assignees - Now showing only managers */}
               <motion.div custom={13} variants={fieldVariants} initial="hidden" animate="visible">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                  <Users className="h-4 w-4 text-purple-600" />
-                  Team Members *
+                  <Shield className="h-4 w-4 text-purple-600" />
+                  Project Manager *
                 </label>
-                <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-xl p-4 bg-gradient-to-br from-white to-gray-50 space-y-2">
-                  {employees.map((employee, index) => (
-                    <motion.label
-                      key={employee._id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="flex items-center gap-3 p-3 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors group"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={formData.assignees.includes(employee._id)}
-                        onChange={() => handleAssigneeChange(employee._id)}
-                        className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                      />
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-sm font-bold group-hover:scale-110 transition-transform">
-                        {(employee.name || "U").charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-semibold text-gray-900">{employee.name}</div>
-                        <div className="text-xs text-gray-500">{employee.email || "No email"}</div>
-                      </div>
-                      {formData.assignees.includes(employee._id) && (
-                        <motion.div
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          className="text-indigo-600"
-                        >
-                          <CheckCircle2 className="h-5 w-5" />
-                        </motion.div>
-                      )}
-                    </motion.label>
-                  ))}
-                </div>
+                {managers.length === 0 ? (
+                  /* Empty state when no managers are available */
+                  <div className="flex items-center gap-3 p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl">
+                    <div className="p-2 bg-amber-100 rounded-lg">
+                      <AlertCircle className="h-5 w-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">No Manager Available</p>
+                      <p className="text-xs text-amber-600">Please assign a manager to this department first.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-xl p-4 bg-gradient-to-br from-white to-gray-50 space-y-2">
+                    {managers.map((manager, index) => (
+                      <motion.label
+                        key={manager._id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="flex items-center gap-3 p-3 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors group"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.assignees.includes(manager._id)}
+                          onChange={() => handleAssigneeChange(manager._id)}
+                          className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-sm font-bold group-hover:scale-110 transition-transform">
+                          {(manager.name || "U").charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-900">{manager.name}</span>
+                            <Shield size={14} className="text-blue-500" />
+                          </div>
+                          <div className="text-xs text-gray-500">{manager.email || "No email"}</div>
+                          <div className="text-xs text-blue-600 font-medium">Manager</div>
+                        </div>
+                        {formData.assignees.includes(manager._id) && (
+                          <motion.div
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            className="text-indigo-600"
+                          >
+                            <CheckCircle2 className="h-5 w-5" />
+                          </motion.div>
+                        )}
+                      </motion.label>
+                    ))}
+                  </div>
+                )}
                 {errors.assignees && (
                   <p className="text-red-600 text-sm mt-2 flex items-center gap-1">
                     <AlertCircle size={14} /> {errors.assignees}

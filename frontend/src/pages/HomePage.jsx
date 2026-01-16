@@ -209,6 +209,20 @@ const HomePage = () => {
 
   const canAddProject = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
 
+  // Get managers for the selected department (for Add/Edit Project modals)
+  const selectedDepartmentManagers = useMemo(() => {
+    if (!selectedDepartment) return [];
+    const dept = departments.find(d => d._id === selectedDepartment);
+    return dept?.managers || [];
+  }, [selectedDepartment, departments]);
+
+  // Get managers for the project being edited (based on project's departmentId)
+  const editProjectManagers = useMemo(() => {
+    if (!selectedProject?.departmentId) return [];
+    const dept = departments.find(d => d._id === selectedProject.departmentId);
+    return dept?.managers || [];
+  }, [selectedProject?.departmentId, departments]);
+
   const getStatusLabel = useCallback((status) => {
     const statusMap = {
       'all': 'All Status',
@@ -675,6 +689,7 @@ const HomePage = () => {
             onClose={() => setModalOpen(false)}
             departmentId={selectedDepartment}
             onProjectAdded={handleProjectAdded}
+            departmentManagers={selectedDepartmentManagers}
           />
         </Suspense>
       )}
@@ -686,6 +701,7 @@ const HomePage = () => {
             onClose={() => setEditModalOpen(false)}
             project={selectedProject}
             onProjectUpdated={handleProjectUpdated}
+            departmentManagers={editProjectManagers}
           />
         </Suspense>
       )}

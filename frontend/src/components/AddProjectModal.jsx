@@ -85,7 +85,7 @@ const fieldVariants = {
   })
 }
 
-const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded }) => {
+const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, departmentManagers = [] }) => {
   const initialFormData = useMemo(() => ({
     title: "",
     description: "",
@@ -108,7 +108,8 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
   }), [])
 
   const [formData, setFormData] = useState(initialFormData)
-  const [employees, setEmployees] = useState([])
+  // Use departmentManagers prop directly instead of fetching employees
+  const managers = useMemo(() => departmentManagers || [], [departmentManagers])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(false)
   const [categoryLoading, setCategoryLoading] = useState(false)
@@ -193,7 +194,6 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
 
   useEffect(() => {
     if (isOpen) {
-      fetchEmployees()
       fetchCategories()
     }
   }, [isOpen, departmentId])
@@ -208,20 +208,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
     }
   }, [isOpen, initialFormData])
 
-  const fetchEmployees = useCallback(async () => {
-    if (!departmentId) return;
-    try {
-      const response = await Database.getUsers(departmentId);
-      if (response.success) {
-        setEmployees(response.data)
-      } else {
-        throw new Error(response.message || "Failed to load employees")
-      }
-    } catch (error) {
-      console.error("Error fetching employees:", error)
-      toast.error("Failed to load employees")
-    }
-  }, [departmentId])
+  // fetchEmployees removed - now using departmentManagers prop directly
 
   const fetchCategories = useCallback(async () => {
     if (!departmentId) return;
@@ -523,16 +510,16 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
     }
   }, [formData, validateForm, fetchDepartmentTeams, departmentId, onProjectAdded, onClose, initialFormData, projectUrlValid, coverImageFile])
 
-  // Memoize available employees (those not already assigned)
+  // Memoize available managers (those not already assigned)
   const availableEmployees = useMemo(() => 
-    employees.filter(employee => !formData.assignees.includes(employee._id)),
-    [employees, formData.assignees]
+    managers.filter(manager => !formData.assignees.includes(manager._id)),
+    [managers, formData.assignees]
   )
 
-  // Memoize selected employees for badges
+  // Memoize selected managers for badges
   const selectedEmployees = useMemo(() => 
-    formData.assignees.map(assigneeId => employees.find(emp => emp._id === assigneeId)).filter(Boolean),
-    [formData.assignees, employees]
+    formData.assignees.map(assigneeId => managers.find(mgr => mgr._id === assigneeId)).filter(Boolean),
+    [formData.assignees, managers]
   )
 
   // Compute trigger rect for visibility menu positioning (portal)
@@ -847,97 +834,90 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded })
                 minDate={formData.startDate || null}
               />
 
-              {/* Assignees */}
+              {/* Assignees - Now showing only managers */}
               <motion.div custom={4} variants={fieldVariants} initial="hidden" animate="visible">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                  <Users className="h-4 w-4 text-purple-600" />
-                  Team Members *
+                  <Shield className="h-4 w-4 text-purple-600" />
+                  Project Manager *
                 </label>
                 <div className="space-y-3">
-                  <Select onValueChange={handleAssigneeChange}>
-                    <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors cursor-pointer">
-                      <SelectValue placeholder="Click to select team members..." />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-64 max-w-xs">
-                      {availableEmployees.map((employee) => {
-                          const getRoleIcon = (role) => {
-                            switch (role) {
-                              case 'admin':
-                                return <Crown size={14} className="text-yellow-500" />;
-                              case 'manager':
-                                return <Shield size={14} className="text-blue-500" />;
-                              default:
-                                return <User size={14} className="text-gray-500" />;
-                            }
-                          };
-
-                          const getRoleLabel = (role) => {
-                            switch (role) {
-                              case 'admin':
-                                return 'Admin';
-                              case 'manager':
-                                return 'Manager';
-                              default:
-                                return 'Member';
-                            }
-                          };
-
-                          return (
-                            <SelectItem key={employee._id} value={employee._id} className="py-3">
-                              <div className="flex items-center gap-3 w-full">
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-                                  {(employee.name?.name || employee.name || "U").charAt(0).toUpperCase()}
-                                </div>
-                                <div className="flex flex-col flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-medium text-gray-900 truncate text-sm">{employee.name?.name || employee.name || "Unknown"}</span>
-                                    {getRoleIcon(employee.role)}
+                  {managers.length === 0 ? (
+                    /* Empty state when no managers are available */
+                    <div className="flex items-center gap-3 p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl">
+                      <div className="p-2 bg-amber-100 rounded-lg">
+                        <AlertCircle className="h-5 w-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-amber-800">No Manager Available</p>
+                        <p className="text-xs text-amber-600">Please assign a manager to this department first.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Select onValueChange={handleAssigneeChange}>
+                        <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors cursor-pointer">
+                          <SelectValue placeholder="Click to select project manager..." />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-64 max-w-xs">
+                          {availableEmployees.map((manager) => {
+                            return (
+                              <SelectItem key={manager._id} value={manager._id} className="py-3">
+                                <div className="flex items-center gap-3 w-full">
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                                    {(manager.name?.name || manager.name || "U").charAt(0).toUpperCase()}
                                   </div>
-                                  <span className="text-xs text-gray-500 truncate">{employee.email?.email || employee.email || "No email"}</span>
-                                  <span className="text-xs text-blue-600 font-medium">{getRoleLabel(employee.role)}</span>
+                                  <div className="flex flex-col flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-gray-900 truncate text-sm">{manager.name?.name || manager.name || "Unknown"}</span>
+                                      <Shield size={14} className="text-blue-500" />
+                                    </div>
+                                    <span className="text-xs text-gray-500 truncate">{manager.email?.email || manager.email || "No email"}</span>
+                                    <span className="text-xs text-blue-600 font-medium">Manager</span>
+                                  </div>
                                 </div>
-                              </div>
-                            </SelectItem>
-                          );
-                        })}
-                    </SelectContent>
-                  </Select>
-                  <AnimatePresence>
-                    {selectedEmployees.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="flex flex-wrap gap-2"
-                      >
-                        {selectedEmployees.map((employee, index) => (
-                            <motion.div
-                              key={employee._id}
-                              initial={{ scale: 0, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              exit={{ scale: 0, opacity: 0 }}
-                              transition={{ delay: index * 0.05 }}
-                            >
-                              <Badge className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-3 py-2 text-sm flex items-center gap-2 hover:from-blue-600 hover:to-purple-600 transition-all">
-                                <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-semibold">
-                                  {(employee?.name?.name || employee?.name || "U").charAt(0).toUpperCase()}
-                                </div>
-                                {employee?.name?.name || employee?.name || "Unknown"}
-                                <motion.button
-                                  whileHover={{ scale: 1.2 }}
-                                  whileTap={{ scale: 0.8 }}
-                                  type="button"
-                                  onClick={() => handleAssigneeChange(employee._id)}
-                                  className="ml-1 hover:bg-white/20 rounded-full p-0.5"
-                                >
-                                  <X size={14} />
-                                </motion.button>
-                              </Badge>
-                            </motion.div>
-                          ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      <AnimatePresence>
+                        {selectedEmployees.length > 0 && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="flex flex-wrap gap-2"
+                          >
+                            {selectedEmployees.map((manager, index) => (
+                              <motion.div
+                                key={manager._id}
+                                initial={{ scale: 0, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0, opacity: 0 }}
+                                transition={{ delay: index * 0.05 }}
+                              >
+                                <Badge className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-3 py-2 text-sm flex items-center gap-2 hover:from-blue-600 hover:to-purple-600 transition-all">
+                                  <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-semibold">
+                                    {(manager?.name?.name || manager?.name || "U").charAt(0).toUpperCase()}
+                                  </div>
+                                  {manager?.name?.name || manager?.name || "Unknown"}
+                                  <motion.button
+                                    whileHover={{ scale: 1.2 }}
+                                    whileTap={{ scale: 0.8 }}
+                                    type="button"
+                                    onClick={() => handleAssigneeChange(manager._id)}
+                                    className="ml-1 hover:bg-white/20 rounded-full p-0.5"
+                                  >
+                                    <X size={14} />
+                                  </motion.button>
+                                </Badge>
+                              </motion.div>
+                            ))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </>
+                  )}
                 </div>
                 {errors.assignees && (
                   <p className="text-red-600 text-sm mt-2 flex items-center gap-1">

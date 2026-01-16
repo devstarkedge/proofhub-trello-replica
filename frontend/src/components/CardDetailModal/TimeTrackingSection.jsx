@@ -13,6 +13,7 @@ import {
   DollarSign,
   Calendar,
   Lock,
+  Info,
 } from "lucide-react";
 import AuthContext from "../../context/AuthContext";
 
@@ -85,6 +86,9 @@ const TimeTrackingSection = ({
   estimationValidationError,
   loggedValidationError,
   billedValidationError,
+  // Billed Time visibility props
+  canAccessBilledTime = true, // Default to true for backward compatibility
+  billedTimeHiddenReason = null,
 }) => {
   const { user } = useContext(AuthContext);
 
@@ -849,7 +853,7 @@ const TimeTrackingSection = ({
                     )}
                   </div>
 
-                  {/* Billed Time */}
+                  {/* Billed Time - Conditionally rendered based on access */}
                   <div className="bg-white rounded-lg p-4 shadow-sm border border-yellow-100">
                     <div className="flex items-center gap-2 mb-3">
                       <DollarSign size={16} className="text-yellow-600" />
@@ -857,268 +861,286 @@ const TimeTrackingSection = ({
                         Billed Time
                       </h5>
                     </div>
-                    {/* Add Billed Time Input */}
-                    <div className="flex flex-col gap-2 mb-3">
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <input
-                            type="number"
-                            min="0"
-                            value={newBilledHours}
-                            onChange={(e) =>
-                              onBilledHoursChange(e.target.value)
-                            }
-                            placeholder="0"
-                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
-                              billedValidationError
-                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
-                                : 'border-yellow-200 focus:ring-yellow-500'
-                            }`}
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                            h
-                          </span>
+                    
+                    {/* Show hidden reason message if user cannot access billed time */}
+                    {!canAccessBilledTime ? (
+                      <div className="flex items-start gap-3 p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-lg">
+                        <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
+                          <Info size={18} className="text-amber-600" />
                         </div>
-                        <div className="relative flex-1">
-                          <input
-                            type="number"
-                            min="0"
-                            value={newBilledMinutes}
-                            onChange={(e) =>
-                              onBilledMinutesChange(e.target.value)
-                            }
-                            placeholder="0"
-                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
-                              billedValidationError
-                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
-                                : 'border-yellow-200 focus:ring-yellow-500'
-                            }`}
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                            m
-                          </span>
+                        <div>
+                          <p className="text-sm font-medium text-amber-800">Billed Time Unavailable</p>
+                          <p className="text-xs text-amber-600 mt-1">{billedTimeHiddenReason}</p>
                         </div>
                       </div>
-                      {/* Date Picker for Billed Time */}
-                      <div className="relative">
-                        <div className="flex items-center gap-2">
-                          <Calendar size={14} className="text-yellow-500" />
-                          <input
-                            type="date"
-                            value={newBilledDate || todayDate}
-                            onChange={(e) => onBilledDateChange(e.target.value)}
-                            max={todayDate}
-                            className="flex-1 p-2 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                    ) : (
+                      <>
+                        {/* Add Billed Time Input */}
+                        <div className="flex flex-col gap-2 mb-3">
+                          <div className="flex gap-2">
+                            <div className="relative flex-1">
+                              <input
+                                type="number"
+                                min="0"
+                                value={newBilledHours}
+                                onChange={(e) =>
+                                  onBilledHoursChange(e.target.value)
+                                }
+                                placeholder="0"
+                                className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                                  billedValidationError
+                                    ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                    : 'border-yellow-200 focus:ring-yellow-500'
+                                }`}
+                              />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                                h
+                              </span>
+                            </div>
+                            <div className="relative flex-1">
+                              <input
+                                type="number"
+                                min="0"
+                                value={newBilledMinutes}
+                                onChange={(e) =>
+                                  onBilledMinutesChange(e.target.value)
+                                }
+                                placeholder="0"
+                                className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                                  billedValidationError
+                                    ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                    : 'border-yellow-200 focus:ring-yellow-500'
+                                }`}
+                              />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                                m
+                              </span>
+                            </div>
+                          </div>
+                          {/* Date Picker for Billed Time */}
+                          <div className="relative">
+                            <div className="flex items-center gap-2">
+                              <Calendar size={14} className="text-yellow-500" />
+                              <input
+                                type="date"
+                                value={newBilledDate || todayDate}
+                                onChange={(e) => onBilledDateChange(e.target.value)}
+                                max={todayDate}
+                                className="flex-1 p-2 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                              />
+                            </div>
+                          </div>
+                          <textarea
+                            value={newBilledDescription}
+                            onChange={(e) =>
+                              onBilledDescriptionChange(e.target.value)
+                            }
+                            placeholder="Description of billable work (mandatory)"
+                            className="w-full p-2 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                            rows="2"
                           />
+                          {/* Validation Error Message */}
+                          {billedValidationError && (
+                            <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                              <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+                              <span className="text-red-600 text-xs font-medium">
+                                {billedValidationError}
+                              </span>
+                            </div>
+                          )}
+                          <motion.button
+                            whileHover={!billedValidationError ? { scale: 1.05 } : {}}
+                            whileTap={!billedValidationError ? { scale: 0.95 } : {}}
+                            onClick={onAddBilledTime}
+                            disabled={!!billedValidationError}
+                            className={`px-3 py-2 rounded-lg shadow-md text-sm font-semibold transition-all ${
+                              billedValidationError
+                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white hover:from-yellow-600 hover:to-orange-600'
+                            }`}
+                          >
+                            Add Billed Time
+                          </motion.button>
                         </div>
-                      </div>
-                      <textarea
-                        value={newBilledDescription}
-                        onChange={(e) =>
-                          onBilledDescriptionChange(e.target.value)
-                        }
-                        placeholder="Description of billed work (mandatory)"
-                        className="w-full p-2 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
-                        rows="2"
-                      />
-                      {/* Validation Error Message */}
-                      {billedValidationError && (
-                        <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                          <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-                          <span className="text-red-600 text-xs font-medium">
-                            {billedValidationError}
-                          </span>
-                        </div>
-                      )}
-                      <motion.button
-                        whileHover={!billedValidationError ? { scale: 1.05 } : {}}
-                        whileTap={!billedValidationError ? { scale: 0.95 } : {}}
-                        onClick={onAddBilledTime}
-                        disabled={!!billedValidationError}
-                        className={`px-3 py-2 rounded-lg shadow-md text-sm font-semibold transition-all ${
-                          billedValidationError
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-gradient-to-r from-yellow-600 to-amber-600 text-white hover:from-yellow-700 hover:to-amber-700'
-                        }`}
-                      >
-                        Bill Time
-                      </motion.button>
-                    </div>
-                    {/* Billed Time Entries */}
-                    {billedTime.length > 0 && (
-                      <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
-                        <AnimatePresence>
-                          {billedTime.map((entry, index) => {
-                            const safeKey =
-                              String(entry.id || `billed-${index}`).trim() ||
-                              `billed-${index}`;
-                            return (
-                              <motion.div
-                                key={safeKey}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 20 }}
-                                className="group relative bg-yellow-50 rounded-lg p-3 border border-yellow-200 hover:border-yellow-300 transition-all text-xs"
-                              >
-                                {editingBilled === entry.id ? (
-                                  <div className="space-y-2">
-                                    <div className="flex gap-2">
-                                      <div className="relative flex-1">
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={editBilledHours}
-                                          onChange={(e) =>
-                                            onEditBilledHoursChange(
-                                              e.target.value
-                                            )
-                                          }
-                                          placeholder="0"
-                                          className="w-full p-1 pr-5 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
-                                        />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          h
-                                        </span>
-                                      </div>
-                                      <div className="relative flex-1">
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={editBilledMinutes}
-                                          onChange={(e) =>
-                                            onEditBilledMinutesChange(
-                                              e.target.value
-                                            )
-                                          }
-                                          placeholder="0"
-                                          className="w-full p-1 pr-5 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
-                                        />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          m
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <textarea
-                                      value={editBilledDescription}
-                                      onChange={(e) =>
-                                        onEditBilledDescriptionChange(
-                                          e.target.value
-                                        )
-                                      }
-                                      placeholder="Description of billed work"
-                                      className="w-full p-1 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
-                                      rows="2"
-                                    />
-                                    <div className="flex gap-1">
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={() => onSaveBilledEdit(entry.id)}
-                                        className="px-2 py-1 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 transition-colors"
-                                      >
-                                        Save
-                                      </motion.button>
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={onCancelBilledEdit}
-                                        className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors"
-                                      >
-                                        Cancel
-                                      </motion.button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <div className="flex items-center gap-2">
-                                        <DollarSign
-                                          size={12}
-                                          className="text-yellow-600"
-                                        />
-                                        <span className="font-bold text-yellow-700 text-base">
-                                          {formatTime(
-                                            entry.hours,
-                                            entry.minutes
-                                          )}
-                                        </span>
-                                        {/* Show lock icon for other users' entries */}
-                                        {!userOwnsEntry(entry) && (
-                                          <span className="flex items-center gap-1 text-gray-400" title="You can only view this entry">
-                                            <Lock size={12} />
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        {userOwnsEntry(entry) ? (
-                                          <>
-                                            <motion.button
-                                              whileHover={{ scale: 1.1 }}
-                                              whileTap={{ scale: 0.9 }}
-                                              onClick={() =>
-                                                onStartEditingBilled(entry)
-                                              }
-                                              className="p-1.5 text-yellow-600 hover:bg-yellow-100 rounded-md transition-all duration-200 border border-yellow-200 hover:border-yellow-300"
-                                              title="Edit billed time"
-                                            >
-                                              <Pencil size={14} />
-                                            </motion.button>
-                                            <motion.button
-                                              whileHover={{ scale: 1.1 }}
-                                              whileTap={{ scale: 0.9 }}
-                                              onClick={() =>
-                                                onConfirmDeleteBilledTime(
-                                                  entry.id
+                        {/* Billed Time Entries */}
+                        {billedTime.length > 0 && (
+                          <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
+                            <AnimatePresence>
+                              {billedTime.map((entry, index) => {
+                                const safeKey =
+                                  String(entry.id || `billed-${index}`).trim() ||
+                                  `billed-${index}`;
+                                return (
+                                  <motion.div
+                                    key={safeKey}
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: 20 }}
+                                    className="group relative bg-yellow-50 rounded-lg p-3 border border-yellow-200 hover:border-yellow-300 transition-all text-xs"
+                                  >
+                                    {editingBilled === entry.id ? (
+                                      <div className="space-y-2">
+                                        <div className="flex gap-2">
+                                          <div className="relative flex-1">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={editBilledHours}
+                                              onChange={(e) =>
+                                                onEditBilledHoursChange(
+                                                  e.target.value
                                                 )
                                               }
-                                              className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
-                                              title="Delete billed time"
-                                            >
-                                              <Trash2 size={14} />
-                                            </motion.button>
-                                          </>
-                                        ) : (
-                                          <span className="text-xs text-gray-400 italic px-2">View only</span>
-                                        )}
+                                              placeholder="0"
+                                              className="w-full p-1 pr-5 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
+                                            />
+                                            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                                              h
+                                            </span>
+                                          </div>
+                                          <div className="relative flex-1">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={editBilledMinutes}
+                                              onChange={(e) =>
+                                                onEditBilledMinutesChange(
+                                                  e.target.value
+                                                )
+                                              }
+                                              placeholder="0"
+                                              className="w-full p-1 pr-5 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
+                                            />
+                                            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                                              m
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <textarea
+                                          value={editBilledDescription}
+                                          onChange={(e) =>
+                                            onEditBilledDescriptionChange(
+                                              e.target.value
+                                            )
+                                          }
+                                          placeholder="Description of billable work"
+                                          className="w-full p-1 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
+                                          rows="2"
+                                        />
+                                        <div className="flex gap-1">
+                                          <motion.button
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                            onClick={() =>
+                                              onSaveBilledEdit(entry.id)
+                                            }
+                                            className="px-2 py-1 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 transition-colors"
+                                          >
+                                            Save
+                                          </motion.button>
+                                          <motion.button
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                            onClick={onCancelBilledEdit}
+                                            className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors"
+                                          >
+                                            Cancel
+                                          </motion.button>
+                                        </div>
                                       </div>
-                                    </div>
-                                    <p className="text-gray-700 mb-1 p-1 bg-yellow-100 rounded">
-                                      Desc: {entry.description}
-                                    </p>
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-1 text-gray-500">
-                                        <User size={12} />
-                                        <span>
-                                          {getUserDisplayName(entry)}
-                                        </span>
-                                      </div>
-                                      <span className="text-gray-600">
-                                        {formatDate(entry.date)}
-                                      </span>
-                                    </div>
-                                  </>
+                                    ) : (
+                                      <>
+                                        <div className="flex items-center justify-between mb-1">
+                                          <div className="flex items-center gap-2">
+                                            <DollarSign
+                                              size={12}
+                                              className="text-yellow-600"
+                                            />
+                                            <span className="font-bold text-yellow-700 text-base">
+                                              {formatTime(
+                                                entry.hours,
+                                                entry.minutes
+                                              )}
+                                            </span>
+                                            {/* Show lock icon for other users' entries */}
+                                            {!userOwnsEntry(entry) && (
+                                              <span className="flex items-center gap-1 text-gray-400" title="You can only view this entry">
+                                                <Lock size={12} />
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            {userOwnsEntry(entry) ? (
+                                              <>
+                                                <motion.button
+                                                  whileHover={{ scale: 1.1 }}
+                                                  whileTap={{ scale: 0.9 }}
+                                                  onClick={() =>
+                                                    onStartEditingBilled(entry)
+                                                  }
+                                                  className="p-1.5 text-yellow-600 hover:bg-yellow-100 rounded-md transition-all duration-200 border border-yellow-200 hover:border-yellow-300"
+                                                  title="Edit billed time"
+                                                >
+                                                  <Pencil size={14} />
+                                                </motion.button>
+                                                <motion.button
+                                                  whileHover={{ scale: 1.1 }}
+                                                  whileTap={{ scale: 0.9 }}
+                                                  onClick={() =>
+                                                    onConfirmDeleteBilledTime(
+                                                      entry.id
+                                                    )
+                                                  }
+                                                  className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
+                                                  title="Delete billed time"
+                                                >
+                                                  <Trash2 size={14} />
+                                                </motion.button>
+                                              </>
+                                            ) : (
+                                              <span className="text-xs text-gray-400 italic px-2">View only</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <p className="text-gray-700 mb-1 p-1 bg-yellow-100 rounded">
+                                          {entry.description}
+                                        </p>
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-1 text-gray-500">
+                                            <User size={12} />
+                                            <span>
+                                              {getUserDisplayName(entry)}
+                                            </span>
+                                          </div>
+                                          <span className="text-gray-600">
+                                            {formatDate(entry.date)}
+                                          </span>
+                                        </div>
+                                      </>
+                                    )}
+                                  </motion.div>
+                                );
+                              })}
+                            </AnimatePresence>
+                          </div>
+                        )}
+                        {/* Total Billed Time */}
+                        {billedTime.length > 0 && (
+                          <div className="pt-2 border-t-2 border-yellow-200">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold text-gray-700">
+                                Total Billed:
+                              </span>
+                              <span className="text-lg font-bold text-yellow-600">
+                                {formatTime(
+                                  calculateTotalBilledTime().hours,
+                                  calculateTotalBilledTime().minutes
                                 )}
-                              </motion.div>
-                            );
-                          })}
-                        </AnimatePresence>
-                      </div>
-                    )}
-                    {/* Total Billed Time */}
-                    {billedTime.length > 0 && (
-                      <div className="pt-2 border-t-2 border-yellow-200">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-gray-700">
-                            Total Billed:
-                          </span>
-                          <span className="text-lg font-bold text-yellow-600">
-                            {formatTime(
-                              calculateTotalBilledTime().hours,
-                              calculateTotalBilledTime().minutes
-                            )}
-                          </span>
-                        </div>
-                      </div>
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

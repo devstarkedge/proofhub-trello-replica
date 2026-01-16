@@ -23,6 +23,7 @@ import RecurringSettingsModal from "./RecurringSettingsModal";
 import DeletePopup from "./ui/DeletePopup";
 import ArchiveConfirmationModal from "./ui/ArchiveConfirmationModal";
 import RestoreConfirmationModal from "./ui/RestoreConfirmationModal";
+import useBilledTimeAccess from "../hooks/useBilledTimeAccess";
 
 const themeOverlay = {
   blue: 'bg-blue-950/60',
@@ -96,6 +97,11 @@ const CardDetailModal = React.memo(({
   const closeHierarchy = useModalHierarchyStore((state) => state.closeAll);
   const hierarchyStackLength = useModalHierarchyStore((state) => state.stack.length);
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
+
+  // Check if user can access billed time based on project client info and user role
+  const { canAccessBilledTime, hiddenReason: billedTimeHiddenReason } = useBilledTimeAccess(
+    currentProject?.clientDetails
+  );
 
   const labelUpdateRef = React.useRef(onLabelUpdate);
   const managedHierarchyRef = React.useRef(false);
@@ -1802,6 +1808,8 @@ const CardDetailModal = React.memo(({
                   estimationValidationError={estimationValidationError}
                   loggedValidationError={loggedValidationError}
                   billedValidationError={billedValidationError}
+                  canAccessBilledTime={canAccessBilledTime}
+                  billedTimeHiddenReason={billedTimeHiddenReason}
                 />
 
                 {/* Subtasks Component */}

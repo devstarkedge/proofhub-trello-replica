@@ -636,7 +636,7 @@ const ProjectCard = ({
               </span>
               <span className="text-sm font-bold text-gray-900">{projectData.progress}%</span>
             </div>
-            <div className="relative w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+            <div className="relative w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${projectData.progress}%` }}
