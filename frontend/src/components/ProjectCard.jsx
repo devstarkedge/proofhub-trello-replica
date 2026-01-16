@@ -731,7 +731,7 @@ const ProjectCard = ({
                 {showManager ? (
                   <>
                     <Crown size={12} className="text-purple-500" />
-                    <span>Manager: {departmentManager || projectData.department?.name || projectData.department}</span>
+                    <span>Project Manager: {departmentManager || projectData.department?.name || projectData.department}</span>
                   </>
                 ) : (
                   <>

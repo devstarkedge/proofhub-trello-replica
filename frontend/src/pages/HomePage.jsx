@@ -69,6 +69,7 @@ const HomePage = () => {
   const [memberListExpanded, setMemberListExpanded] = useState({});
   const [showDeletePopup, setShowDeletePopup] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const statusDropdownRef = useRef(null);
   const memberDropdownRefs = useRef({});
@@ -140,6 +141,7 @@ const HomePage = () => {
     if (!projectToDelete) return;
     const { project, departmentId } = projectToDelete;
 
+    setIsDeleting(true);
     try {
         // Optimistic delete
         projectDeleted(departmentId, project._id);
@@ -152,6 +154,8 @@ const HomePage = () => {
         // Revert by fetching
         fetchDepartments(true);
         setShowDeletePopup(false);
+    } finally {
+        setIsDeleting(false);
     }
   }, [projectToDelete, projectDeleted, fetchDepartments]);
 
@@ -616,7 +620,7 @@ const HomePage = () => {
                                     project={project}
                                     deptId={department._id}
                                     projectId={project._id}
-                                    departmentManager={department.managers?.map(manager => manager.name).join(', ') || 'No Manager'}
+                                    departmentManager={department.managers?.filter(manager => project.members?.some(m => (m._id ? String(m._id) : String(m)) === String(manager._id))).map(manager => manager.name).join(', ') || 'No Manager'}
                                     showManager={true}
                                     onEdit={() => handleEditProject(project, department._id)}
                                     onDelete={() => handleDeleteProject(project, department._id)}
@@ -724,6 +728,7 @@ const HomePage = () => {
         }}
         onConfirm={confirmDeleteProject}
         itemType="project"
+        isLoading={isDeleting}
       />
     </div>
   );
