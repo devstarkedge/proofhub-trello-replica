@@ -151,7 +151,7 @@ const LoginPage = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                  <Mail className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
+                  <Mail className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"} size={20} style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }} />
                 </div>
                 <input
                   type="email"
@@ -188,7 +188,7 @@ const LoginPage = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                  <Lock className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
+                  <Lock className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"} size={20} style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }} />
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -206,7 +206,7 @@ const LoginPage = () => {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/50 hover:text-white/70 transition-colors"
                 >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showPassword ? <EyeOff size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} /> : <Eye size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} />}
                 </button>
               </div>
               {errors.password && (

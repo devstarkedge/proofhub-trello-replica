@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 import { Eye, EyeOff, Mail, Lock, User, Building, UserPlus, AlertCircle, CheckCircle, Check } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import api from '../services/api';
+import useThemeStore from '../store/themeStore';
 import { validateForm, validateField, debouncedEmailCheck, validatePasswordMatch } from '../utils/validationUtils';
 
 const RegisterPage = () => {
@@ -24,6 +25,7 @@ const RegisterPage = () => {
   const [emailAvailable, setEmailAvailable] = useState(null);
   const [checkingEmail, setCheckingEmail] = useState(false);
   const { register } = useContext(AuthContext);
+  const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const navigate = useNavigate();
 
   const { name, email, password, confirmPassword, department } = formData;
@@ -207,7 +209,7 @@ const RegisterPage = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                  <User className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
+                  <User className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"} size={20} style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }} />
                 </div>
                 <input
                   type="text"
@@ -244,7 +246,7 @@ const RegisterPage = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                  <Mail className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
+                  <Mail className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"} size={20} style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }} />
                 </div>
                 <input
                   type="email"
@@ -290,7 +292,7 @@ const RegisterPage = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                  <Lock className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
+                  <Lock className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"} size={20} style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }} />
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -308,7 +310,7 @@ const RegisterPage = () => {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/50 hover:text-white/70 transition-colors"
                 >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showPassword ? <EyeOff size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} /> : <Eye size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} />}
                 </button>
               </div>
               <p className="mt-2 text-xs text-white/60">
@@ -337,7 +339,7 @@ const RegisterPage = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                  <Lock className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
+                  <Lock className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"} size={20} style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }} />
                 </div>
                 <input
                   type={showConfirmPassword ? 'text' : 'password'}
@@ -355,7 +357,7 @@ const RegisterPage = () => {
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/50 hover:text-white/70 transition-colors"
                 >
-                  {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showConfirmPassword ? <EyeOff size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} /> : <Eye size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} />}
                 </button>
               </div>
               {errors.confirmPassword && (
@@ -381,7 +383,7 @@ const RegisterPage = () => {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                  <Building className="text-white" size={20} style={{ filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' }} />
+                  <Building className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"} size={20} style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }} />
                 </div>
                 <select
                   name="department"
