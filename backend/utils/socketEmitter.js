@@ -116,3 +116,34 @@ export const emitFinancePageDeleted = (pageId, pageName) => {
   io.to('admin').emit('finance:page:deleted', { pageId, pageName, message: `Finance page "${pageName}" has been deleted` });
   io.to('manager').emit('finance:page:deleted', { pageId, pageName, message: `Finance page "${pageName}" has been deleted` });
 };
+
+// ============================================
+// Finance Data Real-Time Updates
+// ============================================
+
+/**
+ * Emit finance data refresh event when time tracking data changes
+ * Notifies all users in the finance room to refresh their data
+ * Called when loggedTime or billedTime is updated on cards, subtasks, or nano-subtasks
+ * 
+ * @param {Object} context - Contextual information about the change
+ * @param {string} context.changeType - Type of change: 'logged_time' or 'billed_time'
+ * @param {string} [context.cardId] - ID of the affected card
+ * @param {string} [context.subtaskId] - ID of the affected subtask
+ * @param {string} [context.nanoId] - ID of the affected nano-subtask
+ * @param {string} [context.boardId] - ID of the project/board
+ */
+export const emitFinanceDataRefresh = (context = {}) => {
+  const payload = {
+    type: 'time_tracking_update',
+    timestamp: new Date().toISOString(),
+    ...context
+  };
+  
+  // Emit to finance room (for dashboard viewers)
+  io.to('finance').emit('finance:data:refresh', payload);
+  
+  // Also emit to admin and manager rooms (they may have dashboards open)
+  io.to('admin').emit('finance:data:refresh', payload);
+  io.to('manager').emit('finance:data:refresh', payload);
+};

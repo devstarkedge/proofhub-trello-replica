@@ -18,6 +18,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import AuthContext from '../../context/AuthContext';
+import socketService from '../../services/socket';
 
 /**
  * FinanceDashboard - Single Source of Truth Dashboard
@@ -96,6 +97,38 @@ const FinanceDashboard = () => {
   useEffect(() => {
     fetchDashboardData();
   }, [selectedPeriod]);
+
+  // Real-time updates via Socket.IO
+  useEffect(() => {
+    // Join finance room to receive real-time updates
+    socketService.joinFinance();
+    
+    // Debounced refresh handler to prevent excessive API calls
+    let refreshTimeout;
+    const handleFinanceRefresh = (event) => {
+      console.log('Finance data refresh triggered:', event?.detail);
+      
+      // Clear any pending refresh
+      clearTimeout(refreshTimeout);
+      
+      // Debounce: wait 500ms before refreshing to batch rapid changes
+      refreshTimeout = setTimeout(() => {
+        // Don't show loading spinner for background refresh
+        setError(null);
+        fetchDashboardData();
+      }, 500);
+    };
+    
+    // Listen for finance refresh events from socket
+    window.addEventListener('socket-finance-refresh', handleFinanceRefresh);
+    
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('socket-finance-refresh', handleFinanceRefresh);
+      clearTimeout(refreshTimeout);
+      socketService.leaveFinance();
+    };
+  }, [selectedPeriod]); // Re-subscribe if period changes to use updated fetchDashboardData
 
   // Format currency
   const formatCurrency = (amount) => {

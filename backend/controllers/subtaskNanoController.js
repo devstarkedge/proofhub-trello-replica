@@ -9,6 +9,7 @@ import { refreshCardHierarchyStats, refreshSubtaskNanoStats } from '../utils/hie
 import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
+import { emitFinanceDataRefresh } from '../utils/socketEmitter.js';
 
 const populateConfig = [
   { path: 'assignees', select: 'name email avatar' },
@@ -342,6 +343,19 @@ export const updateNano = asyncHandler(async (req, res, next) => {
         subtaskId,
         subtaskNanoId: nano._id
       });
+    },
+
+    // Emit finance data refresh for time tracking changes
+    () => {
+      if (req.body.loggedTime !== undefined || req.body.billedTime !== undefined) {
+        emitFinanceDataRefresh({
+          changeType: req.body.billedTime !== undefined ? 'billed_time' : 'logged_time',
+          nanoId: nano._id.toString(),
+          subtaskId: subtaskId.toString(),
+          cardId: taskId.toString(),
+          boardId: boardId.toString()
+        });
+      }
     }
   ]);
 });

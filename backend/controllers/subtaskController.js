@@ -11,6 +11,7 @@ import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { slackHooks } from '../utils/slackHooks.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
+import { emitFinanceDataRefresh } from '../utils/socketEmitter.js';
 
 const basePopulate = [
   { path: 'assignees', select: 'name email avatar' },
@@ -360,6 +361,18 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
         cardId: taskId,
         subtaskId: subtask._id
       });
+    },
+
+    // Emit finance data refresh for time tracking changes
+    () => {
+      if (req.body.loggedTime !== undefined || req.body.billedTime !== undefined) {
+        emitFinanceDataRefresh({
+          changeType: req.body.billedTime !== undefined ? 'billed_time' : 'logged_time',
+          subtaskId: subtask._id.toString(),
+          cardId: taskId.toString(),
+          boardId: boardId.toString()
+        });
+      }
     }
   ]);
 });

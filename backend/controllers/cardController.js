@@ -15,6 +15,7 @@ import notificationService from "../utils/notificationService.js";
 import { invalidateHierarchyCache } from "../utils/cacheInvalidation.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
+import { emitFinanceDataRefresh } from "../utils/socketEmitter.js";
 
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
@@ -1060,6 +1061,22 @@ export const updateCard = asyncHandler(async (req, res, next) => {
         });
       }
     }
+    
+    // Emit finance data refresh for logged time changes
+    emitFinanceDataRefresh({
+      changeType: 'logged_time',
+      cardId: card._id.toString(),
+      boardId: card.board.toString()
+    });
+  }
+  
+  // Emit finance data refresh for billed time changes
+  if (req.body.billedTime) {
+    emitFinanceDataRefresh({
+      changeType: 'billed_time',
+      cardId: card._id.toString(),
+      boardId: card.board.toString()
+    });
   }
 
   // General activity log
