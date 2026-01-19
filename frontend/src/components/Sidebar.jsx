@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight } from 'lucide-react';
+import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 import useThemeStore from '../store/themeStore';
@@ -13,6 +13,7 @@ const iconColors = {
   '/hr-panel': { color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' }, // Pink - HR Panel
   '/admin/settings': { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' }, // Indigo - Settings
   '/pm-sheet': { color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' }, // Teal - PM Sheet
+  '/finance': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Finance
 };
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
@@ -57,7 +58,8 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
 
     // PM Sheet - Admin and Manager only
     if (userRole === 'admin' || userRole === 'manager') {
-      items.push({ path: '/pm-sheet', icon: FileSpreadsheet, label: 'PM Sheet', hasChildren: true });
+      // items.push({ path: '/pm-sheet', icon: FileSpreadsheet, label: 'PM Sheet', hasChildren: true });
+      items.push({ path: '/finance', icon: DollarSign, label: 'Finance' });
     }
 
     if (userRole === 'admin') {

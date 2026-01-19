@@ -33,6 +33,7 @@ import slackRoutes from './routes/slack.js';
 import teamAnalyticsRoutes from './routes/teamAnalytics.js';
 import pmSheetRoutes from './routes/pmSheet.js';
 import calendarRoutes from './routes/calendar.js';
+import financeRoutes from './routes/finance.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -120,6 +121,7 @@ app.use('/api/slack', slackRoutes);
 app.use('/api/team-analytics', teamAnalyticsRoutes);
 app.use('/api/pm-sheet', pmSheetRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/finance', financeRoutes);
 
 import jwt from 'jsonwebtoken';
 
@@ -151,6 +153,12 @@ io.on('connection', (socket) => {
   if (decodedUser.role === 'admin') {
     socket.join('admin');
     console.log(`Admin user ${userId} joined admin room`);
+  }
+
+  // Join manager room if user is manager (for finance updates)
+  if (decodedUser.role === 'manager') {
+    socket.join('manager');
+    console.log(`Manager user ${userId} joined manager room`);
   }
 
   console.log(`User ${userId} connected`);
@@ -217,6 +225,17 @@ io.on('connection', (socket) => {
   socket.on('leave-board', (boardId) => {
     socket.leave(`board-${boardId}`);
     if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left board ${boardId}`);
+  });
+
+  // Finance room events - for real-time finance updates
+  socket.on('join-finance', () => {
+    socket.join('finance');
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined finance room`);
+  });
+
+  socket.on('leave-finance', () => {
+    socket.leave('finance');
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left finance room`);
   });
 
   // Push notification subscription management

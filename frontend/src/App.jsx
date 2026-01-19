@@ -42,6 +42,16 @@ import ProjectCoordinatorReport from "./pages/ProjectCoordinatorReport";
 import ApproachPage from "./pages/ApproachPage";
 import PMSheetLayout from "./layouts/PMSheetLayout";
 
+// Finance Module Pages
+import FinanceLayout from "./pages/Finance/FinanceLayout";
+import FinanceDashboard from "./pages/Finance/FinanceDashboard";
+import UsersTab from "./pages/Finance/UsersTab";
+import ProjectsTab from "./pages/Finance/ProjectsTab";
+import WeeklyTab from "./pages/Finance/WeeklyTab";
+import FinancePagesManager from "./pages/Finance/FinancePagesManager";
+import CreateFinancePage from "./pages/Finance/CreateFinancePage";
+import ViewFinancePage from "./pages/Finance/ViewFinancePage";
+
 function App() {
   return (
     <AuthProvider>
@@ -231,6 +241,24 @@ function App() {
               <Route path="month-wise" element={<MonthWisePMReport />} />
               <Route path="coordinator" element={<ProjectCoordinatorReport />} />
               <Route path="approach" element={<ApproachPage />} />
+            </Route>
+            {/* Finance Module Routes - Admin and Manager only */}
+            <Route
+              path="/finance"
+              element={
+                <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                  <FinanceLayout />
+                </PrivateRoute>
+              }
+            >
+              <Route index element={<FinanceDashboard />} />
+              <Route path="users" element={<UsersTab />} />
+              <Route path="projects" element={<ProjectsTab />} />
+              <Route path="weekly" element={<WeeklyTab />} />
+              <Route path="pages" element={<FinancePagesManager />} />
+              <Route path="pages/new" element={<CreateFinancePage />} />
+              <Route path="pages/:id" element={<ViewFinancePage />} />
+              <Route path="pages/:id/edit" element={<CreateFinancePage />} />
             </Route>
             <Route path="*" element={<GlobalFallback type="404" />} />
               </Routes>

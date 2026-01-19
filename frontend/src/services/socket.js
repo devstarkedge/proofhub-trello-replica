@@ -272,6 +272,38 @@ class SocketService {
       console.log('Avatar updated:', data);
       window.dispatchEvent(new CustomEvent('socket-avatar-updated', { detail: data }));
     });
+
+    // Finance page events - for real-time finance updates
+    this.socket.on('finance:page:pending', (data) => {
+      console.log('Finance page pending approval:', data);
+      window.dispatchEvent(new CustomEvent('socket-finance-page-pending', { detail: data }));
+    });
+
+    this.socket.on('finance:page:published', (data) => {
+      console.log('Finance page published:', data);
+      window.dispatchEvent(new CustomEvent('socket-finance-page-published', { detail: data }));
+    });
+
+    this.socket.on('finance:page:status-changed', (data) => {
+      console.log('Finance page status changed:', data);
+      window.dispatchEvent(new CustomEvent('socket-finance-page-status', { detail: data }));
+    });
+
+    this.socket.on('finance:page:updated', (data) => {
+      console.log('Finance page updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-finance-page-updated', { detail: data }));
+    });
+
+    this.socket.on('finance:page:deleted', (data) => {
+      console.log('Finance page deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-finance-page-deleted', { detail: data }));
+    });
+
+    // Finance data refresh event (for real-time data changes)
+    this.socket.on('finance:data:refresh', (data) => {
+      console.log('Finance data refresh:', data);
+      window.dispatchEvent(new CustomEvent('socket-finance-refresh', { detail: data }));
+    });
   }
 
   disconnect() {
@@ -309,6 +341,21 @@ class SocketService {
     if (this.socket && this.connected) {
       console.log('Leaving room:', roomId);
       this.socket.emit('leave-room', roomId);
+    }
+  }
+
+  // Finance room management
+  joinFinance() {
+    if (this.socket && this.connected) {
+      console.log('Joining finance room');
+      this.socket.emit('join-finance');
+    }
+  }
+
+  leaveFinance() {
+    if (this.socket && this.connected) {
+      console.log('Leaving finance room');
+      this.socket.emit('leave-finance');
     }
   }
 

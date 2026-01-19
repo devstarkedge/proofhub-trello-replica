@@ -65,3 +65,54 @@ export const emitBulkUsersUnassigned = (userIds, departmentId) => {
     count: userIds.length
   });
 };
+
+// ============================================
+// Finance Page Socket Emitters
+// ============================================
+
+/**
+ * Emit finance page pending approval event (to admin/manager rooms)
+ */
+export const emitFinancePagePending = (page, creatorName) => {
+  io.to('admin').emit('finance:page:pending', {
+    page,
+    creatorName,
+    message: `${creatorName} created a new finance page: "${page.name}" - Pending approval`
+  });
+};
+
+/**
+ * Emit finance page published event
+ */
+export const emitFinancePagePublished = (page) => {
+  io.to('admin').emit('finance:page:published', { page, message: `New finance page "${page.name}" is now available` });
+  io.to('manager').emit('finance:page:published', { page, message: `New finance page "${page.name}" is now available` });
+};
+
+/**
+ * Emit finance page status change (approved/rejected)
+ */
+export const emitFinancePageStatusChanged = (page, action) => {
+  const message = action === 'approve' 
+    ? `Finance page "${page.name}" has been approved and is now visible to all managers`
+    : `Finance page "${page.name}" was not approved`;
+  
+  io.to('admin').emit('finance:page:status-changed', { page, action, message });
+  io.to('manager').emit('finance:page:status-changed', { page, action, message });
+};
+
+/**
+ * Emit finance page updated event
+ */
+export const emitFinancePageUpdated = (page) => {
+  io.to('admin').emit('finance:page:updated', { page, message: `Finance page "${page.name}" has been updated` });
+  io.to('manager').emit('finance:page:updated', { page, message: `Finance page "${page.name}" has been updated` });
+};
+
+/**
+ * Emit finance page deleted event
+ */
+export const emitFinancePageDeleted = (pageId, pageName) => {
+  io.to('admin').emit('finance:page:deleted', { pageId, pageName, message: `Finance page "${pageName}" has been deleted` });
+  io.to('manager').emit('finance:page:deleted', { pageId, pageName, message: `Finance page "${pageName}" has been deleted` });
+};
