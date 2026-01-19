@@ -166,12 +166,78 @@ const ViewFinancePage = () => {
         user.projects?.forEach(project => {
           const dept = project.department || 'Unassigned';
           if (!grouped[dept]) {
-            grouped[dept] = { items: [], totalPayment: 0 };
+            grouped[dept] = { items: [], totalPayment: 0, usersMap: {} };
           }
-          grouped[dept].items.push({ ...user, project });
+          
+          // Initialize user entry in this department if not exists
+          if (!grouped[dept].usersMap[user.userId]) {
+            grouped[dept].usersMap[user.userId] = {
+              ...user,
+              department: dept,
+              // Initialize aggregated fields
+              projects: [], // Will contain projects only for this department
+              projectName: [], // Collect names
+              payment: 0,
+              taskCount: 0,
+              loggedTime: { totalMinutes: 0 },
+              billedTime: { totalMinutes: 0 },
+              // Reset lastActivity to compare and find latest
+              lastActivity: null
+            };
+          }
+          
+          const u = grouped[dept].usersMap[user.userId];
+          
+          // Aggregate data
+          u.projects.push(project);
+          u.projectName.push(project.projectName || 'Unnamed Project');
+          u.payment += project.payment || 0;
+          u.taskCount += project.taskCount || 0;
+          
+          // Time aggregation
+          const pLogged = project.loggedTime?.totalMinutes || project.loggedMinutes || 0;
+          const pBilled = project.billedTime?.totalMinutes || project.billedMinutes || 0;
+          u.loggedTime.totalMinutes += pLogged;
+          u.billedTime.totalMinutes += pBilled;
+          
+          // Update Last Activity (keep latest)
+          if (project.lastActivity?.date) {
+            const currentLast = u.lastActivity?.date ? new Date(u.lastActivity.date).getTime() : 0;
+            const newLast = new Date(project.lastActivity.date).getTime();
+            if (newLast > currentLast) {
+              u.lastActivity = project.lastActivity;
+            }
+          } else if (!u.lastActivity && project.lastActivity) {
+             u.lastActivity = project.lastActivity;
+          }
+          
           grouped[dept].totalPayment += project.payment || 0;
         });
       });
+
+      // Convert maps to items array
+      Object.keys(grouped).forEach(dept => {
+        const users = Object.values(grouped[dept].usersMap);
+        users.forEach(u => {
+           // Format project names
+           if (Array.isArray(u.projectName)) {
+             u.projectName = [...new Set(u.projectName)].join(', ');
+           }
+           
+           // Determine billing cycle from projects
+           if (u.projects && u.projects.length > 0) {
+             const cycles = new Set(u.projects.map(p => p.billingCycle).filter(Boolean));
+             if (cycles.size === 1) {
+               u.billingCycle = [...cycles][0];
+             } else if (cycles.size > 1) {
+               u.billingCycle = 'mixed';
+             }
+           }
+        });
+        grouped[dept].items = users;
+        delete grouped[dept].usersMap;
+      });
+
     } else {
       filteredData.forEach(project => {
         const dept = project.department || 'Unassigned';
@@ -244,11 +310,14 @@ const ViewFinancePage = () => {
           <span 
             className="px-2 py-1 rounded text-xs font-medium"
             style={{ 
-              backgroundColor: item.billingCycle === 'hr' ? 'rgba(139, 92, 246, 0.12)' : 'rgba(59, 130, 246, 0.12)',
-              color: item.billingCycle === 'hr' ? '#8b5cf6' : '#3b82f6'
+              backgroundColor: item.billingCycle === 'hr' ? 'rgba(139, 92, 246, 0.12)' : 
+                              item.billingCycle === 'mixed' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+              color: item.billingCycle === 'hr' ? '#8b5cf6' : 
+                     item.billingCycle === 'mixed' ? '#f59e0b' : '#3b82f6'
             }}
           >
-            {item.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
+            {item.billingCycle === 'hr' ? 'Hourly' : 
+             item.billingCycle === 'mixed' ? 'Mixed' : 'Fixed'}
           </span>
         );
       case 'hourlyRate':

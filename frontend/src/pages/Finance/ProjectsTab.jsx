@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Search as SearchIcon,
   FolderKanban,
@@ -41,6 +42,8 @@ import EmptyState from '../../components/Finance/EmptyState';
  * - Status editing (inline)
  */
 const ProjectsTab = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,6 +57,21 @@ const ProjectsTab = () => {
     departmentId: null,
     projectId: null
   });
+
+  // Initialize filters from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const projectIdParam = params.get('projectId');
+    const departmentIdParam = params.get('departmentId');
+    
+    if (projectIdParam || departmentIdParam) {
+      setFilters(prev => ({
+        ...prev,
+        projectId: projectIdParam || null,
+        departmentId: departmentIdParam || null
+      }));
+    }
+  }, [location.search]);
 
   // Fetch project finance data
   const fetchData = async () => {
@@ -95,6 +113,8 @@ const ProjectsTab = () => {
   const handleCardClick = (action, value) => {
     if (action === 'project' && value) {
       setFilters(prev => ({ ...prev, projectId: value }));
+    } else if (action === 'user' && value) {
+      navigate(`/finance/users?userId=${value}`);
     }
   };
 

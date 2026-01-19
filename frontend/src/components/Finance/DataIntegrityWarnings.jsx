@@ -43,7 +43,7 @@ const DataIntegrityWarnings = ({
             id: `${project.projectId || project.boardId || project._id}-no-billing`,
             type: 'warning',
             icon: FileQuestion,
-            message: `"${projectName}" has ${Math.floor(totalLoggedMinutes / 60)}h ${totalLoggedMinutes % 60}m logged but no billing type set`,
+            message: `"${projectName}"Project has ${Math.floor(totalLoggedMinutes / 60)}h ${totalLoggedMinutes % 60}m logged but no billing type set`,
             suggestion: 'Set billing type in project settings',
             projectId: project.projectId || project.boardId || project._id
           });
@@ -55,7 +55,7 @@ const DataIntegrityWarnings = ({
             id: `${project.projectId || project.boardId || project._id}-no-rate`,
             type: 'warning',
             icon: DollarSign,
-            message: `"${projectName}" is hourly billing but missing hourly rate`,
+            message: `"${projectName}"Project is hourly billing but missing hourly rate`,
             suggestion: 'Set hourly rate in project settings',
             projectId: project.projectId || project.boardId || project._id
           });
@@ -70,7 +70,7 @@ const DataIntegrityWarnings = ({
               id: `${project.projectId || project.boardId || project._id}-exceeded`,
               type: 'critical',
               icon: AlertCircle,
-              message: `"${projectName}" exceeded fixed hours limit by ${Math.floor(excessMinutes / 60)}h ${excessMinutes % 60}m`,
+              message: `"${projectName}"Project exceeded fixed hours limit by ${Math.floor(excessMinutes / 60)}h ${excessMinutes % 60}m`,
               suggestion: 'Review and adjust time entries or update fixed hours limit',
               projectId: project.projectId || project.boardId || project._id
             });
@@ -86,7 +86,7 @@ const DataIntegrityWarnings = ({
               id: `${project.projectId || project.boardId || project._id}-discrepancy`,
               type: 'info',
               icon: Clock,
-              message: `"${projectName}" has ${Math.round(percentage)}% discrepancy between logged and billed time`,
+              message: `"${projectName}"Project has ${Math.round(percentage)}% discrepancy between logged and billed time`,
               suggestion: 'Review time entries for accuracy',
               projectId: project.projectId || project.boardId || project._id
             });
@@ -106,7 +106,7 @@ const DataIntegrityWarnings = ({
             id: `${user.userId || user._id}-no-dept`,
             type: 'info',
             icon: Info,
-            message: `"${userName}" has logged time but no department assigned`,
+            message: `"${userName}" User has logged time but no department assigned`,
             suggestion: 'Assign department in user settings',
             userId: user.userId || user._id
           });

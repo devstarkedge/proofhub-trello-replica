@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -30,6 +30,24 @@ const FinanceLayout = () => {
   const [customPages, setCustomPages] = useState([]);
   const [pendingPagesCount, setPendingPagesCount] = useState(0);
   const [showPagesMenu, setShowPagesMenu] = useState(false);
+  const pagesDropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (pagesDropdownRef.current && !pagesDropdownRef.current.contains(event.target)) {
+        setShowPagesMenu(false);
+      }
+    };
+
+    if (showPagesMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showPagesMenu]);
   
   // Determine active tab from URL
   const getActiveTab = () => {
@@ -298,7 +316,7 @@ const FinanceLayout = () => {
             />
 
             {/* Custom Pages Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={pagesDropdownRef}>
               <button
                 onClick={() => setShowPagesMenu(!showPagesMenu)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
@@ -323,15 +341,17 @@ const FinanceLayout = () => {
                     boxShadow: '0 10px 40px -10px rgba(0, 0, 0, 0.2), 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)'
                   }}
                 >
-                  {/* Custom Pages List */}
-                  {customPages.length > 0 ? (
+                  {/* Custom Pages List - Only show pending pages (approved ones are tabs) */}
+                  {customPages.filter(p => p.status !== 'approved').length > 0 ? (
                     <>
                       <div className="px-3 py-1.5">
                         <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                          Custom Pages
+                          Pending Pages
                         </span>
                       </div>
-                      {customPages.map(page => (
+                      {customPages
+                        .filter(page => page.status !== 'approved')
+                        .map(page => (
                         <NavLink
                           key={page._id}
                           to={`/finance/pages/${page._id}`}
@@ -364,14 +384,7 @@ const FinanceLayout = () => {
                         style={{ borderTop: '1px solid var(--color-border-subtle)' }}
                       />
                     </>
-                  ) : (
-                    <div 
-                      className="px-3 py-3 text-sm text-center"
-                      style={{ color: 'var(--color-text-muted)' }}
-                    >
-                      No custom pages yet
-                    </div>
-                  )}
+                  ) : null}
 
                   {/* Create New Page */}
                   <NavLink

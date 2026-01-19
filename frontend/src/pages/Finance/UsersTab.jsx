@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useContext } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Search as SearchIcon,
   Users,
@@ -34,6 +35,8 @@ import EmptyState from '../../components/Finance/EmptyState';
  * - Expandable user rows with project breakdown
  */
 const UsersTab = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,6 +50,21 @@ const UsersTab = () => {
     departmentId: null,
     userId: null
   });
+
+  // Initialize filters from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const userIdParam = params.get('userId');
+    const departmentIdParam = params.get('departmentId');
+    
+    if (userIdParam || departmentIdParam) {
+      setFilters(prev => ({
+        ...prev,
+        userId: userIdParam || null,
+        departmentId: departmentIdParam || null
+      }));
+    }
+  }, [location.search]);
 
   // Fetch user finance data
   const fetchData = async () => {
@@ -90,6 +108,8 @@ const UsersTab = () => {
   const handleCardClick = (action, value) => {
     if (action === 'user' && value) {
       setFilters(prev => ({ ...prev, userId: value }));
+    } else if (action === 'project' && value) {
+      navigate(`/finance/projects?projectId=${value}`);
     }
   };
 
