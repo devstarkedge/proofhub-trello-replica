@@ -84,14 +84,18 @@ class NotificationService {
       // Send real-time notification via socket
       emitNotification(user.toString(), populatedNotification);
 
-      // Send email notification if enabled
+      // Send email notification if enabled (in background)
       if (userDoc.settings?.notifications?.email) {
-        await this.sendEmailNotification(notification, userDoc);
+        this.sendEmailNotification(notification, userDoc).catch(err => 
+          console.error('Background email notification error:', err)
+        );
       }
 
-      // Send push notification if enabled and subscription exists
+      // Send push notification if enabled and subscription exists (in background)
       if (userDoc.settings?.notifications?.push && userDoc.pushSubscription) {
-        await this.sendPushNotification(notification, userDoc);
+        this.sendPushNotification(notification, userDoc).catch(err => 
+          console.error('Background push notification error:', err)
+        );
       }
 
       return populatedNotification;

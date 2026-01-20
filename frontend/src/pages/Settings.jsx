@@ -346,8 +346,8 @@ const Settings = () => {
                     whileTap={{ scale: 0.98 }}
                     onClick={async () => {
                       try {
-                        const response = await api.post('/api/notifications/test');
-                        toast.success('Test notification sent! Check your notifications.');
+                        await api.post('/api/notifications/test');
+                        // toast.success removed to prevent duplicate notifications (socket will send one)
                       } catch (error) {
                         toast.error('Failed to send test notification');
                       }

@@ -11,8 +11,13 @@ class SocketService {
   }
 
   connect(userId, token) {
-    if (this.connected && this.socket) {
-      if (import.meta.env.DEV) console.log('Socket already connected');
+    if (this.socket) {
+      if (import.meta.env.DEV) console.log('Socket already initialized');
+      
+      // If we're not connected but have a socket, we might want to ensure we're trying to connect
+      if (!this.connected) {
+        this.socket.connect();
+      }
       return;
     }
 
