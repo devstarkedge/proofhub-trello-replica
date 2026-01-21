@@ -6,7 +6,8 @@ import {
   getFinanceDepartments,
   getFinanceFilterOptions,
   getWeeklyReportData,
-  getUserContributions
+  getUserContributions,
+  getYearWideWeeklyData
 } from '../controllers/financeController.js';
 import {
   getFinancePages,
@@ -19,6 +20,7 @@ import {
   reorderFinancePages
 } from '../controllers/financePageController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
+
 
 const router = express.Router();
 
@@ -46,6 +48,9 @@ router.get('/projects', getProjectFinanceData);
 
 // Weekly report data
 router.get('/weekly', getWeeklyReportData);
+
+// Year-wide weekly report data (for week-wise reporting mode)
+router.get('/weekly-report/year', getYearWideWeeklyData);
 
 // User contributions per project
 router.get('/projects/:projectId/contributions', getUserContributions);

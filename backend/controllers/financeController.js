@@ -1184,3 +1184,376 @@ export const getUserContributions = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// ============================================
+// GET: Year-Wide Weekly Data for Week-Wise Reporting Mode
+// ============================================
+export const getYearWideWeeklyData = async (req, res) => {
+  try {
+    const { year, viewType = 'users', departmentId } = req.query;
+    
+    const targetYear = parseInt(year) || new Date().getFullYear();
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    // Build project filter
+    const projectFilter = { isArchived: false };
+    if (departmentId) projectFilter.department = departmentId;
+    
+    // OPTIMIZATION: Fetch ALL data in parallel with single queries
+    const [projects, allCards, allSubtasks, allNanos] = await Promise.all([
+      Board.find(projectFilter)
+        .populate('department', 'name')
+        .populate('members', 'name email avatar')
+        .lean(),
+      Card.find({ isArchived: false }).select('board billedTime loggedTime').lean(),
+      Subtask.find({}).select('task billedTime loggedTime').lean(),
+      SubtaskNano.find({}).select('subtask billedTime loggedTime').lean()
+    ]);
+    
+    // Build lookup maps
+    const { cardsByBoard, subtasksByCard, nanosBySubtask } = buildLookupMaps(
+      allCards, allSubtasks, allNanos
+    );
+    
+    // Create project lookup for quick access
+    const projectMap = new Map();
+    for (const project of projects) {
+      projectMap.set(project._id.toString(), project);
+    }
+    
+    // Result structure: months with week-wise breakdowns
+    const monthsData = [];
+    let yearTotalPayment = 0;
+    
+    // Process each month
+    for (let month = 0; month < 12; month++) {
+      const weeks = getWeeksOfMonth(targetYear, month);
+      const monthResult = {
+        month,
+        monthName: monthNames[month],
+        hasData: false,
+        weeks: [],
+        totalPayment: 0,
+        items: []
+      };
+      
+      if (viewType === 'users') {
+        // User-centric data: aggregate by user -> month -> week
+        // Also track project-level weekly data within each user
+        const userData = {};
+        
+        for (const project of projects) {
+          const projectId = project._id.toString();
+          const cards = cardsByBoard.get(projectId) || [];
+          
+          for (const card of cards) {
+            const cardId = card._id.toString();
+            
+            // Process billed time entries
+            const processTimeEntry = (entry, isCard = true) => {
+              const entryDate = new Date(entry.date);
+              if (entryDate.getFullYear() !== targetYear) return;
+              if (entryDate.getMonth() !== month) return;
+              
+              const uId = entry.user?.toString();
+              if (!uId) return;
+              
+              // Find which week this entry belongs to
+              let weekNum = null;
+              for (const w of weeks) {
+                if (entryDate >= w.start && entryDate <= w.end) {
+                  weekNum = w.week;
+                  break;
+                }
+              }
+              if (!weekNum) return;
+              
+              if (!userData[uId]) {
+                userData[uId] = {
+                  userId: uId,
+                  userName: entry.userName || 'Unknown',
+                  weeks: {},
+                  projects: {} // Track project-level weekly data
+                };
+              }
+              
+              if (!userData[uId].weeks[weekNum]) {
+                userData[uId].weeks[weekNum] = { billedMinutes: 0, payment: 0 };
+              }
+              
+              // Track project-level data
+              if (!userData[uId].projects[projectId]) {
+                userData[uId].projects[projectId] = {
+                  projectId: projectId,
+                  projectName: project.name,
+                  billingCycle: project.billingCycle,
+                  hourlyPrice: project.hourlyPrice,
+                  weeks: {}
+                };
+              }
+              
+              if (!userData[uId].projects[projectId].weeks[weekNum]) {
+                userData[uId].projects[projectId].weeks[weekNum] = { billedMinutes: 0, payment: 0 };
+              }
+              
+              const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
+              userData[uId].weeks[weekNum].billedMinutes += mins;
+              userData[uId].projects[projectId].weeks[weekNum].billedMinutes += mins;
+              
+              // Calculate payment based on project billing
+              if (project.billingCycle === 'hr') {
+                const payment = (mins / 60) * (project.hourlyPrice || 0);
+                userData[uId].weeks[weekNum].payment += payment;
+                userData[uId].projects[projectId].weeks[weekNum].payment += payment;
+              }
+            };
+            
+            // Process card billed time
+            if (card.billedTime) {
+              for (const entry of card.billedTime) {
+                processTimeEntry(entry);
+              }
+            }
+            
+            // Process subtasks
+            const subtasks = subtasksByCard.get(cardId) || [];
+            for (const subtask of subtasks) {
+              const subtaskId = subtask._id.toString();
+              
+              if (subtask.billedTime) {
+                for (const entry of subtask.billedTime) {
+                  processTimeEntry(entry, false);
+                }
+              }
+              
+              // Process nano subtasks
+              const nanos = nanosBySubtask.get(subtaskId) || [];
+              for (const nano of nanos) {
+                if (nano.billedTime) {
+                  for (const entry of nano.billedTime) {
+                    processTimeEntry(entry, false);
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        // Build week-wise data for this month
+        for (let w = 1; w <= 5; w++) {
+          let weekPayment = 0;
+          let weekBilledMinutes = 0;
+          
+          Object.values(userData).forEach(u => {
+            if (u.weeks[w]) {
+              weekPayment += u.weeks[w].payment;
+              weekBilledMinutes += u.weeks[w].billedMinutes;
+            }
+          });
+          
+          const weekExists = weeks.find(wk => wk.week === w);
+          monthResult.weeks.push({
+            week: w,
+            payment: weekExists ? weekPayment : null,
+            billedMinutes: weekExists ? weekBilledMinutes : null,
+            hasData: weekExists && (weekPayment > 0 || weekBilledMinutes > 0)
+          });
+          
+          if (weekExists && weekPayment > 0) {
+            monthResult.totalPayment += weekPayment;
+            monthResult.hasData = true;
+          }
+        }
+        
+        // Build user items with their week breakdown AND project breakdown
+        monthResult.items = Object.values(userData)
+          .filter(u => Object.keys(u.weeks).length > 0)
+          .map(u => {
+            const weekData = [];
+            let userTotalPayment = 0;
+            
+            for (let w = 1; w <= 5; w++) {
+              const weekInfo = u.weeks[w];
+              const payment = weekInfo ? weekInfo.payment : null;
+              weekData.push(payment);
+              if (payment) userTotalPayment += payment;
+            }
+            
+            // Process project-level weekly data
+            const projectsData = Object.values(u.projects).map(proj => {
+              const projWeekData = [];
+              let projTotalPayment = 0;
+              
+              for (let w = 1; w <= 5; w++) {
+                const weekInfo = proj.weeks[w];
+                const payment = weekInfo ? weekInfo.payment : null;
+                projWeekData.push(payment);
+                if (payment) projTotalPayment += payment;
+              }
+              
+              return {
+                projectId: proj.projectId,
+                projectName: proj.projectName,
+                billingCycle: proj.billingCycle,
+                hourlyPrice: proj.hourlyPrice,
+                weeks: projWeekData,
+                totalPayment: projTotalPayment
+              };
+            }).filter(p => p.totalPayment > 0);
+            
+            return {
+              userId: u.userId,
+              userName: u.userName,
+              weeks: weekData,
+              totalPayment: userTotalPayment,
+              projects: projectsData  // Include project-level breakdown
+            };
+          })
+          .sort((a, b) => b.totalPayment - a.totalPayment);
+          
+      } else {
+        // Project-centric data: aggregate by project -> month -> week
+        for (const project of projects) {
+          const projectId = project._id.toString();
+          const cards = cardsByBoard.get(projectId) || [];
+          
+          const projectWeeks = {};
+          
+          for (const card of cards) {
+            const cardId = card._id.toString();
+            
+            const processTimeEntry = (entry) => {
+              const entryDate = new Date(entry.date);
+              if (entryDate.getFullYear() !== targetYear) return;
+              if (entryDate.getMonth() !== month) return;
+              
+              // Find which week this entry belongs to
+              let weekNum = null;
+              for (const w of weeks) {
+                if (entryDate >= w.start && entryDate <= w.end) {
+                  weekNum = w.week;
+                  break;
+                }
+              }
+              if (!weekNum) return;
+              
+              if (!projectWeeks[weekNum]) {
+                projectWeeks[weekNum] = { billedMinutes: 0 };
+              }
+              
+              const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
+              projectWeeks[weekNum].billedMinutes += mins;
+            };
+            
+            // Process card billed time
+            if (card.billedTime) {
+              for (const entry of card.billedTime) {
+                processTimeEntry(entry);
+              }
+            }
+            
+            // Process subtasks
+            const subtasks = subtasksByCard.get(cardId) || [];
+            for (const subtask of subtasks) {
+              const subtaskId = subtask._id.toString();
+              
+              if (subtask.billedTime) {
+                for (const entry of subtask.billedTime) {
+                  processTimeEntry(entry);
+                }
+              }
+              
+              // Process nano subtasks
+              const nanos = nanosBySubtask.get(subtaskId) || [];
+              for (const nano of nanos) {
+                if (nano.billedTime) {
+                  for (const entry of nano.billedTime) {
+                    processTimeEntry(entry);
+                  }
+                }
+              }
+            }
+          }
+          
+          // Only include project if it has data for this month
+          if (Object.keys(projectWeeks).length > 0) {
+            const weekData = [];
+            let projectTotalPayment = 0;
+            
+            for (let w = 1; w <= 5; w++) {
+              const weekInfo = projectWeeks[w];
+              const weekExists = weeks.find(wk => wk.week === w);
+              
+              let payment = null;
+              if (weekExists && weekInfo) {
+                payment = calculatePayment(project, weekInfo.billedMinutes);
+              }
+              
+              weekData.push(payment);
+              if (payment) projectTotalPayment += payment;
+            }
+            
+            if (projectTotalPayment > 0) {
+              monthResult.items.push({
+                projectId: project._id,
+                projectName: project.name,
+                department: project.department?.name || 'Unassigned',
+                billingCycle: project.billingCycle,
+                weeks: weekData,
+                totalPayment: projectTotalPayment
+              });
+              
+              monthResult.hasData = true;
+            }
+          }
+        }
+        
+        // Update month week totals from project items
+        for (let w = 0; w < 5; w++) {
+          let weekPayment = 0;
+          let hasSomeData = false;
+          
+          monthResult.items.forEach(item => {
+            if (item.weeks[w] !== null) {
+              weekPayment += item.weeks[w];
+              hasSomeData = true;
+            }
+          });
+          
+          const weekExists = weeks.find(wk => wk.week === w + 1);
+          monthResult.weeks.push({
+            week: w + 1,
+            payment: weekExists ? weekPayment : null,
+            hasData: hasSomeData
+          });
+          
+          if (weekExists) {
+            monthResult.totalPayment += weekPayment;
+          }
+        }
+        
+        monthResult.items.sort((a, b) => b.totalPayment - a.totalPayment);
+      }
+      
+      yearTotalPayment += monthResult.totalPayment;
+      
+      // Only include months that have data
+      if (monthResult.hasData) {
+        monthsData.push(monthResult);
+      }
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        year: targetYear,
+        viewType,
+        months: monthsData,
+        yearTotal: yearTotalPayment
+      }
+    });
+  } catch (error) {
+    console.error('Year-Wide Weekly Data Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

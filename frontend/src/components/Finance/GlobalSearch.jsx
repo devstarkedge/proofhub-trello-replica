@@ -263,33 +263,39 @@ const GlobalSearch = ({
                   Recent Searches
                 </span>
               </div>
-              {recentSearches.map((search, index) => (
-                <button
-                  key={`recent-${index}`}
-                  onClick={() => handleSelect(search)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors group"
-                >
-                  {search.icon && (
-                    <search.icon className="w-4 h-4" style={{ color: getTypeColor(search.type) }} />
-                  )}
-                  <div className="flex-1 text-left">
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                      {search.label}
-                    </p>
-                    {search.sublabel && (
-                      <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                        {search.sublabel}
-                      </p>
-                    )}
-                  </div>
+              {recentSearches.map((search, index) => {
+                const Icon = search.type === 'user' ? User :
+                           search.type === 'project' ? Briefcase :
+                           search.type === 'client' ? Building2 :
+                           search.type === 'department' ? Building2 :
+                           search.type === 'upwork' ? Hash : Search;
+
+                return (
                   <button
-                    onClick={(e) => clearRecentSearch(e, search)}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 transition-all"
+                    key={`recent-${index}`}
+                    onClick={() => handleSelect(search)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors group"
                   >
-                    <X className="w-3 h-3" style={{ color: 'var(--color-text-secondary)' }} />
+                    <Icon className="w-4 h-4" style={{ color: getTypeColor(search.type) }} />
+                    <div className="flex-1 text-left">
+                      <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                        {search.label}
+                      </p>
+                      {search.sublabel && (
+                        <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                          {search.sublabel}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={(e) => clearRecentSearch(e, search)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 transition-all"
+                    >
+                      <X className="w-3 h-3" style={{ color: 'var(--color-text-secondary)' }} />
+                    </button>
                   </button>
-                </button>
-              ))}
+                );
+              })}
               {suggestions.length > 0 && (
                 <div className="border-t my-2" style={{ borderColor: 'var(--color-border-subtle)' }} />
               )}

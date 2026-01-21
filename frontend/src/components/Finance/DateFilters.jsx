@@ -7,7 +7,9 @@ import {
   CalendarRange,
   Bookmark,
   Plus,
-  Trash2
+  Trash2,
+  CheckCircle2,
+  Circle
 } from 'lucide-react';
 
 /**
@@ -15,8 +17,20 @@ import {
  * Features: Quick presets (Today, Yesterday, This Week, Last Week, etc.)
  * Custom date range picker
  * Saved filter presets
+ * Week-wise reporting mode toggle (optional)
  */
-const DateFilters = ({ filters, setFilters, onClear, showSavedPresets = false }) => {
+const DateFilters = ({ 
+  filters, 
+  setFilters, 
+  onClear, 
+  showSavedPresets = false,
+  // Week-wise mode props
+  showWeekWiseToggle = false,
+  weekWiseMode = false,
+  onWeekWiseModeChange,
+  selectedYear,
+  onYearChange
+}) => {
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [activePreset, setActivePreset] = useState(null);
@@ -24,6 +38,7 @@ const DateFilters = ({ filters, setFilters, onClear, showSavedPresets = false })
   const [presetName, setPresetName] = useState('');
   const dropdownRef = useRef(null);
   const saveModalRef = useRef(null);
+
 
   // Load saved presets from localStorage
   useEffect(() => {
@@ -279,30 +294,87 @@ const DateFilters = ({ filters, setFilters, onClear, showSavedPresets = false })
   const visiblePresets = presets.slice(0, 4);
   const morePresets = presets.slice(4);
 
+  // Generate years for dropdown (last 3 years + current + next)
+  const years = [];
+  const currentYear = new Date().getFullYear();
+  for (let y = currentYear - 3; y <= currentYear + 1; y++) {
+    years.push(y);
+  }
+
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {/* Quick Preset Buttons - First 4 visible */}
-      {visiblePresets.map((preset) => (
-        <button
-          key={preset.id}
-          onClick={() => applyPreset(preset)}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
-          style={{
-            backgroundColor: activePreset === preset.id 
-              ? 'rgba(16, 185, 129, 0.15)' 
-              : 'var(--color-bg-secondary)',
-            color: activePreset === preset.id 
-              ? '#10b981' 
-              : 'var(--color-text-secondary)',
-            border: `1px solid ${activePreset === preset.id ? '#10b981' : 'var(--color-border-subtle)'}`
-          }}
-        >
-          {preset.label}
-        </button>
-      ))}
+      {/* Week-Wise Mode Toggle */}
+      {showWeekWiseToggle && (
+        <div className="flex items-center gap-4 mr-4">
+          <button
+            onClick={() => onWeekWiseModeChange?.(!weekWiseMode)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
+            style={{
+              backgroundColor: weekWiseMode 
+                ? 'rgba(16, 185, 129, 0.15)' 
+                : 'var(--color-bg-secondary)',
+              color: weekWiseMode 
+                ? '#10b981' 
+                : 'var(--color-text-secondary)',
+              border: `1px solid ${weekWiseMode ? '#10b981' : 'var(--color-border-subtle)'}`
+            }}
+          >
+            {weekWiseMode ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <Circle className="w-4 h-4" />
+            )}
+            Check week wise reports
+          </button>
 
-      {/* More Presets Dropdown */}
-      {morePresets.length > 0 && (
+          {/* Year Selector - Only visible when week-wise mode is enabled */}
+          {weekWiseMode && (
+            <select
+              value={selectedYear || currentYear}
+              onChange={(e) => onYearChange?.(parseInt(e.target.value))}
+              className="px-3 py-1.5 rounded-lg border text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-bg-primary)',
+                borderColor: '#10b981',
+                color: 'var(--color-text-primary)'
+              }}
+            >
+              {years.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
+      {/* Date Filters - Hidden when week-wise mode is enabled */}
+      {!weekWiseMode && (
+        <>
+          {/* Quick Preset Buttons - First 4 visible */}
+          {visiblePresets.map((preset) => (
+            <button
+              key={preset.id}
+              onClick={() => applyPreset(preset)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
+              style={{
+                backgroundColor: activePreset === preset.id 
+                  ? 'rgba(16, 185, 129, 0.15)' 
+                  : 'var(--color-bg-secondary)',
+                color: activePreset === preset.id 
+                  ? '#10b981' 
+                  : 'var(--color-text-secondary)',
+                border: `1px solid ${activePreset === preset.id ? '#10b981' : 'var(--color-border-subtle)'}`
+              }}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </>
+      )}
+
+
+      {/* More Presets Dropdown - Hidden when week-wise mode is enabled */}
+      {!weekWiseMode && morePresets.length > 0 && (
         <div className="relative group">
           <button
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
@@ -353,115 +425,119 @@ const DateFilters = ({ filters, setFilters, onClear, showSavedPresets = false })
         </div>
       )}
 
-      {/* Custom Range Button */}
-      <div className="relative" ref={dropdownRef}>
-        <button
-          onClick={() => setShowCustomPicker(!showCustomPicker)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
-          style={{
-            backgroundColor: activePreset === 'custom' 
-              ? 'rgba(16, 185, 129, 0.15)' 
-              : 'var(--color-bg-secondary)',
-            color: activePreset === 'custom' 
-              ? '#10b981' 
-              : 'var(--color-text-secondary)',
-            border: `1px solid ${activePreset === 'custom' || showCustomPicker ? '#10b981' : 'var(--color-border-subtle)'}`
-          }}
-        >
-          <CalendarRange className="w-3.5 h-3.5" />
-          {activePreset === 'custom' && filters.startDate ? (
-            <span>
-              {formatDisplayDate(filters.startDate)} - {formatDisplayDate(filters.endDate)}
-            </span>
-          ) : (
-            <span>Custom Range</span>
-          )}
-          <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showCustomPicker ? 'rotate-180' : ''}`} />
-        </button>
 
-        {/* Custom Date Picker Dropdown */}
-        {showCustomPicker && (
-          <div 
-            className="absolute top-full left-0 mt-2 p-4 rounded-xl border z-[100]"
+      {/* Custom Range Button - Hidden when week-wise mode is enabled */}
+      {!weekWiseMode && (
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setShowCustomPicker(!showCustomPicker)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
             style={{
-              backgroundColor: '#ffffff',
-              borderColor: '#e5e7eb',
-              minWidth: '280px',
-              boxShadow: '0 10px 40px -10px rgba(0, 0, 0, 0.2), 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)'
+              backgroundColor: activePreset === 'custom' 
+                ? 'rgba(16, 185, 129, 0.15)' 
+                : 'var(--color-bg-secondary)',
+              color: activePreset === 'custom' 
+                ? '#10b981' 
+                : 'var(--color-text-secondary)',
+              border: `1px solid ${activePreset === 'custom' || showCustomPicker ? '#10b981' : 'var(--color-border-subtle)'}`
             }}
           >
-            <div className="space-y-4">
-              <div>
-                <label 
-                  className="text-xs font-medium mb-1 block"
-                  style={{ color: 'var(--color-text-secondary)' }}
-                >
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  id="customStartDate"
-                  className="w-full px-3 py-2 rounded-lg border text-sm"
-                  style={{
-                    backgroundColor: 'var(--color-bg-primary)',
-                    borderColor: 'var(--color-border-subtle)',
-                    color: 'var(--color-text-primary)'
-                  }}
-                  defaultValue={filters.startDate ? new Date(filters.startDate).toISOString().split('T')[0] : ''}
-                />
-              </div>
-              <div>
-                <label 
-                  className="text-xs font-medium mb-1 block"
-                  style={{ color: 'var(--color-text-secondary)' }}
-                >
-                  End Date
-                </label>
-                <input
-                  type="date"
-                  id="customEndDate"
-                  className="w-full px-3 py-2 rounded-lg border text-sm"
-                  style={{
-                    backgroundColor: 'var(--color-bg-primary)',
-                    borderColor: 'var(--color-border-subtle)',
-                    color: 'var(--color-text-primary)'
-                  }}
-                  defaultValue={filters.endDate ? new Date(filters.endDate).toISOString().split('T')[0] : ''}
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    const start = document.getElementById('customStartDate').value;
-                    const end = document.getElementById('customEndDate').value;
-                    if (start && end) {
-                      applyCustomRange(start, end);
-                    }
-                  }}
-                  className="flex-1 px-3 py-2 rounded-lg text-sm font-medium text-white transition-all duration-200"
-                  style={{ backgroundColor: '#10b981' }}
-                >
-                  Apply
-                </button>
-                <button
-                  onClick={() => setShowCustomPicker(false)}
-                  className="px-3 py-2 rounded-lg text-sm font-medium border transition-all duration-200"
-                  style={{
-                    backgroundColor: 'var(--color-bg-primary)',
-                    borderColor: 'var(--color-border-subtle)',
-                    color: 'var(--color-text-secondary)'
-                  }}
-                >
-                  Cancel
-                </button>
+            <CalendarRange className="w-3.5 h-3.5" />
+            {activePreset === 'custom' && filters.startDate ? (
+              <span>
+                {formatDisplayDate(filters.startDate)} - {formatDisplayDate(filters.endDate)}
+              </span>
+            ) : (
+              <span>Custom Range</span>
+            )}
+            <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showCustomPicker ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* Custom Date Picker Dropdown */}
+          {showCustomPicker && (
+            <div 
+              className="absolute top-full left-0 mt-2 p-4 rounded-xl border z-[100]"
+              style={{
+                backgroundColor: '#ffffff',
+                borderColor: '#e5e7eb',
+                minWidth: '280px',
+                boxShadow: '0 10px 40px -10px rgba(0, 0, 0, 0.2), 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)'
+              }}
+            >
+              <div className="space-y-4">
+                <div>
+                  <label 
+                    className="text-xs font-medium mb-1 block"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    id="customStartDate"
+                    className="w-full px-3 py-2 rounded-lg border text-sm"
+                    style={{
+                      backgroundColor: 'var(--color-bg-primary)',
+                      borderColor: 'var(--color-border-subtle)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                    defaultValue={filters.startDate ? new Date(filters.startDate).toISOString().split('T')[0] : ''}
+                  />
+                </div>
+                <div>
+                  <label 
+                    className="text-xs font-medium mb-1 block"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    id="customEndDate"
+                    className="w-full px-3 py-2 rounded-lg border text-sm"
+                    style={{
+                      backgroundColor: 'var(--color-bg-primary)',
+                      borderColor: 'var(--color-border-subtle)',
+                      color: 'var(--color-text-primary)'
+                    }}
+                    defaultValue={filters.endDate ? new Date(filters.endDate).toISOString().split('T')[0] : ''}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const start = document.getElementById('customStartDate').value;
+                      const end = document.getElementById('customEndDate').value;
+                      if (start && end) {
+                        applyCustomRange(start, end);
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 rounded-lg text-sm font-medium text-white transition-all duration-200"
+                    style={{ backgroundColor: '#10b981' }}
+                  >
+                    Apply
+                  </button>
+                  <button
+                    onClick={() => setShowCustomPicker(false)}
+                    className="px-3 py-2 rounded-lg text-sm font-medium border transition-all duration-200"
+                    style={{
+                      backgroundColor: 'var(--color-bg-primary)',
+                      borderColor: 'var(--color-border-subtle)',
+                      color: 'var(--color-text-secondary)'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* Clear Filter Button */}
-      {hasActiveFilter && (
+
+      {/* Clear Filter Button - Hidden when week-wise mode is enabled */}
+      {!weekWiseMode && hasActiveFilter && (
         <button
           onClick={handleClear}
           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
@@ -475,8 +551,9 @@ const DateFilters = ({ filters, setFilters, onClear, showSavedPresets = false })
         </button>
       )}
 
-      {/* Save Current Filter as Preset */}
-      {showSavedPresets && hasActiveFilter && (
+      {/* Save Current Filter as Preset - Hidden when week-wise mode is enabled */}
+      {!weekWiseMode && showSavedPresets && hasActiveFilter && (
+
         <div className="relative" ref={saveModalRef}>
           <button
             onClick={() => setShowSaveModal(!showSaveModal)}
@@ -531,8 +608,9 @@ const DateFilters = ({ filters, setFilters, onClear, showSavedPresets = false })
         </div>
       )}
 
-      {/* Saved Presets Chips */}
-      {showSavedPresets && savedPresets.length > 0 && (
+      {/* Saved Presets Chips - Hidden when week-wise mode is enabled */}
+      {!weekWiseMode && showSavedPresets && savedPresets.length > 0 && (
+
         <div className="flex items-center gap-2 ml-2 pl-2 border-l" style={{ borderColor: 'var(--color-border-subtle)' }}>
           {savedPresets.map((preset) => (
             <div

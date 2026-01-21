@@ -12,16 +12,19 @@ import {
   RefreshCw,
   AlertCircle,
   Edit3,
-  Search as SearchIcon
+  Search as SearchIcon,
+  Calendar
 } from 'lucide-react';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import DateFilters from '../../components/Finance/DateFilters';
 import DepartmentFilter from '../../components/Finance/DepartmentFilter';
+import { WeekWiseHeaders, WeekWiseCells, formatWeekValue } from '../../components/Finance/WeekWiseColumns';
 
 /**
  * ViewFinancePage - Renders a custom finance page with its configured columns
  * Supports both users and projects view types
+ * Includes week-wise reporting mode toggle
  */
 const ViewFinancePage = () => {
   const { id } = useParams();
@@ -38,6 +41,13 @@ const ViewFinancePage = () => {
     endDate: null,
     departmentId: null
   });
+
+  // Week-wise reporting mode state
+  const [weekWiseMode, setWeekWiseMode] = useState(false);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [weeklyData, setWeeklyData] = useState(null);
+  const [weeklyDataLoading, setWeeklyDataLoading] = useState(false);
+
 
   // Fetch page configuration
   const fetchPage = async () => {
@@ -114,6 +124,38 @@ const ViewFinancePage = () => {
     }
   }, [page, filters]);
 
+  // Fetch week-wise data when mode is enabled
+  useEffect(() => {
+    const fetchWeeklyData = async () => {
+      if (!weekWiseMode || !page) {
+        setWeeklyData(null);
+        return;
+      }
+      
+      try {
+        setWeeklyDataLoading(true);
+        const params = new URLSearchParams({
+          year: selectedYear.toString(),
+          viewType: page.pageType
+        });
+        if (filters.departmentId) {
+          params.append('departmentId', filters.departmentId);
+        }
+        
+        const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`);
+        if (response.data.success) {
+          setWeeklyData(response.data.data);
+        }
+      } catch (err) {
+        console.error('Error fetching weekly data:', err);
+      } finally {
+        setWeeklyDataLoading(false);
+      }
+    };
+    
+    fetchWeeklyData();
+  }, [weekWiseMode, selectedYear, filters.departmentId, page]);
+
   // Format helpers
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
@@ -157,6 +199,28 @@ const ViewFinancePage = () => {
     }
   }, [data, searchQuery, page]);
 
+  // Build weekly payments lookup from weeklyData
+  const weeklyPaymentsMap = useMemo(() => {
+    if (!weeklyData || !weeklyData.months) return {};
+    
+    const map = {};
+    
+    // Use current month's week breakdown data
+    const currentMonth = new Date().getMonth();
+    const monthData = weeklyData.months?.find(m => m.month === currentMonth) || weeklyData.months?.[0];
+    
+    if (monthData?.items) {
+      monthData.items.forEach(item => {
+        const key = item.userId || item.projectId;
+        if (key) {
+          map[key] = item.weeks || [0, 0, 0, 0, 0];
+        }
+      });
+    }
+    
+    return map;
+  }, [weeklyData]);
+
   // Group data by department
   const groupedData = useMemo(() => {
     const grouped = {};
@@ -182,7 +246,9 @@ const ViewFinancePage = () => {
               loggedTime: { totalMinutes: 0 },
               billedTime: { totalMinutes: 0 },
               // Reset lastActivity to compare and find latest
-              lastActivity: null
+              lastActivity: null,
+              // Add weekly payments from lookup
+              weeklyPayments: weeklyPaymentsMap[user.userId] || [0, 0, 0, 0, 0]
             };
           }
           
@@ -244,13 +310,18 @@ const ViewFinancePage = () => {
         if (!grouped[dept]) {
           grouped[dept] = { items: [], totalPayment: 0 };
         }
-        grouped[dept].items.push(project);
+        // Add weeklyPayments to each project
+        const projectWithWeekly = {
+          ...project,
+          weeklyPayments: weeklyPaymentsMap[project.projectId] || [0, 0, 0, 0, 0]
+        };
+        grouped[dept].items.push(projectWithWeekly);
         grouped[dept].totalPayment += project.payment || 0;
       });
     }
     
     return grouped;
-  }, [filteredData, page]);
+  }, [filteredData, page, weeklyPaymentsMap]);
 
   // Get visible columns
   const visibleColumns = useMemo(() => {
@@ -504,12 +575,37 @@ const ViewFinancePage = () => {
             filters={filters} 
             setFilters={setFilters}
             onClear={() => {}}
+            showWeekWiseToggle={true}
+            weekWiseMode={weekWiseMode}
+            onWeekWiseModeChange={setWeekWiseMode}
+            selectedYear={selectedYear}
+            onYearChange={setSelectedYear}
           />
         </div>
       </div>
 
+      {/* Week-Wise Mode Header */}
+      {weekWiseMode && (
+        <div 
+          className="flex items-center justify-between p-3 rounded-lg mb-4"
+          style={{ backgroundColor: 'var(--color-bg-muted)' }}
+        >
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5" style={{ color: '#10b981' }} />
+            <span className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              Week-Wise Report - {selectedYear}
+            </span>
+          </div>
+          {weeklyData && (
+            <span className="text-lg font-bold" style={{ color: '#10b981' }}>
+              {formatCurrency(weeklyData.yearTotal || 0)}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Data Table */}
-      {dataLoading ? (
+      {(dataLoading || weeklyDataLoading) ? (
         <div 
           className="p-8 rounded-xl border text-center"
           style={{ 
@@ -520,17 +616,18 @@ const ViewFinancePage = () => {
           <div className="animate-spin rounded-full h-8 w-8 border-2 border-emerald-500 border-t-transparent mx-auto" />
           <p className="mt-4 text-sm" style={{ color: 'var(--color-text-muted)' }}>Loading data...</p>
         </div>
-      ) : Object.keys(groupedData).length === 0 ? (
-        <div 
-          className="p-12 rounded-xl border text-center"
-          style={{ 
-            backgroundColor: 'var(--color-bg-secondary)',
-            borderColor: 'var(--color-border-subtle)'
-          }}
-        >
-          <AlertCircle className="w-12 h-12 mx-auto mb-3" style={{ color: 'var(--color-text-muted)' }} />
-          <p className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-            No data found
+          ) : Object.keys(groupedData).length === 0 ? (
+            <div 
+              className="p-12 rounded-xl border text-center"
+              style={{ 
+                backgroundColor: 'var(--color-bg-secondary)',
+                borderColor: 'var(--color-border-subtle)'
+              }}
+            >
+              <AlertCircle className="w-12 h-12 mx-auto mb-3" style={{ color: 'var(--color-text-muted)' }} />
+              <p className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                No data found
+
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
             Try adjusting your filters or search query
@@ -590,6 +687,10 @@ const ViewFinancePage = () => {
                             {column.label}
                           </th>
                         ))}
+                        {/* Week-wise columns - dynamically inserted */}
+                        {weekWiseMode && (
+                          <WeekWiseHeaders year={selectedYear} showMonthColumn={false} />
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -614,6 +715,14 @@ const ViewFinancePage = () => {
                               {renderCell(item, column.key)}
                             </td>
                           ))}
+                          {/* Week-wise cells - dynamically inserted */}
+                          {weekWiseMode && (
+                            <WeekWiseCells 
+                              weeklyPayments={item.weeklyPayments || [0, 0, 0, 0, 0]}
+                              formatCurrency={formatCurrency}
+                              showMonthColumn={false}
+                            />
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -639,9 +748,34 @@ const ViewFinancePage = () => {
             </span>
           </div>
         </div>
+          )}
+
+      {/* Year Total for Week-Wise Mode */}
+      {weekWiseMode && weeklyData && (
+        <div 
+          className="p-4 rounded-xl border flex items-center justify-between mt-4"
+          style={{ 
+            backgroundColor: 'rgba(16, 185, 129, 0.08)',
+            borderColor: 'rgba(16, 185, 129, 0.3)'
+          }}
+        >
+          <span 
+            className="font-semibold"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            Year Total ({selectedYear})
+          </span>
+          <span 
+            className="text-lg font-bold"
+            style={{ color: '#10b981' }}
+          >
+            {formatCurrency(weeklyData.yearTotal || 0)}
+          </span>
+        </div>
       )}
     </div>
   );
 };
 
 export default ViewFinancePage;
+

@@ -31,6 +31,7 @@ import DataIntegrityWarnings from '../../components/Finance/DataIntegrityWarning
 import ColumnTooltip, { COLUMN_EXPLANATIONS } from '../../components/Finance/ColumnTooltip';
 import { PaymentBreakdownCell } from '../../components/Finance/PaymentBreakdown';
 import EmptyState from '../../components/Finance/EmptyState';
+import { WeekWiseHeaders, WeekWiseCells, formatWeekValue } from '../../components/Finance/WeekWiseColumns';
 
 /**
  * ProjectsTab - Project-centric Finance View (Enhanced)
@@ -40,6 +41,7 @@ import EmptyState from '../../components/Finance/EmptyState';
  * - Client info expandable
  * - Date filters
  * - Status editing (inline)
+ * - Week-wise reporting mode toggle
  */
 const ProjectsTab = () => {
   const navigate = useNavigate();
@@ -57,6 +59,12 @@ const ProjectsTab = () => {
     departmentId: null,
     projectId: null
   });
+
+  // Week-wise reporting mode state
+  const [weekWiseMode, setWeekWiseMode] = useState(false);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [weeklyData, setWeeklyData] = useState(null);
+  const [weeklyDataLoading, setWeeklyDataLoading] = useState(false);
 
   // Initialize filters from URL params
   useEffect(() => {
@@ -108,6 +116,38 @@ const ProjectsTab = () => {
   useEffect(() => {
     fetchData();
   }, [filters]);
+
+  // Fetch week-wise data when mode is enabled
+  useEffect(() => {
+    const fetchWeeklyData = async () => {
+      if (!weekWiseMode) {
+        setWeeklyData(null);
+        return;
+      }
+      
+      try {
+        setWeeklyDataLoading(true);
+        const params = new URLSearchParams({
+          year: selectedYear.toString(),
+          viewType: 'projects'
+        });
+        if (filters.departmentId) {
+          params.append('departmentId', filters.departmentId);
+        }
+        
+        const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`);
+        if (response.data.success) {
+          setWeeklyData(response.data.data);
+        }
+      } catch (err) {
+        console.error('Error fetching weekly data:', err);
+      } finally {
+        setWeeklyDataLoading(false);
+      }
+    };
+    
+    fetchWeeklyData();
+  }, [weekWiseMode, selectedYear, filters.departmentId]);
 
   // Handle card click for filtering
   const handleCardClick = (action, value) => {
@@ -221,6 +261,27 @@ const ProjectsTab = () => {
     return result;
   }, [data, searchQuery, sortConfig]);
 
+  // Build weekly payments lookup from weeklyData (grouped by projectId)
+  const weeklyPaymentsMap = useMemo(() => {
+    if (!weeklyData || !weeklyData.months) return {};
+    
+    const map = {};
+    
+    // Aggregate project payments across all months into week 1-5 based on current month
+    const currentMonth = new Date().getMonth();
+    const monthData = weeklyData.months?.find(m => m.month === currentMonth) || weeklyData.months?.[0];
+    
+    if (monthData?.items) {
+      monthData.items.forEach(item => {
+        if (item.projectId) {
+          map[item.projectId] = item.weeks || [0, 0, 0, 0, 0];
+        }
+      });
+    }
+    
+    return map;
+  }, [weeklyData]);
+
   // Group processed data by department
   const groupedProcessedData = useMemo(() => {
     const grouped = {};
@@ -233,12 +294,17 @@ const ProjectsTab = () => {
           totalBilledMinutes: 0
         };
       }
-      grouped[dept].projects.push(project);
+      // Add weeklyPayments to each project
+      const projectWithWeekly = {
+        ...project,
+        weeklyPayments: weeklyPaymentsMap[project.projectId] || [0, 0, 0, 0, 0]
+      };
+      grouped[dept].projects.push(projectWithWeekly);
       grouped[dept].totalPayment += project.payment || 0;
       grouped[dept].totalBilledMinutes += project.billedTime?.totalMinutes || 0;
     });
     return grouped;
-  }, [processedData]);
+  }, [processedData, weeklyPaymentsMap]);
 
   // Calculate grand totals
   const grandTotals = useMemo(() => {
@@ -390,8 +456,14 @@ const ProjectsTab = () => {
             setFilters={setFilters}
             onClear={() => {}}
             showSavedPresets={true}
+            showWeekWiseToggle={true}
+            weekWiseMode={weekWiseMode}
+            onWeekWiseModeChange={setWeekWiseMode}
+            selectedYear={selectedYear}
+            onYearChange={setSelectedYear}
           />
         </div>
+
       </div>
 
       {/* Error State */}
@@ -415,8 +487,28 @@ const ProjectsTab = () => {
         </div>
       )}
 
+      {/* Week-Wise Mode Header */}
+      {weekWiseMode && (
+        <div 
+          className="flex items-center justify-between p-3 rounded-lg mb-4"
+          style={{ backgroundColor: 'var(--color-bg-muted)' }}
+        >
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5" style={{ color: '#10b981' }} />
+            <span className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              Week-Wise Report - {selectedYear}
+            </span>
+          </div>
+          {weeklyData && (
+            <span className="text-lg font-bold" style={{ color: '#10b981' }}>
+              {formatCurrency(weeklyData.yearTotal || 0)}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Data by Department */}
-      {loading ? (
+      {(loading || weeklyDataLoading) ? (
         <div 
           className="rounded-xl border overflow-hidden"
           style={{ 
@@ -434,6 +526,15 @@ const ProjectsTab = () => {
                 <th className="px-3 py-3 text-left text-xs font-semibold">Billing</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold">Logged</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold">Billed</th>
+                {weekWiseMode && (
+                  <>
+                    <th className="px-3 py-3 text-center text-xs font-semibold">Week 1</th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold">Week 2</th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold">Week 3</th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold">Week 4</th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold">Week 5</th>
+                  </>
+                )}
                 <th className="px-3 py-3 text-left text-xs font-semibold">Payment</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold">Status</th>
                 <th className="px-3 py-3 text-left text-xs font-semibold">Last Activity</th>
@@ -444,18 +545,19 @@ const ProjectsTab = () => {
             </tbody>
           </table>
         </div>
-      ) : Object.keys(groupedProcessedData).length === 0 ? (
-        <div 
-          className="rounded-xl border"
-          style={{ 
-            backgroundColor: 'var(--color-bg-secondary)',
-            borderColor: 'var(--color-border-subtle)'
-          }}
-        >
-          <EmptyState 
-            type={searchQuery ? 'noSearchResults' : 'noProjects'}
-            description={searchQuery 
-              ? 'Try adjusting your search or filters to find projects' 
+          ) : Object.keys(groupedProcessedData).length === 0 ? (
+            <div 
+              className="rounded-xl border"
+              style={{ 
+                backgroundColor: 'var(--color-bg-secondary)',
+                borderColor: 'var(--color-border-subtle)'
+              }}
+            >
+              <EmptyState 
+                type={searchQuery ? 'noSearchResults' : 'noProjects'}
+                description={searchQuery 
+                  ? 'Try adjusting your search or filters to find projects' 
+ 
               : 'Projects with billing information will appear here once created'
             }
           />
@@ -582,6 +684,10 @@ const ProjectsTab = () => {
                             </div>
                           </ColumnTooltip>
                         </th>
+                        {/* Week-wise columns - dynamically inserted */}
+                        {weekWiseMode && (
+                          <WeekWiseHeaders year={selectedYear} showMonthColumn={false} />
+                        )}
                         <th 
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer hover:opacity-70 min-w-24"
                           style={{ color: 'var(--color-text-secondary)' }}
@@ -755,6 +861,15 @@ const ProjectsTab = () => {
                                 {formatTime(project.billedTime)}
                               </td>
 
+                              {/* Week-wise cells - dynamically inserted */}
+                              {weekWiseMode && (
+                                <WeekWiseCells 
+                                  weeklyPayments={project.weeklyPayments || [0, 0, 0, 0, 0]}
+                                  formatCurrency={formatCurrency}
+                                  showMonthColumn={false}
+                                />
+                              )}
+
                               {/* Payment */}
                               <td 
                                 className="px-3 py-3 text-sm font-semibold"
@@ -869,9 +984,34 @@ const ProjectsTab = () => {
             </span>
           </div>
         </div>
+          )}
+
+      {/* Year Total for Week-Wise Mode */}
+      {weekWiseMode && weeklyData && (
+        <div 
+          className="p-4 rounded-xl border flex items-center justify-between mt-4"
+          style={{ 
+            backgroundColor: 'rgba(16, 185, 129, 0.08)',
+            borderColor: 'rgba(16, 185, 129, 0.3)'
+          }}
+        >
+          <span 
+            className="font-semibold"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            Year Total ({selectedYear})
+          </span>
+          <span 
+            className="text-lg font-bold"
+            style={{ color: '#10b981' }}
+          >
+            {formatCurrency(weeklyData.yearTotal || 0)}
+          </span>
+        </div>
       )}
     </div>
   );
 };
 
 export default ProjectsTab;
+
