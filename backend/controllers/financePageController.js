@@ -242,7 +242,7 @@ export const approveFinancePage = async (req, res) => {
 };
 
 // ============================================
-// DELETE: Archive Page
+// DELETE: Delete Page from Database
 // ============================================
 export const deleteFinancePage = async (req, res) => {
   try {
@@ -252,7 +252,7 @@ export const deleteFinancePage = async (req, res) => {
     
     const page = await FinancePage.findById(id);
     
-    if (!page || page.isArchived) {
+    if (!page) {
       return res.status(404).json({ success: false, message: 'Page not found' });
     }
     
@@ -262,11 +262,15 @@ export const deleteFinancePage = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
     
-    page.isArchived = true;
-    await page.save();
+    // Store page info before deletion for socket emission
+    const pageId = page._id;
+    const pageName = page.name;
+    
+    // Permanently delete the page from database
+    await FinancePage.findByIdAndDelete(id);
     
     // Emit socket event for deletion
-    emitFinancePageDeleted(page._id, page.name);
+    emitFinancePageDeleted(pageId, pageName);
     
     res.json({
       success: true,
