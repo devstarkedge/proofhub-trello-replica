@@ -155,10 +155,10 @@ class SlackNotificationService {
    * Optimized with bulk fetching to avoid N+1 queries
    */
   async sendToMultipleUsers(userIds, notificationData) {
+    console.log(`[Slack] Processing batch notification for ${userIds ? userIds.length : 0} users. Type: ${notificationData.type}`);
     if (!userIds || userIds.length === 0) return { successful: 0, failed: 0, results: [] };
 
     const startTime = Date.now();
-    console.log(`[Slack] Processing batch notification for ${userIds.length} users. Type: ${notificationData.type}`);
 
     try {
       // Bulk fetch active SlackUsers provided they have a slackUserId

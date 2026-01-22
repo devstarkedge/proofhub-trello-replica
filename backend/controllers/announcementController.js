@@ -41,7 +41,8 @@ const calculateExpiryDate = (value, unit) => {
 
 // Helper to get subscriber user IDs
 // Handles all subscriber types with proper array-based department matching
-const getSubscriberUserIds = asyncHandler(async (subscribers) => {
+const getSubscriberUserIds = async (subscribers) => {
+  console.log('[Announcement] resolving subscribers:', JSON.stringify(subscribers));
   let userIds = [];
 
   // Base filter to exclude inactive and deleted users
@@ -52,6 +53,7 @@ const getSubscriberUserIds = asyncHandler(async (subscribers) => {
 
   if (subscribers.type === 'all') {
     const users = await User.find(baseFilter).select('_id');
+    console.log(`[Announcement] found ${users.length} users for type 'all'`);
     userIds = users.map(u => u._id);
   } else if (subscribers.type === 'departments') {
     // User.department is an array of ObjectIds
@@ -60,6 +62,7 @@ const getSubscriberUserIds = asyncHandler(async (subscribers) => {
       ...baseFilter,
       department: { $elemMatch: { $in: subscribers.departments } }
     }).select('_id');
+    console.log(`[Announcement] found ${users.length} users for type 'departments': ${JSON.stringify(subscribers.departments)}`);
     userIds = users.map(u => u._id);
   } else if (subscribers.type === 'users') {
     // Filter out inactive/deleted users from the explicit list
@@ -85,7 +88,7 @@ const getSubscriberUserIds = asyncHandler(async (subscribers) => {
   }
 
   return userIds;
-});
+};
 
 // @desc    Get all announcements with filtering and sorting
 // @route   GET /api/announcements
@@ -422,6 +425,7 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     notificationService.sendAnnouncementEmails(announcement, subscriberIds);
     
     // Send Slack notifications
+    console.log(`[Announcement] Triggering Slack notifications for ${subscriberIds.length} users...`);
     slackHooks.onAnnouncementPosted(announcement, subscriberIds, req.user).catch(console.error);
   }
 
