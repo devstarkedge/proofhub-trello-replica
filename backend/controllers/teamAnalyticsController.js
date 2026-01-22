@@ -1226,7 +1226,10 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
     'loggedTime.date': { $gte: targetDate, $lt: nextDate }
   })
     .select('_id title loggedTime board')
-    .populate('board', 'name')
+    .populate({
+      path: 'board',
+      select: 'name department'
+    })
     .lean();
 
   // Get all subtasks with logged time
@@ -1293,7 +1296,9 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
           _id: card._id,
           title: card.title,
           color: generateTaskColor(taskId),
-          projectName: card.board?.name || 'Unknown Project'
+          projectName: card.board?.name || 'Unknown Project',
+          projectId: card.board?._id || null,
+          departmentId: card.board?.department || null
         },
         directEntries: [],
         subtasks: new Map(),
@@ -1318,7 +1323,9 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
           _id: parentCard._id,
           title: parentCard.title,
           color: generateTaskColor(taskId),
-          projectName: parentCard.board?.name || 'Unknown Project'
+          projectName: parentCard.board?.name || 'Unknown Project',
+          projectId: parentCard.board?._id || null,
+          departmentId: parentCard.board?.department || null
         },
         directEntries: [],
         subtasks: new Map(),
@@ -1365,7 +1372,9 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
           _id: parentCard?._id || parentSubtask.task,
           title: parentCard?.title || 'Unknown Task',
           color: generateTaskColor(taskId),
-          projectName: parentCard?.board?.name || 'Unknown Project'
+          projectName: parentCard?.board?.name || 'Unknown Project',
+          projectId: parentCard?.board?._id || null,
+          departmentId: parentCard?.board?.department || null
         },
         directEntries: [],
         subtasks: new Map(),

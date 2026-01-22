@@ -34,6 +34,7 @@ import teamAnalyticsRoutes from './routes/teamAnalytics.js';
 import pmSheetRoutes from './routes/pmSheet.js';
 import calendarRoutes from './routes/calendar.js';
 import financeRoutes from './routes/finance.js';
+import myShortcutsRoutes from './routes/myShortcuts.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -122,6 +123,7 @@ app.use('/api/team-analytics', teamAnalyticsRoutes);
 app.use('/api/pm-sheet', pmSheetRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/finance', financeRoutes);
+app.use('/api/my-shortcuts', myShortcutsRoutes);
 
 import jwt from 'jsonwebtoken';
 
@@ -238,6 +240,17 @@ io.on('connection', (socket) => {
     if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left finance room`);
   });
 
+  // My Shortcuts room events - for real-time user-specific updates
+  socket.on('join-my-shortcuts', () => {
+    socket.join(`user-shortcuts-${userId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined my-shortcuts room`);
+  });
+
+  socket.on('leave-my-shortcuts', () => {
+    socket.leave(`user-shortcuts-${userId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left my-shortcuts room`);
+  });
+
   // Push notification subscription management
   socket.on('subscribe-push', async (subscription) => {
     try {
@@ -292,6 +305,11 @@ export const emitToBoard = (boardId, event, data) => {
 // Helper function to emit to all connected clients
 export const emitToAll = (event, data) => {
   io.emit(event, data);
+};
+
+// Helper function to emit to user's My Shortcuts room
+export const emitToUserShortcuts = (userId, event, data) => {
+  io.to(`user-shortcuts-${userId}`).emit(event, data);
 };
 
 // Export io for use in other modules

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, memo, useCallback, lazy, Suspense } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Clock, Calendar, ChevronDown, ChevronRight,
@@ -36,18 +37,18 @@ const DateDetailModal = memo(({
   const [selectedNano, setSelectedNano] = useState(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
 
+  const navigate = useNavigate();
+
   // Handlers to open detail modals by fetching full data first
-  const handleOpenCard = async (taskId) => {
-    setDrilldownLoading(true);
-    try {
-      const response = await Database.getCard(taskId);
-      if (response.data) {
-        setSelectedCard(response.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch card:', err);
-    } finally {
-      setDrilldownLoading(false);
+  const handleOpenCard = (taskItem) => {
+    // Navigate to workflow page with taskId in URL
+    const task = taskItem.task;
+    const departmentId = task.departmentId;
+    const projectId = task.projectId;
+    const taskId = task._id;
+    
+    if (departmentId && projectId && taskId) {
+      navigate(`/workflow/${departmentId}/${projectId}/${taskId}`);
     }
   };
 
@@ -343,7 +344,7 @@ const DateDetailModal = memo(({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenCard(taskItem.task._id);
+                                handleOpenCard(taskItem);
                               }}
                               className="p-1 hover:bg-blue-100 rounded transition-colors"
                               title="Open task details"

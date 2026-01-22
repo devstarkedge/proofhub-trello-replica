@@ -168,7 +168,14 @@ const Header = ({ boardName }) => {
               <motion.button
                 whileHover={{ scale: 1.03, x: -2 }}
                 whileTap={{ scale: 0.97 }}
-                onClick={() => navigate('/')}
+                onClick={() => {
+                  // Use browser history if available, otherwise fallback to home
+                  if (window.history.length > 1) {
+                    navigate(-1);
+                  } else {
+                    navigate('/');
+                  }
+                }}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200"
                 style={{
                   backgroundColor: 'var(--color-bg-muted)',

@@ -309,6 +309,32 @@ class SocketService {
       console.log('Finance data refresh:', data);
       window.dispatchEvent(new CustomEvent('socket-finance-refresh', { detail: data }));
     });
+
+    // My Shortcuts real-time events
+    this.socket.on('my-shortcuts:summary-updated', (data) => {
+      console.log('My Shortcuts summary updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-my-shortcuts-summary', { detail: data }));
+    });
+
+    this.socket.on('my-shortcuts:new-activity', (data) => {
+      console.log('My Shortcuts new activity:', data);
+      window.dispatchEvent(new CustomEvent('socket-my-shortcuts-activity', { detail: data }));
+    });
+
+    this.socket.on('my-shortcuts:task-count-changed', (data) => {
+      console.log('My Shortcuts task count changed:', data);
+      window.dispatchEvent(new CustomEvent('socket-my-shortcuts-task-count', { detail: data }));
+    });
+
+    this.socket.on('my-shortcuts:time-logged', (data) => {
+      console.log('My Shortcuts time logged:', data);
+      window.dispatchEvent(new CustomEvent('socket-my-shortcuts-time', { detail: data }));
+    });
+
+    this.socket.on('my-shortcuts:announcement', (data) => {
+      console.log('My Shortcuts announcement:', data);
+      window.dispatchEvent(new CustomEvent('socket-my-shortcuts-announcement', { detail: data }));
+    });
   }
 
   disconnect() {
@@ -361,6 +387,21 @@ class SocketService {
     if (this.socket && this.connected) {
       console.log('Leaving finance room');
       this.socket.emit('leave-finance');
+    }
+  }
+
+  // My Shortcuts room management
+  joinMyShortcuts() {
+    if (this.socket && this.connected) {
+      console.log('Joining my-shortcuts room');
+      this.socket.emit('join-my-shortcuts');
+    }
+  }
+
+  leaveMyShortcuts() {
+    if (this.socket && this.connected) {
+      console.log('Leaving my-shortcuts room');
+      this.socket.emit('leave-my-shortcuts');
     }
   }
 

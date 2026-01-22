@@ -51,6 +51,7 @@ import WeeklyTab from "./pages/Finance/WeeklyTab";
 import FinancePagesManager from "./pages/Finance/FinancePagesManager";
 import CreateFinancePage from "./pages/Finance/CreateFinancePage";
 import ViewFinancePage from "./pages/Finance/ViewFinancePage";
+import MyShortcutsPage from "./pages/MyShortcutsPage";
 
 function App() {
   return (
@@ -73,7 +74,23 @@ function App() {
               }
             />
             <Route
+              path="/my-shortcuts"
+              element={
+                <PrivateRoute>
+                  <MyShortcutsPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
               path="/workflow/:deptId/:projectId"
+              element={
+                <PrivateRoute>
+                  <WorkFlow />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/workflow/:deptId/:projectId/:taskId"
               element={
                 <PrivateRoute>
                   <WorkFlow />

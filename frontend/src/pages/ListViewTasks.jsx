@@ -177,24 +177,17 @@ const ListViewTasks = () => {
   const [modalCard, setModalCard] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
 
-  const openCardModal = async (card) => {
+  const openCardModal = (card) => {
     if (!card) return;
-    setModalLoading(true);
-    try {
-      const cached = taskCache.current.get(card._id);
-      if (cached && card.updatedAt && cached.updatedAt === card.updatedAt) {
-        setModalCard(cached);
-      } else {
-        const resp = await Database.getCard(card._id);
-        const fresh = resp.data || resp;
-        taskCache.current.set(card._id, fresh);
-        setModalCard(fresh);
-      }
-      setModalOpen(true);
-    } catch (err) {
-      console.error('Failed to load card details', err);
-    } finally {
-      setModalLoading(false);
+    
+    // Get the department ID and project ID from the card
+    const boardDeptId = card.board?.department?._id || card.board?.department || currentDepartment?._id;
+    const boardProjectId = card.board?._id;
+    const cardId = card._id || card.id;
+    
+    if (boardDeptId && boardProjectId && cardId) {
+      // Navigate to the workflow page with taskId in URL
+      navigate(`/workflow/${boardDeptId}/${boardProjectId}/${cardId}`);
     }
   };
 

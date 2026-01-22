@@ -2390,6 +2390,117 @@ class DatabaseService {
     }
     return await res.json();
   }
+
+  // ============ My Shortcuts API Methods ============
+
+  /**
+   * Get My Shortcuts dashboard summary (batched data)
+   * @returns {Promise<Object>} Dashboard summary with task count, logged time, activities, etc.
+   */
+  async getMyDashboardSummary() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/my-shortcuts/dashboard`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch dashboard summary');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get user's activities with pagination and filtering
+   * @param {Object} filters - { page, limit, type, startDate, endDate, grouped }
+   * @returns {Promise<Object>} Activities with pagination
+   */
+  async getMyActivities(filters = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const params = new URLSearchParams();
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
+    if (filters.type && filters.type !== 'all') params.append('type', filters.type);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+    if (filters.grouped) params.append('grouped', filters.grouped);
+
+    const res = await fetch(`${baseURL}/api/my-shortcuts/activities?${params.toString()}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch activities');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get user's tasks grouped by project
+   * @returns {Promise<Object>} Tasks grouped by project with navigation context
+   */
+  async getMyTasksGrouped() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/my-shortcuts/tasks`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch tasks');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get user's announcements with pagination
+   * @param {Object} options - { page, limit }
+   * @returns {Promise<Object>} Announcements with pagination
+   */
+  async getMyAnnouncements(options = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const params = new URLSearchParams();
+    if (options.page) params.append('page', options.page);
+    if (options.limit) params.append('limit', options.limit);
+
+    const res = await fetch(`${baseURL}/api/my-shortcuts/announcements?${params.toString()}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch announcements');
+    }
+    return await res.json();
+  }
+
+  /**
+   * Get user's assigned projects with pagination
+   * @param {Object} options - { page, limit }
+   * @returns {Promise<Object>} Projects with pagination
+   */
+  async getMyProjects(options = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const params = new URLSearchParams();
+    if (options.page) params.append('page', options.page);
+    if (options.limit) params.append('limit', options.limit);
+
+    const res = await fetch(`${baseURL}/api/my-shortcuts/projects?${params.toString()}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch projects');
+    }
+    return await res.json();
+  }
 }
 
 // Create singleton instance

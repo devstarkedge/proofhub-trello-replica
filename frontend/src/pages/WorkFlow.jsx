@@ -479,14 +479,26 @@ useEffect(() => {
       return;
     }
     
+    // Update URL to include task ID
+    const cardId = card._id || card.id;
+    if (cardId && deptId && projectId) {
+      navigate(`/workflow/${deptId}/${projectId}/${cardId}`, { replace: true });
+    }
+    
     openHierarchyModal({
       type: 'task',
       entity: card,
       project: board
     });
-  }, [openHierarchyModal, board]);
+  }, [openHierarchyModal, board, deptId, projectId, navigate]);
 
-  const closeAllModals = useCallback(() => closeHierarchy(), [closeHierarchy]);
+  const closeAllModals = useCallback(() => {
+    closeHierarchy();
+    // Navigate back to the project URL (without taskId)
+    if (deptId && projectId) {
+      navigate(`/workflow/${deptId}/${projectId}`, { replace: true });
+    }
+  }, [closeHierarchy, deptId, projectId, navigate]);
 
   const closeModalToDepth = useCallback((depth) => {
     closeHierarchyToDepth(depth);
@@ -739,7 +751,14 @@ useEffect(() => {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/')}
+                onClick={() => {
+                  // Use browser history if available, otherwise fallback to home
+                  if (window.history.length > 1) {
+                    navigate(-1);
+                  } else {
+                    navigate('/');
+                  }
+                }}
                 className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white"
               >
                 <ArrowLeft size={24} />

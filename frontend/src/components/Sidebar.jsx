@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign } from 'lucide-react';
+import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 import useThemeStore from '../store/themeStore';
@@ -7,6 +7,7 @@ import useThemeStore from '../store/themeStore';
 // Icon color configuration for each nav item
 const iconColors = {
   '/': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }, // Blue - Home
+  '/my-shortcuts': { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' }, // Cyan - My Shortcuts
   '/announcements': { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' }, // Amber - Announcements
   '/reminders': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Reminders
   '/teams': { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' }, // Cyan - Teams
@@ -45,6 +46,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     // Base navigation visible to all authenticated users
     const baseItems = [
       { path: '/', icon: Home, label: 'Home' },
+      { path: '/my-shortcuts', icon: Zap, label: 'My Shortcuts' },
       { path: '/announcements', icon: Bell, label: 'Announcements' },
     ];
 
