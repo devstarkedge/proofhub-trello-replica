@@ -288,6 +288,40 @@ const announcementService = {
     } catch (error) {
       throw error.response?.data || error.message;
     }
+  },
+
+  // ============ Seen/Read Tracking Methods ============
+
+  // Mark announcement as seen (viewport detection)
+  markAsSeen: async (announcementId) => {
+    try {
+      const response = await api.post(`${API_BASE_URL}/${announcementId}/seen`);
+      return response.data;
+    } catch (error) {
+      // Don't throw on seen tracking failure - it's non-critical
+      console.warn('Failed to mark announcement as seen:', error);
+      return { success: false };
+    }
+  },
+
+  // Get unread announcement count for current user
+  getUnreadCount: async () => {
+    try {
+      const response = await api.get(`${API_BASE_URL}/unread-count`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
+
+  // Get engagement stats for an announcement (admin/manager only)
+  getEngagementStats: async (announcementId) => {
+    try {
+      const response = await api.get(`${API_BASE_URL}/${announcementId}/engagement`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
   }
 };
 

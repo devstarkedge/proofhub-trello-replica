@@ -84,6 +84,13 @@ const getNotificationUrl = (notification) => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
   switch (notification.type) {
+    case 'announcement_created':
+    case 'announcement':
+      // Deep link to announcements page with specific announcement to open
+      const announcementId = notification.relatedAnnouncement || notification.metadata?.announcementId;
+      return announcementId 
+        ? `${baseUrl}/announcements?open=${announcementId}`
+        : `${baseUrl}/announcements`;
     case 'task_assigned':
     case 'task_updated':
     case 'task_deleted':

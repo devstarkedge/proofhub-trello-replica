@@ -40,30 +40,48 @@ const calculateExpiryDate = (value, unit) => {
 };
 
 // Helper to get subscriber user IDs
+// Handles all subscriber types with proper array-based department matching
 const getSubscriberUserIds = asyncHandler(async (subscribers) => {
   let userIds = [];
 
+  // Base filter to exclude inactive and deleted users
+  const baseFilter = { 
+    isActive: true, 
+    isVerified: true 
+  };
+
   if (subscribers.type === 'all') {
-    const users = await User.find({ isActive: true, isVerified: true }).select('_id');
+    const users = await User.find(baseFilter).select('_id');
     userIds = users.map(u => u._id);
   } else if (subscribers.type === 'departments') {
+    // User.department is an array of ObjectIds
+    // Find users where at least one of their departments is in the selected departments
     const users = await User.find({
-      department: { $in: subscribers.departments },
-      isActive: true,
-      isVerified: true
+      ...baseFilter,
+      department: { $elemMatch: { $in: subscribers.departments } }
     }).select('_id');
     userIds = users.map(u => u._id);
   } else if (subscribers.type === 'users') {
-    userIds = subscribers.users;
+    // Filter out inactive/deleted users from the explicit list
+    const validUsers = await User.find({
+      _id: { $in: subscribers.users },
+      ...baseFilter
+    }).select('_id');
+    userIds = validUsers.map(u => u._id);
   } else if (subscribers.type === 'managers') {
+    // Role field is a string, match 'manager' exactly
     const users = await User.find({
-      role: 'manager',
-      isActive: true,
-      isVerified: true
+      ...baseFilter,
+      role: 'manager'
     }).select('_id');
     userIds = users.map(u => u._id);
   } else if (subscribers.type === 'custom') {
-    userIds = subscribers.users;
+    // Filter out inactive/deleted users from the explicit list
+    const validUsers = await User.find({
+      _id: { $in: subscribers.users },
+      ...baseFilter
+    }).select('_id');
+    userIds = validUsers.map(u => u._id);
   }
 
   return userIds;
@@ -86,13 +104,28 @@ export const getAnnouncements = asyncHandler(async (req, res, next) => {
   ];
 
   // Add department filter if user has a department
+  // User.department is an array of ObjectIds, so we need to check if any of the user's
+  // departments are in the announcement's subscribers.departments array
   if (userDepartment) {
-    visibilityConditions.push({ 'subscribers.departments': userDepartment });
+    const userDeptIds = Array.isArray(userDepartment) ? userDepartment : [userDepartment];
+    if (userDeptIds.length > 0) {
+      visibilityConditions.push({ 
+        $and: [
+          { 'subscribers.type': 'departments' },
+          { 'subscribers.departments': { $in: userDeptIds } }
+        ]
+      });
+    }
   }
 
   // Add role-based filter
   if (userRole) {
     visibilityConditions.push({ 'subscribers.roles': userRole });
+    
+    // Also check for 'managers' type if user is a manager
+    if (userRole === 'manager') {
+      visibilityConditions.push({ 'subscribers.type': 'managers' });
+    }
   }
 
   // Build main query
@@ -350,17 +383,36 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
 
     await Notification.insertMany(notifications);
 
-    // Emit real-time notification to subscribers
-    subscriberIds.forEach(userId => {
-      io.to(`user-${userId}`).emit('announcement-created', {
-        announcement: announcement.toJSON(),
-        notification: {
-          type: 'announcement_created',
-          title: 'New Announcement',
-          message: `${req.user.name} posted: ${title}`
-        }
+    // Emit real-time notification using batched room-based emission for efficiency
+    const announcementPayload = {
+      announcement: announcement.toJSON(),
+      notification: {
+        type: 'announcement_created',
+        title: 'New Announcement',
+        message: `${req.user.name} posted: ${title}`
+      }
+    };
+
+    // Emit based on subscriber type for optimized delivery
+    const subscriberType = rawSubscribers.type || 'all';
+    
+    if (subscriberType === 'all') {
+      // Broadcast to all connected users
+      io.emit('announcement-created', announcementPayload);
+    } else if (subscriberType === 'departments') {
+      // Emit to each department room
+      (rawSubscribers.departments || []).forEach(deptId => {
+        io.to(`department-${deptId}`).emit('announcement-created', announcementPayload);
       });
-    });
+    } else if (subscriberType === 'managers') {
+      // Emit to managers room
+      io.to('managers').emit('announcement-created', announcementPayload);
+    } else {
+      // For 'users' and 'custom' types, emit to individual user rooms
+      subscriberIds.forEach(userId => {
+        io.to(`user-${userId}`).emit('announcement-created', announcementPayload);
+      });
+    }
 
     announcement.broadcastedAt = new Date();
     announcement.broadcastedTo = subscriberIds;
@@ -1166,6 +1218,126 @@ export const getAttachments = asyncHandler(async (req, res, next) => {
       totalCount: attachments.length,
       imageCount: images.length,
       documentCount: documents.length
+    }
+  });
+});
+
+// @desc    Mark announcement as seen (viewport detection)
+// @route   POST /api/announcements/:id/seen
+// @access  Private
+export const markAsSeen = asyncHandler(async (req, res, next) => {
+  const announcement = await Announcement.findById(req.params.id);
+  
+  if (!announcement) {
+    return next(new ErrorResponse('Announcement not found', 404));
+  }
+
+  // Check if already seen
+  const alreadySeen = announcement.seenBy?.some(
+    s => s.userId.toString() === req.user.id
+  );
+
+  if (!alreadySeen) {
+    if (!announcement.seenBy) announcement.seenBy = [];
+    announcement.seenBy.push({
+      userId: req.user.id,
+      seenAt: new Date()
+    });
+    await announcement.save();
+  }
+
+  res.status(200).json({ 
+    success: true,
+    message: 'Announcement marked as seen'
+  });
+});
+
+// @desc    Get unread announcement count for user
+// @route   GET /api/announcements/unread-count
+// @access  Private
+export const getUnreadCount = asyncHandler(async (req, res, next) => {
+  const userId = req.user.id;
+  const userDepartment = req.user.department;
+  const userRole = req.user.role;
+
+  // Build visibility query (same logic as getAnnouncements)
+  const visibilityConditions = [
+    { 'subscribers.type': 'all' },
+    { 'subscribers.users': userId },
+    { createdBy: userId }
+  ];
+
+  if (userDepartment) {
+    const userDeptIds = Array.isArray(userDepartment) ? userDepartment : [userDepartment];
+    if (userDeptIds.length > 0) {
+      visibilityConditions.push({ 
+        $and: [
+          { 'subscribers.type': 'departments' },
+          { 'subscribers.departments': { $in: userDeptIds } }
+        ]
+      });
+    }
+  }
+
+  if (userRole) {
+    visibilityConditions.push({ 'subscribers.roles': userRole });
+    if (userRole === 'manager') {
+      visibilityConditions.push({ 'subscribers.type': 'managers' });
+    }
+  }
+
+  // Count announcements user hasn't seen yet
+  const unreadCount = await Announcement.countDocuments({
+    $and: [
+      { $or: visibilityConditions },
+      { isArchived: false },
+      { 'seenBy.userId': { $ne: userId } }
+    ]
+  });
+
+  res.status(200).json({ 
+    success: true, 
+    count: unreadCount 
+  });
+});
+
+// @desc    Get engagement stats for an announcement (admin only)
+// @route   GET /api/announcements/:id/engagement
+// @access  Private/Admin/Manager
+export const getEngagementStats = asyncHandler(async (req, res, next) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager' && req.user.role !== 'hr') {
+    return next(new ErrorResponse('Not authorized to view engagement stats', 403));
+  }
+
+  const announcement = await Announcement.findById(req.params.id)
+    .populate('seenBy.userId', 'name email avatar')
+    .populate('readBy.userId', 'name email avatar')
+    .populate('acknowledgedBy.userId', 'name email avatar');
+
+  if (!announcement) {
+    return next(new ErrorResponse('Announcement not found', 404));
+  }
+
+  // Get total eligible users count for percentage calculation
+  let totalEligibleUsers = 0;
+  try {
+    const subscriberIds = await getSubscriberUserIds(announcement.subscribers);
+    totalEligibleUsers = Array.isArray(subscriberIds) ? subscriberIds.length : 0;
+  } catch (err) {
+    console.error('Error calculating eligible users:', err);
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      totalEligibleUsers,
+      seenCount: announcement.seenBy?.length || 0,
+      readCount: announcement.readBy?.length || 0,
+      acknowledgedCount: announcement.acknowledgedBy?.length || 0,
+      seenBy: announcement.seenBy || [],
+      readBy: announcement.readBy || [],
+      acknowledgedBy: announcement.acknowledgedBy || [],
+      viewCount: announcement.viewCount || 0
     }
   });
 });

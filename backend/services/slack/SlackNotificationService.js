@@ -62,25 +62,29 @@ class SlackNotificationService {
         attachment,
         assignees,
         changes,
-        hoursRemaining
+        hoursRemaining,
+        // Pre-fetched objects for optimization
+        preFetchedSlackUser,
+        preFetchedUser
       } = notificationData;
 
-      // Get user and their Slack connection
-      const user = await User.findById(userId).lean();
+      // Get user if not provided
+      const user = preFetchedUser || await User.findById(userId).lean();
       if (!user) {
         console.log('User not found for Slack notification');
         return null;
       }
 
-      const slackUser = await SlackUser.findByUserId(userId);
+      // Get Slack connection if not provided
+      const slackUser = preFetchedSlackUser || await SlackUser.findByUserId(userId);
       if (!slackUser) {
-        console.log('User not connected to Slack');
+        // Silent return for expected skips (user hasn't connected Slack)
         return null;
       }
 
       // Check if user should receive this notification
       if (!slackUser.shouldReceiveNotification(type, priority)) {
-        console.log('Notification filtered by user preferences');
+        console.log(`Notification ${type} filtered by user preferences for user ${user.name}`);
         return null;
       }
 
@@ -148,19 +152,68 @@ class SlackNotificationService {
 
   /**
    * Send notification to multiple users
+   * Optimized with bulk fetching to avoid N+1 queries
    */
   async sendToMultipleUsers(userIds, notificationData) {
-    const results = await Promise.allSettled(
-      userIds.map(userId => 
-        this.sendNotification({ ...notificationData, userId })
-      )
-    );
+    if (!userIds || userIds.length === 0) return { successful: 0, failed: 0, results: [] };
 
-    return {
-      successful: results.filter(r => r.status === 'fulfilled' && r.value).length,
-      failed: results.filter(r => r.status === 'rejected' || !r.value).length,
-      results
-    };
+    const startTime = Date.now();
+    console.log(`[Slack] Processing batch notification for ${userIds.length} users. Type: ${notificationData.type}`);
+
+    try {
+      // Bulk fetch active SlackUsers provided they have a slackUserId
+      // Also populate the User model to avoid another query per user
+      const slackUsers = await SlackUser.find({
+        user: { $in: userIds },
+        isActive: true,
+        slackUserId: { $exists: true, $ne: '' }
+      }).populate('user');
+
+      const slackUserMap = new Map(slackUsers.map(su => [su.user._id.toString(), su]));
+      
+      console.log(`[Slack] Found ${slackUsers.length} connected Slack users out of ${userIds.length} targets.`);
+      
+      // Log skipped users (optional monitoring)
+      if (slackUsers.length < userIds.length) {
+        const skippedCount = userIds.length - slackUsers.length;
+        console.log(`[Slack] Skipped ${skippedCount} users (no Slack connection).`);
+      }
+
+      const results = await Promise.allSettled(
+        userIds.map(userId => {
+          const idString = userId.toString ? userId.toString() : userId;
+          const slackUser = slackUserMap.get(idString);
+          
+          if (!slackUser) {
+             // User has no connected Slack account - skip safely
+             return Promise.resolve(null);
+          }
+          
+          // Pass the pre-fetched objects to sendNotification
+          // slackUser.user is the populated User document
+          return this.sendNotification({ 
+            ...notificationData, 
+            userId, 
+            preFetchedSlackUser: slackUser,
+            preFetchedUser: slackUser.user
+          });
+        })
+      );
+
+      const successful = results.filter(r => r.status === 'fulfilled' && r.value).length;
+      const failed = results.filter(r => r.status === 'rejected').length; // Only actual errors count as failed
+      
+      console.log(`[Slack] Batch complete. Sent: ${successful}, Skipped/Filtered: ${userIds.length - successful - failed}, Errors: ${failed}. Time: ${Date.now() - startTime}ms`);
+
+      return {
+        successful,
+        failed,
+        results
+      };
+    } catch (error) {
+      console.error('[Slack] Batch processing error:', error);
+      return { successful: 0, failed: userIds.length, results: [] };
+    }
   }
 
   /**
@@ -630,27 +683,14 @@ class SlackNotificationService {
   }
 
   /**
-   * Send announcement notification
+   * Send announcement notification using Block Kit builder
    */
   async sendAnnouncement(announcement, targetUsers, sender) {
-    const payload = {
-      blocks: [
-        blockBuilder.header(`📣 ${announcement.title}`),
-        blockBuilder.section(announcement.content),
-        blockBuilder.context([
-          sender.avatar 
-            ? { type: 'image', image_url: sender.avatar, alt_text: sender.name }
-            : '👤',
-          `Posted by *${sender.name}*`
-        ]),
-        blockBuilder.divider(),
-        blockBuilder.actions('announcement_actions', [
-          blockBuilder.linkButton('View Details', `${process.env.FRONTEND_URL}/announcements/${announcement._id}`, 'view_announcement'),
-          blockBuilder.button('👍 Acknowledge', 'acknowledge_announcement', announcement._id.toString())
-        ])
-      ],
-      text: `📣 New Announcement: ${announcement.title}`
-    };
+    // Use the new block kit builder for professional announcement template
+    const payload = blockBuilder.buildAnnouncementNotification({
+      announcement,
+      triggeredBy: sender
+    });
 
     return this.sendToMultipleUsers(targetUsers, {
       type: 'announcement_created',

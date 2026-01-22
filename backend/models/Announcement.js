@@ -231,12 +231,35 @@ const announcementSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  // Tracks when announcement enters user's viewport (viewport detection)
+  seenBy: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    seenAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  // Tracks when user opens announcement detail modal
   readBy: [{
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     },
     readAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  // Tracks when user acknowledges via Slack button
+  acknowledgedBy: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    acknowledgedAt: {
       type: Date,
       default: Date.now
     }
@@ -269,6 +292,10 @@ announcementSchema.index({ isScheduled: 1, scheduledFor: 1 });
 announcementSchema.index({ category: 1, createdAt: -1 });
 announcementSchema.index({ expiresAt: 1 });
 announcementSchema.index({ createdAt: -1 });
+// Indexes for seen/read tracking and unread count queries
+announcementSchema.index({ 'seenBy.userId': 1 });
+announcementSchema.index({ 'readBy.userId': 1 });
+announcementSchema.index({ 'acknowledgedBy.userId': 1 });
 
 // Virtual for calculating remaining time
 announcementSchema.virtual('remainingTime').get(function() {

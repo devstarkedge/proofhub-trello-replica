@@ -18,7 +18,10 @@ import {
   deleteAttachment,
   restoreAttachment,
   updateAttachmentTag,
-  getAttachments
+  getAttachments,
+  markAsSeen,
+  getUnreadCount,
+  getEngagementStats
 } from '../controllers/announcementController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
@@ -65,11 +68,20 @@ const parseFormDataJSON = (req, res, next) => {
 // Statistics routes
 router.get('/stats/overview', getAnnouncementStats);
 
+// Unread count for user (must be before /:id route)
+router.get('/unread-count', getUnreadCount);
+
 // Get all announcements
 router.get('/', getAnnouncements);
 
 // Get single announcement
 router.get('/:id', getAnnouncement);
+
+// Mark announcement as seen (viewport detection)
+router.post('/:id/seen', markAsSeen);
+
+// Get engagement stats for announcement
+router.get('/:id/engagement', getEngagementStats);
 
 // Create announcement
 router.post(

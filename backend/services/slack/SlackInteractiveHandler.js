@@ -48,7 +48,8 @@ class SlackInteractiveHandler {
       'digest_settings': this.handleDigestSettings.bind(this),
       
       // Announcement actions
-      'acknowledge_announcement': this.handleAcknowledgeAnnouncement.bind(this)
+      'acknowledge_announcement': this.handleAcknowledgeAnnouncement.bind(this),
+      'mark_announcement_read': this.handleMarkAnnouncementRead.bind(this)
     };
 
     // Modal submission handlers
@@ -1055,18 +1056,142 @@ class SlackInteractiveHandler {
   }
 
   /**
-   * Handle acknowledge announcement
+   * Handle acknowledge announcement - saves to database and emits real-time update
    */
   async handleAcknowledgeAnnouncement({ action, user, workspace, responseUrl }) {
-    if (responseUrl) {
-      const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
-      await slackClient.respondToInteraction(responseUrl, {
-        replace_original: false,
-        response_type: 'ephemeral',
-        text: '👍 Announcement acknowledged'
-      });
+    try {
+      const value = this.parseActionValue(action.value);
+      const announcementId = value.announcementId;
+
+      if (!announcementId) {
+        return this.errorResponse('Invalid announcement');
+      }
+
+      // Import Announcement model dynamically to avoid circular deps
+      const Announcement = (await import('../../models/Announcement.js')).default;
+      const announcement = await Announcement.findById(announcementId);
+
+      if (!announcement) {
+        if (responseUrl) {
+          const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+          await slackClient.respondToInteraction(responseUrl, {
+            replace_original: false,
+            response_type: 'ephemeral',
+            text: '❌ Announcement not found'
+          });
+        }
+        return { success: false, message: 'Announcement not found' };
+      }
+
+      // Get FlowTask user ID
+      const flowTaskUserId = user.flowTaskUserId || user.user;
+
+      if (flowTaskUserId) {
+        // Check if already acknowledged
+        if (!announcement.acknowledgedBy) announcement.acknowledgedBy = [];
+        const alreadyAcked = announcement.acknowledgedBy.some(
+          a => a.userId && a.userId.toString() === flowTaskUserId.toString()
+        );
+
+        if (!alreadyAcked) {
+          announcement.acknowledgedBy.push({
+            userId: flowTaskUserId,
+            acknowledgedAt: new Date()
+          });
+          await announcement.save();
+
+          // Emit socket event for real-time UI update
+          const { io } = await import('../../server.js');
+          io.to(`user-${flowTaskUserId}`).emit('announcement-acknowledged', {
+            announcementId: announcement._id,
+            userId: flowTaskUserId
+          });
+        }
+      }
+
+      if (responseUrl) {
+        const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+        await slackClient.respondToInteraction(responseUrl, {
+          replace_original: false,
+          response_type: 'ephemeral',
+          text: '✅ Announcement acknowledged!'
+        });
+      }
+
+      return { success: true, message: 'Announcement acknowledged' };
+    } catch (error) {
+      console.error('Error acknowledging announcement:', error);
+      return this.errorResponse('Failed to acknowledge announcement');
     }
-    return { success: true };
+  }
+
+  /**
+   * Handle mark announcement as read - saves to database and emits real-time update
+   */
+  async handleMarkAnnouncementRead({ action, user, workspace, responseUrl }) {
+    try {
+      const value = this.parseActionValue(action.value);
+      const announcementId = value.announcementId;
+
+      if (!announcementId) {
+        return this.errorResponse('Invalid announcement');
+      }
+
+      // Import Announcement model dynamically
+      const Announcement = (await import('../../models/Announcement.js')).default;
+      const announcement = await Announcement.findById(announcementId);
+
+      if (!announcement) {
+        if (responseUrl) {
+          const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+          await slackClient.respondToInteraction(responseUrl, {
+            replace_original: false,
+            response_type: 'ephemeral',
+            text: '❌ Announcement not found'
+          });
+        }
+        return { success: false, message: 'Announcement not found' };
+      }
+
+      // Get FlowTask user ID
+      const flowTaskUserId = user.flowTaskUserId || user.user;
+
+      if (flowTaskUserId) {
+        // Check if already read
+        const alreadyRead = announcement.readBy.some(
+          r => r.userId && r.userId.toString() === flowTaskUserId.toString()
+        );
+
+        if (!alreadyRead) {
+          announcement.readBy.push({
+            userId: flowTaskUserId,
+            readAt: new Date()
+          });
+          await announcement.save();
+
+          // Emit socket event for real-time UI update
+          const { io } = await import('../../server.js');
+          io.to(`user-${flowTaskUserId}`).emit('announcement-read', {
+            announcementId: announcement._id,
+            userId: flowTaskUserId
+          });
+        }
+      }
+
+      if (responseUrl) {
+        const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+        await slackClient.respondToInteraction(responseUrl, {
+          replace_original: false,
+          response_type: 'ephemeral',
+          text: '📖 Announcement marked as read!'
+        });
+      }
+
+      return { success: true, message: 'Announcement marked as read' };
+    } catch (error) {
+      console.error('Error marking announcement as read:', error);
+      return this.errorResponse('Failed to mark announcement as read');
+    }
   }
 
   // ==================== Modal Submission Handlers ====================

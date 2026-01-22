@@ -339,14 +339,13 @@ export const slackHooks = {
     if (!slackNotificationService) return;
 
     try {
-      for (const userId of recipients) {
-        await slackNotificationService.sendNotification({
-          userId,
-          type: 'announcement',
-          announcement,
-          triggeredBy
-        });
-      }
+      // Use the dedicated sendAnnouncement method which uses Block Kit builder
+      // with professional template and interactive buttons
+      await slackNotificationService.sendAnnouncement(
+        announcement,
+        recipients,
+        triggeredBy
+      );
     } catch (error) {
       console.error('Slack onAnnouncementPosted hook error:', error);
     }

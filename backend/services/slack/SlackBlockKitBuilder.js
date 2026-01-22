@@ -525,6 +525,90 @@ class SlackBlockKitBuilder {
   }
 
   /**
+   * Build announcement notification with interactive buttons
+   */
+  buildAnnouncementNotification(data) {
+    const { announcement, triggeredBy } = data;
+
+    // Category emoji mapping
+    const categoryEmoji = {
+      'HR': '👥',
+      'Urgent': '🚨',
+      'General': '📢',
+      'System Update': '⚙️',
+      'Events': '🎉',
+      'Custom': '📌'
+    };
+
+    // Category colors
+    const categoryColors = {
+      'HR': '#9333ea',
+      'Urgent': '#dc2626',
+      'General': '#6b7280',
+      'System Update': '#2563eb',
+      'Events': '#eab308',
+      'Custom': '#6366f1'
+    };
+
+    const emoji = categoryEmoji[announcement.category] || '📣';
+    const color = categoryColors[announcement.category] || '#6366f1';
+    const announcementUrl = `${this.appUrl}/announcements?open=${announcement._id}`;
+
+    // Truncate description for Slack message
+    const truncatedDescription = announcement.description.length > 300
+      ? announcement.description.substring(0, 297) + '...'
+      : announcement.description;
+
+    const blocks = [
+      // Header
+      this.header(`${emoji} New Announcement`),
+      
+      // Title and description
+      this.section(`*${announcement.title}*\n\n${truncatedDescription}`),
+      
+      // Context info: category, posted by, date
+      this.context([
+        `📂 *Category:* ${announcement.category}`,
+        `👤 *Posted by:* ${triggeredBy?.name || 'Administrator'}`,
+        `📅 *Posted:* ${this.formatDate(announcement.createdAt || new Date())}`
+      ])
+    ];
+
+    // Add attachments count if present
+    if (announcement.attachments && announcement.attachments.length > 0) {
+      blocks.push(this.context([
+        `📎 *Attachments:* ${announcement.attachments.length} file(s)`
+      ]));
+    }
+
+    // Add expiration info
+    if (announcement.expiresAt) {
+      blocks.push(this.context([
+        `⏱️ *Expires:* ${this.formatDate(announcement.expiresAt)}`
+      ]));
+    }
+
+    blocks.push(this.divider());
+
+    // Interactive action buttons
+    blocks.push(this.actions(`announcement_actions_${announcement._id}`, [
+      this.linkButton('👀 View Announcement', announcementUrl, 'view_announcement'),
+      this.button('✅ Acknowledge', 'acknowledge_announcement', JSON.stringify({ 
+        announcementId: announcement._id.toString() 
+      })),
+      this.button('📖 Mark as Read', 'mark_announcement_read', JSON.stringify({ 
+        announcementId: announcement._id.toString() 
+      }))
+    ]));
+
+    return {
+      blocks,
+      text: `${emoji} New Announcement: ${announcement.title}`,
+      attachments: [{ color, blocks: [] }]
+    };
+  }
+
+  /**
    * Build digest notification
    */
   buildDigestNotification(data) {

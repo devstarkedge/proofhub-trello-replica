@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Pin, Clock, Users, MessageCircle, Paperclip, X } from 'lucide-react';
 import { formatDistanceToNow, formatDate } from 'date-fns';
 
@@ -8,10 +8,36 @@ const AnnouncementCard = ({
   onPin,
   onArchive,
   onDelete,
+  onSeen, // Callback when announcement enters viewport
   userRole,
   userId,
   isUserAdmin
 }) => {
+  const cardRef = useRef(null);
+
+  // Intersection Observer for seen tracking
+  useEffect(() => {
+    if (!onSeen || !cardRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            // Announcement is visible in viewport (50%+ visible)
+            onSeen(announcement._id);
+            // Disconnect after first sight to avoid duplicate calls
+            observer.disconnect();
+          }
+        });
+      },
+      { threshold: 0.5 } // Trigger when 50% of card is visible
+    );
+
+    observer.observe(cardRef.current);
+
+    return () => observer.disconnect();
+  }, [announcement._id, onSeen]);
+
   const handleReactionClick = (emoji) => {
     onOpen?.(announcement._id);
   };
@@ -45,6 +71,7 @@ const AnnouncementCard = ({
 
   return (
     <div
+      ref={cardRef}
       className={`bg-white border-2 rounded-lg p-4 cursor-pointer transition-all hover:shadow-lg ${
         announcement.isPinned
           ? 'border-blue-400 bg-blue-50 shadow-md'

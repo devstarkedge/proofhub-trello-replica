@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { Bell, Plus, Search, Filter, Archive, Sparkles, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -15,10 +16,14 @@ import { io } from 'socket.io-client';
 
 const Announcements = () => {
   const { user } = useContext(AuthContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  
   const [announcements, setAnnouncements] = useState([]);
   const [filteredAnnouncements, setFilteredAnnouncements] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
@@ -30,6 +35,7 @@ const Announcements = () => {
   const [showArchived, setShowArchived] = useState(false);
 
   const socketRef = useRef(null);
+  const seenAnnouncementsRef = useRef(new Set()); // Track which announcements have been marked as seen
 
   const isAdmin = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'hr';
 
@@ -54,7 +60,17 @@ const Announcements = () => {
     socket.on('announcement-created', (data) => {
       console.log('New announcement received:', data);
       toast.info(`📢 ${data.notification?.title || 'New announcement!'}`);
-      fetchAnnouncements(showArchived);
+      
+      // Add to local state immediately instead of full refetch
+      setAnnouncements(prev => {
+        // Check if announcement already exists
+        if (prev.some(a => a._id === data.announcement._id)) return prev;
+        // Add to beginning of list
+        return [data.announcement, ...prev];
+      });
+      
+      // Increment unread count
+      setUnreadCount(prev => prev + 1);
     });
 
     socket.on('announcement-updated', (data) => {
@@ -171,6 +187,53 @@ const Announcements = () => {
       console.error('Error fetching announcement detail:', error);
     }
   };
+
+  // Fetch unread count on mount
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const response = await announcementService.getUnreadCount();
+        if (response.success) {
+          setUnreadCount(response.count);
+        }
+      } catch (error) {
+        console.error('Error fetching unread count:', error);
+      }
+    };
+    
+    if (user) fetchUnreadCount();
+  }, [user]);
+
+  // Handle deep linking from URL query parameter (push notification, Slack, email)
+  useEffect(() => {
+    const openAnnouncementId = searchParams.get('open');
+    if (openAnnouncementId && announcements.length > 0) {
+      const announcementToOpen = announcements.find(a => a._id === openAnnouncementId);
+      if (announcementToOpen) {
+        setSelectedAnnouncement(announcementToOpen);
+        setShowDetailModal(true);
+        // Clear the URL parameter after opening
+        setSearchParams({}, { replace: true });
+      } else {
+        // Announcement not in list, try to fetch it directly
+        fetchAnnouncementDetail(openAnnouncementId).then(() => {
+          setShowDetailModal(true);
+          setSearchParams({}, { replace: true });
+        });
+      }
+    }
+  }, [searchParams, announcements, setSearchParams]);
+
+  // Callback to mark announcement as seen (for Intersection Observer in cards)
+  const handleAnnouncementSeen = useCallback((announcementId) => {
+    if (seenAnnouncementsRef.current.has(announcementId)) return;
+    seenAnnouncementsRef.current.add(announcementId);
+    
+    // Mark as seen via API (non-blocking)
+    announcementService.markAsSeen(announcementId).then(() => {
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    });
+  }, []);
 
   useEffect(() => {
     fetchAnnouncements(showArchived);
@@ -596,6 +659,7 @@ const Announcements = () => {
                           onPin={() => handleArchiveAnnouncement(announcement._id)}
                           onArchive={handleArchiveAnnouncement}
                           onDelete={handleDeleteAnnouncement}
+                          onSeen={handleAnnouncementSeen}
                           userRole={user?.role}
                           userId={user?._id}
                           isUserAdmin={isAdmin}

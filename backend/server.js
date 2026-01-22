@@ -157,10 +157,25 @@ io.on('connection', (socket) => {
     console.log(`Admin user ${userId} joined admin room`);
   }
 
-  // Join manager room if user is manager (for finance updates)
+  // Join managers room if user is manager (for finance updates and announcements)
   if (decodedUser.role === 'manager') {
-    socket.join('manager');
-    console.log(`Manager user ${userId} joined manager room`);
+    socket.join('managers');
+    console.log(`User ${userId} joined managers room`);
+  }
+
+  // Join department rooms for batched announcement delivery
+  if (decodedUser.department) {
+    const departments = Array.isArray(decodedUser.department) 
+      ? decodedUser.department 
+      : [decodedUser.department];
+    departments.forEach(deptId => {
+      if (deptId) {
+        socket.join(`department-${deptId}`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`User ${userId} joined department room: department-${deptId}`);
+        }
+      }
+    });
   }
 
   console.log(`User ${userId} connected`);
