@@ -523,6 +523,33 @@ const ListViewTasks = () => {
               <FilterDropdown label="Status" icon={Target} options={[{ value: 'all', label: 'All' }, { value: 'to-do', label: 'To-Do' }, { value: 'in-progress', label: 'In Progress' }, { value: 'review', label: 'Review' }, { value: 'done', label: 'Done' }]} value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })} />
               <FilterDropdown label="Priority" icon={Zap} options={[{ value: 'all', label: 'All' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} value={filters.priority} onValueChange={(value) => setFilters({ ...filters, priority: value })} />
 
+              {/* Filter Presets */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex items-center gap-2 hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 border-2 rounded-xl hover:border-purple-300 group">
+                    <Sparkles size={16} className="text-gray-500 group-hover:text-purple-600 transition-colors" />
+                    <span className="text-gray-700 font-medium">Presets</span>
+                    <ChevronsUpDown size={16} className="text-gray-400 group-hover:text-purple-500 transition-colors" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 bg-white/95 backdrop-blur-xl border-2 rounded-xl shadow-xl">
+                  {Object.keys(getFilterPresets()).map((presetName, index) => (
+                    <React.Fragment key={presetName}>
+                      <DropdownMenuItem
+                        onSelect={() => applyFilterPreset(presetName)}
+                        className="cursor-pointer hover:bg-purple-50 transition-colors rounded-lg mx-1 my-0.5"
+                      >
+                        <div className="flex items-center gap-2 w-full">
+                          <Sparkles className="w-4 h-4 text-purple-500" />
+                          <span>{presetName}</span>
+                        </div>
+                      </DropdownMenuItem>
+                      {index === 0 && <DropdownMenuSeparator className="my-1" />}
+                    </React.Fragment>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               {/* Date Filters */}
               <div className="flex items-center gap-2">
                 <div className="relative">

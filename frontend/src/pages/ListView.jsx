@@ -1099,7 +1099,7 @@ const ListView = () => {
                 />
 
                 {/* Filter Presets */}
-                <DropdownMenu>
+                {/* <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="flex items-center gap-2 hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 border-2 rounded-xl hover:border-purple-300 group">
                       <Sparkles size={16} className="text-gray-500 group-hover:text-purple-600 transition-colors" />
@@ -1123,7 +1123,7 @@ const ListView = () => {
                       </React.Fragment>
                     ))}
                   </DropdownMenuContent>
-                </DropdownMenu>
+                </DropdownMenu> */}
 
                 {/* Date Range Filters */}
                 <div className="flex items-center gap-2">

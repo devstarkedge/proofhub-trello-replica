@@ -198,14 +198,16 @@ const UsersTab = () => {
   };
 
   // Build weekly payments lookup from weeklyData (grouped by userId and userId_projectId)
+  // Also track which month the data is from
   const weeklyPaymentsMap = useMemo(() => {
-    if (!weeklyData || !weeklyData.months) return {};
+    if (!weeklyData || !weeklyData.months) return { payments: {}, activeMonth: 0 };
     
     const map = {};
     
-    // Use current month's week breakdown data
-    const currentMonth = new Date().getMonth();
-    const monthData = weeklyData.months?.find(m => m.month === currentMonth) || weeklyData.months?.[0];
+    // Find the first month with payment data in weeklyData.months
+    // This will be used to display the correct month name instead of current system month
+    const monthData = weeklyData.months?.[0];
+    const activeMonth = monthData?.month ?? 0;
     
     if (monthData?.items) {
       monthData.items.forEach(item => {
@@ -226,8 +228,34 @@ const UsersTab = () => {
       });
     }
     
-    return map;
+    return { payments: map, activeMonth };
   }, [weeklyData]);
+
+  // Get the active month name for the week-wise report (data-driven, not current date)
+  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const activeMonthName = useMemo(() => {
+    if (weeklyData?.months?.[0]?.monthName) {
+      return weeklyData.months[0].monthName;
+    }
+    return MONTH_NAMES[weeklyPaymentsMap.activeMonth] || 'Jan';
+  }, [weeklyData, weeklyPaymentsMap.activeMonth]);
+
+  // Check if weeklyData has any actual payment data for the selected year
+  // This prevents showing stale data from other years when week-wise mode is enabled
+  const hasDataForYear = useMemo(() => {
+    if (!weekWiseMode) return true; // Not in week-wise mode, show all data
+    if (weeklyDataLoading) return true; // Still loading, don't show empty state yet
+    if (!weeklyData || !weeklyData.months || weeklyData.months.length === 0) return false;
+    
+    // Check if any month has items with payment data (any week with value > 0)
+    return weeklyData.months.some(month => 
+      month.items && month.items.length > 0 && 
+      month.items.some(item => {
+        const weeks = item.weeks || [0, 0, 0, 0, 0];
+        return weeks.some(w => w > 0);
+      })
+    );
+  }, [weekWiseMode, weeklyData, weeklyDataLoading]);
 
   // Group data by department
   const groupedByDepartment = useMemo(() => {
@@ -268,7 +296,7 @@ const UsersTab = () => {
         
         // Add project with its weekly payments from lookup (userId_projectId key)
         const projectWeeklyKey = `${user.userId}_${project.projectId}`;
-        const projectWeeklyPayments = weeklyPaymentsMap[projectWeeklyKey] || [0, 0, 0, 0, 0];
+        const projectWeeklyPayments = weeklyPaymentsMap.payments?.[projectWeeklyKey] || [0, 0, 0, 0, 0];
         const projectWithWeekly = {
           ...project,
           weeklyPayments: projectWeeklyPayments
@@ -538,6 +566,32 @@ const UsersTab = () => {
                 }
               />
             </div>
+          ) : weekWiseMode && !hasDataForYear ? (
+            // Empty state when no data exists for selected year in week-wise mode
+            <div 
+              className="rounded-xl border p-12 text-center"
+              style={{ 
+                backgroundColor: 'var(--color-bg-secondary)',
+                borderColor: 'var(--color-border-subtle)'
+              }}
+            >
+              <Calendar 
+                className="w-16 h-16 mx-auto mb-4" 
+                style={{ color: 'var(--color-text-muted)' }} 
+              />
+              <h3 
+                className="text-lg font-semibold mb-2"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                No Data for {selectedYear}
+              </h3>
+              <p 
+                className="text-sm max-w-md mx-auto"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                There are no payment records for the selected year. Please select a different year or check your data.
+              </p>
+            </div>
           ) : (
             <div className="space-y-6">
 
@@ -642,7 +696,7 @@ const UsersTab = () => {
                         </th>
                         {/* Week-wise columns - dynamically inserted */}
                         {weekWiseMode && (
-                          <WeekWiseHeaders year={selectedYear} showMonthColumn={false} />
+                          <WeekWiseHeaders year={selectedYear} showMonthColumn={true} currentMonth={weeklyPaymentsMap.activeMonth} />
                         )}
                         <th 
                           className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer hover:opacity-70"
@@ -721,7 +775,8 @@ const UsersTab = () => {
                               <WeekWiseCells 
                                 weeklyPayments={user.weeklyPayments || [0, 0, 0, 0, 0]}
                                 formatCurrency={formatCurrency}
-                                showMonthColumn={false}
+                                showMonthColumn={true}
+                                monthName={activeMonthName}
                               />
                             )}
                             <td 
@@ -797,7 +852,8 @@ const UsersTab = () => {
                                 <WeekWiseCells 
                                   weeklyPayments={project.weeklyPayments || [0, 0, 0, 0, 0]}
                                   formatCurrency={formatCurrency}
-                                  showMonthColumn={false}
+                                  showMonthColumn={true}
+                                  monthName={activeMonthName}
                                   cellStyle={{ color: 'var(--color-text-muted)' }}
                                 />
                               )}

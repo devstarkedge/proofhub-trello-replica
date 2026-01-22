@@ -294,10 +294,10 @@ const DateFilters = ({
   const visiblePresets = presets.slice(0, 4);
   const morePresets = presets.slice(4);
 
-  // Generate years for dropdown (last 3 years + current + next)
+  // Generate years for dropdown (last 3 years + current)
   const years = [];
   const currentYear = new Date().getFullYear();
-  for (let y = currentYear - 3; y <= currentYear + 1; y++) {
+  for (let y = currentYear - 4; y <= currentYear; y++) {
     years.push(y);
   }
 

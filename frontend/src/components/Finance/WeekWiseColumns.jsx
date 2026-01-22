@@ -95,12 +95,38 @@ export const formatWeekValue = (value, formatCurrency) => {
 /**
  * WeekWiseHeaders - Renders week column headers (Week 1-5)
  * Used to extend existing table headers when week-wise mode is enabled
+ * @param {Object} props
+ * @param {number} props.year - Year for the report
+ * @param {boolean} props.showMonthColumn - Whether to show separate month column
+ * @param {number} props.currentMonth - Current month to display date ranges (0-indexed)
+ * @param {Object} props.headerStyle - Additional styles for headers
  */
 export const WeekWiseHeaders = ({ 
   year, 
   showMonthColumn = true,
+  currentMonth,
   headerStyle = {}
 }) => {
+  // Get weeks with date ranges for current month if provided
+  const weeks = currentMonth !== undefined && currentMonth !== null 
+    ? getWeeksOfMonth(year, currentMonth)
+    : [];
+  
+  // Get month name
+  const monthName = currentMonth !== undefined && currentMonth !== null 
+    ? MONTH_NAMES[currentMonth] 
+    : '';
+
+  // Helper to format date range for a week
+  const formatWeekDateRange = (weekIndex) => {
+    if (weeks[weekIndex] && weeks[weekIndex].start && weeks[weekIndex].end) {
+      const startDay = weeks[weekIndex].start.getDate();
+      const endDay = weeks[weekIndex].end.getDate();
+      return `${startDay}-${endDay} ${monthName}`;
+    }
+    return '';
+  };
+
   return (
     <>
       {showMonthColumn && (
@@ -119,51 +145,76 @@ export const WeekWiseHeaders = ({
         className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider"
         style={{ 
           color: 'var(--color-text-secondary)',
-          minWidth: '85px',
+          minWidth: '95px',
           ...headerStyle
         }}
       >
-        Week 1
+        <div>Week 1</div>
+        {formatWeekDateRange(0) && (
+          <div className="text-[10px] font-normal normal-case" style={{ color: 'var(--color-text-muted)' }}>
+            {formatWeekDateRange(0)}
+          </div>
+        )}
       </th>
       <th 
         className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider"
         style={{ 
           color: 'var(--color-text-secondary)',
-          minWidth: '85px',
+          minWidth: '95px',
           ...headerStyle
         }}
       >
-        Week 2
+        <div>Week 2</div>
+        {formatWeekDateRange(1) && (
+          <div className="text-[10px] font-normal normal-case" style={{ color: 'var(--color-text-muted)' }}>
+            {formatWeekDateRange(1)}
+          </div>
+        )}
       </th>
       <th 
         className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider"
         style={{ 
           color: 'var(--color-text-secondary)',
-          minWidth: '85px',
+          minWidth: '95px',
           ...headerStyle
         }}
       >
-        Week 3
+        <div>Week 3</div>
+        {formatWeekDateRange(2) && (
+          <div className="text-[10px] font-normal normal-case" style={{ color: 'var(--color-text-muted)' }}>
+            {formatWeekDateRange(2)}
+          </div>
+        )}
       </th>
       <th 
         className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider"
         style={{ 
           color: 'var(--color-text-secondary)',
-          minWidth: '85px',
+          minWidth: '95px',
           ...headerStyle
         }}
       >
-        Week 4
+        <div>Week 4</div>
+        {formatWeekDateRange(3) && (
+          <div className="text-[10px] font-normal normal-case" style={{ color: 'var(--color-text-muted)' }}>
+            {formatWeekDateRange(3)}
+          </div>
+        )}
       </th>
       <th 
         className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider"
         style={{ 
           color: 'var(--color-text-secondary)',
-          minWidth: '85px',
+          minWidth: '95px',
           ...headerStyle
         }}
       >
-        Week 5
+        <div>Week 5</div>
+        {formatWeekDateRange(4) && (
+          <div className="text-[10px] font-normal normal-case" style={{ color: 'var(--color-text-muted)' }}>
+            {formatWeekDateRange(4)}
+          </div>
+        )}
       </th>
     </>
   );
