@@ -453,10 +453,10 @@ const UsersTab = ({ users }) => (
           <div key={user._id} className="flex items-center justify-between p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
-                {user.user?.avatar ? (
+                {user.slackAvatar || user.user?.avatar ? (
                   <img 
-                    src={user.user.avatar} 
-                    alt={user.user.name}
+                    src={user.slackAvatar || user.user.avatar} 
+                    alt={user.user?.name}
                     className="w-10 h-10 rounded-full"
                   />
                 ) : (

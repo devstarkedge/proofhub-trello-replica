@@ -446,7 +446,7 @@ export const getWorkspaceUsers = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
 
   const users = await SlackUser.find({ workspace: workspace._id })
-    .populate('user', 'name email role')
+    .populate('user', 'name email role avatar')
     .skip((page - 1) * limit)
     .limit(parseInt(limit))
     .sort({ linkedAt: -1 });
