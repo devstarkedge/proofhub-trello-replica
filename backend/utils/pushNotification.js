@@ -81,7 +81,7 @@ export const sendPushNotification = async (notification, pushSubscription) => {
 
 // Get notification URL for click action
 const getNotificationUrl = (notification) => {
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
   switch (notification.type) {
     case 'announcement_created':
@@ -96,11 +96,11 @@ const getNotificationUrl = (notification) => {
     case 'task_deleted':
     case 'comment_added':
     case 'comment_mention':
-      return `${baseUrl}/board/${notification.relatedBoard}?card=${notification.relatedCard}`;
+      return `${baseUrl}/workflow/${notification.relatedBoard}?card=${notification.relatedCard}`;
     case 'project_created':
     case 'project_deleted':
     case 'project_updates':
-      return `${baseUrl}/board/${notification.relatedBoard}`;
+      return `${baseUrl}/workflow/${notification.relatedBoard}`;
     case 'user_registered':
       return `${baseUrl}/admin/users`;
     default:

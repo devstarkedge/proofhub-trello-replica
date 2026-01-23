@@ -416,10 +416,10 @@ class SlackInteractiveHandler {
         return { success: true, message: 'Task already in progress' };
       }
 
-      // Find the "In Progress" list for this board
+      // Find the "In Progress" list for this board (handles various title variations)
       const inProgressList = await List.findOne({
         board: task.board._id || task.board,
-        title: { $regex: /in.?progress/i }
+        title: { $regex: /in[\s\-_]*progress|doing|active|wip|working/i }
       });
 
       // Update task status

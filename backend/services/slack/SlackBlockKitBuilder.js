@@ -1011,7 +1011,7 @@ class SlackBlockKitBuilder {
                   emoji: true
                 },
                 action_id: `start_task_${task._id}`,
-                value: task._id.toString()
+                value: JSON.stringify({ taskId: task._id.toString(), boardId: (task.board?._id || task.board)?.toString() })
               }
             });
           }
