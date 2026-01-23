@@ -1014,14 +1014,18 @@ class SlackInteractiveHandler {
    */
   async handleDepartmentSelect({ action, user, workspace, triggerId, container, view }) {
     try {
+      console.log('handleDepartmentSelect triggered');
       const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
       const deptId = action.selected_option.value;
+      console.log('Selected Dept ID:', deptId);
+      
       const meta = JSON.parse(view.private_metadata || '{}');
       const userId = meta.userId || user.user;
       
       // Get FlowTask user to check role
       const flowTaskUser = await User.findById(userId);
       const isAdmin = flowTaskUser?.role === 'admin';
+      console.log('User Role:', flowTaskUser?.role, 'Is Admin:', isAdmin);
 
       // Fetch projects for this department
       let query = {
@@ -1036,10 +1040,16 @@ class SlackInteractiveHandler {
         ];
       }
 
+      console.log('Project Query:', JSON.stringify(query));
       const projects = await Board.find(query)
         .select('name _id')
         .sort({ name: 1 })
         .lean();
+      
+      console.log('Projects found:', projects.length);
+
+      // ... rest of code ...
+
 
       // Project options
       const projectOptions = projects.map(proj => ({
@@ -1056,31 +1066,34 @@ class SlackInteractiveHandler {
       const deptOption = action.selected_option;
 
       // Build updated view
+      const datesBlock = {
+        type: 'input',
+        block_id: 'task_dates',
+        label: { type: 'plain_text', text: '📅 Dates', emoji: true },
+        element: {
+          type: 'datepicker',
+          action_id: 'start_date',
+          placeholder: { type: 'plain_text', text: 'Start Date' }
+        }
+      };
+      if (startDate) datesBlock.element.initial_date = startDate;
+
+      const dueDateBlock = {
+        type: 'input',
+        block_id: 'task_due_date',
+        optional: true,
+        label: { type: 'plain_text', text: 'Due Date', emoji: true },
+        element: {
+          type: 'datepicker',
+          action_id: 'due_date',
+          placeholder: { type: 'plain_text', text: 'Select due date (optional)' }
+        }
+      };
+      if (dueDate) dueDateBlock.element.initial_date = dueDate;
+
       const blocks = [
-        // Dates (Preserved)
-        {
-          type: 'input',
-          block_id: 'task_dates',
-          label: { type: 'plain_text', text: '📅 Dates', emoji: true },
-          element: {
-            type: 'datepicker',
-            action_id: 'start_date',
-            initial_date: startDate,
-            placeholder: { type: 'plain_text', text: 'Start Date' }
-          }
-        },
-        {
-          type: 'input',
-          block_id: 'task_due_date',
-          optional: true,
-          label: { type: 'plain_text', text: 'Due Date', emoji: true },
-          element: {
-            type: 'datepicker',
-            action_id: 'due_date',
-            initial_date: dueDate,
-            placeholder: { type: 'plain_text', text: 'Select due date (optional)' }
-          }
-        },
+        datesBlock,
+        dueDateBlock,
         blockBuilder.divider(),
         
         // Department (Preserved)
@@ -1140,14 +1153,18 @@ class SlackInteractiveHandler {
    */
   async handleProjectSelect({ action, user, workspace, triggerId, container, view }) {
     try {
+      console.log('handleProjectSelect triggered');
       const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
       const projectId = action.selected_option.value;
+      console.log('Selected Project ID:', projectId);
       
       // Fetch lists for this project
       const lists = await List.find({ 
         board: projectId,
         isArchived: false 
       }).sort({ position: 1 }).lean();
+      
+      console.log('Lists found:', lists.length);
 
       // Status options
       let statusOptions = [];
@@ -1158,6 +1175,7 @@ class SlackInteractiveHandler {
         }));
       } else {
         // Fallback default statuses if no lists found
+        console.log('No lists found, using default statuses');
         statusOptions = [
           { text: { type: 'plain_text', text: '📋 To Do' }, value: 'todo' },
           { text: { type: 'plain_text', text: '🔄 In Progress' }, value: 'in-progress' }
@@ -1178,31 +1196,34 @@ class SlackInteractiveHandler {
       const projectBlock = view.blocks.find(b => b.block_id === 'task_project');
       const projOptions = projectBlock ? projectBlock.element.options : [projectOption];
 
+      const datesBlock = {
+        type: 'input',
+        block_id: 'task_dates',
+        label: { type: 'plain_text', text: '📅 Dates', emoji: true },
+        element: {
+          type: 'datepicker',
+          action_id: 'start_date',
+          placeholder: { type: 'plain_text', text: 'Start Date' }
+        }
+      };
+      if (startDate) datesBlock.element.initial_date = startDate;
+
+      const dueDateBlock = {
+        type: 'input',
+        block_id: 'task_due_date',
+        optional: true,
+        label: { type: 'plain_text', text: 'Due Date', emoji: true },
+        element: {
+          type: 'datepicker',
+          action_id: 'due_date',
+          placeholder: { type: 'plain_text', text: 'Select due date (optional)' }
+        }
+      };
+      if (dueDate) dueDateBlock.element.initial_date = dueDate;
+
       const blocks = [
-        // Dates (Preserved)
-        {
-          type: 'input',
-          block_id: 'task_dates',
-          label: { type: 'plain_text', text: '📅 Dates', emoji: true },
-          element: {
-            type: 'datepicker',
-            action_id: 'start_date',
-            initial_date: startDate,
-            placeholder: { type: 'plain_text', text: 'Start Date' }
-          }
-        },
-        {
-          type: 'input',
-          block_id: 'task_due_date',
-          optional: true,
-          label: { type: 'plain_text', text: 'Due Date', emoji: true },
-          element: {
-            type: 'datepicker',
-            action_id: 'due_date',
-            initial_date: dueDate,
-            placeholder: { type: 'plain_text', text: 'Select due date (optional)' }
-          }
-        },
+        datesBlock,
+        dueDateBlock,
         blockBuilder.divider(),
         
         // Department (Preserved)
