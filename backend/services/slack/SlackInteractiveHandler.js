@@ -1106,9 +1106,15 @@ class SlackInteractiveHandler {
           element: {
             type: 'static_select',
             action_id: 'select_department',
-            initial_option: deptOption,
+            initial_option: {
+              text: { type: 'plain_text', text: deptOption.text.text },
+              value: deptOption.value
+            },
             placeholder: { type: 'plain_text', text: 'Select Department' },
-            options: view.blocks.find(b => b.block_id === 'task_department').element.options
+            options: view.blocks.find(b => b.block_id === 'task_department').element.options.map(o => ({
+              text: { type: 'plain_text', text: o.text.text },
+              value: o.value
+            }))
           }
         }
       ];
@@ -1145,6 +1151,9 @@ class SlackInteractiveHandler {
       return { success: true };
     } catch (error) {
       console.error('Error handling department select:', error);
+      if (error.data && error.data.response_metadata) {
+        console.error('Slack API Error Details:', JSON.stringify(error.data.response_metadata));
+      }
       return this.errorResponse('Failed to update modal');
     }
   }
@@ -1236,9 +1245,15 @@ class SlackInteractiveHandler {
           element: {
             type: 'static_select',
             action_id: 'select_department',
-            initial_option: deptOption,
+            initial_option: {
+              text: { type: 'plain_text', text: deptOption.text.text },
+              value: deptOption.value
+            },
             placeholder: { type: 'plain_text', text: 'Select Department' },
-            options: deptOptions
+            options: deptOptions.map(o => ({
+              text: { type: 'plain_text', text: o.text.text },
+              value: o.value
+            }))
           }
         },
         
@@ -1251,9 +1266,15 @@ class SlackInteractiveHandler {
           element: {
             type: 'static_select',
             action_id: 'select_project',
-            initial_option: projectOption,
+            initial_option: {
+              text: { type: 'plain_text', text: projectOption.text.text },
+              value: projectOption.value
+            },
             placeholder: { type: 'plain_text', text: 'Select Project' },
-            options: projOptions
+            options: projOptions.map(o => ({
+              text: { type: 'plain_text', text: o.text.text },
+              value: o.value
+            }))
           }
         },
 
