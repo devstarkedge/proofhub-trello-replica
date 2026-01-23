@@ -871,14 +871,24 @@ class SlackInteractiveHandler {
       if (!userId) {
         return this.errorResponse('User data not available. Please reconnect your account.');
       }
+
+      // Get FlowTask user to check role
+      const flowTaskUser = await User.findById(userId);
+      const isAdmin = flowTaskUser?.role === 'admin';
       
-      // Get all departments the user has access to
-      const departments = await Department.find({
-        $or: [
+      // Get departments based on role
+      let query = { isActive: true };
+      if (!isAdmin) {
+        query.$or = [
           { manager: userId },
           { members: userId }
-        ]
-      }).select('name _id').sort({ name: 1 }).lean();
+        ];
+      }
+
+      const departments = await Department.find(query)
+        .select('name _id')
+        .sort({ name: 1 })
+        .lean();
 
       // Department options
       const departmentOptions = departments.map(dept => ({
@@ -1009,15 +1019,27 @@ class SlackInteractiveHandler {
       const meta = JSON.parse(view.private_metadata || '{}');
       const userId = meta.userId || user.user;
       
+      // Get FlowTask user to check role
+      const flowTaskUser = await User.findById(userId);
+      const isAdmin = flowTaskUser?.role === 'admin';
+
       // Fetch projects for this department
-      const projects = await Board.find({
+      let query = {
         department: deptId,
-        $or: [
+        isArchived: { $ne: true }
+      };
+
+      if (!isAdmin) {
+        query.$or = [
           { owner: userId },
           { members: userId }
-        ],
-        isArchived: { $ne: true }
-      }).select('name _id').sort({ name: 1 }).lean();
+        ];
+      }
+
+      const projects = await Board.find(query)
+        .select('name _id')
+        .sort({ name: 1 })
+        .lean();
 
       // Project options
       const projectOptions = projects.map(proj => ({
