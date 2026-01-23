@@ -1142,7 +1142,7 @@ class SlackInteractiveHandler {
         type: 'modal',
         callback_id: 'create_task_modal',
         private_metadata: view.private_metadata,
-        title: view.title,
+        title: { type: 'plain_text', text: 'Create Task', emoji: true },
         submit: { type: 'plain_text', text: 'Create', emoji: true },
         close: { type: 'plain_text', text: 'Cancel' },
         blocks
@@ -1342,7 +1342,7 @@ class SlackInteractiveHandler {
         type: 'modal',
         callback_id: 'create_task_modal',
         private_metadata: view.private_metadata,
-        title: view.title,
+        title: { type: 'plain_text', text: 'Create Task', emoji: true },
         submit: { type: 'plain_text', text: 'Create', emoji: true },
         close: { type: 'plain_text', text: 'Cancel' },
         blocks
