@@ -90,7 +90,7 @@ const Announcements = () => {
         setShowDetailModal(false);
         setSelectedAnnouncement(null);
       }
-      toast.info('An announcement was removed');
+      toast.info('An announcement removed');
     });
 
     socket.on('announcement-archived', (data) => {
@@ -302,7 +302,6 @@ const Announcements = () => {
       
       try {
         await announcementService.deleteAnnouncement(announcementId);
-        toast.success('Announcement deleted successfully');
       } catch (error) {
         console.error('Error deleting announcement:', error);
         // If it's a 404, it was already deleted, don't show error

@@ -42,6 +42,8 @@ class SlackInteractiveHandler {
       'open_preferences': this.handleOpenPreferences.bind(this),
       'refresh_home': this.handleRefreshHome.bind(this),
       'create_task_modal': this.handleCreateTaskModal.bind(this),
+      'select_department': this.handleDepartmentSelect.bind(this),
+      'select_project': this.handleProjectSelect.bind(this),
       
       // Digest actions
       'mark_all_read': this.handleMarkAllRead.bind(this),
@@ -289,7 +291,7 @@ class SlackInteractiveHandler {
 
       blocks.push(blockBuilder.divider());
       blocks.push(blockBuilder.actions('view_all_tasks', [
-        blockBuilder.linkButton('📋 View All Tasks', `${process.env.FRONTEND_URL}/list-view`, 'view_all')
+        blockBuilder.linkButton('📋 View All Tasks', `${process.env.FRONTEND_URL}/my-shortcuts`, 'view_all')
       ]));
     }
 
@@ -857,6 +859,9 @@ class SlackInteractiveHandler {
   /**
    * Handle Create Task button - opens modal
    */
+  /**
+   * Handle Create Task button - opens modal with initial dependent fields
+   */
   async handleCreateTaskModal({ action, user, workspace, triggerId }) {
     try {
       const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
@@ -864,7 +869,6 @@ class SlackInteractiveHandler {
       // Null-safety check for user data
       const userId = user?.user?._id || user?.user;
       if (!userId) {
-        console.error('User ID not found for create task modal');
         return this.errorResponse('User data not available. Please reconnect your account.');
       }
       
@@ -874,76 +878,40 @@ class SlackInteractiveHandler {
           { manager: userId },
           { members: userId }
         ]
-      }).select('name _id').lean();
+      }).select('name _id').sort({ name: 1 }).lean();
 
-      // Get user's boards with department info populated
-      const boards = await Board.find({
-        $or: [
-          { owner: userId },
-          { members: userId }
-        ],
-        isArchived: { $ne: true }
-      }).populate('department', 'name').select('name _id department').limit(50).lean();
-
-      // Create project options with department context
-      const boardOptions = boards.map(board => ({
+      // Department options
+      const departmentOptions = departments.map(dept => ({
         text: { 
           type: 'plain_text', 
-          text: `${board.name.substring(0, 50)}${board.department?.name ? ` (${board.department.name.substring(0, 20)})` : ''}`.substring(0, 75)
+          text: dept.name.substring(0, 75)
         },
-        value: board._id.toString()
+        value: dept._id.toString()
       }));
 
-      // If no boards, show error
-      if (boardOptions.length === 0) {
+      if (departmentOptions.length === 0) {
         await slackClient.openModal(triggerId, {
           type: 'modal',
-          title: {
-            type: 'plain_text',
-            text: '❌ No Projects',
-            emoji: true
-          },
-          close: {
-            type: 'plain_text',
-            text: 'Close'
-          },
+          title: { type: 'plain_text', text: '❌ No Departments', emoji: true },
+          close: { type: 'plain_text', text: 'Close' },
           blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: '*You need at least one project to create a task.*\n\nPlease create a project in FlowTask first, then come back here to create tasks.'
-              }
-            },
-            {
-              type: 'actions',
-              elements: [{
-                type: 'button',
-                text: {
-                  type: 'plain_text',
-                  text: '📁 Open FlowTask',
-                  emoji: true
-                },
-                url: `${process.env.FRONTEND_URL}/`,
-                action_id: 'open_flowtask'
-              }]
-            }
+            blockBuilder.section('*No departments found.*\n\nYou need to be a member of at least one department to create tasks.'),
+            blockBuilder.actions('no_dept_actions', [
+              blockBuilder.linkButton('📁 Open FlowTask', `${process.env.FRONTEND_URL}/`, 'open_flowtask')
+            ])
           ]
         });
         return { success: true };
       }
 
-      // Status/List options (predefined workflow statuses)
-      const statusOptions = [
-        { text: { type: 'plain_text', text: '📋 To Do' }, value: 'todo' },
-        { text: { type: 'plain_text', text: '🔄 In Progress' }, value: 'in-progress' },
-        { text: { type: 'plain_text', text: '👀 In Review' }, value: 'in-review' }
-      ];
+      // Initial Date - Start Date (Required, Today)
+      const today = new Date().toISOString().split('T')[0];
 
-      // Open create task modal with enhanced fields
+      // Open create task modal with initial state
       await slackClient.openModal(triggerId, {
         type: 'modal',
         callback_id: 'create_task_modal',
+        private_metadata: JSON.stringify({ userId: userId.toString() }),
         title: {
           type: 'plain_text',
           text: '➕ Create Task',
@@ -959,128 +927,68 @@ class SlackInteractiveHandler {
           text: 'Cancel'
         },
         blocks: [
-          // Task Title
+          // Dates Section
           {
             type: 'input',
-            block_id: 'task_title',
+            block_id: 'task_dates',
             label: {
               type: 'plain_text',
-              text: '📝 Task Title',
+              text: '📅 Dates',
               emoji: true
             },
             element: {
-              type: 'plain_text_input',
-              action_id: 'title_input',
+              type: 'datepicker',
+              action_id: 'start_date',
+              initial_date: today,
               placeholder: {
                 type: 'plain_text',
-                text: 'Enter task title...'
+                text: 'Start Date'
               }
             }
           },
-          // Description
-          {
-            type: 'input',
-            block_id: 'task_description',
-            optional: true,
-            label: {
-              type: 'plain_text',
-              text: '📄 Description',
-              emoji: true
-            },
-            element: {
-              type: 'plain_text_input',
-              action_id: 'description_input',
-              multiline: true,
-              placeholder: {
-                type: 'plain_text',
-                text: 'Add description (optional)...'
-              }
-            }
-          },
-          // Divider
-          { type: 'divider' },
-          // Project Selection (with department context in name)
-          {
-            type: 'input',
-            block_id: 'task_project',
-            label: {
-              type: 'plain_text',
-              text: '📁 Project',
-              emoji: true
-            },
-            element: {
-              type: 'static_select',
-              action_id: 'project_select',
-              placeholder: {
-                type: 'plain_text',
-                text: 'Select a project...'
-              },
-              options: boardOptions
-            }
-          },
-          // Status/List Selection
-          {
-            type: 'input',
-            block_id: 'task_status',
-            optional: true,
-            label: {
-              type: 'plain_text',
-              text: '📊 Status',
-              emoji: true
-            },
-            element: {
-              type: 'static_select',
-              action_id: 'status_select',
-              initial_option: statusOptions[0],
-              options: statusOptions
-            }
-          },
-          // Divider
-          { type: 'divider' },
-          // Priority
-          {
-            type: 'input',
-            block_id: 'task_priority',
-            optional: true,
-            label: {
-              type: 'plain_text',
-              text: '🎯 Priority',
-              emoji: true
-            },
-            element: {
-              type: 'static_select',
-              action_id: 'priority_select',
-              initial_option: {
-                text: { type: 'plain_text', text: '🟡 Medium' },
-                value: 'medium'
-              },
-              options: [
-                { text: { type: 'plain_text', text: '🔴 Critical' }, value: 'critical' },
-                { text: { type: 'plain_text', text: '🟠 High' }, value: 'high' },
-                { text: { type: 'plain_text', text: '🟡 Medium' }, value: 'medium' },
-                { text: { type: 'plain_text', text: '🟢 Low' }, value: 'low' }
-              ]
-            }
-          },
-          // Due Date
           {
             type: 'input',
             block_id: 'task_due_date',
             optional: true,
             label: {
               type: 'plain_text',
-              text: '📅 Due Date',
+              text: 'Due Date',
               emoji: true
             },
             element: {
               type: 'datepicker',
-              action_id: 'due_date_picker',
+              action_id: 'due_date',
               placeholder: {
                 type: 'plain_text',
-                text: 'Select due date...'
+                text: 'Select due date (optional)'
               }
             }
-          }
+          },
+          blockBuilder.divider(),
+          
+          // Department Selection (Step 1)
+          {
+            type: 'input',
+            block_id: 'task_department',
+            dispatch_action: true,
+            label: {
+              type: 'plain_text',
+              text: '🏢 Department',
+              emoji: true
+            },
+            element: {
+              type: 'static_select',
+              action_id: 'select_department',
+              placeholder: {
+                type: 'plain_text',
+                text: 'Select Department'
+              },
+              options: departmentOptions
+            }
+          },
+          
+          // Context for next steps
+          blockBuilder.context(['ℹ️ _Select a department to see available projects_'])
         ]
       });
 
@@ -1088,6 +996,297 @@ class SlackInteractiveHandler {
     } catch (error) {
       console.error('Error opening create task modal:', error);
       return this.errorResponse('Failed to open create task modal');
+    }
+  }
+
+  /**
+   * Handle Department selection - updates modal with project dropdown
+   */
+  async handleDepartmentSelect({ action, user, workspace, triggerId, container, view }) {
+    try {
+      const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+      const deptId = action.selected_option.value;
+      const meta = JSON.parse(view.private_metadata || '{}');
+      const userId = meta.userId || user.user;
+      
+      // Fetch projects for this department
+      const projects = await Board.find({
+        department: deptId,
+        $or: [
+          { owner: userId },
+          { members: userId }
+        ],
+        isArchived: { $ne: true }
+      }).select('name _id').sort({ name: 1 }).lean();
+
+      // Project options
+      const projectOptions = projects.map(proj => ({
+        text: {
+          type: 'plain_text',
+          text: proj.name.substring(0, 75)
+        },
+        value: proj._id.toString()
+      }));
+
+      // Get values to preserve
+      const startDate = view.state.values.task_dates.start_date.selected_date;
+      const dueDate = view.state.values.task_due_date.due_date.selected_date;
+      const deptOption = action.selected_option;
+
+      // Build updated view
+      const blocks = [
+        // Dates (Preserved)
+        {
+          type: 'input',
+          block_id: 'task_dates',
+          label: { type: 'plain_text', text: '📅 Dates', emoji: true },
+          element: {
+            type: 'datepicker',
+            action_id: 'start_date',
+            initial_date: startDate,
+            placeholder: { type: 'plain_text', text: 'Start Date' }
+          }
+        },
+        {
+          type: 'input',
+          block_id: 'task_due_date',
+          optional: true,
+          label: { type: 'plain_text', text: 'Due Date', emoji: true },
+          element: {
+            type: 'datepicker',
+            action_id: 'due_date',
+            initial_date: dueDate,
+            placeholder: { type: 'plain_text', text: 'Select due date (optional)' }
+          }
+        },
+        blockBuilder.divider(),
+        
+        // Department (Preserved)
+        {
+          type: 'input',
+          block_id: 'task_department',
+          dispatch_action: true,
+          label: { type: 'plain_text', text: '🏢 Department', emoji: true },
+          element: {
+            type: 'static_select',
+            action_id: 'select_department',
+            initial_option: deptOption,
+            placeholder: { type: 'plain_text', text: 'Select Department' },
+            options: view.blocks.find(b => b.block_id === 'task_department').element.options
+          }
+        }
+      ];
+
+      // Add Project Dropdown or No Projects Message
+      if (projectOptions.length > 0) {
+        blocks.push({
+          type: 'input',
+          block_id: 'task_project',
+          dispatch_action: true,
+          label: { type: 'plain_text', text: '📁 Project', emoji: true },
+          element: {
+            type: 'static_select',
+            action_id: 'select_project',
+            placeholder: { type: 'plain_text', text: 'Select Project' },
+            options: projectOptions
+          }
+        });
+        blocks.push(blockBuilder.context(['ℹ️ _Select a project to continue_']));
+      } else {
+        blocks.push(blockBuilder.section('⚠️ *No projects found in this department.*'));
+      }
+
+      await slackClient.updateModal(view.id, {
+        type: 'modal',
+        callback_id: 'create_task_modal',
+        private_metadata: view.private_metadata,
+        title: view.title,
+        submit: { type: 'plain_text', text: 'Create', emoji: true },
+        close: { type: 'plain_text', text: 'Cancel' },
+        blocks
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error handling department select:', error);
+      return this.errorResponse('Failed to update modal');
+    }
+  }
+
+  /**
+   * Handle Project selection - updates modal with task details fields
+   */
+  async handleProjectSelect({ action, user, workspace, triggerId, container, view }) {
+    try {
+      const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+      const projectId = action.selected_option.value;
+      
+      // Fetch lists for this project
+      const lists = await List.find({ 
+        board: projectId,
+        isArchived: false 
+      }).sort({ position: 1 }).lean();
+
+      // Status options
+      let statusOptions = [];
+      if (lists.length > 0) {
+        statusOptions = lists.map(list => ({
+          text: { type: 'plain_text', text: list.title.substring(0, 75) },
+          value: list._id.toString()
+        }));
+      } else {
+        // Fallback default statuses if no lists found
+        statusOptions = [
+          { text: { type: 'plain_text', text: '📋 To Do' }, value: 'todo' },
+          { text: { type: 'plain_text', text: '🔄 In Progress' }, value: 'in-progress' }
+        ];
+      }
+
+      // Get preserved values
+      const startDate = view.state.values.task_dates.start_date.selected_date;
+      const dueDate = view.state.values.task_due_date.due_date.selected_date;
+      const deptOption = view.state.values.task_department.select_department.selected_option;
+      const projectOption = action.selected_option;
+      
+      // Reconstitute Department options from previous view to prevent losing them
+      const deptBlock = view.blocks.find(b => b.block_id === 'task_department');
+      const deptOptions = deptBlock ? deptBlock.element.options : [deptOption];
+      
+       // Reconstitute Project options
+      const projectBlock = view.blocks.find(b => b.block_id === 'task_project');
+      const projOptions = projectBlock ? projectBlock.element.options : [projectOption];
+
+      const blocks = [
+        // Dates (Preserved)
+        {
+          type: 'input',
+          block_id: 'task_dates',
+          label: { type: 'plain_text', text: '📅 Dates', emoji: true },
+          element: {
+            type: 'datepicker',
+            action_id: 'start_date',
+            initial_date: startDate,
+            placeholder: { type: 'plain_text', text: 'Start Date' }
+          }
+        },
+        {
+          type: 'input',
+          block_id: 'task_due_date',
+          optional: true,
+          label: { type: 'plain_text', text: 'Due Date', emoji: true },
+          element: {
+            type: 'datepicker',
+            action_id: 'due_date',
+            initial_date: dueDate,
+            placeholder: { type: 'plain_text', text: 'Select due date (optional)' }
+          }
+        },
+        blockBuilder.divider(),
+        
+        // Department (Preserved)
+        {
+          type: 'input',
+          block_id: 'task_department',
+          dispatch_action: true,
+          label: { type: 'plain_text', text: '🏢 Department', emoji: true },
+          element: {
+            type: 'static_select',
+            action_id: 'select_department',
+            initial_option: deptOption,
+            placeholder: { type: 'plain_text', text: 'Select Department' },
+            options: deptOptions
+          }
+        },
+        
+        // Project (Preserved)
+        {
+          type: 'input',
+          block_id: 'task_project',
+          dispatch_action: true,
+          label: { type: 'plain_text', text: '📁 Project', emoji: true },
+          element: {
+            type: 'static_select',
+            action_id: 'select_project',
+            initial_option: projectOption,
+            placeholder: { type: 'plain_text', text: 'Select Project' },
+            options: projOptions
+          }
+        },
+
+        // Status/List Selection (New)
+        {
+          type: 'input',
+          block_id: 'task_status',
+          label: { type: 'plain_text', text: '📊 Status / List', emoji: true },
+          element: {
+            type: 'static_select',
+            action_id: 'select_status',
+            initial_option: statusOptions[0],
+            placeholder: { type: 'plain_text', text: 'Select Status' },
+            options: statusOptions
+          }
+        },
+        
+        blockBuilder.divider(),
+
+        // Task Details (New)
+        {
+          type: 'input',
+          block_id: 'task_title',
+          label: { type: 'plain_text', text: '📝 Task Name', emoji: true },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'title_input',
+            placeholder: { type: 'plain_text', text: 'Enter task name' }
+          }
+        },
+        {
+          type: 'input',
+          block_id: 'task_description',
+          optional: true,
+          label: { type: 'plain_text', text: '📄 Description', emoji: true },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'description_input',
+            multiline: true,
+            placeholder: { type: 'plain_text', text: 'Add description (optional)' }
+          }
+        },
+
+        // Priority (New)
+        {
+          type: 'input',
+          block_id: 'task_priority',
+          optional: true,
+          label: { type: 'plain_text', text: '🎯 Priority', emoji: true },
+          element: {
+            type: 'static_select',
+            action_id: 'priority_select',
+            initial_option: { text: { type: 'plain_text', text: '🟡 Medium' }, value: 'medium' },
+            options: [
+              { text: { type: 'plain_text', text: '🔴 Critical' }, value: 'critical' },
+              { text: { type: 'plain_text', text: '🟠 High' }, value: 'high' },
+              { text: { type: 'plain_text', text: '🟡 Medium' }, value: 'medium' },
+              { text: { type: 'plain_text', text: '🟢 Low' }, value: 'low' }
+            ]
+          }
+        }
+      ];
+
+      await slackClient.updateModal(view.id, {
+        type: 'modal',
+        callback_id: 'create_task_modal',
+        private_metadata: view.private_metadata,
+        title: view.title,
+        submit: { type: 'plain_text', text: 'Create', emoji: true },
+        close: { type: 'plain_text', text: 'Cancel' },
+        blocks
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error handling project select:', error);
+      return this.errorResponse('Failed to update modal');
     }
   }
 
@@ -1261,63 +1460,62 @@ class SlackInteractiveHandler {
     try {
       const values = view.state.values;
       
-      const title = values.task_title.title_input.value;
+      const title = values.task_title?.title_input?.value;
       const description = values.task_description?.description_input?.value;
-      const priority = values.task_priority?.priority_select?.selected_option?.value;
-      const dueDate = values.task_due_date?.due_date_picker?.selected_date;
-      const boardId = values.task_project?.project_select?.selected_option?.value;
-      const selectedStatus = values.task_status?.status_select?.selected_option?.value || 'todo';
-      const assigneeSlackIds = values.task_assignees?.assignees_select?.selected_users || [];
+      const priority = values.task_priority?.priority_select?.selected_option?.value || 'medium';
+      
+      const startDate = values.task_dates?.start_date?.selected_date;
+      const dueDate = values.task_due_date?.due_date?.selected_date;
+      
+      const boardId = values.task_project?.select_project?.selected_option?.value;
+      const selectedStatus = values.task_status?.select_status?.selected_option?.value || 'todo';
+      
+      // Validation
+      if (!title) {
+        return { response_action: 'errors', errors: { task_title: 'Task title is required' } };
+      }
+      
+      if (!boardId) {
+        return { response_action: 'errors', errors: { task_project: 'Please select a project' } };
+      }
 
       // Get board
-      const board = await Board.findById(boardId);
+      const board = await Board.findById(boardId).populate('department');
       if (!board) {
-        return { response_action: 'errors', errors: { task_project: 'Please select a valid project' } };
+        return { response_action: 'errors', errors: { task_project: 'Project not found' } };
       }
 
       // Get lists for this board
       const lists = await List.find({ board: board._id }).sort({ position: 1 }).lean();
-      if (!lists || lists.length === 0) {
-        return { response_action: 'errors', errors: { task_project: 'No list found in this project' } };
-      }
-
-      // Find appropriate list based on selected status
-      // Try to match list name with status, otherwise use first list
-      let targetList = lists.find(list => 
-        list.name?.toLowerCase().includes(selectedStatus.replace('-', ' ')) ||
-        list.name?.toLowerCase().includes(selectedStatus.replace('-', ''))
-      );
       
-      // If no match found, use default mappings
+      // Determine target list
+      let targetList;
+      
+      // If selectedStatus is a specific list ID (from our dynamic fetching), use it directly
+      if (selectedStatus !== 'todo' && selectedStatus !== 'in-progress' && selectedStatus.match(/^[0-9a-fA-F]{24}$/)) {
+        targetList = lists.find(l => l._id.toString() === selectedStatus);
+      }
+      
+      // If not found or if generic status string, try to match by name
       if (!targetList) {
-        const statusListMap = {
+        const searchTerms = {
           'todo': ['to do', 'todo', 'backlog', 'new'],
           'in-progress': ['in progress', 'doing', 'working', 'active'],
           'in-review': ['in review', 'review', 'testing', 'qa']
-        };
+        }[selectedStatus] || [];
         
-        const searchTerms = statusListMap[selectedStatus] || [];
         targetList = lists.find(list => 
           searchTerms.some(term => list.name?.toLowerCase().includes(term))
         );
       }
       
-      // Fallback to first list if no match
+      // Fallback to first list if still no match
       if (!targetList) {
         targetList = lists[0];
       }
 
-      // Map Slack user IDs to FlowTask users
-      const assignees = [];
-      for (const slackId of assigneeSlackIds) {
-        const slackUser = await SlackUser.findOne({ 
-          slackUserId: slackId, 
-          workspace: workspace._id,
-          isActive: true 
-        });
-        if (slackUser) {
-          assignees.push(slackUser.user);
-        }
+      if (!targetList) {
+        return { response_action: 'errors', errors: { task_project: 'No lists found in this project' } };
       }
 
       // Create the task
@@ -1330,25 +1528,28 @@ class SlackInteractiveHandler {
         description,
         board: board._id,
         list: targetList._id,
-        status: selectedStatus,
-        priority: priority || 'medium',
+        status: selectedStatus.match(/^[0-9a-fA-F]{24}$/) ? 'todo' : selectedStatus, // Default status if list ID used
+        priority,
+        startDate: startDate ? new Date(startDate) : undefined,
         dueDate: dueDate ? new Date(dueDate) : undefined,
-        assignees,
+        assignees: [], // No assignees in this simplified flow
         createdBy: user.user,
         position: (maxPosition?.position || 0) + 1
       });
 
+      // Update status to match list type if possible
+      // This helps if we selected a specific list but just want to ensure status property is aligned
+      if (targetList.title.match(/in[\s\-_]*progress|doing|active|wip|working/i)) {
+        task.status = 'in-progress';
+      } else if (targetList.title.match(/done|complete/i)) {
+        task.status = 'completed';
+      } else {
+        task.status = 'todo';
+      }
+      await task.save();
+
       // Emit real-time update
       emitToBoard(board._id.toString(), 'card-created', task);
-
-      // Send notifications to assignees
-      if (assignees.length > 0) {
-        await slackNotificationService.sendTaskNotification('task_assigned', task, {
-          triggeredBy: await User.findById(user.user),
-          assignees: await User.find({ _id: { $in: assignees } }),
-          board
-        });
-      }
 
       // Send confirmation to creator
       const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
@@ -1356,9 +1557,13 @@ class SlackInteractiveHandler {
         text: `✅ Task "${title}" created successfully!`,
         blocks: [
           blockBuilder.section(`✅ *Task Created*\n*${title}*`),
-          blockBuilder.context([`📁 ${board.name} • 📊 ${selectedStatus}`]),
+          blockBuilder.context([
+            `📁 ${board.name} • 📊 ${targetList.title}`,
+            startDate ? `📅 Start: ${startDate}` : '',
+            dueDate ? `📅 Due: ${dueDate}` : ''
+          ].filter(Boolean)),
           blockBuilder.actions('task_created_actions', [
-            blockBuilder.linkButton('📋 View Task', blockBuilder.taskUrl(task._id, board._id, board.department), 'view_created_task')
+            blockBuilder.linkButton('📋 View Task', blockBuilder.taskUrl(task._id, board._id, board.department?._id), 'view_created_task')
           ])
         ]
       });
@@ -1369,7 +1574,7 @@ class SlackInteractiveHandler {
       return { response_action: 'clear' };
     } catch (error) {
       console.error('Error creating task from modal:', error);
-      return { response_action: 'errors', errors: { task_title: 'Failed to create task' } };
+      return { response_action: 'errors', errors: { task_title: 'Failed to create task: ' + error.message } };
     }
   }
 

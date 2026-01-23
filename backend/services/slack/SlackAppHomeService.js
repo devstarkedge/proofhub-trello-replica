@@ -431,8 +431,8 @@ class SlackAppHomeService {
     // Quick actions footer
     blocks.push(blockBuilder.divider());
     blocks.push(blockBuilder.actions('home_quick_actions', [
-      blockBuilder.linkButton('📋 All Tasks', `${process.env.FRONTEND_URL}/list-view`, 'view_all_tasks'),
-      blockBuilder.linkButton('📁 Projects', `${process.env.FRONTEND_URL}/`, 'view_projects'),
+      blockBuilder.linkButton('📋 All Tasks', `${process.env.FRONTEND_URL}/my-shortcuts`, 'view_all_tasks'),
+      blockBuilder.linkButton('📁 Projects', `${process.env.FRONTEND_URL}/my-shortcuts`, 'view_projects'),
       blockBuilder.button('🔔 Preferences', 'open_preferences', 'open_prefs')
     ]));
 

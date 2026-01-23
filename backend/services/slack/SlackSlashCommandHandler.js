@@ -156,7 +156,7 @@ class SlackSlashCommandHandler {
 
     blocks.push(blockBuilder.divider());
     blocks.push(blockBuilder.actions('mytasks_actions', [
-      blockBuilder.linkButton('📋 View All Tasks', `${process.env.FRONTEND_URL}/list-view`, 'view_all'),
+      blockBuilder.linkButton('📋 View All Tasks', `${process.env.FRONTEND_URL}/my-shortcuts`, 'view_all'),
       blockBuilder.button('🔄 Refresh', 'refresh_mytasks', filter)
     ]));
 

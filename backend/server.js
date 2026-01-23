@@ -78,7 +78,9 @@ app.use(cors({
 }));
 
 // Capture raw body for Slack signature verification (before JSON parsing)
+// Slack sends different content types: JSON for events, URL-encoded for interactive
 app.use('/api/slack', express.json({ verify: captureRawBody }));
+app.use('/api/slack', express.urlencoded({ extended: true, verify: captureRawBody }));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
