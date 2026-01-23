@@ -68,7 +68,7 @@ class SlackInteractiveHandler {
    * Main handler for block actions
    */
   async handleBlockAction(payload) {
-    const { actions, user, trigger_id, response_url, team, container } = payload;
+    const { actions, user, trigger_id, response_url, team, container, view } = payload;
     
     // Get workspace and Slack user
     const workspace = await SlackWorkspace.findByTeamId(team.id);
@@ -95,7 +95,8 @@ class SlackInteractiveHandler {
             workspace,
             triggerId: trigger_id,
             responseUrl: response_url,
-            container
+            container,
+            view
           });
           results.push(result);
 
