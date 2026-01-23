@@ -13,18 +13,29 @@ export const slackHooks = {
    * Trigger when a task is assigned to user(s)
    */
   async onTaskAssigned(task, board, assignees, triggeredBy) {
-    if (!slackNotificationService) return;
+    if (!slackNotificationService) {
+      console.log('[Slack] slackNotificationService not available');
+      return;
+    }
+
+    console.log(`[Slack] onTaskAssigned triggered for task "${task.title}" to ${assignees?.length || 0} assignees`);
 
     try {
       for (const assignee of assignees) {
+        const userId = assignee._id || assignee;
+        console.log(`[Slack] Sending task_assigned notification to user ${userId}`);
+        
         await slackNotificationService.sendNotification({
-          userId: assignee._id || assignee,
+          userId,
           type: 'task_assigned',
           task,
           board,
-          triggeredBy
+          triggeredBy,
+          priority: 'high',
+          forceImmediate: true // Bypass batching for immediate delivery
         });
       }
+      console.log(`[Slack] onTaskAssigned completed for ${assignees?.length || 0} assignees`);
     } catch (error) {
       console.error('Slack onTaskAssigned hook error:', error);
     }

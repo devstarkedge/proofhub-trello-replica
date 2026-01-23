@@ -92,10 +92,14 @@ class NotificationService {
       }
 
       // Send push notification if enabled and subscription exists (in background)
+      console.log(`[Push] Checking push for user ${userDoc.name}: enabled=${userDoc.settings?.notifications?.push}, hasSubscription=${!!userDoc.pushSubscription}`);
       if (userDoc.settings?.notifications?.push && userDoc.pushSubscription) {
+        console.log(`[Push] Sending push notification to ${userDoc.name}`);
         this.sendPushNotification(notification, userDoc).catch(err => 
           console.error('Background push notification error:', err)
         );
+      } else {
+        console.log(`[Push] Skipped - push not enabled or no subscription`);
       }
 
       return populatedNotification;

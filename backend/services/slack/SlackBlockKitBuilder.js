@@ -735,7 +735,7 @@ class SlackBlockKitBuilder {
 
     blocks.push(this.divider());
     blocks.push(this.actions('batch_actions', [
-      this.linkButton('📋 View All', `${this.appUrl}/notifications`, 'view_all'),
+      this.linkButton('📋 View All', `${this.appUrl}/announcements`, 'view_all'),
       this.button('✅ Mark All Read', 'mark_all_read', 'batch')
     ]));
 
@@ -1506,8 +1506,15 @@ class SlackBlockKitBuilder {
     // Context-specific buttons
     switch (type) {
       case 'task_assigned':
-        buttons.push(this.button('✅ Accept', 'accept_task', taskValue, 'primary'));
-        buttons.push(this.button('🔄 Start Working', 'start_task', taskValue));
+        // Only show Start Working if task is in To-Do status
+        // Check for various representations of "To-Do" status
+        const todoStatuses = ['todo', 'to-do', 'to do', 'pending', 'backlog'];
+        const currentStatus = (task.status || '').toLowerCase().replace(/[\s-_]/g, '');
+        const isTodo = todoStatuses.some(s => s.replace(/[\s-_]/g, '') === currentStatus);
+        
+        if (isTodo) {
+          buttons.push(this.button('▶️ Start Working', 'start_task', taskValue, 'primary'));
+        }
         break;
       case 'task_due_soon':
       case 'task_overdue':
@@ -1521,7 +1528,7 @@ class SlackBlockKitBuilder {
         buttons.push(this.button('✅ Mark Done', 'mark_complete', taskValue));
     }
 
-    // Add project link if available
+    // Add project link if available (always visible)
     if (board?._id) {
       buttons.push(this.linkButton('📁 Project', this.boardUrl(board._id, board?.department), 'open_project'));
     }

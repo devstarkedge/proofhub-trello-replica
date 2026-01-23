@@ -65,7 +65,9 @@ class SlackNotificationService {
         hoursRemaining,
         // Pre-fetched objects for optimization
         preFetchedSlackUser,
-        preFetchedUser
+        preFetchedUser,
+        // Pre-built payload (e.g., for announcements)
+        payload: preBuiltPayload
       } = notificationData;
 
       // Get user if not provided
@@ -107,13 +109,13 @@ class SlackNotificationService {
         slackUser.preferences.batchingEnabled &&
         !forceImmediate &&
         priority !== 'critical' &&
-        !['task_assigned', 'comment_mention'].includes(type) // High-priority types always immediate
+        !['task_assigned', 'comment_mention', 'announcement_created'].includes(type) // High-priority types always immediate
       ) {
         return this.addToBatch(slackUser, notificationData);
       }
 
-      // Build notification payload
-      const payload = await this.buildNotificationPayload(notificationData);
+      // Use pre-built payload or build one
+      const payload = preBuiltPayload || await this.buildNotificationPayload(notificationData);
       if (!payload) {
         console.log('Failed to build notification payload');
         return null;
@@ -133,8 +135,8 @@ class SlackNotificationService {
         channelId: channelInfo.channelId,
         threadTs: channelInfo.threadTs,
         blockKitPayload: payload,
-        entityId: task?._id || comment?._id,
-        entityType: task ? 'Card' : comment ? 'Comment' : null,
+        entityId: task?._id || comment?._id || announcement?._id || null,
+        entityType: task ? 'Card' : comment ? 'Comment' : announcement ? 'Announcement' : undefined,
         relatedBoard: board?._id,
         sender: triggeredBy,
         priority
@@ -686,6 +688,8 @@ class SlackNotificationService {
    * Send announcement notification using Block Kit builder
    */
   async sendAnnouncement(announcement, targetUsers, sender) {
+    console.log(`[Slack] Sending announcement "${announcement.title}" to ${targetUsers?.length || 0} users`);
+    
     // Use the new block kit builder for professional announcement template
     const payload = blockBuilder.buildAnnouncementNotification({
       announcement,
@@ -694,9 +698,12 @@ class SlackNotificationService {
 
     return this.sendToMultipleUsers(targetUsers, {
       type: 'announcement_created',
+      announcement,
+      triggeredBy: sender,
       customMessage: announcement.title,
-      priority: announcement.priority || 'medium',
-      payload
+      priority: 'high', // Announcements are high priority
+      payload,
+      forceImmediate: true // Bypass batching
     });
   }
 
