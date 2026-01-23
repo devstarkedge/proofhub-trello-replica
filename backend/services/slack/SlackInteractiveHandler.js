@@ -382,31 +382,89 @@ class SlackInteractiveHandler {
    */
   async handleStartTask({ action, user, workspace, responseUrl }) {
     try {
+      console.log('[Slack] handleStartTask called with action:', action);
+      
       const taskValue = this.parseActionValue(action.value);
-      const taskId = taskValue.taskId || taskValue;
+      console.log('[Slack] Parsed taskValue:', taskValue);
+      
+      const taskId = taskValue?.taskId || taskValue;
+      const boardId = taskValue?.boardId;
 
-      const task = await Card.findById(taskId);
+      if (!taskId) {
+        console.error('[Slack] No taskId found in action value');
+        return this.errorResponse('Task ID not found');
+      }
+
+      const task = await Card.findById(taskId).populate('board list');
       if (!task) {
+        console.error('[Slack] Task not found:', taskId);
         return this.errorResponse('Task not found');
       }
 
+      // Check if already in progress
+      const currentStatus = (task.status || '').toLowerCase().replace(/[\s-_]/g, '');
+      if (currentStatus === 'inprogress') {
+        console.log('[Slack] Task already in progress');
+        if (responseUrl) {
+          const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+          await slackClient.respondToInteraction(responseUrl, {
+            replace_original: false,
+            response_type: 'ephemeral',
+            text: '⚠️ This task is already in progress.'
+          });
+        }
+        return { success: true, message: 'Task already in progress' };
+      }
+
+      // Find the "In Progress" list for this board
+      const inProgressList = await List.findOne({
+        board: task.board._id || task.board,
+        title: { $regex: /in.?progress/i }
+      });
+
+      // Update task status
       task.status = 'in-progress';
+      
+      // Also update list if found
+      if (inProgressList) {
+        task.list = inProgressList._id;
+        console.log(`[Slack] Moving task to list: ${inProgressList.title}`);
+      }
+      
       await task.save();
 
-      console.log(`Task ${taskId} started by ${user.slackUserId}`);
+      console.log(`[Slack] Task ${taskId} started by ${user.slackUserId}`);
 
-      emitToBoard(task.board.toString(), 'card-updated', {
+      // Emit real-time update to FlowTask frontend
+      emitToBoard((task.board._id || task.board).toString(), 'card-updated', {
         cardId: task._id,
-        updates: { status: 'in-progress' }
+        updates: { 
+          status: 'in-progress',
+          list: inProgressList?._id
+        }
       });
 
       // Refresh App Home
       await queueAppHomeUpdate(user._id, workspace._id);
 
+      // Send feedback to user via Slack
+      if (responseUrl) {
+        try {
+          const slackClient = await SlackApiClient.forWorkspace(workspace.teamId);
+          await slackClient.respondToInteraction(responseUrl, {
+            replace_original: false,
+            response_type: 'ephemeral',
+            text: `✅ You've started working on "${task.title}". Status updated to In Progress!`
+          });
+        } catch (respError) {
+          console.error('[Slack] Error sending response:', respError);
+        }
+      }
+
       return { success: true, message: 'Task started' };
     } catch (error) {
-      console.error('Error starting task:', error);
-      return this.errorResponse('Failed to start task');
+      console.error('[Slack] Error starting task:', error);
+      return this.errorResponse('Failed to start task: ' + error.message);
     }
   }
 

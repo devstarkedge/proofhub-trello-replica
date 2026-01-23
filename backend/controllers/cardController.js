@@ -786,7 +786,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
 
   // Send Slack notifications for task assignment
   if (assignee) {
-    const boardData = await Board.findById(board).select('name').lean();
+    const boardData = await Board.findById(board).select('name department').lean();
     slackHooks.onTaskAssigned(card, boardData, [assignee], req.user).catch(console.error);
   }
 
@@ -1139,7 +1139,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       });
       
       // Send Slack notifications for new assignees
-      const boardData = await Board.findById(card.board).select('name').lean();
+      const boardData = await Board.findById(card.board).select('name department').lean();
       slackHooks.onTaskAssigned(card, boardData, addedAssignees, req.user).catch(console.error);
     }
 

@@ -247,16 +247,15 @@ class SlackBlockKitBuilder {
 
   /**
    * Create task URL
-   * Uses the direct task route /project/:projectId/task/:taskId which is already defined in frontend App.jsx
-   * If departmentId is available, uses /workflow/:deptId/:projectId?card=:taskId for opening modal on board
+   * Uses the workflow route: /workflow/:deptId/:projectId/:taskId
    */
   taskUrl(cardId, boardId, departmentId = null) {
-    // If departmentId is available, use the full workflow URL with card query param
+    // If departmentId is available, use the full workflow URL
     if (departmentId) {
-      return `${this.appUrl}/workflow/${departmentId}/${boardId}?card=${cardId}`;
+      return `${this.appUrl}/workflow/${departmentId}/${boardId}/${cardId}`;
     }
-    // Fallback: Use direct task route that doesn't require departmentId
-    return `${this.appUrl}/project/${boardId}/task/${cardId}`;
+    // Fallback: Use basic workflow URL (may show undefined for department)
+    return `${this.appUrl}/workflow/${departmentId || 'undefined'}/${boardId}/${cardId}`;
   }
 
   /**
