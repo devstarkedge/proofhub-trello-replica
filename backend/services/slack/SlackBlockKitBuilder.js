@@ -608,6 +608,36 @@ class SlackBlockKitBuilder {
   }
 
   /**
+   * Build module access granted notification
+   */
+  buildModuleAccessNotification(data) {
+    const { moduleName, triggeredBy, notes } = data;
+    const moduleUrl = `${this.appUrl}/${moduleName.toLowerCase()}`;
+
+    const blocks = [
+      this.header(`🔐 Access Granted: ${moduleName}`),
+      this.section(`${triggeredBy?.name || 'An administrator'} has granted you access to the *${moduleName}* module.`),
+      this.context([
+        `👤 Granted by: *${triggeredBy?.name || 'Administrator'}*`,
+        notes ? `📝 Notes: ${notes}` : ''
+      ].filter(Boolean))
+    ];
+
+    blocks.push(this.divider());
+
+    blocks.push(this.actions(`module_access_actions_${moduleName}`, [
+      this.linkButton(`🚀 Open ${moduleName}`, moduleUrl, `open_${moduleName.toLowerCase()}`),
+      this.button('Got it', `ack_${moduleName.toLowerCase()}`, JSON.stringify({ module: moduleName }), 'primary')
+    ]));
+
+    return {
+      blocks,
+      text: `Access granted to ${moduleName}`,
+      attachments: [{ color: '#6366f1', blocks: [] }]
+    };
+  }
+
+  /**
    * Build digest notification
    */
   buildDigestNotification(data) {

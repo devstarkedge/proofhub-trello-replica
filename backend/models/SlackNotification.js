@@ -36,6 +36,7 @@ const slackNotificationSchema = new mongoose.Schema({
       'team_invite', 'team_update',
       'user_registered', 'user_assigned', 'user_unassigned',
       'announcement_created',
+      'module_access',
       'reminder_due_soon', 'reminder_sent',
       'deadline_approaching', 'status_change',
       'digest_daily', 'digest_weekly', 'digest_hourly',

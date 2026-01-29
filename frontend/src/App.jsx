@@ -52,6 +52,7 @@ import FinancePagesManager from "./pages/Finance/FinancePagesManager";
 import CreateFinancePage from "./pages/Finance/CreateFinancePage";
 import ViewFinancePage from "./pages/Finance/ViewFinancePage";
 import MyShortcutsPage from "./pages/MyShortcutsPage";
+import SalesPage from "./pages/SalesPage";
 
 function App() {
   return (
@@ -142,6 +143,15 @@ function App() {
               element={
                 <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>
                   <TeamManagement />
+                </PrivateRoute>
+              }
+            />
+
+            <Route
+              path="/sales"
+              element={
+                <PrivateRoute>
+                  <SalesPage />
                 </PrivateRoute>
               }
             />

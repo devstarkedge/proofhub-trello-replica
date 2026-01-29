@@ -557,6 +557,14 @@ class SlackNotificationService {
           ].filter(Boolean)
         };
 
+      case 'module_access':
+        // data should contain moduleName and optional notes
+        return blockBuilder.buildModuleAccessNotification({
+          moduleName: data.moduleName || 'Module',
+          triggeredBy,
+          notes: data.notes
+        });
+
       case 'attachment_added':
         return blockBuilder.buildTaskNotification({
           type: 'task_updated',

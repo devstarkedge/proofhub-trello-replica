@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import AuthContext from './AuthContext';
 import Database from '../services/database';
@@ -10,6 +11,7 @@ const NotificationContext = createContext();
 
 export const NotificationProvider = ({ children }) => {
   const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
   
   // Core state
   const [notifications, setNotifications] = useState([]);
@@ -476,13 +478,21 @@ export const NotificationProvider = ({ children }) => {
 
   // Handle notification click
   const handleNotificationClick = (notification) => {
+    // Verification flow for admins/managers
     if (notification.type === 'user_registered' && (user?.role === 'admin' || user?.role === 'manager')) {
       setVerificationModal(notification);
       markAsRead(notification._id);
-    } else {
-      if (!notification.isRead) {
-        markAsRead(notification._id);
-      }
+      return;
+    }
+
+    // Mark read optimistically
+    if (!notification.isRead) markAsRead(notification._id);
+
+    // If notification carries a URL in metadata, navigate there
+    const targetUrl = notification?.metadata?.url || (notification.type === 'module_access' ? '/sales' : null);
+    if (targetUrl) {
+      setIsOpen(false);
+      navigate(targetUrl);
     }
   };
 

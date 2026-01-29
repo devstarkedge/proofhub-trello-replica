@@ -335,6 +335,71 @@ class SocketService {
       console.log('My Shortcuts announcement:', data);
       window.dispatchEvent(new CustomEvent('socket-my-shortcuts-announcement', { detail: data }));
     });
+
+    // Sales real-time events
+    this.socket.on('sales:row:created', (data) => {
+      console.log('Sales row created:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-row-created', { detail: data }));
+    });
+
+    this.socket.on('sales:row:updated', (data) => {
+      console.log('Sales row updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-row-updated', { detail: data }));
+    });
+
+    this.socket.on('sales:row:deleted', (data) => {
+      console.log('Sales row deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-row-deleted', { detail: data }));
+    });
+
+    this.socket.on('sales:rows:bulk-updated', (data) => {
+      console.log('Sales rows bulk updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-rows-bulk-updated', { detail: data }));
+    });
+
+    this.socket.on('sales:rows:bulk-deleted', (data) => {
+      console.log('Sales rows bulk deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-rows-bulk-deleted', { detail: data }));
+    });
+
+    this.socket.on('sales:row:locked', (data) => {
+      console.log('Sales row locked:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-row-locked', { detail: data }));
+    });
+
+    this.socket.on('sales:row:unlocked', (data) => {
+      console.log('Sales row unlocked:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-row-unlocked', { detail: data }));
+    });
+
+    this.socket.on('sales:dropdown:updated', (data) => {
+      console.log('Sales dropdown updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-dropdown-updated', { detail: data }));
+    });
+
+    this.socket.on('sales:column:created', (data) => {
+      console.log('Sales column created:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-column-created', { detail: data }));
+    });
+
+    this.socket.on('sales:rows:imported', (data) => {
+      console.log('Sales rows imported:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-rows-imported', { detail: data }));
+    });
+    
+    // Sales permissions update (admin changed access for a user)
+    this.socket.on('sales:permissions:updated', (data) => {
+      console.log('Sales permissions updated via socket:', data);
+      // Dispatch both socket-prefixed and generic event to support components listening for either
+      window.dispatchEvent(new CustomEvent('socket-sales-permissions-updated', { detail: data }));
+      try {
+        // Also dispatch a generic event name used by ModuleAccessPanel local updates
+        const { userId, permissions } = data || {};
+        window.dispatchEvent(new CustomEvent('sales-permissions-updated', { detail: { userId, permissions } }));
+      } catch (e) {
+        // ignore
+      }
+    });
   }
 
   disconnect() {
@@ -402,6 +467,21 @@ class SocketService {
     if (this.socket && this.connected) {
       console.log('Leaving my-shortcuts room');
       this.socket.emit('leave-my-shortcuts');
+    }
+  }
+
+  // Sales room management
+  joinSales() {
+    if (this.socket && this.connected) {
+      console.log('Joining sales room');
+      this.socket.emit('join-sales');
+    }
+  }
+
+  leaveSales() {
+    if (this.socket && this.connected) {
+      console.log('Leaving sales room');
+      this.socket.emit('leave-sales');
     }
   }
 

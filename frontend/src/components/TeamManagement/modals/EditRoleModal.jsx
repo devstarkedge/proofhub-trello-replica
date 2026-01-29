@@ -281,7 +281,7 @@ const EditRoleModal = memo(({
                 {/* Role Power Presets */}
                 {!isSystemRole && (
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <label className=" text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                       <Zap size={16} className="text-amber-500 fill-amber-500" />
                       Role Power Presets
                     </label>

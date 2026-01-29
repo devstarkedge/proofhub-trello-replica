@@ -1,7 +1,8 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap } from 'lucide-react';
+import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
+import { getUserPermissions } from '../services/salesApi';
 import useThemeStore from '../store/themeStore';
 
 // Icon color configuration for each nav item
@@ -15,6 +16,7 @@ const iconColors = {
   '/admin/settings': { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' }, // Indigo - Settings
   '/pm-sheet': { color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' }, // Teal - PM Sheet
   '/finance': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Finance
+  '/sales': { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }, // Purple - Sales
 };
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
@@ -23,6 +25,8 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   const [hoveredItem, setHoveredItem] = useState(null);
   const [pmSheetExpanded, setPmSheetExpanded] = useState(false);
   const location = useLocation();
+
+  const [salesVisible, setSalesVisible] = useState(false);
 
   // Check if current path is under PM Sheet
   const isPMSheetActive = location.pathname.startsWith('/pm-sheet');
@@ -33,6 +37,46 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       setPmSheetExpanded(true);
     }
   }, [isPMSheetActive]);
+
+  // Fetch current user's sales visibility and listen for permission updates
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchVisibility = async () => {
+      if (!user || !user._id) return;
+      try {
+        const res = await getUserPermissions(user._id);
+        if (!mounted) return;
+        const perms = res.data || res;
+        setSalesVisible(Boolean(perms?.moduleVisible));
+      } catch (err) {
+        setSalesVisible(false);
+      }
+    };
+
+    fetchVisibility();
+
+    const onUpdate = (e) => {
+      try {
+        const { userId, permissions } = e.detail || {};
+        if (!user) return;
+        if (userId === user._id) {
+          setSalesVisible(Boolean(permissions?.moduleVisible));
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    window.addEventListener('sales-permissions-updated', onUpdate);
+    window.addEventListener('socket-sales-permissions-updated', onUpdate);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('sales-permissions-updated', onUpdate);
+      window.removeEventListener('socket-sales-permissions-updated', onUpdate);
+    };
+  }, [user]);
 
   // PM Sheet child pages
   const pmSheetChildren = [
@@ -63,12 +107,17 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       // items.push({ path: '/pm-sheet', icon: FileSpreadsheet, label: 'PM Sheet', hasChildren: true });
       items.push({ path: '/finance', icon: DollarSign, label: 'Finance' });
     }
-
+    
+    // Sales visible only for admin or explicitly granted users
     if (userRole === 'admin') {
+      items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
       items.push({ path: '/reminders', icon: CalendarClock, label: 'Client Reminders' });
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
       items.push({ path: '/hr-panel', icon: UserCheck, label: 'HR Panel' });
       items.push({ path: '/admin/settings', icon: Settings, label: 'Admin Settings' });
+    } else if (salesVisible) {
+      // Non-admin user explicitly granted sales access — only show Sales link
+      items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
     } else if (userRole === 'hr') {
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
       items.push({ path: '/hr-panel', icon: UserCheck, label: 'HR Panel' });

@@ -1,11 +1,12 @@
 import React, { useState, useContext } from "react";
-import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield, MessageSquare } from "lucide-react";
+import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield, MessageSquare, Blocks } from "lucide-react";
 import AuthContext from "../context/AuthContext";
 import api from "../services/api";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 import Avatar from "../components/Avatar";
 import SlackAdminPanel from "../components/SlackAdminPanel";
+import ModuleAccessPanel from "../components/Admin/ModuleAccessPanel";
 
 const AdminSettings = () => {
   const { user, token, setUser } = useContext(AuthContext);
@@ -22,6 +23,7 @@ const AdminSettings = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
+  const [activeTab, setActiveTab] = useState('account'); // 'account' | 'modules'
 
   const { newEmail, currentPassword, newPassword, confirmNewPassword } = formData;
 
@@ -126,6 +128,34 @@ const AdminSettings = () => {
               <p className="text-gray-600">Manage your account security and preferences</p>
             </div>
 
+            {/* Tab Navigation */}
+            <div className="mb-6 border-b border-gray-200">
+              <nav className="flex gap-4" aria-label="Tabs">
+                <button
+                  onClick={() => setActiveTab('account')}
+                  className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                    activeTab === 'account'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Shield className="w-4 h-4" />
+                  Account Security
+                </button>
+                <button
+                  onClick={() => setActiveTab('modules')}
+                  className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                    activeTab === 'modules'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Blocks className="w-4 h-4" />
+                  Modules Access
+                </button>
+              </nav>
+            </div>
+
             {/* Alert Messages */}
             {message && (
               <div className="mb-6 animate-slide-down">
@@ -151,27 +181,30 @@ const AdminSettings = () => {
               </div>
             )}
 
-            {/* Current User Info Card */}
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-xl shadow-lg mb-6 text-white">
-              <div className="flex items-center gap-4">
-                <Avatar 
-                  src={user?.avatar} 
-                  name={user?.name} 
-                  role={user?.role}
-                  isVerified={user?.isVerified}
-                  size="xl"
-                  showBadge={true}
+            {/* Account Tab Content */}
+            {activeTab === 'account' && (
+              <>
+                {/* Current User Info Card */}
+                <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-xl shadow-lg mb-6 text-white">
+                  <div className="flex items-center gap-4">
+                    <Avatar 
+                      src={user?.avatar} 
+                      name={user?.name} 
+                      role={user?.role}
+                      isVerified={user?.isVerified}
+                      size="xl"
+                      showBadge={true}
 
-                />
-                <div>
-                  <h3 className="text-lg font-semibold">{user?.name}</h3>
-                  <p className="text-sm opacity-90">Current Account</p>
-                  <p className="text-lg font-medium mt-1">{user?.email}</p>
+                    />
+                    <div>
+                      <h3 className="text-lg font-semibold">{user?.name}</h3>
+                      <p className="text-sm opacity-90">Current Account</p>
+                      <p className="text-lg font-medium mt-1">{user?.email}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
+                <div className="grid md:grid-cols-2 gap-6">
               {/* Email Settings Card */}
               <div className="bg-white p-6 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
                 <div className="flex items-center gap-3 mb-4">
@@ -369,6 +402,15 @@ const AdminSettings = () => {
             <div className="mt-8 bg-white p-6 rounded-xl shadow-md">
               <SlackAdminPanel />
             </div>
+              </>
+            )}
+
+            {/* Modules Access Tab Content */}
+            {activeTab === 'modules' && (
+              <div className="bg-white p-6 rounded-xl shadow-md">
+                <ModuleAccessPanel />
+              </div>
+            )}
           </div>
         </main>
       </div>

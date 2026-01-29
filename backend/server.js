@@ -35,6 +35,8 @@ import pmSheetRoutes from './routes/pmSheet.js';
 import calendarRoutes from './routes/calendar.js';
 import financeRoutes from './routes/finance.js';
 import myShortcutsRoutes from './routes/myShortcuts.js';
+import salesRoutes from './routes/sales.js';
+import salesPermissionsRoutes from './routes/salesPermissions.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -126,6 +128,8 @@ app.use('/api/pm-sheet', pmSheetRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/my-shortcuts', myShortcutsRoutes);
+app.use('/api/sales', salesRoutes);
+app.use('/api/sales-permissions', salesPermissionsRoutes);
 
 import jwt from 'jsonwebtoken';
 
@@ -266,6 +270,17 @@ io.on('connection', (socket) => {
   socket.on('leave-my-shortcuts', () => {
     socket.leave(`user-shortcuts-${userId}`);
     if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left my-shortcuts room`);
+  });
+
+  // Sales room events - for real-time sales updates
+  socket.on('join-sales', () => {
+    socket.join('sales');
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined sales room`);
+  });
+
+  socket.on('leave-sales', () => {
+    socket.leave('sales');
+    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left sales room`);
   });
 
   // Push notification subscription management

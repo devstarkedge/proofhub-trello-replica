@@ -37,18 +37,45 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
   }, [disabled]);
 
   const { placeholder, displayValue } = useMemo(() => {
-    let placeholder = 'Select...';
-    let displayValue = placeholder;
-    React.Children.forEach(children, (child) => {
-      if (child?.type === SelectValue) {
-        placeholder = child.props.placeholder || placeholder;
-        displayValue = placeholder;
-      }
-      if (child?.type === SelectItem && child.props.value === selectedValue) {
-        displayValue = child.props.children;
-      }
-    });
-    return { placeholder, displayValue };
+    let placeholderText = 'Select...';
+    let selectedLabel = null;
+
+    const findSelectedLabel = (nodes) => {
+      React.Children.forEach(nodes, (child) => {
+        if (!child) return;
+        
+        // If we already found the label, stop looking (optimization)
+        if (selectedLabel) return;
+
+        // Check for SelectValue to update placeholder
+        if (child.type === SelectValue) {
+          placeholderText = child.props.placeholder || placeholderText;
+        }
+
+        // Check for SelectItem matching the value
+        if (child.type === SelectItem && child.props.value === selectedValue) {
+          selectedLabel = child.props.children;
+          return;
+        }
+
+        // Recurse into SelectContent or Fragments or Arrays
+        // Note: React.Children.forEach automatically flattens arrays, so we just check for containers
+        if (child.type === SelectContent || child.type === React.Fragment) {
+          findSelectedLabel(child.props.children);
+        }
+        
+        // Also handle the case where children is just an array/fragment implied
+        if (child.props && child.props.children && typeof child.type !== 'string') {
+             // We generally don't want to dive into ALL components, potentially expensive or wrong.
+             // But for SelectContent specifically it's needed.
+             // The logic above handles SelectContent.
+        }
+      });
+    };
+
+    findSelectedLabel(children);
+    
+    return { placeholder: placeholderText, displayValue: selectedLabel || placeholderText };
   }, [children, selectedValue]);
 
   return (
