@@ -1,4 +1,5 @@
 import React, { useRef, useState, useCallback, useContext, memo, useEffect } from 'react';
+import { formatSalesDate } from '../../utils/dateUtils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Star, ExternalLink, History, Edit2, Trash2, Lock, Copy, 
@@ -117,7 +118,7 @@ const TableRow = memo(({
     // Read-only display
     switch (column.type) {
       case 'date':
-        return value ? new Date(value).toLocaleDateString() : '-';
+        return formatSalesDate(value);
       
       case 'link':
         if (!value) return '-';
@@ -168,14 +169,24 @@ const TableRow = memo(({
     }
   };
 
+  // Row background logic
+  const getRowBackground = () => {
+    if (isSelected) return 'bg-blue-50 dark:bg-blue-900/30';
+    if (row.rowColor && row.rowColor !== '#FFFFFF') {
+       // We adjust opacity slightly for light mode to ensure text is readable if color is dark
+       // But assuming user picks light pastel colors usually. 
+       // For safety, we can apply it as style with opacity.
+       return ''; // Handled via style
+    }
+    return 'bg-white dark:bg-gray-800';
+  };
+
   return (
     <div
-      className={`flex items-center border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors absolute top-0 left-0 w-full ${
-        isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-white dark:bg-gray-800'
-      }`}
+      className={`flex items-center border-b border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors absolute top-0 left-0 w-full ${getRowBackground()}`}
       style={{
         ...style,
-        backgroundColor: row.rowColor !== '#FFFFFF' ? `${row.rowColor}10` : undefined
+        backgroundColor: !isSelected && row.rowColor && row.rowColor !== '#FFFFFF' ? `${row.rowColor}33` : undefined // 20% opacity for better visibility
       }}
     >
       {columns.map((column) => (

@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Calendar } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
+import DatePickerModal from '../DatePickerModal';
+import { formatSalesDate, parseSalesDate } from '../../utils/dateUtils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { salesRowSchemaFlexible } from '../../utils/salesValidation';
 import useSalesStore from '../../store/salesStore';
@@ -29,22 +31,19 @@ const defaultValues = {
 };
 
 // Convert backend row object to values compatible with react-hook-form
+// Convert backend row object to values compatible with react-hook-form
 function convertRowForForm(row) {
   if (!row) return {};
   const out = { ...row };
-  // Format dates as yyyy-MM-dd strings (local) for input[type=date]
-  const formatLocalDate = (d) => {
-    if (!d) return '';
-    const dateObj = new Date(d);
-    if (Number.isNaN(dateObj.getTime())) return '';
-    const yyyy = dateObj.getFullYear();
-    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const dd = String(dateObj.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
-  out.date = formatLocalDate(row.date);
-  out.followUpDate = formatLocalDate(row.followUpDate);
+  
+  // Convert strings to Date objects for Zod schema compliance
+  if (out.date) {
+    out.date = new Date(out.date);
+  }
+  if (out.followUpDate) {
+    out.followUpDate = new Date(out.followUpDate);
+  }
+  
   return out;
 }
 
@@ -52,18 +51,56 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   const { createRow, updateRow, dropdownOptions, customColumns, fetchCustomColumns, lockRow, unlockRow } = useSalesStore();
   const isEdit = Boolean(editingRow);
   const [activeSection, setActiveSection] = React.useState('all'); // 'all' | 'deal' | 'client' | 'status'
+  
+  // Date Picker State
+  const [datePickerState, setDatePickerState] = React.useState({
+    isOpen: false,
+    target: null, // 'date' | 'followUpDate' | customColumnKey
+    title: ''
+  });
 
   const {
     register,
     handleSubmit,
     control,
     reset,
+    watch,
     formState: { errors, isSubmitting },
     setValue,
   } = useForm({
     resolver: zodResolver(salesRowSchemaFlexible),
     defaultValues: isEdit ? { ...defaultValues, ...convertRowForForm(editingRow) } : defaultValues,
   });
+
+  // Watch date fields for display
+  const watchedDate = watch('date');
+  const watchedFollowUpDate = watch('followUpDate');
+  // We need to watch all fields to support custom columns potentially, but for now we can just rely on getValues or specific watches if needed.
+  // Actually, for custom columns, we might need to watch them dynamically or just pass current value to the renderer.
+  // Using watch() without arguments watches everything, but might be performance heavy.
+  // Instead, we'll watch specific known dates, and for custom columns we can use Controller or watch specifically.
+  // Let's use `watch()` to get all values for rendering custom date fields correctly.
+  const allValues = watch();
+
+  const openDatePicker = (target, title) => {
+    setDatePickerState({
+      isOpen: true,
+      target,
+      title
+    });
+  };
+
+  const handleDateSelect = (dateString) => {
+    if (datePickerState.target) {
+      if (dateString) {
+          // Parse string (dd-mm-yyyy or yyyy-mm-dd) to Date object for Zod validation
+          const dateObj = parseSalesDate(dateString);
+          setValue(datePickerState.target, dateObj, { shouldValidate: true, shouldDirty: true });
+      } else {
+          setValue(datePickerState.target, null, { shouldValidate: true, shouldDirty: true });
+      }
+    }
+  };
 
   useEffect(() => {
     fetchCustomColumns();
@@ -78,12 +115,31 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       reset(base);
 
       // Lock row
-      lockRow(editingRow._id).catch(() => {
-         // Silently fail or handle if needed
-      });
+      // Use isMounted to prevent unlocking if we unmount before lock is acquired
+      // Use hasLock to ensure we only unlock if we successfully locked it
+      let hasLock = false;
+      let isMounted = true;
+
+      lockRow(editingRow._id)
+          .then(() => {
+              if (isMounted) {
+                  hasLock = true;
+              } else {
+                  // If unmounted *after* lock request started but *before* it finished:
+                  // The lock succeeded, but we are gone. Unlocking immediately.
+                  unlockRow(editingRow._id).catch(() => {});
+              }
+          })
+          .catch((err) => {
+             // Silently fail or handle if needed (e.g. 423 Locked)
+             console.log("Failed to lock row:", err?.response?.data?.message || err.message);
+          });
 
       return () => {
-        unlockRow(editingRow._id);
+        isMounted = false;
+        if (hasLock) {
+           unlockRow(editingRow._id).catch(() => {});
+        }
       };
     } else {
       const base = { ...defaultValues };
@@ -111,6 +167,15 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       // Convert date fields to Date objects if needed
       if (typeof data.date === 'string') data.date = new Date(data.date);
       if (data.followUpDate && typeof data.followUpDate === 'string') data.followUpDate = new Date(data.followUpDate);
+      
+      // Also handle custom date columns if any
+      if (customColumns) {
+        customColumns.forEach(col => {
+            if (col.type === 'date' && data[col.key] && typeof data[col.key] === 'string') {
+                data[col.key] = new Date(data[col.key]);
+            }
+        });
+      }
 
       if (isEdit) {
         await updateRow(editingRow._id, data);
@@ -165,7 +230,22 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                  <div className="col-span-1">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Date<span className="text-red-500">*</span></label>
-                  <input type="date" {...register('date', { valueAsDate: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                  <div className="relative">
+                    <input 
+                        type="text" 
+                        readOnly
+                        value={formatSalesDate(watchedDate)}
+                        onClick={() => openDatePicker('date', 'Select Deal Date')}
+                        className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg cursor-pointer"
+                        placeholder="dd-mm-yyyy"
+                    />
+                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  </div>
+                  {/* Hidden input to register with hook form if needed, but we used setValue. 
+                      However, we are not using register('date') anymore on the visible input because it's read-only and formatted.
+                      We need to register the field so it exists in formData.
+                  */}
+                  <input type="hidden" {...register('date')} />
                   {errors.date && <p className="text-red-500 text-xs mt-1">{errors.date.message}</p>}
                 </div>
 
@@ -362,7 +442,18 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
 
                  <div className="col-span-1">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Next Follow Up Date</label>
-                  <input type="date" {...register('followUpDate', { valueAsDate: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                  <div className="relative">
+                    <input 
+                        type="text" 
+                        readOnly
+                        value={formatSalesDate(watchedFollowUpDate)}
+                        onClick={() => openDatePicker('followUpDate', 'Select Follow Up Date')}
+                        className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg cursor-pointer"
+                        placeholder="dd-mm-yyyy"
+                    />
+                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  </div>
+                  <input type="hidden" {...register('followUpDate')} />
                 </div>
               </div>
             </div>
@@ -395,7 +486,18 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                                     )}
                                   />
                               ) : col.type === 'date' ? (
-                                <input type="date" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        readOnly
+                                        value={formatSalesDate(allValues[col.key])} // Accesing value from watch() result
+                                        onClick={() => openDatePicker(col.key, `Select ${col.name}`)}
+                                        className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg cursor-pointer"
+                                        placeholder="dd-mm-yyyy"
+                                    />
+                                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                     <input type="hidden" {...register(col.key)} />
+                                </div>
                               ) : col.type === 'number' ? (
                                 <input type="number" {...register(col.key, { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
                               ) : col.type === 'link' ? (
@@ -440,6 +542,15 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
            </button>
         </div>
       </div>
+      
+      {/* Global Date Picker Modal */}
+      <DatePickerModal
+        isOpen={datePickerState.isOpen}
+        onClose={() => setDatePickerState(prev => ({ ...prev, isOpen: false }))}
+        onSelectDate={handleDateSelect}
+        selectedDate={datePickerState.target ? allValues[datePickerState.target] : null}
+        title={datePickerState.title}
+      />
     </div>
   );
 };

@@ -5,6 +5,7 @@ import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
 import useSalesStore from '../../store/salesStore';
 import { toast } from 'react-toastify';
+import { parseSalesDate } from '../../utils/dateUtils';
 
 const ImportDataModal = ({ isOpen, onClose }) => {
   const { importRows } = useSalesStore();
@@ -156,46 +157,16 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       });
 
       // Normalization helpers
-      const parseDateString = (val) => {
-        if (val === null || val === undefined) return null;
-        if (val instanceof Date) return val.toISOString();
-        const s = String(val).trim();
-        if (!s) return null;
-        // Try ISO / native parse first
-        const native = new Date(s);
-        if (!isNaN(native.getTime())) return native.toISOString();
-        // dd/mm/yyyy or d/m/yyyy or dd-mm-yyyy
-        const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-        if (dmy) {
-          const day = parseInt(dmy[1], 10);
-          const month = parseInt(dmy[2], 10);
-          const year = parseInt(dmy[3], 10);
-          const dt = new Date(year, month - 1, day);
-          if (!isNaN(dt.getTime())) return dt.toISOString();
-        }
-        // mm/dd/yyyy
-        const mdy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
-        if (mdy) {
-          const p1 = parseInt(mdy[1], 10);
-          const p2 = parseInt(mdy[2], 10);
-          const y = parseInt(mdy[3], 10);
-          const year = y < 100 ? 2000 + y : y;
-          const dt = new Date(year, p1 - 1, p2);
-          if (!isNaN(dt.getTime())) return dt.toISOString();
-        }
-        return null;
-      };
-
       const normalizeRow = (obj) => {
         const out = { ...obj };
         // Dates
         if (out.date) {
-          const d = parseDateString(out.date);
-          out.date = d;
+          const d = parseSalesDate(out.date);
+          out.date = d ? d.toISOString() : null;
         }
         if (out.followUpDate) {
-          const d = parseDateString(out.followUpDate);
-          out.followUpDate = d;
+          const d = parseSalesDate(out.followUpDate);
+          out.followUpDate = d ? d.toISOString() : null;
         }
         // Numeric fields
         ['clientRating', 'clientHireRate', 'connects', 'rate'].forEach(k => {

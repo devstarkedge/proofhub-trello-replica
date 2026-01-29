@@ -6,7 +6,7 @@ import SalesActivityLog from '../models/SalesActivityLog.js';
 import { io, emitToUser } from '../server.js';
 import slackNotificationService from '../services/slack/SlackNotificationService.js';
 import notificationService from '../utils/notificationService.js';
-import XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // Field label mapping for better activity log readability
 const fieldLabels = {
@@ -725,76 +725,133 @@ export const exportRows = async (req, res) => {
 
     const rows = rawRows.map(flattenRow);
 
-    // Transform data for export
-    const exportData = rows.map(row => {
-      // Base object
-      const base = {
-      'Date': row.date ? new Date(row.date).toLocaleDateString() : '',
-      'Month': row.monthName || '',
-      'Bid Link': row.bidLink || '',
-      'Platform': row.platform || '',
-      'Profile': row.profile || '',
-      'Technology': row.technology || '',
-      'Client Rating': row.clientRating || '',
-      'Client % Hire Rate': row.clientHireRate || '',
-      'Client Budget': row.clientBudget || '',
-      'Client Spending': row.clientSpending || '',
-      'Client Location': row.clientLocation || '',
-      'Reply From Client': row.replyFromClient || '',
-      'Follow Ups': row.followUps || '',
-      'Follow Up Date': row.followUpDate ? new Date(row.followUpDate).toLocaleDateString() : '',
-      'Connects': row.connects || '',
-      'Rate': row.rate || '',
-      'Proposal Screenshot': row.proposalScreenshot || '',
-      'Status': row.status || '',
-      'Comments': row.comments || '',
-      'Created By': row.createdBy?.name || '',
-      'Updated By': row.updatedBy?.name || '',
-      'Created At': row.createdAt ? new Date(row.createdAt).toLocaleString() : ''
-      };
+    // Helper for export formatting
+    const formatExportDate = (date) => {
+      if (!date) return '';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '';
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}-${month}-${year}`;
+    };
 
+    // Prepare data for ExcelJS
+    const excludedFields = [
+      '_id', '__v', 'customFields', 'isDeleted', 
+      'lockedBy', 'lockedAt', 'createdBy', 'updatedBy', 
+      'createdAt', 'updatedAt', 'id', 'dateCheck', 'rowColor',
+      'date-check'
+    ];
+
+    // Determine all unique keys for columns (standard + custom)
+    const allKeys = new Set();
+    // Helper to get export object
+    const getExportObj = (row) => {
+      const base = {
+        'Date': formatExportDate(row.date),
+        'Month': row.monthName || '',
+        'Bid Link': row.bidLink || '',
+        'Platform': row.platform || '',
+        'Profile': row.profile || '',
+        'Technology': row.technology || '',
+        'Client Rating': row.clientRating || '',
+        'Client % Hire Rate': row.clientHireRate || '',
+        'Client Budget': row.clientBudget || '',
+        'Client Spending': row.clientSpending || '',
+        'Client Location': row.clientLocation || '',
+        'Reply From Client': row.replyFromClient || '',
+        'Follow Ups': row.followUps || '',
+        'Follow Up Date': formatExportDate(row.followUpDate),
+        'Connects': row.connects || '',
+        'Rate': row.rate || '',
+        'Proposal Screenshot': row.proposalScreenshot || '',
+        'Status': row.status || '',
+        'Comments': row.comments || ''
+      };
       // Add custom fields
       Object.keys(row).forEach(key => {
-        if (!Object.keys(base).includes(key) && !['_id', '__v', 'customFields', 'isDeleted'].includes(key)) {
-           base[key] = row[key]; // They are already flattened
+        if (!Object.keys(base).includes(key) && !excludedFields.includes(key)) {
+           base[key] = row[key];
         }
       });
       return base;
+    };
+
+    // First pass: collect all keys
+    const processedRows = rows.map(r => {
+      const obj = getExportObj(r);
+      Object.keys(obj).forEach(k => allKeys.add(k));
+      return { data: obj, _original: r };
     });
 
-    // Create workbook
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    // Calculate optimal column widths based on header and data lengths
-    try {
-      const headers = Object.keys(exportData[0] || {});
-      const cols = headers.map((h) => {
-        const maxCell = exportData.reduce((max, row) => {
-          const val = row[h];
-          const len = val === null || val === undefined ? 0 : String(val).length;
-          return Math.max(max, len);
-        }, String(h).length);
-        // Add padding and clamp to reasonable bounds
-        const width = Math.min(Math.max(Math.ceil(maxCell) + 2, 10), 60);
-        return { wch: width };
-      });
-      if (cols.length) ws['!cols'] = cols;
-    } catch (err) {
-      // Non-fatal: if width calc fails, continue with defaults
-      console.warn('Failed to calculate column widths for export:', err.message);
-    }
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Sales Data');
+    const columns = Array.from(allKeys).map(key => ({
+      header: key,
+      key: key,
+      width: 20 // Default width
+    }));
+
+    // Create Workbook
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Sales Data');
+
+    worksheet.columns = columns;
+
+    // Add rows and style them
+    processedRows.forEach((item) => {
+      const rowNode = worksheet.addRow(item.data);
+      
+      // Apply row color if present
+      if (item._original.rowColor) {
+        let color = item._original.rowColor.replace('#', '');
+        // Ensure 6 chars
+        if (color.length === 3) color = color.split('').map(c => c+c).join('');
+        // ExcelJS expects ARGB
+        const argb = 'FF' + color;
+
+        // Apply fill to each cell in the row
+        rowNode.eachCell({ includeEmpty: true }, (cell) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: argb }
+          };
+        });
+      }
+    });
+
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    
+    // Auto-filter
+    worksheet.autoFilter = {
+      from: {
+        row: 1,
+        column: 1
+      },
+      to: {
+        row: 1,
+        column: columns.length
+      }
+    };
 
     // Generate buffer
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: format === 'xlsx' ? 'xlsx' : 'csv' });
+    const buffer = await workbook.xlsx.writeBuffer();
 
     // Set headers based on format
-    const filename = `sales_export_${new Date().toISOString().split('T')[0]}.${format === 'xlsx' ? 'xlsx' : 'csv'}`;
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', format === 'xlsx' 
-      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-      : 'text/csv');
+    const filename = `sales_export_${new Date().toISOString().split('T')[0]}.xlsx`;
     
+    if (format === 'csv') {
+       // Fallback for CSV - colors not possible
+       const csvBuffer = await workbook.csv.writeBuffer();
+       res.setHeader('Content-Disposition', `attachment; filename="${filename.replace('.xlsx', '.csv')}"`);
+       res.setHeader('Content-Type', 'text/csv');
+       res.send(csvBuffer);
+       return;
+    }
+
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buffer);
   } catch (error) {
     console.error('Export rows error:', error);
