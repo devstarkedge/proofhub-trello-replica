@@ -1,6 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getCards, getCardsByBoard, getCardsByDepartment, getCard, createCard, updateCard, moveCard, deleteCard, getCardActivity, archiveCard, restoreCard, getArchivedCards } from '../controllers/cardController.js';
+import { getCards, getCardsByBoard, getCardsByDepartment, getCard, createCard, updateCard, moveCard, deleteCard, getCardActivity, archiveCard, restoreCard, getArchivedCards, addTimeEntry, updateTimeEntry, deleteTimeEntry } from '../controllers/cardController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import upload from '../middleware/upload.js';
@@ -26,5 +26,9 @@ router.put('/:id/move', protect, moveCard);
 router.put('/:id/archive', protect, archiveCard);
 router.put('/:id/restore', protect, restoreCard);
 router.delete('/:id', protect, deleteCard);
+
+router.post('/:id/time-tracking', protect, addTimeEntry);
+router.put('/:id/time-tracking/:entryId', protect, updateTimeEntry);
+router.delete('/:id/time-tracking/:entryId', protect, deleteTimeEntry);
 
 export default router;

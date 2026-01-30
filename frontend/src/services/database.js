@@ -401,6 +401,48 @@ class DatabaseService {
     await fetch(`${baseURL}/api/cards/${cardId}`, { method: 'DELETE', headers });
   }
 
+  // New independent time tracking methods for Card
+  async addCardTimeEntry(cardId, type, entry) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/time-tracking`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ type, entry })
+    });
+    if (!res.ok) throw new Error('Failed to add time entry');
+    return await res.json();
+  }
+
+  async updateCardTimeEntry(cardId, entryId, type, updates) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/time-tracking/${entryId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ type, updates })
+    });
+    if (!res.ok) throw new Error('Failed to update time entry');
+    return await res.json();
+  }
+
+  async deleteCardTimeEntry(cardId, entryId, type) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/time-tracking/${entryId}?type=${type}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) throw new Error('Failed to delete time entry');
+    return await res.json();
+  }
+
   async moveCard(cardId, destinationListId, newPosition, newStatus) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
@@ -572,6 +614,48 @@ class DatabaseService {
     return await res.json();
   }
 
+  // New independent time tracking methods for Subtask
+  async addSubtaskTimeEntry(subtaskId, type, entry) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/time-tracking`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ type, entry })
+    });
+    if (!res.ok) throw new Error('Failed to add time entry');
+    return await res.json();
+  }
+
+  async updateSubtaskTimeEntry(subtaskId, entryId, type, updates) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/time-tracking/${entryId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ type, updates })
+    });
+    if (!res.ok) throw new Error('Failed to update time entry');
+    return await res.json();
+  }
+
+  async deleteSubtaskTimeEntry(subtaskId, entryId, type) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/time-tracking/${entryId}?type=${type}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) throw new Error('Failed to delete time entry');
+    return await res.json();
+  }
+
   async reorderSubtasks(taskId, orderedIds) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };
@@ -666,6 +750,48 @@ class DatabaseService {
       const error = await res.json();
       throw new Error(error.message || 'Failed to delete subtask-nano');
     }
+    return await res.json();
+  }
+
+  // New independent time tracking methods for Nano
+  async addNanoTimeEntry(nanoId, type, entry) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/subtask-nanos/${nanoId}/time-tracking`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ type, entry })
+    });
+    if (!res.ok) throw new Error('Failed to add time entry');
+    return await res.json();
+  }
+
+  async updateNanoTimeEntry(nanoId, entryId, type, updates) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/subtask-nanos/${nanoId}/time-tracking/${entryId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ type, updates })
+    });
+    if (!res.ok) throw new Error('Failed to update time entry');
+    return await res.json();
+  }
+
+  async deleteNanoTimeEntry(nanoId, entryId, type) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    const res = await fetch(`${baseURL}/api/subtask-nanos/${nanoId}/time-tracking/${entryId}?type=${type}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) throw new Error('Failed to delete time entry');
     return await res.json();
   }
 

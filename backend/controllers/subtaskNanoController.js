@@ -1,5 +1,6 @@
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import mongoose from 'mongoose';
 import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
@@ -481,6 +482,235 @@ export const getNanoActivity = asyncHandler(async (req, res, next) => {
     page: parseInt(page),
     pages: Math.ceil(total / parseInt(limit)),
     data: activities,
+  });
+});
+
+// @desc    Add time tracking entry
+// @route   POST /api/subtask-nanos/:id/time-tracking
+// @access  Private
+export const addTimeEntry = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  const { type, entry } = req.body;
+
+  if (!['estimation', 'logged', 'billed'].includes(type)) {
+    return next(new ErrorResponse('Invalid time entry type', 400));
+  }
+
+  const nano = await SubtaskNano.findById(id);
+  if (!nano) {
+    return next(new ErrorResponse('Subtask-Nano not found', 404));
+  }
+
+  const fieldName = `${type}Time`;
+  
+  const newEntry = {
+    ...entry,
+    user: req.user.id,
+    _id: new mongoose.Types.ObjectId()
+  };
+
+  if (newEntry.hours) newEntry.hours = parseInt(newEntry.hours) || 0;
+  if (newEntry.minutes) newEntry.minutes = parseInt(newEntry.minutes) || 0;
+
+  nano[fieldName].push(newEntry);
+  await nano.save();
+
+  await nano.populate(`${fieldName}.user`, 'name email avatar');
+  const addedEntry = nano[fieldName].find(e => e._id.toString() === newEntry._id.toString());
+  
+  await Activity.create({
+    type: 'time_logged',
+    description: `Added ${type} time entry (${newEntry.hours}h ${newEntry.minutes}m)`,
+    user: req.user.id,
+    board: nano.board,
+    card: nano.task,
+    subtask: nano.subtask,
+    nanoSubtask: nano._id,
+    contextType: 'nanoSubtask',
+    metadata: {
+        timeType: type,
+        hours: newEntry.hours,
+        minutes: newEntry.minutes
+    }
+  });
+
+  const fullNano = await SubtaskNano.findById(id).populate(populateConfig);
+  
+  await Promise.all([
+    refreshSubtaskNanoStats(nano.subtask),
+    refreshCardHierarchyStats(nano.task)
+  ]);
+
+  emitToBoard(nano.board.toString(), 'hierarchy-nano-changed', {
+    type: 'updated',
+    subtaskId: nano.subtask.toString(),
+    nano: fullNano
+  });
+
+  if (type === 'logged' || type === 'billed') {
+    emitFinanceDataRefresh({
+      changeType: type === 'billed' ? 'billed_time' : 'logged_time',
+      nanoId: nano._id.toString(),
+      subtaskId: nano.subtask.toString(),
+      cardId: nano.task.toString(),
+      boardId: nano.board.toString()
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: addedEntry
+  });
+});
+
+// @desc    Update time tracking entry
+// @route   PUT /api/subtask-nanos/:id/time-tracking/:entryId
+// @access  Private
+export const updateTimeEntry = asyncHandler(async (req, res, next) => {
+  const { id, entryId } = req.params;
+  const { type, updates } = req.body;
+
+  if (!['estimation', 'logged', 'billed'].includes(type)) {
+    return next(new ErrorResponse('Invalid time entry type', 400));
+  }
+
+  const nano = await SubtaskNano.findById(id);
+  if (!nano) {
+    return next(new ErrorResponse('Subtask-Nano not found', 404));
+  }
+
+  const fieldName = `${type}Time`;
+  const entryIndex = nano[fieldName].findIndex(e => e._id.toString() === entryId);
+
+  if (entryIndex === -1) {
+    return next(new ErrorResponse('Time entry not found', 404));
+  }
+
+  const entry = nano[fieldName][entryIndex];
+
+  if (entry.user.toString() !== req.user.id.toString()) {
+     return next(new ErrorResponse('Not authorized to update this time entry', 403));
+  }
+
+  if (updates.hours !== undefined) entry.hours = parseInt(updates.hours) || 0;
+  if (updates.minutes !== undefined) entry.minutes = parseInt(updates.minutes) || 0;
+  if (updates.date !== undefined) entry.date = updates.date;
+  if (updates.reason !== undefined && type === 'estimation') entry.reason = updates.reason;
+  if (updates.description !== undefined && type !== 'estimation') entry.description = updates.description;
+
+  await nano.save();
+  await nano.populate(`${fieldName}.user`, 'name email avatar');
+  const updatedEntry = nano[fieldName][entryIndex];
+
+  await Activity.create({
+    type: 'time_logged',
+    description: `Updated ${type} time entry`,
+    user: req.user.id,
+    board: nano.board,
+    card: nano.task,
+    subtask: nano.subtask,
+    nanoSubtask: nano._id,
+    contextType: 'nanoSubtask'
+  });
+
+  const fullNano = await SubtaskNano.findById(id).populate(populateConfig);
+
+  await Promise.all([
+    refreshSubtaskNanoStats(nano.subtask),
+    refreshCardHierarchyStats(nano.task)
+  ]);
+
+  emitToBoard(nano.board.toString(), 'hierarchy-nano-changed', {
+    type: 'updated',
+    subtaskId: nano.subtask.toString(),
+    nano: fullNano
+  });
+  
+  if (type === 'logged' || type === 'billed') {
+    emitFinanceDataRefresh({
+      changeType: type === 'billed' ? 'billed_time' : 'logged_time',
+      nanoId: nano._id.toString(),
+      subtaskId: nano.subtask.toString(),
+      cardId: nano.task.toString(),
+      boardId: nano.board.toString()
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: updatedEntry
+  });
+});
+
+// @desc    Delete time tracking entry
+// @route   DELETE /api/subtask-nanos/:id/time-tracking/:entryId
+// @access  Private
+export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
+  const { id, entryId } = req.params;
+  const { type } = req.query;
+
+  if (!['estimation', 'logged', 'billed'].includes(type)) {
+    return next(new ErrorResponse('Invalid time entry type', 400));
+  }
+
+  const nano = await SubtaskNano.findById(id);
+  if (!nano) {
+    return next(new ErrorResponse('Subtask-Nano not found', 404));
+  }
+
+  const fieldName = `${type}Time`;
+  const entryIndex = nano[fieldName].findIndex(e => e._id.toString() === entryId);
+
+  if (entryIndex === -1) {
+    return next(new ErrorResponse('Time entry not found', 404));
+  }
+
+  const entry = nano[fieldName][entryIndex];
+
+  if (entry.user.toString() !== req.user.id.toString()) {
+     return next(new ErrorResponse('Not authorized to delete this time entry', 403));
+  }
+
+  nano[fieldName].splice(entryIndex, 1);
+  await nano.save();
+
+  await Activity.create({
+    type: 'time_logged',
+    description: `Deleted ${type} time entry`,
+    user: req.user.id,
+    board: nano.board,
+    card: nano.task,
+    subtask: nano.subtask,
+    nanoSubtask: nano._id,
+    contextType: 'nanoSubtask'
+  });
+
+  const fullNano = await SubtaskNano.findById(id).populate(populateConfig);
+
+  await Promise.all([
+    refreshSubtaskNanoStats(nano.subtask),
+    refreshCardHierarchyStats(nano.task)
+  ]);
+
+  emitToBoard(nano.board.toString(), 'hierarchy-nano-changed', {
+    type: 'updated',
+    subtaskId: nano.subtask.toString(),
+    nano: fullNano
+  });
+
+  if (type === 'logged' || type === 'billed') {
+    emitFinanceDataRefresh({
+      changeType: type === 'billed' ? 'billed_time' : 'logged_time',
+      nanoId: nano._id.toString(),
+      subtaskId: nano.subtask.toString(),
+      cardId: nano.task.toString(),
+      boardId: nano.board.toString()
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { _id: entryId }
   });
 });
 

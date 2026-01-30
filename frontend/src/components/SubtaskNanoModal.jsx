@@ -427,9 +427,9 @@ const SubtaskNanoModal = ({
         tags: tagIds,
         attachments,
         // Properly prepare time entries with _id preservation for ownership
-        estimationTime: estimationEntries.map(entry => prepareTimeEntry(entry, 'estimation')),
-        loggedTime: loggedTime.map(entry => prepareTimeEntry(entry, 'logged')),
-        billedTime: billedTime.map(entry => prepareTimeEntry(entry, 'billed'))
+        // estimationTime: estimationEntries.map(entry => prepareTimeEntry(entry, 'estimation')),
+        // loggedTime: loggedTime.map(entry => prepareTimeEntry(entry, 'logged')),
+        // billedTime: billedTime.map(entry => prepareTimeEntry(entry, 'billed'))
       };
       await Database.updateNano(entityId, payload);
       toast.success("Subtask-Nano updated");
@@ -584,24 +584,23 @@ const SubtaskNanoModal = ({
     try {
       const hours = parseInt(newEstimationHours) || 0;
       const minutes = parseInt(newEstimationMinutes) || 0;
-      const totalMinutes = hours * 60 + minutes;
       
       // Use selected date or default to today
       const selectedDate = newEstimationDate || getTodayDate();
       const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
       
-      const newEntry = {
-        // NO _id field - backend will detect this as new entry and assign current user
-        id: `new-estimation-${Date.now()}`, // Only for React key, not for backend
+      const response = await Database.addNanoTimeEntry(entityId, 'estimation', {
         hours,
         minutes,
         reason: newEstimationReason,
-        totalMinutes,
-        date: dateObj.toISOString(),
-        // Store user info for immediate UI display (backend will override with req.user)
-        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
-        userName: user?.name // Denormalized for display
+        date: dateObj.toISOString()
+      });
+
+      const newEntry = {
+        ...response.data,
+        id: response.data._id
       };
+      
       const updatedEntries = [...estimationEntries, newEntry];
       setEstimationEntries(updatedEntries);
       setNewEstimationHours("");
@@ -611,7 +610,7 @@ const SubtaskNanoModal = ({
       toast.success("Estimation added");
     } catch (error) {
       console.error("Error adding estimation:", error);
-      toast.error("Failed to add estimation");
+      toast.error("Failed to add estimation: " + error.message);
     }
   };
 
@@ -632,6 +631,15 @@ const SubtaskNanoModal = ({
       const hours = parseInt(editEstimationHours) || 0;
       const minutes = parseInt(editEstimationMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
+      
+      const entry = estimationEntries.find(e => e.id === editingEstimation);
+      if (!entry) return;
+      const entryId = entry._id || entry.id;
+
+      await Database.updateNanoTimeEntry(entityId, entryId, 'estimation', {
+        hours, minutes, reason: editEstimationReason
+      });
+
       const updatedEntries = estimationEntries.map(entry =>
         entry.id === editingEstimation
           ? { ...entry, hours, minutes, reason: editEstimationReason, totalMinutes }
@@ -645,7 +653,7 @@ const SubtaskNanoModal = ({
       toast.success("Estimation updated");
     } catch (error) {
       console.error("Error updating estimation:", error);
-      toast.error("Failed to update estimation");
+      toast.error("Failed to update estimation: " + error.message);
     }
   };
 
@@ -659,17 +667,21 @@ const SubtaskNanoModal = ({
   const handleDeleteEstimation = async (entryId) => {
     try {
       // Find the entry to check ownership
-      const entry = estimationEntries.find(e => e.id === entryId);
+      const entry = estimationEntries.find(e => e.id === entryId || e._id === entryId);
       if (entry && !userOwnsTimeEntry(entry)) {
         toast.error("You can only delete your own time entries");
         return;
       }
-      const updatedEntries = estimationEntries.filter(entry => entry.id !== entryId);
+      
+      const realId = entry._id || entry.id;
+      await Database.deleteNanoTimeEntry(entityId, realId, 'estimation');
+
+      const updatedEntries = estimationEntries.filter(entry => entry.id !== entryId && entry._id !== entryId);
       setEstimationEntries(updatedEntries);
       toast.success("Estimation deleted");
     } catch (error) {
       console.error("Error deleting estimation:", error);
-      toast.error("Failed to delete estimation");
+      toast.error("Failed to delete estimation: " + error.message);
     }
   };
 
@@ -683,24 +695,23 @@ const SubtaskNanoModal = ({
     try {
       const hours = parseInt(newLoggedHours) || 0;
       const minutes = parseInt(newLoggedMinutes) || 0;
-      const totalMinutes = hours * 60 + minutes;
       
       // Use selected date or default to today
       const selectedDate = newLoggedDate || getTodayDate();
       const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
       
-      const newEntry = {
-        // NO _id field - backend will detect this as new entry and assign current user
-        id: `new-logged-${Date.now()}`, // Only for React key, not for backend
+      const response = await Database.addNanoTimeEntry(entityId, 'logged', {
         hours,
         minutes,
         description: newLoggedDescription,
-        totalMinutes,
-        date: dateObj.toISOString(),
-        // Store user info for immediate UI display (backend will override with req.user)
-        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
-        userName: user?.name // Denormalized for display
+        date: dateObj.toISOString()
+      });
+
+      const newEntry = {
+        ...response.data,
+        id: response.data._id
       };
+      
       const updatedEntries = [...loggedTime, newEntry];
       setLoggedTime(updatedEntries);
       setNewLoggedHours("");
@@ -710,7 +721,7 @@ const SubtaskNanoModal = ({
       toast.success("Logged time added");
     } catch (error) {
       console.error("Error adding logged time:", error);
-      toast.error("Failed to add logged time");
+      toast.error("Failed to add logged time: " + error.message);
     }
   };
 
@@ -731,6 +742,15 @@ const SubtaskNanoModal = ({
       const hours = parseInt(editLoggedHours) || 0;
       const minutes = parseInt(editLoggedMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
+
+      const entry = loggedTime.find(e => e.id === editingLogged);
+      if (!entry) return;
+      const entryId = entry._id || entry.id;
+
+      await Database.updateNanoTimeEntry(entityId, entryId, 'logged', {
+         hours, minutes, description: editLoggedDescription
+      });
+
       const updatedEntries = loggedTime.map(entry =>
         entry.id === editingLogged
           ? { ...entry, hours, minutes, description: editLoggedDescription, totalMinutes }
@@ -744,7 +764,7 @@ const SubtaskNanoModal = ({
       toast.success("Logged time updated");
     } catch (error) {
       console.error("Error updating logged time:", error);
-      toast.error("Failed to update logged time");
+      toast.error("Failed to update logged time: " + error.message);
     }
   };
 
@@ -758,17 +778,21 @@ const SubtaskNanoModal = ({
   const handleDeleteLoggedTime = async (entryId) => {
     try {
       // Find the entry to check ownership
-      const entry = loggedTime.find(e => e.id === entryId);
+      const entry = loggedTime.find(e => e.id === entryId || e._id === entryId);
       if (entry && !userOwnsTimeEntry(entry)) {
         toast.error("You can only delete your own time entries");
         return;
       }
-      const updatedEntries = loggedTime.filter(entry => entry.id !== entryId);
+      
+      const realId = entry._id || entry.id;
+      await Database.deleteNanoTimeEntry(entityId, realId, 'logged');
+
+      const updatedEntries = loggedTime.filter(entry => entry.id !== entryId && entry._id !== entryId);
       setLoggedTime(updatedEntries);
       toast.success("Logged time deleted");
     } catch (error) {
       console.error("Error deleting logged time:", error);
-      toast.error("Failed to delete logged time");
+      toast.error("Failed to delete logged time: " + error.message);
     }
   };
 
@@ -782,24 +806,23 @@ const SubtaskNanoModal = ({
     try {
       const hours = parseInt(newBilledHours) || 0;
       const minutes = parseInt(newBilledMinutes) || 0;
-      const totalMinutes = hours * 60 + minutes;
       
       // Use selected date or default to today
       const selectedDate = newBilledDate || getTodayDate();
       const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
       
-      const newEntry = {
-        // NO _id field - backend will detect this as new entry and assign current user
-        id: `new-billed-${Date.now()}`, // Only for React key, not for backend
+      const response = await Database.addNanoTimeEntry(entityId, 'billed', {
         hours,
         minutes,
         description: newBilledDescription,
-        totalMinutes,
-        date: dateObj.toISOString(),
-        // Store user info for immediate UI display (backend will override with req.user)
-        user: user ? { _id: user._id, name: user.name, email: user.email, avatar: user.avatar } : null,
-        userName: user?.name // Denormalized for display
+        date: dateObj.toISOString()
+      });
+
+      const newEntry = {
+        ...response.data,
+        id: response.data._id
       };
+      
       const updatedEntries = [...billedTime, newEntry];
       setBilledTime(updatedEntries);
       setNewBilledHours("");
@@ -809,7 +832,7 @@ const SubtaskNanoModal = ({
       toast.success("Billed time added");
     } catch (error) {
       console.error("Error adding billed time:", error);
-      toast.error("Failed to add billed time");
+      toast.error("Failed to add billed time: " + error.message);
     }
   };
 
@@ -830,6 +853,15 @@ const SubtaskNanoModal = ({
       const hours = parseInt(editBilledHours) || 0;
       const minutes = parseInt(editBilledMinutes) || 0;
       const totalMinutes = hours * 60 + minutes;
+
+      const entry = billedTime.find(e => e.id === editingBilled);
+      if (!entry) return;
+      const entryId = entry._id || entry.id;
+
+      await Database.updateNanoTimeEntry(entityId, entryId, 'billed', {
+         hours, minutes, description: editBilledDescription
+      });
+
       const updatedEntries = billedTime.map(entry =>
         entry.id === editingBilled
           ? { ...entry, hours, minutes, description: editBilledDescription, totalMinutes }
@@ -843,7 +875,7 @@ const SubtaskNanoModal = ({
       toast.success("Billed time updated");
     } catch (error) {
       console.error("Error updating billed time:", error);
-      toast.error("Failed to update billed time");
+      toast.error("Failed to update billed time: " + error.message);
     }
   };
 
@@ -857,17 +889,21 @@ const SubtaskNanoModal = ({
   const handleDeleteBilledTime = async (entryId) => {
     try {
       // Find the entry to check ownership
-      const entry = billedTime.find(e => e.id === entryId);
+      const entry = billedTime.find(e => e.id === entryId || e._id === entryId);
       if (entry && !userOwnsTimeEntry(entry)) {
         toast.error("You can only delete your own time entries");
         return;
       }
-      const updatedEntries = billedTime.filter(entry => entry.id !== entryId);
+      
+      const realId = entry._id || entry.id;
+      await Database.deleteNanoTimeEntry(entityId, realId, 'billed');
+
+      const updatedEntries = billedTime.filter(entry => entry.id !== entryId && entry._id !== entryId);
       setBilledTime(updatedEntries);
       toast.success("Billed time deleted");
     } catch (error) {
       console.error("Error deleting billed time:", error);
-      toast.error("Failed to delete billed time");
+      toast.error("Failed to delete billed time: " + error.message);
     }
   };
 

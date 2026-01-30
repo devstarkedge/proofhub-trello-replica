@@ -406,11 +406,8 @@ export const deleteSalesRow = async (req, res) => {
       });
     }
 
-    // Soft delete
-    row.isDeleted = true;
-    row.deletedAt = new Date();
-    row.deletedBy = userId;
-    await row.save();
+    // Hard delete
+    await SalesRow.findByIdAndDelete(req.params.id);
 
     // Log activity
     await SalesActivityLog.logActivity({
@@ -527,16 +524,7 @@ export const bulkDeleteRows = async (req, res) => {
       });
     }
 
-    const result = await SalesRow.updateMany(
-      { _id: { $in: rowIds }, isDeleted: false },
-      {
-        $set: {
-          isDeleted: true,
-          deletedAt: new Date(),
-          deletedBy: userId
-        }
-      }
-    );
+    const result = await SalesRow.deleteMany({ _id: { $in: rowIds } });
 
     // Log activity for each deleted row
     const logPromises = rowIds.map(rowId =>
@@ -556,8 +544,8 @@ export const bulkDeleteRows = async (req, res) => {
 
     res.json({
       success: true,
-      message: `Successfully deleted ${result.modifiedCount} rows`,
-      deletedCount: result.modifiedCount
+      message: `Successfully deleted ${result.deletedCount} rows`,
+      deletedCount: result.deletedCount
     });
   } catch (error) {
     console.error('Bulk delete error:', error);

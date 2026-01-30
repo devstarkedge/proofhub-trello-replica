@@ -1769,3 +1769,219 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
     data: cards,
   });
 });
+
+// @desc    Add time tracking entry
+// @route   POST /api/cards/:id/time-tracking
+// @access  Private
+export const addTimeEntry = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  const { type, entry } = req.body;
+
+  if (!['estimation', 'logged', 'billed'].includes(type)) {
+    return next(new ErrorResponse('Invalid time entry type', 400));
+  }
+
+  const card = await Card.findById(id);
+  if (!card) {
+    return next(new ErrorResponse('Card not found', 404));
+  }
+
+  const fieldName = `${type}Time`;
+  
+  // Create valid entry with new ID
+  const newEntry = {
+    ...entry,
+    user: req.user.id, // Enforce current user as owner
+    _id: new mongoose.Types.ObjectId()
+  };
+
+  // Ensure hours/minutes are integers
+  if (newEntry.hours) newEntry.hours = parseInt(newEntry.hours) || 0;
+  if (newEntry.minutes) newEntry.minutes = parseInt(newEntry.minutes) || 0;
+
+  // Add to array
+  card[fieldName].push(newEntry);
+  await card.save();
+
+  // Populate user info for response
+  await card.populate(`${fieldName}.user`, 'name email avatar');
+  
+  // Find the newly added entry to return
+  const addedEntry = card[fieldName].find(e => e._id.toString() === newEntry._id.toString());
+  
+  // Log activity
+  await Activity.create({
+    type: 'time_logged',
+    description: `Added ${type} time entry (${newEntry.hours}h ${newEntry.minutes}m)`,
+    user: req.user.id,
+    board: card.board,
+    card: card._id,
+    list: card.list,
+    contextType: 'task',
+    metadata: {
+        timeType: type,
+        hours: newEntry.hours,
+        minutes: newEntry.minutes
+    }
+  });
+
+  // Emit socket event
+  emitToBoard(card.board.toString(), 'card-updated', {
+    cardId: card._id,
+    updates: {
+      [fieldName]: card[fieldName]
+    }
+  });
+
+  if (type === 'logged' || type === 'billed') {
+    emitFinanceDataRefresh({
+      changeType: type === 'billed' ? 'billed_time' : 'logged_time',
+      cardId: card._id.toString(),
+      boardId: card.board.toString()
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: addedEntry
+  });
+});
+
+// @desc    Update time tracking entry
+// @route   PUT /api/cards/:id/time-tracking/:entryId
+// @access  Private
+export const updateTimeEntry = asyncHandler(async (req, res, next) => {
+  const { id, entryId } = req.params;
+  const { type, updates } = req.body;
+
+  if (!['estimation', 'logged', 'billed'].includes(type)) {
+    return next(new ErrorResponse('Invalid time entry type', 400));
+  }
+
+  const card = await Card.findById(id);
+  if (!card) {
+    return next(new ErrorResponse('Card not found', 404));
+  }
+
+  const fieldName = `${type}Time`;
+  const entryIndex = card[fieldName].findIndex(e => e._id.toString() === entryId);
+
+  if (entryIndex === -1) {
+    return next(new ErrorResponse('Time entry not found', 404));
+  }
+
+  const entry = card[fieldName][entryIndex];
+
+  // check ownership
+  if (entry.user.toString() !== req.user.id.toString()) {
+     return next(new ErrorResponse('Not authorized to update this time entry', 403));
+  }
+
+  // Update fields
+  if (updates.hours !== undefined) entry.hours = parseInt(updates.hours) || 0;
+  if (updates.minutes !== undefined) entry.minutes = parseInt(updates.minutes) || 0;
+  if (updates.date !== undefined) entry.date = updates.date;
+  if (updates.reason !== undefined && type === 'estimation') entry.reason = updates.reason;
+  if (updates.description !== undefined && type !== 'estimation') entry.description = updates.description;
+
+  await card.save();
+  await card.populate(`${fieldName}.user`, 'name email avatar');
+  const updatedEntry = card[fieldName][entryIndex];
+
+  // Log activity
+  await Activity.create({
+    type: 'time_logged',
+    description: `Updated ${type} time entry`,
+    user: req.user.id,
+    board: card.board,
+    card: card._id,
+    list: card.list,
+    contextType: 'task'
+  });
+
+  emitToBoard(card.board.toString(), 'card-updated', {
+    cardId: card._id,
+    updates: {
+      [fieldName]: card[fieldName]
+    }
+  });
+  
+  if (type === 'logged' || type === 'billed') {
+    emitFinanceDataRefresh({
+      changeType: type === 'billed' ? 'billed_time' : 'logged_time',
+      cardId: card._id.toString(),
+      boardId: card.board.toString()
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: updatedEntry
+  });
+});
+
+// @desc    Delete time tracking entry
+// @route   DELETE /api/cards/:id/time-tracking/:entryId
+// @access  Private
+export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
+  const { id, entryId } = req.params;
+  const { type } = req.query; // Pass type as query param
+
+  if (!['estimation', 'logged', 'billed'].includes(type)) {
+    return next(new ErrorResponse('Invalid time entry type', 400));
+  }
+
+  const card = await Card.findById(id);
+  if (!card) {
+    return next(new ErrorResponse('Card not found', 404));
+  }
+
+  const fieldName = `${type}Time`;
+  const entryIndex = card[fieldName].findIndex(e => e._id.toString() === entryId);
+
+  if (entryIndex === -1) {
+    return next(new ErrorResponse('Time entry not found', 404));
+  }
+
+  const entry = card[fieldName][entryIndex];
+
+  // check ownership
+  if (entry.user.toString() !== req.user.id.toString()) {
+     return next(new ErrorResponse('Not authorized to delete this time entry', 403));
+  }
+
+  // Remove from array
+  card[fieldName].splice(entryIndex, 1);
+  await card.save();
+
+  // Log activity
+  await Activity.create({
+    type: 'time_logged',
+    description: `Deleted ${type} time entry`,
+    user: req.user.id,
+    board: card.board,
+    card: card._id,
+    list: card.list,
+    contextType: 'task'
+  });
+
+  emitToBoard(card.board.toString(), 'card-updated', {
+    cardId: card._id,
+    updates: {
+      [fieldName]: card[fieldName]
+    }
+  });
+
+  if (type === 'logged' || type === 'billed') {
+    emitFinanceDataRefresh({
+      changeType: type === 'billed' ? 'billed_time' : 'logged_time',
+      cardId: card._id.toString(),
+      boardId: card.board.toString()
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { _id: entryId }
+  });
+});

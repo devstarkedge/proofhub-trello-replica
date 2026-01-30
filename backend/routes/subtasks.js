@@ -7,7 +7,10 @@ import {
   updateSubtask,
   deleteSubtask,
   reorderSubtasks,
-  getSubtaskActivity
+  getSubtaskActivity,
+  addTimeEntry,
+  updateTimeEntry,
+  deleteTimeEntry
 } from '../controllers/subtaskController.js';
 
 const router = express.Router();
@@ -20,6 +23,10 @@ router.get('/:id/activity', protect, getSubtaskActivity);
 router.get('/:id', protect, getSubtaskById);
 router.put('/:id', protect, updateSubtask);
 router.delete('/:id', protect, deleteSubtask);
+
+router.post('/:id/time-tracking', protect, addTimeEntry);
+router.put('/:id/time-tracking/:entryId', protect, updateTimeEntry);
+router.delete('/:id/time-tracking/:entryId', protect, deleteTimeEntry);
 
 export default router;
 

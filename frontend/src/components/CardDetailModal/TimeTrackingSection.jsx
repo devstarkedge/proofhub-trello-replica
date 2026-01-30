@@ -410,9 +410,7 @@ const TimeTrackingSection = ({
                       <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
                         <AnimatePresence>
                           {estimationEntries.map((entry, index) => {
-                            const safeKey =
-                              String(entry.id || `estimation-${index}`).trim() ||
-                              `estimation-${index}`;
+                            const safeKey = entry._id || entry.id || `estimation-${index}`;
                             return (
                               <motion.div
                                 key={safeKey}
@@ -676,9 +674,7 @@ const TimeTrackingSection = ({
                       <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
                         <AnimatePresence>
                           {loggedTime.map((entry, index) => {
-                            const safeKey =
-                              String(entry.id || `logged-${index}`).trim() ||
-                              `logged-${index}`;
+                            const safeKey = entry._id || entry.id || `logged-${index}`;
                             return (
                               <motion.div
                                 key={safeKey}
@@ -967,9 +963,7 @@ const TimeTrackingSection = ({
                           <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
                             <AnimatePresence>
                               {billedTime.map((entry, index) => {
-                                const safeKey =
-                                  String(entry.id || `billed-${index}`).trim() ||
-                                  `billed-${index}`;
+                                const safeKey = entry._id || entry.id || `billed-${index}`;
                                 return (
                                   <motion.div
                                     key={safeKey}

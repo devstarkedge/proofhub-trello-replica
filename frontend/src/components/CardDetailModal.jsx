@@ -433,18 +433,23 @@ const CardDetailModal = React.memo(({
           }
         }
 
-        if (updates.estimationTime) setEstimationEntries((updates.estimationTime || []).map((entry, idx) => {
-          const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
-          return { ...entry, id };
-        }));
-        if (updates.loggedTime) setLoggedTime((updates.loggedTime || []).map((entry, idx) => {
-          const id = String(entry.id || entry._id || `logged-${idx}`).trim() || `logged-${idx}`;
-          return { ...entry, id };
-        }));
-        if (updates.billedTime) setBilledTime((updates.billedTime || []).map((entry, idx) => {
-          const id = String(entry.id || entry._id || `billed-${idx}`).trim() || `billed-${idx}`;
-          return { ...entry, id };
-        }));
+
+        // Helper to ensure IDs for React keys
+        const mapWithId = (entries, prefix) => (entries || []).map((entry, idx) => {
+             // Prefer _id, fallback to existing id, then temp
+             const id = entry._id ? String(entry._id) : (entry.id || `${prefix}-${idx}-${Date.now()}`);
+             return { ...entry, id };
+        });
+
+        if (updates.estimationTime) {
+          setEstimationEntries(mapWithId(updates.estimationTime, 'estimation'));
+        }
+        if (updates.loggedTime) {
+          setLoggedTime(mapWithId(updates.loggedTime, 'logged'));
+        }
+        if (updates.billedTime) {
+          setBilledTime(mapWithId(updates.billedTime, 'billed'));
+        }
         if (updates.attachments) setAttachments(updates.attachments);
       }
     };
@@ -755,7 +760,7 @@ const CardDetailModal = React.memo(({
    * 1. Assign req.user.id as the owner for entries without _id
    * 2. Preserve the original user for entries WITH _id
    */
-  const handleAddEstimation = useCallback(() => {
+  const handleAddEstimation = useCallback(async () => {
     // Check validation error first
     if (estimationValidationError) {
       toast.error(estimationValidationError);
@@ -772,30 +777,31 @@ const CardDetailModal = React.memo(({
 
     // Use selected date or default to today
     const selectedDate = newEstimationDate || getTodayDate();
-    const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
+    const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
 
     const normalized = normalizeTime(hours, minutes);
-    const newEntry = {
-      // NO _id field - backend will detect this as new entry and assign current user
-      id: `new-estimation-${Date.now()}`, // Only for React key, not for backend
-      hours: normalized.hours,
-      minutes: normalized.minutes,
-      reason: newEstimationReason,
-      // Store user info for immediate UI display (backend will override with req.user)
-      user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
-      userName: user.name, // Denormalized for display
-      date: dateObj.toISOString(),
-    };
+    const cardId = card._id || card.id;
+    
+    try {
+      const response = await Database.addCardTimeEntry(cardId, 'estimation', {
+        hours: normalized.hours,
+        minutes: normalized.minutes,
+        reason: newEstimationReason,
+        date: dateObj.toISOString()
+      });
 
-    setEstimationEntries(prev => [...prev, newEntry]);
-    setNewEstimationHours("");
-    setNewEstimationMinutes("");
-    setNewEstimationReason("");
-    setNewEstimationDate("");
-    toast.success("Estimation added successfully!");
-  }, [newEstimationHours, newEstimationMinutes, newEstimationReason, newEstimationDate, estimationValidationError, user._id, user.name, user.email, user.avatar]);
+      setNewEstimationHours("");
+      setNewEstimationMinutes("");
+      setNewEstimationReason("");
+      setNewEstimationDate("");
+      toast.success("Estimation added successfully!");
+    } catch (error) {
+      console.error("Error adding estimation:", error);
+      toast.error("Failed to add estimation: " + error.message);
+    }
+  }, [newEstimationHours, newEstimationMinutes, newEstimationReason, newEstimationDate, estimationValidationError, card]);
 
-  const handleAddLoggedTime = useCallback(() => {
+  const handleAddLoggedTime = useCallback(async () => {
     // Check validation error first
     if (loggedValidationError) {
       toast.error(loggedValidationError);
@@ -810,32 +816,32 @@ const CardDetailModal = React.memo(({
       return;
     }
 
-    // Use selected date or default to today
     const selectedDate = newLoggedDate || getTodayDate();
-    const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
+    const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
 
     const normalized = normalizeTime(hours, minutes);
-    const newEntry = {
-      // NO _id field - backend will detect this as new entry and assign current user
-      id: `new-logged-${Date.now()}`, // Only for React key, not for backend
-      hours: normalized.hours,
-      minutes: normalized.minutes,
-      description: newLoggedDescription,
-      // Store user info for immediate UI display (backend will override with req.user)
-      user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
-      userName: user.name, // Denormalized for display
-      date: dateObj.toISOString(),
-    };
+    const cardId = card._id || card.id;
+    
+    try {
+      const response = await Database.addCardTimeEntry(cardId, 'logged', {
+        hours: normalized.hours,
+        minutes: normalized.minutes,
+        description: newLoggedDescription,
+        date: dateObj.toISOString()
+      });
 
-    setLoggedTime(prev => [...prev, newEntry]);
-    setNewLoggedHours("");
-    setNewLoggedMinutes("");
-    setNewLoggedDescription("");
-    setNewLoggedDate("");
-    toast.success("Time logged successfully!");
-  }, [newLoggedHours, newLoggedMinutes, newLoggedDescription, newLoggedDate, loggedValidationError, user._id, user.name, user.email, user.avatar]);
+      setNewLoggedHours("");
+      setNewLoggedMinutes("");
+      setNewLoggedDescription("");
+      setNewLoggedDate("");
+      toast.success("Time logged successfully!");
+    } catch (error) {
+      console.error("Error logging time:", error);
+      toast.error("Failed to log time: " + error.message);
+    }
+  }, [newLoggedHours, newLoggedMinutes, newLoggedDescription, newLoggedDate, loggedValidationError, card]);
 
-  const handleAddBilledTime = useCallback(() => {
+  const handleAddBilledTime = useCallback(async () => {
     // Check validation error first
     if (billedValidationError) {
       toast.error(billedValidationError);
@@ -850,30 +856,32 @@ const CardDetailModal = React.memo(({
       return;
     }
 
-    // Use selected date or default to today
     const selectedDate = newBilledDate || getTodayDate();
-    const dateObj = new Date(selectedDate + 'T12:00:00.000Z'); // Use noon to avoid timezone issues
+    const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
 
     const normalized = normalizeTime(hours, minutes);
-    const newEntry = {
-      // NO _id field - backend will detect this as new entry and assign current user
-      id: `new-billed-${Date.now()}`, // Only for React key, not for backend
-      hours: normalized.hours,
-      minutes: normalized.minutes,
-      description: newBilledDescription,
-      // Store user info for immediate UI display (backend will override with req.user)
-      user: { _id: user._id, name: user.name, email: user.email, avatar: user.avatar },
-      userName: user.name, // Denormalized for display
-      date: dateObj.toISOString(),
-    };
+    const cardId = card._id || card.id;
+    
+    try {
+      const response = await Database.addCardTimeEntry(cardId, 'billed', {
+        hours: normalized.hours,
+        minutes: normalized.minutes,
+        description: newBilledDescription,
+        date: dateObj.toISOString()
+      });
 
-    setBilledTime(prev => [...prev, newEntry]);
-    setNewBilledHours("");
-    setNewBilledMinutes("");
-    setNewBilledDescription("");
-    setNewBilledDate("");
-    toast.success("Billed time added successfully!");
-  }, [newBilledHours, newBilledMinutes, newBilledDescription, newBilledDate, billedValidationError, user._id, user.name, user.email, user.avatar]);
+      setNewBilledHours("");
+      setNewBilledMinutes("");
+      setNewBilledDescription("");
+      setNewBilledDate("");
+      toast.success("Billed time added successfully!");
+    } catch (error) {
+      console.error("Error adding billed time:", error);
+      toast.error("Failed to add billed time: " + error.message);
+    }
+  }, [newBilledHours, newBilledMinutes, newBilledDescription, newBilledDate, billedValidationError, card]);
+
+
 
   const startEditingEstimation = useCallback((entry) => {
     // Ownership check - only allow editing own entries
@@ -899,7 +907,7 @@ const CardDetailModal = React.memo(({
     setEditLoggedDescription(entry.description);
   }, [userOwnsTimeEntry]);
 
-  const saveEstimationEdit = useCallback((id) => {
+  const saveEstimationEdit = useCallback(async (id) => {
     const hours = parseInt(editEstimationHours || 0);
     const minutes = parseInt(editEstimationMinutes || 0);
 
@@ -909,26 +917,44 @@ const CardDetailModal = React.memo(({
     }
 
     const normalized = normalizeTime(hours, minutes);
-    setEstimationEntries(prev =>
-      prev.map((entry) =>
-        entry.id === id
-          ? {
-              ...entry,
-              hours: normalized.hours,
-              minutes: normalized.minutes,
-              reason: editEstimationReason,
-            }
-          : entry
-      )
-    );
-    setEditingEstimation(null);
-    setEditEstimationHours("");
-    setEditEstimationMinutes("");
-    setEditEstimationReason("");
-    toast.success("Estimation updated successfully!");
-  }, [editEstimationHours, editEstimationMinutes, editEstimationReason]);
+    const cardId = card._id || card.id;
+    
+    try {
+      // Find entry to get real _id
+      const entry = estimationEntries.find(e => e.id === id);
+      if (!entry) throw new Error("Entry not found");
+      const entryId = entry._id || entry.id;
 
-  const saveLoggedEdit = useCallback((id) => {
+      await Database.updateCardTimeEntry(cardId, entryId, 'estimation', {
+        hours: normalized.hours,
+        minutes: normalized.minutes,
+        reason: editEstimationReason
+      });
+
+      setEstimationEntries(prev =>
+        prev.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                hours: normalized.hours,
+                minutes: normalized.minutes,
+                reason: editEstimationReason,
+              }
+            : entry
+        )
+      );
+      setEditingEstimation(null);
+      setEditEstimationHours("");
+      setEditEstimationMinutes("");
+      setEditEstimationReason("");
+      toast.success("Estimation updated successfully!");
+    } catch (error) {
+      console.error("Error updating estimation:", error);
+      toast.error("Failed to update: " + error.message);
+    }
+  }, [editEstimationHours, editEstimationMinutes, editEstimationReason, card, estimationEntries]);
+
+  const saveLoggedEdit = useCallback(async (id) => {
     const hours = parseInt(editLoggedHours || 0);
     const minutes = parseInt(editLoggedMinutes || 0);
 
@@ -938,24 +964,41 @@ const CardDetailModal = React.memo(({
     }
 
     const normalized = normalizeTime(hours, minutes);
-    setLoggedTime(prev =>
-      prev.map((entry) =>
-        entry.id === id
-          ? {
-              ...entry,
-              hours: normalized.hours,
-              minutes: normalized.minutes,
-              description: editLoggedDescription,
-            }
-          : entry
-      )
-    );
-    setEditingLogged(null);
-    setEditLoggedHours("");
-    setEditLoggedMinutes("");
-    setEditLoggedDescription("");
-    toast.success("Logged time updated successfully!");
-  }, [editLoggedHours, editLoggedMinutes, editLoggedDescription]);
+    const cardId = card._id || card.id;
+
+    try {
+       const entry = loggedTime.find(e => e.id === id);
+       if (!entry) throw new Error("Entry not found");
+       const entryId = entry._id || entry.id;
+
+       await Database.updateCardTimeEntry(cardId, entryId, 'logged', {
+         hours: normalized.hours,
+         minutes: normalized.minutes,
+         description: editLoggedDescription
+       });
+
+        setLoggedTime(prev =>
+          prev.map((entry) =>
+            entry.id === id
+              ? {
+                  ...entry,
+                  hours: normalized.hours,
+                  minutes: normalized.minutes,
+                  description: editLoggedDescription,
+                }
+              : entry
+          )
+        );
+        setEditingLogged(null);
+        setEditLoggedHours("");
+        setEditLoggedMinutes("");
+        setEditLoggedDescription("");
+        toast.success("Logged time updated successfully!");
+    } catch (error) {
+       console.error("Error updating logged time:", error);
+       toast.error("Failed to update: " + error.message);
+    }
+  }, [editLoggedHours, editLoggedMinutes, editLoggedDescription, card, loggedTime]);
 
   const cancelEstimationEdit = useCallback(() => {
     setEditingEstimation(null);
@@ -983,7 +1026,7 @@ const CardDetailModal = React.memo(({
     setEditBilledDescription(entry.description);
   }, [userOwnsTimeEntry]);
 
-  const saveBilledEdit = useCallback((id) => {
+  const saveBilledEdit = useCallback(async (id) => {
     const hours = parseInt(editBilledHours || 0);
     const minutes = parseInt(editBilledMinutes || 0);
 
@@ -993,24 +1036,41 @@ const CardDetailModal = React.memo(({
     }
 
     const normalized = normalizeTime(hours, minutes);
-    setBilledTime(prev =>
-      prev.map((entry) =>
-        entry.id === id
-          ? {
-              ...entry,
-              hours: normalized.hours,
-              minutes: normalized.minutes,
-              description: editBilledDescription,
-            }
-          : entry
-      )
-    );
-    setEditingBilled(null);
-    setEditBilledHours("");
-    setEditBilledMinutes("");
-    setEditBilledDescription("");
-    toast.success("Billed time updated successfully!");
-  }, [editBilledHours, editBilledMinutes, editBilledDescription]);
+    const cardId = card._id || card.id;
+
+    try {
+       const entry = billedTime.find(e => e.id === id);
+       if (!entry) throw new Error("Entry not found");
+       const entryId = entry._id || entry.id;
+
+       await Database.updateCardTimeEntry(cardId, entryId, 'billed', {
+         hours: normalized.hours,
+         minutes: normalized.minutes,
+         description: editBilledDescription
+       });
+
+        setBilledTime(prev =>
+          prev.map((entry) =>
+            entry.id === id
+              ? {
+                  ...entry,
+                  hours: normalized.hours,
+                  minutes: normalized.minutes,
+                  description: editBilledDescription,
+                }
+              : entry
+          )
+        );
+        setEditingBilled(null);
+        setEditBilledHours("");
+        setEditBilledMinutes("");
+        setEditBilledDescription("");
+        toast.success("Billed time updated successfully!");
+    } catch (error) {
+       console.error("Error updating billed time:", error);
+       toast.error("Failed to update: " + error.message);
+    }
+  }, [editBilledHours, editBilledMinutes, editBilledDescription, card, billedTime]);
 
   const cancelBilledEdit = useCallback(() => {
     setEditingBilled(null);
@@ -1020,38 +1080,62 @@ const CardDetailModal = React.memo(({
   }, []);
 
   // Memoized delete handlers for time tracking entries with ownership validation
-  const confirmDeleteEstimation = useCallback((id) => {
+  const confirmDeleteEstimation = useCallback(async (id) => {
     // Find the entry and check ownership
     const entry = estimationEntries.find(e => e.id === id || e._id === id);
     if (entry && !userOwnsTimeEntry(entry)) {
       toast.error("You can only delete your own time entries");
       return;
     }
-    setEstimationEntries(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
-    toast.info("Estimation entry removed");
-  }, [estimationEntries, userOwnsTimeEntry]);
+    const cardId = card._id || card.id;
+    try {
+        const entryId = entry._id || entry.id;
+        await Database.deleteCardTimeEntry(cardId, entryId, 'estimation');
+        setEstimationEntries(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
+        toast.info("Estimation entry removed");
+    } catch (error) {
+        console.error("Error deleting estimation:", error);
+        toast.error("Failed to delete estimation");
+    }
+  }, [estimationEntries, userOwnsTimeEntry, card]);
 
-  const confirmDeleteLoggedTime = useCallback((id) => {
+  const confirmDeleteLoggedTime = useCallback(async (id) => {
     // Find the entry and check ownership
     const entry = loggedTime.find(e => e.id === id || e._id === id);
     if (entry && !userOwnsTimeEntry(entry)) {
       toast.error("You can only delete your own time entries");
       return;
     }
-    setLoggedTime(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
-    toast.info("Time entry removed");
-  }, [loggedTime, userOwnsTimeEntry]);
+    const cardId = card._id || card.id;
+    try {
+        const entryId = entry._id || entry.id;
+        await Database.deleteCardTimeEntry(cardId, entryId, 'logged');
+        setLoggedTime(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
+        toast.info("Time entry removed");
+    } catch (error) {
+        console.error("Error deleting time:", error);
+        toast.error("Failed to delete time entry");
+    }
+  }, [loggedTime, userOwnsTimeEntry, card]);
 
-  const confirmDeleteBilledTime = useCallback((id) => {
+  const confirmDeleteBilledTime = useCallback(async (id) => {
     // Find the entry and check ownership
     const entry = billedTime.find(e => e.id === id || e._id === id);
     if (entry && !userOwnsTimeEntry(entry)) {
       toast.error("You can only delete your own time entries");
       return;
     }
-    setBilledTime(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
-    toast.info("Billed time entry removed");
-  }, [billedTime, userOwnsTimeEntry]);
+    const cardId = card._id || card.id;
+    try {
+        const entryId = entry._id || entry.id;
+        await Database.deleteCardTimeEntry(cardId, entryId, 'billed');
+        setBilledTime(prev => prev.filter((entry) => entry.id !== id && entry._id !== id));
+        toast.info("Billed time entry removed");
+    } catch (error) {
+        console.error("Error deleting billed time:", error);
+        toast.error("Failed to delete billed time");
+    }
+  }, [billedTime, userOwnsTimeEntry, card]);
 
   const handleSave = async () => {
     const cardId = card._id || card.id;
@@ -1124,9 +1208,7 @@ const CardDetailModal = React.memo(({
         attachments: attachments.length > 0 ? attachments : [],
         coverImage: coverImage ? (typeof coverImage === 'object' ? coverImage._id : coverImage) : null,
         // Properly prepare time entries with _id preservation for ownership
-        estimationTime: estimationEntries.map(entry => prepareTimeEntry(entry, 'estimation')),
-        loggedTime: loggedTime.map(entry => prepareTimeEntry(entry, 'logged')),
-        billedTime: billedTime.map(entry => prepareTimeEntry(entry, 'billed')),
+        // estimationTime, loggedTime, billedTime REMOVED - handled independently
       };
       
       // Include full label objects for optimistic UI update
