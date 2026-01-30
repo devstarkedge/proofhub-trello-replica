@@ -17,7 +17,8 @@ const SalesFilters = () => {
   const [datePickerState, setDatePickerState] = useState({
     isOpen: false,
     target: null, // 'dateFrom' | 'dateTo'
-    title: ''
+    title: '',
+    minDate: null
   });
 
   // Fetch dropdown options on mount
@@ -40,8 +41,8 @@ const SalesFilters = () => {
     setFilters({ [key]: value });
   }, [setFilters]);
 
-  const openDatePicker = (target, title) => {
-    setDatePickerState({ isOpen: true, target, title });
+  const openDatePicker = (target, title, minDate = null) => {
+    setDatePickerState({ isOpen: true, target, title, minDate });
   };
 
   const handleDateSelect = (dateString) => {
@@ -49,6 +50,73 @@ const SalesFilters = () => {
       handleFilterChange(datePickerState.target, dateString);
     }
   };
+
+  // Date Presets Logic
+  const [datePreset, setDatePreset] = useState('');
+
+  const calculateDateRange = (preset) => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // Include full today
+    
+    let from = new Date();
+    from.setHours(0, 0, 0, 0);
+
+    switch (preset) {
+      case 'thisWeek':
+        // Start of week (assuming Monday)
+        const day = today.getDay();
+        const diff = today.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+        from.setDate(diff);
+        return { from, to: today };
+      case 'thisMonth':
+        from.setDate(1);
+        return { from, to: today };
+      case 'thisYear':
+        from.setMonth(0, 1);
+        return { from, to: today };
+      default:
+        return null;
+    }
+  };
+
+  const handlePresetChange = (preset) => {
+    setDatePreset(preset);
+
+    if (preset === 'custom') {
+      // Don't clear dates, just let user pick
+      return;
+    }
+
+    if (preset === 'all') {
+      setFilters({ dateFrom: null, dateTo: null });
+      return;
+    }
+
+    const range = calculateDateRange(preset);
+    if (range) {
+      setFilters({
+        dateFrom: range.from.toISOString(),
+        dateTo: range.to.toISOString()
+      });
+    }
+  };
+
+  // Determine preset on mount/update based on filters
+  useEffect(() => {
+    // If we want to sync the dropdown with external changes to filters, we can add logic here.
+    // However, checking if a specific range matches "This Week" exactly is tricky and maybe unnecessary.
+    // For now, if dateFrom/dateTo are empty, we can set preset to 'all'.
+    if (!filters.dateFrom && !filters.dateTo) {
+      setDatePreset('all');
+    } else if (datePreset !== 'custom' && datePreset !== 'thisWeek' && datePreset !== 'thisMonth' && datePreset !== 'thisYear') {
+       // If filters exist but preset is 'all' or empty, and it doesn't match a calculated preset likely, maybe default to custom?
+       // Let's keep it simple: if user sets date manually via custom view, it stays custom. 
+       // If standard filters are loaded (e.g. from URL or persisted state), we might want to default to Custom if they don't match presets.
+       // For this iteration, we'll start with 'all' if empty, or 'custom' if has values and preset is unset.
+       if (!datePreset) setDatePreset('custom');
+    }
+  }, [filters.dateFrom, filters.dateTo]);
+
 
   const activeFilterCount = Object.values(filters).filter(v => v !== '' && v !== null && v !== undefined).length;
 
@@ -107,7 +175,10 @@ const SalesFilters = () => {
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
-            onClick={clearFilters}
+            onClick={() => {
+              clearFilters();
+              setDatePreset('all'); 
+            }}
             className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
           >
             <X className="w-4 h-4" />
@@ -128,42 +199,64 @@ const SalesFilters = () => {
           >
             <div className="px-4 pb-4 pt-2 border-t border-gray-100 dark:border-gray-700/50">
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                {/* Date Range */}
-                <div className="col-span-2 xl:col-span-2 grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelClass}>
-                      <Calendar className="w-3 h-3 inline mr-1" />
-                      Date From
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        readOnly
-                        value={formatSalesDate(filters.dateFrom)}
-                        onClick={() => openDatePicker('dateFrom', 'Select Start Date')}
-                        className={inputClass}
-                        placeholder="dd-mm-yyyy"
-                      />
-                      <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                
+                {/* Date Presets Dropdown */}
+                <div className={`col-span-2 xl:col-span-2 grid ${datePreset === 'custom' ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
+                    <div className={datePreset === 'custom' ? "col-span-1" : "col-span-2"}>
+                      <label className={labelClass}>
+                        <Calendar className="w-3 h-3 inline mr-1" />
+                        Date Filter
+                      </label>
+                      <select
+                        value={datePreset}
+                        onChange={(e) => handlePresetChange(e.target.value)}
+                        className={selectClass}
+                      >
+                         <option value="all">All Time (Default)</option>
+                         <option value="thisWeek">This Week</option>
+                         <option value="thisMonth">This Month</option>
+                         <option value="thisYear">This Year</option>
+                         <option value="custom">Custom Range</option>
+                      </select>
                     </div>
-                  </div>
-                  <div>
-                    <label className={labelClass}>
-                      <Calendar className="w-3 h-3 inline mr-1" />
-                      Date To
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        readOnly
-                        value={formatSalesDate(filters.dateTo)}
-                        onClick={() => openDatePicker('dateTo', 'Select End Date')}
-                        className={inputClass}
-                        placeholder="dd-mm-yyyy"
-                      />
-                      <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
+
+                    {/* Show Date Inputs ONLY if Custom is selected */}
+                    {datePreset === 'custom' && (
+                      <>
+                        <div>
+                          <label className={labelClass}>
+                             Date From
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              readOnly
+                              value={formatSalesDate(filters.dateFrom)}
+                              onClick={() => openDatePicker('dateFrom', 'Select Start Date')}
+                              className={inputClass}
+                              placeholder="dd-mm-yyyy"
+                            />
+                            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className={labelClass}>
+                             Date To
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              readOnly
+                              value={formatSalesDate(filters.dateTo)}
+                              onClick={() => openDatePicker('dateTo', 'Select End Date', filters.dateFrom)}
+                              className={inputClass}
+                              placeholder="dd-mm-yyyy"
+                            />
+                            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                          </div>
+                        </div>
+                      </>
+                    )}
                 </div>
 
                 {/* Platform */}
@@ -339,6 +432,7 @@ const SalesFilters = () => {
         onSelectDate={handleDateSelect}
         selectedDate={datePickerState.target ? filters[datePickerState.target] : null}
         title={datePickerState.title}
+        minDate={datePickerState.minDate}
       />
     </div>
   );

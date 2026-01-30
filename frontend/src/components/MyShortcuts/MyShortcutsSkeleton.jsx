@@ -1,18 +1,9 @@
 import React, { memo } from 'react';
-import Header from '../Header';
-import Sidebar from '../Sidebar';
 
-/**
- * Skeleton loader for My Shortcuts page
- * Shows loading state with progressive section loading
- */
 const MyShortcutsSkeleton = () => {
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
-        <main className="p-6 space-y-6">
+    <div className="bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50 h-full">
+      <main className="p-6 space-y-6">
           {/* Page Header Skeleton */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -117,8 +108,7 @@ const MyShortcutsSkeleton = () => {
               ))}
             </div>
           </div>
-        </main>
-      </div>
+      </main>
     </div>
   );
 };

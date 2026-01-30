@@ -114,7 +114,7 @@ const Header = ({ boardName }) => {
     { path: '/', icon: Kanban, label: 'Board' },
     { path: '/list-view', icon: List, label: 'Task-List' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
-    { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+    ...(user && (user.role === 'admin' || user.role === 'manager') ? [{ path: '/analytics', icon: BarChart3, label: 'Analytics' }] : []),
   ];
 
   const isActive = (path) => path === '/list-view' ? location.pathname.startsWith('/list-view') : location.pathname === path;
