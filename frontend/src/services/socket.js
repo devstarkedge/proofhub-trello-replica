@@ -392,13 +392,53 @@ class SocketService {
       console.log('Sales permissions updated via socket:', data);
       // Dispatch both socket-prefixed and generic event to support components listening for either
       window.dispatchEvent(new CustomEvent('socket-sales-permissions-updated', { detail: data }));
-      try {
-        // Also dispatch a generic event name used by ModuleAccessPanel local updates
-        const { userId, permissions } = data || {};
-        window.dispatchEvent(new CustomEvent('sales-permissions-updated', { detail: { userId, permissions } }));
-      } catch (e) {
-        // ignore
-      }
+
+    });
+
+    // Announcement events
+    this.socket.on('announcement-created', (data) => {
+      console.log('Announcement created:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-created', { detail: data }));
+    });
+
+    this.socket.on('announcement-updated', (data) => {
+      console.log('Announcement updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-updated', { detail: data }));
+    });
+
+    this.socket.on('announcement-deleted', (data) => {
+      console.log('Announcement deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-deleted', { detail: data }));
+    });
+
+    this.socket.on('announcement-archived', (data) => {
+      console.log('Announcement archived:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-archived', { detail: data }));
+    });
+
+    this.socket.on('announcement-comment-added', (data) => {
+      console.log('Announcement comment added:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-comment-added', { detail: data }));
+    });
+
+    this.socket.on('announcement-comment-deleted', (data) => {
+      console.log('Announcement comment deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-comment-deleted', { detail: data }));
+    });
+
+    this.socket.on('announcement-reaction-added', (data) => {
+      console.log('Announcement reaction added:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-reaction-added', { detail: data }));
+    });
+
+    this.socket.on('announcement-reaction-removed', (data) => {
+      console.log('Announcement reaction removed:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-reaction-removed', { detail: data }));
+    });
+
+    this.socket.on('announcement-pin-toggled', (data) => {
+      console.log('Announcement pin toggled:', data);
+      window.dispatchEvent(new CustomEvent('socket-announcement-pin-toggled', { detail: data }));
     });
   }
 
@@ -467,6 +507,21 @@ class SocketService {
     if (this.socket && this.connected) {
       console.log('Leaving my-shortcuts room');
       this.socket.emit('leave-my-shortcuts');
+    }
+  }
+
+  // Announcement room management
+  joinAnnouncements() {
+    if (this.socket && this.connected) {
+      console.log('Joining announcements room');
+      this.socket.emit('join-announcements');
+    }
+  }
+
+  leaveAnnouncements() {
+    if (this.socket && this.connected) {
+      console.log('Leaving announcements room');
+      this.socket.emit('leave-announcements');
     }
   }
 

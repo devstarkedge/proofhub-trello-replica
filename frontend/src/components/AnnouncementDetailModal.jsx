@@ -120,11 +120,11 @@ const AnnouncementDetailModal = ({
   isOpen,
   announcement,
   onClose,
-  onAddComment,
-  onDeleteComment,
-  onAddReaction,
-  onRemoveReaction,
-  onAttachmentDeleted,
+  onAddComment = () => console.warn("onAddComment missing"),
+  onDeleteComment = () => console.warn("onDeleteComment missing"),
+  onAddReaction = () => console.warn("onAddReaction missing"),
+  onRemoveReaction = () => console.warn("onRemoveReaction missing"),
+  onAttachmentDeleted = () => {},
   isLoading,
 }) => {
   const { user } = useContext(AuthContext);
@@ -134,6 +134,14 @@ const AnnouncementDetailModal = ({
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [copiedLink, setCopiedLink] = useState(null);
   const [deletingAttachment, setDeletingAttachment] = useState(null);
+  const commentsEndRef = React.useRef(null);
+
+  // Auto-scroll to bottom of comments when new ones are added
+  React.useEffect(() => {
+    if (announcement?.comments?.length) {
+      commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [announcement?.comments]);
 
   // Separate images and documents
   const { images, documents } = useMemo(() => {
@@ -621,6 +629,8 @@ const AnnouncementDetailModal = ({
                 <p className="text-sm text-gray-500">No comments yet</p>
               </div>
             )}
+
+            <div ref={commentsEndRef} />
           </div>
 
           {/* Comment Input */}

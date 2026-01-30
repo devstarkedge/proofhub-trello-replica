@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import useMyShortcutsStore from '../store/myShortcutsStore';
 import socketService from '../services/socket';
+import { useAnnouncementActions } from '../hooks/useAnnouncementActions';
+import announcementService from '../services/announcementService';
 
 // Lazy load modals
 const ActivityModal = lazy(() => import('../components/MyShortcuts/ActivityModal'));
@@ -99,6 +101,68 @@ const MyShortcutsPage = () => {
       window.removeEventListener('socket-my-shortcuts-announcement', handleNewAnnouncement);
     };
   }, [updateTaskCount, updateLoggedTime, addNewActivity, addNewAnnouncement]);
+
+  // Listen for real-time announcement updates (comments, reactions)
+  useEffect(() => {
+    socketService.joinAnnouncements();
+
+    const handleAnnouncementUpdate = async (e) => {
+      const data = e.detail;
+      // If the event relates to the currently open announcement
+      if (selectedAnnouncement && (data.announcementId === selectedAnnouncement._id || data.announcement?._id === selectedAnnouncement._id)) {
+         try {
+           // Fetch latest to be safe and simple
+           const response = await announcementService.getAnnouncement(selectedAnnouncement._id);
+           if (response.success) {
+             setSelectedAnnouncement(response.data);
+           }
+         } catch (err) {
+           console.error("Error refreshing announcement via socket:", err);
+         }
+      }
+    };
+
+    window.addEventListener('socket-announcement-comment-added', handleAnnouncementUpdate);
+    window.addEventListener('socket-announcement-comment-deleted', handleAnnouncementUpdate);
+    window.addEventListener('socket-announcement-reaction-added', handleAnnouncementUpdate);
+    window.addEventListener('socket-announcement-reaction-removed', handleAnnouncementUpdate);
+    window.addEventListener('socket-announcement-updated', handleAnnouncementUpdate);
+
+    return () => {
+      socketService.leaveAnnouncements();
+      window.removeEventListener('socket-announcement-comment-added', handleAnnouncementUpdate);
+      window.removeEventListener('socket-announcement-comment-deleted', handleAnnouncementUpdate);
+      window.removeEventListener('socket-announcement-reaction-added', handleAnnouncementUpdate);
+      window.removeEventListener('socket-announcement-reaction-removed', handleAnnouncementUpdate);
+      window.removeEventListener('socket-announcement-updated', handleAnnouncementUpdate);
+    };
+  }, [selectedAnnouncement]);
+
+  const handleAnnouncementActionSuccess = useCallback(async (action, announcementId) => {
+      // If the modal is open with this announcement, fetch the latest details
+      if (selectedAnnouncement && selectedAnnouncement._id === announcementId) {
+        try {
+          const response = await announcementService.getAnnouncement(announcementId);
+          if (response.success) {
+            setSelectedAnnouncement(response.data);
+          }
+        } catch (error) {
+          console.error('Failed to refresh announcement details:', error);
+        }
+      }
+
+      // Refresh announcements list if needed
+      fetchAnnouncements();
+  }, [fetchAnnouncements, selectedAnnouncement]);
+
+  const {
+      addComment,
+      deleteComment,
+      addReaction,
+      removeReaction,
+      deleteAttachment,
+      loadingAction
+  } = useAnnouncementActions(handleAnnouncementActionSuccess);
 
   // Navigation handlers
   const handleMyTasksClick = useCallback(() => {
@@ -196,7 +260,17 @@ const MyShortcutsPage = () => {
             
             {/* Announcements Section */}
             <AnnouncementsSection 
-              onAnnouncementClick={(announcement) => setSelectedAnnouncement(announcement)}
+              onAnnouncementClick={async (announcement) => {
+                setSelectedAnnouncement(announcement); // Optimistic update
+                try {
+                  const response = await announcementService.getAnnouncement(announcement._id);
+                  if (response.success) {
+                    setSelectedAnnouncement(response.data);
+                  }
+                } catch (error) {
+                  console.error('Failed to fetch full announcement details:', error);
+                }
+              }}
             />
           </div>
 
@@ -229,6 +303,12 @@ const MyShortcutsPage = () => {
             isOpen={!!selectedAnnouncement}
             onClose={() => setSelectedAnnouncement(null)}
             announcement={selectedAnnouncement}
+            onAddComment={addComment}
+            onDeleteComment={deleteComment}
+            onAddReaction={addReaction}
+            onRemoveReaction={removeReaction}
+            onAttachmentDeleted={deleteAttachment}
+            isLoading={loadingAction}
           />
         </Suspense>
       )}

@@ -10,7 +10,8 @@ import CreateAnnouncementModal from '../components/CreateAnnouncementModal';
 import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
 import Loading from '../components/Loading';
 import { AnnouncementsListSkeleton } from '../components/LoadingSkeleton';
-import { io } from 'socket.io-client';
+import { useAnnouncementActions } from '../hooks/useAnnouncementActions';
+import socketService from '../services/socket';
 
 const Announcements = () => {
   const { user } = useContext(AuthContext);
@@ -32,7 +33,7 @@ const Announcements = () => {
   const [sortBy, setSortBy] = useState('latest');
   const [showArchived, setShowArchived] = useState(false);
 
-  const socketRef = useRef(null);
+
   const seenAnnouncementsRef = useRef(new Set()); // Track which announcements have been marked as seen
 
   const isAdmin = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'hr';
@@ -41,37 +42,24 @@ const Announcements = () => {
   useEffect(() => {
     if (!user) return;
 
-    const token = localStorage.getItem('token');
-    const socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000', {
-      auth: {
-        userId: user._id,
-        token
-      }
-    });
+    // Join announcements room via shared service
+    socketService.joinAnnouncements();
 
-    socketRef.current = socket;
-
-    // Join announcements room
-    socket.emit('join-announcements');
-
-    // Listen for announcement events
-    socket.on('announcement-created', (data) => {
+    // Listen for announcement events via window events (dispatched by socketService)
+    const handleAnnouncementCreated = (e) => {
+      const data = e.detail;
       console.log('New announcement received:', data);
       toast.info(`📢 ${data.notification?.title || 'New announcement!'}`);
       
-      // Add to local state immediately instead of full refetch
       setAnnouncements(prev => {
-        // Check if announcement already exists
         if (prev.some(a => a._id === data.announcement._id)) return prev;
-        // Add to beginning of list
         return [data.announcement, ...prev];
       });
-      
-      // Increment unread count
       setUnreadCount(prev => prev + 1);
-    });
+    };
 
-    socket.on('announcement-updated', (data) => {
+    const handleAnnouncementUpdated = (e) => {
+      const data = e.detail;
       console.log('Announcement updated:', data);
       setAnnouncements(prev =>
         prev.map(a => a._id === data.announcementId ? data.announcement : a)
@@ -79,9 +67,10 @@ const Announcements = () => {
       if (selectedAnnouncement?._id === data.announcementId) {
         setSelectedAnnouncement(data.announcement);
       }
-    });
+    };
 
-    socket.on('announcement-deleted', (data) => {
+    const handleAnnouncementDeleted = (e) => {
+      const data = e.detail;
       console.log('Announcement deleted:', data);
       setAnnouncements(prev => prev.filter(a => a._id !== data.announcementId));
       if (selectedAnnouncement?._id === data.announcementId) {
@@ -89,19 +78,18 @@ const Announcements = () => {
         setSelectedAnnouncement(null);
       }
       toast.info('An announcement removed');
-    });
+    };
 
-    socket.on('announcement-archived', (data) => {
-      console.log('Announcement archived:', data);
+    const handleAnnouncementArchived = () => {
       fetchAnnouncements(showArchived);
-    });
+    };
 
-    socket.on('announcement-comment-added', (data) => {
+    const handleCommentAdded = (e) => {
+      const data = e.detail;
       console.log('Comment added:', data);
       if (selectedAnnouncement?._id === data.announcementId) {
         fetchAnnouncementDetail(data.announcementId);
       }
-      // Update announcement in list
       setAnnouncements(prev =>
         prev.map(a => 
           a._id === data.announcementId
@@ -109,9 +97,10 @@ const Announcements = () => {
             : a
         )
       );
-    });
+    };
 
-    socket.on('announcement-comment-deleted', (data) => {
+    const handleCommentDeleted = (e) => {
+      const data = e.detail;
       console.log('Comment deleted:', data);
       if (selectedAnnouncement?._id === data.announcementId) {
         fetchAnnouncementDetail(data.announcementId);
@@ -123,34 +112,54 @@ const Announcements = () => {
             : a
         )
       );
-    });
+    };
 
-    socket.on('announcement-reaction-added', (data) => {
+    const handleReactionAdded = (e) => {
+      const data = e.detail;
       console.log('Reaction added:', data);
       if (selectedAnnouncement?._id === data.announcementId) {
         fetchAnnouncementDetail(data.announcementId);
       }
       fetchAnnouncements(showArchived);
-    });
+    };
 
-    socket.on('announcement-reaction-removed', (data) => {
+    const handleReactionRemoved = (e) => {
+      const data = e.detail;
       console.log('Reaction removed:', data);
       if (selectedAnnouncement?._id === data.announcementId) {
         fetchAnnouncementDetail(data.announcementId);
       }
       fetchAnnouncements(showArchived);
-    });
+    };
 
-    socket.on('announcement-pin-toggled', (data) => {
-      console.log('Pin toggled:', data);
+    const handlePinToggled = () => {
       fetchAnnouncements(showArchived);
-    });
+    };
+
+    window.addEventListener('socket-announcement-created', handleAnnouncementCreated);
+    window.addEventListener('socket-announcement-updated', handleAnnouncementUpdated);
+    window.addEventListener('socket-announcement-deleted', handleAnnouncementDeleted);
+    window.addEventListener('socket-announcement-archived', handleAnnouncementArchived);
+    window.addEventListener('socket-announcement-comment-added', handleCommentAdded);
+    window.addEventListener('socket-announcement-comment-deleted', handleCommentDeleted);
+    window.addEventListener('socket-announcement-reaction-added', handleReactionAdded);
+    window.addEventListener('socket-announcement-reaction-removed', handleReactionRemoved);
+    window.addEventListener('socket-announcement-pin-toggled', handlePinToggled);
 
     return () => {
-      socket.emit('leave-announcements');
-      socket.disconnect();
+      socketService.leaveAnnouncements();
+      
+      window.removeEventListener('socket-announcement-created', handleAnnouncementCreated);
+      window.removeEventListener('socket-announcement-updated', handleAnnouncementUpdated);
+      window.removeEventListener('socket-announcement-deleted', handleAnnouncementDeleted);
+      window.removeEventListener('socket-announcement-archived', handleAnnouncementArchived);
+      window.removeEventListener('socket-announcement-comment-added', handleCommentAdded);
+      window.removeEventListener('socket-announcement-comment-deleted', handleCommentDeleted);
+      window.removeEventListener('socket-announcement-reaction-added', handleReactionAdded);
+      window.removeEventListener('socket-announcement-reaction-removed', handleReactionRemoved);
+      window.removeEventListener('socket-announcement-pin-toggled', handlePinToggled);
     };
-  }, [user, showArchived]);
+  }, [user, showArchived, selectedAnnouncement]);
 
   // Fetch announcements
   const fetchAnnouncements = async (isArchived = false) => {
@@ -337,87 +346,33 @@ const Announcements = () => {
       }
     } catch (error) {
       console.error('Error fetching announcement:', error);
-      toast.error('Failed to load announcement');
     }
   };
 
-  // Add comment
-  const handleAddComment = async (announcementId, text) => {
-    try {
-      await announcementService.addComment(announcementId, text);
-      toast.success('Comment added');
-
-      // Update selected announcement
-      const response = await announcementService.getAnnouncement(announcementId);
-      if (response.success) {
-        setSelectedAnnouncement(response.data);
+  const handleAnnouncementActionSuccess = useCallback((action, announcementId, extraId) => {
+      if (action === 'comment-added' || action === 'comment-deleted' || action === 'reaction-added' || action === 'reaction-removed') {
+           // Socket usually handles this, but we can fetch detail to be sure if selected
+           if (selectedAnnouncement && selectedAnnouncement._id === announcementId) {
+               fetchAnnouncementDetail(announcementId);
+           }
       }
-
-      // Refresh list
-      fetchAnnouncements(showArchived);
-    } catch (error) {
-      console.error('Error adding comment:', error);
-      toast.error('Failed to add comment');
-    }
-  };
-
-  // Delete comment
-  const handleDeleteComment = async (announcementId, commentId) => {
-    try {
-      await announcementService.deleteComment(announcementId, commentId);
-      toast.success('Comment deleted');
-
-      // Update selected announcement
-      const response = await announcementService.getAnnouncement(announcementId);
-      if (response.success) {
-        setSelectedAnnouncement(response.data);
+      if (action === 'attachment-deleted') {
+           handleAttachmentDeleted(extraId);
       }
-
-      // Refresh list
+      // Re-fetch list for good measure
       fetchAnnouncements(showArchived);
-    } catch (error) {
-      console.error('Error deleting comment:', error);
-      toast.error('Failed to delete comment');
-    }
-  };
+  }, [selectedAnnouncement, fetchAnnouncements, showArchived]);
 
-  // Add reaction
-  const handleAddReaction = async (announcementId, emoji) => {
-    try {
-      await announcementService.addReaction(announcementId, emoji);
+  const {
+      addComment,
+      deleteComment,
+      addReaction,
+      removeReaction,
+      deleteAttachment, // We can use the hook's deleteAttachment or the local one. The hook is better.
+      loadingAction
+  } = useAnnouncementActions(handleAnnouncementActionSuccess);
 
-      // Update selected announcement
-      const response = await announcementService.getAnnouncement(announcementId);
-      if (response.success) {
-        setSelectedAnnouncement(response.data);
-      }
 
-      // Refresh list
-      fetchAnnouncements(showArchived);
-    } catch (error) {
-      console.error('Error adding reaction:', error);
-      toast.error('Failed to add reaction');
-    }
-  };
-
-  // Remove reaction
-  const handleRemoveReaction = async (announcementId, emoji) => {
-    try {
-      await announcementService.removeReaction(announcementId, emoji);
-
-      // Update selected announcement
-      const response = await announcementService.getAnnouncement(announcementId);
-      if (response.success) {
-        setSelectedAnnouncement(response.data);
-      }
-
-      // Refresh list
-      fetchAnnouncements(showArchived);
-    } catch (error) {
-      console.error('Error removing reaction:', error);
-      toast.error('Failed to remove reaction');
-    }
-  };
 
 
 
@@ -680,12 +635,12 @@ const Announcements = () => {
         isOpen={showDetailModal}
         announcement={selectedAnnouncement}
         onClose={() => setShowDetailModal(false)}
-        onAddComment={handleAddComment}
-        onDeleteComment={handleDeleteComment}
-        onAddReaction={handleAddReaction}
-        onRemoveReaction={handleRemoveReaction}
-        onAttachmentDeleted={handleAttachmentDeleted}
-        isLoading={false}
+        onAddComment={addComment}
+        onDeleteComment={deleteComment}
+        onAddReaction={addReaction}
+        onRemoveReaction={removeReaction}
+        onAttachmentDeleted={deleteAttachment}
+        isLoading={loadingAction}
       />
     </div>
   );
