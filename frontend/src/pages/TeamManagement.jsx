@@ -6,8 +6,6 @@ import Database from '../services/database';
 import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
 import useThemeStore from '../store/themeStore';
-import Header from '../components/Header';
-import Sidebar from '../components/Sidebar';
 import DepartmentList from '../components/TeamManagement/DepartmentList';
 import EmployeeAssignment from '../components/TeamManagement/EmployeeAssignment';
 import TeamStats from '../components/TeamManagement/TeamStats';
@@ -557,11 +555,9 @@ const TeamManagement = () => {
 
   if (!isAdminOrManager) {
     return (
-      <div className={`flex min-h-screen ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
-        <Sidebar />
-        <div className="flex-1 lg:ml-64">
-          <Header />
+      <div className={`min-h-full ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
           <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+            {/* ... */}
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -581,16 +577,12 @@ const TeamManagement = () => {
               </div>
             </motion.div>
           </div>
-        </div>
       </div>
     );
   }
 
   return (
-    <div className={`flex min-h-screen ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
+    <div className={`min-h-full ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
         <main className="p-3 sm:p-4 md:p-6 lg:p-8 min-h-[calc(100vh-80px)]">
           <ErrorBoundary>
             {/* Header Section */}
@@ -728,8 +720,7 @@ const TeamManagement = () => {
               )}
             </AnimatePresence>
           </ErrorBoundary>
-        </main>
-      </div>
+      </main>
 
       {/* Lazy-loaded Modals */}
       <Suspense fallback={null}>

@@ -8,7 +8,6 @@ import {
   Users2
 } from 'lucide-react';
 import DepartmentContext from '../context/DepartmentContext';
-import Header from '../components/Header';
 import { ListViewSkeleton } from '../components/LoadingSkeleton';
 
 /**
@@ -36,7 +35,6 @@ const ListViewLayout = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      <Header />
       
       {/* Decorative Background Elements */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">

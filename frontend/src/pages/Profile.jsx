@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
-import Header from '../components/Header';
 import Loading from '../components/Loading';
 import Avatar from '../components/Avatar';
 import useAvatar from '../hooks/useAvatar';
@@ -146,8 +145,7 @@ const Profile = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
+      <div className="min-h-full bg-gray-50">
         <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
           <Loading size="lg" text="Loading profile..." />
         </div>
@@ -157,12 +155,11 @@ const Profile = () => {
 
   return (
     <div className={`
-      min-h-screen transition-colors duration-500
+      min-h-full transition-colors duration-500
       ${isDarkMode 
         ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black text-gray-100' 
         : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}
     `}>
-      <Header />
 
       <div className="max-w-4xl mx-auto px-4 py-8">
         <motion.div

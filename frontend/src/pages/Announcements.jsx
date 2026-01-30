@@ -10,8 +10,6 @@ import CreateAnnouncementModal from '../components/CreateAnnouncementModal';
 import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
 import Loading from '../components/Loading';
 import { AnnouncementsListSkeleton } from '../components/LoadingSkeleton';
-import Header from '../components/Header';
-import Sidebar from '../components/Sidebar';
 import { io } from 'socket.io-client';
 
 const Announcements = () => {
@@ -425,11 +423,8 @@ const Announcements = () => {
 
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
-        <main className="p-6 space-y-6">
+    <div className="min-h-full bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <main className="p-6 space-y-6">
           {/* Header Section */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -670,8 +665,7 @@ const Announcements = () => {
               )}
             </AnimatePresence>
           </motion.div>
-        </main>
-      </div>
+      </main>
 
       {/* Create Modal */}
       <CreateAnnouncementModal

@@ -12,7 +12,6 @@ import {
   Loader2
 } from 'lucide-react';
 import useTrashStore from '../store/trashStore';
-import Header from '../components/Header';
 import TrashItemCard from '../components/TrashItemCard';
 
 // Lazy load the document viewer
@@ -179,8 +178,7 @@ const ProjectTrash = () => {
   // Loading skeleton
   if (loading && items.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
+      <div className="min-h-full bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="mb-6 flex items-center gap-3">
             <button
@@ -207,8 +205,7 @@ const ProjectTrash = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
+    <div className="min-h-full bg-gray-50">
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Header */}

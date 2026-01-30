@@ -2,8 +2,6 @@ import React, { useContext, memo } from 'react';
 import { motion } from 'framer-motion';
 import { Bell, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
-import Sidebar from '../components/Sidebar';
 import { ModernCalendarGrid } from '../components/calendar';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
@@ -41,8 +39,7 @@ const ClientReminderCalendarPage = memo(() => {
   // Access denied view
   if (!canAccess) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-        <Header />
+      <div className="min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
         <div className="flex items-center justify-center h-[calc(100vh-64px)]">
           <div className="text-center">
             <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
@@ -63,11 +60,8 @@ const ClientReminderCalendarPage = memo(() => {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
-        <main className="p-6">
+    <div className="min-h-full bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
+      <main className="p-6">
           {/* Page Header */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -102,8 +96,7 @@ const ClientReminderCalendarPage = memo(() => {
             departmentId={currentDepartment?._id !== 'all' ? currentDepartment?._id : null}
             onSelectReminder={handleSelectReminder}
           />
-        </main>
-      </div>
+      </main>
 
       {/* Reminder Modal */}
       {showReminderModal && selectedProject && (

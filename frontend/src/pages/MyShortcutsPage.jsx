@@ -5,8 +5,6 @@ import {
   CheckSquare, Clock, Activity, FolderKanban, Megaphone,
   ChevronRight, RefreshCw, AlertCircle, TrendingUp
 } from 'lucide-react';
-import Header from '../components/Header';
-import Sidebar from '../components/Sidebar';
 import useMyShortcutsStore from '../store/myShortcutsStore';
 import socketService from '../services/socket';
 
@@ -130,11 +128,8 @@ const MyShortcutsPage = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
-        <main className="p-6 space-y-6">
+    <div className="min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+      <main className="p-6 space-y-6">
           {/* Page Header */}
           <div className="flex items-center justify-between">
             <div>
@@ -207,8 +202,7 @@ const MyShortcutsPage = () => {
 
           {/* My Tasks Section */}
           <MyTasksSection />
-        </main>
-      </div>
+      </main>
 
       {/* Activity Modal */}
       <AnimatePresence>

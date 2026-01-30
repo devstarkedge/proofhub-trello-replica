@@ -7,8 +7,6 @@ import {
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
-import Header from '../components/Header';
-import Sidebar from '../components/Sidebar';
 import ProjectCard from '../components/ProjectCard';
 import HomePageSkeleton from '../components/LoadingSkeleton';
 import NeonSparkText from '../components/NeonSparkText';
@@ -283,10 +281,8 @@ const HomePage = () => {
     // Only show full page error if we have NO data.
     if (error && departments.length === 0) {
        return (
-         <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-            <Sidebar />
-            <div className="flex-1 lg:ml-64">
-               <Header />
+         <div className="flex min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+            <div className="flex-1">
                <div className="flex items-center justify-center h-[calc(100vh-200px)]">
                   <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
                      <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -308,11 +304,8 @@ const HomePage = () => {
     }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
-        <main className="p-6 space-y-6">
+    <div className="min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+      <main className="p-6 space-y-6">
           {/* Welcome Header */}
           <WelcomeHeader user={user} />
 
@@ -682,8 +675,7 @@ const HomePage = () => {
               })}
             </div>
           )}
-        </main>
-      </div>
+      </main>
 
       {/* Modals - Render only when open for better performance */}
       {modalOpen && (

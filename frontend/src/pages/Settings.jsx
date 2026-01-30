@@ -9,7 +9,6 @@ import {
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import NotificationContext from '../context/NotificationContext';
-import Header from '../components/Header';
 import Loading from '../components/Loading';
 import SlackSettings from '../components/SlackSettings';
 import { validateField, validatePasswordMatch, validateForm, validationRules } from '../utils/validationUtils';
@@ -162,8 +161,7 @@ const Settings = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
+      <div className="min-h-full bg-gray-50">
         <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
           <Loading size="lg" text="Loading settings..." />
         </div>
@@ -172,8 +170,7 @@ const Settings = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
+    <div className="min-h-full bg-gray-50">
 
       <div className="max-w-4xl mx-auto px-4 py-8">
         <motion.div

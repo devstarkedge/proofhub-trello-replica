@@ -19,6 +19,7 @@ import VerifyPending from "./pages/VerifyPending";
 import TeamManagement from "./pages/TeamManagement";
 import Search from "./pages/Search";
 import ListViewLayout from "./layouts/ListViewLayout";
+import MainLayout from "./layouts/MainLayout";
 import ListViewTasks from "./pages/ListViewTasks";
 import ListViewTeams from "./pages/ListViewTeams";
 import CalendarView from "./pages/CalendarView";
@@ -65,229 +66,129 @@ function App() {
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/verify-pending" element={<VerifyPending />} />
               <Route
-                path="/"
                 element={
                   <PrivateRoute>
+                    <MainLayout />
+                  </PrivateRoute>
+                }
+              >
+                <Route
+                  path="/"
+                  element={
                     <ErrorBoundary>
                       <HomePage />
-                  </ErrorBoundary>
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/my-shortcuts"
-              element={
-                <PrivateRoute>
-                  <MyShortcutsPage />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/workflow/:deptId/:projectId"
-              element={
-                <PrivateRoute>
-                  <WorkFlow />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/workflow/:deptId/:projectId/:taskId"
-              element={
-                <PrivateRoute>
-                  <WorkFlow />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/workflow/:deptId/:projectId/trash"
-              element={
-                <PrivateRoute>
-                  <ProjectTrash />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/project/:projectId/task/:taskId"
-              element={
-                <PrivateRoute>
-                  <WorkFlow />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/project/:projectId/task/:taskId/subtask/:subtaskId"
-              element={
-                <PrivateRoute>
-                  <WorkFlow />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/project/:projectId/task/:taskId/subtask/:subtaskId/neno/:nenoId"
-              element={
-                <PrivateRoute>
-                  <WorkFlow />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/teams"
-              element={
-                <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>
-                  <TeamManagement />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/team-management"
-              element={
-                <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>
-                  <TeamManagement />
-                </PrivateRoute>
-              }
-            />
+                    </ErrorBoundary>
+                  }
+                />
+                <Route path="/my-shortcuts" element={<MyShortcutsPage />} />
+                <Route path="/workflow/:deptId/:projectId" element={<WorkFlow />} />
+                <Route path="/workflow/:deptId/:projectId/:taskId" element={<WorkFlow />} />
+                <Route path="/workflow/:deptId/:projectId/trash" element={<ProjectTrash />} />
+                <Route path="/project/:projectId/task/:taskId" element={<WorkFlow />} />
+                <Route path="/project/:projectId/task/:taskId/subtask/:subtaskId" element={<WorkFlow />} />
+                <Route path="/project/:projectId/task/:taskId/subtask/:subtaskId/neno/:nenoId" element={<WorkFlow />} />
 
-            <Route
-              path="/sales"
-              element={
-                <PrivateRoute>
-                  <SalesPage />
-                </PrivateRoute>
-              }
-            />
+                <Route
+                  path="/teams"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>
+                      <TeamManagement />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/team-management"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>
+                      <TeamManagement />
+                    </PrivateRoute>
+                  }
+                />
 
-            <Route
-              path="/admin/settings"
-              element={
-                <PrivateRoute requiredRole={["Admin"]}>
-                  <AdminSettings />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/hr-panel"
-              element={
-                <PrivateRoute requiredRole={["Admin", "HR"]}>
-                  <HRPanel />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/search"
-              element={
-                <PrivateRoute>
-                  <Search />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/list-view"
-              element={
-                <PrivateRoute>
-                  <ListViewLayout />
-                </PrivateRoute>
-              }
-            >
-              <Route index element={<ListViewTasks />} />
-              <Route path="teams" element={<ListViewTeams />} />
-            </Route>
-            <Route
-              path="/calendar"
-              element={
-                <PrivateRoute>
-                  <CalendarView />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/gantt"
-              element={
-                <PrivateRoute>
-                  <GanttView />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/analytics"
-              element={
-                <PrivateRoute>
-                  <Analytics />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <PrivateRoute>
-                  <Profile />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <PrivateRoute>
-                  <Settings />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/announcements"
-              element={
-                <PrivateRoute>
-                  <Announcements />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/reminders"
-              element={
-                <PrivateRoute requiredRole={["Manager", "Admin"]}>
-                  <RemindersPage />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/reminder-calendar"
-              element={
-                <PrivateRoute requiredRole={["Manager", "Admin"]}>
-                  <ClientReminderCalendarPage />
-                </PrivateRoute>
-              }
-            />
-            {/* PM Sheet Routes - Admin and Manager only */}
-            <Route
-              path="/pm-sheet"
-              element={
-                <PrivateRoute requiredRole={["Manager", "Admin"]}>
-                  <PMSheetLayout />
-                </PrivateRoute>
-              }
-            >
-              <Route index element={<PMSheetDashboard />} />
-              <Route path="month-wise" element={<MonthWisePMReport />} />
-              <Route path="coordinator" element={<ProjectCoordinatorReport />} />
-              <Route path="approach" element={<ApproachPage />} />
-            </Route>
-            {/* Finance Module Routes - Admin and Manager only */}
-            <Route
-              path="/finance"
-              element={
-                <PrivateRoute requiredRole={["Manager", "Admin"]}>
-                  <FinanceLayout />
-                </PrivateRoute>
-              }
-            >
-              <Route index element={<FinanceDashboard />} />
-              <Route path="users" element={<UsersTab />} />
-              <Route path="projects" element={<ProjectsTab />} />
-              <Route path="weekly" element={<WeeklyTab />} />
-              <Route path="pages" element={<FinancePagesManager />} />
-              <Route path="pages/new" element={<CreateFinancePage />} />
-              <Route path="pages/:id" element={<ViewFinancePage />} />
-              <Route path="pages/:id/edit" element={<CreateFinancePage />} />
-            </Route>
-            <Route path="*" element={<GlobalFallback type="404" />} />
+                <Route path="/sales" element={<SalesPage />} />
+
+                <Route
+                  path="/admin/settings"
+                  element={
+                    <PrivateRoute requiredRole={["Admin"]}>
+                      <AdminSettings />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/hr-panel"
+                  element={
+                    <PrivateRoute requiredRole={["Admin", "HR"]}>
+                      <HRPanel />
+                    </PrivateRoute>
+                  }
+                />
+                <Route path="/search" element={<Search />} />
+
+                <Route path="/list-view" element={<ListViewLayout />}>
+                  <Route index element={<ListViewTasks />} />
+                  <Route path="teams" element={<ListViewTeams />} />
+                </Route>
+
+                <Route path="/calendar" element={<CalendarView />} />
+                <Route path="/gantt" element={<GanttView />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/announcements" element={<Announcements />} />
+
+                <Route
+                  path="/reminders"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                      <RemindersPage />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/reminder-calendar"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                      <ClientReminderCalendarPage />
+                    </PrivateRoute>
+                  }
+                />
+
+                {/* PM Sheet Routes - Admin and Manager only */}
+                <Route
+                  path="/pm-sheet"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                      <PMSheetLayout />
+                    </PrivateRoute>
+                  }
+                >
+                  <Route index element={<PMSheetDashboard />} />
+                  <Route path="month-wise" element={<MonthWisePMReport />} />
+                  <Route path="coordinator" element={<ProjectCoordinatorReport />} />
+                  <Route path="approach" element={<ApproachPage />} />
+                </Route>
+
+                {/* Finance Module Routes - Admin and Manager only */}
+                <Route
+                  path="/finance"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                      <FinanceLayout />
+                    </PrivateRoute>
+                  }
+                >
+                  <Route index element={<FinanceDashboard />} />
+                  <Route path="users" element={<UsersTab />} />
+                  <Route path="projects" element={<ProjectsTab />} />
+                  <Route path="weekly" element={<WeeklyTab />} />
+                  <Route path="pages" element={<FinancePagesManager />} />
+                  <Route path="pages/new" element={<CreateFinancePage />} />
+                  <Route path="pages/:id" element={<ViewFinancePage />} />
+                  <Route path="pages/:id/edit" element={<CreateFinancePage />} />
+                </Route>
+              </Route>
+              <Route path="*" element={<GlobalFallback type="404" />} />
               </Routes>
             <ToastContainer
               position="top-right"

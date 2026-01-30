@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw, Users, ArrowLeft, Download, ChevronDown, ChevronRight } from 'lucide-react';
-import Sidebar from '../components/Sidebar';
-import Header from '../components/Header';
 import { usePMSheet } from '../context/PMSheetContext';
 import {
   PMTable,
@@ -145,11 +143,8 @@ const ProjectCoordinatorReportContent = () => {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-      <Sidebar />
-      <Header />
-      
-      <main className="lg:ml-64 pt-16 min-h-screen">
-        <div className="p-6 max-w-7xl mx-auto">
+      <main className="p-6">
+        <div className="max-w-7xl mx-auto">
           {/* Page Header */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">

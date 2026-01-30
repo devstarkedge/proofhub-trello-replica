@@ -2,8 +2,6 @@ import React, { useState, useContext } from "react";
 import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield, MessageSquare, Blocks } from "lucide-react";
 import AuthContext from "../context/AuthContext";
 import api from "../services/api";
-import Header from "../components/Header";
-import Sidebar from "../components/Sidebar";
 import Avatar from "../components/Avatar";
 import SlackAdminPanel from "../components/SlackAdminPanel";
 import ModuleAccessPanel from "../components/Admin/ModuleAccessPanel";
@@ -113,11 +111,8 @@ const AdminSettings = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
-        <main className="p-6">
+    <div className="min-h-full bg-gradient-to-br from-gray-50 to-gray-100">
+      <main className="p-6">
           <div className="max-w-4xl mx-auto">
             {/* Header Section */}
             <div className="mb-8 animate-fade-in">
@@ -412,8 +407,7 @@ const AdminSettings = () => {
               </div>
             )}
           </div>
-        </main>
-      </div>
+      </main>
 
       <style jsx="true">{`
         @keyframes fade-in {

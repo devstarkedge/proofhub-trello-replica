@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useContext, memo, lazy, Suspense, useMemo, useCallback } from 'react';
-import Header from '../components/Header';
 import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
 import StatsGrid from '../components/StatsGrid';
@@ -129,8 +128,7 @@ const Analytics = memo(() => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
+      <div className="min-h-full bg-gray-50">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
@@ -140,8 +138,7 @@ const Analytics = memo(() => {
 
   if (!analyticsData) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
+      <div className="min-h-full bg-gray-50">
         <div className="text-center py-10">
           <p className="text-gray-600">No analytics data available. Please select a team or department.</p>
         </div>
@@ -151,8 +148,7 @@ const Analytics = memo(() => {
 
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
+    <div className="min-h-full bg-gray-50">
       <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">

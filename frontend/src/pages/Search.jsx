@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import Database from '../services/database';
-import Header from '../components/Header';
 import Card from '../components/Card';
 
 const Search = () => {
@@ -25,8 +24,7 @@ const Search = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Header />
+    <div className="min-h-full bg-gray-100">
       <div className="max-w-4xl mx-auto py-8 px-4">
         <h1 className="text-3xl font-bold mb-8">Search Tasks</h1>
 

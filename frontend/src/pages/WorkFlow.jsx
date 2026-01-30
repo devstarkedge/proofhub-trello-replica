@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw, Archive, Trash2 } from 'lucide-react';
 import Database from '../services/database';
-import Header from '../components/Header';
 import Board from '../components/Board';
 import { lazy } from 'react';
 const EditProjectModal = lazy(() => import('../components/EditProjectModal'));

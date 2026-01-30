@@ -15,6 +15,7 @@ import DropdownManagerModal from '../components/Sales/DropdownManagerModal';
 import CustomColumnModal from '../components/Sales/CustomColumnModal';
 import BulkActionsToolbar from '../components/Sales/BulkActionsToolbar';
 
+
 const SalesPage = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useContext(AuthContext);
@@ -51,7 +52,9 @@ const SalesPage = () => {
     // Wait for auth restore to finish before initializing page
     if (authLoading) return;
 
-    initializePage();
+    if (user && user._id) {
+      initializePage();
+    }
 
     return () => {
       // Remove any sales socket listeners and leave sales room on unmount
@@ -65,11 +68,13 @@ const SalesPage = () => {
       window.removeEventListener('socket-sales-rows-imported', onSocketRowsImported);
       window.removeEventListener('socket-sales-row-locked', onSocketRowLocked);
       window.removeEventListener('socket-sales-row-unlocked', onSocketRowUnlocked);
+      window.removeEventListener('sales-permissions-updated', onPermsUpdate);
+      window.removeEventListener('socket-sales-permissions-updated', onPermsUpdate);
 
       socketService.leaveSales();
     };
     // Re-run when auth loading changes (i.e. after restoreSession completes)
-  }, [authLoading]);
+  }, [authLoading, user]);
 
   // Listen for online status to sync drafts
   useEffect(() => {
@@ -83,49 +88,32 @@ const SalesPage = () => {
     return () => window.removeEventListener('online', handleOnline);
   }, [syncDrafts]);
 
-  // Listen for permission updates (dynamic changes by Admin)
-  useEffect(() => {
-    const onPermsUpdate = async (e) => {
-      try {
-        const detail = e.detail || {};
-        const { userId, permissions } = detail;
+  const onPermsUpdate = async (e) => {
+    try {
+      const detail = e.detail || {};
+      const { userId } = detail;
 
-        // If the socket emitted without userId, it's already targeted to this client
-        if (userId && user && user._id !== userId) return;
+      // If the socket emitted without userId, it's already targeted to this client
+      if (userId && user && user._id !== userId) return;
 
-        // Re-fetch permissions and update store
-        const perms = await fetchPermissions(user._id);
-        if (!perms || !perms.moduleVisible) {
-          toast.error('Your access to the Sales module was revoked');
-          navigate('/');
-          return;
-        }
-
-        // If permissions changed, refresh rows to reflect allowed actions
-        await Promise.all([fetchRows(), fetchCustomColumns()]);
-      } catch (err) {
-        // ignore
+      // Re-fetch permissions and update store
+      const perms = await fetchPermissions(user._id);
+      if (!perms || !perms.moduleVisible) {
+        toast.error('Your access to the Sales module was revoked');
+        navigate('/');
+        return;
       }
-    };
 
-    window.addEventListener('sales-permissions-updated', onPermsUpdate);
-    window.addEventListener('socket-sales-permissions-updated', onPermsUpdate);
-    return () => {
-      window.removeEventListener('sales-permissions-updated', onPermsUpdate);
-      window.removeEventListener('socket-sales-permissions-updated', onPermsUpdate);
-    };
-  }, [user, fetchPermissions, fetchRows, fetchCustomColumns, navigate]);
+      // If permissions changed, refresh rows to reflect allowed actions
+      await Promise.all([fetchRows(), fetchCustomColumns()]);
+    } catch (err) {
+      // ignore
+    }
+  };
 
   const initializePage = async () => {
     try {
       setLoading(true);
-
-      // Check if user is authenticated
-      if (!user || !user._id) {
-        console.log('No authenticated user found');
-        navigate('/login');
-        return;
-      }
 
       console.log('Checking permissions for user:', user._id);
 
@@ -163,6 +151,10 @@ const SalesPage = () => {
       window.addEventListener('socket-sales-rows-imported', onSocketRowsImported);
       window.addEventListener('socket-sales-row-locked', onSocketRowLocked);
       window.addEventListener('socket-sales-row-unlocked', onSocketRowUnlocked);
+      
+      // Permissions listeners
+      window.addEventListener('sales-permissions-updated', onPermsUpdate);
+      window.addEventListener('socket-sales-permissions-updated', onPermsUpdate);
 
       // Fetch initial data
       await Promise.all([
@@ -249,48 +241,65 @@ const SalesPage = () => {
     setShowAddModal(true);
   };
 
-  if (loading) {
+  // Render permissions check loader only if permissions are completely missing
+  // But we want to show the shell ASAP, so we might skip this if we want instant shell.
+  // However, we need permissions to render the toolbar properly.
+  // For now, we'll keep the specialized loader only for authentication/initial permission check.
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading Sales Module...</p>
+          <p className="text-gray-600 dark:text-gray-400">Authenticating...</p>
         </div>
       </div>
     );
   }
 
-  if (!permissions || !permissions.moduleVisible) {
-    return null;
+  // If permissions are loaded and denied, show denial message (handled by redirect usually, but safe fallback)
+  if (!loading && permissions && !permissions.moduleVisible) {
+    return null; // Will have redirected
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Toolbar */}
-      <SalesToolbar
-        onAddRow={() => setShowAddModal(true)}
-        onImport={() => setShowImportModal(true)}
-        onManageDropdowns={() => setShowDropdownManager(true)}
-        onCreateColumn={() => setShowCustomColumn(true)}
-        onBack={() => navigate(-1)}
-        permissions={permissions}
-      />
+    <div className="h-full bg-gray-50 dark:bg-gray-900">
+      
+      {/* Main Content Area - Fixed height to allow inner scroll */}
+      {/* Main Content Area - Fixed height to allow inner scroll */}
+      <div className="h-full flex flex-col overflow-hidden">
+          {/* Scrollable Content Container (Toolbar + Table) */}
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            
+            {/* Toolbar */}
+            <div className="flex-shrink-0">
+              <SalesToolbar
+                onAddRow={() => setShowAddModal(true)}
+                onImport={() => setShowImportModal(true)}
+                onManageDropdowns={() => setShowDropdownManager(true)}
+                onCreateColumn={() => setShowCustomColumn(true)}
+                onBack={() => navigate(-1)}
+                permissions={permissions}
+              />
 
-      {/* Filters Panel (always visible, toggle built-in) */}
-      <SalesFilters />
+              {/* Filters Panel (always visible, toggle built-in) */}
+              <SalesFilters />
 
-      {/* Bulk Actions Toolbar */}
-      {selectedRows.size > 0 && (
-        <BulkActionsToolbar permissions={permissions} />
-      )}
+              {/* Bulk Actions Toolbar */}
+              {selectedRows.size > 0 && (
+                <BulkActionsToolbar permissions={permissions} />
+              )}
+            </div>
 
-      {/* Main Table */}
-      <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <SalesTable
-          onEditRow={openEditModal}
-          onViewActivity={openActivityLog}
-          permissions={permissions}
-        />
+            {/* Main Table - takes remaining height */}
+            <div className="flex-1 overflow-hidden px-4 sm:px-6 lg:px-8 py-4">
+              <SalesTable
+                onEditRow={openEditModal}
+                onViewActivity={openActivityLog}
+                permissions={permissions}
+                loading={loading} // Pass loading state to table
+              />
+            </div>
+          </div>
       </div>
 
       {/* Modals */}
@@ -322,8 +331,6 @@ const SalesPage = () => {
           rowId={selectedRowForActivity._id}
         />
       )}
-
-
 
       {showCustomColumn && (
         <CustomColumnModal

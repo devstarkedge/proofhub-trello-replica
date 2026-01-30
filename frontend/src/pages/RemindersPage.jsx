@@ -6,8 +6,6 @@ import {
   BarChart3, TrendingUp, Users, Loader, X, Mail, Phone, User,
   CalendarDays, List
 } from 'lucide-react';
-import Header from '../components/Header';
-import Sidebar from '../components/Sidebar';
 import ReminderCalendar from '../components/ReminderCalendar';
 import { ModernCalendarGrid } from '../components/calendar';
 import { ClientRemindersSkeleton } from '../components/LoadingSkeleton';
@@ -180,8 +178,7 @@ const RemindersPage = memo(() => {
   // Access denied view
   if (!canAccess) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-        <Header />
+      <div className="min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
         <div className="flex items-center justify-center h-[calc(100vh-64px)]">
           <div className="text-center">
             <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
@@ -194,11 +191,8 @@ const RemindersPage = memo(() => {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
-        <main className="p-6 space-y-6">
+    <div className="min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+      <main className="p-6 space-y-6">
           {/* Header Section */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -550,8 +544,7 @@ const RemindersPage = memo(() => {
           )}
             </>
           )}
-        </main>
-      </div>
+      </main>
 
       {/* Reminder Modal */}
       {showReminderModal && selectedProject && (

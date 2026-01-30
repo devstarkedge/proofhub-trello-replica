@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
-import Header from '../components/Header';
+
 
 const GanttView = () => {
   const { currentTeam } = useContext(DepartmentContext);
@@ -50,8 +50,7 @@ const GanttView = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100">
-        <Header />
+      <div className="min-h-full bg-gray-100">
         <div className="flex items-center justify-center h-64">
           <div className="text-xl">Loading Gantt chart...</div>
         </div>
@@ -60,8 +59,7 @@ const GanttView = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Header />
+    <div className="min-h-full bg-gray-100">
       <div className="max-w-7xl mx-auto py-8 px-4">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Gantt Chart - {currentTeam?.name}</h1>

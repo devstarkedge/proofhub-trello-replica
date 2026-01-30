@@ -228,13 +228,13 @@ const SkeletonRow = ({ index, columns, totalWidth }) => (
   </div>
 );
 
-const SalesTable = ({ onEditRow, onViewActivity, permissions }) => {
+const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
   const { user } = useContext(AuthContext);
   const parentRef = useRef(null);
   
   const {
     rows,
-    loading,
+    // loading, // Removed: using prop instead
     customColumns = [],
     selectedRows,
     toggleRowSelection,
@@ -286,16 +286,26 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions }) => {
   // Loading state with skeleton
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-        <div className="p-6 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
-          <p className="text-gray-600 dark:text-gray-400 mt-3 font-medium">Loading Sales Records…</p>
-          <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">This might take a moment for large datasets</p>
-        </div>
-        <div className="overflow-x-auto">
-          {[...Array(8)].map((_, i) => (
-            <SkeletonRow key={i} index={i} columns={COLUMNS} totalWidth={TOTAL_WIDTH} />
-          ))}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 h-full flex flex-col">
+
+        <div className="overflow-hidden flex-1 relative">
+           {/* Header for skeleton view */}
+           <div 
+             className="flex items-center bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 border-b border-gray-200 dark:border-gray-700 absolute top-0 z-10"
+             style={{ height: 48, width: TOTAL_WIDTH }}
+           >
+             {COLUMNS.map((col) => (
+                <div key={col.key} className="flex-shrink-0 px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400" style={{ width: col.width }}>
+                  {col.label}
+                </div>
+             ))}
+           </div>
+           
+           <div className="mt-[48px] px-0">
+              {[...Array(10)].map((_, i) => (
+                <SkeletonRow key={i} index={i} columns={COLUMNS} totalWidth={TOTAL_WIDTH} />
+              ))}
+           </div>
         </div>
       </div>
     );
@@ -322,8 +332,8 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions }) => {
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 flex flex-col h-[calc(100vh-250px)]">
-      {/* Scroll container for X-AXIS ONLY - Y axis is handled by page scroll */}
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 flex flex-col h-full">
+      {/* Scroll container for X-AXIS ONLY - Y axis is handled by page scroll/virtualizer */}
       <div 
         ref={parentRef}
         className="overflow-auto w-full h-full"
@@ -376,7 +386,10 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions }) => {
                   style={{
                     height: `${virtualRow.size}px`,
                     transform: `translateY(${virtualRow.start}px)`,
-                    top: 48, // Offset by header height
+                    top: 48, // Offset by header height to avoid overlap with sticky header
+                    position: 'absolute',
+                    left: 0,
+                    width: '100%'
                   }}
                 />
               );
@@ -384,7 +397,7 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions }) => {
         </div>
       </div>
 
-      {/* Pagination Footer - Only show if server-side pagination is active on top of infinite scroll/virtualization if desired, or if using pages */}
+      {/* Pagination Footer - Fixed at bottom */}
       {pagination.pages > 1 && (
         <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 px-6 py-4 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 shrink-0">
           <div className="text-sm text-gray-600 dark:text-gray-400">

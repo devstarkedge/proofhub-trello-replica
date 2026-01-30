@@ -22,8 +22,6 @@ import api from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import AuthContext from '../context/AuthContext';
 import useDepartmentStore from '../store/departmentStore';
-import Header from '../components/Header';
-import Sidebar from '../components/Sidebar';
 import Avatar from '../components/Avatar';
 
 // Memoized User Row Component for better performance
@@ -399,11 +397,8 @@ const HRPanel = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64">
-        <Header />
-        <main className="p-6">
+    <div className="min-h-full bg-gradient-to-br from-gray-50 to-gray-100">
+      <main className="p-6">
           {/* Header */}
           <div className="mb-8 animate-fade-in">
             <div className="flex items-center gap-3 mb-2">
@@ -788,8 +783,7 @@ const HRPanel = () => {
               </div>
             </div>
           )}
-        </main>
-      </div>
+      </main>
 
       <style jsx="true">{`
         @keyframes fade-in {

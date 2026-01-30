@@ -458,6 +458,53 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
               </div>
             </div>
 
+            {/* Custom Columns Section */}
+            {customColumns && customColumns.length > 0 && (
+              <div>
+                 <SectionHeader title="Additional Information" />
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {customColumns.map(col => (
+                        <div key={col.key}>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{col.name}{col.isRequired ? <span className="text-red-500">*</span> : null}</label>
+                          {col.type === 'dropdown' ? (
+                            <Controller
+                                name={col.key}
+                                control={control}
+                                render={({ field }) => (
+                                  <SalesDropdown
+                                    columnName={col.key}
+                                    value={field.value}
+                                    onChange={field.onChange}
+                                    placeholder={`Select ${col.name}`}
+                                  />
+                                )}
+                              />
+                          ) : col.type === 'date' ? (
+                            <div className="relative">
+                                <input 
+                                    type="text" 
+                                    readOnly
+                                    value={formatSalesDate(allValues[col.key])} // Accesing value from watch() result
+                                    onClick={() => openDatePicker(col.key, `Select ${col.name}`)}
+                                    className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg cursor-pointer"
+                                    placeholder="dd-mm-yyyy"
+                                />
+                                 <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                 <input type="hidden" {...register(col.key)} />
+                            </div>
+                          ) : col.type === 'number' ? (
+                            <input type="number" {...register(col.key, { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                          ) : col.type === 'link' ? (
+                            <input type="url" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                          ) : (
+                            <input type="text" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                          )}
+                        </div>
+                    ))}
+                 </div>
+              </div>
+            )}
+
             {/* Comments & Extras */}
             <div>
                <SectionHeader title="Additional Notes" />
@@ -466,49 +513,6 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Comments</label>
                     <textarea {...register('comments')} rows={3} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg resize-none" placeholder="Add any relevant notes here..."></textarea>
                  </div>
-                  {/* Custom Columns */}
-                  {customColumns && customColumns.length > 0 && (
-                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-2 pt-4 border-t border-dashed border-gray-200 dark:border-gray-700">
-                        {customColumns.map(col => (
-                            <div key={col.key}>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{col.name}{col.isRequired ? <span className="text-red-500">*</span> : null}</label>
-                              {col.type === 'dropdown' ? (
-                                <Controller
-                                    name={col.key}
-                                    control={control}
-                                    render={({ field }) => (
-                                      <SalesDropdown
-                                        columnName={col.key}
-                                        value={field.value}
-                                        onChange={field.onChange}
-                                        placeholder={`Select ${col.name}`}
-                                      />
-                                    )}
-                                  />
-                              ) : col.type === 'date' ? (
-                                <div className="relative">
-                                    <input 
-                                        type="text" 
-                                        readOnly
-                                        value={formatSalesDate(allValues[col.key])} // Accesing value from watch() result
-                                        onClick={() => openDatePicker(col.key, `Select ${col.name}`)}
-                                        className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg cursor-pointer"
-                                        placeholder="dd-mm-yyyy"
-                                    />
-                                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                     <input type="hidden" {...register(col.key)} />
-                                </div>
-                              ) : col.type === 'number' ? (
-                                <input type="number" {...register(col.key, { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
-                              ) : col.type === 'link' ? (
-                                <input type="url" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
-                              ) : (
-                                <input type="text" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
-                              )}
-                            </div>
-                        ))}
-                     </div>
-                  )}
                </div>
             </div>
 

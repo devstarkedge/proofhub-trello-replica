@@ -12,8 +12,7 @@ import {
   FileText,
   Bell
 } from 'lucide-react';
-import Header from '../../components/Header';
-import Sidebar from '../../components/Sidebar';
+
 import AuthContext from '../../context/AuthContext';
 import api from '../../services/api';
 import socketService from '../../services/socket';
@@ -195,241 +194,233 @@ const FinanceLayout = () => {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-      {/* Sidebar */}
-      <Sidebar />
-      
-      {/* Main Content Area */}
-      <div className="lg:ml-64">
-        {/* Header */}
-        <Header />
-        
-        <main className="p-6">
-          {/* Page Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div 
-                className="p-2.5 rounded-xl"
-                style={{ 
-                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                }}
-              >
-                <DollarSign 
-                  className="w-6 h-6" 
-                  style={{ color: '#10b981' }}
-                />
-              </div>
-              <div>
-                <h1 
-                  className="text-2xl font-bold"
-                  style={{ color: 'var(--color-text-primary)' }}
-                >
-                  Finance
-                </h1>
-                <p 
-                  className="text-sm"
-                  style={{ color: 'var(--color-text-secondary)' }}
-                >
-                  Track revenue, billing, and team performance
-                </p>
-              </div>
+      {/* Main Content Area - Inner layout only */}
+      <main className="p-6">
+        {/* Page Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div 
+              className="p-2.5 rounded-xl"
+              style={{ 
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+              }}
+            >
+              <DollarSign 
+                className="w-6 h-6" 
+                style={{ color: '#10b981' }}
+              />
             </div>
-
-            {/* Admin: Pending Pages Notification */}
-            {isAdmin && pendingPagesCount > 0 && (
-              <NavLink
-                to="/finance/pages"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
-                style={{
-                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                  color: '#f59e0b'
-                }}
+            <div>
+              <h1 
+                className="text-2xl font-bold"
+                style={{ color: 'var(--color-text-primary)' }}
               >
-                <Bell className="w-4 h-4" />
-                {pendingPagesCount} pending approval{pendingPagesCount > 1 ? 's' : ''}
-              </NavLink>
-            )}
+                Finance
+              </h1>
+              <p 
+                className="text-sm"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                Track revenue, billing, and team performance
+              </p>
+            </div>
           </div>
 
-          {/* Tab Navigation */}
-          <div 
-            className="flex items-center gap-1 p-1 rounded-xl mb-6"
-            style={{ backgroundColor: 'var(--color-bg-secondary)' }}
-          >
-            {/* Main Tabs */}
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              
+          {/* Admin: Pending Pages Notification */}
+          {isAdmin && pendingPagesCount > 0 && (
+            <NavLink
+              to="/finance/pages"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+              style={{
+                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                color: '#f59e0b'
+              }}
+            >
+              <Bell className="w-4 h-4" />
+              {pendingPagesCount} pending approval{pendingPagesCount > 1 ? 's' : ''}
+            </NavLink>
+          )}
+        </div>
+
+        {/* Tab Navigation */}
+        <div 
+          className="flex items-center gap-1 p-1 rounded-xl mb-6"
+          style={{ backgroundColor: 'var(--color-bg-secondary)' }}
+        >
+          {/* Main Tabs */}
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            
+            return (
+              <NavLink
+                key={tab.id}
+                to={tab.path}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
+                style={{
+                  backgroundColor: isActive ? 'var(--color-bg-primary)' : 'transparent',
+                  color: isActive ? '#10b981' : 'var(--color-text-secondary)',
+                  boxShadow: isActive ? '0 1px 3px rgba(0, 0, 0, 0.1)' : 'none',
+                }}
+              >
+                <Icon 
+                  className="w-4 h-4" 
+                  style={{ 
+                    color: isActive ? '#10b981' : 'var(--color-text-muted)' 
+                  }}
+                />
+                <span>{tab.label}</span>
+              </NavLink>
+            );
+          })}
+
+          {/* Approved Custom Pages as Individual Tabs */}
+          {customPages
+            .filter(page => page.status === 'approved')
+            .map(page => {
+              const isPageActive = location.pathname.includes(`/pages/${page._id}`);
               return (
                 <NavLink
-                  key={tab.id}
-                  to={tab.path}
+                  key={page._id}
+                  to={`/finance/pages/${page._id}`}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
                   style={{
-                    backgroundColor: isActive ? 'var(--color-bg-primary)' : 'transparent',
-                    color: isActive ? '#10b981' : 'var(--color-text-secondary)',
-                    boxShadow: isActive ? '0 1px 3px rgba(0, 0, 0, 0.1)' : 'none',
+                    backgroundColor: isPageActive ? 'var(--color-bg-primary)' : 'transparent',
+                    color: isPageActive ? '#10b981' : 'var(--color-text-secondary)',
+                    boxShadow: isPageActive ? '0 1px 3px rgba(0, 0, 0, 0.1)' : 'none',
                   }}
                 >
-                  <Icon 
+                  <FileText 
                     className="w-4 h-4" 
                     style={{ 
-                      color: isActive ? '#10b981' : 'var(--color-text-muted)' 
+                      color: isPageActive ? '#10b981' : 'var(--color-text-muted)' 
                     }}
                   />
-                  <span>{tab.label}</span>
+                  <span>{page.name}</span>
                 </NavLink>
               );
             })}
 
-            {/* Approved Custom Pages as Individual Tabs */}
-            {customPages
-              .filter(page => page.status === 'approved')
-              .map(page => {
-                const isPageActive = location.pathname.includes(`/pages/${page._id}`);
-                return (
-                  <NavLink
-                    key={page._id}
-                    to={`/finance/pages/${page._id}`}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
-                    style={{
-                      backgroundColor: isPageActive ? 'var(--color-bg-primary)' : 'transparent',
-                      color: isPageActive ? '#10b981' : 'var(--color-text-secondary)',
-                      boxShadow: isPageActive ? '0 1px 3px rgba(0, 0, 0, 0.1)' : 'none',
-                    }}
-                  >
-                    <FileText 
-                      className="w-4 h-4" 
-                      style={{ 
-                        color: isPageActive ? '#10b981' : 'var(--color-text-muted)' 
-                      }}
-                    />
-                    <span>{page.name}</span>
-                  </NavLink>
-                );
-              })}
+          {/* Divider */}
+          <div 
+            className="w-px h-6 mx-2"
+            style={{ backgroundColor: 'var(--color-border-subtle)' }}
+          />
 
-            {/* Divider */}
-            <div 
-              className="w-px h-6 mx-2"
-              style={{ backgroundColor: 'var(--color-border-subtle)' }}
-            />
+          {/* Custom Pages Dropdown */}
+          <div className="relative" ref={pagesDropdownRef}>
+            <button
+              onClick={() => setShowPagesMenu(!showPagesMenu)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
+              style={{
+                backgroundColor: activeTab === 'pages' ? 'var(--color-bg-primary)' : 'transparent',
+                color: activeTab === 'pages' ? '#10b981' : 'var(--color-text-secondary)',
+                boxShadow: activeTab === 'pages' ? '0 1px 3px rgba(0, 0, 0, 0.1)' : 'none',
+                border: showPagesMenu ? '1px solid #10b981' : '1px solid transparent'
+              }}
+            >
+              <FileText className="w-4 h-4" />
+              <span>Pages</span>
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showPagesMenu ? 'rotate-180' : ''}`} />
+            </button>
 
-            {/* Custom Pages Dropdown */}
-            <div className="relative" ref={pagesDropdownRef}>
-              <button
-                onClick={() => setShowPagesMenu(!showPagesMenu)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
+            {showPagesMenu && (
+              <div 
+                className="absolute top-full left-0 mt-2 py-2 rounded-xl border z-[100] min-w-52"
                 style={{
-                  backgroundColor: activeTab === 'pages' ? 'var(--color-bg-primary)' : 'transparent',
-                  color: activeTab === 'pages' ? '#10b981' : 'var(--color-text-secondary)',
-                  boxShadow: activeTab === 'pages' ? '0 1px 3px rgba(0, 0, 0, 0.1)' : 'none',
-                  border: showPagesMenu ? '1px solid #10b981' : '1px solid transparent'
+                  backgroundColor: '#ffffff',
+                  borderColor: '#e5e7eb',
+                  boxShadow: '0 10px 40px -10px rgba(0, 0, 0, 0.2), 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)'
                 }}
               >
-                <FileText className="w-4 h-4" />
-                <span>Pages</span>
-                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showPagesMenu ? 'rotate-180' : ''}`} />
-              </button>
+                {/* Custom Pages List - Only show pending pages (approved ones are tabs) */}
+                {customPages.filter(p => p.status !== 'approved').length > 0 ? (
+                  <>
+                    <div className="px-3 py-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                        Pending Pages
+                      </span>
+                    </div>
+                    {customPages
+                      .filter(page => page.status !== 'approved')
+                      .map(page => (
+                      <NavLink
+                        key={page._id}
+                        to={`/finance/pages/${page._id}`}
+                        onClick={() => setShowPagesMenu(false)}
+                        className="flex items-center justify-between gap-3 px-3 py-2.5 mx-1.5 rounded-lg text-sm transition-all duration-150"
+                        style={{ color: 'var(--color-text-primary)' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#f3f4f6';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        <span className="truncate">{page.name}</span>
+                        {page.status === 'pending' && (
+                          <span 
+                            className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                            style={{ 
+                              backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                              color: '#f59e0b'
+                            }}
+                          >
+                            Pending
+                          </span>
+                        )}
+                      </NavLink>
+                    ))}
+                    <div 
+                      className="my-2 mx-3"
+                      style={{ borderTop: '1px solid var(--color-border-subtle)' }}
+                    />
+                  </>
+                ) : null}
 
-              {showPagesMenu && (
-                <div 
-                  className="absolute top-full left-0 mt-2 py-2 rounded-xl border z-[100] min-w-52"
-                  style={{
-                    backgroundColor: '#ffffff',
-                    borderColor: '#e5e7eb',
-                    boxShadow: '0 10px 40px -10px rgba(0, 0, 0, 0.2), 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)'
+                {/* Create New Page */}
+                <NavLink
+                  to="/finance/pages/new"
+                  onClick={() => setShowPagesMenu(false)}
+                  className="flex items-center gap-2 px-3 py-2.5 mx-1.5 rounded-lg text-sm font-medium transition-all duration-150"
+                  style={{ color: '#10b981' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  {/* Custom Pages List - Only show pending pages (approved ones are tabs) */}
-                  {customPages.filter(p => p.status !== 'approved').length > 0 ? (
-                    <>
-                      <div className="px-3 py-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                          Pending Pages
-                        </span>
-                      </div>
-                      {customPages
-                        .filter(page => page.status !== 'approved')
-                        .map(page => (
-                        <NavLink
-                          key={page._id}
-                          to={`/finance/pages/${page._id}`}
-                          onClick={() => setShowPagesMenu(false)}
-                          className="flex items-center justify-between gap-3 px-3 py-2.5 mx-1.5 rounded-lg text-sm transition-all duration-150"
-                          style={{ color: 'var(--color-text-primary)' }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#f3f4f6';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                          }}
-                        >
-                          <span className="truncate">{page.name}</span>
-                          {page.status === 'pending' && (
-                            <span 
-                              className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
-                              style={{ 
-                                backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                                color: '#f59e0b'
-                              }}
-                            >
-                              Pending
-                            </span>
-                          )}
-                        </NavLink>
-                      ))}
-                      <div 
-                        className="my-2 mx-3"
-                        style={{ borderTop: '1px solid var(--color-border-subtle)' }}
-                      />
-                    </>
-                  ) : null}
+                  <Plus className="w-4 h-4" />
+                  <span>Create New Page</span>
+                </NavLink>
 
-                  {/* Create New Page */}
+                {/* Manage Pages (Admin) */}
+                {isAdmin && (
                   <NavLink
-                    to="/finance/pages/new"
+                    to="/finance/pages"
                     onClick={() => setShowPagesMenu(false)}
-                    className="flex items-center gap-2 px-3 py-2.5 mx-1.5 rounded-lg text-sm font-medium transition-all duration-150"
-                    style={{ color: '#10b981' }}
+                    className="flex items-center gap-2 px-3 py-2.5 mx-1.5 rounded-lg text-sm transition-all duration-150"
+                    style={{ color: 'var(--color-text-secondary)' }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
+                      e.currentTarget.style.backgroundColor = '#f3f4f6';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.backgroundColor = 'transparent';
                     }}
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>Create New Page</span>
+                    <Settings className="w-4 h-4" />
+                    <span>Manage Pages</span>
                   </NavLink>
-
-                  {/* Manage Pages (Admin) */}
-                  {isAdmin && (
-                    <NavLink
-                      to="/finance/pages"
-                      onClick={() => setShowPagesMenu(false)}
-                      className="flex items-center gap-2 px-3 py-2.5 mx-1.5 rounded-lg text-sm transition-all duration-150"
-                      style={{ color: 'var(--color-text-secondary)' }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f3f4f6';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                      }}
-                    >
-                      <Settings className="w-4 h-4" />
-                      <span>Manage Pages</span>
-                    </NavLink>
-                  )}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Page Content - Rendered via Outlet */}
-          <Outlet />
-        </main>
-      </div>
+        {/* Page Content - Rendered via Outlet */}
+        <Outlet />
+      </main>
     </div>
   );
 };

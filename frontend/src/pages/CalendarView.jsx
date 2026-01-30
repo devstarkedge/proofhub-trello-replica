@@ -32,7 +32,6 @@ import '../components/calendar/CalendarTask.css';
 import DepartmentContext from '../context/DepartmentContext';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
-import Header from '../components/Header';
 import ReminderCalendar from '../components/ReminderCalendar';
 import { ModernCalendarGrid, CalendarTaskModal } from '../components/calendar';
 import ReminderModal from '../components/ReminderModal';
@@ -507,8 +506,7 @@ const CalendarView = () => {
   const uniqueStatuses = [...new Set(events.map(e => e.extendedProps.status))];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      <Header />
+    <div className="min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         {/* Header Section */}
         <motion.div
