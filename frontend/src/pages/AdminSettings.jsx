@@ -212,7 +212,17 @@ const AdminSettings = () => {
                   </div>
                 </div>
 
-                <form onSubmit={onSubmit}>
+                <form onSubmit={onSubmit} autoComplete="off">
+                  {/* 
+                    Hack to prevent browser autofill:
+                    Browsers often ignore autoComplete="off" for login/settings fields.
+                    We add hidden dummy inputs to "trap" the browser's initial autofill attempt.
+                  */}
+                  <div style={{ position: 'absolute', opacity: 0, zIndex: -1, width: 0, height: 0, overflow: 'hidden' }}>
+                    <input type="email" name="dummy-email" autoComplete="email" tabIndex={-1} />
+                    <input type="password" name="dummy-password" autoComplete="new-password" tabIndex={-1} />
+                  </div>
+
                   <div className="mb-4">
                     <label className="block text-gray-700 text-sm font-semibold mb-2" htmlFor="newEmail">
                       New Email Address
@@ -229,6 +239,11 @@ const AdminSettings = () => {
                         name="newEmail"
                         value={newEmail}
                         onChange={onChange}
+                        onFocus={(e) => {
+                          e.target.readOnly = false;
+                        }}
+                        readOnly={true} // Start as readOnly to prevent autofill on load
+                        autoComplete="off"
                       />
                     </div>
                     <p className="text-xs text-gray-500 mt-2">Leave blank to keep current email</p>
@@ -248,7 +263,16 @@ const AdminSettings = () => {
                   </div>
                 </div>
 
-                <form onSubmit={onSubmit}>
+                <form onSubmit={onSubmit} autoComplete="off">
+                   {/* 
+                    Hack to prevent browser autofill:
+                    Browsers often ignore autoComplete="off" for login/settings fields.
+                    We add hidden dummy inputs to "trap" the browser's initial autofill attempt.
+                  */}
+                  <div style={{ position: 'absolute', opacity: 0, zIndex: -1, width: 0, height: 0, overflow: 'hidden' }}>
+                    <input type="password" name="dummy-password-2" autoComplete="new-password" tabIndex={-1} />
+                  </div>
+
                   <div className="mb-4">
                     <label className="block text-gray-700 text-sm font-semibold mb-2" htmlFor="currentPassword">
                       Current Password
@@ -266,6 +290,11 @@ const AdminSettings = () => {
                         value={currentPassword}
                         onChange={onChange}
                         required={newPassword ? true : false}
+                        onFocus={(e) => {
+                          e.target.readOnly = false;
+                        }}
+                        readOnly={true} // Start as readOnly to prevent autofill on load
+                        autoComplete="new-password" // using new-password to prevent autofill
                       />
                       <button
                         type="button"
@@ -297,6 +326,11 @@ const AdminSettings = () => {
                         name="newPassword"
                         value={newPassword}
                         onChange={onChange}
+                        onFocus={(e) => {
+                          e.target.readOnly = false;
+                        }}
+                        readOnly={true} // Start as readOnly to prevent autofill on load
+                        autoComplete="new-password"
                       />
                       <button
                         type="button"
@@ -350,6 +384,11 @@ const AdminSettings = () => {
                         name="confirmNewPassword"
                         value={confirmNewPassword}
                         onChange={onChange}
+                        onFocus={(e) => {
+                          e.target.readOnly = false;
+                        }}
+                        readOnly={true} // Start as readOnly to prevent autofill on load
+                        autoComplete="new-password"
                       />
                       <button
                         type="button"

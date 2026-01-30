@@ -202,6 +202,15 @@ const Settings = () => {
                 </div>
               </div>
 
+              {/* 
+                Hack to prevent browser autofill:
+                Browsers often ignore autoComplete="off" for login/settings fields.
+                We add hidden dummy inputs to "trap" the browser's initial autofill attempt.
+              */}
+              <div style={{ position: 'absolute', opacity: 0, zIndex: -1, width: 0, height: 0, overflow: 'hidden' }}>
+                <input type="password" name="dummy-password" autoComplete="new-password" tabIndex={-1} />
+              </div>
+
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -216,6 +225,11 @@ const Settings = () => {
                         errors.currentPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
                       }`}
                       placeholder="Enter current password"
+                      autoComplete="new-password"
+                      onFocus={(e) => {
+                        e.target.readOnly = false;
+                      }}
+                      readOnly={true} // Start as readOnly to prevent autofill on load
                     />
                     <button
                       type="button"
@@ -243,6 +257,11 @@ const Settings = () => {
                         errors.newPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
                       }`}
                       placeholder="Enter new password"
+                      autoComplete="new-password"
+                      onFocus={(e) => {
+                        e.target.readOnly = false;
+                      }}
+                      readOnly={true} // Start as readOnly to prevent autofill on load
                     />
                     <button
                       type="button"
@@ -270,6 +289,11 @@ const Settings = () => {
                         errors.confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
                       }`}
                       placeholder="Confirm new password"
+                      autoComplete="new-password"
+                      onFocus={(e) => {
+                        e.target.readOnly = false;
+                      }}
+                      readOnly={true} // Start as readOnly to prevent autofill on load
                     />
                     <button
                       type="button"
