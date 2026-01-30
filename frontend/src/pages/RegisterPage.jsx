@@ -197,7 +197,18 @@ const RegisterPage = () => {
             <p className="text-white/70">Join your team and start collaborating</p>
           </motion.div>
 
-          <form onSubmit={onSubmit} className="space-y-3 sm:space-y-4">
+          <form onSubmit={onSubmit} className="space-y-3 sm:space-y-4" autoComplete="off">
+            {/* 
+              Hack to prevent browser autofill:
+              Browsers often ignore autoComplete="off" for login/register fields.
+              We add hidden dummy inputs to "trap" the browser's initial autofill attempt.
+            */}
+            <div style={{ position: 'absolute', opacity: 0, zIndex: -1, width: 0, height: 0, overflow: 'hidden' }}>
+              <input type="text" name="dummy-name" autoComplete="name" tabIndex={-1} />
+              <input type="email" name="dummy-email" autoComplete="email" tabIndex={-1} />
+              <input type="password" name="dummy-password" autoComplete="new-password" tabIndex={-1} />
+            </div>
+
             {/* Name Field */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
@@ -217,6 +228,7 @@ const RegisterPage = () => {
                   value={name}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('name')}
+                  autoComplete="off"
                   className={`w-full pl-12 pr-4 py-3 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent backdrop-blur-sm transition-all ${
                     errors.name ? 'border-red-400 bg-red-500/10' : 'border-white/20'
                   }`}
@@ -254,6 +266,11 @@ const RegisterPage = () => {
                   value={email}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('email')}
+                  onFocus={(e) => {
+                    e.target.readOnly = false;
+                  }}
+                  readOnly={true} // Start as readOnly to prevent autofill on load
+                  autoComplete="off" // Explicitly off for this field
                   className={`w-full pl-12 pr-12 py-3 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent backdrop-blur-sm transition-all ${
                     errors.email ? 'border-red-400 bg-red-500/10' : 'border-white/20'
                   }`}
@@ -300,6 +317,11 @@ const RegisterPage = () => {
                   value={password}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('password')}
+                  onFocus={(e) => {
+                    e.target.readOnly = false;
+                  }}
+                  readOnly={true} // Start as readOnly to prevent autofill on load
+                  autoComplete="new-password" // "new-password" often works better than "off" for passwords
                   className={`w-full pl-12 pr-12 py-3 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent backdrop-blur-sm transition-all ${
                     errors.password ? 'border-red-400 bg-red-500/10' : 'border-white/20'
                   }`}
@@ -347,6 +369,11 @@ const RegisterPage = () => {
                   value={confirmPassword}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('confirmPassword')}
+                  onFocus={(e) => {
+                    e.target.readOnly = false;
+                  }}
+                  readOnly={true} // Start as readOnly to prevent autofill on load
+                  autoComplete="new-password" // "new-password" often works better than "off" for passwords
                   className={`w-full pl-12 pr-12 py-3 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent backdrop-blur-sm transition-all ${
                     errors.confirmPassword ? 'border-red-400 bg-red-500/10' : 'border-white/20'
                   }`}
@@ -401,7 +428,7 @@ const RegisterPage = () => {
               </div>
               <p className="mt-2 text-xs text-white/60">Choose your department for better organization</p>
             </motion.div>
-
+            
             {/* Submit Button */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
