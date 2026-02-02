@@ -6,6 +6,7 @@ import SalesActivityLog from '../models/SalesActivityLog.js';
 import { io, emitToUser } from '../server.js';
 import slackNotificationService from '../services/slack/SlackNotificationService.js';
 import notificationService from '../utils/notificationService.js';
+import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards.js';
 import ExcelJS from 'exceljs';
 
 // Field label mapping for better activity log readability
@@ -1239,11 +1240,38 @@ export const updateUserPermissions = async (req, res) => {
   try {
     const { userId } = req.params;
     const adminId = req.user._id;
+
+    const existingPermission = await SalesPermission.findOne({ user: userId });
+    const previousModuleVisible = existingPermission?.moduleVisible === true;
+    const previousNotifiedAt = existingPermission?.moduleAccessNotifiedAt || null;
+
+    const payload = {
+      moduleVisible: req.body.moduleVisible === true,
+      canCreate: !!req.body.canCreate,
+      canUpdate: !!req.body.canUpdate,
+      canDelete: !!req.body.canDelete,
+      canExport: !!req.body.canExport,
+      canImport: !!req.body.canImport,
+      canManageDropdowns: !!req.body.canManageDropdowns,
+      canViewActivityLog: req.body.canViewActivityLog !== undefined ? !!req.body.canViewActivityLog : true,
+      notes: req.body.notes || ''
+    };
+
+    const shouldNotifyModuleAccess = shouldNotifyOnModuleGrant({
+      previousAccess: previousModuleVisible,
+      nextAccess: payload.moduleVisible === true
+    });
+
+    if (payload.moduleVisible === true) {
+      payload.moduleAccessNotifiedAt = new Date();
+    } else if (previousModuleVisible && payload.moduleVisible === false) {
+      payload.moduleAccessNotifiedAt = null;
+    }
     
     const permission = await SalesPermission.findOneAndUpdate(
       { user: userId },
       {
-        ...req.body,
+        ...payload,
         grantedBy: adminId
       },
       {
@@ -1263,7 +1291,7 @@ export const updateUserPermissions = async (req, res) => {
     try {
       emitToUser(userId, 'sales:permissions:updated', { userId, permissions: permission });
       // If module access granted, create in-app notification and send Slack notification
-      if (permission.moduleVisible) {
+      if (shouldNotifyModuleAccess) {
         try {
           // In-app notification
           await notificationService.createNotification({

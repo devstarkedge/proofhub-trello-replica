@@ -40,6 +40,10 @@ const salesPermissionSchema = new mongoose.Schema({
     type: Boolean,
     default: true // Most users can view history
   },
+  moduleAccessNotifiedAt: {
+    type: Date,
+    default: null
+  },
   // Admin who set the permissions
   grantedBy: {
     type: mongoose.Schema.Types.ObjectId,

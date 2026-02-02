@@ -3,6 +3,7 @@ import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import slackNotificationService from '../services/slack/SlackNotificationService.js';
 import notificationService from '../utils/notificationService.js';
+import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards.js';
 
 // @desc    Get sales permission for a user
 // @route   GET /api/sales-permissions/:id
@@ -36,6 +37,8 @@ export const setSalesPermission = asyncHandler(async (req, res, next) => {
   };
 
   let permission = await SalesPermission.findOne({ user: userId });
+  const previousModuleVisible = permission?.moduleVisible === true;
+  const previousNotifiedAt = permission?.moduleAccessNotifiedAt || null;
 
   if (!permission) {
     permission = new SalesPermission({ ...payload, user: userId, grantedBy: req.user._id });
@@ -44,10 +47,21 @@ export const setSalesPermission = asyncHandler(async (req, res, next) => {
     permission.grantedBy = req.user._id;
   }
 
+  const shouldNotifyModuleAccess = shouldNotifyOnModuleGrant({
+    previousAccess: previousModuleVisible,
+    nextAccess: permission.moduleVisible === true
+  });
+
+  if (permission.moduleVisible === true) {
+    permission.moduleAccessNotifiedAt = new Date();
+  } else if (previousModuleVisible && permission.moduleVisible === false) {
+    permission.moduleAccessNotifiedAt = null;
+  }
+
   await permission.save();
 
   // If access granted, send Slack notification to the user (non-blocking)
-  if (permission.moduleVisible) {
+  if (shouldNotifyModuleAccess) {
     try {
       slackNotificationService.sendNotification({
         userId,
