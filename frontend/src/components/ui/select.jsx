@@ -54,7 +54,7 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
 
         // Check for SelectItem matching the value
         if (child.type === SelectItem && child.props.value === selectedValue) {
-          selectedLabel = child.props.children;
+          selectedLabel = child.props.label ?? child.props.children;
           return;
         }
 
@@ -145,7 +145,7 @@ const SelectContent = forwardRef(({ className = '', children, onSelect, selected
   );
 });
 
-const SelectItem = forwardRef(({ className = '', children, value, onSelect, selectedValue, ...props }, ref) => {
+const SelectItem = forwardRef(({ className = '', children, value, label, onSelect, selectedValue, ...props }, ref) => {
   const isSelected = selectedValue === value;
 
   const handleClick = useCallback(() => {

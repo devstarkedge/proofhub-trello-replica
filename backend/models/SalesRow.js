@@ -40,7 +40,7 @@ const salesRowSchema = new mongoose.Schema({
   },
   clientRating: {
     type: Number,
-    min: [0.5, 'Rating must be at least 0'],
+    min: [0.5, 'Rating must be at least 0.5'],
     max: [5, 'Rating must not exceed 5']
   },
   clientHireRate: {

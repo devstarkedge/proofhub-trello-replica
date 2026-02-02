@@ -59,7 +59,9 @@ const DeletePopup = memo(({
   description, // override
   itemType = "default",
   isLoading = false,
-  preventCloseOnOverlay = false
+  preventCloseOnOverlay = false,
+  confirmLabel = 'Delete',
+  cancelLabel = 'Cancel'
 }) => {
   const config = ITEM_CONFIG[itemType] || ITEM_CONFIG.default;
   const displayTitle = title || config.title;
@@ -146,7 +148,7 @@ const DeletePopup = memo(({
                   disabled={isLoading}
                   className="flex-1 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-sm font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gray-200"
                 >
-                  Cancel
+                  {cancelLabel}
                 </button>
                 <button
                   onClick={(e) => {
@@ -166,7 +168,7 @@ const DeletePopup = memo(({
                       <span>Deleting...</span>
                     </>
                   ) : (
-                    <span>Delete</span>
+                    <span>{confirmLabel}</span>
                   )}
                 </button>
               </div>

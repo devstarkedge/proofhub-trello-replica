@@ -85,8 +85,8 @@ router.post('/dropdowns/:columnName', requireSalesPermission('canManageDropdowns
 // Update dropdown option (requires canManageDropdowns)
 router.put('/dropdowns/:columnName/:id', requireSalesPermission('canManageDropdowns'), updateDropdownOption);
 
-// Delete dropdown option (requires canManageDropdowns)
-router.delete('/dropdowns/:columnName/:id', requireSalesPermission('canManageDropdowns'), deleteDropdownOption);
+// Delete dropdown option (admin or creator only)
+router.delete('/dropdowns/:columnName/:id', deleteDropdownOption);
 
 // ============================================
 // CUSTOM COLUMNS ROUTES

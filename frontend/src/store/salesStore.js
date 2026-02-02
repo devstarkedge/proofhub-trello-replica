@@ -346,10 +346,24 @@ const useSalesStore = create(
        * Delete dropdown option
        */
       deleteDropdownOption: async (columnName, optionId) => {
+        const previousOptions = get().dropdownOptions[columnName] || [];
+        set(state => ({
+          dropdownOptions: {
+            ...state.dropdownOptions,
+            [columnName]: previousOptions.filter(opt => opt._id !== optionId)
+          }
+        }));
+
         try {
           await salesApi.deleteDropdownOption(columnName, optionId);
-          await get().fetchDropdownOptions(columnName);
         } catch (error) {
+          // Rollback on error
+          set(state => ({
+            dropdownOptions: {
+              ...state.dropdownOptions,
+              [columnName]: previousOptions
+            }
+          }));
           throw error;
         }
       },

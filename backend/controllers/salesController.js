@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import SalesRow from '../models/SalesRow.js';
 import SalesColumn from '../models/SalesColumn.js';
 import SalesDropdownOption from '../models/SalesDropdownOption.js';
@@ -1085,13 +1086,17 @@ export const updateDropdownOption = async (req, res) => {
 export const deleteDropdownOption = async (req, res) => {
   try {
     const { columnName, id } = req.params;
+    const userId = req.user?._id;
+    const userRole = (req.user?.role || '').toLowerCase();
 
-    // Soft delete by marking as inactive
-    const option = await SalesDropdownOption.findOneAndUpdate(
-      { _id: id, columnName },
-      { isActive: false },
-      { new: true }
-    );
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid dropdown option id'
+      });
+    }
+
+    const option = await SalesDropdownOption.findOne({ _id: id, columnName });
 
     if (!option) {
       return res.status(404).json({
@@ -1100,8 +1105,36 @@ export const deleteDropdownOption = async (req, res) => {
       });
     }
 
+    const isAdmin = userRole === 'admin';
+    const isCreator = option.createdBy?.toString() === userId?.toString();
+
+    if (!isAdmin && !isCreator) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not allowed to delete this option'
+      });
+    }
+
+    const lookupValues = Array.from(new Set([option.value, option.label].filter(Boolean)));
+    const usageQuery = { isDeleted: false };
+    const usageField = STANDARD_FIELDS.includes(columnName)
+      ? columnName
+      : `customFields.${columnName}`;
+
+    usageQuery[usageField] = lookupValues.length > 1 ? { $in: lookupValues } : lookupValues[0];
+
+    const isInUse = await SalesRow.exists(usageQuery);
+    if (isInUse) {
+      return res.status(409).json({
+        success: false,
+        message: 'This option is already linked to existing records and cannot be deleted.'
+      });
+    }
+
+    await SalesDropdownOption.deleteOne({ _id: id, columnName });
+
     // Emit real-time event
-    io.to('sales').emit('sales:dropdown:updated', { columnName });
+    io.to('sales').emit('sales:dropdown:updated', { columnName, deletedId: id });
 
     res.json({
       success: true,

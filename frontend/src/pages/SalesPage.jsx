@@ -322,7 +322,6 @@ const SalesPage = () => {
                 onImport={() => setShowImportModal(true)}
                 onManageDropdowns={() => setShowDropdownManager(true)}
                 onCreateColumn={() => setShowCustomColumn(true)}
-                onBack={() => navigate(-1)}
                 permissions={permissions}
               />
 

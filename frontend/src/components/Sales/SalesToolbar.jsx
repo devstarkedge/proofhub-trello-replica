@@ -12,7 +12,6 @@ const SalesToolbar = ({
   onManageDropdowns,
   onCreateColumn,
   onViewActivityLog,
-  onBack,
   permissions
 }) => {
   const { exportRows, selectedRows, pagination } = useSalesStore();
@@ -41,20 +40,8 @@ const SalesToolbar = ({
     <div className="bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-800 border-b border-gray-200 dark:border-gray-700">
       <div className="px-4 sm:px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          {/* Left Side - Back Button, Stats & Title */}
+          {/* Left Side - Title & Stats */}
           <div className="flex items-center gap-4">
-            {onBack && (
-              <button
-                onClick={onBack}
-                aria-label="Go back"
-                className="inline-flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 shadow-sm"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-            )}
-
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
                 Sales
