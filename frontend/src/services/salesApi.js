@@ -224,6 +224,15 @@ export const createCustomColumn = async (columnData) => {
   return data;
 };
 
+/**
+ * Delete custom column
+ */
+export const deleteCustomColumn = async (columnId) => {
+  const { data } = await api.delete(`/columns/${columnId}`);
+  toast.success(data.message || 'Column deleted successfully');
+  return data;
+};
+
 // ============================================
 // PERMISSIONS API
 // ============================================

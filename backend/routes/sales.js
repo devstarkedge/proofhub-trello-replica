@@ -18,6 +18,7 @@ import {
   deleteDropdownOption,
   getCustomColumns,
   createCustomColumn,
+  deleteCustomColumn,
   getUserPermissions,
   updateUserPermissions
 } from '../controllers/salesController.js';
@@ -95,6 +96,9 @@ router.get('/columns', getCustomColumns);
 
 // Create custom column (requires canManageDropdowns)
 router.post('/columns', requireSalesPermission('canManageDropdowns'), createCustomColumn);
+
+// Delete custom column (requires canManageDropdowns)
+router.delete('/columns/:id', requireSalesPermission('canManageDropdowns'), deleteCustomColumn);
 
 // ============================================
 // PERMISSIONS ROUTES

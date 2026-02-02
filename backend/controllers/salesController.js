@@ -1150,6 +1150,47 @@ export const createCustomColumn = async (req, res) => {
 };
 
 /**
+ * @desc    Delete custom column (hard delete)
+ * @route   DELETE /api/sales/columns/:id
+ * @access  Private (requires canManageDropdowns permission)
+ */
+export const deleteCustomColumn = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const column = await SalesColumn.findById(id);
+
+    if (!column) {
+      return res.status(404).json({
+        success: false,
+        message: 'Custom column not found'
+      });
+    }
+
+    // Remove dropdown options for this column (if any)
+    await SalesDropdownOption.deleteMany({ columnName: column.key });
+
+    // Remove the column
+    await SalesColumn.deleteOne({ _id: id });
+
+    // Emit real-time event
+    io.to('sales').emit('sales:column:deleted', { columnId: column._id, columnKey: column.key });
+
+    res.json({
+      success: true,
+      message: 'Custom column deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete custom column error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete custom column',
+      error: error.message
+    });
+  }
+};
+
+/**
  * @desc    Get user permissions
  * @route   GET /api/sales/permissions/:userId
  * @access  Private (Admin or self)

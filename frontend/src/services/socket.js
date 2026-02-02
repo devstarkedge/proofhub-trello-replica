@@ -382,6 +382,11 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-sales-column-created', { detail: data }));
     });
 
+    this.socket.on('sales:column:deleted', (data) => {
+      console.log('Sales column deleted:', data);
+      window.dispatchEvent(new CustomEvent('socket-sales-column-deleted', { detail: data }));
+    });
+
     this.socket.on('sales:rows:imported', (data) => {
       console.log('Sales rows imported:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-rows-imported', { detail: data }));

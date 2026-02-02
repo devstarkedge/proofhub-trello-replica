@@ -378,6 +378,18 @@ const useSalesStore = create(
       },
 
       /**
+       * Delete custom column
+       */
+      deleteCustomColumn: async (columnId) => {
+        try {
+          await salesApi.deleteCustomColumn(columnId);
+          await get().fetchCustomColumns();
+        } catch (error) {
+          throw error;
+        }
+      },
+
+      /**
        * Fetch user permissions
        */
       fetchPermissions: async (userId) => {
@@ -504,6 +516,13 @@ const useSalesStore = create(
        * Handle column created event
        */
       handleColumnCreated: () => {
+        get().fetchCustomColumns();
+      },
+
+      /**
+       * Handle column deleted event
+       */
+      handleColumnDeleted: () => {
         get().fetchCustomColumns();
       },
 

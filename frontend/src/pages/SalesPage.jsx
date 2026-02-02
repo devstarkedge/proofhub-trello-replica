@@ -43,6 +43,7 @@ const SalesPage = () => {
     handleBulkDelete,
     handleDropdownUpdated,
     handleColumnCreated,
+    handleColumnDeleted,
     handleRowLocked,
     handleRowUnlocked,
     syncDrafts
@@ -65,6 +66,7 @@ const SalesPage = () => {
       window.removeEventListener('socket-sales-rows-bulk-deleted', onSocketRowsBulkDeleted);
       window.removeEventListener('socket-sales-dropdown-updated', onSocketDropdownUpdated);
       window.removeEventListener('socket-sales-column-created', onSocketColumnCreated);
+      window.removeEventListener('socket-sales-column-deleted', onSocketColumnDeleted);
       window.removeEventListener('socket-sales-rows-imported', onSocketRowsImported);
       window.removeEventListener('socket-sales-row-locked', onSocketRowLocked);
       window.removeEventListener('socket-sales-row-unlocked', onSocketRowUnlocked);
@@ -148,6 +150,7 @@ const SalesPage = () => {
       window.addEventListener('socket-sales-rows-bulk-deleted', onSocketRowsBulkDeleted);
       window.addEventListener('socket-sales-dropdown-updated', onSocketDropdownUpdated);
       window.addEventListener('socket-sales-column-created', onSocketColumnCreated);
+      window.addEventListener('socket-sales-column-deleted', onSocketColumnDeleted);
       window.addEventListener('socket-sales-rows-imported', onSocketRowsImported);
       window.addEventListener('socket-sales-row-locked', onSocketRowLocked);
       window.addEventListener('socket-sales-row-unlocked', onSocketRowUnlocked);
@@ -213,6 +216,11 @@ const SalesPage = () => {
   const onSocketColumnCreated = () => {
     handleColumnCreated();
     toast.info('New column added');
+  };
+
+  const onSocketColumnDeleted = () => {
+    handleColumnDeleted();
+    toast.info('Column deleted');
   };
 
   const onSocketRowsImported = (e) => {

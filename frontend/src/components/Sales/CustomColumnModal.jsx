@@ -26,6 +26,9 @@ const slugify = (s) =>
 
 const CustomColumnModal = ({ isOpen, onClose }) => {
   const createCustomColumn = useSalesStore(state => state.createCustomColumn);
+  const deleteCustomColumn = useSalesStore(state => state.deleteCustomColumn);
+  const customColumns = useSalesStore(state => state.customColumns);
+  const fetchCustomColumns = useSalesStore(state => state.fetchCustomColumns);
   const { register, control, handleSubmit, watch, reset, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: { name: '', type: 'dropdown', allowCustom: false, options: [] }
@@ -35,10 +38,24 @@ const CustomColumnModal = ({ isOpen, onClose }) => {
   const type = watch('type');
 
   useEffect(() => {
-    if (!isOpen) {
-      reset({ name: '', type: 'dropdown', allowCustom: false, options: [] });
+    if (isOpen) {
+      fetchCustomColumns();
+      return;
     }
-  }, [isOpen, reset]);
+
+    reset({ name: '', type: 'dropdown', allowCustom: false, options: [] });
+  }, [isOpen, reset, fetchCustomColumns]);
+
+  const handleDeleteColumn = async (columnId) => {
+    const confirmed = window.confirm('Are you sure you want to delete this custom column?');
+    if (!confirmed) return;
+
+    try {
+      await deleteCustomColumn(columnId);
+    } catch (err) {
+      console.error('Failed to delete column', err);
+    }
+  };
 
   const onSubmit = async (data) => {
     const payload = {
@@ -99,7 +116,32 @@ const CustomColumnModal = ({ isOpen, onClose }) => {
                 </div>
               </div>
             )}
-
+            {customColumns && customColumns.length > 0 && (
+              <div className="bg-gray-50 dark:bg-gray-900/30 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Custom Columns</h3>
+                  <span className="text-xs text-gray-500">{customColumns.length}</span>
+                </div>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {customColumns.map((col) => (
+                    <div key={col._id} className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2">
+                      <div className="flex flex-col">
+                        <span className="text-sm text-gray-900 dark:text-gray-100">{col.name}</span>
+                        <span className="text-xs text-gray-500">{col.type}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteColumn(col._id)}
+                        className="text-red-600 hover:text-red-700"
+                        aria-label={`Delete ${col.name}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div>
               <p className="text-sm text-gray-500">Preview: Column key will be auto-generated from name.</p>
             </div>
