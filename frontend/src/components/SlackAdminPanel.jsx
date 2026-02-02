@@ -32,6 +32,10 @@ const SlackLogo = ({ size = 24, className = '' }) => (
 
 const SlackAdminPanel = () => {
   const [loading, setLoading] = useState(true);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [workspaceSettings, setWorkspaceSettings] = useState(null);
@@ -65,6 +69,7 @@ const SlackAdminPanel = () => {
   // Fetch analytics
   const fetchAnalytics = useCallback(async () => {
     try {
+      setAnalyticsLoading(true);
       const [analyticsRes, queueRes] = await Promise.all([
         slackService.getAnalytics('daily', 30),
         slackService.getQueueStats()
@@ -73,18 +78,30 @@ const SlackAdminPanel = () => {
       setQueueStats(queueRes.data);
     } catch (error) {
       console.error('Failed to fetch analytics:', error);
+    } finally {
+      setAnalyticsLoading(false);
     }
   }, []);
 
   // Fetch users
   const fetchUsers = useCallback(async () => {
     try {
+      setUsersLoading(true);
       const res = await slackService.getWorkspaceUsers(1, 50);
       setUsers(res.data.users || []);
     } catch (error) {
       console.error('Failed to fetch users:', error);
+    } finally {
+      setUsersLoading(false);
     }
   }, []);
+
+  const fetchSettings = useCallback(async () => {
+    if (!activeTab === 'settings') return;
+     // settings are already loaded in initial fetchData, but we can reload if needed manually
+     // currently just placeholder if needed for specific tab refresh behavior
+  }, [activeTab]);
+
 
   useEffect(() => {
     fetchData();
@@ -161,7 +178,11 @@ const SlackAdminPanel = () => {
         <div className="flex items-center gap-2">
           <StatusBadge status={healthStatus?.status} />
           <button
-            onClick={fetchData}
+            onClick={() => {
+              if (activeTab === 'overview' || activeTab === 'settings') fetchData();
+              if (activeTab === 'users') fetchUsers();
+              if (activeTab === 'analytics') fetchAnalytics();
+            }}
             className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
           >
             <RefreshCw className="w-5 h-5" />
@@ -206,13 +227,14 @@ const SlackAdminPanel = () => {
             settings={workspaceSettings.settings}
             onChange={handleSettingChange}
             saving={saving}
+            loading={settingsLoading}
           />
         )}
         {activeTab === 'users' && (
-          <UsersTab users={users} />
+          <UsersTab users={users} loading={usersLoading} />
         )}
         {activeTab === 'analytics' && (
-          <AnalyticsTab analytics={analytics} />
+          <AnalyticsTab analytics={analytics} loading={analyticsLoading} />
         )}
       </AnimatePresence>
     </div>
@@ -287,7 +309,15 @@ const OverviewTab = ({ workspace, health, queues }) => (
 );
 
 // Settings Tab
-const SettingsTab = ({ settings, onChange, saving }) => (
+const SettingsTab = ({ settings, onChange, saving, loading }) => {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+  return (
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
@@ -428,10 +458,19 @@ const SettingsTab = ({ settings, onChange, saving }) => (
       />
     </SettingsSection>
   </motion.div>
-);
+)};
 
 // Users Tab
-const UsersTab = ({ users }) => (
+const UsersTab = ({ users, loading }) => {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  return (
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
@@ -489,10 +528,19 @@ const UsersTab = ({ users }) => (
       )}
     </div>
   </motion.div>
-);
+)};
 
 // Analytics Tab
-const AnalyticsTab = ({ analytics }) => (
+const AnalyticsTab = ({ analytics, loading }) => {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  return (
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
@@ -559,7 +607,7 @@ const AnalyticsTab = ({ analytics }) => (
       </div>
     )}
   </motion.div>
-);
+)};
 
 // Helper Components
 const StatCard = ({ label, value, icon, color }) => (
@@ -645,3 +693,4 @@ const SettingToggle = ({ label, description, checked, onChange, disabled }) => (
 );
 
 export default SlackAdminPanel;
+
