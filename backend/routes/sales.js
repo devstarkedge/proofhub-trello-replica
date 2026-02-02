@@ -18,6 +18,7 @@ import {
   deleteDropdownOption,
   getCustomColumns,
   createCustomColumn,
+  updateCustomColumn,
   deleteCustomColumn,
   getUserPermissions,
   updateUserPermissions
@@ -97,6 +98,10 @@ router.get('/columns', getCustomColumns);
 // Create custom column (requires canManageDropdowns)
 router.post('/columns', requireSalesPermission('canManageDropdowns'), createCustomColumn);
 
+// Update custom column (requires canManageDropdowns)
+router.put('/columns/:id', requireSalesPermission('canManageDropdowns'), updateCustomColumn);
+// Update custom column (requires canManageDropdowns)
+router.put('/columns/:id', requireSalesPermission('canManageDropdowns'), updateCustomColumn);
 // Delete custom column (requires canManageDropdowns)
 router.delete('/columns/:id', requireSalesPermission('canManageDropdowns'), deleteCustomColumn);
 

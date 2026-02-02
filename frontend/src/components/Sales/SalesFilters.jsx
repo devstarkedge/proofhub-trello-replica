@@ -120,28 +120,28 @@ const SalesFilters = () => {
 
   const activeFilterCount = Object.values(filters).filter(v => v !== '' && v !== null && v !== undefined).length;
 
-  const selectClass = "w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none cursor-pointer hover:border-gray-300 dark:hover:border-gray-500";
-  const inputClass = "w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all cursor-pointer";
-  const labelClass = "block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider";
+  const selectClass = "w-full px-4 py-3 text-sm border-2 border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 shadow-sm hover:shadow-md font-medium";
+  const inputClass = "w-full px-4 py-3 text-sm border-2 border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 font-medium";
+  const labelClass = "block text-xs font-bold text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wider";
 
   return (
-    <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
+    <div className="bg-gradient-to-r from-white via-blue-50/20 to-white dark:from-gray-800 dark:via-blue-900/10 dark:to-gray-800 border-b border-gray-200/80 dark:border-gray-700/80 shadow-sm backdrop-blur-sm">
       {/* Search Bar and Toggle */}
-      <div className="px-4 py-3 flex items-center gap-4">
+      <div className="px-6 py-4 flex items-center gap-4">
         {/* Global Search */}
-        <div className="flex-1 max-w-xl relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+        <div className="flex-1 max-w-2xl relative group">
+          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-hover:text-blue-500 transition-colors w-5 h-5" />
           <input
             type="text"
             placeholder="Search bid links, comments, technology, profile..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full pl-11 pr-4 py-2.5 text-sm border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white dark:focus:bg-gray-700 transition-all"
+            className="w-full pl-12 pr-12 py-3 text-sm border-2 border-gray-200 dark:border-gray-600 rounded-2xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600"
           />
           {searchInput && (
             <button
               onClick={() => setSearchInput('')}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full p-1.5 transition-all hover:scale-110"
             >
               <X className="w-4 h-4" />
             </button>
@@ -150,23 +150,23 @@ const SalesFilters = () => {
 
         {/* Filter Toggle Button */}
         <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => setIsExpanded(!isExpanded)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all ${
+          className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl font-semibold text-sm transition-all shadow-md hover:shadow-lg ${
             isExpanded || activeFilterCount > 0
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-blue-500/30'
+              : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 border-2 border-gray-200 dark:border-gray-600'
           }`}
         >
-          <Filter className="w-4 h-4" />
+          <Filter className="w-5 h-5" />
           <span>Filters</span>
           {activeFilterCount > 0 && (
-            <span className="px-1.5 py-0.5 text-xs font-bold bg-white/20 rounded-full min-w-[20px] text-center">
+            <span className="px-2 py-0.5 text-xs font-bold bg-white/25 rounded-full min-w-[24px] text-center animate-pulse">
               {activeFilterCount}
             </span>
           )}
-          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </motion.button>
 
         {/* Clear All */}
@@ -175,13 +175,15 @@ const SalesFilters = () => {
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => {
               clearFilters();
               setDatePreset('all'); 
             }}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-5 py-3 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-2xl transition-all border-2 border-red-200 dark:border-red-800 hover:border-red-300 dark:hover:border-red-700 shadow-sm hover:shadow-md"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
             Clear All
           </motion.button>
         )}
@@ -197,8 +199,8 @@ const SalesFilters = () => {
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 pt-2 border-t border-gray-100 dark:border-gray-700/50">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+            <div className="px-6 pb-5 pt-3 border-t border-gray-100/60 dark:border-gray-700/60 bg-gradient-to-b from-blue-50/30 to-transparent dark:from-blue-900/5 dark:to-transparent">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-5">
                 
                 {/* Date Presets Dropdown */}
                 <div className={`col-span-2 xl:col-span-2 grid ${datePreset === 'custom' ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
@@ -227,7 +229,7 @@ const SalesFilters = () => {
                           <label className={labelClass}>
                              Date From
                           </label>
-                          <div className="relative">
+                          <div className="relative group">
                             <input
                               type="text"
                               readOnly
@@ -236,14 +238,14 @@ const SalesFilters = () => {
                               className={inputClass}
                               placeholder="dd-mm-yyyy"
                             />
-                            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
                           </div>
                         </div>
                         <div>
                           <label className={labelClass}>
                              Date To
                           </label>
-                          <div className="relative">
+                          <div className="relative group">
                             <input
                               type="text"
                               readOnly
@@ -252,7 +254,7 @@ const SalesFilters = () => {
                               className={inputClass}
                               placeholder="dd-mm-yyyy"
                             />
-                            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
                           </div>
                         </div>
                       </>

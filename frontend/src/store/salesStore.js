@@ -17,6 +17,7 @@ const useSalesStore = create(
         minRating: null,
         minHireRate: null,
         budget: '',
+        profile: '',
         dateFrom: null,
         dateTo: null
       },
@@ -378,6 +379,18 @@ const useSalesStore = create(
       },
 
       /**
+       * Update custom column
+       */
+      updateCustomColumn: async (columnId, columnData) => {
+        try {
+          await salesApi.updateCustomColumn(columnId, columnData);
+          await get().fetchCustomColumns();
+        } catch (error) {
+          throw error;
+        }
+      },
+
+      /**
        * Delete custom column
        */
       deleteCustomColumn: async (columnId) => {
@@ -420,11 +433,18 @@ const useSalesStore = create(
        * Handle real-time row updated event
        */
       handleRowUpdated: (updatedRow) => {
-        set(state => ({
-          rows: state.rows.map(row =>
+        set(state => {
+          const nextRows = state.rows.map(row =>
             row._id === updatedRow._id ? updatedRow : row
-          )
-        }));
+          );
+
+          if (!updatedRow.lockedBy) {
+            const { [updatedRow._id]: removed, ...rest } = state.lockedRows;
+            return { rows: nextRows, lockedRows: rest };
+          }
+
+          return { rows: nextRows };
+        });
       },
 
       /**

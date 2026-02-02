@@ -126,6 +126,7 @@ export const getSalesRows = async (req, res) => {
       minRating,
       minHireRate,
       budget,
+      profile,
       dateFrom,
       dateTo,
       sortBy = 'date',
@@ -156,6 +157,7 @@ export const getSalesRows = async (req, res) => {
     if (minRating) query.clientRating = { $gte: parseInt(minRating) };
     if (minHireRate) query.clientHireRate = { $gte: parseInt(minHireRate) };
     if (budget) query.clientBudget = budget;
+    if (profile) query.profile = profile;
     
     // Date range filter
     if (dateFrom || dateTo) {
@@ -349,10 +351,8 @@ export const updateSalesRow = async (req, res) => {
 
     row.updatedBy = userId;
     
-    // Release lock if it was locked
-    if (row.lockedBy) {
-      row.releaseLock(userId);
-    }
+    // Release lock if it was locked by this user
+    const didUnlock = row.lockedBy ? row.releaseLock(userId) : false;
 
     await row.save();
     await row.populate('createdBy updatedBy', 'name email avatar');
@@ -372,8 +372,11 @@ export const updateSalesRow = async (req, res) => {
       });
     }
 
-    // Emit real-time event
+    // Emit real-time events
     io.to('sales').emit('sales:row:updated', { row: flatRow, changes });
+    if (didUnlock) {
+      io.to('sales').emit('sales:row:unlocked', { rowId: row._id });
+    }
 
     res.json({
       success: true,
@@ -595,7 +598,11 @@ export const lockRow = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Row locked successfully'
+      message: 'Row locked successfully',
+      data: {
+        rowId: row._id,
+        lockedBy: { _id: userId, name: req.user.name }
+      }
     });
   } catch (error) {
     console.error('Lock row error:', error);
@@ -621,6 +628,28 @@ export const unlockRow = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Sales row not found'
+      });
+    }
+
+    // If lock expired, clear it without requiring ownership
+    if (!row.isLocked() && row.lockedBy) {
+      row.lockedBy = null;
+      row.lockedAt = null;
+      await row.save();
+
+      io.to('sales').emit('sales:row:unlocked', { rowId: row._id });
+
+      return res.json({
+        success: true,
+        message: 'Row unlocked successfully'
+      });
+    }
+
+    if (!row.lockedBy) {
+      io.to('sales').emit('sales:row:unlocked', { rowId: row._id });
+      return res.json({
+        success: true,
+        message: 'Row already unlocked'
       });
     }
 
@@ -1185,6 +1214,49 @@ export const deleteCustomColumn = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to delete custom column',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * @desc    Update custom column
+ * @route   PUT /api/sales/columns/:id
+ * @access  Private (requires canManageDropdowns permission)
+ */
+export const updateCustomColumn = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, type } = req.body;
+
+    const column = await SalesColumn.findById(id);
+
+    if (!column) {
+      return res.status(404).json({
+        success: false,
+        message: 'Custom column not found'
+      });
+    }
+
+    // Update column fields
+    if (name) column.name = name;
+    if (type) column.type = type;
+    
+    await column.save();
+
+    // Emit real-time event
+    io.to('sales').emit('sales:column:updated', { column });
+
+    res.json({
+      success: true,
+      message: 'Custom column updated successfully',
+      data: column
+    });
+  } catch (error) {
+    console.error('Update custom column error:', error);
+    res.status(400).json({
+      success: false,
+      message: 'Failed to update custom column',
       error: error.message
     });
   }

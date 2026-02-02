@@ -36,6 +36,9 @@ const SalesPage = () => {
     fetchCustomColumns,
     fetchDropdownOptions,
     selectedRows,
+    lockedRows,
+    lockRow,
+    unlockRow,
     handleRowCreated,
     handleRowUpdated,
     handleRowDeleted,
@@ -66,6 +69,7 @@ const SalesPage = () => {
       window.removeEventListener('socket-sales-rows-bulk-deleted', onSocketRowsBulkDeleted);
       window.removeEventListener('socket-sales-dropdown-updated', onSocketDropdownUpdated);
       window.removeEventListener('socket-sales-column-created', onSocketColumnCreated);
+      window.removeEventListener('socket-sales-column-updated', onSocketColumnUpdated);
       window.removeEventListener('socket-sales-column-deleted', onSocketColumnDeleted);
       window.removeEventListener('socket-sales-rows-imported', onSocketRowsImported);
       window.removeEventListener('socket-sales-row-locked', onSocketRowLocked);
@@ -150,6 +154,7 @@ const SalesPage = () => {
       window.addEventListener('socket-sales-rows-bulk-deleted', onSocketRowsBulkDeleted);
       window.addEventListener('socket-sales-dropdown-updated', onSocketDropdownUpdated);
       window.addEventListener('socket-sales-column-created', onSocketColumnCreated);
+      window.addEventListener('socket-sales-column-updated', onSocketColumnUpdated);
       window.addEventListener('socket-sales-column-deleted', onSocketColumnDeleted);
       window.addEventListener('socket-sales-rows-imported', onSocketRowsImported);
       window.addEventListener('socket-sales-row-locked', onSocketRowLocked);
@@ -218,6 +223,11 @@ const SalesPage = () => {
     toast.info('New column added');
   };
 
+  const onSocketColumnUpdated = () => {
+    handleColumnCreated(); // Reuse the same handler to refresh columns
+    toast.info('Column updated');
+  };
+
   const onSocketColumnDeleted = () => {
     handleColumnDeleted();
     toast.info('Column deleted');
@@ -244,9 +254,37 @@ const SalesPage = () => {
     setShowActivityLog(true);
   };
 
-  const openEditModal = (row) => {
-    setEditingRow(row);
-    setShowAddModal(true);
+  const openEditModal = async (row) => {
+    const existingLock = lockedRows?.[row._id];
+    const existingLockName = existingLock?.name || existingLock?.userName;
+    if (existingLock && existingLock._id && existingLock._id !== user?._id) {
+      toast.error(existingLockName
+        ? `This row is being edited by ${existingLockName}`
+        : 'This row is being edited by another user'
+      );
+      return;
+    }
+
+    try {
+      await lockRow(row._id);
+      setEditingRow(row);
+      setShowAddModal(true);
+    } catch (error) {
+      const lockedByName = error?.response?.data?.lockedBy?.name
+        || error?.response?.data?.lockedBy?.userName;
+      const message = lockedByName
+        ? `This row is being edited by ${lockedByName}`
+        : (error?.response?.data?.message || 'This row is being edited by another user');
+      toast.error(message);
+    }
+  };
+
+  const closeEditModal = async () => {
+    setShowAddModal(false);
+    if (editingRow?._id) {
+      await unlockRow(editingRow._id).catch(() => {});
+    }
+    setEditingRow(null);
   };
 
   // Render permissions check loader only if permissions are completely missing
@@ -270,16 +308,15 @@ const SalesPage = () => {
   }
 
   return (
-    <div className="h-full bg-gray-50 dark:bg-gray-900">
+    <div className="h-full bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-50 dark:from-gray-900 dark:via-blue-900/10 dark:to-gray-900">
       
-      {/* Main Content Area - Fixed height to allow inner scroll */}
       {/* Main Content Area - Fixed height to allow inner scroll */}
       <div className="h-full flex flex-col overflow-hidden">
           {/* Scrollable Content Container (Toolbar + Table) */}
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             
             {/* Toolbar */}
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border-b border-gray-200/50 dark:border-gray-700/50 shadow-sm">
               <SalesToolbar
                 onAddRow={() => setShowAddModal(true)}
                 onImport={() => setShowImportModal(true)}
@@ -298,8 +335,8 @@ const SalesPage = () => {
               )}
             </div>
 
-            {/* Main Table - takes remaining height */}
-            <div className="flex-1 overflow-hidden px-4 sm:px-6 lg:px-8 py-4">
+            {/* Main Table - takes remaining height with premium spacing */}
+            <div className="flex-1 overflow-hidden px-4 sm:px-6 lg:px-8 py-6">
               <SalesTable
                 onEditRow={openEditModal}
                 onViewActivity={openActivityLog}
@@ -314,10 +351,7 @@ const SalesPage = () => {
       {showAddModal && (
         <AddSalesRowModal
           isOpen={showAddModal}
-          onClose={() => {
-            setShowAddModal(false);
-            setEditingRow(null);
-          }}
+          onClose={closeEditModal}
           editingRow={editingRow}
         />
       )}

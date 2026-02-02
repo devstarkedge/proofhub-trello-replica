@@ -48,7 +48,7 @@ function convertRowForForm(row) {
 }
 
 const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
-  const { createRow, updateRow, dropdownOptions, customColumns, fetchCustomColumns, lockRow, unlockRow } = useSalesStore();
+  const { createRow, updateRow, dropdownOptions, customColumns, fetchCustomColumns } = useSalesStore();
   const isEdit = Boolean(editingRow);
   const [activeSection, setActiveSection] = React.useState('all'); // 'all' | 'deal' | 'client' | 'status'
   
@@ -113,34 +113,6 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
         });
       }
       reset(base);
-
-      // Lock row
-      // Use isMounted to prevent unlocking if we unmount before lock is acquired
-      // Use hasLock to ensure we only unlock if we successfully locked it
-      let hasLock = false;
-      let isMounted = true;
-
-      lockRow(editingRow._id)
-          .then(() => {
-              if (isMounted) {
-                  hasLock = true;
-              } else {
-                  // If unmounted *after* lock request started but *before* it finished:
-                  // The lock succeeded, but we are gone. Unlocking immediately.
-                  unlockRow(editingRow._id).catch(() => {});
-              }
-          })
-          .catch((err) => {
-             // Silently fail or handle if needed (e.g. 423 Locked)
-             console.log("Failed to lock row:", err?.response?.data?.message || err.message);
-          });
-
-      return () => {
-        isMounted = false;
-        if (hasLock) {
-           unlockRow(editingRow._id).catch(() => {});
-        }
-      };
     } else {
       const base = { ...defaultValues };
       if (customColumns && customColumns.length) {
@@ -148,7 +120,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       }
       reset(base);
     }
-  }, [isEdit, editingRow, reset, fetchCustomColumns, customColumns.length, lockRow, unlockRow]);
+  }, [isEdit, editingRow, reset, fetchCustomColumns, customColumns.length]);
 
   // Keep form in sync when customColumns change while modal is open
   useEffect(() => {
@@ -191,55 +163,58 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   if (!isOpen) return null;
 
   const SectionHeader = ({ title, icon: Icon }) => (
-    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100 dark:border-gray-700">
-      {Icon && <Icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />}
-      <h3 className="font-semibold text-gray-800 dark:text-gray-100">{title}</h3>
+    <div className="flex items-center gap-3 mb-5 pb-3 border-b-2 border-gradient-to-r from-blue-100 via-indigo-100 to-blue-100 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-blue-900/30">
+      {Icon && <Icon className="w-6 h-6 text-blue-600 dark:text-blue-400" />}
+      <h3 className="font-bold text-lg text-gray-800 dark:text-gray-100 tracking-tight">{title}</h3>
     </div>
   );
 
   return (
-    <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 backdrop-blur-md bg-black/40 flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
+      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 border border-gray-200/50 dark:border-gray-700/50">
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800 sticky top-0 z-10">
+        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-white via-blue-50/30 to-white dark:from-gray-800 dark:via-blue-900/10 dark:to-gray-800 sticky top-0 z-10 shadow-sm">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              {isEdit ? 'Edit Record' : 'New Sales Record'}
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent flex items-center gap-3">
+              {isEdit ? '✏️ Edit Record' : '✨ New Sales Record'}
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               {isEdit ? 'Update the details below' : 'Fill in the information to add a new sales record'}
             </p>
           </div>
           <button 
             type="button" 
             onClick={onClose} 
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-500"
+            className="p-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:scale-110 hover:rotate-90 duration-200"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
         {/* content */}
-        <div className="overflow-y-auto flex-1 p-6 custom-scrollbar">
-          <form id="sales-form" onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+        <div className="overflow-y-auto flex-1 p-8 custom-scrollbar bg-gradient-to-b from-transparent via-blue-50/10 to-transparent dark:via-blue-900/5">
+          <form id="sales-form" onSubmit={handleSubmit(onSubmit)} className="space-y-10">
             
             {/* Deal Details Section */}
             <div>
               <SectionHeader title="Deal Details" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                  <div className="col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Date<span className="text-red-500">*</span></label>
-                  <div className="relative">
+                  <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                    Date
+                    <span className="text-red-500 font-bold">*</span>
+                  </label>
+                  <div className="relative group">
                     <input 
                         type="text" 
                         readOnly
                         value={formatSalesDate(watchedDate)}
                         onClick={() => openDatePicker('date', 'Select Deal Date')}
-                        className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg cursor-pointer"
+                        className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl cursor-pointer transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium"
                         placeholder="dd-mm-yyyy"
                     />
-                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
                   </div>
                   {/* Hidden input to register with hook form if needed, but we used setValue. 
                       However, we are not using register('date') anymore on the visible input because it's read-only and formatted.
@@ -250,7 +225,10 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                 <div className="col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Platform<span className="text-red-500">*</span></label>
+                  <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                    Platform
+                    <span className="text-red-500 font-bold">*</span>
+                  </label>
                   <Controller
                     name="platform"
                     control={control}
@@ -267,7 +245,10 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                 <div className="col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Technology<span className="text-red-500">*</span></label>
+                  <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                    Technology
+                    <span className="text-red-500 font-bold">*</span>
+                  </label>
                   <Controller
                     name="technology"
                     control={control}
@@ -284,7 +265,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                 <div className="col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Profile</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Profile</label>
                   <Controller
                     name="profile"
                     control={control}
@@ -300,8 +281,8 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                 <div className="col-span-1 lg:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Bid Link</label>
-                  <input type="url" placeholder="https://..." {...register('bidLink')} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Bid Link</label>
+                  <input type="url" placeholder="https://..." {...register('bidLink')} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                    {errors.bidLink && <p className="text-red-500 text-xs mt-1">{errors.bidLink.message}</p>}
                 </div>
               </div>
@@ -312,17 +293,17 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
               <SectionHeader title="Client Information" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                  <div className="col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Rating (0-5)</label>
-                  <input type="number" min={0} max={5} step="0.5" {...register('clientRating', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Rating (0-5)</label>
+                  <input type="number" min={0} max={5} step="0.5" {...register('clientRating', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                 </div>
                 
                 <div className="col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Hire Rate (%)</label>
-                   <input type="number" min={0} max={100} {...register('clientHireRate', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Hire Rate (%)</label>
+                   <input type="number" min={0} max={100} {...register('clientHireRate', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                 </div>
 
                 <div className="col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Location</label>
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Location</label>
                    <Controller
                     name="clientLocation"
                     control={control}
@@ -338,7 +319,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                 <div className="col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Budget</label>
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Budget</label>
                    <Controller
                     name="clientBudget"
                     control={control}
@@ -354,8 +335,8 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
                 
                  <div className="col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Spending</label>
-                   <input type="text" {...register('clientSpending')} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Spending</label>
+                   <input type="text" {...register('clientSpending')} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                 </div>
               </div>
             </div>
@@ -365,16 +346,16 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
               <SectionHeader title="Deal Mechanics" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                  <div className="col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Rate ($)</label>
-                   <input type="number" min={0} {...register('rate', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Rate ($)</label>
+                   <input type="number" min={0} {...register('rate', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                 </div>
                  <div className="col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Connects</label>
-                   <input type="number" min={0} {...register('connects', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Connects</label>
+                   <input type="number" min={0} {...register('connects', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                 </div>
                  <div className="col-span-1 lg:col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Proposal Screenshot</label>
-                   <input type="url" placeholder="https://..." {...register('proposalScreenshot')} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Proposal Screenshot</label>
+                   <input type="url" placeholder="https://..." {...register('proposalScreenshot')} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                 </div>
               </div>
             </div>
@@ -384,7 +365,10 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
               <SectionHeader title="Status & Tracking" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                  <div className="col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Current Status<span className="text-red-500">*</span></label>
+                  <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                    Current Status
+                    <span className="text-red-500 font-bold">*</span>
+                  </label>
                   <Controller
                     name="status"
                     control={control}
@@ -401,7 +385,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                 <div className="col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Client Reply</label>
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Client Reply</label>
                    <Controller
                     name="replyFromClient"
                     control={control}
@@ -417,15 +401,15 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                  <div className="col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Row Color</label>
-                   <div className="flex items-center gap-3">
-                     <input type="color" {...register('rowColor')} className="w-10 h-10 p-0.5 rounded border border-gray-200 cursor-pointer" />
-                     <span className="text-sm text-gray-500">Pick a highlight color</span>
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Row Color</label>
+                   <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 transition-all">
+                     <input type="color" {...register('rowColor')} className="w-12 h-12 p-1 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer hover:scale-110 transition-transform" />
+                     <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Pick a highlight color</span>
                    </div>
                 </div>
 
                 <div className="col-span-1">
-                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Follow Up Status</label>
+                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Follow Up Status</label>
                    <Controller
                     name="followUps"
                     control={control}
@@ -441,17 +425,17 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                  <div className="col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Next Follow Up Date</label>
-                  <div className="relative">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Next Follow Up Date</label>
+                  <div className="relative group">
                     <input 
                         type="text" 
                         readOnly
                         value={formatSalesDate(watchedFollowUpDate)}
                         onClick={() => openDatePicker('followUpDate', 'Select Follow Up Date')}
-                        className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg cursor-pointer"
+                        className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl cursor-pointer transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium"
                         placeholder="dd-mm-yyyy"
                     />
-                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
                   </div>
                   <input type="hidden" {...register('followUpDate')} />
                 </div>
@@ -465,7 +449,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                     {customColumns.map(col => (
                         <div key={col.key}>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{col.name}{col.isRequired ? <span className="text-red-500">*</span> : null}</label>
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{col.name}{col.isRequired ? <span className="text-red-500 font-bold ml-1">*</span> : null}</label>
                           {col.type === 'dropdown' ? (
                             <Controller
                                 name={col.key}
@@ -480,24 +464,24 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                                 )}
                               />
                           ) : col.type === 'date' ? (
-                            <div className="relative">
+                            <div className="relative group">
                                 <input 
                                     type="text" 
                                     readOnly
                                     value={formatSalesDate(allValues[col.key])} // Accesing value from watch() result
                                     onClick={() => openDatePicker(col.key, `Select ${col.name}`)}
-                                    className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg cursor-pointer"
+                                    className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl cursor-pointer transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium"
                                     placeholder="dd-mm-yyyy"
                                 />
-                                 <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                 <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
                                  <input type="hidden" {...register(col.key)} />
                             </div>
                           ) : col.type === 'number' ? (
-                            <input type="number" {...register(col.key, { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                            <input type="number" {...register(col.key, { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                           ) : col.type === 'link' ? (
-                            <input type="url" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                            <input type="url" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                           ) : (
-                            <input type="text" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg" />
+                            <input type="text" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                           )}
                         </div>
                     ))}
@@ -510,8 +494,8 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                <SectionHeader title="Additional Notes" />
                <div className="grid grid-cols-1 gap-5">
                  <div className="col-span-1">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Comments</label>
-                    <textarea {...register('comments')} rows={3} className="input w-full bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-blue-500 rounded-lg resize-none" placeholder="Add any relevant notes here..."></textarea>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Comments</label>
+                    <textarea {...register('comments')} rows={4} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl resize-none transition-all hover:border-blue-300 dark:hover:border-blue-600" placeholder="Add any relevant notes here..."></textarea>
                  </div>
                </div>
             </div>
@@ -520,12 +504,12 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex justify-end gap-3 rounded-b-2xl">
+        <div className="px-8 py-5 border-t border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50 via-blue-50/30 to-gray-50 dark:from-gray-800 dark:via-blue-900/10 dark:to-gray-800 flex justify-end gap-4 rounded-b-3xl shadow-inner">
            <button
              type="button"
              onClick={onClose}
              disabled={isSubmitting}
-             className="px-6 py-2.5 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-sm"
+             className="px-8 py-3 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-all shadow-sm hover:shadow-md hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
            >
              Cancel
            </button>
@@ -533,15 +517,15 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
              type="submit"
              form="sales-form"
              disabled={isSubmitting}
-             className="px-6 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:ring-4 focus:ring-blue-500/20 transition-all shadow-md shadow-blue-500/20 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+             className="px-8 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 hover:from-blue-700 hover:via-blue-700 hover:to-indigo-700 focus:ring-4 focus:ring-blue-500/30 transition-all shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2.5"
            >
              {isSubmitting ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
+                  <div className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin"/>
                   <span>Saving...</span>
                 </>
              ) : (
-                <span>{isEdit ? 'Save Changes' : 'Create Record'}</span>
+                <span>{isEdit ? '✅ Save Changes' : '✨ Create Record'}</span>
              )}
            </button>
         </div>

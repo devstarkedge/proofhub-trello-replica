@@ -31,8 +31,8 @@ api.interceptors.response.use(
   (error) => {
     const message = error.response?.data?.message || 'An error occurred';
     
-    // Don't show toast for 403 permission errors (component will handle)
-    if (error.response?.status !== 403) {
+    // Don't show toast for 403 permission errors or 423 lock errors (component will handle)
+    if (![403, 423].includes(error.response?.status)) {
       toast.error(message);
     }
     
@@ -221,6 +221,15 @@ export const getCustomColumns = async () => {
 export const createCustomColumn = async (columnData) => {
   const { data } = await api.post('/columns', columnData);
   toast.success(data.message || 'Column created successfully');
+  return data;
+};
+
+/**
+ * Update custom column
+ */
+export const updateCustomColumn = async (columnId, columnData) => {
+  const { data } = await api.put(`/columns/${columnId}`, columnData);
+  toast.success(data.message || 'Column updated successfully');
   return data;
 };
 
