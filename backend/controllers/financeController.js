@@ -44,9 +44,57 @@ const isWithinDateRange = (entryDate, filterStartDate, filterEndDate) => {
 };
 
 // ============================================
+// HELPER: Resolve user name from entry/user map
+// ============================================
+const resolveUserName = (entry, usersById) => {
+  if (entry?.userName) return entry.userName;
+  const userId = entry?.user?.toString();
+  if (userId && usersById?.has(userId)) return usersById.get(userId);
+  if (entry?.user?.name) return entry.user.name;
+  return 'Unknown';
+};
+
+// ============================================
+// HELPER: Build userId -> name lookup from time entries
+// ============================================
+const collectUserIds = (timeArray, idSet) => {
+  if (!timeArray || !Array.isArray(timeArray)) return;
+  for (const entry of timeArray) {
+    const userId = entry?.user?.toString();
+    if (userId) idSet.add(userId);
+  }
+};
+
+const buildUserNameMap = async (cards, subtasks, nanos) => {
+  const userIds = new Set();
+  (cards || []).forEach(card => {
+    collectUserIds(card.billedTime, userIds);
+    collectUserIds(card.loggedTime, userIds);
+  });
+  (subtasks || []).forEach(subtask => {
+    collectUserIds(subtask.billedTime, userIds);
+    collectUserIds(subtask.loggedTime, userIds);
+  });
+  (nanos || []).forEach(nano => {
+    collectUserIds(nano.billedTime, userIds);
+    collectUserIds(nano.loggedTime, userIds);
+  });
+
+  if (userIds.size === 0) return new Map();
+
+  const users = await User.find({ _id: { $in: Array.from(userIds) } })
+    .select('name')
+    .lean();
+
+  const usersById = new Map();
+  users.forEach(user => usersById.set(user._id.toString(), user.name));
+  return usersById;
+};
+
+// ============================================
 // HELPER: Aggregate time entries with date filtering
 // ============================================
-const aggregateTimeEntries = (timeArray, filterStartDate, filterEndDate) => {
+const aggregateTimeEntries = (timeArray, filterStartDate, filterEndDate, usersById) => {
   if (!timeArray || !Array.isArray(timeArray)) return { totalMinutes: 0, byUser: {} };
   
   let totalMinutes = 0;
@@ -61,7 +109,7 @@ const aggregateTimeEntries = (timeArray, filterStartDate, filterEndDate) => {
     const userId = entry.user?.toString();
     if (userId) {
       if (!byUser[userId]) {
-        byUser[userId] = { billedMinutes: 0, userName: entry.userName };
+        byUser[userId] = { billedMinutes: 0, userName: resolveUserName(entry, usersById) };
       }
       byUser[userId].billedMinutes += minutes;
     }
@@ -129,6 +177,8 @@ export const getFinanceSummary = async (req, res) => {
       Subtask.find({}).select('task billedTime loggedTime').lean(),
       SubtaskNano.find({}).select('subtask billedTime loggedTime').lean()
     ]);
+
+    const usersById = await buildUserNameMap(allCards, allSubtasks, allNanos);
     
     // Build lookup maps for O(1) access
     const { cardsByBoard, subtasksByCard, nanosBySubtask } = buildLookupMaps(
@@ -153,7 +203,7 @@ export const getFinanceSummary = async (req, res) => {
         const cardId = card._id.toString();
         
         // Card billed time
-        const cardBilled = aggregateTimeEntries(card.billedTime, filterStartDate, filterEndDate);
+        const cardBilled = aggregateTimeEntries(card.billedTime, filterStartDate, filterEndDate, usersById);
         projectBilledMinutes += cardBilled.totalMinutes;
         
         // Merge user data
@@ -163,7 +213,7 @@ export const getFinanceSummary = async (req, res) => {
         }
         
         // Card logged time
-        const cardLogged = aggregateTimeEntries(card.loggedTime, filterStartDate, filterEndDate);
+        const cardLogged = aggregateTimeEntries(card.loggedTime, filterStartDate, filterEndDate, usersById);
         projectLoggedMinutes += cardLogged.totalMinutes;
         
         // Process subtasks
@@ -171,7 +221,7 @@ export const getFinanceSummary = async (req, res) => {
         for (const subtask of subtasks) {
           const subtaskId = subtask._id.toString();
           
-          const subtaskBilled = aggregateTimeEntries(subtask.billedTime, filterStartDate, filterEndDate);
+          const subtaskBilled = aggregateTimeEntries(subtask.billedTime, filterStartDate, filterEndDate, usersById);
           projectBilledMinutes += subtaskBilled.totalMinutes;
           
           for (const [userId, data] of Object.entries(subtaskBilled.byUser)) {
@@ -179,13 +229,13 @@ export const getFinanceSummary = async (req, res) => {
             userRevenue[userId].billedMinutes += data.billedMinutes;
           }
           
-          const subtaskLogged = aggregateTimeEntries(subtask.loggedTime, filterStartDate, filterEndDate);
+          const subtaskLogged = aggregateTimeEntries(subtask.loggedTime, filterStartDate, filterEndDate, usersById);
           projectLoggedMinutes += subtaskLogged.totalMinutes;
           
           // Process nano-subtasks
           const nanos = nanosBySubtask.get(subtaskId) || [];
           for (const nano of nanos) {
-            const nanoBilled = aggregateTimeEntries(nano.billedTime, filterStartDate, filterEndDate);
+            const nanoBilled = aggregateTimeEntries(nano.billedTime, filterStartDate, filterEndDate, usersById);
             projectBilledMinutes += nanoBilled.totalMinutes;
             
             for (const [userId, data] of Object.entries(nanoBilled.byUser)) {
@@ -193,7 +243,7 @@ export const getFinanceSummary = async (req, res) => {
               userRevenue[userId].billedMinutes += data.billedMinutes;
             }
             
-            const nanoLogged = aggregateTimeEntries(nano.loggedTime, filterStartDate, filterEndDate);
+            const nanoLogged = aggregateTimeEntries(nano.loggedTime, filterStartDate, filterEndDate, usersById);
             projectLoggedMinutes += nanoLogged.totalMinutes;
           }
         }
@@ -287,6 +337,8 @@ export const getUserFinanceData = async (req, res) => {
       Subtask.find({}).select('task billedTime loggedTime').lean(),
       SubtaskNano.find({}).select('subtask billedTime loggedTime').lean()
     ]);
+
+    const usersById = await buildUserNameMap(allCards, allSubtasks, allNanos);
     
     // Build lookup maps
     const { cardsByBoard, subtasksByCard, nanosBySubtask } = buildLookupMaps(
@@ -318,7 +370,7 @@ export const getUserFinanceData = async (req, res) => {
           if (!userData[uId]) {
             userData[uId] = {
               userId: uId,
-              userName: entry.userName || 'Unknown',
+              userName: resolveUserName(entry, usersById),
               projects: {},
               totalBilledMinutes: 0,
               totalLoggedMinutes: 0
@@ -356,7 +408,7 @@ export const getUserFinanceData = async (req, res) => {
           if (!userData[uId]) {
             userData[uId] = {
               userId: uId,
-              userName: entry.userName || 'Unknown',
+              userName: resolveUserName(entry, usersById),
               projects: {},
               totalBilledMinutes: 0,
               totalLoggedMinutes: 0
@@ -480,6 +532,8 @@ export const getProjectFinanceData = async (req, res) => {
       Subtask.find({}).select('task billedTime loggedTime title updatedAt').lean(),
       SubtaskNano.find({}).select('subtask billedTime loggedTime title updatedAt').lean()
     ]);
+
+    const usersById = await buildUserNameMap(allCards, allSubtasks, allNanos);
     
     // Build lookup maps
     const { cardsByBoard, subtasksByCard, nanosBySubtask } = buildLookupMaps(
@@ -505,10 +559,10 @@ export const getProjectFinanceData = async (req, res) => {
         }
         
         // Aggregate times with date filtering
-        const cardBilled = aggregateTimeEntries(card.billedTime, filterStartDate, filterEndDate);
+        const cardBilled = aggregateTimeEntries(card.billedTime, filterStartDate, filterEndDate, usersById);
         projectBilledMinutes += cardBilled.totalMinutes;
         
-        const cardLogged = aggregateTimeEntries(card.loggedTime, filterStartDate, filterEndDate);
+        const cardLogged = aggregateTimeEntries(card.loggedTime, filterStartDate, filterEndDate, usersById);
         projectLoggedMinutes += cardLogged.totalMinutes;
         
         // Process subtasks
@@ -520,10 +574,10 @@ export const getProjectFinanceData = async (req, res) => {
             lastActivity = { type: 'subtask', title: subtask.title, date: subtask.updatedAt };
           }
           
-          const subtaskBilled = aggregateTimeEntries(subtask.billedTime, filterStartDate, filterEndDate);
+          const subtaskBilled = aggregateTimeEntries(subtask.billedTime, filterStartDate, filterEndDate, usersById);
           projectBilledMinutes += subtaskBilled.totalMinutes;
           
-          const subtaskLogged = aggregateTimeEntries(subtask.loggedTime, filterStartDate, filterEndDate);
+          const subtaskLogged = aggregateTimeEntries(subtask.loggedTime, filterStartDate, filterEndDate, usersById);
           projectLoggedMinutes += subtaskLogged.totalMinutes;
           
           // Process nano-subtasks
@@ -533,10 +587,10 @@ export const getProjectFinanceData = async (req, res) => {
               lastActivity = { type: 'nano-subtask', title: nano.title, date: nano.updatedAt };
             }
             
-            const nanoBilled = aggregateTimeEntries(nano.billedTime, filterStartDate, filterEndDate);
+            const nanoBilled = aggregateTimeEntries(nano.billedTime, filterStartDate, filterEndDate, usersById);
             projectBilledMinutes += nanoBilled.totalMinutes;
             
-            const nanoLogged = aggregateTimeEntries(nano.loggedTime, filterStartDate, filterEndDate);
+            const nanoLogged = aggregateTimeEntries(nano.loggedTime, filterStartDate, filterEndDate, usersById);
             projectLoggedMinutes += nanoLogged.totalMinutes;
           }
         }
@@ -694,6 +748,8 @@ export const getWeeklyReportData = async (req, res) => {
       Subtask.find({}).select('task billedTime loggedTime').lean(),
       SubtaskNano.find({}).select('subtask billedTime loggedTime').lean()
     ]);
+
+    const usersById = await buildUserNameMap(allCards, allSubtasks, allNanos);
     
     // Build lookup maps
     const { cardsByBoard, subtasksByCard, nanosBySubtask } = buildLookupMaps(
@@ -743,7 +799,7 @@ export const getWeeklyReportData = async (req, res) => {
                   if (!userData[uId]) {
                     userData[uId] = {
                       userId: uId,
-                      userName: entry.userName || 'Unknown',
+                      userName: resolveUserName(entry, usersById),
                       billedMinutes: 0,
                       loggedMinutes: 0,
                       projects: new Set()
@@ -769,7 +825,7 @@ export const getWeeklyReportData = async (req, res) => {
                   if (!userData[uId]) {
                     userData[uId] = {
                       userId: uId,
-                      userName: entry.userName || 'Unknown',
+                      userName: resolveUserName(entry, usersById),
                       billedMinutes: 0,
                       loggedMinutes: 0,
                       projects: new Set()
@@ -798,7 +854,7 @@ export const getWeeklyReportData = async (req, res) => {
                     if (!userData[uId]) {
                       userData[uId] = {
                         userId: uId,
-                        userName: entry.userName || 'Unknown',
+                        userName: resolveUserName(entry, usersById),
                         billedMinutes: 0,
                         loggedMinutes: 0,
                         projects: new Set()
@@ -826,7 +882,7 @@ export const getWeeklyReportData = async (req, res) => {
                       if (!userData[uId]) {
                         userData[uId] = {
                           userId: uId,
-                          userName: entry.userName || 'Unknown',
+                          userName: resolveUserName(entry, usersById),
                           billedMinutes: 0,
                           loggedMinutes: 0,
                           projects: new Set()
@@ -1044,6 +1100,8 @@ export const getUserContributions = async (req, res) => {
     const nanos = await SubtaskNano.find({
       subtask: { $in: Array.from(subtaskIds).map(id => id) }
     }).lean();
+
+    const usersById = await buildUserNameMap(cards, projectSubtasks, nanos);
     
     // Aggregate user contributions
     const userContributions = {};
@@ -1058,7 +1116,7 @@ export const getUserContributions = async (req, res) => {
           if (!userContributions[uId]) {
             userContributions[uId] = {
               userId: uId,
-              userName: entry.userName || 'Unknown',
+              userName: resolveUserName(entry, usersById),
               billedMinutes: 0,
               loggedMinutes: 0,
               taskCount: 0,
@@ -1083,7 +1141,7 @@ export const getUserContributions = async (req, res) => {
           if (!userContributions[uId]) {
             userContributions[uId] = {
               userId: uId,
-              userName: entry.userName || 'Unknown',
+              userName: resolveUserName(entry, usersById),
               billedMinutes: 0,
               loggedMinutes: 0,
               taskCount: 0,
@@ -1106,7 +1164,7 @@ export const getUserContributions = async (req, res) => {
           if (!userContributions[uId]) {
             userContributions[uId] = {
               userId: uId,
-              userName: entry.userName || 'Unknown',
+              userName: resolveUserName(entry, usersById),
               billedMinutes: 0,
               loggedMinutes: 0,
               taskCount: 0,
@@ -1134,7 +1192,7 @@ export const getUserContributions = async (req, res) => {
           if (!userContributions[uId]) {
             userContributions[uId] = {
               userId: uId,
-              userName: entry.userName || 'Unknown',
+              userName: resolveUserName(entry, usersById),
               billedMinutes: 0,
               loggedMinutes: 0,
               taskCount: 0,
@@ -1215,6 +1273,9 @@ export const getYearWideWeeklyData = async (req, res) => {
       allCards, allSubtasks, allNanos
     );
     
+    // Build user name map for resolving user names in time entries
+    const usersById = await buildUserNameMap(allCards, allSubtasks, allNanos);
+    
     // Create project lookup for quick access
     const projectMap = new Map();
     for (const project of projects) {
@@ -1271,7 +1332,7 @@ export const getYearWideWeeklyData = async (req, res) => {
               if (!userData[uId]) {
                 userData[uId] = {
                   userId: uId,
-                  userName: entry.userName || 'Unknown',
+                  userName: resolveUserName(entry, usersById),
                   weeks: {},
                   projects: {} // Track project-level weekly data
                 };
