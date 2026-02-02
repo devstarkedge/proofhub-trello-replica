@@ -38,7 +38,25 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         return;
       }
       const [header, ...body] = json;
-      setColumns(header);
+
+      const normalizeHeader = (s) => (s === null || s === undefined) ? '' : String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+      const seen = new Set();
+      const filteredHeader = [];
+      const filteredBody = body.map(() => []);
+
+      header.forEach((h, idx) => {
+        const norm = normalizeHeader(h);
+        if (norm && seen.has(norm)) {
+          return;
+        }
+        if (norm) seen.add(norm);
+        filteredHeader.push(h);
+        filteredBody.forEach((row, rIdx) => {
+          row.push(body[rIdx]?.[idx]);
+        });
+      });
+
+      setColumns(filteredHeader);
       // Auto-map columns by header names using simple heuristics
       try {
         const normalize = (s) => (s === null || s === undefined) ? '' : String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -49,7 +67,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         });
 
         const autoMap = {};
-        header.forEach((h) => {
+        filteredHeader.forEach((h) => {
           const n = normalize(h);
           let mapped = null;
           if (fieldByNorm[n]) mapped = fieldByNorm[n];
@@ -76,7 +94,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       } catch (e) {
         // ignore mapping errors and allow manual mapping
       }
-      setRows(body);
+      setRows(filteredBody);
       setStep(2);
     };
     reader.readAsArrayBuffer(file);

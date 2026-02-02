@@ -50,9 +50,26 @@ export const parseSalesDate = (val) => {
   if (val instanceof Date) {
     return isNaN(val.getTime()) ? null : val;
   }
+
+  // Excel serial date numbers (e.g., 46114 or 46114.00011574074)
+  if (typeof val === 'number' && !isNaN(val)) {
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    const date = new Date(excelEpoch + val * 24 * 60 * 60 * 1000);
+    return isNaN(date.getTime()) ? null : date;
+  }
   
   const s = String(val).trim();
   if (!s) return null;
+
+  // Numeric strings that represent Excel serial dates
+  if (s.match(/^\d+(\.\d+)?$/)) {
+    const num = Number(s);
+    if (!isNaN(num)) {
+      const excelEpoch = Date.UTC(1899, 11, 30);
+      const date = new Date(excelEpoch + num * 24 * 60 * 60 * 1000);
+      return isNaN(date.getTime()) ? null : date;
+    }
+  }
 
   // Try ISO / native parse first (if it's a full ISO string from backend)
   // But be careful, NEW Date('13-01-2026') might be invalid in some browsers or locales if not ISO.

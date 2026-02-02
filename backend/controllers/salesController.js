@@ -744,6 +744,8 @@ export const exportRows = async (req, res) => {
 
     const rows = rawRows.map(flattenRow);
 
+    const isCsv = format === 'csv';
+
     // Helper for export formatting
     const formatExportDate = (date) => {
       if (!date) return '';
@@ -752,7 +754,8 @@ export const exportRows = async (req, res) => {
       const day = String(d.getDate()).padStart(2, '0');
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const year = d.getFullYear();
-      return `${day}-${month}-${year}`;
+      const formatted = `${day}-${month}-${year}`;
+      return isCsv ? `\t${formatted}` : formatted;
     };
 
     // Prepare data for ExcelJS
@@ -788,10 +791,10 @@ export const exportRows = async (req, res) => {
         'Status': row.status || '',
         'Comments': row.comments || ''
       };
-      // Add custom fields
+      // Add custom fields (exclude standard fields to avoid duplicates)
       Object.keys(row).forEach(key => {
-        if (!Object.keys(base).includes(key) && !excludedFields.includes(key)) {
-           base[key] = row[key];
+        if (!STANDARD_FIELDS.includes(key) && !excludedFields.includes(key)) {
+          base[key] = row[key];
         }
       });
       return base;
