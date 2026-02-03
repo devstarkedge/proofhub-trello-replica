@@ -115,15 +115,21 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
       items.push({ path: '/hr-panel', icon: UserCheck, label: 'HR Panel' });
       items.push({ path: '/admin/settings', icon: Settings, label: 'Admin Settings' });
-    } else if (salesVisible) {
-      // Non-admin user explicitly granted sales access — only show Sales link
-      items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
     } else if (userRole === 'hr') {
+      if (salesVisible) {
+        items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
+      }
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
       items.push({ path: '/hr-panel', icon: UserCheck, label: 'HR Panel' });
     } else if (userRole === 'manager') {
+      if (salesVisible) {
+        items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
+      }
       items.push({ path: '/reminders', icon: CalendarClock, label: 'Client Reminders' });
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
+    } else if (salesVisible) {
+      // Non-admin user explicitly granted sales access — only show Sales link
+      items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
     }
 
     return items;
