@@ -522,6 +522,13 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
     [formData.assignees, managers]
   )
 
+  // Keep Select value in sync with current assignees (clears when none)
+  const selectedAssigneeValue = useMemo(() => (
+    formData.assignees.length > 0
+      ? formData.assignees[formData.assignees.length - 1]
+      : null
+  ), [formData.assignees])
+
   // Compute trigger rect for visibility menu positioning (portal)
   const visTriggerRect = visTriggerRef.current ? visTriggerRef.current.getBoundingClientRect() : null
   const visMenuStyle = visTriggerRect ? {
@@ -854,7 +861,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
                     </div>
                   ) : (
                     <>
-                      <Select onValueChange={handleAssigneeChange}>
+                      <Select value={selectedAssigneeValue} onValueChange={handleAssigneeChange}>
                         <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300 transition-colors cursor-pointer">
                           <SelectValue placeholder="Click to select project manager..." />
                         </SelectTrigger>

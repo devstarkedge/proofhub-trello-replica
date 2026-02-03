@@ -201,9 +201,31 @@ const CoverImageUploader = ({
             {/* Overlay actions */}
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
               {selectedFile && !projectId && (
-                <span className="text-white text-sm font-medium">
-                  Ready to upload with project
-                </span>
+                <>
+                  <span className="text-white text-sm font-medium">
+                    Ready to upload with project
+                  </span>
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={open}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg font-medium shadow-lg hover:bg-blue-600"
+                  >
+                    <RefreshCw size={16} />
+                    <span>Change</span>
+                  </motion.button>
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleRemove}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg font-medium shadow-lg hover:bg-red-600"
+                  >
+                    <Trash2 size={16} />
+                    <span>Remove</span>
+                  </motion.button>
+                </>
               )}
               {selectedFile && projectId && (
                 <>

@@ -10,6 +10,8 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
     setSelectedValue(value);
   }, [value]);
 
+  const resolvedValue = value !== undefined ? value : selectedValue;
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -53,7 +55,7 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
         }
 
         // Check for SelectItem matching the value
-        if (child.type === SelectItem && child.props.value === selectedValue) {
+        if (child.type === SelectItem && child.props.value === resolvedValue) {
           selectedLabel = child.props.label ?? child.props.children;
           return;
         }
@@ -76,7 +78,7 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
     findSelectedLabel(children);
     
     return { placeholder: placeholderText, displayValue: selectedLabel || placeholderText };
-  }, [children, selectedValue]);
+  }, [children, resolvedValue]);
 
   return (
     <div className="relative" ref={selectRef} {...props}>
@@ -85,7 +87,7 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
           return React.cloneElement(child, {
             onClick: toggleOpen,
             isOpen,
-            selectedValue,
+            selectedValue: resolvedValue,
             displayValue,
             disabled
           });
@@ -93,7 +95,7 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
         if (child?.type === SelectContent) {
           return isOpen ? React.cloneElement(child, {
             onSelect: handleSelect,
-            selectedValue,
+            selectedValue: resolvedValue,
             onClose: () => setIsOpen(false)
           }) : null;
         }
