@@ -771,7 +771,7 @@ export const exportRows = async (req, res) => {
     const excludedFields = [
       '_id', '__v', 'customFields', 'isDeleted', 
       'lockedBy', 'lockedAt', 'createdBy', 'updatedBy', 
-      'createdAt', 'updatedAt', 'id', 'rowColor'
+      'createdAt', 'updatedAt', 'id'
     ];
 
     // Determine all unique keys for columns (standard + custom)
@@ -797,7 +797,8 @@ export const exportRows = async (req, res) => {
         'Rate': row.rate || '',
         'Proposal Screenshot': row.proposalScreenshot || '',
         'Status': row.status || '',
-        'Comments': row.comments || ''
+        'Comments': row.comments || '',
+        'Row Color': row.rowColor || ''
       };
       // Add custom fields (exclude standard fields to avoid duplicates)
       Object.keys(row).forEach(key => {
