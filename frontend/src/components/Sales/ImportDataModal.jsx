@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { X, Upload } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
@@ -8,7 +8,7 @@ import { toast } from 'react-toastify';
 import { parseSalesDate } from '../../utils/dateUtils';
 
 const ImportDataModal = ({ isOpen, onClose }) => {
-  const { importRows } = useSalesStore();
+  const { importRows, customColumns, fetchCustomColumns } = useSalesStore();
   const [step, setStep] = useState(1); // 1: Upload, 2: Map, 3: Preview, 4: Importing
   const [fileName, setFileName] = useState('');
   const [columns, setColumns] = useState([]);
@@ -19,6 +19,13 @@ const ImportDataModal = ({ isOpen, onClose }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [failedResults, setFailedResults] = useState(null);
+
+  // Fetch custom columns when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetchCustomColumns();
+    }
+  }, [isOpen, fetchCustomColumns]);
 
   const onDrop = useCallback((acceptedFiles) => {
     setError('');
@@ -57,44 +64,75 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       });
 
       setColumns(filteredHeader);
-      // Auto-map columns by header names using simple heuristics
-      try {
-        const normalize = (s) => (s === null || s === undefined) ? '' : String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
-        const fieldByNorm = {};
-        salesFields.forEach(f => {
-          fieldByNorm[normalize(f.key)] = f.key;
-          fieldByNorm[normalize(f.label)] = f.key;
-        });
+      setRows(filteredBody);
+      
+      // Auto-map columns after a small delay to ensure salesFields is populated
+      setTimeout(() => {
+        try {
+          const normalize = (s) => (s === null || s === undefined) ? '' : String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+          const fieldByNorm = {};
+          
+          // Get current salesFields (standard + custom)
+          const currentSalesFields = useSalesStore.getState().customColumns.length > 0
+            ? [
+                { key: 'date', label: 'Date' },
+                { key: 'bidLink', label: 'Bid Link' },
+                { key: 'platform', label: 'Platform' },
+                { key: 'profile', label: 'Profile' },
+                { key: 'technology', label: 'Technology' },
+                { key: 'clientRating', label: 'Client Rating' },
+                { key: 'clientHireRate', label: 'Client % Hire Rate' },
+                { key: 'clientBudget', label: 'Client Budget' },
+                { key: 'clientSpending', label: 'Client Spending' },
+                { key: 'clientLocation', label: 'Client Location' },
+                { key: 'replyFromClient', label: 'Reply From Client' },
+                { key: 'followUps', label: 'Follow Ups' },
+                { key: 'followUpDate', label: 'Follow Up Date' },
+                { key: 'connects', label: 'Connects' },
+                { key: 'rate', label: 'Rate' },
+                { key: 'proposalScreenshot', label: 'Proposal Screenshot' },
+                { key: 'status', label: 'Status' },
+                { key: 'comments', label: 'Comments' },
+                { key: 'rowColor', label: 'Row Color' },
+                ...useSalesStore.getState().customColumns.map(col => ({ key: col.key, label: col.name }))
+              ]
+            : [];
+          
+          currentSalesFields.forEach(f => {
+            fieldByNorm[normalize(f.key)] = f.key;
+            fieldByNorm[normalize(f.label)] = f.key;
+          });
 
-        const autoMap = {};
-        filteredHeader.forEach((h) => {
-          const n = normalize(h);
-          let mapped = null;
-          if (fieldByNorm[n]) mapped = fieldByNorm[n];
-          else {
-            // try partial/contains match
-            for (const f of salesFields) {
-              const nk = normalize(f.key);
-              const nl = normalize(f.label);
-              if (nk && nk.includes(n) || n.includes(nk) || (nl && nl.includes(n)) || n.includes(nl)) {
-                mapped = f.key;
-                break;
+          const autoMap = {};
+          filteredHeader.forEach((h) => {
+            const n = normalize(h);
+            let mapped = null;
+            if (fieldByNorm[n]) mapped = fieldByNorm[n];
+            else {
+              // try partial/contains match
+              for (const f of currentSalesFields) {
+                const nk = normalize(f.key);
+                const nl = normalize(f.label);
+                if (nk && nk.includes(n) || n.includes(nk) || (nl && nl.includes(n)) || n.includes(nl)) {
+                  mapped = f.key;
+                  break;
+                }
               }
             }
-          }
-          // avoid mapping multiple headers to same field; prefer first match
-          if (mapped && !Object.values(autoMap).includes(mapped)) {
-            autoMap[h] = mapped;
-          }
-        });
+            // avoid mapping multiple headers to same field; prefer first match
+            if (mapped && !Object.values(autoMap).includes(mapped)) {
+              autoMap[h] = mapped;
+            }
+          });
 
-        if (Object.keys(autoMap).length > 0) {
-          setColumnMap(autoMap);
+          if (Object.keys(autoMap).length > 0) {
+            setColumnMap(autoMap);
+          }
+        } catch (e) {
+          // ignore mapping errors and allow manual mapping
         }
-      } catch (e) {
-        // ignore mapping errors and allow manual mapping
-      }
-      setRows(filteredBody);
+      }, 100);
+      
       setStep(2);
     };
     reader.readAsArrayBuffer(file);
@@ -109,28 +147,38 @@ const ImportDataModal = ({ isOpen, onClose }) => {
     multiple: false
   });
 
-  // Predefined sales fields for mapping
-  const salesFields = [
-    { key: 'date', label: 'Date' },
-    { key: 'bidLink', label: 'Bid Link' },
-    { key: 'platform', label: 'Platform' },
-    { key: 'profile', label: 'Profile' },
-    { key: 'technology', label: 'Technology' },
-    { key: 'clientRating', label: 'Client Rating' },
-    { key: 'clientHireRate', label: 'Client % Hire Rate' },
-    { key: 'clientBudget', label: 'Client Budget' },
-    { key: 'clientSpending', label: 'Client Spending' },
-    { key: 'clientLocation', label: 'Client Location' },
-    { key: 'replyFromClient', label: 'Reply From Client' },
-    { key: 'followUps', label: 'Follow Ups' },
-    { key: 'followUpDate', label: 'Follow Up Date' },
-    { key: 'connects', label: 'Connects' },
-    { key: 'rate', label: 'Rate' },
-    { key: 'proposalScreenshot', label: 'Proposal Screenshot' },
-    { key: 'status', label: 'Status' },
-    { key: 'comments', label: 'Comments' },
-    { key: 'rowColor', label: 'Row Color' },
-  ];
+  // Predefined sales fields for mapping (standard + custom columns)
+  const salesFields = useMemo(() => {
+    const standardFields = [
+      { key: 'date', label: 'Date' },
+      { key: 'bidLink', label: 'Bid Link' },
+      { key: 'platform', label: 'Platform' },
+      { key: 'profile', label: 'Profile' },
+      { key: 'technology', label: 'Technology' },
+      { key: 'clientRating', label: 'Client Rating' },
+      { key: 'clientHireRate', label: 'Client % Hire Rate' },
+      { key: 'clientBudget', label: 'Client Budget' },
+      { key: 'clientSpending', label: 'Client Spending' },
+      { key: 'clientLocation', label: 'Client Location' },
+      { key: 'replyFromClient', label: 'Reply From Client' },
+      { key: 'followUps', label: 'Follow Ups' },
+      { key: 'followUpDate', label: 'Follow Up Date' },
+      { key: 'connects', label: 'Connects' },
+      { key: 'rate', label: 'Rate' },
+      { key: 'proposalScreenshot', label: 'Proposal Screenshot' },
+      { key: 'status', label: 'Status' },
+      { key: 'comments', label: 'Comments' },
+      { key: 'rowColor', label: 'Row Color' },
+    ];
+
+    // Add custom columns to the mapping list
+    const customFields = customColumns.map(col => ({
+      key: col.key,
+      label: col.name
+    }));
+
+    return [...standardFields, ...customFields];
+  }, [customColumns]);
 
   const handleMapChange = (col, value) => {
     setColumnMap((prev) => ({ ...prev, [col]: value }));
@@ -177,7 +225,8 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       // Normalization helpers
       const normalizeRow = (obj) => {
         const out = { ...obj };
-        // Dates
+        
+        // Standard date fields
         if (out.date) {
           const d = parseSalesDate(out.date);
           out.date = d ? d.toISOString() : null;
@@ -186,18 +235,49 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           const d = parseSalesDate(out.followUpDate);
           out.followUpDate = d ? d.toISOString() : null;
         }
-        // Numeric fields
+        
+        // Handle custom columns based on their types
+        customColumns.forEach(col => {
+          const key = col.key;
+          if (out[key] !== undefined && out[key] !== null && out[key] !== '') {
+            switch (col.type) {
+              case 'date':
+                // Parse date custom fields
+                const d = parseSalesDate(out[key]);
+                out[key] = d ? d.toISOString() : null;
+                break;
+              case 'number':
+                // Parse numeric custom fields
+                const n = Number(String(out[key]).replace(/,/g, '').trim());
+                out[key] = isNaN(n) ? out[key] : n;
+                break;
+              case 'dropdown':
+              case 'text':
+              case 'link':
+              default:
+                // Keep as string, just trim
+                if (typeof out[key] === 'string') {
+                  out[key] = out[key].trim();
+                }
+                break;
+            }
+          }
+        });
+        
+        // Standard numeric fields
         ['clientRating', 'clientHireRate', 'connects', 'rate'].forEach(k => {
           if (out[k] !== undefined && out[k] !== null && out[k] !== '') {
             const n = Number(String(out[k]).replace(/,/g, '').trim());
             out[k] = isNaN(n) ? out[k] : n;
           }
         });
-        // Trim strings
+        
+        // Trim all string fields and remove empty values
         Object.keys(out).forEach(k => {
           if (typeof out[k] === 'string') out[k] = out[k].trim();
           if (out[k] === '') delete out[k];
         });
+        
         return out;
       };
 

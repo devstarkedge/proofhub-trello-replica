@@ -736,13 +736,22 @@ export const exportRows = async (req, res) => {
       query._id = { $in: rowIds.split(',') };
     }
 
-    const rawRows = await SalesRow.find(query)
-      .populate('createdBy', 'name')
-      .populate('updatedBy', 'name')
-      .sort({ date: -1 })
-      .lean();
+    const [rawRows, customColumns] = await Promise.all([
+      SalesRow.find(query)
+        .populate('createdBy', 'name')
+        .populate('updatedBy', 'name')
+        .sort({ date: -1 })
+        .lean(),
+      SalesColumn.find().lean()
+    ]);
 
     const rows = rawRows.map(flattenRow);
+    
+    // Create a map of custom columns by key for quick lookup
+    const customColumnMap = {};
+    customColumns.forEach(col => {
+      customColumnMap[col.key] = col;
+    });
 
     const isCsv = format === 'csv';
 
@@ -762,8 +771,7 @@ export const exportRows = async (req, res) => {
     const excludedFields = [
       '_id', '__v', 'customFields', 'isDeleted', 
       'lockedBy', 'lockedAt', 'createdBy', 'updatedBy', 
-      'createdAt', 'updatedAt', 'id', 'dateCheck', 'rowColor',
-      'date-check'
+      'createdAt', 'updatedAt', 'id', 'rowColor'
     ];
 
     // Determine all unique keys for columns (standard + custom)
@@ -794,7 +802,13 @@ export const exportRows = async (req, res) => {
       // Add custom fields (exclude standard fields to avoid duplicates)
       Object.keys(row).forEach(key => {
         if (!STANDARD_FIELDS.includes(key) && !excludedFields.includes(key)) {
-          base[key] = row[key];
+          const customCol = customColumnMap[key];
+          // Format date-type custom columns
+          if (customCol && customCol.type === 'date') {
+            base[key] = formatExportDate(row[key]);
+          } else {
+            base[key] = row[key] || '';
+          }
         }
       });
       return base;
