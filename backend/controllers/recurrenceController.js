@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import RecurringTask from '../models/RecurringTask.js';
@@ -30,6 +31,12 @@ const generateRecurringSubtask = async (recurringTask, userId) => {
   const template = recurringTask.subtaskTemplate || {};
   const parentTitle = card.title || 'Task';
   
+  // Filter tags to ensure only valid ObjectIds are included
+  const validTags = (template.tags || []).filter(tag => {
+    // Check if tag is a valid ObjectId or can be converted to one
+    return tag && mongoose.Types.ObjectId.isValid(tag);
+  });
+  
   const subtask = await Subtask.create({
     task: recurringTask.card,
     board: recurringTask.board,
@@ -38,7 +45,7 @@ const generateRecurringSubtask = async (recurringTask, userId) => {
     status: 'todo',
     priority: template.priority || 'medium',
     assignees: template.assignees || [],
-    tags: [...(template.tags || []), 'Recurring Task'],
+    tags: validTags,
     dueDate: subtaskDueDate,
     startDate: subtaskStartDate,
     order: currentCount,
