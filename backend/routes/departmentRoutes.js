@@ -1,6 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
-import { getDepartments, getPublicDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment, getDepartmentsWithAssignments, getUserDepartmentFilterOptions } from '../controllers/departmentController.js';
+import { getDepartments, getPublicDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment, getDepartmentsWithAssignments, getUserDepartmentFilterOptions, getDepartmentStats } from '../controllers/departmentController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 
@@ -10,6 +10,7 @@ router.get('/public', getPublicDepartments); // Public route must be before prot
 router.get('/', protect, getDepartments);
 router.get('/with-assignments', protect, getDepartmentsWithAssignments);
 router.get('/filter-options', protect, getUserDepartmentFilterOptions);
+router.get('/stats/summary', protect, getDepartmentStats);
 router.get('/:id', protect, getDepartment);
 
 router.post('/', protect, authorize('admin'), [

@@ -878,6 +878,20 @@ class DatabaseService {
     return await res.json();
   }
 
+  async getDepartmentStats(departmentId = null) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const query = departmentId ? `?departmentId=${departmentId}` : '';
+    const res = await fetch(`${baseURL}/api/departments/stats/summary${query}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
   async createDepartment(name, description, managerIds) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };

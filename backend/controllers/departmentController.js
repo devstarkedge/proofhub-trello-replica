@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Department from "../models/Department.js";
 import User from "../models/User.js";
 import Board from "../models/Board.js";
@@ -7,6 +8,7 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
 import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUsersUnassigned } from "../utils/socketEmitter.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
+import { resolveDepartmentScope } from '../utils/departmentStats.js';
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -43,6 +45,90 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
     success: true,
     count: departmentsWithCount.length,
     data: departmentsWithCount,
+  });
+});
+
+// @desc    Get department stats (role-aware)
+// @route   GET /api/departments/stats/summary
+// @access  Private (Admin/Manager)
+export const getDepartmentStats = asyncHandler(async (req, res, next) => {
+  const user = req.user;
+  if (!user) {
+    return next(new ErrorResponse('Not authorized', 401));
+  }
+
+  const requestedDepartmentId = req.query.departmentId || req.query.department || null;
+  let scope;
+
+  try {
+    scope = resolveDepartmentScope({
+      role: user.role,
+      department: user.department,
+      requestedDepartmentId
+    });
+  } catch (error) {
+    return next(new ErrorResponse(error.message, 403));
+  }
+
+  const { departmentIds } = scope;
+
+  if (Array.isArray(departmentIds) && departmentIds.length === 0) {
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalDepartments: 0,
+        totalManagers: 0,
+        totalMembers: 0,
+        avgMembersPerDept: 0
+      }
+    });
+  }
+
+  const matchQuery = { isActive: true };
+  if (Array.isArray(departmentIds)) {
+    matchQuery._id = { $in: departmentIds.map((id) => new mongoose.Types.ObjectId(id)) };
+  }
+
+  const [departmentTotals, employeeCount] = await Promise.all([
+    Department.aggregate([
+      { $match: matchQuery },
+      {
+        $project: {
+          managersCount: { $size: { $ifNull: ['$managers', []] } }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalDepartments: { $sum: 1 },
+          totalManagers: { $sum: '$managersCount' }
+        }
+      }
+    ]),
+    User.countDocuments({
+      role: 'employee',
+      isVerified: true,
+      isActive: true,
+      ...(Array.isArray(departmentIds)
+        ? { department: { $in: departmentIds.map((id) => new mongoose.Types.ObjectId(id)) } }
+        : {})
+    })
+  ]);
+
+  const totals = departmentTotals[0] || { totalDepartments: 0, totalManagers: 0 };
+  const totalMembers = employeeCount || 0;
+  const avgMembersPerDept = totals.totalDepartments > 0
+    ? Math.round(totalMembers / totals.totalDepartments)
+    : 0;
+
+  res.status(200).json({
+    success: true,
+    data: {
+      totalDepartments: totals.totalDepartments,
+      totalManagers: totals.totalManagers,
+      totalMembers: totalMembers,
+      avgMembersPerDept
+    }
   });
 });
 

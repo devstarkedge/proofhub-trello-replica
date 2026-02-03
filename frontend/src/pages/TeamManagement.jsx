@@ -173,17 +173,40 @@ const TeamManagement = () => {
     }
   }, [state.currentDepartment]);
 
-  // Calculate stats with useMemo
-  const stats = useMemo(() => {
-    const totalMembers = departments.reduce((acc, dept) => acc + (dept.members?.length || 0), 0);
-    const totalManagers = state.managers.filter(m => m.role === 'manager').length;
-    return {
-      totalDepartments: departments.length,
-      totalMembers: state.employees.length,
-      totalManagers: totalManagers,
-      avgMembersPerDept: departments.length > 0 ? Math.round(totalMembers / departments.length) : 0
-    };
-  }, [departments, state.employees, state.managers]);
+  // Load stats (role-aware)
+  const loadStats = useCallback(async () => {
+    if (!user) return;
+
+    const role = (user.role || '').toLowerCase();
+    const isAdmin = role === 'admin';
+    const departmentId = isAdmin ? null : state.currentDepartment?._id;
+
+    if (!isAdmin && !departmentId) return;
+
+    try {
+      const statsResponse = await Database.getDepartmentStats(departmentId);
+      const statsData = statsResponse.data || statsResponse || {};
+
+      dispatch({
+        type: ACTION_TYPES.SET_STATS,
+        payload: {
+          totalDepartments: statsData.totalDepartments || 0,
+          totalMembers: statsData.totalMembers || 0,
+          totalManagers: statsData.totalManagers || 0,
+          avgMembersPerDept: statsData.avgMembersPerDept || 0
+        }
+      });
+    } catch (error) {
+      console.error('Error loading stats:', error);
+      showToast('Failed to load stats', 'error');
+    }
+  }, [user, state.currentDepartment, showToast]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  const stats = state.stats;
 
   // Memoized event handlers
   const handleSelectDepartment = useCallback((dept) => {
