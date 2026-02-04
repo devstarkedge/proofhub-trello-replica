@@ -1,6 +1,7 @@
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import Department from '../models/Department.js';
+import Board from '../models/Board.js';
 import { emitNotification } from '../server.js';
 import { sendEmail } from './email.js';
 import { sendPushNotification } from './pushNotification.js';
@@ -42,7 +43,10 @@ class NotificationService {
         entityType,
         action,
         priority: explicitPriority,
-        metadata
+        metadata,
+        departmentId,
+        projectId,
+        taskId
       } = notificationData;
 
       // Check user settings before creating notification
@@ -71,7 +75,10 @@ class NotificationService {
         entityType: entityType || (relatedCard ? 'Card' : relatedBoard ? 'Board' : relatedTeam ? 'Team' : null),
         action,
         priority,
-        metadata: metadata || {}
+        metadata: metadata || {},
+        departmentId,
+        projectId,
+        taskId
       });
 
       // Populate for socket emission
@@ -257,18 +264,40 @@ class NotificationService {
   async notifyTaskAssigned(card, assigneeId, assignerId) {
     const notifications = [];
 
-    // Notify the assignee
-    if (assigneeId !== assignerId) {
-      notifications.push({
-        type: 'task_assigned',
-        title: 'Task Assigned',
-        message: `You have been assigned to "${card.title}"`,
-        user: assigneeId,
-        sender: assignerId,
-        relatedCard: card._id,
-        relatedBoard: card.board
-      });
+    const assignees = Array.isArray(assigneeId) ? assigneeId : [assigneeId];
+
+    let board = null;
+    const boardId = card?.board?._id || card?.board;
+    if (boardId) {
+      board = await Board.findById(boardId).select('department').lean();
     }
+
+    const departmentId = board?.department || card?.department || null;
+    const projectId = boardId || null;
+    const taskId = card?._id || null;
+
+    assignees.forEach(assignee => {
+      if (assignee && assignee.toString() !== assignerId?.toString()) {
+        notifications.push({
+          type: 'task_assigned',
+          title: 'Task Assigned',
+          message: `You have been assigned to "${card.title}"`,
+          user: assignee,
+          sender: assignerId,
+          relatedCard: taskId,
+          relatedBoard: projectId,
+          departmentId,
+          projectId,
+          taskId,
+          metadata: {
+            departmentId,
+            projectId,
+            taskId,
+            url: departmentId && projectId && taskId ? `/workflow/${departmentId}/${projectId}/${taskId}` : null
+          }
+        });
+      }
+    });
 
     return this.createBulkNotifications(notifications);
   }

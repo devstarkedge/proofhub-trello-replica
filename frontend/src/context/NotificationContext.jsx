@@ -488,6 +488,23 @@ export const NotificationProvider = ({ children }) => {
     // Mark read optimistically
     if (!notification.isRead) markAsRead(notification._id);
 
+    const departmentId = notification?.departmentId || notification?.metadata?.departmentId;
+    const projectId = notification?.projectId || notification?.metadata?.projectId;
+    const taskId = notification?.taskId || notification?.metadata?.taskId;
+
+    if (notification?.type === 'task_assigned') {
+      if (departmentId && projectId && taskId) {
+        setIsOpen(false);
+        navigate(`/workflow/${departmentId}/${projectId}/${taskId}`);
+        return;
+      }
+
+      toast.error('Task not found');
+      setIsOpen(false);
+      navigate('/');
+      return;
+    }
+
     // If notification carries a URL in metadata, navigate there
     const targetUrl = notification?.metadata?.url || (notification.type === 'module_access' ? '/sales' : null);
     if (targetUrl) {

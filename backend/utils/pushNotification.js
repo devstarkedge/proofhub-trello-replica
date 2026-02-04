@@ -44,6 +44,9 @@ export const sendPushNotification = async (notification, pushSubscription) => {
       data: {
         notificationId: notification._id,
         type: notification.type,
+        departmentId: notification.departmentId || notification.metadata?.departmentId,
+        projectId: notification.projectId || notification.relatedBoard || notification.metadata?.projectId,
+        taskId: notification.taskId || notification.relatedCard || notification.metadata?.taskId,
         url: getNotificationUrl(notification)
       },
       actions: [
@@ -83,6 +86,14 @@ export const sendPushNotification = async (notification, pushSubscription) => {
 const getNotificationUrl = (notification) => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+  const departmentId = notification.departmentId || notification.metadata?.departmentId;
+  const projectId = notification.projectId || notification.relatedBoard || notification.metadata?.projectId;
+  const taskId = notification.taskId || notification.relatedCard || notification.metadata?.taskId;
+
+  if (departmentId && projectId && taskId) {
+    return `${baseUrl}/workflow/${departmentId}/${projectId}/${taskId}`;
+  }
+
   switch (notification.type) {
     case 'announcement_created':
     case 'announcement':
@@ -96,7 +107,10 @@ const getNotificationUrl = (notification) => {
     case 'task_deleted':
     case 'comment_added':
     case 'comment_mention':
-      return `${baseUrl}/workflow/${notification.relatedBoard}?card=${notification.relatedCard}`;
+      if (projectId && taskId) {
+        return `${baseUrl}/workflow/${projectId}?card=${taskId}`;
+      }
+      return `${baseUrl}`;
     case 'project_created':
     case 'project_deleted':
     case 'project_updates':

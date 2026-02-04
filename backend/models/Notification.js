@@ -99,6 +99,19 @@ const notificationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Team'
   },
+  // Task routing fields (for workflow deep links)
+  departmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department'
+  },
+  projectId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Board'
+  },
+  taskId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Card'
+  },
   // Read state
   isRead: {
     type: Boolean,

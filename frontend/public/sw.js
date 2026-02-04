@@ -64,11 +64,13 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
 
   const notificationData = event.notification.data;
-  let url = '/dashboard'; // Default fallback
+  let url = '/'; // Default fallback
 
   // Determine URL based on notification type
   if (notificationData && notificationData.url) {
     url = notificationData.url;
+  } else if (notificationData && notificationData.departmentId && notificationData.projectId && notificationData.taskId) {
+    url = `/workflow/${notificationData.departmentId}/${notificationData.projectId}/${notificationData.taskId}`;
   }
 
   event.waitUntil(
