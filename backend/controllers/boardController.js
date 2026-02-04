@@ -11,6 +11,7 @@ import Reminder from "../models/Reminder.js";
 import Subtask from "../models/Subtask.js";
 import SubtaskNano from "../models/SubtaskNano.js";
 import Comment from "../models/Comment.js";
+import User from "../models/User.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
@@ -91,7 +92,8 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
   const { id: projectId } = req.params;
 
   // Fetch board and lists in parallel
-  const [board, lists] = await Promise.all([
+  // Also fetch subtasks and nanos to aggregate complete team
+  const [board, lists, subtasks, nanos] = await Promise.all([
     Board.findById(projectId)
       .populate('owner', 'name email avatar role')
       .populate('team', 'name')
@@ -100,7 +102,9 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
       .lean(),
     List.find({ board: projectId, isArchived: false })
       .sort('position')
-      .lean()
+      .lean(),
+    Subtask.find({ board: projectId }).select('assignees').lean(),
+    SubtaskNano.find({ board: projectId }).select('assignees').lean()
   ]);
 
   if (!board) {
@@ -122,11 +126,65 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
   const listIds = lists.map(l => l._id);
   const cards = await Card.find({ list: { $in: listIds }, isArchived: false })
     .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime')
-    .populate('assignees', 'name email avatar')
+    .populate('assignees', 'name email avatar role')
     .populate('members', 'name email avatar')
     .populate('coverImage', 'url secureUrl thumbnailUrl fileName fileType isCover')
     .sort({ list: 1, position: 1 })
     .lean();
+
+  // --- AGGREGATE ALL PROJECT MEMBERS ---
+  const memberMap = new Map();
+  
+  // Helper to add user to map
+  const addUser = (user) => {
+    if (!user) return;
+    // Handle both populated object and direct ID
+    const id = user._id ? user._id.toString() : user.toString();
+    
+    if (user._id && !memberMap.has(id)) {
+      memberMap.set(id, user); // Prefer populated user
+    } else if (!memberMap.has(id)) {
+      memberMap.set(id, { _id: id }); // Placeholder with just ID
+    }
+  };
+
+  // 1. Board Owner
+  if (board.owner) addUser(board.owner);
+
+  // 2. Board Members (explicitly assigned)
+  if (board.members) board.members.forEach(addUser);
+
+  // 3. Card Assignees
+  cards.forEach(card => {
+    if (card.assignees) card.assignees.forEach(addUser);
+  });
+
+  // 4. Subtask Assignees
+  subtasks.forEach(task => {
+    if (task.assignees) task.assignees.forEach(addUser);
+  });
+
+  // 5. Nano Assignees
+  nanos.forEach(nano => {
+    if (nano.assignees) nano.assignees.forEach(addUser);
+  });
+
+  // Identify missing user details (IDs that are just strings/placeholders without name)
+  const missingUserIds = [];
+  memberMap.forEach((val, key) => {
+     if (!val.name) missingUserIds.push(key);
+  });
+
+  // Fetch details for missing users
+  if (missingUserIds.length > 0) {
+      const users = await User.find({ _id: { $in: missingUserIds } }).select('name email avatar role').lean();
+      users.forEach(u => memberMap.set(u._id.toString(), u));
+  }
+
+  // Update board members with the complete aggregated list
+  // Only include valid users (must have name/email)
+  board.members = Array.from(memberMap.values()).filter(u => u.name);
+  // -------------------------------------
 
   // Fetch all labels for this board for manual population
   const allLabels = await Label.find({ board: projectId }).select('name color').lean();
