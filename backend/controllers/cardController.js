@@ -1,4 +1,6 @@
 import Card from "../models/Card.js";
+import User from "../models/User.js";
+import Label from "../models/Label.js";
 import List from "../models/List.js";
 import Board from "../models/Board.js";
 import Department from "../models/Department.js";
@@ -907,33 +909,33 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     .populate("loggedTime.user", "name email avatar")
     .populate("billedTime.user", "name email avatar");
 
-  // Log specific activity types based on what changed
-  if (req.body.title && req.body.title !== card.title) {
+  // Log specific activity types based on what changed - compare to OLD values
+  if (req.body.title && req.body.title !== oldTitle) {
     await Activity.create({
       type: "title_changed",
-      description: `Changed title from "${card.title}" to "${req.body.title}"`,
+      description: `Changed title from "${oldTitle}" to "${req.body.title}"`,
       user: req.user.id,
       board: card.board,
       card: card._id,
       contextType: 'task',
       metadata: {
-        oldTitle: card.title,
+        oldTitle: oldTitle,
         newTitle: req.body.title
       }
     });
   }
 
-  if (req.body.description !== undefined && req.body.description !== card.description) {
+  if (req.body.description !== undefined && req.body.description !== oldDescription) {
     // Save version history for description (content is required, use stripped htmlContent or placeholder)
-    const descriptionContent = card.description 
-      ? card.description.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim() 
+    const descriptionContent = oldDescription 
+      ? oldDescription.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim() 
       : '';
     
     await VersionHistory.createVersion({
       entityType: 'card_description',
       entityId: card._id,
       content: descriptionContent || '(empty)',
-      htmlContent: card.description || '',
+      htmlContent: oldDescription || '',
       mentions: card.descriptionMentions || [],
       editedBy: req.user.id,
       card: card._id,
@@ -968,47 +970,62 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     });
   }
 
-  if (req.body.status && req.body.status !== card.status) {
+  if (req.body.status && req.body.status !== oldStatus) {
     await Activity.create({
       type: "status_changed",
-      description: `Changed status from "${card.status}" to "${req.body.status}"`,
+      description: `Changed status from "${oldStatus}" to "${req.body.status}"`,
       user: req.user.id,
       board: card.board,
       card: card._id,
       contextType: 'task',
       metadata: {
-        oldStatus: card.status,
+        oldStatus: oldStatus,
         newStatus: req.body.status
       }
     });
   }
 
-  if (req.body.priority && req.body.priority !== card.priority) {
+  if (req.body.priority && req.body.priority !== oldPriority) {
     await Activity.create({
       type: "priority_changed",
-      description: `Changed priority from "${card.priority || 'None'}" to "${req.body.priority}"`,
+      description: `Changed priority from "${oldPriority || 'None'}" to "${req.body.priority}"`,
       user: req.user.id,
       board: card.board,
       card: card._id,
       contextType: 'task',
       metadata: {
-        oldPriority: card.priority || 'None',
+        oldPriority: oldPriority || 'None',
         newPriority: req.body.priority
       }
     });
   }
 
-  if (req.body.dueDate && req.body.dueDate !== card.dueDate) {
+  // Compare dueDate using timestamps for proper comparison
+  const newDueDateStr = req.body.dueDate ? new Date(req.body.dueDate).toISOString() : null;
+  const oldDueDateStr = oldDueDate ? new Date(oldDueDate).toISOString() : null;
+  if (req.body.dueDate !== undefined && newDueDateStr !== oldDueDateStr) {
+    // Format dates for user-friendly display
+    const formatDate = (date) => {
+      if (!date) return 'None';
+      return new Date(date).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    };
+    const oldDateFormatted = formatDate(oldDueDate);
+    const newDateFormatted = formatDate(req.body.dueDate);
+    
     await Activity.create({
       type: "due_date_changed",
-      description: `Changed due date to ${new Date(req.body.dueDate).toLocaleDateString()}`,
+      description: `Changed due date from ${oldDateFormatted} to ${newDateFormatted}`,
       user: req.user.id,
       board: card.board,
       card: card._id,
       contextType: 'task',
       metadata: {
-        oldDate: card.dueDate,
-        newDate: req.body.dueDate
+        oldDate: oldDateFormatted,
+        newDate: newDateFormatted
       }
     });
   }
@@ -1079,19 +1096,35 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // General activity log
-  await Activity.create({
-    type: "card_updated",
-    description: `Updated card "${card.title}"`,
-    user: req.user.id,
-    board: card.board,
-    card: card._id,
-    list: card.list,
-    contextType: 'task',
-    metadata: {
-      changes: req.body
+  // Labels change detection - only log if labels actually changed
+  if (req.body.labels !== undefined) {
+    const newLabels = (req.body.labels || []).map(l => l.toString()).sort();
+    const sortedOldLabels = [...oldLabels].sort();
+    
+    if (JSON.stringify(newLabels) !== JSON.stringify(sortedOldLabels)) {
+      try {
+        const labelDocs = await Label.find({ _id: { $in: req.body.labels } }).select('name');
+        const labelNames = labelDocs.map(l => l.name).join(', ');
+        const oldLabelDocs = await Label.find({ _id: { $in: oldLabels } }).select('name');
+        const oldLabelNames = oldLabelDocs.map(l => l.name).join(', ') || 'None';
+        
+        await Activity.create({
+          type: 'labels_changed',
+          description: `Changed labels from "${oldLabelNames}" to "${labelNames || 'None'}"`,
+          user: req.user.id,
+          board: card.board,
+          card: card._id,
+          contextType: 'task',
+          metadata: {
+            oldLabels: oldLabelNames,
+            newLabels: labelNames || 'None'
+          }
+        });
+      } catch (err) {
+        console.error('Error creating labels activity:', err);
+      }
     }
-  });
+  }
 
   // Invalidate caches for hierarchy
   invalidateHierarchyCache({
@@ -1129,6 +1162,11 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
     if (addedAssignees.length > 0) {
       await notificationService.notifyTaskAssigned(card, addedAssignees, req.user.id);
+      
+      // Fetch names for activity log
+      const addedUsers = await User.find({ _id: { $in: addedAssignees } }).select('name');
+      const memberNames = addedUsers.map(u => u.name).join(', ');
+      
       await Activity.create({
         type: 'member_added',
         description: `added members to the card`,
@@ -1136,6 +1174,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
         board: card.board,
         card: card._id,
         contextType: 'task',
+        metadata: {
+          memberName: memberNames,
+          memberIds: addedAssignees
+        }
       });
       
       // Send Slack notifications for new assignees
@@ -1144,6 +1186,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
 
     if (removedAssignees.length > 0) {
+      // Fetch names for activity log
+      const removedUsers = await User.find({ _id: { $in: removedAssignees } }).select('name');
+      const memberNames = removedUsers.map(u => u.name).join(', ');
+
       await Activity.create({
         type: 'member_removed',
         description: `removed members from the card`,
@@ -1151,6 +1197,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
         board: card.board,
         card: card._id,
         contextType: 'task',
+        metadata: {
+          memberName: memberNames,
+          memberIds: removedAssignees
+        }
       });
     }
   }

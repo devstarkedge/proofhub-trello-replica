@@ -4,6 +4,7 @@ import {
   uploadAttachment,
   uploadMultipleAttachments,
   getCardAttachments,
+  getBoardAttachments,
   getSubtaskAttachments,
   getNanoSubtaskAttachments,
   getAttachmentsByContext,
@@ -38,6 +39,7 @@ router.delete('/bulk/permanent', bulkPermanentDelete);
 
 // Get routes - specific entity routes first, then generic
 router.get('/card/:cardId', getCardAttachments);
+router.get('/board/:boardId', getBoardAttachments);
 router.get('/subtask/:subtaskId', getSubtaskAttachments);
 router.get('/nano/:nanoSubtaskId', getNanoSubtaskAttachments);
 router.get('/context/:contextType/:contextRef', getAttachmentsByContext);

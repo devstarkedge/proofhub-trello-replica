@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useContext, Suspense, memo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw, Archive, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw, Archive, Trash2, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import Database from '../services/database';
 import Board from '../components/Board';
 import { lazy } from 'react';
-const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
+import EditProjectModal from '../components/EnterpriseEditProjectModal';
 import DepartmentContext from '../context/DepartmentContext';
 import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';
@@ -741,7 +741,7 @@ useEffect(() => {
   const hasNoLists = lists.length === 0;
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 overflow-hidden">
+    <div className="h-full flex flex-col bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 overflow-hidden">
       {/* Custom Header for Workflow */}
       <header className="bg-white/10 backdrop-blur-lg border-b border-white/20 shadow-lg">
         <div className="px-6 py-4">
@@ -762,22 +762,23 @@ useEffect(() => {
               >
                 <ArrowLeft size={24} />
               </motion.button>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold text-white">{board.name}</h1>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold text-white truncate">{board.name}</h1>
+                  {board.description && (
+                    <FileText size={14} className="text-white/60" title="Description available" />
+                  )}
                   {(user?.role === 'admin' || user?.role === 'manager') && (
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
                       onClick={handleOpenEditModal}
-                      className="p-1 hover:bg-white/20 rounded text-white/70 hover:text-white"
+                      className="p-1.5 hover:bg-white/20 rounded-lg text-white/70 hover:text-white transition-colors flex-shrink-0"
+                      title="Edit Project"
                     >
                       <Pencil size={16} />
                     </motion.button>
                   )}
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-white/70 text-sm">{board.description || 'Project Board'}</p>
                 </div>
               </div>
             </div>

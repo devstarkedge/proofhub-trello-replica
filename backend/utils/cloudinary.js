@@ -474,7 +474,11 @@ export const getFileTypeCategory = (mimetype) => {
   
   if (mimetype.startsWith('image/')) return 'image';
   if (mimetype.startsWith('video/')) return 'video';
+  if (mimetype.startsWith('audio/')) return 'audio';
   if (mimetype === 'application/pdf') return 'pdf';
+  if (mimetype.includes('google-apps.document')) return 'document';
+  if (mimetype.includes('google-apps.spreadsheet')) return 'spreadsheet';
+  if (mimetype.includes('google-apps.presentation')) return 'presentation';
   if (mimetype.includes('word') || mimetype.includes('document')) return 'document';
   if (mimetype.includes('excel') || mimetype.includes('spreadsheet')) return 'spreadsheet';
   if (mimetype.includes('powerpoint') || mimetype.includes('presentation')) return 'presentation';

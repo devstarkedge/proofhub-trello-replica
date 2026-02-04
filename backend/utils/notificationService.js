@@ -575,6 +575,50 @@ class NotificationService {
     return this.createBulkNotifications(notifications);
   }
 
+  // Project update notifications
+  async notifyProjectUpdated(board, updaterId, changesSummary = '') {
+    const notifications = [];
+
+    const message = changesSummary
+      ? `Project "${board.name}" updated: ${changesSummary}`
+      : `Project "${board.name}" was updated`;
+
+    // Notify project members
+    if (board.members && board.members.length > 0) {
+      board.members.forEach(memberId => {
+        if (memberId.toString() !== updaterId) {
+          notifications.push({
+            type: 'project_updates',
+            title: 'Project Updated',
+            message,
+            user: memberId,
+            sender: updaterId,
+            relatedBoard: board._id
+          });
+        }
+      });
+    }
+
+    // Notify department managers
+    const department = await Department.findById(board.department).populate('managers');
+    if (department && department.managers) {
+      department.managers.forEach(manager => {
+        if (manager._id.toString() !== updaterId) {
+          notifications.push({
+            type: 'project_updates',
+            title: 'Project Updated',
+            message,
+            user: manager._id,
+            sender: updaterId,
+            relatedBoard: board._id
+          });
+        }
+      });
+    }
+
+    return this.createBulkNotifications(notifications);
+  }
+
   // User registration notifications (for admins and managers)
   async notifyUserRegistered(user, recipients) {
     const notifications = [];

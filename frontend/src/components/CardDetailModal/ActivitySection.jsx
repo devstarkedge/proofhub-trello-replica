@@ -53,6 +53,7 @@ const ActivitySection = ({ activities, loading, teamMembers = [] }) => {
       time_logged: <Clock className={`${iconProps} text-emerald-600`} />,
       title_changed: <Edit2 className={`${iconProps} text-blue-600`} />,
       description_changed: <Edit2 className={`${iconProps} text-blue-600`} />,
+      labels_changed: <Tag className={`${iconProps} text-purple-600`} />,
     };
 
     return iconMap[activityType] || <FileText className={`${iconProps} ${colorClasses}`} />;
@@ -79,6 +80,7 @@ const ActivitySection = ({ activities, loading, teamMembers = [] }) => {
       time_logged: "bg-emerald-50 border-emerald-200",
       title_changed: "bg-blue-50 border-blue-200",
       description_changed: "bg-blue-50 border-blue-200",
+      labels_changed: "bg-purple-50 border-purple-200",
     };
 
     return colorMap[activityType] || "bg-gray-50 border-gray-200";
@@ -99,7 +101,7 @@ const ActivitySection = ({ activities, loading, teamMembers = [] }) => {
       member_added: `${userName} added ${metadata?.memberName} as assignee`,
       member_removed: `${userName} removed ${metadata?.memberName} from assignees`,
       attachment_added: `${userName} added an attachment: ${metadata?.fileName || "File"}`,
-      due_date_changed: `${userName} changed due date to ${metadata?.newDate}`,
+      due_date_changed: `${userName} changed due date from ${metadata?.oldDate || 'None'} to ${metadata?.newDate || 'None'}`,
       priority_changed: `${userName} changed priority from ${metadata?.oldPriority} to ${metadata?.newPriority}`,
       status_changed: `${userName} changed status from ${metadata?.oldStatus} to ${metadata?.newStatus}`,
       subtask_created: `${userName} created subtask: ${metadata?.subtaskTitle}`,
@@ -109,6 +111,7 @@ const ActivitySection = ({ activities, loading, teamMembers = [] }) => {
       time_logged: `${userName} logged ${metadata?.hours}h ${metadata?.minutes}m of work`,
       title_changed: `${userName} changed title to "${metadata?.newTitle}"`,
       description_changed: `${userName} updated the description`,
+      labels_changed: `${userName} changed labels from "${metadata?.oldLabels}" to "${metadata?.newLabels}"`,
     };
 
     return descriptions[type] || description || `${userName} performed an action`;

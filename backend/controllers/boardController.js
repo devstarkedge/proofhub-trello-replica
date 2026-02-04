@@ -16,6 +16,7 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
 import { emitNotification } from "../server.js";
 import notificationService from "../utils/notificationService.js";
+import { slackHooks } from "../utils/slackHooks.js";
 import { 
   notifyProjectCreatedInBackground, 
   sendProjectEmailsInBackground, 
@@ -455,12 +456,104 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Not authorized to update this board", 403));
   }
 
+  const previousBoard = board.toObject();
+
   board = await Board.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
   })
     .populate("owner", "name email avatar")
     .populate("members", "name email avatar");
+
+  // Activity + notifications
+  const changes = [];
+  const activityTasks = [];
+
+  if (req.body.name && req.body.name !== previousBoard.name) {
+    changes.push(`Name updated to "${req.body.name}"`);
+    activityTasks.push(Activity.create({
+      type: 'project_updated',
+      description: `Renamed project to "${req.body.name}"`,
+      user: req.user.id,
+      board: board._id,
+      contextType: 'board'
+    }));
+  }
+
+  if (typeof req.body.description === 'string' && req.body.description !== previousBoard.description) {
+    changes.push('Description updated');
+    activityTasks.push(Activity.create({
+      type: 'project_updated',
+      description: 'Updated project description',
+      user: req.user.id,
+      board: board._id,
+      contextType: 'board'
+    }));
+  }
+
+  if (req.body.status && req.body.status !== previousBoard.status) {
+    changes.push(`Status changed to ${req.body.status}`);
+    activityTasks.push(Activity.create({
+      type: 'project_status_changed',
+      description: `Status changed to ${req.body.status}`,
+      user: req.user.id,
+      board: board._id,
+      contextType: 'board',
+      metadata: { from: previousBoard.status, to: req.body.status }
+    }));
+  }
+
+  if (req.body.priority && req.body.priority !== previousBoard.priority) {
+    changes.push(`Priority changed to ${req.body.priority}`);
+    activityTasks.push(Activity.create({
+      type: 'project_priority_changed',
+      description: `Priority changed to ${req.body.priority}`,
+      user: req.user.id,
+      board: board._id,
+      contextType: 'board',
+      metadata: { from: previousBoard.priority, to: req.body.priority }
+    }));
+  }
+
+  if (Array.isArray(req.body.members)) {
+    const prevMembers = (previousBoard.members || []).map(m => m.toString());
+    const nextMembers = req.body.members.map(m => m.toString());
+    const added = nextMembers.filter(id => !prevMembers.includes(id));
+    const removed = prevMembers.filter(id => !nextMembers.includes(id));
+
+    if (added.length > 0) {
+      changes.push(`Members added (${added.length})`);
+      activityTasks.push(Activity.create({
+        type: 'project_member_added',
+        description: `Added ${added.length} member(s)`,
+        user: req.user.id,
+        board: board._id,
+        contextType: 'board',
+        metadata: { added }
+      }));
+    }
+
+    if (removed.length > 0) {
+      changes.push(`Members removed (${removed.length})`);
+      activityTasks.push(Activity.create({
+        type: 'project_member_removed',
+        description: `Removed ${removed.length} member(s)`,
+        user: req.user.id,
+        board: board._id,
+        contextType: 'board',
+        metadata: { removed }
+      }));
+    }
+  }
+
+  if (activityTasks.length > 0) {
+    await Promise.all(activityTasks);
+  }
+
+  if (changes.length > 0) {
+    await notificationService.notifyProjectUpdated(board, req.user.id, changes.slice(0, 3).join(', '));
+    await slackHooks.onProjectUpdated(board, changes, req.user);
+  }
 
   // Invalidate relevant caches
   invalidateCache(`/api/boards`);
@@ -472,6 +565,25 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: board,
+  });
+});
+
+// @desc    Get project activity timeline
+// @route   GET /api/boards/:id/activity
+// @access  Private
+export const getProjectActivity = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const limit = parseInt(req.query.limit || '50', 10);
+
+  const activity = await Activity.find({ board: id })
+    .populate('user', 'name avatar')
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+
+  res.status(200).json({
+    success: true,
+    data: activity
   });
 });
 

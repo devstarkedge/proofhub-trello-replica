@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 // API service for CRUD operations
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 
@@ -142,6 +144,74 @@ class DatabaseService {
       headers['Authorization'] = `Bearer ${token}`;
     }
     const res = await fetch(`${baseURL}/api/boards/${projectId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async uploadProjectAttachment(projectId, file, onUploadProgress) {
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('boardId', projectId);
+    formData.append('contextType', 'board');
+
+    const response = await axios.post(`${baseURL}/api/attachments/upload`, formData, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'multipart/form-data'
+      },
+      onUploadProgress: (progressEvent) => {
+        if (!onUploadProgress) return;
+        const total = progressEvent.total || file?.size || 0;
+        if (total > 0) {
+          const percent = Math.min(100, Math.round((progressEvent.loaded * 100) / total));
+          onUploadProgress(percent);
+        }
+      }
+    });
+
+    return response.data;
+  }
+
+  async getProjectAttachments(projectId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/attachments/board/${projectId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  async deleteAttachment(attachmentId) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/attachments/${attachmentId}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to delete attachment');
+    }
+    return await res.json();
+  }
+
+  async getProjectActivity(projectId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/boards/${projectId}/activity`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }

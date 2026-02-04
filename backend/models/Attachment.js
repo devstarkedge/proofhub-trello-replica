@@ -63,7 +63,7 @@ const attachmentSchema = new mongoose.Schema({
   contextType: {
     type: String,
     required: true,
-    enum: ['card', 'subtask', 'subtaskNano', 'nanoSubtask', 'comment', 'description'],
+    enum: ['card', 'subtask', 'subtaskNano', 'nanoSubtask', 'comment', 'description', 'board'],
     index: true
   },
   contextRef: {
@@ -108,6 +108,30 @@ const attachmentSchema = new mongoose.Schema({
   uploadedAt: {
     type: Date,
     default: Date.now
+  },
+
+  // Versioning (for project/board attachments)
+  versionGroup: {
+    type: String,
+    trim: true,
+    index: true
+  },
+  versionNumber: {
+    type: Number,
+    min: 1
+  },
+  versionLabel: {
+    type: String,
+    trim: true
+  },
+  fileExtension: {
+    type: String,
+    trim: true
+  },
+  isLatestVersion: {
+    type: Boolean,
+    default: true,
+    index: true
   },
 
   // Additional metadata

@@ -4,6 +4,16 @@ const activitySchema = new mongoose.Schema({
   type: {
     type: String,
     enum: [
+      'board_created',
+      'board_updated',
+      'project_created',
+      'project_updated',
+      'project_status_changed',
+      'project_priority_changed',
+      'project_member_added',
+      'project_member_removed',
+      'project_file_uploaded',
+      'project_file_deleted',
       'card_created',
       'card_updated',
       'card_moved',
@@ -63,7 +73,7 @@ const activitySchema = new mongoose.Schema({
   // Context - determines what type of item this activity belongs to
   contextType: {
     type: String,
-    enum: ['task', 'subtask', 'nanoSubtask', 'card'],
+    enum: ['task', 'subtask', 'nanoSubtask', 'card', 'board'],
     default: 'task',
     required: true
   },

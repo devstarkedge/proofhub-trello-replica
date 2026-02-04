@@ -71,6 +71,27 @@ const SubtasksSection = ({
         )}
       </div>
 
+      <div className="flex gap-2 mb-3">
+        <input
+          type="text"
+          value={newItemTitle || ''}
+          onChange={(e) => onNewItemTitleChange(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === "Enter") onCreateItem();
+          }}
+          placeholder={`Add a ${title.toLowerCase().slice(0, -1)}...`}
+          className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+        />
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={onCreateItem}
+          className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+        >
+          <Plus size={18} />
+        </motion.button>
+      </div>
+
       <div className="ml-1 space-y-2">
         <AnimatePresence>
           {items.map((item, index) => {
@@ -154,27 +175,6 @@ const SubtasksSection = ({
             {emptyLabel}
           </div>
         )}
-
-        <div className="flex gap-2 mt-3">
-          <input
-            type="text"
-            value={newItemTitle || ''}
-            onChange={(e) => onNewItemTitleChange(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === "Enter") onCreateItem();
-            }}
-            placeholder={`Add a ${title.toLowerCase().slice(0, -1)}...`}
-            className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-          />
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={onCreateItem}
-            className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
-          >
-            <Plus size={18} />
-          </motion.button>
-        </div>
       </div>
     </div>
   );

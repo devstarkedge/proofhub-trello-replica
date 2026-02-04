@@ -9,6 +9,7 @@ import {
   getBoardsByDepartment, 
   getWorkflowData, 
   getWorkflowComplete,
+  getProjectActivity,
   uploadCoverImage,
   removeCoverImage,
   restoreCoverImage
@@ -23,6 +24,7 @@ router.get('/', protect, getBoards);
 router.get('/department/:departmentId', protect, getBoardsByDepartment);
 router.get('/workflow/:departmentId/:projectId', protect, getWorkflowData);
 router.get('/:id/workflow-complete', protect, getWorkflowComplete); // Optimized single-call endpoint
+router.get('/:id/activity', protect, getProjectActivity);
 router.get('/:id', protect, getBoard);
 
 router.post('/', protect, upload.array('attachments', 10), [

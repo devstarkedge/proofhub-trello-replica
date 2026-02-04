@@ -24,7 +24,6 @@ const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   // Allowed file types
-  const allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar/;
   const allowedMimeTypes = [
     'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
     'application/pdf',
@@ -32,7 +31,16 @@ const fileFilter = (req, file, cb) => {
     'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'text/plain', 'text/csv',
-    'application/zip', 'application/x-rar-compressed'
+    'application/zip', 'application/x-rar-compressed',
+    'video/mp4', 'video/quicktime', 'video/x-msvideo',
+    'audio/mpeg', 'audio/wav', 'audio/x-wav',
+    'application/vnd.google-apps.document',
+    'application/vnd.google-apps.spreadsheet',
+    'application/vnd.google-apps.presentation',
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.ms-works'
   ];
 
   if (allowedMimeTypes.includes(file.mimetype)) {
@@ -59,20 +67,20 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     throw new ErrorResponse('No file uploaded', 400);
   }
 
-  const { cardId, subtaskId, nanoSubtaskId, contextType = 'description', contextRef, commentId, setCover } = req.body;
+  const { cardId, subtaskId, nanoSubtaskId, boardId: projectId, contextType = 'description', contextRef, commentId, setCover } = req.body;
 
   // Validate exactly one parent reference is provided
-  const parentCount = [cardId, subtaskId, nanoSubtaskId].filter(Boolean).length;
+  const parentCount = [cardId, subtaskId, nanoSubtaskId, projectId].filter(Boolean).length;
   if (parentCount !== 1) {
-    throw new ErrorResponse('Exactly one parent reference (cardId, subtaskId, or nanoSubtaskId) is required', 400);
+    throw new ErrorResponse('Exactly one parent reference (cardId, subtaskId, nanoSubtaskId, or boardId) is required', 400);
   }
 
-  let boardId, parentType, parentRefId, folderPath, cardForCover;
+  let resolvedBoardId, parentType, parentRefId, folderPath, cardForCover;
   
   if (cardId) {
     const card = await Card.findById(cardId).select('board').lean();
     if (!card) throw new ErrorResponse('Card not found', 404);
-    boardId = card.board;
+    resolvedBoardId = card.board;
     parentType = 'card';
     parentRefId = cardId;
     folderPath = `flowtask/cards/${cardId}/attachments`;
@@ -80,7 +88,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
   } else if (subtaskId) {
     const subtask = await Subtask.findById(subtaskId).populate('task', 'board').lean();
     if (!subtask) throw new ErrorResponse('Subtask not found', 404);
-    boardId = subtask.task?.board;
+    resolvedBoardId = subtask.task?.board;
     parentType = 'subtask';
     parentRefId = subtaskId;
     folderPath = `flowtask/subtasks/${subtaskId}/attachments`;
@@ -91,11 +99,19 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
       populate: { path: 'task', select: 'board' } 
     }).lean();
     if (!nano) throw new ErrorResponse('Nano-subtask not found', 404);
-    boardId = nano.subtask?.task?.board;
+    resolvedBoardId = nano.subtask?.task?.board;
     parentType = 'nanoSubtask';
     parentRefId = nanoSubtaskId;
     folderPath = `flowtask/nanos/${nanoSubtaskId}/attachments`;
     cardForCover = null; // Nanos don't have cover images
+  } else if (projectId) {
+    const board = await Board.findById(projectId).select('department').lean();
+    if (!board) throw new ErrorResponse('Project not found', 404);
+    parentType = 'board';
+    parentRefId = projectId;
+    resolvedBoardId = projectId;
+    folderPath = `flowtask/projects/${projectId}/attachments`;
+    cardForCover = null;
   }
 
   const fileType = getFileTypeCategory(req.file.mimetype);
@@ -104,6 +120,38 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
   // Cover is ONLY set when explicitly requested - no auto-cover logic
   // This ensures attachments in subtask/nano modals never affect parent covers
   const shouldSetAsCover = setCover === 'true' && parentType === 'card';
+
+  // Versioning for project attachments
+  let versionGroup = null;
+  let versionNumber = null;
+  let versionLabel = null;
+  let fileExtension = null;
+  let displayFileName = req.file.originalname;
+  if (parentType === 'board') {
+    const originalName = req.file.originalname || '';
+    const lastDotIndex = originalName.lastIndexOf('.');
+    const baseName = lastDotIndex > -1 ? originalName.slice(0, lastDotIndex) : originalName;
+    const ext = lastDotIndex > -1 ? originalName.slice(lastDotIndex + 1) : '';
+    versionGroup = baseName.trim() || 'file';
+    fileExtension = ext.toLowerCase();
+
+    const latest = await Attachment.findOne({
+      board: resolvedBoardId,
+      versionGroup,
+      isDeleted: false
+    }).sort({ versionNumber: -1 }).lean();
+
+    versionNumber = (latest?.versionNumber || 0) + 1;
+    versionLabel = `v${versionNumber}`;
+    displayFileName = `${versionGroup}_v${versionNumber}${fileExtension ? `.${fileExtension}` : ''}`;
+
+    if (latest?._id) {
+      await Attachment.updateMany(
+        { board: resolvedBoardId, versionGroup, isDeleted: false },
+        { $set: { isLatestVersion: false } }
+      );
+    }
+  }
 
   // Upload to Cloudinary
   let cloudinaryResult;
@@ -129,7 +177,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
 
   // Create attachment record with correct parent field
   const attachmentData = {
-    fileName: cloudinaryResult.public_id.split('/').pop(),
+    fileName: displayFileName,
     originalName: req.file.originalname,
     fileType,
     mimeType: req.file.mimetype,
@@ -142,16 +190,21 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     // Use the frontend's contextType ('description' or 'comment') for proper separation
     // If contextType is 'comment' and commentId is provided, use it
     // Otherwise use contextRef or fallback to parentRefId
-    contextType: contextType || 'description',
+    contextType: parentType === 'board' ? 'board' : (contextType || 'description'),
     contextRef: contextType === 'comment' ? (commentId || contextRef || parentRefId) : (contextRef || parentRefId),
-    board: boardId,
+    board: resolvedBoardId,
     comment: commentId || null,
     uploadedBy: req.user.id,
     width: cloudinaryResult.width,
     height: cloudinaryResult.height,
     pages: cloudinaryResult.pages,
     duration: cloudinaryResult.duration,
-    isCover: shouldSetAsCover
+    isCover: shouldSetAsCover,
+    versionGroup,
+    versionNumber,
+    versionLabel,
+    fileExtension,
+    isLatestVersion: parentType === 'board' ? true : undefined
   };
 
   // Set the correct parent field
@@ -161,6 +214,8 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     attachmentData.subtask = subtaskId;
   } else if (parentType === 'nanoSubtask') {
     attachmentData.nanoSubtask = nanoSubtaskId;
+  } else if (parentType === 'board') {
+    attachmentData.board = resolvedBoardId;
   }
 
   // Add thumbnail URLs for images
@@ -186,14 +241,29 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     type: 'attachment_added',
     description: `Added attachment: ${req.file.originalname}`,
     user: req.user.id,
-    board: boardId
+    board: resolvedBoardId
   };
   if (parentType === 'card') activityData.card = cardId;
   await Activity.create(activityData);
 
+  // Project file upload activity and notifications
+  if (parentType === 'board' && resolvedBoardId) {
+    await Activity.create({
+      type: 'project_file_uploaded',
+      description: `Uploaded file: ${displayFileName}`,
+      user: req.user.id,
+      board: resolvedBoardId,
+      contextType: 'board',
+      metadata: {
+        fileName: displayFileName,
+        versionLabel
+      }
+    });
+  }
+
   // Emit real-time update
-  if (boardId) {
-    emitToBoard(boardId.toString(), 'attachment-added', {
+  if (resolvedBoardId) {
+    emitToBoard(resolvedBoardId.toString(), 'attachment-added', {
       parentType,
       parentId: parentRefId,
       cardId: parentType === 'card' ? cardId : null,
@@ -215,6 +285,8 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     invalidateCache(`/api/attachments/subtask/${subtaskId}`);
   } else if (parentType === 'nanoSubtask') {
     invalidateCache(`/api/attachments/nano/${nanoSubtaskId}`);
+  } else if (parentType === 'board') {
+    invalidateCache(`/api/attachments/board/${resolvedBoardId}`);
   }
 
   res.status(201).json({
@@ -382,6 +454,48 @@ export const getCardAttachments = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get attachments for a project/board
+// @route   GET /api/attachments/board/:boardId
+// @access  Private
+export const getBoardAttachments = asyncHandler(async (req, res) => {
+  const { boardId } = req.params;
+  const { page = 1, limit = 50, fileType, versionGroup } = req.query;
+
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
+
+  const query = { board: boardId, contextType: 'board', isDeleted: false };
+  if (fileType) {
+    query.fileType = fileType;
+  }
+  if (versionGroup) {
+    query.versionGroup = versionGroup;
+  }
+
+  const [attachments, total] = await Promise.all([
+    Attachment.find(query)
+      .populate('uploadedBy', 'name avatar')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
+    Attachment.countDocuments(query)
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: attachments,
+    pagination: {
+      currentPage: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      totalItems: total,
+      hasNext: pageNum * limitNum < total,
+      hasPrev: pageNum > 1
+    }
+  });
+});
+
 // @desc    Get attachments for a subtask
 // @route   GET /api/attachments/subtask/:subtaskId
 // @access  Private
@@ -517,6 +631,7 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
 
   const wasCover = attachment.isCover;
   const cardId = attachment.card;
+  const isProjectAttachment = attachment.contextType === 'board' || (!attachment.card && attachment.board);
   
   // Build originalContext on first delete
   try {
@@ -562,7 +677,7 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
 
   // Auto-promote next description image to cover if deleted attachment was cover
   let newCoverAttachment = null;
-  if (wasCover) {
+  if (wasCover && cardId) {
     // Find next eligible image to be cover (prioritize description images)
     newCoverAttachment = await Attachment.findOne({
       card: cardId,
@@ -580,13 +695,28 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
     }
   }
 
+  // Update latest version flag for project attachments
+  if (isProjectAttachment && attachment.versionGroup) {
+    const latest = await Attachment.findOne({
+      board: attachment.board,
+      versionGroup: attachment.versionGroup,
+      isDeleted: false
+    }).sort({ versionNumber: -1 });
+
+    if (latest) {
+      latest.isLatestVersion = true;
+      await latest.save();
+    }
+  }
+
   // Log activity
   await Activity.create({
-    type: 'attachment_deleted',
+    type: isProjectAttachment ? 'project_file_deleted' : 'attachment_deleted',
     description: `Deleted attachment: ${attachment.originalName}`,
     user: req.user.id,
     board: attachment.board,
-    card: attachment.card
+    card: attachment.card,
+    contextType: isProjectAttachment ? 'board' : 'card'
   });
 
   // Emit real-time update
@@ -607,8 +737,13 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
   }
 
   // Invalidate cache
-  invalidateCache(`/api/cards/${attachment.card}`);
-  invalidateCache(`/api/attachments/card/${attachment.card}`);
+  if (attachment.card) {
+    invalidateCache(`/api/cards/${attachment.card}`);
+    invalidateCache(`/api/attachments/card/${attachment.card}`);
+  }
+  if (isProjectAttachment && attachment.board) {
+    invalidateCache(`/api/attachments/board/${attachment.board}`);
+  }
   // Also invalidate trash cache since attachment is now in trash
   if (attachment.board) {
     invalidateCache(`/api/projects/${attachment.board}/trash`);

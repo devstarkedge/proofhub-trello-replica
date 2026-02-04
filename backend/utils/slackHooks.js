@@ -154,6 +154,31 @@ export const slackHooks = {
   },
 
   /**
+   * Trigger when a project (board) is updated
+   */
+  async onProjectUpdated(board, changes, triggeredBy) {
+    if (!slackNotificationService) return;
+
+    try {
+      const members = board.members || [];
+      for (const member of members) {
+        const userId = member._id || member;
+        if (userId.toString() === triggeredBy._id?.toString()) continue;
+
+        await slackNotificationService.sendNotification({
+          userId,
+          type: 'project_updates',
+          board,
+          changes,
+          triggeredBy
+        });
+      }
+    } catch (error) {
+      console.error('Slack onProjectUpdated hook error:', error);
+    }
+  },
+
+  /**
    * Trigger when deadline is approaching
    */
   async onDeadlineReminder(task, board, hoursRemaining) {

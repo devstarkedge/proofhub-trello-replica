@@ -14,6 +14,7 @@ import { toast } from "react-toastify"
 import Database from "../services/database"
 import ReactCountryFlag from "react-country-flag"
 import CoverImageUploader from "./CoverImageUploader"
+import DragDropFileUploader from "./DragDropFileUploader"
 import AuthContext from '../context/AuthContext'
 import DatePickerModal from "./DatePickerModal"
 
@@ -121,12 +122,16 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
   const [newCategoryDescription, setNewCategoryDescription] = useState("")
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false)
   const [visOpen, setVisOpen] = useState(false)
-  const [projectUrlValid, setProjectUrlValid] = useState(false)
+  const [projectUrlValid, setProjectUrlValid] = useState(true)
   const [countrySearchQuery, setCountrySearchQuery] = useState("")
   const [coverImageFile, setCoverImageFile] = useState(null)
   const [coverImagePreview, setCoverImagePreview] = useState(null)
   const [showStartDatePicker, setShowStartDatePicker] = useState(false)
   const [showDueDatePicker, setShowDueDatePicker] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState([])
+  const [uploadErrors, setUploadErrors] = useState([])
+  const [draftStatus, setDraftStatus] = useState("")
+  const draftTimerRef = useRef(null)
   const countryDropdownRef = useRef(null)
   const visTriggerRef = useRef(null)
   const visMenuRef = useRef(null)
@@ -205,8 +210,58 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
       setErrors({})
       setTouched({})
       setShowAddCategory(false)
+      setPendingFiles([])
+      setUploadErrors([])
+      setDraftStatus("")
     }
   }, [isOpen, initialFormData])
+
+  const draftKey = useMemo(() => (
+    departmentId ? `projectDraft:${departmentId}` : 'projectDraft:global'
+  ), [departmentId])
+
+  // Restore draft on open
+  useEffect(() => {
+    if (!isOpen) return
+
+    try {
+      const draftRaw = localStorage.getItem(draftKey)
+      if (draftRaw) {
+        const draft = JSON.parse(draftRaw)
+        if (draft?.formData) {
+          setFormData(prev => ({ ...prev, ...draft.formData }))
+          setDraftStatus("Draft restored ✅")
+        }
+      }
+    } catch (error) {
+      console.error('Failed to restore project draft:', error)
+    }
+  }, [isOpen, draftKey])
+
+  // Auto-save draft
+  useEffect(() => {
+    if (!isOpen) return
+
+    if (draftTimerRef.current) {
+      clearTimeout(draftTimerRef.current)
+    }
+
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({
+          formData,
+          savedAt: new Date().toISOString()
+        }))
+        setDraftStatus("Draft Saved ✅")
+      } catch (error) {
+        console.error('Failed to save project draft:', error)
+      }
+    }, 800)
+
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    }
+  }, [formData, isOpen, draftKey])
 
   // fetchEmployees removed - now using departmentManagers prop directly
 
@@ -377,6 +432,31 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
     }
   }, [errors.assignees])
 
+  const handleFilesAdded = useCallback((files) => {
+    const newItems = files.map((file) => ({
+      id: `${file.name}-${Date.now()}-${Math.random()}`,
+      file,
+      progress: 0,
+      status: 'queued'
+    }))
+    setPendingFiles((prev) => [...prev, ...newItems])
+    setUploadErrors([])
+  }, [])
+
+  const handleRemovePendingFile = useCallback((item) => {
+    setPendingFiles((prev) => prev.filter((f) => f.id !== item.id))
+  }, [])
+
+  const updatePendingFile = useCallback((id, updates) => {
+    setPendingFiles((prev) => prev.map((fileItem) => (
+      fileItem.id === id ? { ...fileItem, ...updates } : fileItem
+    )))
+  }, [])
+
+  const handleRemoveFile = useCallback((item) => {
+    setPendingFiles((prev) => prev.filter((f) => f.id !== item.id))
+  }, [])
+
   const validateForm = useCallback(() => {
     const newErrors = {}
     if (!formData.title.trim()) newErrors.title = "Title is required"
@@ -489,11 +569,38 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
           }
         }
         
+        // Upload project attachments
+        if (pendingFiles.length > 0) {
+          const failed = []
+          for (const item of pendingFiles) {
+            updatePendingFile(item.id, { status: 'uploading', progress: 0 })
+            try {
+              await Database.uploadProjectAttachment(
+                createdProject._id,
+                item.file,
+                (progress) => updatePendingFile(item.id, { progress })
+              )
+              updatePendingFile(item.id, { status: 'done', progress: 100 })
+            } catch (uploadError) {
+              const message = uploadError?.message || 'Upload failed'
+              updatePendingFile(item.id, { status: 'error', error: message })
+              failed.push(`${item.file.name}: ${message}`)
+            }
+          }
+
+          if (failed.length > 0) {
+            setUploadErrors(failed)
+            toast.warning('Some files failed to upload. You can retry in Edit Project.')
+          }
+        }
+
         // Replace optimistic project with real data (including cover image)
         onProjectAdded(createdProject, optimisticProject._id)
         setFormData(initialFormData)
         setCoverImageFile(null)
         setCoverImagePreview(null)
+        setPendingFiles([])
+        localStorage.removeItem(draftKey)
         toast.success("Project created successfully!")
       } else {
         // Revert optimistic update on failure
@@ -508,7 +615,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
     } finally {
       setIsSaving(false)
     }
-  }, [formData, validateForm, fetchDepartmentTeams, departmentId, onProjectAdded, onClose, initialFormData, projectUrlValid, coverImageFile])
+  }, [formData, validateForm, fetchDepartmentTeams, departmentId, onProjectAdded, onClose, initialFormData, projectUrlValid, coverImageFile, pendingFiles, updatePendingFile, draftKey])
 
   // Memoize available managers (those not already assigned)
   const availableEmployees = useMemo(() => 
@@ -528,6 +635,18 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
       ? formData.assignees[formData.assignees.length - 1]
       : null
   ), [formData.assignees])
+
+  const isFormReady = useMemo(() => {
+    if (!formData.title.trim()) return false
+    if (formData.title.trim().length < 3) return false
+    if (!formData.startDate) return false
+    if (formData.dueDate && new Date(formData.startDate) >= new Date(formData.dueDate)) return false
+    if (formData.assignees.length === 0) return false
+    if (formData.clientEmail && !EMAIL_REGEX.test(formData.clientEmail)) return false
+    if (formData.projectUrl && !PROJECT_URL_REGEX.test(formData.projectUrl)) return false
+    if (formData.clientMobileNumber && formData.clientMobileNumber.length !== selectedCountry.digits) return false
+    return true
+  }, [formData, selectedCountry.digits])
 
   // Compute trigger rect for visibility menu positioning (portal)
   const visTriggerRect = visTriggerRef.current ? visTriggerRef.current.getBoundingClientRect() : null
@@ -555,11 +674,12 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
           initial="hidden"
           animate="visible"
           exit="exit"
-          className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden"
+          className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-6xl w-[92vw] h-[90vh] overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6 text-white">
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6 text-white">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <motion.div 
@@ -576,6 +696,10 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
                 </div>
               </div>
               <div className="flex items-center gap-4">
+                <div className="hidden sm:flex items-center gap-2 text-xs bg-white/20 px-3 py-1.5 rounded-full">
+                  <span className="font-semibold">Status:</span>
+                  <span className="capitalize">Planning</span>
+                </div>
                 <div className="relative">
                   <div
                     ref={visTriggerRef}
@@ -621,9 +745,10 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
             </div>
           </div>
 
-          {/* Form Content */}
-          <div className="overflow-y-auto max-h-[calc(90vh-200px)] px-8 py-6">
-            <form onSubmit={handleSubmit} className="space-y-6 pb-8">
+          {/* Content */}
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 overflow-hidden">
+            <div className="lg:col-span-2 overflow-y-auto px-8 py-6">
+              <form onSubmit={handleSubmit} className="space-y-6 pb-12">
               {/* Title */}
               <motion.div custom={0} variants={fieldVariants} initial="hidden" animate="visible">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
@@ -1430,13 +1555,53 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
                   </div>
                 </div>
               </motion.div>
-
-
             </form>
           </div>
 
-          {/* Footer */}
-          <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex justify-between items-center">
+          {/* Right Panel */}
+          <aside className="lg:col-span-1 border-l border-gray-200 bg-gray-50/60 overflow-y-auto px-6 py-6 space-y-6">
+            <section className="bg-white rounded-2xl border border-gray-200 p-4">
+              <DragDropFileUploader
+                title="Project Attachments"
+                description="Drag & drop files here, or click to browse"
+                helperText="PDF, CSV, DOC/DOCX, PPT/PPTX, Images, Video, Audio"
+                files={pendingFiles}
+                onFilesAdded={handleFilesAdded}
+                onRemove={handleRemovePendingFile}
+                errors={uploadErrors}
+              />
+            </section>
+
+            <section className="bg-white rounded-2xl border border-gray-200 p-4">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3">Project Team</h4>
+              {selectedEmployees.length === 0 ? (
+                <p className="text-xs text-gray-500">Assign a project manager to see team members here.</p>
+              ) : (
+                <div className="space-y-3">
+                  {selectedEmployees.map((manager) => (
+                    <div key={manager._id} className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 text-white flex items-center justify-center text-xs font-semibold">
+                        {(manager?.name?.name || manager?.name || 'U').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{manager?.name?.name || manager?.name || 'Unknown'}</p>
+                        <p className="text-xs text-gray-500">Project Manager</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="bg-white rounded-2xl border border-gray-200 p-4">
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">Draft Status</h4>
+              <p className="text-xs text-gray-600">{draftStatus || 'No draft saved yet'}</p>
+            </section>
+          </aside>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex justify-between items-center sticky bottom-0">
             <motion.button
               whileHover={{ scale: 1.02, x: -4 }}
               whileTap={{ scale: 0.98 }}
@@ -1451,7 +1616,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
               whileTap={{ scale: 0.98 }}
               type="submit"
               onClick={handleSubmit}
-              disabled={isSaving || !projectUrlValid}
+              disabled={isSaving || !isFormReady || !projectUrlValid}
               className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all shadow-lg shadow-blue-500/30"
             >
               {isSaving ? (
@@ -1467,6 +1632,7 @@ const AddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, d
               )}
             </motion.button>
           </div>
+        </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>

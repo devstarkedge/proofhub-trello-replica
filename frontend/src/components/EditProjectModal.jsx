@@ -14,6 +14,7 @@ import ReminderModal from './ReminderModal';
 import AuthContext from '../context/AuthContext';
 import CoverImageUploader from './CoverImageUploader';
 import DatePickerModal from './DatePickerModal';
+import DragDropFileUploader from './DragDropFileUploader';
 
 const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated, departmentManagers = [] }) => {
   // Get user from AuthContext instead of localStorage
@@ -45,6 +46,12 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated, departme
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [projectFiles, setProjectFiles] = useState([]);
+  const [uploadErrors, setUploadErrors] = useState([]);
+  const [activityLog, setActivityLog] = useState([]);
+  const [draftStatus, setDraftStatus] = useState('');
+  const draftTimerRef = React.useRef(null);
   
   // Reminder modal state
   const [showReminderModal, setShowReminderModal] = useState(false);
@@ -61,6 +68,52 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated, departme
   // Get user role from AuthContext
   const userRole = user?.role || 'employee';
   const canManageReminders = userRole === 'admin' || userRole === 'manager';
+
+  const draftKey = useMemo(() => {
+    const id = project?.id || project?._id;
+    return id ? `projectDraft:${id}` : 'projectDraft:unknown';
+  }, [project]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    try {
+      const draftRaw = localStorage.getItem(draftKey);
+      if (draftRaw) {
+        const draft = JSON.parse(draftRaw);
+        if (draft?.formData) {
+          setFormData(prev => ({ ...prev, ...draft.formData }));
+          setDraftStatus('Draft restored ✅');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to restore project draft:', error);
+    }
+  }, [isOpen, draftKey]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (draftTimerRef.current) {
+      clearTimeout(draftTimerRef.current);
+    }
+
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({
+          formData,
+          savedAt: new Date().toISOString()
+        }));
+        setDraftStatus('Draft Saved ✅');
+      } catch (error) {
+        console.error('Failed to save project draft:', error);
+      }
+    }, 800);
+
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    };
+  }, [formData, isOpen, draftKey]);
 
   useEffect(() => {
     if (isOpen && project) {
@@ -94,6 +147,17 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated, departme
           setCoverImageHistory(fullProject.coverImageHistory || []);
           // fetchEmployees removed - now using departmentManagers prop directly
           await fetchCategories(fullProject);
+
+          try {
+            const [attachmentsRes, activityRes] = await Promise.all([
+              Database.getProjectAttachments(fullProject._id || fullProject.id),
+              Database.getProjectActivity(fullProject._id || fullProject.id)
+            ]);
+            setProjectFiles(attachmentsRes.data || []);
+            setActivityLog(activityRes.data || []);
+          } catch (fetchError) {
+            console.error('Error fetching project files or activity:', fetchError);
+          }
         } catch (error) {
           console.error('Error fetching full project:', error);
         }
@@ -155,6 +219,38 @@ const EditProjectModal = ({ isOpen, onClose, project, onProjectUpdated, departme
         : [...prev.assignees, userId]
     }));
   };
+
+  const handleFilesAdded = useCallback((files) => {
+    const newItems = files.map((file) => ({
+      id: `${file.name}-${Date.now()}-${Math.random()}`,
+      file,
+      progress: 0,
+      status: 'queued'
+    }));
+    setPendingFiles(prev => [...prev, ...newItems]);
+    setUploadErrors([]);
+  }, []);
+
+  const handleRemovePendingFile = useCallback((item) => {
+    setPendingFiles(prev => prev.filter(f => f.id !== item.id));
+  }, []);
+
+  const updatePendingFile = useCallback((id, updates) => {
+    setPendingFiles(prev => prev.map(fileItem => (
+      fileItem.id === id ? { ...fileItem, ...updates } : fileItem
+    )));
+  }, []);
+
+  const handleDeleteExistingFile = useCallback(async (fileItem) => {
+    try {
+      await Database.deleteAttachment(fileItem._id);
+      setProjectFiles(prev => prev.filter(f => f._id !== fileItem._id));
+      toast.success('File removed from project');
+    } catch (error) {
+      console.error('Error deleting attachment:', error);
+      toast.error(error.message || 'Failed to delete file');
+    }
+  }, []);
 
   const validateForm = () => {
     const newErrors = {};

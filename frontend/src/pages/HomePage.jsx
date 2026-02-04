@@ -14,10 +14,8 @@ import { useDebounce } from '../hooks/useDebounce';
 import useProjectStore from '../store/projectStore';
 import Avatar from '../components/Avatar';
 import { lazy, Suspense } from 'react';
-
-// Lazy load modals for better initial load
-const AddProjectModal = lazy(() => import('../components/AddProjectModal'));
-const EditProjectModal = lazy(() => import('../components/EditProjectModal'));
+import AddProjectModal from '../components/EnterpriseAddProjectModal';
+import EditProjectModal from '../components/EnterpriseEditProjectModal';
 const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
 import DeletePopup from '../components/ui/DeletePopup';
 import WelcomeHeader from '../components/WelcomeHeader';

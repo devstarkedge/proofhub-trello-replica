@@ -9,8 +9,8 @@ const boardSchema = new mongoose.Schema({
   },
   description: {
     type: String,
-    trim: true,
-    maxlength: [500, 'Description cannot exceed 500 characters']
+    trim: true
+    // No maxlength - unlimited description support for enterprise
   },
   team: {
     type: mongoose.Schema.Types.ObjectId,
@@ -152,12 +152,44 @@ const boardSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
+  // Draft data for auto-save feature
+  draftData: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  draftSavedAt: {
+    type: Date
+  },
+  draftSavedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  // Last activity tracking for timeline
+  lastActivityAt: {
+    type: Date,
+    default: Date.now
+  },
+  lastActivityBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  lastActivityType: {
+    type: String
+  },
   createdAt: {
     type: Date,
     default: Date.now
   }
 }, {
   timestamps: true
+});
+
+// Pre-save middleware to update lastActivityAt
+boardSchema.pre('save', function(next) {
+  if (this.isModified() && !this.isNew) {
+    this.lastActivityAt = new Date();
+  }
+  next();
 });
 
 // Indexes
