@@ -157,19 +157,33 @@ const TeamManagement = () => {
   // Auto-select and persist department
   useEffect(() => {
     if (departments.length > 0 && !state.currentDepartment) {
-      const savedDepartmentId = localStorage.getItem('selectedDepartmentId');
-      const savedDepartment = savedDepartmentId ?
-        departments.find(dept => dept._id === savedDepartmentId) : null;
+      // Priority 1: Check for last managed department (page-specific preference)
+      const managedDepartmentId = localStorage.getItem('managedDepartmentId');
+      let targetDept = managedDepartmentId ?
+        departments.find(dept => dept._id === managedDepartmentId) : null;
 
-      const dept = savedDepartment || departments[0];
-      dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
-      setCurrentDepartment(dept);
+      // Priority 2: If no managed preference, check global selection (if it's a specific valid department)
+      if (!targetDept) {
+        const globalDepartmentId = localStorage.getItem('selectedDepartmentId');
+        // Only use global selection if it's NOT 'all' and exists in our list
+        if (globalDepartmentId && globalDepartmentId !== 'all') {
+          targetDept = departments.find(dept => dept._id === globalDepartmentId);
+        }
+      }
+
+      // Priority 3: Default to first available department
+      const dept = targetDept || departments[0];
+      
+      if (dept) {
+        dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
+        setCurrentDepartment(dept);
+      }
     }
   }, [departments, state.currentDepartment, setCurrentDepartment]);
 
   useEffect(() => {
     if (state.currentDepartment) {
-      localStorage.setItem('selectedDepartmentId', state.currentDepartment._id);
+      localStorage.setItem('managedDepartmentId', state.currentDepartment._id);
     }
   }, [state.currentDepartment]);
 
