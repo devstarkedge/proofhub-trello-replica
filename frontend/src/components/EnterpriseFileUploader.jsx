@@ -168,13 +168,14 @@ const FileItem = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ delay: index * 0.05 }}
+      onClick={onPreview ? () => onPreview(file, index) : undefined}
       className={`group flex items-center gap-4 p-4 border rounded-xl transition-all ${
         isUploading 
           ? 'border-blue-200 bg-blue-50/50' 
           : isExisting 
             ? 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-md'
             : 'border-green-200 bg-green-50/50'
-      }`}
+      } ${onPreview ? 'cursor-pointer' : ''}`}
     >
       {/* File Icon */}
       <div className={`p-3 rounded-xl ${config.color} flex-shrink-0`}>
@@ -236,7 +237,10 @@ const FileItem = ({
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 type="button"
-                onClick={() => onPreview(file)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPreview(file, index);
+                }}
                 className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                 title="Preview"
               >
@@ -248,7 +252,10 @@ const FileItem = ({
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 type="button"
-                onClick={() => window.open(file.url || file.secureUrl, '_blank')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(file.url || file.secureUrl, '_blank');
+                }}
                 className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                 title="Download"
               >
@@ -260,7 +267,10 @@ const FileItem = ({
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 type="button"
-                onClick={() => onRemove(file, index)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(file, index);
+                }}
                 className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                 title="Remove"
               >

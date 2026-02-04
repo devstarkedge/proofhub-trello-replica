@@ -16,6 +16,24 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [validationErrors, setValidationErrors] = useState({});
+  const [restrictedAction, setRestrictedAction] = useState({ show: false, x: 0, y: 0, message: '' });
+
+  const handleRestrictedClick = (e, message) => {
+    if (currentUser?.role !== 'admin') {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = rect.left + rect.width / 2; // Center horizontally
+      const y = rect.top; // Position above the element
+
+      setRestrictedAction({ show: true, x, y, message });
+
+      setTimeout(() => {
+        setRestrictedAction(prev => ({ ...prev, show: false }));
+      }, 3000);
+    }
+  };
 
   // Use reactive selectors for roles
   const roles = useRoleStore((state) => state.roles);
@@ -343,14 +361,38 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
             </div>
           </div>
 
+          
+          {/* Restricted Access Tooltip */}
+          {restrictedAction.show && (
+            <div 
+              className="absolute z-50 bg-gray-800 text-white text-xs py-2 px-3 rounded shadow-lg transition-opacity duration-300"
+              style={{ 
+                top: restrictedAction.y, 
+                left: restrictedAction.x,
+                transform: 'translate(-50%, -120%)',
+                pointerEvents: 'none'
+              }}
+            >
+              {restrictedAction.message}
+              <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 w-2 h-2 bg-gray-800 rotate-45"></div>
+            </div>
+          )}
+
           {/* Approval Settings Section */}
-          <div className="bg-blue-50 p-6 rounded-lg border border-blue-100">
+          <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 relative">
             <h3 className="text-xl font-semibold mb-5 flex items-center text-gray-800">
               <FaCheckCircle className="mr-2 text-blue-600" />
               Approval Settings
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
+              <div 
+                className="relative"
+                onClick={(e) => handleRestrictedClick(e, "Only Admin has access to verify the user.")}
+              >
+                {/* Overlay for non-admins to capture clicks */}
+                {currentUser?.role !== 'admin' && (
+                  <div className="absolute inset-0 z-10 cursor-not-allowed bg-transparent" />
+                )}
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Assign Role <span className="text-red-500">*</span>
                 </label>
@@ -360,8 +402,8 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                     setSelectedRole(e.target.value);
                     setValidationErrors({...validationErrors, role: ''});
                   }}
-                  className={`w-full px-4 py-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900 ${validationErrors.role ? 'border-red-500' : 'border-gray-300'}`}
-                  disabled={approveLoading || declineLoading}
+                  className={`w-full px-4 py-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900 ${validationErrors.role ? 'border-red-500' : 'border-gray-300'} ${currentUser?.role !== 'admin' ? 'cursor-not-allowed opacity-70' : ''}`}
+                  disabled={approveLoading || declineLoading || currentUser?.role !== 'admin'}
                 >
                   {roles.length === 0 ? (
                     <option value="employee" disabled className="bg-white text-gray-500">Loading roles...</option>
@@ -387,15 +429,22 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                   </p>
                 )}
               </div>
-              <div>
+              <div 
+                className="relative"
+                onClick={(e) => handleRestrictedClick(e, "Only Admin has access to verify the user.")}
+              >
+                {/* Overlay for non-admins to capture clicks */}
+                {currentUser?.role !== 'admin' && (
+                  <div className="absolute inset-0 z-10 cursor-not-allowed bg-transparent" />
+                )}
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Assign Department (Optional)
                 </label>
                 <select
                   value={selectedDepartment}
                   onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900"
-                  disabled={(approveLoading || declineLoading) || departments.length === 0}
+                  className={`w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900 ${currentUser?.role !== 'admin' ? 'cursor-not-allowed opacity-70' : ''}`}
+                  disabled={(approveLoading || declineLoading) || departments.length === 0 || currentUser?.role !== 'admin'}
                 >
                   <option value="" className="bg-white text-gray-900">No Department</option>
                   {departments.map((dept) => (
@@ -412,50 +461,86 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
           </div>
 
           {/* Action Buttons Section */}
-          <div className="bg-gray-50 p-6 rounded-lg border-t">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button
-                onClick={handleDecline}
-                disabled={declineLoading}
-                className={`w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 font-medium flex items-center justify-center space-x-2 ${declineLoading ? 'cursor-not-allowed' : 'hover:shadow-md'}`}
-              >
-                {declineLoading ? (
-                  <>
-                    <FaSpinner className="animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <FaTimesCircle />
-                    <span>Decline & Delete</span>
-                  </>
-                )}
-              </button>
-              <button
-                onClick={handleApprove}
-                disabled={approveLoading}
-                className={`w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 font-medium flex items-center justify-center space-x-2 ${approveLoading ? 'cursor-not-allowed' : 'hover:shadow-md'}`}
-              >
-                {approveLoading ? (
-                  <>
-                    <FaSpinner className="animate-spin" />
-                    <span>Processing...</span>
-                  </>
-                ) : (
-                  <>
-                    <FaCheckCircle />
-                    <span>Approve & Verify</span>
-                  </>
-                )}
-              </button>
-            </div>
+          <div className="bg-gray-50 p-6 rounded-lg border-t relative">
+            {user.isVerified ? (
+              <div className="text-center py-2">
+                <div className="bg-green-50 text-green-700 p-6 rounded-lg border border-green-200 shadow-sm">
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="p-3 bg-green-100 rounded-full mb-3">
+                      <FaCheckCircle className="text-3xl text-green-600" />
+                    </div>
+                    <h4 className="text-xl font-bold mb-2 text-green-800">User Already Verified</h4>
+                    <p className="text-green-700 max-w-md">
+                      This user has successfully been verified and already has access to the system. No further action is required.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div 
+                    className="w-full relative"
+                    onClick={(e) => handleRestrictedClick(e, "Only Admin can approve or decline user verification.")}
+                  >
+                    {/* Overlay for non-admins to capture clicks */}
+                    {currentUser?.role !== 'admin' && (
+                      <div className="absolute inset-0 z-10 cursor-not-allowed bg-transparent" />
+                    )}
+                  <button
+                    onClick={handleDecline}
+                    disabled={declineLoading || currentUser?.role !== 'admin'}
+                    className={`w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 font-medium flex items-center justify-center space-x-2 ${declineLoading || currentUser?.role !== 'admin' ? 'cursor-not-allowed' : 'hover:shadow-md'}`}
+                  >
+                    {declineLoading ? (
+                      <>
+                        <FaSpinner className="animate-spin" />
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FaTimesCircle />
+                        <span>Decline & Delete</span>
+                      </>
+                    )}
+                  </button>
+                  </div>
+                  <div 
+                    className="w-full relative"
+                    onClick={(e) => handleRestrictedClick(e, "Only Admin can approve or decline user verification.")}
+                  >
+                    {/* Overlay for non-admins to capture clicks */}
+                    {currentUser?.role !== 'admin' && (
+                      <div className="absolute inset-0 z-10 cursor-not-allowed bg-transparent" />
+                    )}
+                  <button
+                    onClick={handleApprove}
+                    disabled={approveLoading || currentUser?.role !== 'admin'}
+                    className={`w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 font-medium flex items-center justify-center space-x-2 ${approveLoading || currentUser?.role !== 'admin' ? 'cursor-not-allowed' : 'hover:shadow-md'}`}
+                  >
+                    {approveLoading ? (
+                      <>
+                        <FaSpinner className="animate-spin" />
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FaCheckCircle />
+                        <span>Approve & Verify</span>
+                      </>
+                    )}
+                  </button>
+                  </div>
+                </div>
 
-            <div className="mt-4 text-center">
-              <p className="text-xs text-gray-500">
-                <FaInfoCircle className="inline mr-1" />
-                Approving will verify the user and grant access. Declining will permanently delete the user account.
-              </p>
-            </div>
+                <div className="mt-4 text-center">
+                  <p className="text-xs text-gray-500">
+                    <FaInfoCircle className="inline mr-1" />
+                    Approving will verify the user and grant access. Declining will permanently delete the user account.
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

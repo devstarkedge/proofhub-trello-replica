@@ -108,7 +108,7 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId }) => {
 
   const tabs = useMemo(() => [
     { id: 'details', label: 'Details', icon: Info },
-    { id: 'files', label: 'Files', icon: FileText, badge: attachments?.length || 0 },
+    { id: 'files', label: 'Files', icon: FileText, badge: attachments?.length ? attachments.length : null },
     { id: 'team', label: 'Team', icon: Users, badge: project?.members?.length || 0 },
     { id: 'activity', label: 'Activity', icon: History, badge: activity?.length || 0 }
   ], [attachments?.length, project?.members?.length, activity?.length]);

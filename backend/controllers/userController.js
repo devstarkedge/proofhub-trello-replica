@@ -327,13 +327,13 @@ export const updateSettings = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Verify user (Admin and Manager only)
+// @desc    Verify user (Admin only)
 // @route   PUT /api/users/:id/verify
-// @access  Private/Admin/Manager
+// @access  Private/Admin
 export const verifyUser = asyncHandler(async (req, res, next) => {
-  // Strict Role Check
-  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
-    return next(new ErrorResponse('Not authorized to verify users', 403));
+  // Strict Role Check - Admin Only
+  if (req.user.role !== 'admin') {
+    return next(new ErrorResponse('Not authorized to verify users. Admin access required.', 403));
   }
 
   const { role, department } = req.body;
@@ -422,13 +422,13 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Decline user registration (Admin and Manager only)
+// @desc    Decline user registration (Admin only)
 // @route   DELETE /api/users/:id/decline
-// @access  Private/Admin/Manager
+// @access  Private/Admin
 export const declineUser = asyncHandler(async (req, res, next) => {
-  // Strict Role Check
-  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
-    return next(new ErrorResponse('Not authorized to decline users', 403));
+  // Strict Role Check - Admin Only
+  if (req.user.role !== 'admin') {
+    return next(new ErrorResponse('Not authorized to decline users. Admin access required.', 403));
   }
 
   const user = await User.findById(req.params.id);

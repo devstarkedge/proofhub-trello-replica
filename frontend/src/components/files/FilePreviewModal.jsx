@@ -354,6 +354,13 @@ const FilePreviewModal = ({
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < files.length - 1;
 
+  // Sync index when a new file is opened
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentIndex(initialIndex || 0);
+    }
+  }, [isOpen, initialIndex]);
+
   // Reset state when file changes
   useEffect(() => {
     setZoom(1);
