@@ -335,7 +335,8 @@ const EnterpriseFileUploader = ({
   maxSize = 25 * 1024 * 1024, // 25MB
   errors = [],
   showVersionHistory = false,
-  showPreview = true
+  showPreview = true,
+  showDropzone = true
 }) => {
   const [isDragActive, setIsDragActive] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
@@ -446,69 +447,71 @@ const EnterpriseFileUploader = ({
       </div>
 
       {/* Drop Zone */}
-      <div
-        {...getRootProps()}
-        className={`relative border-2 border-dashed rounded-2xl transition-all cursor-pointer ${
-          isDragActive
-            ? 'border-indigo-500 bg-indigo-50 scale-[1.02]'
-            : disabled
-              ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
-              : 'border-gray-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/30'
-        } ${isCompact ? 'p-4' : 'p-8'}`}
-      >
-        <input {...getInputProps()} />
-        
-        <div className="flex flex-col items-center text-center gap-3">
-          <motion.div
-            animate={{
-              scale: isDragActive ? 1.1 : 1,
-              rotate: isDragActive ? 5 : 0
-            }}
-            className={`p-4 rounded-2xl ${
-              isDragActive
-                ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
-                : 'bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600'
-            }`}
-          >
-            <Upload className={isCompact ? 'h-5 w-5' : 'h-7 w-7'} />
-          </motion.div>
+      {showDropzone && (
+        <div
+          {...getRootProps()}
+          className={`relative border-2 border-dashed rounded-2xl transition-all cursor-pointer ${
+            isDragActive
+              ? 'border-indigo-500 bg-indigo-50 scale-[1.02]'
+              : disabled
+                ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                : 'border-gray-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/30'
+          } ${isCompact ? 'p-4' : 'p-8'}`}
+        >
+          <input {...getInputProps()} />
           
-          <div>
-            <p className={`font-semibold ${isDragActive ? 'text-indigo-600' : 'text-gray-800'} ${isCompact ? 'text-sm' : 'text-base'}`}>
-              {isDragActive ? 'Drop files here!' : description}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              Maximum {formatBytes(maxSize)} per file
-            </p>
+          <div className="flex flex-col items-center text-center gap-3">
+            <motion.div
+              animate={{
+                scale: isDragActive ? 1.1 : 1,
+                rotate: isDragActive ? 5 : 0
+              }}
+              className={`p-4 rounded-2xl ${
+                isDragActive
+                  ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
+                  : 'bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600'
+              }`}
+            >
+              <Upload className={isCompact ? 'h-5 w-5' : 'h-7 w-7'} />
+            </motion.div>
+            
+            <div>
+              <p className={`font-semibold ${isDragActive ? 'text-indigo-600' : 'text-gray-800'} ${isCompact ? 'text-sm' : 'text-base'}`}>
+                {isDragActive ? 'Drop files here!' : description}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Maximum {formatBytes(maxSize)} per file
+              </p>
+            </div>
+
+            {!isCompact && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); open(); }}
+                className="mt-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 hover:border-indigo-400 transition-all"
+              >
+                Browse Files
+              </button>
+            )}
           </div>
 
-          {!isCompact && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); open(); }}
-              className="mt-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 hover:border-indigo-400 transition-all"
-            >
-              Browse Files
-            </button>
-          )}
+          {/* Drag overlay */}
+          <AnimatePresence>
+            {isDragActive && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-indigo-500/10 backdrop-blur-sm rounded-2xl flex items-center justify-center"
+              >
+                <div className="p-4 bg-white rounded-xl shadow-xl">
+                  <p className="text-indigo-600 font-semibold">Release to upload</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-
-        {/* Drag overlay */}
-        <AnimatePresence>
-          {isDragActive && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-indigo-500/10 backdrop-blur-sm rounded-2xl flex items-center justify-center"
-            >
-              <div className="p-4 bg-white rounded-xl shadow-xl">
-                <p className="text-indigo-600 font-semibold">Release to upload</p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      )}
 
       {/* Error Messages */}
       <AnimatePresence>

@@ -16,7 +16,7 @@ import Avatar from '../components/Avatar';
 import { lazy, Suspense } from 'react';
 import AddProjectModal from '../components/EnterpriseAddProjectModal';
 import EditProjectModal from '../components/EnterpriseEditProjectModal';
-const ViewProjectModal = lazy(() => import('../components/ViewProjectModal'));
+import ViewProjectModal from '../components/EnterpriseViewProjectModal';
 import DeletePopup from '../components/ui/DeletePopup';
 import WelcomeHeader from '../components/WelcomeHeader';
 
