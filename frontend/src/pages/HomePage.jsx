@@ -706,6 +706,7 @@ const HomePage = () => {
             isOpen={viewModalOpen}
             onClose={() => setViewModalOpen(false)}
             projectId={selectedProjectId}
+            onEditProject={handleEditProject}
           />
         </Suspense>
       )}

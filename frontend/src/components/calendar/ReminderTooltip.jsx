@@ -1,10 +1,11 @@
-import React, { memo, useState, useRef, useEffect } from 'react';
+import React, { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { 
   Calendar, Clock, User, FileText, 
   AlertCircle, CheckCircle2, AlertTriangle 
 } from 'lucide-react';
+import { useClientInfo } from '../../context/ClientInfoContext';
 
 /**
  * ReminderTooltip - Hover preview tooltip for reminder details
@@ -22,6 +23,18 @@ const ReminderTooltip = memo(({
   const tooltipRef = useRef(null);
   const showTimeoutRef = useRef(null);
   const hideTimeoutRef = useRef(null);
+  const { getClientForProject } = useClientInfo();
+
+  const getProjectId = useCallback((reminder) => (
+    reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId
+  ), []);
+
+  const liveReminders = useMemo(() => (
+    reminders.map(reminder => ({
+      ...reminder,
+      client: getClientForProject(getProjectId(reminder), reminder.client || {})
+    }))
+  ), [reminders, getClientForProject, getProjectId]);
 
   // Calculate tooltip position to avoid going off-screen
   const calculatePosition = () => {
@@ -29,7 +42,7 @@ const ReminderTooltip = memo(({
     
     const rect = triggerRef.current.getBoundingClientRect();
     const tooltipWidth = 320;
-    const tooltipHeight = Math.min(reminders.length * 80 + 60, 350);
+    const tooltipHeight = Math.min(liveReminders.length * 80 + 60, 350);
     const padding = 12;
     
     let x = rect.left + rect.width / 2 - tooltipWidth / 2;
@@ -147,7 +160,7 @@ const ReminderTooltip = memo(({
 
       {createPortal(
         <AnimatePresence>
-          {isVisible && reminders.length > 0 && (
+          {isVisible && liveReminders.length > 0 && (
             <motion.div
               ref={tooltipRef}
               variants={tooltipVariants}
@@ -182,21 +195,21 @@ const ReminderTooltip = memo(({
                       })}
                     </span>
                     <span className="ml-auto text-xs text-gray-500">
-                      {reminders.length} reminder{reminders.length > 1 ? 's' : ''}
+                      {liveReminders.length} reminder{liveReminders.length > 1 ? 's' : ''}
                     </span>
                   </div>
                 </div>
 
                 {/* Reminders list */}
                 <div className="max-h-64 overflow-y-auto">
-                  {reminders.slice(0, 5).map((reminder, index) => {
+                  {liveReminders.slice(0, 5).map((reminder, index) => {
                     const statusInfo = getStatusInfo(reminder);
                     const StatusIcon = statusInfo.icon;
 
                     return (
                       <div
                         key={reminder._id || index}
-                        className={`px-4 py-3 ${index !== reminders.slice(0, 5).length - 1 ? 'border-b border-gray-100' : ''}`}
+                        className={`px-4 py-3 ${index !== liveReminders.slice(0, 5).length - 1 ? 'border-b border-gray-100' : ''}`}
                       >
                         {/* Project name with status badge */}
                         <div className="flex items-center gap-2 mb-1.5">
@@ -237,10 +250,10 @@ const ReminderTooltip = memo(({
                 </div>
 
                 {/* Show more indicator */}
-                {reminders.length > 5 && (
+                {liveReminders.length > 5 && (
                   <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-center">
                     <span className="text-xs text-indigo-600 font-medium">
-                      +{reminders.length - 5} more reminder{reminders.length - 5 > 1 ? 's' : ''}
+                      +{liveReminders.length - 5} more reminder{liveReminders.length - 5 > 1 ? 's' : ''}
                     </span>
                   </div>
                 )}

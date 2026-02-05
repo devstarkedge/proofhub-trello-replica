@@ -5,6 +5,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { MeProvider } from "./context/MeContext";
 import { TeamProvider } from "./context/DepartmentContext";
 import { NotificationProvider } from "./context/NotificationContext";
+import { ClientInfoProvider } from "./context/ClientInfoContext";
 import NetworkStatusToast from "./components/NetworkStatusToast";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalFallback from "./components/GlobalFallback";
@@ -61,6 +62,7 @@ function App() {
       <MeProvider>
         <TeamProvider>
           <NotificationProvider>
+            <ClientInfoProvider>
               <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
@@ -190,6 +192,7 @@ function App() {
               </Route>
               <Route path="*" element={<GlobalFallback type="404" />} />
               </Routes>
+            </ClientInfoProvider>
             <ToastContainer
               position="top-right"
               autoClose={5000}

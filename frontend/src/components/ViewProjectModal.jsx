@@ -19,7 +19,8 @@ import {
   Phone,
   Info,
   Image as ImageIcon,
-  History
+  History,
+  Pencil
 } from 'lucide-react';
 import Database from '../services/database';
 import EnterpriseFileUploader from './EnterpriseFileUploader';
@@ -96,7 +97,7 @@ const TabNavigation = ({ tabs, activeTab, onTabChange }) => (
   </div>
 );
 
-const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId }) => {
+const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [project, setProject] = useState(null);
   const [attachments, setAttachments] = useState([]);
@@ -173,6 +174,13 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId }) => {
 
   if (!isOpen) return null;
 
+  const handleEditClick = () => {
+    if (!project || !onEditProject) return;
+    const departmentId = project?.department?._id || project?.departmentId;
+    onEditProject(project, departmentId);
+    onClose();
+  };
+
   return createPortal(
     <AnimatePresence>
       {isOpen && (
@@ -214,13 +222,24 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId }) => {
                   </div>
                 </div>
 
-                <button
-                  onClick={onClose}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
-                  aria-label="Close"
-                >
-                  <X size={24} />
-                </button>
+                <div className="flex items-center gap-2">
+                  {onEditProject && project && (
+                    <button
+                      onClick={handleEditClick}
+                      className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                      aria-label="Edit project"
+                    >
+                      <Pencil size={20} />
+                    </button>
+                  )}
+                  <button
+                    onClick={onClose}
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                    aria-label="Close"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
               </div>
 
               <div className="mt-4">

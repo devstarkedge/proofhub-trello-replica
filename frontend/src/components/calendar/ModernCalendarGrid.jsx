@@ -11,6 +11,7 @@ import GlobalTimeline from './GlobalTimeline';
 import CalendarSearch from './CalendarSearch';
 import ExportTools from './ExportTools';
 import ReminderModal from '../ReminderModal';
+import { useClientInfo } from '../../context/ClientInfoContext';
 
 /**
  * ModernCalendarGrid - Enterprise-level calendar component
@@ -39,6 +40,35 @@ const ModernCalendarGrid = memo(({
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [selectedReminder, setSelectedReminder] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
+  const { getClientForProject, getClientDetailsForProject } = useClientInfo();
+
+  const getProjectId = useCallback((reminder) => (
+    reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId
+  ), []);
+
+  const resolveReminderClient = useCallback((reminder) => {
+    if (!reminder) return reminder;
+    return {
+      ...reminder,
+      client: getClientForProject(getProjectId(reminder), reminder.client || {})
+    };
+  }, [getClientForProject, getProjectId]);
+
+  const remindersWithLiveClient = useMemo(() => {
+    const next = {};
+    Object.keys(reminders).forEach(dateKey => {
+      next[dateKey] = (reminders[dateKey] || []).map(resolveReminderClient);
+    });
+    return next;
+  }, [reminders, resolveReminderClient]);
+
+  const allRemindersWithLiveClient = useMemo(() => (
+    allReminders.map(resolveReminderClient)
+  ), [allReminders, resolveReminderClient]);
+
+  const selectedReminderWithLiveClient = useMemo(() => (
+    selectedReminder ? resolveReminderClient(selectedReminder) : null
+  ), [selectedReminder, resolveReminderClient]);
 
   // Calendar data calculation
   const calendarData = useMemo(() => {
@@ -192,7 +222,7 @@ const ModernCalendarGrid = memo(({
   // Date click handler
   const handleDateClick = (dateInfo) => {
     const dateKey = dateInfo.date.toISOString().split('T')[0];
-    const dateReminders = reminders[dateKey] || [];
+    const dateReminders = remindersWithLiveClient[dateKey] || [];
     
     setSelectedDate(dateKey);
     setPanelReminders(dateReminders);
@@ -204,7 +234,7 @@ const ModernCalendarGrid = memo(({
 
   // Timeline date click handler
   const handleTimelineDateClick = (dateString) => {
-    const dateReminders = reminders[dateString] || [];
+    const dateReminders = remindersWithLiveClient[dateString] || [];
     const dateObj = new Date(dateString);
     
     // Navigate to the month if different
@@ -217,6 +247,12 @@ const ModernCalendarGrid = memo(({
     setPanelReminders(dateReminders);
     setIsPanelOpen(true);
   };
+
+  useEffect(() => {
+    if (selectedDate) {
+      setPanelReminders(remindersWithLiveClient[selectedDate] || []);
+    }
+  }, [selectedDate, remindersWithLiveClient]);
 
   // Edit reminder handler
   const handleEditReminder = (reminder) => {
@@ -257,8 +293,8 @@ const ModernCalendarGrid = memo(({
     if (selectedDate && panelReminders.length > 0) {
       return panelReminders;
     }
-    return allReminders;
-  }, [selectedDate, panelReminders, allReminders]);
+    return allRemindersWithLiveClient;
+  }, [selectedDate, panelReminders, allRemindersWithLiveClient]);
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -270,7 +306,7 @@ const ModernCalendarGrid = memo(({
 
       {/* Global Timeline */}
       <GlobalTimeline
-        reminders={reminders}
+        reminders={remindersWithLiveClient}
         selectedDate={selectedDate}
         onDateClick={handleTimelineDateClick}
       />
@@ -287,7 +323,7 @@ const ModernCalendarGrid = memo(({
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">{formatMonthYear()}</h2>
                 <p className="text-sm text-gray-500">
-                  {Object.values(reminders).flat().length} reminders this period
+                  {Object.values(remindersWithLiveClient).flat().length} reminders this period
                 </p>
               </div>
             </div>
@@ -375,7 +411,7 @@ const ModernCalendarGrid = memo(({
               <div className="grid grid-cols-7 gap-2">
                 {calendarData.map((dateInfo, index) => {
                   const dateKey = dateInfo.date.toISOString().split('T')[0];
-                  const dateReminders = reminders[dateKey] || [];
+                  const dateReminders = remindersWithLiveClient[dateKey] || [];
                   
                   return (
                     <CalendarCell
@@ -445,12 +481,11 @@ const ModernCalendarGrid = memo(({
           }}
           projectId={selectedProject._id}
           projectName={selectedProject.name}
-          clientInfo={{
-            clientName: selectedReminder?.client?.name || '',
-            clientEmail: selectedReminder?.client?.email || '',
-            clientWhatsappNumber: selectedReminder?.client?.phone || ''
-          }}
-          existingReminder={selectedReminder}
+          clientInfo={getClientDetailsForProject(
+            selectedProject._id,
+            selectedReminderWithLiveClient?.client || {}
+          )}
+          existingReminder={selectedReminderWithLiveClient}
           onReminderCreated={() => {
             fetchReminders(true);
             setShowReminderModal(false);

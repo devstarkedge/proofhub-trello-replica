@@ -39,6 +39,9 @@ const ReminderModal = memo(({
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  
+  // Local client data state - allows real-time updates while modal is open
+  const [liveClientInfo, setLiveClientInfo] = useState(null);
 
   // Initialize form with existing reminder data
   useEffect(() => {
@@ -86,6 +89,41 @@ const ReminderModal = memo(({
       fetchHistory();
     }
   }, [isOpen, fetchHistory]);
+
+  // Fetch fresh client info from project and listen for real-time updates
+  useEffect(() => {
+    if (!isOpen || !projectId) {
+      setLiveClientInfo(null);
+      return;
+    }
+
+    // Fetch fresh client info from project
+    const fetchFreshClientInfo = async () => {
+      try {
+        const response = await Database.getProject(projectId);
+        if (response.success && response.data?.clientDetails) {
+          setLiveClientInfo(response.data.clientDetails);
+        }
+      } catch (error) {
+        console.error('Error fetching fresh client info:', error);
+        // Fall back to clientInfo prop if fetch fails
+      }
+    };
+
+    fetchFreshClientInfo();
+
+    // Listen for project updates while modal is open
+    const handleBoardUpdate = (event) => {
+      const { boardId, updates } = event.detail || {};
+      if (boardId === projectId && updates?.clientDetails) {
+        console.log('Client details updated while modal open, refreshing...');
+        setLiveClientInfo(updates.clientDetails);
+      }
+    };
+
+    window.addEventListener('socket-board-updated', handleBoardUpdate);
+    return () => window.removeEventListener('socket-board-updated', handleBoardUpdate);
+  }, [isOpen, projectId]);
 
   // Handle escape key and focus trap
   useEffect(() => {
@@ -219,6 +257,9 @@ const ReminderModal = memo(({
 
   if (!isOpen) return null;
 
+  // Use live client info if available, otherwise fall back to prop
+  const currentClientInfo = liveClientInfo || clientInfo || {};
+
   const modalVariants = {
     hidden: { opacity: 0, scale: 0.95, y: 20 },
     visible: { 
@@ -277,12 +318,12 @@ const ReminderModal = memo(({
               </div>
               
               {/* Client Avatar Preview */}
-              {clientInfo?.clientName && (
+              {currentClientInfo?.clientName && (
                 <div className="flex items-center gap-2 bg-white/10 rounded-full px-3 py-1.5">
                   <div className="h-7 w-7 rounded-full bg-white/30 flex items-center justify-center text-xs font-bold">
-                    {clientInfo.clientName.charAt(0).toUpperCase()}
+                    {currentClientInfo.clientName.charAt(0).toUpperCase()}
                   </div>
-                  <span className="text-sm font-medium">{clientInfo.clientName}</span>
+                  <span className="text-sm font-medium">{currentClientInfo.clientName}</span>
                 </div>
               )}
 
@@ -478,33 +519,33 @@ const ReminderModal = memo(({
                     Client Information
                   </h3>
                   
-                  {clientInfo?.clientName || clientInfo?.clientEmail || clientInfo?.clientWhatsappNumber ? (
+                  {currentClientInfo?.clientName || currentClientInfo?.clientEmail || currentClientInfo?.clientWhatsappNumber ? (
                     <div className="space-y-3">
-                      {clientInfo.clientName && (
+                      {currentClientInfo.clientName && (
                         <div className="flex items-center justify-between p-3 bg-white rounded-xl">
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold">
-                              {clientInfo.clientName.charAt(0).toUpperCase()}
+                              {currentClientInfo.clientName.charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <p className="font-semibold text-gray-900">{clientInfo.clientName}</p>
+                              <p className="font-semibold text-gray-900">{currentClientInfo.clientName}</p>
                               <p className="text-xs text-gray-500">Client</p>
                             </div>
                           </div>
                         </div>
                       )}
 
-                      {clientInfo.clientEmail && (
+                      {currentClientInfo.clientEmail && (
                         <div className="flex items-center justify-between p-3 bg-white rounded-xl group">
                           <div className="flex items-center gap-3">
                             <Mail className="h-5 w-5 text-gray-400" />
-                            <span className="text-sm text-gray-700">{clientInfo.clientEmail}</span>
+                            <span className="text-sm text-gray-700">{currentClientInfo.clientEmail}</span>
                           </div>
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <motion.button
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
-                              onClick={() => copyToClipboard(clientInfo.clientEmail, 'Email')}
+                              onClick={() => copyToClipboard(currentClientInfo.clientEmail, 'Email')}
                               className="p-1.5 hover:bg-gray-100 rounded-lg"
                               aria-label="Copy email"
                             >
@@ -513,7 +554,7 @@ const ReminderModal = memo(({
                             <motion.a
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
-                              href={`mailto:${clientInfo.clientEmail}`}
+                              href={`mailto:${currentClientInfo.clientEmail}`}
                               className="p-1.5 hover:bg-gray-100 rounded-lg"
                               aria-label="Send email"
                             >
@@ -523,17 +564,17 @@ const ReminderModal = memo(({
                         </div>
                       )}
 
-                      {clientInfo.clientWhatsappNumber && (
+                      {currentClientInfo.clientWhatsappNumber && (
                         <div className="flex items-center justify-between p-3 bg-white rounded-xl group">
                           <div className="flex items-center gap-3">
                             <Phone className="h-5 w-5 text-gray-400" />
-                            <span className="text-sm text-gray-700">{clientInfo.clientWhatsappNumber}</span>
+                            <span className="text-sm text-gray-700">{currentClientInfo.clientWhatsappNumber}</span>
                           </div>
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <motion.button
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
-                              onClick={() => copyToClipboard(clientInfo.clientWhatsappNumber, 'Phone')}
+                              onClick={() => copyToClipboard(currentClientInfo.clientWhatsappNumber, 'Phone')}
                               className="p-1.5 hover:bg-gray-100 rounded-lg"
                               aria-label="Copy phone"
                             >
@@ -542,7 +583,7 @@ const ReminderModal = memo(({
                             <motion.a
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
-                              href={`https://wa.me/${clientInfo.clientWhatsappNumber.replace(/[^0-9]/g, '')}`}
+                              href={`https://wa.me/${currentClientInfo.clientWhatsappNumber.replace(/[^0-9]/g, '')}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="p-1.5 hover:bg-gray-100 rounded-lg"

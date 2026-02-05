@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useCallback, memo } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell, Calendar, Clock, CheckCircle2, AlertCircle, AlertTriangle,
@@ -11,8 +11,10 @@ import { ModernCalendarGrid } from '../components/calendar';
 import { ClientRemindersSkeleton } from '../components/LoadingSkeleton';
 import ReminderModal from '../components/ReminderModal';
 import ViewProjectModal from '../components/ViewProjectModal';
+import EditProjectModal from '../components/EditProjectModal';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
+import { useClientInfo } from '../context/ClientInfoContext';
 import Database from '../services/database';
 import { toast } from 'react-toastify';
 
@@ -23,6 +25,7 @@ import { toast } from 'react-toastify';
 const RemindersPage = memo(() => {
   const { user } = useContext(AuthContext);
   const { currentDepartment, departments } = useContext(DepartmentContext);
+  const { getClientForProject, getClientDetailsForProject, upsertClientInfoBatch } = useClientInfo();
   
   // View mode: 'list' or 'calendar'
   const [viewMode, setViewMode] = useState('list');
@@ -45,9 +48,20 @@ const RemindersPage = memo(() => {
   const [selectedProject, setSelectedProject] = useState(null);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   // Check if user can access this page
   const canAccess = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
+
+  const editProjectManagers = useMemo(() => {
+    if (!selectedProject?.departmentId) return [];
+    const dept = departments?.find(d => d._id === selectedProject.departmentId);
+    return dept?.managers || [];
+  }, [selectedProject?.departmentId, departments]);
+
+  const getProjectId = useCallback((reminder) => (
+    reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId
+  ), []);
 
   // Fetch reminders and stats
   const fetchData = useCallback(async (showRefreshIndicator = false) => {
@@ -68,8 +82,16 @@ const RemindersPage = memo(() => {
         Database.getAllReminders(filters),
         Database.getReminderDashboardStats(filters)
       ]);
-      
-      setReminders(remindersRes.data || []);
+
+      const remindersData = remindersRes.data || [];
+      setReminders(remindersData);
+      upsertClientInfoBatch(
+        remindersData.map(reminder => ({
+          projectId: getProjectId(reminder),
+          source: reminder.project?.clientDetails || reminder.client || {},
+          fallback: reminder.client || {}
+        }))
+      );
       // Stats are nested in statsRes.data.stats
       setStats(statsRes.data?.stats || null);
     } catch (error) {
@@ -79,14 +101,36 @@ const RemindersPage = memo(() => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [canAccess, statusFilter, selectedDepartment]);
+  }, [canAccess, statusFilter, selectedDepartment, getProjectId, upsertClientInfoBatch]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  const remindersWithLiveClient = useMemo(() => (
+    reminders.map(reminder => ({
+      ...reminder,
+      client: getClientForProject(getProjectId(reminder), reminder.client || {})
+    }))
+  ), [reminders, getClientForProject, getProjectId]);
+
+  // Listen for project updates to refresh reminders when client info changes
+  useEffect(() => {
+    const handleBoardUpdate = (event) => {
+      const { updates } = event.detail || {};
+      // If client details were updated, refresh reminders to get latest data
+      if (updates?.clientDetails) {
+        console.log('Client details updated, refreshing reminders...');
+        fetchData(true);
+      }
+    };
+    
+    window.addEventListener('socket-board-updated', handleBoardUpdate);
+    return () => window.removeEventListener('socket-board-updated', handleBoardUpdate);
+  }, [fetchData]);
+
   // Filter reminders by search query
-  const filteredReminders = reminders.filter(reminder => {
+  const filteredReminders = remindersWithLiveClient.filter(reminder => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -95,6 +139,14 @@ const RemindersPage = memo(() => {
       reminder.client?.email?.toLowerCase().includes(query)
     );
   });
+
+  const selectedReminderWithLiveClient = useMemo(() => {
+    if (!selectedReminder) return null;
+    return {
+      ...selectedReminder,
+      client: getClientForProject(getProjectId(selectedReminder), selectedReminder.client || {})
+    };
+  }, [selectedReminder, getClientForProject, getProjectId]);
 
   // Handle reminder actions
   const handleSendNow = async (reminder) => {
@@ -127,6 +179,17 @@ const RemindersPage = memo(() => {
       toast.error('Failed to cancel reminder');
     }
   };
+
+  const handleEditProject = useCallback((project, departmentId) => {
+    const resolvedDepartmentId = departmentId || project?.department?._id || project?.departmentId;
+    setSelectedProject({ ...project, departmentId: resolvedDepartmentId });
+    setEditModalOpen(true);
+    setShowProjectModal(false);
+  }, []);
+
+  const handleProjectUpdated = useCallback(() => {
+    fetchData(true);
+  }, [fetchData]);
 
   const handleViewReminder = (reminder) => {
     setSelectedReminder(reminder);
@@ -557,12 +620,11 @@ const RemindersPage = memo(() => {
           }}
           projectId={selectedProject._id}
           projectName={selectedProject.name}
-          clientInfo={{
-            clientName: selectedReminder?.client?.name || '',
-            clientEmail: selectedReminder?.client?.email || '',
-            clientWhatsappNumber: selectedReminder?.client?.phone || ''
-          }}
-          existingReminder={selectedReminder}
+          clientInfo={getClientDetailsForProject(
+            selectedProject._id,
+            selectedReminderWithLiveClient?.client || {}
+          )}
+          existingReminder={selectedReminderWithLiveClient}
           onReminderSaved={() => fetchData(true)}
         />
       )}
@@ -576,6 +638,17 @@ const RemindersPage = memo(() => {
             setSelectedProjectId(null);
           }}
           projectId={selectedProjectId}
+          onEditProject={handleEditProject}
+        />
+      )}
+
+      {editModalOpen && selectedProject && (
+        <EditProjectModal
+          isOpen={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          project={selectedProject}
+          onProjectUpdated={handleProjectUpdated}
+          departmentManagers={editProjectManagers}
         />
       )}
     </div>

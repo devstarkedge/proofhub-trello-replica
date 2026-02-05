@@ -402,9 +402,23 @@ export const getAllReminders = asyncHandler(async (req, res) => {
 
   const total = await Reminder.countDocuments(query);
 
+  // Enrich reminders with latest client info from project.clientDetails
+  // This ensures real-time client data is displayed even if reminder.client is stale
+  const enrichedReminders = reminders.map(reminder => {
+    const projectClient = reminder.project?.clientDetails || {};
+    return {
+      ...reminder,
+      client: {
+        name: projectClient.clientName || reminder.client?.name || '',
+        email: projectClient.clientEmail || reminder.client?.email || '',
+        phone: projectClient.clientWhatsappNumber || reminder.client?.phone || ''
+      }
+    };
+  });
+
   res.json({
     success: true,
-    data: reminders,
+    data: enrichedReminders,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -413,6 +427,7 @@ export const getAllReminders = asyncHandler(async (req, res) => {
     }
   });
 });
+
 
 // @desc    Send reminder now (manual trigger)
 // @route   POST /api/reminders/:id/send

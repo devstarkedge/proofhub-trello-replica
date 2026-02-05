@@ -36,10 +36,12 @@ import ReminderCalendar from '../components/ReminderCalendar';
 import { ModernCalendarGrid, CalendarTaskModal } from '../components/calendar';
 import ReminderModal from '../components/ReminderModal';
 import HtmlContent from '../components/ui/HtmlContent';
+import { useClientInfo } from '../context/ClientInfoContext';
 
 const CalendarView = () => {
   const { currentDepartment } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
+  const { getClientForProject, getClientDetailsForProject } = useClientInfo();
   const [events, setEvents] = useState([]);
   const [filteredEvents, setFilteredEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +70,19 @@ const CalendarView = () => {
   // Tooltip state for hover preview
   const [tooltipData, setTooltipData] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
+  const resolveReminderClient = useCallback((reminder) => {
+    if (!reminder) return null;
+    const projectId = reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId;
+    return {
+      ...reminder,
+      client: getClientForProject(projectId, reminder.client || {})
+    };
+  }, [getClientForProject]);
+
+  const selectedReminderWithLiveClient = useMemo(() => (
+    selectedReminder ? resolveReminderClient(selectedReminder) : null
+  ), [selectedReminder, resolveReminderClient]);
 
   const handleSelectReminder = (reminder) => {
     setSelectedReminder(reminder);
@@ -1180,7 +1195,10 @@ const CalendarView = () => {
           }}
           projectId={selectedProject._id}
           projectName={selectedProject.name}
-          clientInfo={selectedReminder?.client}
+          clientInfo={getClientDetailsForProject(
+            selectedProject._id,
+            selectedReminderWithLiveClient?.client || {}
+          )}
           onReminderSaved={() => {}}
         />
       )}

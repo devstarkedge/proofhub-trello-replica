@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../services/database';
+import { useClientInfo } from '../context/ClientInfoContext';
 
 /**
  * ReminderDashboard - Full dashboard for viewing and managing reminders
@@ -51,6 +52,11 @@ const ReminderDashboard = memo(({ departmentId, className = '' }) => {
   // Selected reminder for actions
   const [selectedReminder, setSelectedReminder] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
+  const { getClientForProject, upsertClientInfoBatch } = useClientInfo();
+
+  const getProjectId = useCallback((reminder) => (
+    reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId
+  ), []);
 
   // Fetch dashboard stats
   const fetchStats = useCallback(async () => {
@@ -92,7 +98,15 @@ const ReminderDashboard = memo(({ departmentId, className = '' }) => {
 
       const response = await Database.getAllReminders(queryParams);
       if (response.success) {
-        setReminders(response.data);
+        const remindersData = response.data || [];
+        setReminders(remindersData);
+        upsertClientInfoBatch(
+          remindersData.map(reminder => ({
+            projectId: getProjectId(reminder),
+            source: reminder.project?.clientDetails || reminder.client || {},
+            fallback: reminder.client || {}
+          }))
+        );
         setPagination(response.pagination);
       }
     } catch (error) {
@@ -101,7 +115,14 @@ const ReminderDashboard = memo(({ departmentId, className = '' }) => {
     } finally {
       setRemindersLoading(false);
     }
-  }, [departmentId, filters, searchTerm, pagination.limit]);
+  }, [departmentId, filters, searchTerm, pagination.limit, getProjectId, upsertClientInfoBatch]);
+
+  const remindersWithLiveClient = useMemo(() => (
+    reminders.map(reminder => ({
+      ...reminder,
+      client: getClientForProject(getProjectId(reminder), reminder.client || {})
+    }))
+  ), [reminders, getClientForProject, getProjectId]);
 
   // Initial fetch
   useEffect(() => {
@@ -457,7 +478,7 @@ const ReminderDashboard = memo(({ departmentId, className = '' }) => {
                     <td className="px-4 py-4"><div className="h-4 bg-gray-200 rounded w-20 ml-auto"></div></td>
                   </tr>
                 ))
-              ) : reminders.length === 0 ? (
+              ) : remindersWithLiveClient.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="px-4 py-12 text-center">
                     <Bell className="h-12 w-12 text-gray-300 mx-auto mb-3" />
@@ -466,7 +487,7 @@ const ReminderDashboard = memo(({ departmentId, className = '' }) => {
                   </td>
                 </tr>
               ) : (
-                reminders.map((reminder) => {
+                remindersWithLiveClient.map((reminder) => {
                   const statusBadge = getStatusBadge(reminder.status);
                   const isOverdue = reminder.status === 'pending' && new Date(reminder.scheduledDate) < new Date();
                   

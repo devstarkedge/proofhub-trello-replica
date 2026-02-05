@@ -15,7 +15,7 @@ import User from "../models/User.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
-import { emitNotification } from "../server.js";
+import { emitNotification, emitToAll } from "../server.js";
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { 
@@ -612,6 +612,13 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     await notificationService.notifyProjectUpdated(board, req.user.id, changes.slice(0, 3).join(', '));
     await slackHooks.onProjectUpdated(board, changes, req.user);
   }
+
+  // Emit socket event for real-time updates (e.g., reminders page needs to update client info)
+  emitToAll('board-updated', {
+    boardId: board._id.toString(),
+    updates: req.body,
+    projectName: board.name
+  });
 
   // Invalidate relevant caches
   invalidateCache(`/api/boards`);

@@ -6,6 +6,7 @@ import { ModernCalendarGrid } from '../components/calendar';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
 import ReminderModal from '../components/ReminderModal';
+import { useClientInfo } from '../context/ClientInfoContext';
 
 /**
  * ClientReminderCalendarPage - Dedicated full-page client reminder calendar
@@ -16,6 +17,7 @@ const ClientReminderCalendarPage = memo(() => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
   const { currentDepartment, departments } = useContext(DepartmentContext);
+  const { getClientForProject, getClientDetailsForProject } = useClientInfo();
   
   // Check if user can access this page
   const canAccess = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'manager';
@@ -24,6 +26,19 @@ const ClientReminderCalendarPage = memo(() => {
   const [showReminderModal, setShowReminderModal] = React.useState(false);
   const [selectedReminder, setSelectedReminder] = React.useState(null);
   const [selectedProject, setSelectedProject] = React.useState(null);
+
+  const resolveReminderClient = React.useCallback((reminder) => {
+    if (!reminder) return null;
+    const projectId = reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId;
+    return {
+      ...reminder,
+      client: getClientForProject(projectId, reminder.client || {})
+    };
+  }, [getClientForProject]);
+
+  const selectedReminderWithLiveClient = React.useMemo(() => (
+    resolveReminderClient(selectedReminder)
+  ), [selectedReminder, resolveReminderClient]);
 
   // Handle reminder selection from calendar
   const handleSelectReminder = (reminder) => {
@@ -109,12 +124,11 @@ const ClientReminderCalendarPage = memo(() => {
           }}
           projectId={selectedProject._id}
           projectName={selectedProject.name}
-          clientInfo={{
-            clientName: selectedReminder?.client?.name || '',
-            clientEmail: selectedReminder?.client?.email || '',
-            clientWhatsappNumber: selectedReminder?.client?.phone || ''
-          }}
-          existingReminder={selectedReminder}
+          clientInfo={getClientDetailsForProject(
+            selectedProject._id,
+            selectedReminderWithLiveClient?.client || {}
+          )}
+          existingReminder={selectedReminderWithLiveClient}
           onReminderCreated={() => {
             setShowReminderModal(false);
             // Calendar will auto-refresh

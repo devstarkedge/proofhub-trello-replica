@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   History, ChevronDown, ChevronRight, Calendar, User,
@@ -6,6 +6,7 @@ import {
   MessageSquare, ArrowRight, Loader
 } from 'lucide-react';
 import Database from '../services/database';
+import { useClientInfo } from '../context/ClientInfoContext';
 
 /**
  * ReminderHistory - Accordion/slide-over component for viewing reminder history
@@ -23,6 +24,18 @@ const ReminderHistory = memo(({
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const { getClientForProject } = useClientInfo();
+
+  const getProjectId = useCallback((reminder) => (
+    reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId
+  ), []);
+
+  const remindersWithLiveClient = useMemo(() => (
+    reminders.map(reminder => ({
+      ...reminder,
+      client: getClientForProject(getProjectId(reminder), reminder.client || {})
+    }))
+  ), [reminders, getClientForProject, getProjectId]);
 
   // Use controlled state if provided
   const expanded = controlledExpanded !== undefined ? controlledExpanded : isOpen;
@@ -162,7 +175,7 @@ const ReminderHistory = memo(({
           <div className="text-left">
             <h3 className="text-sm font-semibold text-gray-900">Reminder History</h3>
             <p className="text-xs text-gray-500">
-              {reminders.length > 0 ? `${reminders.length} reminder${reminders.length !== 1 ? 's' : ''}` : 'View past reminders'}
+              {remindersWithLiveClient.length > 0 ? `${remindersWithLiveClient.length} reminder${remindersWithLiveClient.length !== 1 ? 's' : ''}` : 'View past reminders'}
             </p>
           </div>
         </div>
@@ -185,7 +198,7 @@ const ReminderHistory = memo(({
             transition={{ duration: 0.3, ease: 'easeInOut' }}
           >
             <div className="border-t border-gray-200 p-4">
-              {loading && reminders.length === 0 ? (
+              {loading && remindersWithLiveClient.length === 0 ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader className="h-6 w-6 animate-spin text-indigo-600" />
                 </div>
@@ -194,7 +207,7 @@ const ReminderHistory = memo(({
                   <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-2" />
                   <p className="text-sm text-red-600">{error}</p>
                 </div>
-              ) : reminders.length === 0 ? (
+              ) : remindersWithLiveClient.length === 0 ? (
                 <div className="text-center py-8">
                   <History className="h-8 w-8 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm text-gray-500">No reminders yet</p>
@@ -206,7 +219,7 @@ const ReminderHistory = memo(({
                     {/* Timeline line */}
                     <div className="absolute left-[22px] top-0 bottom-0 w-0.5 bg-gray-200" />
 
-                    {reminders.map((reminder, index) => {
+                    {remindersWithLiveClient.map((reminder, index) => {
                       const config = statusConfig[reminder.status] || statusConfig.pending;
                       const StatusIcon = config.icon;
 

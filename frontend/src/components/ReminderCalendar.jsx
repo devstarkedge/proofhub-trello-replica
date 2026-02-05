@@ -6,6 +6,7 @@ import {
   X, Loader, User
 } from 'lucide-react';
 import Database from '../services/database';
+import { useClientInfo } from '../context/ClientInfoContext';
 
 /**
  * ReminderCalendar - Calendar view showing reminder dots and counts
@@ -17,6 +18,27 @@ const ReminderCalendar = memo(({ departmentId, onSelectReminder, className = '' 
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedDateReminders, setSelectedDateReminders] = useState([]);
+  const { getClientForProject } = useClientInfo();
+
+  const getProjectId = useCallback((reminder) => (
+    reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId
+  ), []);
+
+  const resolveReminderClient = useCallback((reminder) => {
+    if (!reminder) return reminder;
+    return {
+      ...reminder,
+      client: getClientForProject(getProjectId(reminder), reminder.client || {})
+    };
+  }, [getClientForProject, getProjectId]);
+
+  const remindersWithLiveClient = useMemo(() => {
+    const next = {};
+    Object.keys(reminders).forEach(dateKey => {
+      next[dateKey] = (reminders[dateKey] || []).map(resolveReminderClient);
+    });
+    return next;
+  }, [reminders, resolveReminderClient]);
 
   // Get calendar data
   const calendarData = useMemo(() => {
@@ -117,13 +139,13 @@ const ReminderCalendar = memo(({ departmentId, onSelectReminder, className = '' 
   const handleDateClick = (dateInfo) => {
     const dateKey = dateInfo.date.toISOString().split('T')[0];
     setSelectedDate(dateKey);
-    setSelectedDateReminders(reminders[dateKey] || []);
+    setSelectedDateReminders(remindersWithLiveClient[dateKey] || []);
   };
 
   // Get reminder info for a date
   const getDateReminderInfo = (date) => {
     const dateKey = date.toISOString().split('T')[0];
-    const dateReminders = reminders[dateKey] || [];
+    const dateReminders = remindersWithLiveClient[dateKey] || [];
     
     if (dateReminders.length === 0) return null;
     
@@ -159,6 +181,12 @@ const ReminderCalendar = memo(({ departmentId, onSelectReminder, className = '' 
   };
 
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  useEffect(() => {
+    if (selectedDate) {
+      setSelectedDateReminders(remindersWithLiveClient[selectedDate] || []);
+    }
+  }, [selectedDate, remindersWithLiveClient]);
 
   // Status badge helper
   const getStatusBadge = (status) => {
