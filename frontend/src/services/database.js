@@ -1742,6 +1742,23 @@ class DatabaseService {
     return await res.json();
   }
 
+  async deleteCategory(categoryId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/categories/${categoryId}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to delete category');
+    }
+    return await res.json();
+  }
+
   // Card Activity operations
   async getCardActivity(cardId, limit = 100, page = 1) {
     const token = localStorage.getItem('token');

@@ -553,7 +553,7 @@ const EnterpriseFileCard = ({
           </AnimatePresence>
 
           {/* Always visible delete for pending files */}
-          {isPending && !isHovered && onDelete && (
+          {isPending && onDelete && (
             <motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}

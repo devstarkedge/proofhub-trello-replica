@@ -7,7 +7,7 @@ import {
   X, Plus, AlertCircle, Loader, Calendar, Users, DollarSign,
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
   CheckCircle2, ChevronDown, ChevronLeft, Shield, User, Crown, Search, Image,
-  Maximize2, Minimize2, Info, Paperclip, ArrowRight
+  Maximize2, Minimize2, Info, Paperclip, ArrowRight, Trash2
 } from "lucide-react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
 import { Badge } from "../components/ui/badge";
@@ -150,6 +150,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const [projectUrlValid, setProjectUrlValid] = useState(true);
   const [countrySearchQuery, setCountrySearchQuery] = useState("");
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const [coverImageFile, setCoverImageFile] = useState(null);
   const [coverImagePreview, setCoverImagePreview] = useState(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -159,6 +160,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const [draftStatus, setDraftStatus] = useState("");
   const draftTimerRef = useRef(null);
   const countryDropdownRef = useRef(null);
+  const categoryDropdownRef = useRef(null);
   const uploadProgressTimers = useRef(new Map());
 
   // Filter countries
@@ -194,10 +196,13 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       if (countryDropdownOpen && countryDropdownRef.current && !countryDropdownRef.current.contains(event.target)) {
         setCountryDropdownOpen(false);
       }
+      if (categoryDropdownOpen && categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) {
+        setCategoryDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [countryDropdownOpen]);
+  }, [countryDropdownOpen, categoryDropdownOpen]);
 
   // Fetch categories
   useEffect(() => {
@@ -313,6 +318,33 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       toast.error(error.message || "Failed to create category");
     }
   }, [newCategoryName, newCategoryDescription, departmentId]);
+
+  const handleDeleteCategory = useCallback(async (categoryId, categoryName, e) => {
+    e.stopPropagation(); // Prevent dropdown from closing
+    
+    if (!window.confirm(`Are you sure you want to delete "${categoryName}"?`)) {
+      return;
+    }
+
+    try {
+      // Optimistically remove from UI
+      setCategories((prev) => prev.filter((cat) => cat._id !== categoryId));
+      
+      // If the deleted category was selected, clear the selection
+      if (formData.projectCategory === categoryName) {
+        setFormData((prev) => ({ ...prev, projectCategory: "" }));
+      }
+
+      const response = await Database.deleteCategory(categoryId);
+      if (response.success) {
+        toast.success("Category deleted successfully!");
+      }
+    } catch (error) {
+      // Revert on error by refetching
+      fetchCategories();
+      toast.error(error.message || "Failed to delete category");
+    }
+  }, [formData.projectCategory, fetchCategories]);
 
   const fetchDepartmentTeams = useCallback(async () => {
     try {
@@ -914,22 +946,64 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         </FormField>
 
                         <FormField label="Category" icon={Tag}>
-                          <Select onValueChange={handleCategoryChange} value={formData.projectCategory}>
-                            <SelectTrigger className="w-full h-12 rounded-xl border-gray-300 hover:border-blue-300">
-                              <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {categories.map((cat) => (
-                                <SelectItem key={cat._id} value={cat.name}>{cat.name}</SelectItem>
-                              ))}
-                              <SelectItem value="add-new">
-                                <div className="flex items-center gap-2 text-blue-600">
+                          <div className="relative" ref={categoryDropdownRef}>
+                            <div
+                              onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                              className="w-full px-4 py-3 border border-gray-300 rounded-xl cursor-pointer flex items-center justify-between hover:border-blue-300 bg-white"
+                            >
+                              <span className={formData.projectCategory ? 'text-gray-900' : 'text-gray-400'}>
+                                {formData.projectCategory || 'Select category'}
+                              </span>
+                              <ChevronDown size={16} className={`text-gray-400 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`} />
+                            </div>
+
+                            {categoryDropdownOpen && (
+                              <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                                {categories.length === 0 ? (
+                                  <div className="px-4 py-3 text-sm text-gray-500">
+                                    No categories available
+                                  </div>
+                                ) : (
+                                  categories.map((cat) => (
+                                    <div
+                                      key={cat._id}
+                                      className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 group transition-colors border-b border-gray-100 last:border-b-0"
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setFormData((prev) => ({ ...prev, projectCategory: cat.name }));
+                                          setCategoryDropdownOpen(false);
+                                        }}
+                                        className="flex-1 text-left text-sm text-gray-700 hover:text-gray-900"
+                                      >
+                                        {cat.name}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleDeleteCategory(cat._id, cat.name, e)}
+                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all ml-2"
+                                        title="Delete category"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  ))
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowAddCategory(true);
+                                    setCategoryDropdownOpen(false);
+                                  }}
+                                  className="w-full px-4 py-2.5 flex items-center gap-2 text-blue-600 hover:bg-blue-50 text-sm font-medium transition-colors border-t border-gray-200"
+                                >
                                   <Plus size={14} />
                                   Add New Category
-                                </div>
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </FormField>
 
                         <FormField label="Visibility" icon={Globe}>
