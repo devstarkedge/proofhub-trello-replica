@@ -5,7 +5,7 @@ import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shie
 import Database from '../services/database';
 import Board from '../components/Board';
 import { lazy } from 'react';
-import EditProjectModal from '../components/EnterpriseEditProjectModal';
+import EditProjectModal from '../components/EditProjectModal';
 import DepartmentContext from '../context/DepartmentContext';
 import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';

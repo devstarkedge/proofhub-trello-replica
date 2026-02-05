@@ -10,7 +10,7 @@ import ReminderCalendar from '../components/ReminderCalendar';
 import { ModernCalendarGrid } from '../components/calendar';
 import { ClientRemindersSkeleton } from '../components/LoadingSkeleton';
 import ReminderModal from '../components/ReminderModal';
-import ViewProjectModal from '../components/EnterpriseViewProjectModal';
+import ViewProjectModal from '../components/ViewProjectModal';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';

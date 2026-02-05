@@ -1,335 +1,460 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+"use client";
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, Calendar, Clock, DollarSign, User, Mail, Phone,
-  Globe, Tag, Users, Building, FileText, Eye
+  X,
+  Eye,
+  FileText,
+  Calendar,
+  Clock,
+  Globe,
+  DollarSign,
+  Link2,
+  Users,
+  Shield,
+  Tag,
+  Mail,
+  Phone,
+  Info,
+  Image as ImageIcon,
+  History
 } from 'lucide-react';
 import Database from '../services/database';
+import EnterpriseFileUploader from './EnterpriseFileUploader';
+import ActivityTimeline from './ActivityTimeline';
+import ExpandableDescription from './ExpandableDescription';
 
-// Simple skeleton loader for better UX
-const Skeleton = ({ className = '' }) => (
-  <div className={`animate-pulse bg-gray-200 rounded ${className}`} />
-);
+const drawerVariants = {
+  hidden: { x: '100%', opacity: 0 },
+  visible: {
+    x: 0,
+    opacity: 1,
+    transition: { type: 'spring', damping: 30, stiffness: 300 }
+  },
+  exit: { x: '100%', opacity: 0, transition: { duration: 0.2 } }
+};
 
-const ViewProjectModal = ({ isOpen, onClose, projectId }) => {
-  const [project, setProject] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+const overlayVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1 },
+  exit: { opacity: 0 }
+};
 
-  useEffect(() => {
-    if (isOpen && projectId) {
-      fetchProjectDetails();
-    }
-    // eslint-disable-next-line
-  }, [isOpen, projectId]);
-
-  const fetchProjectDetails = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await Database.getProject(projectId);
-      if (response.success) {
-        setProject(response.data);
-      } else {
-        setError('Failed to load project details');
-      }
-    } catch (err) {
-      console.error('Error fetching project details:', err);
-      setError('Failed to load project details');
-    } finally {
-      setLoading(false);
-    }
+const StatusBadge = ({ status }) => {
+  const statusConfig = {
+    planning: { color: 'bg-gray-100 text-gray-700 border-gray-300', label: 'Planning' },
+    'in-progress': { color: 'bg-blue-100 text-blue-700 border-blue-300', label: 'In Progress' },
+    completed: { color: 'bg-green-100 text-green-700 border-green-300', label: 'Completed' },
+    'on-hold': { color: 'bg-yellow-100 text-yellow-700 border-yellow-300', label: 'On Hold' }
   };
-
-  if (!isOpen) return null;
-
+  const config = statusConfig[status] || statusConfig.planning;
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-60 flex items-center justify-center p-2 md:p-6 bg-black/40 backdrop-blur-sm"
-      aria-modal="true"
-      role="dialog"
-      tabIndex={-1}
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.97, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.97, opacity: 0 }}
-        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-blue-100"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Sticky Header */}
-        <div className="sticky top-0 z-10 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-5 md:p-6 rounded-t-2xl shadow-sm flex justify-between items-center border-b border-blue-200/30">
-          <div className="flex items-center gap-3">
-            <span className="p-2 bg-white/20 rounded-lg"><Eye size={24} /></span>
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight">Project Details</h2>
-              <p className="text-blue-100 text-sm mt-1">View project information</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close modal"
-            className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-white"
-          >
-            <X size={24} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50">
-          {loading ? (
-            <div className="flex flex-col gap-6 animate-pulse">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="bg-white rounded-lg p-6 flex flex-col gap-4 shadow-sm">
-                  <Skeleton className="h-6 w-1/3 mb-2" />
-                  <Skeleton className="h-4 w-1/2" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-2/3" />
-                </div>
-              ))}
-            </div>
-          ) : error ? (
-            <div className="text-center py-12">
-              <div className="text-red-500 text-lg font-medium">{error}</div>
-              <button
-                onClick={fetchProjectDetails}
-                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-              >
-                Try Again
-              </button>
-            </div>
-          ) : project ? (
-            <div className="space-y-8">
-              {/* Basic Information */}
-              <section className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <FileText size={20} className="text-blue-600" />
-                  Basic Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Project Name</label>
-                    <p className="text-gray-900 font-semibold text-base">{project.name}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Visibility</label>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                      project.visibility === 'public' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {project.visibility || 'private'}
-                    </span>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Project Category</label>
-                    <p className="text-gray-900">{project.projectCategory || 'Not specified'}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
-                    <div className="flex items-center gap-2">
-                      <Calendar size={16} className="text-gray-400" />
-                      <span>{project.startDate ? new Date(project.startDate).toLocaleDateString() : 'Not set'}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Due Date</label>
-                    <div className="flex items-center gap-2">
-                      <Clock size={16} className="text-gray-400" />
-                      <span>{project.dueDate ? new Date(project.dueDate).toLocaleDateString() : 'Not set'}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-                  <p className="text-gray-700 bg-gray-50 p-3 rounded border border-gray-100 text-sm min-h-[40px]">{project.description || 'No description provided'}</p>
-                </div>
-              </section>
-              <div className="border-t border-gray-200" />
-
-              {/* Project Source & URLs */}
-              <section className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Globe size={20} className="text-blue-600" />
-                  Project Source & Links
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Project Source</label>
-                    <div className="flex items-center gap-2">
-                      <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
-                        {project.projectSource || 'Direct'}
-                      </span>
-                    </div>
-                  </div>
-                  {project.projectSource === 'Upwork' && project.upworkId && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Upwork ID</label>
-                      <p className="text-gray-900">{project.upworkId}</p>
-                    </div>
-                  )}
-                  {project.projectUrl && (
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Project URL</label>
-                      <a
-                        href={project.projectUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 underline break-all"
-                      >
-                        {project.projectUrl}
-                      </a>
-                    </div>
-                  )}
-                </div>
-              </section>
-              <div className="border-t border-gray-200" />
-
-              {/* Billing Information */}
-              <section className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <DollarSign size={20} className="text-blue-600" />
-                  Billing Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Billing Cycle</label>
-                    <p className="text-gray-900 capitalize">{project.billingCycle || 'Not specified'}</p>
-                  </div>
-                  {project.billingCycle === 'fixed' && project.fixedPrice && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Fixed Price</label>
-                      <p className="text-gray-900 font-semibold">${project.fixedPrice}</p>
-                    </div>
-                  )}
-                  {project.billingCycle === 'hr' && project.hourlyPrice && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Hourly Rate</label>
-                      <p className="text-gray-900 font-semibold">${project.hourlyPrice}/hr</p>
-                    </div>
-                  )}
-                  {project.estimatedTime && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Estimated Time</label>
-                      <p className="text-gray-900">{project.estimatedTime}</p>
-                    </div>
-                  )}
-                </div>
-              </section>
-              <div className="border-t border-gray-200" />
-
-              {/* Client Details */}
-              <section className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <User size={20} className="text-blue-600" />
-                  Client Details
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Client Name</label>
-                    <p className="text-gray-900">{project.clientDetails?.clientName || 'Not provided'}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Client Email</label>
-                    <div className="flex items-center gap-2">
-                      <Mail size={16} className="text-gray-400" />
-                      <p className="text-gray-900">{project.clientDetails?.clientEmail || 'Not provided'}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Client WhatsApp</label>
-                    <div className="flex items-center gap-2">
-                      <Phone size={16} className="text-gray-400" />
-                      <p className="text-gray-900">{project.clientDetails?.clientWhatsappNumber || 'Not provided'}</p>
-                    </div>
-                  </div>
-                </div>
-              </section>
-              <div className="border-t border-gray-200" />
-
-              {/* Department & Members */}
-              <section className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Users size={20} className="text-blue-600" />
-                  Department & Members
-                </h3>
-                <div className="grid grid-cols-1 gap-6">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Department</label>
-                    <div className="flex items-center gap-2">
-                      <Building size={16} className="text-gray-400" />
-                      <p className="text-gray-900">{project.department?.name || 'Not assigned'}</p>
-                    </div>
-                  </div>
-                </div>
-                {project.members && project.members.length > 0 && (
-                  <div className="mt-4">
-                    <label className="block text-xs font-medium text-gray-500 mb-2">Assigned Members</label>
-                    <div className="flex flex-wrap gap-2">
-                      {project.members.map((member) => (
-                        <div key={member._id} className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors">
-                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                            {member.name?.[0]?.toUpperCase() || 'U'}
-                          </div>
-                          <span className="text-sm text-gray-900">{member.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </section>
-              <div className="border-t border-gray-200" />
-
-              {/* Status & Progress */}
-              <section className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Clock size={20} className="text-blue-600" />
-                  Status & Progress
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                      project.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                      project.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                      project.status === 'Planning' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {project.status || 'Not set'}
-                    </span>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Progress</label>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 bg-gray-200 rounded-full h-3">
-                        <div
-                          className="bg-blue-500 h-3 rounded-full transition-all duration-300"
-                          style={{ width: `${project.progress || 0}%` }}
-                        ></div>
-                      </div>
-                      <span className="text-xs font-semibold text-gray-900">{project.progress || 0}%</span>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Sticky Footer */}
-        <div className="sticky bottom-0 z-10 bg-white px-6 py-4 rounded-b-2xl flex justify-end border-t border-gray-200 shadow-sm">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold focus:outline-none focus:ring-2 focus:ring-blue-400"
-          >
-            Close
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
+    <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${config.color}`}>
+      {config.label}
+    </span>
   );
 };
 
-export default ViewProjectModal;
+const PriorityBadge = ({ priority }) => {
+  const priorityConfig = {
+    low: { color: 'bg-emerald-100 text-emerald-700', label: 'Low' },
+    medium: { color: 'bg-amber-100 text-amber-700', label: 'Medium' },
+    high: { color: 'bg-orange-100 text-orange-700', label: 'High' },
+    urgent: { color: 'bg-red-100 text-red-700', label: 'Urgent' }
+  };
+  const config = priorityConfig[priority] || priorityConfig.medium;
+  return (
+    <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${config.color}`}>
+      {config.label}
+    </span>
+  );
+};
+
+const TabNavigation = ({ tabs, activeTab, onTabChange }) => (
+  <div className="flex gap-1 p-1 bg-white/10 rounded-xl backdrop-blur-sm">
+    {tabs.map((tab) => (
+      <button
+        key={tab.id}
+        onClick={() => onTabChange(tab.id)}
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          activeTab === tab.id
+            ? 'bg-white text-indigo-600 shadow-sm'
+            : 'text-white/80 hover:text-white hover:bg-white/10'
+        }`}
+      >
+        <tab.icon size={16} />
+        {tab.label}
+        {tab.badge && (
+          <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-600 text-xs font-semibold rounded-full">
+            {tab.badge}
+          </span>
+        )}
+      </button>
+    ))}
+  </div>
+);
+
+const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId }) => {
+  const [activeTab, setActiveTab] = useState('details');
+  const [project, setProject] = useState(null);
+  const [attachments, setAttachments] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const tabs = useMemo(() => [
+    { id: 'details', label: 'Details', icon: Info },
+    { id: 'files', label: 'Files', icon: FileText, badge: attachments?.length ? attachments.length : null },
+    { id: 'team', label: 'Team', icon: Users, badge: project?.members?.length || 0 },
+    { id: 'activity', label: 'Activity', icon: History, badge: activity?.length || 0 }
+  ], [attachments?.length, project?.members?.length, activity?.length]);
+
+  useEffect(() => {
+    if (!isOpen || !projectId) return;
+
+    const fetchData = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const response = await Database.getProject(projectId);
+        if (response.success) {
+          setProject(response.data);
+        } else {
+          setError('Failed to load project');
+        }
+      } catch (err) {
+        setError('Failed to load project');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [isOpen, projectId]);
+
+  useEffect(() => {
+    if (!isOpen || !projectId) return;
+
+    const fetchAttachments = async () => {
+      setFilesLoading(true);
+      try {
+        const response = await Database.getProjectAttachments(projectId);
+        if (response.success) {
+          setAttachments(response.data || []);
+        }
+      } catch (err) {
+        // ignore
+      } finally {
+        setFilesLoading(false);
+      }
+    };
+
+    const fetchActivity = async () => {
+      setActivityLoading(true);
+      try {
+        const response = await Database.getProjectActivity(projectId);
+        if (response.success) {
+          setActivity(response.data || []);
+        }
+      } catch (err) {
+        // ignore
+      } finally {
+        setActivityLoading(false);
+      }
+    };
+
+    fetchAttachments();
+    fetchActivity();
+  }, [isOpen, projectId]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            variants={overlayVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            onClick={onClose}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60]"
+          />
+
+          <motion.div
+            variants={drawerVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="fixed right-0 top-0 h-full w-full max-w-5xl bg-white shadow-2xl z-[61] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 px-6 py-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-2 bg-white/10 rounded-xl">
+                    <Eye size={22} className="text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-xl font-bold text-white truncate max-w-[320px]">
+                        {project?.name || 'Project Details'}
+                      </h2>
+                      {project?.status && <StatusBadge status={project.status} />}
+                      {project?.priority && <PriorityBadge priority={project.priority} />}
+                    </div>
+                    <p className="text-indigo-200 text-sm mt-1">
+                      {project?.updatedAt ? `Last updated: ${new Date(project.updatedAt).toLocaleDateString()}` : 'View project information'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={onClose}
+                  className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                  aria-label="Close"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="mt-4">
+                <TabNavigation tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-6 space-y-6">
+                {loading ? (
+                  <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
+                    <div className="animate-pulse space-y-3">
+                      <div className="h-5 bg-gray-200 rounded w-1/3" />
+                      <div className="h-4 bg-gray-200 rounded w-2/3" />
+                      <div className="h-4 bg-gray-200 rounded w-full" />
+                    </div>
+                  </div>
+                ) : error ? (
+                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4">
+                    {error}
+                  </div>
+                ) : (
+                  <>
+                    {activeTab === 'details' && project && (
+                      <div className="space-y-6">
+                        {project.coverImage?.url && (
+                          <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
+                            <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                              <ImageIcon size={16} className="text-purple-600" />
+                              Cover Image
+                            </h3>
+                            <img
+                              src={project.coverImage.url}
+                              alt="Project Cover"
+                              className="w-full max-h-64 object-cover rounded-xl border"
+                            />
+                          </section>
+                        )}
+
+                        <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
+                          <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <FileText size={16} className="text-blue-600" />
+                            Basic Information
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs text-gray-500">Project Name</label>
+                              <p className="text-sm font-semibold text-gray-900">{project.name}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Visibility</label>
+                              <p className="text-sm text-gray-900 capitalize">{project.visibility || 'public'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Project Category</label>
+                              <p className="text-sm text-gray-900">{project.projectCategory || 'Not specified'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Estimated Time</label>
+                              <p className="text-sm text-gray-900">{project.estimatedTime || 'Not specified'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Start Date</label>
+                              <div className="flex items-center gap-2 text-sm text-gray-900">
+                                <Calendar size={14} className="text-gray-400" />
+                                <span>{project.startDate ? new Date(project.startDate).toLocaleDateString() : 'Not set'}</span>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Due Date</label>
+                              <div className="flex items-center gap-2 text-sm text-gray-900">
+                                <Clock size={14} className="text-gray-400" />
+                                <span>{project.dueDate ? new Date(project.dueDate).toLocaleDateString() : 'Not set'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4">
+                            <ExpandableDescription
+                              description={project.description || ''}
+                              title="Description"
+                            />
+                          </div>
+                        </section>
+
+                        <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
+                          <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <Globe size={16} className="text-indigo-600" />
+                            Project Source & Links
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs text-gray-500">Project Source</label>
+                              <p className="text-sm text-gray-900">{project.projectSource || 'Direct'}</p>
+                            </div>
+                            {project.upworkId && (
+                              <div>
+                                <label className="text-xs text-gray-500">Upwork ID</label>
+                                <p className="text-sm text-gray-900">{project.upworkId}</p>
+                              </div>
+                            )}
+                            {project.projectUrl && (
+                              <div className="md:col-span-2">
+                                <label className="text-xs text-gray-500">Project URL</label>
+                                <a
+                                  href={project.projectUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm text-indigo-600 hover:text-indigo-800 break-all"
+                                >
+                                  {project.projectUrl}
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        </section>
+
+                        <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
+                          <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <DollarSign size={16} className="text-emerald-600" />
+                            Billing Information
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs text-gray-500">Billing Cycle</label>
+                              <p className="text-sm text-gray-900 capitalize">{project.billingCycle || 'Not specified'}</p>
+                            </div>
+                            {project.billingCycle === 'fixed' && (
+                              <div>
+                                <label className="text-xs text-gray-500">Fixed Price</label>
+                                <p className="text-sm text-gray-900">{project.fixedPrice || '—'}</p>
+                              </div>
+                            )}
+                            {project.billingCycle === 'hr' && (
+                              <div>
+                                <label className="text-xs text-gray-500">Hourly Rate</label>
+                                <p className="text-sm text-gray-900">{project.hourlyPrice || '—'}</p>
+                              </div>
+                            )}
+                          </div>
+                        </section>
+
+                        <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
+                          <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <Mail size={16} className="text-blue-600" />
+                            Client Information
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs text-gray-500">Client Name</label>
+                              <p className="text-sm text-gray-900">{project.clientDetails?.clientName || 'Not specified'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Client Email</label>
+                              <p className="text-sm text-gray-900">{project.clientDetails?.clientEmail || 'Not specified'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500">Client Phone</label>
+                              <p className="text-sm text-gray-900">{project.clientDetails?.clientWhatsappNumber || 'Not specified'}</p>
+                            </div>
+                          </div>
+                        </section>
+                      </div>
+                    )}
+
+                    {activeTab === 'files' && (
+                      <div className="space-y-4">
+                        <EnterpriseFileUploader
+                          title="Project Attachments"
+                          description="Attachments uploaded to this project"
+                          pendingFiles={[]}
+                          existingFiles={attachments}
+                          onFilesAdded={null}
+                          onRemovePending={null}
+                          onRemoveExisting={null}
+                          disabled={true}
+                          showVersionHistory={true}
+                          showPreview={true}
+                          showDropzone={false}
+                        />
+                        {filesLoading && (
+                          <p className="text-xs text-gray-500">Loading files...</p>
+                        )}
+                      </div>
+                    )}
+
+                    {activeTab === 'team' && project && (
+                      <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
+                        <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                          <Shield size={16} className="text-purple-600" />
+                          Project Team
+                        </h3>
+                        {project.members?.length ? (
+                          <div className="space-y-3">
+                            {project.members.map((member) => (
+                              <div
+                                key={member._id}
+                                className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl"
+                              >
+                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
+                                  {(member?.name || 'U').charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">{member?.name || 'Unknown'}</p>
+                                  <p className="text-xs text-gray-500">{member?.email || 'No email'}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500">No team members assigned.</p>
+                        )}
+                      </section>
+                    )}
+
+                    {activeTab === 'activity' && (
+                      <ActivityTimeline
+                        activities={activity}
+                        loading={activityLoading}
+                        projectCreatedAt={project?.createdAt}
+                        projectCreatedBy={project?.owner?.name}
+                        projectUpdatedAt={project?.updatedAt}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
+};
+
+export default EnterpriseViewProjectModal;

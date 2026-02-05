@@ -14,9 +14,9 @@ import { useDebounce } from '../hooks/useDebounce';
 import useProjectStore from '../store/projectStore';
 import Avatar from '../components/Avatar';
 import { lazy, Suspense } from 'react';
-import AddProjectModal from '../components/EnterpriseAddProjectModal';
-import EditProjectModal from '../components/EnterpriseEditProjectModal';
-import ViewProjectModal from '../components/EnterpriseViewProjectModal';
+import AddProjectModal from '../components/AddProjectModal';
+import EditProjectModal from '../components/EditProjectModal';
+import ViewProjectModal from '../components/ViewProjectModal';
 import DeletePopup from '../components/ui/DeletePopup';
 import WelcomeHeader from '../components/WelcomeHeader';
 
