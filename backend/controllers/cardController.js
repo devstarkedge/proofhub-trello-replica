@@ -723,6 +723,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
     list,
     board,
     assignee,
+    assignees: assigneesFromBody,
     members,
     labels,
     priority,
@@ -730,6 +731,12 @@ export const createCard = asyncHandler(async (req, res, next) => {
     startDate,
     position,
   } = req.body;
+
+  const resolvedAssignees = Array.isArray(assigneesFromBody)
+    ? assigneesFromBody
+    : assignee
+      ? [assignee]
+      : [];
 
   // Get the list and count cards in parallel
   const [cardList, cardCount] = await Promise.all([
@@ -746,7 +753,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
     description,
     list,
     board,
-    assignee,
+    assignees: resolvedAssignees,
     members: members || [],
     labels: labels || [],
     priority,
@@ -784,12 +791,12 @@ export const createCard = asyncHandler(async (req, res, next) => {
   });
 
   // Send notifications using the notification service
-  await notificationService.notifyTaskAssigned(card, assignee, req.user.id);
+  if (resolvedAssignees.length > 0) {
+    await notificationService.notifyTaskAssigned(card, resolvedAssignees, req.user.id);
 
-  // Send Slack notifications for task assignment
-  if (assignee) {
+    // Send Slack notifications for task assignment
     const boardData = await Board.findById(board).select('name department').lean();
-    slackHooks.onTaskAssigned(card, boardData, [assignee], req.user).catch(console.error);
+    slackHooks.onTaskAssigned(card, boardData, resolvedAssignees, req.user).catch(console.error);
   }
 
   // Notify all members
@@ -1152,6 +1159,11 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   // If description was updated, detect mentions and notify mentioned users
   if (req.body.description) {
     await notificationService.processMentions(req.body.description, card, req.user.id);
+  }
+
+  // Normalize single assignee payloads
+  if (req.body.assignees === undefined && req.body.assignee !== undefined) {
+    req.body.assignees = req.body.assignee ? [req.body.assignee] : [];
   }
 
   // Notify if assignees changed (only if actually changed)
