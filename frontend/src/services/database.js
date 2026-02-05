@@ -120,6 +120,55 @@ class DatabaseService {
     return await res.json();
   }
 
+  // Project dropdown options
+  async getProjectDropdownOptions(type) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/project-options/${type}`, { headers });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch dropdown options');
+    }
+    return await res.json();
+  }
+
+  async addProjectDropdownOption(type, label, value) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/project-options/${type}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ label, value })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to add option');
+    }
+    return await res.json();
+  }
+
+  async deleteProjectDropdownOption(type, optionId) {
+    const token = localStorage.getItem('token');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/project-options/${type}/${optionId}`, {
+      method: 'DELETE',
+      headers
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to delete option');
+    }
+    return await res.json();
+  }
   async deleteProject(projectId) {
     const token = localStorage.getItem('token');
     const headers = {};

@@ -17,6 +17,7 @@ import ReactCountryFlag from "react-country-flag";
 import CoverImageUploader from "./CoverImageUploader";
 import EnterpriseFileUploader from "./EnterpriseFileUploader";
 import AuthContext from '../context/AuthContext';
+import ProjectOptionsDropdown from './ProjectOptionsDropdown';
 import DatePickerModal from "./DatePickerModal";
 
 // Country codes data
@@ -151,6 +152,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const [projectUrlValid, setProjectUrlValid] = useState(true);
   const [countrySearchQuery, setCountrySearchQuery] = useState("");
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [visibilityDropdownOpen, setVisibilityDropdownOpen] = useState(false);
   const [coverImageFile, setCoverImageFile] = useState(null);
   const [coverImagePreview, setCoverImagePreview] = useState(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -161,6 +163,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const draftTimerRef = useRef(null);
   const countryDropdownRef = useRef(null);
   const categoryDropdownRef = useRef(null);
+  const visibilityDropdownRef = useRef(null);
   const uploadProgressTimers = useRef(new Map());
 
   // Filter countries
@@ -198,6 +201,9 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       }
       if (categoryDropdownOpen && categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) {
         setCategoryDropdownOpen(false);
+      }
+      if (visibilityDropdownOpen && visibilityDropdownRef.current && !visibilityDropdownRef.current.contains(event.target)) {
+        setVisibilityDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -713,6 +719,53 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                     <span className="font-medium">Status:</span>
                     <span>Planning</span>
                   </div>
+
+                  <div className="relative" ref={visibilityDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setVisibilityDropdownOpen(!visibilityDropdownOpen)}
+                      className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full text-sm text-white hover:bg-white/20 transition-all font-medium min-w-[100px] justify-between border border-white/10"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Globe size={14} className={formData.visibility === 'public' ? 'text-blue-200' : 'text-gray-300'} />
+                        <span className="capitalize">{formData.visibility}</span>
+                      </div>
+                      <ChevronDown size={14} className={`transition-transform duration-200 ${visibilityDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    <AnimatePresence>
+                      {visibilityDropdownOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          className="absolute right-0 top-full mt-2 w-40 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 origin-top-right"
+                        >
+                          <div className="p-1">
+                            {['public', 'private'].map((option) => (
+                              <button
+                                key={option}
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => ({ ...prev, visibility: option }));
+                                  setVisibilityDropdownOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                                  formData.visibility === option 
+                                    ? 'bg-blue-50 text-blue-600 font-medium' 
+                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                }`}
+                              >
+                                {option === 'public' ? <Globe size={16} /> : <Shield size={16} />}
+                                <span className="capitalize">{option}</span>
+                                {formData.visibility === option && <CheckCircle2 size={14} className="ml-auto" />}
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -858,16 +911,14 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <FormField label="Project Source" icon={Briefcase}>
-                          <select
-                            name="projectSource"
+                          <ProjectOptionsDropdown
+                            optionType="projectSource"
                             value={formData.projectSource}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
-                          >
-                            <option value="Direct">Direct Client</option>
-                            <option value="Upwork">Upwork</option>
-                            <option value="Contra">Contra</option>
-                          </select>
+                            onChange={(val) => setFormData((prev) => ({ ...prev, projectSource: val }))}
+                            allowManage={true}
+                            showLabel={false}
+                            theme="blue"
+                          />
                         </FormField>
 
                         {formData.projectSource === 'Upwork' && (
@@ -884,15 +935,14 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         )}
 
                         <FormField label="Billing Type" icon={DollarSign}>
-                          <select
-                            name="billingCycle"
+                          <ProjectOptionsDropdown
+                            optionType="billingType"
                             value={formData.billingCycle}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
-                          >
-                            <option value="hr">Hourly Rate</option>
-                            <option value="fixed">Fixed Price</option>
-                          </select>
+                            onChange={(val) => setFormData((prev) => ({ ...prev, billingCycle: val }))}
+                            allowManage={true}
+                            showLabel={false}
+                            theme="blue"
+                          />
                         </FormField>
 
                         {formData.billingCycle === 'fixed' ? (
@@ -1004,18 +1054,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                               </div>
                             )}
                           </div>
-                        </FormField>
-
-                        <FormField label="Visibility" icon={Globe}>
-                          <select
-                            name="visibility"
-                            value={formData.visibility}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
-                          >
-                            <option value="public">Public</option>
-                            <option value="private">Private</option>
-                          </select>
                         </FormField>
                       </div>
 

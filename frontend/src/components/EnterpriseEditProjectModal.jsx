@@ -22,6 +22,7 @@ import DatePickerModal from './DatePickerModal';
 import EnterpriseFileUploader from './EnterpriseFileUploader';
 import ActivityTimeline from './ActivityTimeline';
 import ExpandableDescription from './ExpandableDescription';
+import ProjectOptionsDropdown from './ProjectOptionsDropdown';
 
 // Enterprise drawer variants
 const drawerVariants = {
@@ -162,7 +163,7 @@ const EnterpriseEditProjectModal = ({
     startDate: '',
     projectSource: 'Direct',
     upworkId: '',
-    billingCycle: 'hourly',
+    billingCycle: 'hr',
     fixedPrice: '',
     hourlyPrice: '',
     dueDate: '',
@@ -277,7 +278,7 @@ const EnterpriseEditProjectModal = ({
             startDate: fullProject.startDate ? new Date(fullProject.startDate).toISOString().split('T')[0] : '',
             projectSource: fullProject.projectSource || 'Direct',
             upworkId: fullProject.upworkId || '',
-            billingCycle: fullProject.billingCycle || 'hourly',
+            billingCycle: fullProject.billingCycle === 'hourly' ? 'hr' : (fullProject.billingCycle || 'hr'),
             fixedPrice: fullProject.fixedPrice || '',
             hourlyPrice: fullProject.hourlyPrice || '',
             dueDate: fullProject.dueDate ? new Date(fullProject.dueDate).toISOString().split('T')[0] : '',
@@ -822,16 +823,13 @@ const EnterpriseEditProjectModal = ({
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           <FormField label="Project Source" icon={Briefcase}>
-                            <select
-                              name="projectSource"
+                            <ProjectOptionsDropdown
+                              optionType="projectSource"
                               value={formData.projectSource}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all hover:border-indigo-300"
-                            >
-                              <option value="Direct">Direct Client</option>
-                              <option value="Upwork">Upwork</option>
-                              <option value="Contra">Contra</option>
-                            </select>
+                              onChange={(val) => setFormData((prev) => ({ ...prev, projectSource: val }))}
+                              showLabel={false}
+                              theme="indigo"
+                            />
                           </FormField>
 
                           {formData.projectSource === 'Upwork' && (
@@ -848,15 +846,13 @@ const EnterpriseEditProjectModal = ({
                           )}
 
                           <FormField label="Billing Type" icon={DollarSign}>
-                            <select
-                              name="billingCycle"
+                            <ProjectOptionsDropdown
+                              optionType="billingType"
                               value={formData.billingCycle}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all hover:border-indigo-300"
-                            >
-                              <option value="hourly">Hourly Rate</option>
-                              <option value="fixed">Fixed Price</option>
-                            </select>
+                              onChange={(val) => setFormData((prev) => ({ ...prev, billingCycle: val }))}
+                              showLabel={false}
+                              theme="indigo"
+                            />
                           </FormField>
 
                           {formData.billingCycle === 'fixed' ? (

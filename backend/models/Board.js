@@ -91,16 +91,14 @@ const boardSchema = new mongoose.Schema({
     trim: true
   },
   projectSource: {
-    type: String,
-    enum: ['Upwork', 'Direct', 'Contra']
+    type: String
   },
   upworkId: {
     type: String,
     trim: true
   },
   billingCycle: {
-    type: String,
-    enum: ['hr', 'fixed']
+    type: String
   },
   fixedPrice: {
     type: Number
