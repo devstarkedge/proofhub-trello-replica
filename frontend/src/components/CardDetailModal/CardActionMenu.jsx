@@ -54,17 +54,36 @@ const CardActionMenu = ({
     if (typeof window === "undefined") return null;
     const projectId = ids.projectId;
     const taskId = ids.taskId;
-    if (!projectId || !taskId) return null;
+    const departmentId = ids.departmentId; // Now receiving departmentId
+    
+    // Check for required IDs - departmentId is now required for correct routing
+    if (!projectId || !taskId || !departmentId) return null;
 
-    let path = `/project/${projectId}/task/${taskId}`;
+    // New format: /workflow/{departmentId}/{projectId}/{taskId}/
+    let path = `/workflow/${departmentId}/${projectId}/${taskId}`;
+    
+    // Append additional segments if present (though typically handled via simple task link now)
     if (ids.subtaskId) {
-      path += `/subtask/${ids.subtaskId}`;
+      // If needed, we can append query params or hash, but user requested clean path.
+      // Assuming nested routing might support it or we stick to task link.
+      // The user request was specific: /workflow/{departmentId}/{projectId}/{taskId}/
+      // If subtask linking is needed, it might need backend/routing support in that format.
+      // For now, based on "This should be the only link format used going forward", I'll stick to the base task link
+      // UNLESS the legacy code supported deep linking that works with the new route.
+      // The new workflow route structure in App.jsx (lines 87-91) supports:
+      // /workflow/:deptId/:projectId/:taskId
+      // It DOES NOT explicitly show /subtask/:subtaskId in the new routes list I saw in App.jsx.
+      // However, line 90 in App.jsx was: /project/:projectId/task/:taskId/subtask/:subtaskId
+      // I am removing that. The new routes (lines 86-88) are:
+      // /workflow/:deptId/:projectId
+      // /workflow/:deptId/:projectId/:taskId
+      // So deep linking to subtasks might not be supported in the URL path directly anymore, 
+      // OR it relies on query params/state.
+      // I will output the requested format.
     }
-    if (ids.nenoId) {
-      path += `/neno/${ids.nenoId}`;
-    }
+    
     return `${window.location.origin}${path}`;
-  }, [ids.projectId, ids.taskId, ids.subtaskId, ids.nenoId]);
+  }, [ids.projectId, ids.taskId, ids.departmentId]);
 
   const handleCopyLink = async () => {
     if (!shareLink) return;

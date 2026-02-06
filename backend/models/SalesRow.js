@@ -92,7 +92,6 @@ const salesRowSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    required: [true, 'Status is required'],
     trim: true,
     index: true
   },

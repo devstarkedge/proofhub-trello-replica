@@ -1701,6 +1701,10 @@ const CardDetailModal = React.memo(({
                   ids={{
                     projectId: resolvedProjectId,
                     taskId,
+                    departmentId: (() => {
+                      const dept = card?.board?.department || currentProject?.department || departments.find(d => d._id === card?.department);
+                      return typeof dept === 'object' ? dept?._id : dept;
+                    })()
                   }}
                   onDelete={executeDelete}
                   onArchive={() => setShowArchiveConfirmation(true)}
