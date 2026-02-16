@@ -25,7 +25,7 @@ import {
 import Database from '../services/database';
 import EnterpriseFileUploader from './EnterpriseFileUploader';
 import ActivityTimeline from './ActivityTimeline';
-import ExpandableDescription from './ExpandableDescription';
+import HtmlContent from './ui/HtmlContent';
 
 const drawerVariants = {
   hidden: { x: '100%', opacity: 0 },
@@ -318,10 +318,17 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
                           </div>
 
                           <div className="mt-4">
-                            <ExpandableDescription
-                              description={project.description || ''}
-                              title="Description"
-                            />
+                            <label className="text-xs text-gray-500">Description</label>
+                            {project.description ? (
+                              <HtmlContent
+                                html={project.description}
+                                className="bg-white border border-gray-200 rounded-xl p-3 mt-1"
+                              />
+                            ) : (
+                              <p className="text-gray-700 bg-white p-3 rounded-xl border border-gray-200 text-sm mt-1">
+                                No description provided
+                              </p>
+                            )}
                           </div>
                         </section>
 

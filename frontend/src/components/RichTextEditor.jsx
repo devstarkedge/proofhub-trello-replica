@@ -66,6 +66,9 @@ const RichTextEditor = ({
   contextRef = null, // Reference ID
   enableAttachments = false, // Enable multi-file attachment button
   enableAutoCover = true, // Auto-set first description image as cover
+  showLinkTool = true,
+  showImageTool = true,
+  editorMinHeightClass = null,
 }) => {
   const [isExpanded, setIsExpanded] = useState(startExpanded);
   // ... state declarations ...
@@ -84,6 +87,16 @@ const RichTextEditor = ({
 
   // Helper to determine if we have a valid entity for attachments
   const hasEntityContext = !!(entityId || cardId);
+
+  const getEditorSizeClass = useCallback(() => {
+    if (collapsible && !isExpanded) {
+      return 'h-[50px] overflow-hidden';
+    }
+    if (editorMinHeightClass) {
+      return editorMinHeightClass;
+    }
+    return isComment ? 'min-h-[80px]' : 'min-h-[200px]';
+  }, [collapsible, isExpanded, editorMinHeightClass, isComment]);
 
   // Callback to insert image into editor with proper cursor positioning
   // Images are inserted at the current position, then cursor moves to new line below
@@ -356,13 +369,7 @@ const RichTextEditor = ({
       content: content || '',
       editorProps: {
         attributes: {
-          class: `prose prose-sm max-w-none focus:outline-none transition-all duration-200 ease-in-out ${
-            collapsible && !isExpanded 
-              ? 'h-[50px] overflow-hidden' 
-              : isComment 
-                ? 'min-h-[80px]' 
-                : 'min-h-[200px]'
-          }`,
+          class: `prose prose-sm max-w-none focus:outline-none transition-all duration-200 ease-in-out ${getEditorSizeClass()}`,
         },
       },
       onUpdate: ({ editor }) => {
@@ -372,7 +379,7 @@ const RichTextEditor = ({
       onTransaction: () => {
         forceUpdate({});
       },
-    });
+    }, [getEditorSizeClass]);
 
   // Sync editor content with attachment deletions
   // When an attachment is deleted from any section, remove it from editor content
@@ -389,18 +396,12 @@ const RichTextEditor = ({
       editor.setOptions({
         editorProps: {
           attributes: {
-            class: `prose prose-sm max-w-none focus:outline-none transition-all duration-200 ease-in-out ${
-              collapsible && !isExpanded 
-                ? 'h-[50px] overflow-hidden' 
-                : isComment 
-                  ? 'min-h-[80px]' 
-                  : 'min-h-[200px]'
-            }`,
+            class: `prose prose-sm max-w-none focus:outline-none transition-all duration-200 ease-in-out ${getEditorSizeClass()}`,
           },
         },
       });
     }
-  }, [isExpanded, collapsible, isComment, editor]);
+  }, [editor, getEditorSizeClass]);
 
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
@@ -526,7 +527,7 @@ const RichTextEditor = ({
   }
 
   return (
-    <div ref={editorRef} className="w-full relative">
+    <div ref={editorRef} className={`w-full relative ${className}`}>
       {/* Collapsed Header - show when collapsible and not expanded */}
       {collapsible && !isExpanded && (
         <div 
@@ -554,6 +555,7 @@ const RichTextEditor = ({
               </>
             )}
             <button
+              type="button"
               onClick={() => editor.chain().focus().toggleBold().run()}
               className={`p-2 rounded hover:bg-gray-200 transition-colors ${
                 editor.isActive('bold') ? 'bg-gray-200' : ''
@@ -563,6 +565,7 @@ const RichTextEditor = ({
               <Bold size={16} />
           </button>
           <button
+            type="button"
             onClick={() => editor.chain().focus().toggleItalic().run()}
             className={`p-2 rounded hover:bg-gray-200 transition-colors ${
               editor.isActive('italic') ? 'bg-gray-200' : ''
@@ -572,6 +575,7 @@ const RichTextEditor = ({
             <Italic size={16} />
           </button>
           <button
+            type="button"
             onClick={() => editor.chain().focus().toggleUnderline().run()}
             className={`p-2 rounded hover:bg-gray-200 transition-colors ${
               editor.isActive('underline') ? 'bg-gray-200' : ''
@@ -580,37 +584,41 @@ const RichTextEditor = ({
           >
             <UnderlineIcon size={16} />
           </button>
-          <div className="w-px h-6 bg-gray-300 mx-1" />
-          <button
-            onClick={() => {
-              const previousUrl = editor.getAttributes('link').href;
-              const url = window.prompt('URL', previousUrl);
+          {showLinkTool && <div className="w-px h-6 bg-gray-300 mx-1" />}
+          {showLinkTool && (
+            <button
+              type="button"
+              onClick={() => {
+                const previousUrl = editor.getAttributes('link').href;
+                const url = window.prompt('URL', previousUrl);
 
-              if (url === null) {
-                return;
-              }
+                if (url === null) {
+                  return;
+                }
 
-              if (url === '') {
-                editor.chain().focus().extendMarkRange('link').unsetLink().run();
-                return;
-              }
+                if (url === '') {
+                  editor.chain().focus().extendMarkRange('link').unsetLink().run();
+                  return;
+                }
 
-              // If no text is selected, use the URL as the link text
-              if (editor.state.selection.empty) {
-                editor.chain().focus().insertContent(`<a href="${url}" target="_blank">${url}</a>`).run();
-              } else {
-                editor.chain().focus().extendMarkRange('link').setLink({ href: url, target: '_blank' }).run();
-              }
-            }}
-            className={`p-2 rounded hover:bg-gray-200 transition-colors ${
-              editor.isActive('link') ? 'bg-gray-200' : ''
-            }`}
-            title="Link"
-          >
-            <LinkIcon size={16} />
-          </button>
+                // If no text is selected, use the URL as the link text
+                if (editor.state.selection.empty) {
+                  editor.chain().focus().insertContent(`<a href="${url}" target="_blank">${url}</a>`).run();
+                } else {
+                  editor.chain().focus().extendMarkRange('link').setLink({ href: url, target: '_blank' }).run();
+                }
+              }}
+              className={`p-2 rounded hover:bg-gray-200 transition-colors ${
+                editor.isActive('link') ? 'bg-gray-200' : ''
+              }`}
+              title="Link"
+            >
+              <LinkIcon size={16} />
+            </button>
+          )}
           <button
             ref={emojiButtonRef}
+            type="button"
             onClick={() => {
               if (!showEmojiPicker) {
                 // Calculate position before showing
@@ -659,26 +667,29 @@ const RichTextEditor = ({
               </div>
             )}
           </button>
-          <button
-            onClick={() => {
-              if (fileInputRef.current) {
-                fileInputRef.current.click();
-              }
-            }}
-            disabled={uploadingImage || attachmentUploading}
-            className="p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative"
-            title="Upload Image"
-          >
-            {uploadingImage ? (
-              <Loader size={16} className="animate-spin" />
-            ) : uploadSuccess ? (
-              <Check size={16} className="text-green-600" />
-            ) : uploadError ? (
-              <AlertCircle size={16} className="text-red-600" />
-            ) : (
-              <ImageIcon size={16} />
-            )}
-          </button>
+          {showImageTool && (
+            <button
+              type="button"
+              onClick={() => {
+                if (fileInputRef.current) {
+                  fileInputRef.current.click();
+                }
+              }}
+              disabled={uploadingImage || attachmentUploading}
+              className="p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative"
+              title="Upload Image"
+            >
+              {uploadingImage ? (
+                <Loader size={16} className="animate-spin" />
+              ) : uploadSuccess ? (
+                <Check size={16} className="text-green-600" />
+              ) : uploadError ? (
+                <AlertCircle size={16} className="text-red-600" />
+              ) : (
+                <ImageIcon size={16} />
+              )}
+            </button>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -749,6 +760,7 @@ const RichTextEditor = ({
           {enableAttachments && hasEntityContext && (
             <>
               <button
+                type="button"
                 onClick={() => {
                   if (attachmentInputRef.current) {
                     attachmentInputRef.current.click();
@@ -795,6 +807,7 @@ const RichTextEditor = ({
           )}
           <div className="w-px h-6 bg-gray-300 mx-1" />
           <button
+            type="button"
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             className={`p-2 rounded hover:bg-gray-200 transition-colors ${
               editor.isActive('bulletList') ? 'bg-gray-200' : ''
@@ -804,6 +817,7 @@ const RichTextEditor = ({
             <List size={16} />
           </button>
           <button
+            type="button"
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
             className={`p-2 rounded hover:bg-gray-200 transition-colors ${
               editor.isActive('orderedList') ? 'bg-gray-200' : ''
@@ -813,6 +827,7 @@ const RichTextEditor = ({
             <ListOrdered size={16} />
           </button>
           <button
+            type="button"
             onClick={() => editor.chain().focus().toggleBlockquote().run()}
             className={`p-2 rounded hover:bg-gray-200 transition-colors ${
               editor.isActive('blockquote') ? 'bg-gray-200' : ''
@@ -823,6 +838,7 @@ const RichTextEditor = ({
           </button>
           <div className="w-px h-6 bg-gray-300 mx-1" />
           <button
+            type="button"
             onClick={() => editor.chain().focus().undo().run()}
             className="p-2 rounded hover:bg-gray-200 transition-colors"
             disabled={!editor.can().undo()}
@@ -831,6 +847,7 @@ const RichTextEditor = ({
             <Undo size={16} />
           </button>
           <button
+            type="button"
             onClick={() => editor.chain().focus().redo().run()}
             className="p-2 rounded hover:bg-gray-200 transition-colors"
             disabled={!editor.can().redo()}

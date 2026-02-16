@@ -39,8 +39,8 @@ const useEditorAttachment = ({
 
   // Get store methods
   const entityKey = getEntityKey(resolvedEntityType, resolvedEntityId);
-  const { addAttachment, uploadFile: storeUploadFile } = useAttachmentStore();
-  const attachments = useAttachmentStore(state => state.attachments[entityKey] || []);
+  const addAttachment = useAttachmentStore(state => state.addAttachment);
+  const storeUploadFile = useAttachmentStore(state => state.uploadFile);
 
   // DISABLED: Auto-cover is disabled - cover must be set explicitly by user
   // This prevents attachments from automatically becoming covers and ensures

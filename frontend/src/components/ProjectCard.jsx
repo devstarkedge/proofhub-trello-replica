@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, memo, useContext } from 'react';
+import React, { useState, useRef, useEffect, memo, useContext, useMemo } from 'react';
 import useThemeStore from '../store/themeStore';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -55,6 +55,17 @@ const ProjectCard = ({
   if (projectData._id && !projectData.id) {
     projectData.id = projectData._id;
   }
+
+  const descriptionPreview = useMemo(() => {
+    const rawDescription = projectData.description || '';
+    if (!rawDescription) return '';
+
+    return rawDescription
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }, [projectData.description]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -622,7 +633,7 @@ const ProjectCard = ({
             whileHover={{ opacity: 1 }}
             transition={{ duration: 0.2 }}
           >
-            {projectData.description || 'No description available'}
+            {descriptionPreview || 'No description available'}
           </motion.p>
         </div>
 

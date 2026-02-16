@@ -19,6 +19,7 @@ import EnterpriseFileUploader from "./EnterpriseFileUploader";
 import AuthContext from '../context/AuthContext';
 import ProjectOptionsDropdown from './ProjectOptionsDropdown';
 import DatePickerModal from "./DatePickerModal";
+import RichTextEditor from './RichTextEditor';
 
 // Country codes data
 const COUNTRY_CODES = [
@@ -841,17 +842,18 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         </FormField>
 
                         <FormField label="Description" icon={FileText} helperText="No character limit - describe your project in detail">
-                          <textarea
-                            name="description"
-                            value={formData.description}
-                            onChange={handleInputChange}
-                            rows={6}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-none hover:border-blue-300"
+                          <RichTextEditor
+                            content={formData.description}
+                            onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
                             placeholder="Describe the project goals, deliverables, and requirements..."
+                            startExpanded={true}
+                            allowMentions={false}
+                            enableAttachments={false}
+                            showLinkTool={false}
+                            showImageTool={false}
+                            editorMinHeightClass="min-h-[120px]"
+                            className="bg-white border border-gray-300 rounded-xl p-2 hover:border-blue-300"
                           />
-                          {formData.description && (
-                            <p className="text-xs text-gray-400">{formData.description.length.toLocaleString()} characters</p>
-                          )}
                         </FormField>
                       </div>
                     </section>

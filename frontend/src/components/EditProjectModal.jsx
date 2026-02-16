@@ -21,8 +21,8 @@ import CoverImageUploader from './CoverImageUploader';
 import DatePickerModal from './DatePickerModal';
 import EnterpriseFileUploader from './EnterpriseFileUploader';
 import ActivityTimeline from './ActivityTimeline';
-import ExpandableDescription from './ExpandableDescription';
 import ProjectOptionsDropdown from './ProjectOptionsDropdown';
+import RichTextEditor from './RichTextEditor';
 
 // Enterprise drawer variants
 const drawerVariants = {
@@ -689,17 +689,18 @@ const EnterpriseEditProjectModal = ({
                           </FormField>
 
                           <FormField label="Description" icon={FileText}>
-                            <textarea
-                              name="description"
-                              value={formData.description}
-                              onChange={handleInputChange}
-                              rows={6}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none hover:border-indigo-300"
-                              placeholder="Describe the project goals, deliverables, and requirements... (No character limit)"
+                            <RichTextEditor
+                              content={formData.description}
+                              onChange={(value) => setFormData(prev => ({ ...prev, description: value }))}
+                              placeholder="Describe the project goals, deliverables, and requirements..."
+                              startExpanded={true}
+                              allowMentions={false}
+                              enableAttachments={false}
+                              showLinkTool={false}
+                              showImageTool={false}
+                              editorMinHeightClass="min-h-[120px]"
+                              className="bg-white border border-gray-300 rounded-xl p-2 hover:border-indigo-300"
                             />
-                            <p className="text-xs text-gray-400 mt-1">
-                              {formData.description.length.toLocaleString()} characters
-                            </p>
                           </FormField>
                         </div>
                       </section>
