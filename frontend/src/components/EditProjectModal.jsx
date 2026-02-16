@@ -443,7 +443,7 @@ const EnterpriseEditProjectModal = ({
     if (!formData.title.trim()) newErrors.title = 'Title is required';
     if (formData.title.length > 0 && formData.title.length < 3) newErrors.title = 'Title must be at least 3 characters';
     if (!formData.startDate) newErrors.startDate = 'Start date is required';
-    if (!formData.dueDate) newErrors.dueDate = 'Due date is required';
+    // if (!formData.dueDate) newErrors.dueDate = 'Due date is required';
     if (formData.startDate && formData.dueDate && new Date(formData.startDate) >= new Date(formData.dueDate)) {
       newErrors.dueDate = 'Due date must be after start date';
     }
@@ -756,7 +756,7 @@ const EnterpriseEditProjectModal = ({
                             </div>
                           </FormField>
 
-                          <FormField label="Due Date" icon={Calendar} required error={errors.dueDate}>
+                          <FormField label="Due Date" icon={Calendar}  error={errors.dueDate}>
                             <div
                               onClick={() => setShowDueDatePicker(true)}
                               className={`w-full px-4 py-3 border rounded-xl cursor-pointer flex items-center justify-between hover:border-indigo-300 ${
@@ -892,7 +892,7 @@ const EnterpriseEditProjectModal = ({
                             />
                           </FormField>
 
-                          <FormField label="Project URL" icon={Link2}>
+                          <FormField label="Website URL" icon={Link2}>
                             <input
                               type="text"
                               name="projectUrl"

@@ -982,7 +982,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                           />
                         </FormField>
 
-                        <FormField label="Project URL" icon={Link2} error={errors.projectUrl}>
+                        <FormField label="Website URL" icon={Link2} error={errors.projectUrl}>
                           <input
                             type="text"
                             name="projectUrl"

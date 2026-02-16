@@ -343,7 +343,7 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
                             )}
                             {project.projectUrl && (
                               <div className="md:col-span-2">
-                                <label className="text-xs text-gray-500">Project URL</label>
+                                <label className="text-xs text-gray-500">Website URL</label>
                                 <a
                                   href={project.projectUrl}
                                   target="_blank"
