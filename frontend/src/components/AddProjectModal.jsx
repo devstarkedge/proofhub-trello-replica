@@ -66,7 +66,7 @@ const drawerVariants = {
 };
 
 // Form field component
-const FormField = ({ label, icon: Icon, required, error, helperText, children, className = '' }) => (
+const FormField = memo(({ label, icon: Icon, required, error, helperText, children, className = '' }) => (
   <div className={`space-y-2 ${className}`}>
     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
       {Icon && <Icon className="h-4 w-4 text-blue-600" />}
@@ -90,10 +90,10 @@ const FormField = ({ label, icon: Icon, required, error, helperText, children, c
       )}
     </AnimatePresence>
   </div>
-);
+));
 
 // Tab component
-const Tab = ({ tabs, activeTab, onTabChange }) => (
+const Tab = memo(({ tabs, activeTab, onTabChange }) => (
   <div className="flex gap-1 p-1 bg-white/10 rounded-xl backdrop-blur-sm">
     {tabs.map((tab) => (
       <button
@@ -110,7 +110,7 @@ const Tab = ({ tabs, activeTab, onTabChange }) => (
       </button>
     ))}
   </div>
-);
+));
 
 const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, departmentManagers = [] }) => {
   const { user } = useContext(AuthContext);
@@ -259,15 +259,18 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     }
   }, [isOpen, draftKey]);
 
-  // Auto-save draft
+  // Keep a ref to formData to avoid re-triggering the auto-save effect on every change
+  const formDataRef = useRef(formData);
+  formDataRef.current = formData;
+
+  // Auto-save draft using interval + ref (avoids re-render cascade on every keystroke)
   useEffect(() => {
     if (!isOpen) return;
-    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
 
-    draftTimerRef.current = setTimeout(() => {
+    const timer = setInterval(() => {
       try {
         localStorage.setItem(draftKey, JSON.stringify({
-          formData,
+          formData: formDataRef.current,
           savedAt: new Date().toISOString()
         }));
         setDraftStatus("Draft Saved ✅");
@@ -275,12 +278,10 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       } catch (error) {
         console.error('Failed to save project draft:', error);
       }
-    }, 1000);
+    }, 5000);
 
-    return () => {
-      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    };
-  }, [formData, isOpen, draftKey]);
+    return () => clearInterval(timer);
+  }, [isOpen, draftKey]);
 
   const fetchCategories = useCallback(async () => {
     if (!departmentId) return;

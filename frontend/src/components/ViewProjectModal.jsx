@@ -43,7 +43,7 @@ const overlayVariants = {
   exit: { opacity: 0 }
 };
 
-const StatusBadge = ({ status }) => {
+const StatusBadge = React.memo(({ status }) => {
   const statusConfig = {
     planning: { color: 'bg-gray-100 text-gray-700 border-gray-300', label: 'Planning' },
     'in-progress': { color: 'bg-blue-100 text-blue-700 border-blue-300', label: 'In Progress' },
@@ -56,9 +56,9 @@ const StatusBadge = ({ status }) => {
       {config.label}
     </span>
   );
-};
+});
 
-const PriorityBadge = ({ priority }) => {
+const PriorityBadge = React.memo(({ priority }) => {
   const priorityConfig = {
     low: { color: 'bg-emerald-100 text-emerald-700', label: 'Low' },
     medium: { color: 'bg-amber-100 text-amber-700', label: 'Medium' },
@@ -71,9 +71,9 @@ const PriorityBadge = ({ priority }) => {
       {config.label}
     </span>
   );
-};
+});
 
-const TabNavigation = ({ tabs, activeTab, onTabChange }) => (
+const TabNavigation = React.memo(({ tabs, activeTab, onTabChange }) => (
   <div className="flex gap-1 p-1 bg-white/10 rounded-xl backdrop-blur-sm">
     {tabs.map((tab) => (
       <button
@@ -95,7 +95,7 @@ const TabNavigation = ({ tabs, activeTab, onTabChange }) => (
       </button>
     ))}
   </div>
-);
+));
 
 const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject }) => {
   const [activeTab, setActiveTab] = useState('details');
@@ -137,40 +137,45 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
     fetchData();
   }, [isOpen, projectId]);
 
+  // Track which tabs have had their data fetched
+  const fetchedTabsRef = React.useRef({});
+
+  // Reset fetched tabs when projectId changes
+  useEffect(() => {
+    fetchedTabsRef.current = {};
+    setAttachments([]);
+    setActivity([]);
+  }, [projectId]);
+
+  // Lazy fetch attachments when files tab is selected
   useEffect(() => {
     if (!isOpen || !projectId) return;
-
-    const fetchAttachments = async () => {
+    if (activeTab === 'files' && !fetchedTabsRef.current.files) {
+      fetchedTabsRef.current.files = true;
       setFilesLoading(true);
-      try {
-        const response = await Database.getProjectAttachments(projectId);
-        if (response.success) {
-          setAttachments(response.data || []);
-        }
-      } catch (err) {
-        // ignore
-      } finally {
-        setFilesLoading(false);
-      }
-    };
+      Database.getProjectAttachments(projectId)
+        .then(res => {
+          if (res.success) setAttachments(res.data || []);
+        })
+        .catch(() => {})
+        .finally(() => setFilesLoading(false));
+    }
+  }, [activeTab, isOpen, projectId]);
 
-    const fetchActivity = async () => {
+  // Lazy fetch activity when activity tab is selected
+  useEffect(() => {
+    if (!isOpen || !projectId) return;
+    if (activeTab === 'activity' && !fetchedTabsRef.current.activity) {
+      fetchedTabsRef.current.activity = true;
       setActivityLoading(true);
-      try {
-        const response = await Database.getProjectActivity(projectId);
-        if (response.success) {
-          setActivity(response.data || []);
-        }
-      } catch (err) {
-        // ignore
-      } finally {
-        setActivityLoading(false);
-      }
-    };
-
-    fetchAttachments();
-    fetchActivity();
-  }, [isOpen, projectId]);
+      Database.getProjectActivity(projectId)
+        .then(res => {
+          if (res.success) setActivity(res.data || []);
+        })
+        .catch(() => {})
+        .finally(() => setActivityLoading(false));
+    }
+  }, [activeTab, isOpen, projectId]);
 
   if (!isOpen) return null;
 

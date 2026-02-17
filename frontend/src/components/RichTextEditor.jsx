@@ -79,7 +79,7 @@ const RichTextEditor = ({
   const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0 });
   const emojiPickerRef = useRef(null);
   const emojiButtonRef = useRef(null);
-  const [, forceUpdate] = useState(); 
+
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
   const attachmentInputRef = useRef(null);
@@ -375,9 +375,6 @@ const RichTextEditor = ({
       onUpdate: ({ editor }) => {
         const html = editor.getHTML();
         onChange(html);
-      },
-      onTransaction: () => {
-        forceUpdate({});
       },
     }, [getEditorSizeClass]);
 

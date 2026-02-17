@@ -50,7 +50,7 @@ const overlayVariants = {
 };
 
 // Tab navigation component
-const TabNavigation = ({ tabs, activeTab, onTabChange }) => (
+const TabNavigation = React.memo(({ tabs, activeTab, onTabChange }) => (
   <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
     {tabs.map((tab) => (
       <button
@@ -72,10 +72,10 @@ const TabNavigation = ({ tabs, activeTab, onTabChange }) => (
       </button>
     ))}
   </div>
-);
+));
 
 // Status badge component
-const StatusBadge = ({ status }) => {
+const StatusBadge = React.memo(({ status }) => {
   const statusConfig = {
     planning: { color: 'bg-gray-100 text-gray-700 border-gray-300', label: 'Planning' },
     'in-progress': { color: 'bg-blue-100 text-blue-700 border-blue-300', label: 'In Progress' },
@@ -88,10 +88,10 @@ const StatusBadge = ({ status }) => {
       {config.label}
     </span>
   );
-};
+});
 
 // Priority badge component
-const PriorityBadge = ({ priority }) => {
+const PriorityBadge = React.memo(({ priority }) => {
   const priorityConfig = {
     low: { color: 'bg-emerald-100 text-emerald-700', label: 'Low' },
     medium: { color: 'bg-amber-100 text-amber-700', label: 'Medium' },
@@ -104,10 +104,10 @@ const PriorityBadge = ({ priority }) => {
       {config.label}
     </span>
   );
-};
+});
 
 // Form field component with validation
-const FormField = ({ 
+const FormField = React.memo(({ 
   label, 
   icon: Icon, 
   required, 
@@ -139,7 +139,7 @@ const FormField = ({
       )}
     </AnimatePresence>
   </div>
-);
+));
 
 // Main Enterprise Edit Project Modal
 const EnterpriseEditProjectModal = ({ 
@@ -240,15 +240,18 @@ const EnterpriseEditProjectModal = ({
     }
   }, [isOpen, draftKey]);
 
-  // Auto-save draft
+  // Keep a ref to formData to avoid re-triggering the auto-save effect on every change
+  const formDataRef = useRef(formData);
+  formDataRef.current = formData;
+
+  // Auto-save draft using interval + ref (avoids re-render cascade on every keystroke)
   useEffect(() => {
     if (!isOpen) return;
-    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
 
-    draftTimerRef.current = setTimeout(() => {
+    const timer = setInterval(() => {
       try {
         localStorage.setItem(draftKey, JSON.stringify({
-          formData,
+          formData: formDataRef.current,
           savedAt: new Date().toISOString()
         }));
         setDraftStatus('Draft Saved ✅');
@@ -256,12 +259,10 @@ const EnterpriseEditProjectModal = ({
       } catch (error) {
         console.error('Failed to save project draft:', error);
       }
-    }, 1000);
+    }, 5000);
 
-    return () => {
-      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    };
-  }, [formData, isOpen, draftKey]);
+    return () => clearInterval(timer);
+  }, [isOpen, draftKey]);
 
   // Load project data
   useEffect(() => {
@@ -297,20 +298,7 @@ const EnterpriseEditProjectModal = ({
           setCoverImageHistory(fullProject.coverImageHistory || []);
           await fetchCategories(fullProject);
           
-          // Fetch attachments and activity
-          setActivityLoading(true);
-          try {
-            const [attachmentsRes, activityRes] = await Promise.all([
-              Database.getProjectAttachments(fullProject._id || fullProject.id),
-              Database.getProjectActivity(fullProject._id || fullProject.id)
-            ]);
-            setProjectFiles(attachmentsRes.data || []);
-            setActivityLog(activityRes.data || []);
-          } catch (fetchError) {
-            console.error('Error fetching project files or activity:', fetchError);
-          } finally {
-            setActivityLoading(false);
-          }
+          // Attachments and activity are now fetched lazily when their tabs are selected
         } catch (error) {
           console.error('Error fetching full project:', error);
           toast.error('Failed to load project details');
@@ -319,6 +307,38 @@ const EnterpriseEditProjectModal = ({
       fetchFullProject();
     }
   }, [isOpen, project]);
+
+  // Track which tabs have had their data fetched
+  const fetchedTabsRef = useRef({});
+
+  // Reset fetched tabs when project changes
+  useEffect(() => {
+    fetchedTabsRef.current = {};
+  }, [project]);
+
+  // Lazy fetch attachments when files tab is selected
+  useEffect(() => {
+    if (activeTab === 'files' && !fetchedTabsRef.current.files && isOpen && project) {
+      fetchedTabsRef.current.files = true;
+      const projectId = project._id || project.id;
+      Database.getProjectAttachments(projectId)
+        .then(res => setProjectFiles(res.data || []))
+        .catch(err => console.error('Error fetching attachments:', err));
+    }
+  }, [activeTab, isOpen, project]);
+
+  // Lazy fetch activity when activity tab is selected
+  useEffect(() => {
+    if (activeTab === 'activity' && !fetchedTabsRef.current.activity && isOpen && project) {
+      fetchedTabsRef.current.activity = true;
+      setActivityLoading(true);
+      const projectId = project._id || project.id;
+      Database.getProjectActivity(projectId)
+        .then(res => setActivityLog(res.data || []))
+        .catch(err => console.error('Error fetching activity:', err))
+        .finally(() => setActivityLoading(false));
+    }
+  }, [activeTab, isOpen, project]);
 
   const fetchCategories = async (project) => {
     try {
@@ -329,22 +349,22 @@ const EnterpriseEditProjectModal = ({
     }
   };
 
-  const handleInputChange = (e) => {
+  const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
-  };
+  }, [errors]);
 
-  const handleAssigneeChange = (userId) => {
+  const handleAssigneeChange = useCallback((userId) => {
     setFormData(prev => ({
       ...prev,
       assignees: prev.assignees.includes(userId)
         ? prev.assignees.filter(id => id !== userId)
         : [...prev.assignees, userId]
     }));
-  };
+  }, []);
 
   // File handlers
   const handleRemovePendingFile = useCallback((item) => {

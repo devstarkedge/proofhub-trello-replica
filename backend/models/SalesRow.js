@@ -163,9 +163,12 @@ salesRowSchema.index({ technology: 1, date: -1 });
 salesRowSchema.index({ status: 1, date: -1 });
 salesRowSchema.index({ createdBy: 1 });
 salesRowSchema.index({ isDeleted: 1, date: -1 });
+salesRowSchema.index({ clientLocation: 1, date: -1 });
+salesRowSchema.index({ profile: 1, date: -1 });
 
 // Compound index for common queries
 salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, date: -1 });
+salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, technology: 1, date: -1 });
 
 // Pre-save hook to auto-generate month name from date
 salesRowSchema.pre('save', function(next) {

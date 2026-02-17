@@ -50,6 +50,9 @@ const useSalesStore = create(
       // Per-column filters (key: column key, value: filter value or object)
       columnFilters: {},
 
+      // User-customized column widths (key: column key, value: width in px)
+      columnWidths: {},
+
       // ============================================
       // ACTIONS
       // ============================================
@@ -316,6 +319,22 @@ const useSalesStore = create(
       clearColumnFilters: () => {
         set({ columnFilters: {} });
         get().fetchRows(1);
+      },
+
+      /**
+       * Set a single column width (user resize)
+       */
+      setColumnWidth: (columnKey, width) => {
+        set(state => ({
+          columnWidths: { ...state.columnWidths, [columnKey]: width }
+        }));
+      },
+
+      /**
+       * Reset all column widths to defaults
+       */
+      resetColumnWidths: () => {
+        set({ columnWidths: {} });
       },
 
       /**
@@ -674,6 +693,7 @@ const useSalesStore = create(
       partialize: (state) => ({
         filters: state.filters,
         columnFilters: state.columnFilters,
+        columnWidths: state.columnWidths,
         sortBy: state.sortBy,
         sortOrder: state.sortOrder,
         dropdownOptions: state.dropdownOptions,
