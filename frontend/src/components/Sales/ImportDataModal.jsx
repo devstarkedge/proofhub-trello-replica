@@ -1,14 +1,15 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { X, Upload } from 'lucide-react';
+import { X, Upload, AlertCircle, Plus, Check } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
 import useSalesStore from '../../store/salesStore';
+import * as salesApi from '../../services/salesApi';
 import { toast } from 'react-toastify';
 import { parseSalesDate } from '../../utils/dateUtils';
 
 const ImportDataModal = ({ isOpen, onClose }) => {
-  const { importRows, customColumns, fetchCustomColumns, fetchRows } = useSalesStore();
+  const { importRows, customColumns, fetchCustomColumns, fetchRows, fetchDropdownOptions } = useSalesStore();
   const [step, setStep] = useState(1); // 1: Upload, 2: Map, 3: Preview, 4: Importing, 5: Complete
   const [fileName, setFileName] = useState('');
   const [columns, setColumns] = useState([]);
@@ -25,7 +26,10 @@ const ImportDataModal = ({ isOpen, onClose }) => {
   const [progressMessage, setProgressMessage] = useState('');
   const [processedCount, setProcessedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [importStats, setImportStats] = useState({ success: 0, failed: 0 });
+  const [importStats, setImportStats] = useState({ success: 0, failed: 0, newColumns: 0, newOptions: 0 });
+
+  // New columns to auto-create during import
+  const [newColumnsToCreate, setNewColumnsToCreate] = useState([]);
 
   // Fetch custom columns when modal opens
   useEffect(() => {
@@ -43,10 +47,32 @@ const ImportDataModal = ({ isOpen, onClose }) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
+      const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // =============================================
+      // FIX: Force all cells to their text representation.
+      // XLSX auto-converts date-like strings (e.g. "06-01-2025") into Excel
+      // serial numbers using US locale (MM-DD-YYYY), which swaps day/month
+      // when day ≤ 12. We convert ALL numeric cells that have a date format
+      // back to plain strings so our DD-MM-YYYY parser handles them.
+      // We also keep the formatted text (cell.w) when available.
+      // =============================================
+      Object.keys(worksheet).forEach(addr => {
+        if (addr[0] === '!') return;
+        const cell = worksheet[addr];
+        if (!cell) return;
+
+        // For any cell, prefer the formatted text representation
+        // This preserves exactly what was in the file
+        if (cell.w !== undefined && cell.w !== null) {
+          cell.t = 's';
+          cell.v = String(cell.w);
+        }
+      });
+
+      const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
       if (!json.length) {
         setError('No data found in file.');
         return;
@@ -79,31 +105,30 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           const normalize = (s) => (s === null || s === undefined) ? '' : String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
           const fieldByNorm = {};
           
-          // Get current salesFields (standard + custom)
-          const currentSalesFields = useSalesStore.getState().customColumns.length > 0
-            ? [
-                { key: 'date', label: 'Date' },
-                { key: 'bidLink', label: 'Bid Link' },
-                { key: 'platform', label: 'Platform' },
-                { key: 'profile', label: 'Profile' },
-                { key: 'technology', label: 'Technology' },
-                { key: 'clientRating', label: 'Client Rating' },
-                { key: 'clientHireRate', label: 'Client % Hire Rate' },
-                { key: 'clientBudget', label: 'Client Budget' },
-                { key: 'clientSpending', label: 'Client Spending' },
-                { key: 'clientLocation', label: 'Client Location' },
-                { key: 'replyFromClient', label: 'Reply From Client' },
-                { key: 'followUps', label: 'Follow Ups' },
-                { key: 'followUpDate', label: 'Follow Up Date' },
-                { key: 'connects', label: 'Connects' },
-                { key: 'rate', label: 'Rate' },
-                { key: 'proposalScreenshot', label: 'Proposal Screenshot' },
-                { key: 'status', label: 'Status' },
-                { key: 'comments', label: 'Comments' },
-                { key: 'rowColor', label: 'Row Color' },
-                ...useSalesStore.getState().customColumns.map(col => ({ key: col.key, label: col.name }))
-              ]
-            : [];
+          // Standard fields are always available
+          const standardFieldsList = [
+            { key: 'date', label: 'Date' },
+            { key: 'bidLink', label: 'Bid Link' },
+            { key: 'platform', label: 'Platform' },
+            { key: 'profile', label: 'Profile' },
+            { key: 'technology', label: 'Technology' },
+            { key: 'clientRating', label: 'Client Rating' },
+            { key: 'clientHireRate', label: 'Client % Hire Rate' },
+            { key: 'clientBudget', label: 'Client Budget' },
+            { key: 'clientSpending', label: 'Client Spending' },
+            { key: 'clientLocation', label: 'Client Location' },
+            { key: 'replyFromClient', label: 'Reply From Client' },
+            { key: 'followUps', label: 'Follow Ups' },
+            { key: 'followUpDate', label: 'Follow Up Date' },
+            { key: 'connects', label: 'Connects' },
+            { key: 'rate', label: 'Rate' },
+            { key: 'proposalScreenshot', label: 'Proposal Screenshot' },
+            { key: 'status', label: 'Status' },
+            { key: 'comments', label: 'Comments' },
+            { key: 'rowColor', label: 'Row Color' },
+          ];
+          const customFieldsList = (useSalesStore.getState().customColumns || []).map(col => ({ key: col.key, label: col.name }));
+          const currentSalesFields = [...standardFieldsList, ...customFieldsList];
           
           currentSalesFields.forEach(f => {
             fieldByNorm[normalize(f.key)] = f.key;
@@ -111,6 +136,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           });
 
           const autoMap = {};
+          const unmappedHeaders = [];
           filteredHeader.forEach((h) => {
             const n = normalize(h);
             let mapped = null;
@@ -120,7 +146,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
               for (const f of currentSalesFields) {
                 const nk = normalize(f.key);
                 const nl = normalize(f.label);
-                if (nk && nk.includes(n) || n.includes(nk) || (nl && nl.includes(n)) || n.includes(nl)) {
+                if (nk && (nk.includes(n) || n.includes(nk)) || (nl && (nl.includes(n) || n.includes(nl)))) {
                   mapped = f.key;
                   break;
                 }
@@ -129,12 +155,25 @@ const ImportDataModal = ({ isOpen, onClose }) => {
             // avoid mapping multiple headers to same field; prefer first match
             if (mapped && !Object.values(autoMap).includes(mapped)) {
               autoMap[h] = mapped;
+            } else if (!mapped) {
+              unmappedHeaders.push(h);
             }
           });
 
           if (Object.keys(autoMap).length > 0) {
             setColumnMap(autoMap);
           }
+
+          // Auto-detect new columns from unmapped headers (exclude system-like columns)
+          const skipHeaders = new Set(['_id', 'id', '__v', 'createdat', 'updatedat', 'deletedat', 'deletedby', 'isdeleted', 'lockedby', 'lockedat', 'createdby', 'updatedby', 'monthname']);
+          const detectedNewCols = unmappedHeaders
+            .filter(h => !skipHeaders.has(normalize(h)))
+            .map(h => ({
+              name: h,
+              type: 'text', // Default type; user can change
+              enabled: true
+            }));
+          setNewColumnsToCreate(detectedNewCols);
         } catch (e) {
           // ignore mapping errors and allow manual mapping
         }
@@ -192,13 +231,33 @@ const ImportDataModal = ({ isOpen, onClose }) => {
   };
 
   const handlePreview = () => {
+    // Build extended column map that includes new columns (mapped as their generated key)
+    const extendedMap = { ...columnMap };
+    newColumnsToCreate.filter(c => c.enabled).forEach(c => {
+      const key = c.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      if (key && !Object.values(extendedMap).includes(key)) {
+        // Map the file column header to the generated key
+        extendedMap[c.name] = key;
+      }
+    });
+
+    // Detect month column index for date validation
+    const monthColIdx = columns.findIndex(col => {
+      const norm = String(col).toLowerCase().replace(/[^a-z0-9]/g, '');
+      return norm === 'month' || norm === 'monthname';
+    });
+
     // Map columns to sales fields
     const mapped = rows.map((row) => {
       const obj = {};
       columns.forEach((col, idx) => {
-        const field = columnMap[col];
+        const field = extendedMap[col];
         if (field) obj[field] = row[idx];
       });
+      // Attach imported month name for date validation
+      if (monthColIdx >= 0 && row[monthColIdx]) {
+        obj._importedMonthName = String(row[monthColIdx]).trim();
+      }
       return obj;
     });
     setPreviewRows(mapped.slice(0, 10)); // Preview first 10
@@ -211,10 +270,20 @@ const ImportDataModal = ({ isOpen, onClose }) => {
     setSuccess('');
     setFailedResults(null);
     try {
+      // Build extended column map that includes new columns
+      const extendedMap = { ...columnMap };
+      const enabledNewCols = newColumnsToCreate.filter(c => c.enabled);
+      enabledNewCols.forEach(c => {
+        const key = c.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        if (key && !Object.values(extendedMap).includes(key)) {
+          extendedMap[c.name] = key;
+        }
+      });
+
       // Check if required fields are mapped (for user guidance only)
       const requiredFields = ['date', 'platform', 'technology', 'status'];
-      const mappedRequiredFields = requiredFields.filter(f => Object.values(columnMap).includes(f));
-      const unmappedFields = requiredFields.filter(f => !Object.values(columnMap).includes(f));
+      const mappedRequiredFields = requiredFields.filter(f => Object.values(extendedMap).includes(f));
+      const unmappedFields = requiredFields.filter(f => !Object.values(extendedMap).includes(f));
       
       // Warn user if no required fields are mapped, but allow import
       if (mappedRequiredFields.length === 0 && unmappedFields.length === requiredFields.length) {
@@ -223,13 +292,23 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         return;
       }
 
-      // Map all rows
+      // Detect month column index for date validation
+      const monthColIdx = columns.findIndex(col => {
+        const norm = String(col).toLowerCase().replace(/[^a-z0-9]/g, '');
+        return norm === 'month' || norm === 'monthname';
+      });
+
+      // Map all rows using extendedMap
       const mapped = rows.map((row, originalIndex) => {
         const obj = { _originalIndex: originalIndex };
         columns.forEach((col, idx) => {
-          const field = columnMap[col];
+          const field = extendedMap[col];
           if (field) obj[field] = row[idx];
         });
+        // Attach imported month name for date validation
+        if (monthColIdx >= 0 && row[monthColIdx]) {
+          obj._importedMonthName = String(row[monthColIdx]).trim();
+        }
         return obj;
       });
 
@@ -245,15 +324,63 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         return;
       }
 
+      // Month name → month number mapping (0-indexed)
+      const monthNameToNum = {
+        january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+        july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+        jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+      };
+
       // Normalization helpers
       const normalizeRow = (obj) => {
         const out = { ...obj };
         const originalIndex = out._originalIndex;
         delete out._originalIndex;
-        
-        // Standard date fields - enhanced parsing
+
+        // Extract and remove the imported month name (it's metadata, not a DB field)
+        const importedMonth = out._importedMonthName;
+        delete out._importedMonthName;
+
+        // Standard date fields - enhanced parsing with month-name validation
         if (out.date !== undefined && out.date !== null && out.date !== '') {
-          const d = parseSalesDate(out.date);
+          let d = parseSalesDate(out.date);
+
+          // Validate parsed date against the imported Month Name column
+          if (d && importedMonth) {
+            const expectedMonthNum = monthNameToNum[importedMonth.toLowerCase()];
+            if (expectedMonthNum !== undefined && d.getUTCMonth() !== expectedMonthNum) {
+              // Month mismatch — the date was likely swapped (DD↔MM).
+              // Reconstruct by swapping day and month in the parsed date.
+              const wrongMonth = d.getUTCMonth();    // 0-indexed
+              const wrongDay = d.getUTCDate();
+              const year = d.getUTCFullYear();
+              // wrongMonth+1 should actually be the day, wrongDay should be the month
+              // Only swap if the swapped values make a valid date
+              if (wrongMonth + 1 <= 31 && wrongDay >= 1 && wrongDay <= 12) {
+                const reconstructed = new Date(Date.UTC(year, wrongDay - 1, wrongMonth + 1));
+                if (!isNaN(reconstructed.getTime()) && reconstructed.getUTCMonth() === wrongDay - 1) {
+                  d = reconstructed;
+                  console.warn(`[Import] Date corrected using month column: parsed month=${wrongMonth + 1}, expected="${importedMonth}", swapped to ${reconstructed.toISOString()}`);
+                }
+              }
+              // If swap didn't work, try to build from the original string + expected month
+              if (d.getUTCMonth() !== expectedMonthNum) {
+                const rawStr = String(out.date);
+                const parts = rawStr.match(/(\d{1,2})[\-\/\.](\d{1,2})[\-\/\.](\d{2,4})/);
+                if (parts) {
+                  // Try DD-MM-YYYY where MM = expectedMonthNum+1
+                  const dayCandidate = parseInt(parts[1], 10);
+                  const yr = parts[3].length === 2 ? 2000 + parseInt(parts[3], 10) : parseInt(parts[3], 10);
+                  const rebuilt = new Date(Date.UTC(yr, expectedMonthNum, dayCandidate));
+                  if (!isNaN(rebuilt.getTime()) && rebuilt.getUTCMonth() === expectedMonthNum && rebuilt.getUTCDate() === dayCandidate) {
+                    d = rebuilt;
+                    console.warn(`[Import] Date rebuilt from raw string + month column: "${rawStr}" → ${rebuilt.toISOString()}`);
+                  }
+                }
+              }
+            }
+          }
+
           out.date = d ? d.toISOString() : null;
         }
         if (out.followUpDate !== undefined && out.followUpDate !== null && out.followUpDate !== '') {
@@ -464,7 +591,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       setProcessedCount(0);
       setProgress(0);
       setProgressMessage('Starting import...');
-      setImportStats({ success: 0, failed: 0 });
+      setImportStats({ success: 0, failed: 0, newColumns: 0, newOptions: 0 });
       
       // Split into batches
       const batches = [];
@@ -474,8 +601,11 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       
       let totalSuccess = 0;
       let totalBackendFailed = 0;
+      let totalNewColumns = 0;
+      let totalNewOptions = 0;
       const allFailed = [...invalidRows];
       const allSuccessful = [];
+      const allNewColumns = [];
       
       // Process batches sequentially with progress updates
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -485,7 +615,14 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         setProgressMessage(`Processing batch ${batchIndex + 1} of ${batches.length}...`);
         
         try {
-          const result = await importRows(batch);
+          // For the first batch, include new columns to create
+          const importPayload = batchIndex === 0 && enabledNewCols.length > 0
+            ? { data: batch, newColumns: enabledNewCols.map(c => ({ name: c.name, type: c.type })) }
+            : batch;
+          
+          const result = batchIndex === 0 && enabledNewCols.length > 0
+            ? await salesApi.importRows(importPayload.data, importPayload.newColumns)
+            : await importRows(batch);
           
           if (result && result.results) {
             const batchSuccess = result.results.success?.length || 0;
@@ -493,6 +630,15 @@ const ImportDataModal = ({ isOpen, onClose }) => {
             
             if (result.results.success) {
               allSuccessful.push(...result.results.success);
+            }
+
+            // Track new columns and options created
+            if (result.results.newColumnsCreated) {
+              totalNewColumns += result.results.newColumnsCreated.length;
+              allNewColumns.push(...result.results.newColumnsCreated);
+            }
+            if (result.results.newDropdownOptionsCreated) {
+              totalNewOptions += result.results.newDropdownOptionsCreated.length;
             }
             
             if (result.results.failed && result.results.failed.length > 0) {
@@ -524,7 +670,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         
         setProcessedCount(processedSoFar);
         setProgress(progressPercent);
-        setImportStats({ success: totalSuccess, failed: allFailed.length });
+        setImportStats({ success: totalSuccess, failed: allFailed.length, newColumns: totalNewColumns, newOptions: totalNewOptions });
         setProgressMessage(`Processed ${processedSoFar.toLocaleString()} of ${totalRows.toLocaleString()} rows...`);
         
         // Small delay to ensure UI updates render
@@ -533,6 +679,18 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       
       // Refresh the data after import completes
       await fetchRows();
+      
+      // Also refresh custom columns and dropdown options if new ones were created
+      if (totalNewColumns > 0) {
+        await fetchCustomColumns();
+      }
+      if (totalNewOptions > 0) {
+        // Refresh dropdown options for affected columns
+        const dropdownStandard = ['platform', 'technology', 'status', 'clientLocation', 'clientBudget', 'profile', 'replyFromClient', 'followUps'];
+        for (const col of dropdownStandard) {
+          await fetchDropdownOptions(col).catch(() => {});
+        }
+      }
       
       // Final results
       const totalFailed = allFailed.length;
@@ -590,7 +748,8 @@ const ImportDataModal = ({ isOpen, onClose }) => {
     setProgressMessage('');
     setProcessedCount(0);
     setTotalCount(0);
-    setImportStats({ success: 0, failed: 0 });
+    setImportStats({ success: 0, failed: 0, newColumns: 0, newOptions: 0 });
+    setNewColumnsToCreate([]);
   };
 
   if (!isOpen) return null;
@@ -650,7 +809,57 @@ const ImportDataModal = ({ isOpen, onClose }) => {
                   </tbody>
                 </table>
               </div>
-              <div className="flex justify-end gap-2">
+
+              {/* New Columns Detected */}
+              {newColumnsToCreate.length > 0 && (
+                <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    <h4 className="font-semibold text-amber-700 dark:text-amber-400 text-sm">
+                      New Columns Detected ({newColumnsToCreate.length})
+                    </h4>
+                  </div>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-3">
+                    These file columns don't match any existing fields and will be created as new custom columns.
+                  </p>
+                  <div className="space-y-2">
+                    {newColumnsToCreate.map((nc, idx) => (
+                      <div key={idx} className="flex items-center gap-3 p-2 bg-white dark:bg-gray-800 rounded border border-amber-100 dark:border-amber-900">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewColumnsToCreate(prev => prev.map((c, i) => i === idx ? { ...c, enabled: !c.enabled } : c));
+                          }}
+                          className={`shrink-0 w-6 h-6 rounded flex items-center justify-center border transition-colors ${
+                            nc.enabled
+                              ? 'bg-amber-500 border-amber-500 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
+                          }`}
+                        >
+                          {nc.enabled && <Check className="w-4 h-4" />}
+                        </button>
+                        <span className="flex-1 text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{nc.name}</span>
+                        <select
+                          className="input text-xs py-1 px-2 w-28"
+                          value={nc.type}
+                          disabled={!nc.enabled}
+                          onChange={e => {
+                            setNewColumnsToCreate(prev => prev.map((c, i) => i === idx ? { ...c, type: e.target.value } : c));
+                          }}
+                        >
+                          <option value="text">Text</option>
+                          <option value="number">Number</option>
+                          <option value="date">Date</option>
+                          <option value="dropdown">Dropdown</option>
+                          <option value="link">Link</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 mt-4">
                 <button onClick={handleReset} className="px-4 py-2 border rounded-lg">Back</button>
                 <button onClick={handlePreview} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Preview</button>
               </div>
@@ -835,6 +1044,34 @@ const ImportDataModal = ({ isOpen, onClose }) => {
                   <div className="text-sm text-red-600 dark:text-red-400 mt-1">Rows Failed</div>
                 </div>
               </div>
+
+              {/* New columns & options created */}
+              {(importStats.newColumns > 0 || importStats.newOptions > 0) && (
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  {importStats.newColumns > 0 && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 text-center border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center justify-center gap-1">
+                        <Plus className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                        <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+                          {importStats.newColumns}
+                        </span>
+                      </div>
+                      <div className="text-sm text-amber-600 dark:text-amber-400 mt-1">New Columns Created</div>
+                    </div>
+                  )}
+                  {importStats.newOptions > 0 && (
+                    <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 text-center border border-purple-200 dark:border-purple-800">
+                      <div className="flex items-center justify-center gap-1">
+                        <Plus className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                        <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                          {importStats.newOptions}
+                        </span>
+                      </div>
+                      <div className="text-sm text-purple-600 dark:text-purple-400 mt-1">New Dropdown Options</div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Failed Rows Details */}
               {failedResults && failedResults.failed && failedResults.failed.length > 0 && (

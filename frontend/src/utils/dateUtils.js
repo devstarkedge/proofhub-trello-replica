@@ -41,8 +41,9 @@ export const toISOFormat = (date) => {
 
 /**
  * Parses a date string to a Date object.
- * Prioritizes dd-mm-yyyy, then mm-dd-yyyy, then ISO.
- * @param {string|Date} val 
+ * ALWAYS treats dd-mm-yyyy as the canonical format.
+ * Never relies on new Date(string) for ambiguous formats.
+ * @param {string|Date|number} val 
  * @returns {Date|null}
  */
 export const parseSalesDate = (val) => {
@@ -51,59 +52,59 @@ export const parseSalesDate = (val) => {
     return isNaN(val.getTime()) ? null : val;
   }
 
-  // Excel serial date numbers (e.g., 46114 or 46114.00011574074)
+  // Excel serial date numbers (e.g., 45662)
   if (typeof val === 'number' && !isNaN(val)) {
-    const excelEpoch = Date.UTC(1899, 11, 30);
-    const date = new Date(excelEpoch + val * 24 * 60 * 60 * 1000);
-    return isNaN(date.getTime()) ? null : date;
+    if (val > 10000) {
+      // Likely an Excel serial date
+      const excelEpoch = Date.UTC(1899, 11, 30);
+      const date = new Date(excelEpoch + val * 24 * 60 * 60 * 1000);
+      return isNaN(date.getTime()) ? null : date;
+    }
+    return null;
   }
   
   const s = String(val).trim();
   if (!s) return null;
 
   // Numeric strings that represent Excel serial dates
-  if (s.match(/^\d+(\.\d+)?$/)) {
+  if (s.match(/^\d+(\.\d+)?$/) && Number(s) > 10000) {
     const num = Number(s);
-    if (!isNaN(num)) {
-      const excelEpoch = Date.UTC(1899, 11, 30);
-      const date = new Date(excelEpoch + num * 24 * 60 * 60 * 1000);
-      return isNaN(date.getTime()) ? null : date;
-    }
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    const date = new Date(excelEpoch + num * 24 * 60 * 60 * 1000);
+    return isNaN(date.getTime()) ? null : date;
   }
 
-  // Try ISO / native parse first (if it's a full ISO string from backend)
-  // But be careful, NEW Date('13-01-2026') might be invalid in some browsers or locales if not ISO.
-  // So we accept ISO if it contains 'T' or looks like YYYY-MM-DD
-  if (s.match(/^\d{4}-\d{2}-\d{2}/)) {
-    const native = new Date(s);
-    return isNaN(native.getTime()) ? null : native;
-  }
-
-  // dd/mm/yyyy or d/m/yyyy or dd-mm-yyyy or dd.mm.yyyy
-  // prioritized over mm/dd/yyyy
+  // DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY — ALWAYS tried first (canonical format)
   const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (dmy) {
     const day = parseInt(dmy[1], 10);
     const month = parseInt(dmy[2], 10);
     const year = parseInt(dmy[3], 10);
-    const dt = new Date(year, month - 1, day);
-    return isNaN(dt.getTime()) ? null : dt;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const dt = new Date(year, month - 1, day);
+      return isNaN(dt.getTime()) ? null : dt;
+    }
   }
 
-  // mm/dd/yyyy - fallback
-  const mdy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
-  if (mdy) {
-    const p1 = parseInt(mdy[1], 10); // month?
-    const p2 = parseInt(mdy[2], 10); // day?
-    const y = parseInt(mdy[3], 10);
-    const year = y < 100 ? 2000 + y : y;
-    
-    // Assume Month/Day/Year
-    const dt = new Date(year, p1 - 1, p2);
-    return isNaN(dt.getTime()) ? null : dt;
+  // ISO format YYYY-MM-DD (from backend / database) — safe, unambiguous
+  if (s.match(/^\d{4}-\d{2}-\d{2}/)) {
+    const native = new Date(s);
+    return isNaN(native.getTime()) ? null : native;
   }
 
-  // Fallback to native
+  // Short year: dd-mm-yy
+  const dmyShort = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/);
+  if (dmyShort) {
+    const day = parseInt(dmyShort[1], 10);
+    const month = parseInt(dmyShort[2], 10);
+    const year = 2000 + parseInt(dmyShort[3], 10);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const dt = new Date(year, month - 1, day);
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+  }
+
+  // Fallback to native parsing only for clearly unambiguous formats (e.g., "January 6, 2025")
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 };

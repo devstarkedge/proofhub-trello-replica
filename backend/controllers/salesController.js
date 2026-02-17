@@ -114,62 +114,121 @@ const prepareRowForSave = (data) => {
  * @route   GET /api/sales/rows
  * @access  Private (requires sales module permission)
  */
+// Helper to build a query from filter params (shared by getSalesRows and exportRows)
+const buildSalesQuery = (params) => {
+  const {
+    search = '',
+    platform,
+    technology,
+    status,
+    location,
+    minRating,
+    minHireRate,
+    budget,
+    profile,
+    dateFrom,
+    dateTo,
+    columnFilters // JSON string of per-column filters
+  } = params;
+
+  const query = { isDeleted: false };
+
+  // Search across multiple fields
+  if (search) {
+    query.$or = [
+      { bidLink: { $regex: search, $options: 'i' } },
+      { comments: { $regex: search, $options: 'i' } },
+      { platform: { $regex: search, $options: 'i' } },
+      { profile: { $regex: search, $options: 'i' } },
+      { technology: { $regex: search, $options: 'i' } },
+      { clientLocation: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  // Apply standard filters
+  if (platform) query.platform = platform;
+  if (technology) query.technology = technology;
+  if (status) query.status = status;
+  if (location) query.clientLocation = location;
+  if (minRating) query.clientRating = { $gte: parseFloat(minRating) };
+  if (minHireRate) query.clientHireRate = { $gte: parseFloat(minHireRate) };
+  if (budget) query.clientBudget = budget;
+  if (profile) query.profile = profile;
+
+  // Date range filter
+  if (dateFrom || dateTo) {
+    query.date = {};
+    if (dateFrom) query.date.$gte = new Date(dateFrom);
+    if (dateTo) query.date.$lte = new Date(dateTo);
+  }
+
+  // Per-column filters (from column filter UI)
+  if (columnFilters) {
+    let filters = columnFilters;
+    if (typeof filters === 'string') {
+      try { filters = JSON.parse(filters); } catch { filters = {}; }
+    }
+    Object.entries(filters).forEach(([key, filterVal]) => {
+      if (!filterVal || filterVal === '') return;
+      // Determine if this is a standard field or custom field
+      const isStandard = STANDARD_FIELDS.includes(key);
+      const fieldPath = isStandard ? key : `customFields.${key}`;
+
+      if (typeof filterVal === 'object' && filterVal !== null) {
+        // Range filter for numbers/dates: { min, max } or { from, to }
+        if (filterVal.min !== undefined || filterVal.max !== undefined) {
+          query[fieldPath] = {};
+          if (filterVal.min !== undefined && filterVal.min !== '') query[fieldPath].$gte = parseFloat(filterVal.min);
+          if (filterVal.max !== undefined && filterVal.max !== '') query[fieldPath].$lte = parseFloat(filterVal.max);
+        } else if (filterVal.from || filterVal.to) {
+          query[fieldPath] = {};
+          if (filterVal.from) query[fieldPath].$gte = new Date(filterVal.from);
+          if (filterVal.to) query[fieldPath].$lte = new Date(filterVal.to);
+        } else if (filterVal.value !== undefined && filterVal.value !== '') {
+          // Exact or text match
+          if (filterVal.type === 'text') {
+            query[fieldPath] = { $regex: filterVal.value, $options: 'i' };
+          } else {
+            query[fieldPath] = filterVal.value;
+          }
+        }
+      } else {
+        // Simple string filter - use case-insensitive regex for text, exact for others
+        const dateFields = ['date', 'followUpDate'];
+        const numericFields = ['clientRating', 'clientHireRate', 'connects', 'rate'];
+        if (dateFields.includes(key)) {
+          // Skip - date filters should use range format
+        } else if (numericFields.includes(key)) {
+          const num = parseFloat(filterVal);
+          if (!isNaN(num)) query[fieldPath] = num;
+        } else {
+          query[fieldPath] = { $regex: String(filterVal), $options: 'i' };
+        }
+      }
+    });
+  }
+
+  return query;
+};
+
 export const getSalesRows = async (req, res) => {
   try {
     const {
       page = 1,
       limit = 50,
-      search = '',
-      platform,
-      technology,
-      status,
-      location,
-      minRating,
-      minHireRate,
-      budget,
-      profile,
-      dateFrom,
-      dateTo,
       sortBy = 'date',
       sortOrder = 'desc'
     } = req.query;
 
-    // Build query
-    const query = { isDeleted: false };
+    // Build query using shared helper
+    const query = buildSalesQuery(req.query);
 
-    // Search across multiple fields
-    if (search) {
-      query.$or = [
-        { bidLink: { $regex: search, $options: 'i' } },
-        { comments: { $regex: search, $options: 'i' } },
-        { platform: { $regex: search, $options: 'i' } },
-        { profile: { $regex: search, $options: 'i' } },
-        { technology: { $regex: search, $options: 'i' } },
-        // Also search in custom fields?? This is hard with Map... 
-        // For now, we likely miss custom fields in search unless we query specifically.
-      ];
-    }
-
-    // Apply filters
-    if (platform) query.platform = platform;
-    if (technology) query.technology = technology;
-    if (status) query.status = status;
-    if (location) query.clientLocation = location;
-    if (minRating) query.clientRating = { $gte: parseInt(minRating) };
-    if (minHireRate) query.clientHireRate = { $gte: parseInt(minHireRate) };
-    if (budget) query.clientBudget = budget;
-    if (profile) query.profile = profile;
-    
-    // Date range filter
-    if (dateFrom || dateTo) {
-      query.date = {};
-      if (dateFrom) query.date.$gte = new Date(dateFrom);
-      if (dateTo) query.date.$lte = new Date(dateTo);
-    }
-
-    // Sort configuration
+    // Sort configuration - always include date as secondary sort for consistency
     const sortConfig = {};
     sortConfig[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    if (sortBy !== 'date') {
+      sortConfig.date = -1; // Secondary sort by date desc
+    }
 
     // Execute query with pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -728,19 +787,26 @@ export const getActivityLog = async (req, res) => {
  */
 export const exportRows = async (req, res) => {
   try {
-    const { format = 'csv', rowIds } = req.query;
+    const { format = 'csv', rowIds, sortBy = 'date', sortOrder = 'desc' } = req.query;
     
-    // Build query
-    const query = { isDeleted: false };
+    // Build query using same filter logic as getSalesRows
+    const query = buildSalesQuery(req.query);
+    
+    // If specific rowIds provided, override query
     if (rowIds) {
       query._id = { $in: rowIds.split(',') };
     }
+
+    // Sort configuration matching the table view
+    const sortConfig = {};
+    sortConfig[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    if (sortBy !== 'date') sortConfig.date = -1;
 
     const [rawRows, customColumns] = await Promise.all([
       SalesRow.find(query)
         .populate('createdBy', 'name')
         .populate('updatedBy', 'name')
-        .sort({ date: -1 })
+        .sort(sortConfig)
         .lean(),
       SalesColumn.find().lean()
     ]);
@@ -907,7 +973,7 @@ export const exportRows = async (req, res) => {
  */
 export const importRows = async (req, res) => {
   try {
-    const { data } = req.body; // Array of row objects
+    const { data, newColumns: requestedNewColumns } = req.body; // data: Array of row objects, newColumns: optional array of { name, type } for auto-creation
     const userId = req.user._id;
 
     if (!data || !Array.isArray(data) || data.length === 0) {
@@ -919,22 +985,150 @@ export const importRows = async (req, res) => {
 
     const results = {
       success: [],
-      failed: []
+      failed: [],
+      newColumnsCreated: [],
+      newDropdownOptionsCreated: []
     };
 
-    // Process each row
+    // =============================================
+    // STEP 1: Auto-create new columns if requested
+    // =============================================
+    if (requestedNewColumns && Array.isArray(requestedNewColumns)) {
+      const existingColumns = await SalesColumn.find().lean();
+      const existingKeys = new Set(existingColumns.map(c => c.key));
+      const standardKeys = new Set(STANDARD_FIELDS);
+
+      let lastOrder = existingColumns.reduce((max, c) => Math.max(max, c.displayOrder || 0), 0);
+
+      for (const newCol of requestedNewColumns) {
+        const key = newCol.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        if (!key || existingKeys.has(key) || standardKeys.has(key)) continue;
+
+        try {
+          const column = await SalesColumn.create({
+            name: newCol.name,
+            key,
+            type: newCol.type || 'text',
+            displayOrder: ++lastOrder,
+            createdBy: userId
+          });
+          existingKeys.add(key);
+          results.newColumnsCreated.push({ name: column.name, key: column.key, type: column.type });
+        } catch (colErr) {
+          // Duplicate key or validation error - skip silently
+          if (colErr.code !== 11000) {
+            console.error('Auto-create column error:', colErr.message);
+          }
+        }
+      }
+    }
+
+    // =============================================
+    // STEP 2: Auto-detect and create dropdown options
+    // =============================================
+    const dropdownStandardFields = ['platform', 'technology', 'status', 'clientLocation', 'clientBudget', 'profile', 'replyFromClient', 'followUps'];
+    const customDropdownColumns = await SalesColumn.find({ type: 'dropdown' }).lean();
+    const allDropdownFields = [...dropdownStandardFields, ...customDropdownColumns.map(c => c.key)];
+
+    // Collect unique values per dropdown field from import data
+    const newValuesPerField = {};
+    for (const field of allDropdownFields) {
+      const valuesSet = new Set();
+      data.forEach(row => {
+        const val = row[field];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          valuesSet.add(String(val).trim());
+        }
+      });
+      if (valuesSet.size > 0) {
+        newValuesPerField[field] = valuesSet;
+      }
+    }
+
+    // Check which values are new and create dropdown options
+    for (const [field, values] of Object.entries(newValuesPerField)) {
+      const existingOptions = await SalesDropdownOption.find({ columnName: field, isActive: true }).lean();
+      const existingValues = new Set(existingOptions.map(o => o.value));
+      const existingLabels = new Set(existingOptions.map(o => o.label));
+      let lastOrder = existingOptions.reduce((max, o) => Math.max(max, o.displayOrder || 0), 0);
+
+      for (const val of values) {
+        if (existingValues.has(val) || existingLabels.has(val)) continue;
+        try {
+          await SalesDropdownOption.create({
+            columnName: field,
+            value: val,
+            label: val,
+            displayOrder: ++lastOrder,
+            createdBy: userId
+          });
+          results.newDropdownOptionsCreated.push({ columnName: field, value: val });
+        } catch (optErr) {
+          if (optErr.code !== 11000) {
+            console.error('Auto-create dropdown option error:', optErr.message);
+          }
+        }
+      }
+    }
+
+    // =============================================
+    // STEP 3: Import rows
+    // =============================================
     for (let i = 0; i < data.length; i++) {
       try {
         const { standard, custom } = prepareRowForSave(data[i]);
         
-        // Initialize row with standard fields
+        // Parse date fields robustly — ALWAYS try DD-MM-YYYY first
+        if (standard.date && !(standard.date instanceof Date)) {
+          const dateStr = String(standard.date).trim();
+          // 1. Try DD-MM-YYYY / DD/MM/YYYY / DD.MM.YYYY (our canonical format)
+          const dmy = dateStr.match(/^(\d{1,2})[\-\/\.](\d{1,2})[\-\/\.](\d{4})$/);
+          if (dmy) {
+            const day = parseInt(dmy[1], 10);
+            const month = parseInt(dmy[2], 10);
+            const year = parseInt(dmy[3], 10);
+            if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+              standard.date = new Date(year, month - 1, day);
+            }
+          }
+          // 2. Try Excel serial number
+          if (typeof standard.date === 'string' || typeof standard.date === 'number') {
+            const numVal = Number(standard.date);
+            if (!isNaN(numVal) && numVal > 10000 && !dmy) {
+              const excelEpoch = Date.UTC(1899, 11, 30);
+              standard.date = new Date(excelEpoch + numVal * 24 * 60 * 60 * 1000);
+            }
+          }
+          // 3. Fallback to ISO/native only for YYYY-MM-DD or ISO strings (from backend re-imports)
+          if (typeof standard.date === 'string') {
+            if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+              const parsed = new Date(dateStr);
+              if (!isNaN(parsed.getTime())) standard.date = parsed;
+            }
+          }
+        }
+        if (standard.followUpDate && !(standard.followUpDate instanceof Date)) {
+          const fDateStr = String(standard.followUpDate).trim();
+          const fdmy = fDateStr.match(/^(\d{1,2})[\-\/\.](\d{1,2})[\-\/\.](\d{4})$/);
+          if (fdmy) {
+            const day = parseInt(fdmy[1], 10);
+            const month = parseInt(fdmy[2], 10);
+            const year = parseInt(fdmy[3], 10);
+            if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+              standard.followUpDate = new Date(year, month - 1, day);
+            }
+          } else if (fDateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+            const parsed = new Date(fDateStr);
+            if (!isNaN(parsed.getTime())) standard.followUpDate = parsed;
+          }
+        }
+
         const row = new SalesRow({
           ...standard,
           createdBy: userId,
           updatedBy: userId
         });
 
-        // Explicitly set custom fields
         if (Object.keys(custom).length > 0) {
           Object.entries(custom).forEach(([key, value]) => {
             row.customFields.set(key, value);
@@ -944,7 +1138,6 @@ export const importRows = async (req, res) => {
         await row.save();
         results.success.push({ index: i, id: row._id });
 
-        // Log activity
         await SalesActivityLog.logActivity({
           salesRow: row._id,
           user: userId,
@@ -962,16 +1155,29 @@ export const importRows = async (req, res) => {
       }
     }
 
-    // Emit real-time event
+    // Emit real-time events
     if (results.success.length > 0) {
       io.to('sales').emit('sales:rows:imported', {
-        count: results.success.length
+        count: results.success.length,
+        newColumnsCreated: results.newColumnsCreated,
+        newDropdownOptionsCreated: results.newDropdownOptionsCreated
+      });
+    }
+    // Also emit column/dropdown updates if new ones were created
+    if (results.newColumnsCreated.length > 0) {
+      io.to('sales').emit('sales:column:created', { columns: results.newColumnsCreated });
+    }
+    if (results.newDropdownOptionsCreated.length > 0) {
+      // Group by columnName for targeted updates
+      const affectedColumns = [...new Set(results.newDropdownOptionsCreated.map(o => o.columnName))];
+      affectedColumns.forEach(colName => {
+        io.to('sales').emit('sales:dropdown:updated', { columnName: colName });
       });
     }
 
     res.json({
       success: true,
-      message: `Imported ${results.success.length} rows, ${results.failed.length} failed`,
+      message: `Imported ${results.success.length} rows, ${results.failed.length} failed. ${results.newColumnsCreated.length} new columns created, ${results.newDropdownOptionsCreated.length} new dropdown options added.`,
       results
     });
   } catch (error) {

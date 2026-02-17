@@ -3,7 +3,7 @@ import { formatSalesDate } from '../../utils/dateUtils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Star, ExternalLink, History, Edit2, Trash2, Lock, Copy, 
-  ChevronLeft, ChevronRight, Loader2, DollarSign
+  ChevronLeft, ChevronRight, Loader2, DollarSign, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import StarRating from '../ui/StarRating';
 import { toast } from 'react-toastify';
@@ -246,7 +246,6 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
   
   const {
     rows,
-    // loading, // Removed: using prop instead
     customColumns = [],
     selectedRows,
     toggleRowSelection,
@@ -258,7 +257,11 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
     updateRow,
     lockRow,
     unlockRow,
-    lockedRows = {}
+    lockedRows = {},
+    dropdownOptions = {},
+    sortBy,
+    sortOrder,
+    setSorting
   } = useSalesStore();
 
   useEffect(() => {
@@ -293,6 +296,25 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
       console.error('Delete failed:', error);
     }
   };
+
+  // Sort click handler
+  const handleSortClick = useCallback((columnKey) => {
+    if (columnKey === 'checkbox' || columnKey === 'actions') return;
+    const newOrder = sortBy === columnKey && sortOrder === 'desc' ? 'asc' : 'desc';
+    setSorting(columnKey, newOrder);
+  }, [sortBy, sortOrder, setSorting]);
+
+  // Get sort icon for a column
+  const getSortIcon = (columnKey) => {
+    if (columnKey === 'checkbox' || columnKey === 'actions') return null;
+    if (sortBy === columnKey) {
+      return sortOrder === 'desc' ? <ArrowDown className="w-3 h-3" /> : <ArrowUp className="w-3 h-3" />;
+    }
+    return <ArrowUpDown className="w-3 h-3 opacity-30" />;
+  };
+
+  // Header height
+  const HEADER_HEIGHT = 56;
 
   // Loading state with skeleton
   if (loading) {
@@ -358,21 +380,22 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
         className="overflow-auto w-full h-full custom-scrollbar"
       >
         {/* Table with dynamic width to fit content */}
-        <div style={{ minWidth: 'fit-content', height: `${rowVirtualizer.getTotalSize()}px` }} className="relative">
+        <div style={{ minWidth: 'fit-content', height: `${rowVirtualizer.getTotalSize() + HEADER_HEIGHT}px` }} className="relative">
           {/* Table Header - Sticky */}
           <div 
-            className="flex items-center bg-gray-100 dark:bg-gray-800 border-b-2 border-gray-200 dark:border-gray-700 sticky top-0 z-10 shadow-sm"
-            style={{ height: 56, minWidth: 'fit-content' }}
+            className="flex items-center bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-20 shadow-sm"
+            style={{ height: HEADER_HEIGHT, minWidth: 'fit-content' }}
           >
-            {COLUMNS.map((column, index) => (
+            {COLUMNS.map((column) => (
               <div
                 key={column.key}
-                className="flex-shrink-0 px-4 py-4 text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 border-r border-gray-200/50 dark:border-gray-700/50 last:border-r-0"
+                className={`flex-shrink-0 px-4 py-4 text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 border-r border-gray-200/50 dark:border-gray-700/50 last:border-r-0 ${column.key !== 'checkbox' && column.key !== 'actions' ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-700/60 select-none transition-colors' : ''}`}
                 style={{ 
                   minWidth: column.minWidth,
                   width: 'auto',
                   whiteSpace: 'nowrap'
                 }}
+                onClick={() => handleSortClick(column.key)}
               >
                 {column.key === 'checkbox' ? (
                   <input
@@ -380,9 +403,13 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
                     checked={selectedRows.size === rows.length && rows.length > 0}
                     onChange={handleSelectAll}
                     className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer transition-all hover:scale-110"
+                    onClick={(e) => e.stopPropagation()}
                   />
                 ) : (
-                  column.label
+                  <div className="flex items-center gap-1.5">
+                    <span>{column.label}</span>
+                    {getSortIcon(column.key)}
+                  </div>
                 )}
               </div>
             ))}
@@ -406,7 +433,7 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
                   style={{
                     height: `${virtualRow.size}px`,
                     transform: `translateY(${virtualRow.start}px)`,
-                    top: 56, // Offset by header height to avoid overlap with sticky header
+                    top: HEADER_HEIGHT,
                     position: 'absolute',
                     left: 0,
                     width: '100%'

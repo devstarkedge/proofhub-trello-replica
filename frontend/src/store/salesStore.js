@@ -47,6 +47,9 @@ const useSalesStore = create(
       // Pending drafts (offline edits)
       pendingDrafts: [],
 
+      // Per-column filters (key: column key, value: filter value or object)
+      columnFilters: {},
+
       // ============================================
       // ACTIONS
       // ============================================
@@ -58,6 +61,16 @@ const useSalesStore = create(
         set({ loading: true, error: null });
         try {
           const currentPage = page || get().pagination.page;
+          const columnFilters = get().columnFilters || {};
+          const hasColumnFilters = Object.keys(columnFilters).some(k => {
+            const v = columnFilters[k];
+            if (v === '' || v === null || v === undefined) return false;
+            if (typeof v === 'object' && v !== null) {
+              return Object.values(v).some(sv => sv !== '' && sv !== null && sv !== undefined);
+            }
+            return true;
+          });
+
           const params = {
             page: currentPage,
             limit: get().pagination.limit,
@@ -65,6 +78,11 @@ const useSalesStore = create(
             sortBy: get().sortBy,
             sortOrder: get().sortOrder
           };
+
+          // Only send columnFilters if there are active ones
+          if (hasColumnFilters) {
+            params.columnFilters = JSON.stringify(columnFilters);
+          }
 
           const response = await salesApi.getSalesRows(params);
           // Deduplicate rows by _id
@@ -93,17 +111,26 @@ const useSalesStore = create(
         try {
           const response = await salesApi.createSalesRow(rowData);
           set(state => {
-            // Add new row and deduplicate by _id
-            const allRows = [response.data, ...state.rows];
-            const uniqueRows = [];
-            const seen = new Set();
-            for (const row of allRows) {
-              if (!seen.has(row._id)) {
-                uniqueRows.push(row);
-                seen.add(row._id);
+            // Insert new row in correct date-sorted position
+            const newRow = response.data;
+            const allRows = [...state.rows];
+            const seen = new Set(allRows.map(r => r._id));
+            if (seen.has(newRow._id)) {
+              return { rows: allRows.map(r => r._id === newRow._id ? newRow : r) };
+            }
+            // Find insertion index based on date sort
+            const sortOrder = state.sortOrder;
+            const newDate = new Date(newRow.date || 0).getTime();
+            let insertIdx = allRows.length;
+            for (let i = 0; i < allRows.length; i++) {
+              const rowDate = new Date(allRows[i].date || 0).getTime();
+              if (sortOrder === 'desc' ? newDate >= rowDate : newDate <= rowDate) {
+                insertIdx = i;
+                break;
               }
             }
-            return { rows: uniqueRows };
+            allRows.splice(insertIdx, 0, newRow);
+            return { rows: allRows };
           });
           return response.data;
         } catch (error) {
@@ -216,7 +243,16 @@ const useSalesStore = create(
       exportRows: async (format = 'csv') => {
         try {
           const selectedRowIds = Array.from(get().selectedRows);
-          await salesApi.exportRows(format, selectedRowIds.length > 0 ? selectedRowIds : null);
+          const filters = get().filters;
+          const columnFilters = get().columnFilters || {};
+          const sortBy = get().sortBy;
+          const sortOrder = get().sortOrder;
+          await salesApi.exportRows(format, selectedRowIds.length > 0 ? selectedRowIds : null, {
+            ...filters,
+            columnFilters: Object.keys(columnFilters).length > 0 ? JSON.stringify(columnFilters) : undefined,
+            sortBy,
+            sortOrder
+          });
         } catch (error) {
           throw error;
         }
@@ -249,8 +285,36 @@ const useSalesStore = create(
             budget: '',
             dateFrom: null,
             dateTo: null
-          }
+          },
+          columnFilters: {}
         });
+        get().fetchRows(1);
+      },
+
+      /**
+       * Set a per-column filter value
+       */
+      setColumnFilter: (columnKey, value) => {
+        set(state => {
+          const newFilters = { ...state.columnFilters };
+          if (value === '' || value === null || value === undefined) {
+            delete newFilters[columnKey];
+          } else {
+            newFilters[columnKey] = value;
+          }
+          return {
+            columnFilters: newFilters,
+            pagination: { ...state.pagination, page: 1 }
+          };
+        });
+        get().fetchRows(1);
+      },
+
+      /**
+       * Clear all column filters
+       */
+      clearColumnFilters: () => {
+        set({ columnFilters: {} });
         get().fetchRows(1);
       },
 
@@ -434,12 +498,25 @@ const useSalesStore = create(
        */
       handleRowCreated: (row) => {
         set(state => {
-          // If row already exists, replace it; otherwise prepend.
+          // If row already exists, replace it
           const exists = state.rows.some(r => r._id === row._id);
           if (exists) {
             return { rows: state.rows.map(r => (r._id === row._id ? row : r)) };
           }
-          return { rows: [row, ...state.rows] };
+          // Insert in correct date-sorted position
+          const allRows = [...state.rows];
+          const sortOrder = state.sortOrder;
+          const newDate = new Date(row.date || 0).getTime();
+          let insertIdx = allRows.length;
+          for (let i = 0; i < allRows.length; i++) {
+            const rowDate = new Date(allRows[i].date || 0).getTime();
+            if (sortOrder === 'desc' ? newDate >= rowDate : newDate <= rowDate) {
+              insertIdx = i;
+              break;
+            }
+          }
+          allRows.splice(insertIdx, 0, row);
+          return { rows: allRows };
         });
       },
 
@@ -596,6 +673,7 @@ const useSalesStore = create(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         filters: state.filters,
+        columnFilters: state.columnFilters,
         sortBy: state.sortBy,
         sortOrder: state.sortOrder,
         dropdownOptions: state.dropdownOptions,

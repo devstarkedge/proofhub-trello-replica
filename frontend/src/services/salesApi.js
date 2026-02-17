@@ -130,10 +130,10 @@ export const getActivityLog = async (id, params = {}) => {
 };
 
 /**
- * Export sales rows
+ * Export sales rows (respects current filters and sorting)
  */
-export const exportRows = async (format = 'csv', rowIds = null) => {
-  const params = { format };
+export const exportRows = async (format = 'csv', rowIds = null, filterParams = {}) => {
+  const params = { format, ...filterParams };
   if (rowIds && rowIds.length > 0) {
     params.rowIds = rowIds.join(',');
   }
@@ -158,9 +158,15 @@ export const exportRows = async (format = 'csv', rowIds = null) => {
 
 /**
  * Import sales rows from file data
+ * @param {Array} data - Array of row objects
+ * @param {Array} newColumns - Optional array of { name, type } for auto-creating columns
  */
-export const importRows = async (data) => {
-  const response = await api.post('/rows/import', { data });
+export const importRows = async (data, newColumns = null) => {
+  const payload = { data };
+  if (newColumns && newColumns.length > 0) {
+    payload.newColumns = newColumns;
+  }
+  const response = await api.post('/rows/import', payload);
   return response.data;
 };
 

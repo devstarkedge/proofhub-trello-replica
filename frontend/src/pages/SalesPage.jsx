@@ -234,8 +234,17 @@ const SalesPage = () => {
   };
 
   const onSocketRowsImported = (e) => {
+    const detail = e.detail || {};
+    const newColCount = Array.isArray(detail.newColumnsCreated) ? detail.newColumnsCreated.length : (detail.newColumnsCreated || 0);
+    const newOptCount = Array.isArray(detail.newDropdownOptionsCreated) ? detail.newDropdownOptionsCreated.length : (detail.newDropdownOptionsCreated || 0);
     fetchRows();
-    toast.success(`${e.detail.count} rows imported`);
+    if (newColCount > 0) {
+      fetchCustomColumns();
+    }
+    if (newOptCount > 0 || newColCount > 0) {
+      fetchDropdownOptions();
+    }
+    toast.success(`${detail.count || 0} rows imported${newColCount ? `, ${newColCount} new columns` : ''}${newOptCount ? `, ${newOptCount} new options` : ''}`);
   };
 
   const onSocketRowLocked = (e) => {
