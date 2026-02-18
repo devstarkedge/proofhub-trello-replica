@@ -186,6 +186,46 @@ class DatabaseService {
     return { success: true };
   }
 
+  async bulkDeleteProjects(projectIds) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/boards/bulk-delete`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ projectIds })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const error = new Error(data.message || 'Failed to bulk delete projects');
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
+  async undoBulkDeleteProjects(projectIds) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${baseURL}/api/boards/undo-bulk-delete`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ projectIds })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const error = new Error(data.message || 'Failed to undo bulk delete');
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
   async getProject(projectId) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };

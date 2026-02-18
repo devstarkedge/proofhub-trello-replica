@@ -5,6 +5,7 @@ import {
   TrendingUp, Users, AlertCircle, Search, Filter,
   Grid, List as ListIcon, ChevronDown, Sparkles, User, Shield
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import ProjectCard from '../components/ProjectCard';
@@ -12,12 +13,15 @@ import HomePageSkeleton from '../components/LoadingSkeleton';
 import NeonSparkText from '../components/NeonSparkText';
 import { useDebounce } from '../hooks/useDebounce';
 import useProjectStore from '../store/projectStore';
+import useProjectSelection from '../hooks/useProjectSelection';
 import Avatar from '../components/Avatar';
 import { lazy, Suspense } from 'react';
 import AddProjectModal from '../components/AddProjectModal';
 import EditProjectModal from '../components/EditProjectModal';
 import ViewProjectModal from '../components/ViewProjectModal';
 import DeletePopup from '../components/ui/DeletePopup';
+import BulkDeleteModal from '../components/ui/BulkDeleteModal';
+import BulkActionToolbar from '../components/BulkActionToolbar';
 import WelcomeHeader from '../components/WelcomeHeader';
 
 // Memoized modal loading fallback
@@ -42,11 +46,25 @@ const HomePage = () => {
     fetchDepartments,
     projectAdded,
     projectUpdated,
-    projectDeleted
+    projectDeleted,
+    projectsBulkDeleted,
+    projectsBulkRestored
   } = useProjectStore(); // Using the new store
 
   const { user } = useContext(AuthContext);
   // Removed local useState for departments, loading, error, members assignments
+
+  // Selection hook for multi-delete
+  const {
+    selectedProjectIds,
+    selectionDepartmentId,
+    isSelectionMode,
+    selectedCount,
+    toggleProject,
+    selectAll,
+    clearSelection,
+    isSelected
+  } = useProjectSelection();
   
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
@@ -66,6 +84,11 @@ const HomePage = () => {
   const [showDeletePopup, setShowDeletePopup] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Bulk delete state
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deletingProjectIds, setDeletingProjectIds] = useState(new Set());
   
   const statusDropdownRef = useRef(null);
   const memberDropdownRefs = useRef({});
@@ -160,6 +183,97 @@ const HomePage = () => {
     setViewModalOpen(true);
   }, []);
 
+  // ====== BULK DELETE HANDLERS ======
+
+  // Get projects data for the selected IDs (for modal display and undo snapshot)
+  const getSelectedProjectsData = useCallback(() => {
+    if (!selectionDepartmentId) return [];
+    const dept = departments.find(d => d._id === selectionDepartmentId);
+    if (!dept) return [];
+    const idSet = new Set(selectedProjectIds);
+    return (dept.projects || []).filter(p => idSet.has(p._id));
+  }, [departments, selectionDepartmentId, selectedProjectIds]);
+
+  const handleBulkDeleteClick = useCallback(() => {
+    if (selectedCount === 0) return;
+    setShowBulkDeleteModal(true);
+  }, [selectedCount]);
+
+  const confirmBulkDelete = useCallback(async () => {
+    if (selectedProjectIds.length === 0 || !selectionDepartmentId) return;
+
+    const projectsSnapshot = getSelectedProjectsData();
+    const idsToDelete = [...selectedProjectIds];
+    const deptId = selectionDepartmentId;
+
+    setIsBulkDeleting(true);
+    setDeletingProjectIds(new Set(idsToDelete));
+
+    // Optimistic UI: remove cards immediately
+    projectsBulkDeleted(deptId, idsToDelete);
+    clearSelection();
+    setShowBulkDeleteModal(false);
+
+    try {
+      const result = await Database.bulkDeleteProjects(idsToDelete);
+
+      setDeletingProjectIds(new Set());
+      setIsBulkDeleting(false);
+
+      // Success toast with undo
+      const successMsg = result.message || `${result.total} project(s) deleted successfully`;
+      
+      // Track if undo was already performed
+      let undoPerformed = false;
+
+      toast.success(
+        ({ closeToast }) => (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm">{successMsg}</span>
+            <button
+              onClick={async () => {
+                if (undoPerformed) return;
+                undoPerformed = true;
+                try {
+                  await Database.undoBulkDeleteProjects(idsToDelete);
+                  projectsBulkRestored(deptId, projectsSnapshot);
+                  toast.info(`${projectsSnapshot.length} project(s) restored`, { autoClose: 3000 });
+                } catch (err) {
+                  console.error('Undo failed:', err);
+                  toast.error('Failed to undo. Projects may have been permanently deleted.');
+                  fetchDepartments(true);
+                }
+                closeToast();
+              }}
+              className="px-3 py-1 text-xs font-semibold bg-white text-green-700 rounded-lg hover:bg-green-50 transition-all border border-green-200 whitespace-nowrap flex-shrink-0"
+            >
+              Undo
+            </button>
+          </div>
+        ),
+        { autoClose: 8000, closeOnClick: false }
+      );
+
+      // Show partial failure info
+      if (result.failed && result.failed.length > 0) {
+        toast.warn(
+          `${result.deleted.length} deleted successfully, ${result.failed.length} not found.`,
+          { autoClose: 5000 }
+        );
+      }
+    } catch (error) {
+      console.error('Bulk delete failed:', error);
+      // Rollback: restore all projects
+      projectsBulkRestored(deptId, projectsSnapshot);
+      setDeletingProjectIds(new Set());
+      setIsBulkDeleting(false);
+      toast.error(error.message || 'Failed to delete projects. Please try again.');
+    }
+  }, [
+    selectedProjectIds, selectionDepartmentId, getSelectedProjectsData,
+    projectsBulkDeleted, projectsBulkRestored, clearSelection, fetchDepartments
+  ]);
+
   const toggleViewAllProjects = useCallback((departmentId) => {
     setExpandedDepartments(prev => ({
       ...prev,
@@ -208,6 +322,24 @@ const HomePage = () => {
   }, [debouncedSearchQuery, filterStatus, selectedMembers, projectsWithMemberAssignments]);
 
   const canAddProject = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
+  const canSelectProjects = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
+
+  const handleSelectAllForDepartment = useCallback(() => {
+    if (!selectionDepartmentId) return;
+    const dept = departments.find(d => d._id === selectionDepartmentId);
+    if (!dept) return;
+    const filteredProjects = filterProjects(dept.projects, selectionDepartmentId);
+    const allIds = filteredProjects.map(p => p._id);
+    selectAll(allIds, selectionDepartmentId);
+  }, [selectionDepartmentId, departments, filterProjects, selectAll]);
+
+  // Get the total filterable projects count for the active selection department
+  const selectionDepartmentTotalProjects = useMemo(() => {
+    if (!selectionDepartmentId) return 0;
+    const dept = departments.find(d => d._id === selectionDepartmentId);
+    if (!dept) return 0;
+    return filterProjects(dept.projects, selectionDepartmentId).length;
+  }, [selectionDepartmentId, departments, filterProjects]);
 
   // Get managers for the selected department (for Add/Edit Project modals)
   const selectedDepartmentManagers = useMemo(() => {
@@ -617,6 +749,10 @@ const HomePage = () => {
                                     onDelete={() => handleDeleteProject(project, department._id)}
                                     onView={() => handleViewProject(project._id)}
                                     viewMode={viewMode}
+                                    isSelectable={canSelectProjects}
+                                    isSelected={isSelected(project._id)}
+                                    onSelect={() => toggleProject(project._id, department._id)}
+                                    isBulkDeleting={deletingProjectIds.has(project._id)}
                                   />
                                 </div>
                               ))}
@@ -720,6 +856,26 @@ const HomePage = () => {
         onConfirm={confirmDeleteProject}
         itemType="project"
         isLoading={isDeleting}
+      />
+
+      {/* Bulk Delete Floating Toolbar */}
+      <BulkActionToolbar
+        isVisible={isSelectionMode}
+        selectedCount={selectedCount}
+        totalCount={selectionDepartmentTotalProjects}
+        onDelete={handleBulkDeleteClick}
+        onSelectAll={handleSelectAllForDepartment}
+        onCancel={clearSelection}
+        isDeleting={isBulkDeleting}
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <BulkDeleteModal
+        isOpen={showBulkDeleteModal}
+        projects={getSelectedProjectsData()}
+        onConfirm={confirmBulkDelete}
+        onCancel={() => setShowBulkDeleteModal(false)}
+        isLoading={isBulkDeleting}
       />
     </div>
   );

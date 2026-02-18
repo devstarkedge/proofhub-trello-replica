@@ -8,7 +8,7 @@ import {
   Edit, Trash2, Eye, Target, Star,
   Activity, Layers, Sparkles, ArrowRight,
   Briefcase, MapPin, Zap, Shield, Crown, Building2,
-  ImageIcon, Pencil
+  ImageIcon, Pencil, Check, Loader2
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 
@@ -26,7 +26,12 @@ const ProjectCard = ({
   onEdit,
   onDelete,
   onView,
-  onEditCover // New prop for cover image editing
+  onEditCover, // New prop for cover image editing
+  // Selection props for multi-delete
+  isSelectable = false,
+  isSelected = false,
+  onSelect,
+  isBulkDeleting = false
 }) => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
@@ -169,6 +174,11 @@ const ProjectCard = ({
   };
 
   const handleCardClick = () => {
+    // If in selection mode with selectable, toggle selection instead of navigating
+    if (isSelectable && isSelected) {
+      // If card is selected and user clicks on card body, deselect
+      return;
+    }
     // Don't navigate if project is optimistic (temp ID)
     if (projectData.isOptimistic || String(projectData.id).startsWith('temp-')) {
       return;
@@ -283,16 +293,78 @@ const ProjectCard = ({
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: isOptimistic ? 0.7 : 1, y: 0 }}
+      animate={{ 
+        opacity: isOptimistic ? 0.7 : 1, 
+        y: 0,
+        scale: isSelected ? 1.02 : 1
+      }}
       whileHover={{ 
         y: isOptimistic ? 0 : -8, 
         transition: { duration: 0.3, ease: "easeOut" } 
       }}
       onHoverStart={() => !isOptimistic && setIsHovered(true)}
       onHoverEnd={() => setIsHovered(false)}
-      className={`bg-white rounded-2xl shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-100 overflow-hidden group relative ${isOptimistic ? 'cursor-wait' : 'cursor-pointer'}`}
+      className={`bg-white rounded-2xl shadow-md hover:shadow-2xl transition-all duration-300 border overflow-hidden group relative ${
+        isOptimistic ? 'cursor-wait' : 'cursor-pointer'
+      } ${
+        isSelected 
+          ? 'border-blue-500 ring-2 ring-blue-500 ring-offset-2 ring-offset-white z-10' 
+          : 'border-gray-100'
+      } ${
+        isBulkDeleting ? 'pointer-events-none' : ''
+      }`}
       onClick={handleCardClick}
     >
+      {/* Bulk Deleting Overlay */}
+      {isBulkDeleting && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="absolute inset-0 bg-white/70 backdrop-blur-sm z-50 flex items-center justify-center rounded-2xl"
+        >
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 size={28} className="text-red-500 animate-spin" />
+            <span className="text-xs font-medium text-red-600">Deleting...</span>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Selection Checkbox */}
+      {isSelectable && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.5 }}
+          animate={{ 
+            opacity: isSelected || isHovered ? 1 : 0,
+            scale: isSelected || isHovered ? 1 : 0.5
+          }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="absolute top-3 left-3 z-40"
+        >
+          <motion.button
+            whileHover={{ scale: 1.15 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect && onSelect();
+            }}
+            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 border ${
+              isSelected
+                ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200'
+                : 'bg-transparent border-gray-400 text-gray-400 hover:border-blue-400 hover:text-blue-500'
+            }`}
+          >
+            {isSelected && (
+              <motion.div
+                initial={{ scale: 0, rotate: -90 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+              >
+                <Check size={16} strokeWidth={3} />
+              </motion.div>
+            )}
+          </motion.button>
+        </motion.div>
+      )}
       {/* Optimistic Loading Indicator */}
       {isOptimistic && (
         <div className="absolute inset-0 bg-white/50 z-20 flex items-center justify-center">
@@ -437,7 +509,7 @@ const ProjectCard = ({
             initial={{ x: 20, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ delay: 0.2 }}
-            className="absolute top-3 right-3 z-10"
+            className="absolute bottom-3 right-3 z-10"
           >
             <div className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border backdrop-blur-md ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border} shadow-lg`}>
               {statusConfig.icon}
@@ -465,7 +537,7 @@ const ProjectCard = ({
         {canEditProject && (
           <div
             ref={menuRef}
-            className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 transition-all duration-500 z-40"
+            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-500 z-40"
           >
             <motion.button
               whileHover={{
@@ -501,7 +573,7 @@ const ProjectCard = ({
                     stiffness: 300,
                     damping: 25
                   }}
-                  className="absolute top-0 left-full ml-2 mt-3 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl py-2 z-[9999] min-w-[160px] border border-white/20 overflow-hidden"
+                  className="absolute top-0 right-full mr-2 mt-3 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl py-2 z-[9999] min-w-[160px] border border-white/20 overflow-hidden"
                 >
                   <motion.button
                     whileHover={{

@@ -64,6 +64,20 @@ const boardSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Soft-delete fields for bulk delete with undo support
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: {
+    type: Date,
+    default: null
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
   startDate: {
     type: Date
   },
@@ -209,5 +223,6 @@ boardSchema.index({ department: 1, status: 1 }); // For department status filter
 boardSchema.index({ department: 1, priority: 1 }); // For department priority filtering
 boardSchema.index({ owner: 1, createdAt: -1 }); // For user-owned boards timeline
 boardSchema.index({ members: 1, updatedAt: -1 }); // For member boards with recent activity
+boardSchema.index({ isDeleted: 1, deletedAt: 1 }); // For soft-delete cleanup queries
 
 export default mongoose.model('Board', boardSchema);

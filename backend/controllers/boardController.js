@@ -35,6 +35,7 @@ import {
 // @access  Private
 export const getBoards = asyncHandler(async (req, res, next) => {
   let query = {
+    isDeleted: { $ne: true },
     $or: [{ owner: req.user.id }, { members: req.user.id }],
   };
 
@@ -70,7 +71,8 @@ export const getBoardsByDepartment = asyncHandler(async (req, res, next) => {
 
   const boards = await Board.find({
     department: departmentId,
-    isArchived: false
+    isArchived: false,
+    isDeleted: { $ne: true }
   })
     .populate("owner", "name email avatar")
     .populate("team", "name")
@@ -107,7 +109,7 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     SubtaskNano.find({ board: projectId }).select('assignees').lean()
   ]);
 
-  if (!board) {
+  if (!board || board.isDeleted) {
     return next(new ErrorResponse('Board not found', 404));
   }
 
@@ -257,7 +259,7 @@ export const getWorkflowData = asyncHandler(async (req, res, next) => {
     .populate("members", "name email avatar role")
     .lean(); // Use lean() for read-only operations
 
-  if (!board) {
+  if (!board || board.isDeleted) {
     return next(new ErrorResponse("Project not found", 404));
   }
 
@@ -298,7 +300,7 @@ export const getBoard = asyncHandler(async (req, res, next) => {
     .populate("department", "name")
     .populate("members", "name email avatar");
 
-  if (!board) {
+  if (!board || board.isDeleted) {
     return next(new ErrorResponse("Board not found", 404));
   }
 
@@ -949,5 +951,181 @@ export const restoreCoverImage = asyncHandler(async (req, res, next) => {
       coverImage: board.coverImage,
       coverImageHistory: board.coverImageHistory
     }
+  });
+});
+
+// =============================================
+// BULK DELETE ENDPOINTS
+// =============================================
+
+// @desc    Bulk soft-delete projects (with undo support)
+// @route   POST /api/boards/bulk-delete
+// @access  Private (Admin/Manager only)
+export const bulkDeleteBoards = asyncHandler(async (req, res, next) => {
+  const { projectIds } = req.body;
+
+  // Validate input
+  if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0) {
+    return next(new ErrorResponse("projectIds must be a non-empty array", 400));
+  }
+
+  if (projectIds.length > 50) {
+    return next(new ErrorResponse("Cannot delete more than 50 projects at once", 400));
+  }
+
+  // Validate all IDs are valid ObjectIds
+  const mongoose = (await import('mongoose')).default;
+  const invalidIds = projectIds.filter(id => !mongoose.Types.ObjectId.isValid(id));
+  if (invalidIds.length > 0) {
+    return next(new ErrorResponse(`Invalid project IDs: ${invalidIds.join(', ')}`, 400));
+  }
+
+  // Fetch all boards in one query
+  const boards = await Board.find({
+    _id: { $in: projectIds },
+    isDeleted: { $ne: true }
+  }).select('_id name owner department').lean();
+
+  if (boards.length === 0) {
+    return next(new ErrorResponse("No valid projects found to delete", 404));
+  }
+
+  // Authorization check — admin and manager can delete any board
+  const userRole = req.user.role.toLowerCase();
+  const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
+
+  if (!isAdminOrManager) {
+    return next(new ErrorResponse("Not authorized to perform bulk delete", 403));
+  }
+
+  const authorizedIds = boards.map(b => b._id);
+  const foundIds = new Set(boards.map(b => b._id.toString()));
+  const notFoundIds = projectIds.filter(id => !foundIds.has(id));
+
+  // Soft-delete all authorized boards in one operation
+  await Board.updateMany(
+    { _id: { $in: authorizedIds } },
+    {
+      isDeleted: true,
+      deletedAt: new Date(),
+      deletedBy: req.user.id
+    }
+  );
+
+  // Remove boards from departments' projects arrays (grouped by department)
+  const deptMap = {};
+  for (const board of boards) {
+    if (board.department) {
+      const deptId = board.department.toString();
+      if (!deptMap[deptId]) deptMap[deptId] = [];
+      deptMap[deptId].push(board._id);
+    }
+  }
+
+  await Promise.all(
+    Object.entries(deptMap).map(([deptId, ids]) =>
+      Department.findByIdAndUpdate(deptId, {
+        $pullAll: { projects: ids }
+      })
+    )
+  );
+
+  // Invalidate caches
+  invalidateCache('/api/boards');
+  invalidateCache('/api/departments');
+  for (const deptId of Object.keys(deptMap)) {
+    invalidateCache(`/api/boards/department/${deptId}`);
+  }
+
+  // Send notifications for deleted projects
+  try {
+    await Promise.all(
+      boards.map(board =>
+        notificationService.notifyTaskDeleted(board, req.user.id, true).catch(() => {})
+      )
+    );
+  } catch (e) {
+    // Non-blocking — notifications should not fail the delete
+  }
+
+  res.status(200).json({
+    success: true,
+    message: `${authorizedIds.length} project(s) deleted successfully${notFoundIds.length > 0 ? `, ${notFoundIds.length} not found` : ''}`,
+    deleted: authorizedIds.map(id => id.toString()),
+    deletedNames: boards.map(b => b.name),
+    failed: notFoundIds,
+    total: authorizedIds.length
+  });
+});
+
+// @desc    Undo bulk soft-delete (restore projects)
+// @route   POST /api/boards/undo-bulk-delete
+// @access  Private (Admin/Manager only)
+export const undoBulkDeleteBoards = asyncHandler(async (req, res, next) => {
+  const { projectIds } = req.body;
+
+  // Validate input
+  if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0) {
+    return next(new ErrorResponse("projectIds must be a non-empty array", 400));
+  }
+
+  const UNDO_WINDOW_MS = 30 * 1000; // 30 seconds to undo
+  const undoThreshold = new Date(Date.now() - UNDO_WINDOW_MS);
+
+  // Find boards that were soft-deleted by this user within the undo window
+  const boards = await Board.find({
+    _id: { $in: projectIds },
+    isDeleted: true,
+    deletedBy: req.user.id,
+    deletedAt: { $gte: undoThreshold }
+  }).select('_id name department').lean();
+
+  if (boards.length === 0) {
+    return next(new ErrorResponse("No projects eligible for undo. The undo window may have expired.", 400));
+  }
+
+  const restoreIds = boards.map(b => b._id);
+
+  // Restore: clear soft-delete fields
+  await Board.updateMany(
+    { _id: { $in: restoreIds } },
+    {
+      isDeleted: false,
+      deletedAt: null,
+      deletedBy: null
+    }
+  );
+
+  // Re-add boards to departments' projects arrays
+  const deptMap = {};
+  for (const board of boards) {
+    if (board.department) {
+      const deptId = board.department.toString();
+      if (!deptMap[deptId]) deptMap[deptId] = [];
+      deptMap[deptId].push(board._id);
+    }
+  }
+
+  await Promise.all(
+    Object.entries(deptMap).map(([deptId, ids]) =>
+      Department.findByIdAndUpdate(deptId, {
+        $addToSet: { projects: { $each: ids } }
+      })
+    )
+  );
+
+  // Invalidate caches
+  invalidateCache('/api/boards');
+  invalidateCache('/api/departments');
+  for (const deptId of Object.keys(deptMap)) {
+    invalidateCache(`/api/boards/department/${deptId}`);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: `${boards.length} project(s) restored successfully`,
+    restored: restoreIds.map(id => id.toString()),
+    restoredNames: boards.map(b => b.name),
+    total: boards.length
   });
 });

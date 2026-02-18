@@ -12,13 +12,19 @@ import {
   getProjectActivity,
   uploadCoverImage,
   removeCoverImage,
-  restoreCoverImage
+  restoreCoverImage,
+  bulkDeleteBoards,
+  undoBulkDeleteBoards
 } from '../controllers/boardController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import upload, { uploadCoverImageMiddleware } from '../middleware/upload.js';
 
 const router = express.Router();
+
+// Bulk operations (must be before /:id routes to avoid route conflict)
+router.post('/bulk-delete', protect, authorize('admin', 'manager'), bulkDeleteBoards);
+router.post('/undo-bulk-delete', protect, authorize('admin', 'manager'), undoBulkDeleteBoards);
 
 router.get('/', protect, getBoards);
 router.get('/department/:departmentId', protect, getBoardsByDepartment);

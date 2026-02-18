@@ -355,6 +355,7 @@ import { startRecurringTaskScheduler } from './utils/recurrenceScheduler.js';
 import { startReminderScheduler } from './utils/reminderScheduler.js';
 import { startArchivedCardCleanup } from './utils/archiveCleanup.js';
 import { startTrashCleanup } from './utils/trashCleanup.js';
+import { startBoardCleanup } from './utils/boardCleanup.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
 
 // MongoDB connection with connection pooling
@@ -377,6 +378,8 @@ mongoose.connect(process.env.MONGO_URI, {
     startArchivedCardCleanup();
     // Start trashed attachments cleanup
     startTrashCleanup();
+    // Start soft-deleted boards permanent cleanup
+    startBoardCleanup();
     // Initialize Slack services (queues, etc.)
     initializeSlackServices().then(() => {
       console.log('Slack services initialized');

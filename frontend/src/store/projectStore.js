@@ -177,6 +177,40 @@ const useProjectStore = create(
             return dept;
           })
         }));
+      },
+
+      // Bulk delete: remove multiple projects from a department (optimistic)
+      projectsBulkDeleted: (departmentId, projectIds) => {
+        const idSet = new Set(projectIds);
+        set(state => ({
+          departments: state.departments.map(dept => {
+            if (dept._id === departmentId) {
+              return {
+                ...dept,
+                projects: dept.projects.filter(p => !idSet.has(p._id))
+              };
+            }
+            return dept;
+          })
+        }));
+      },
+
+      // Bulk restore: re-insert projects after undo (rollback)
+      projectsBulkRestored: (departmentId, projects) => {
+        set(state => ({
+          departments: state.departments.map(dept => {
+            if (dept._id === departmentId) {
+              // Avoid duplicates
+              const existingIds = new Set(dept.projects.map(p => p._id));
+              const newProjects = projects.filter(p => !existingIds.has(p._id));
+              return {
+                ...dept,
+                projects: [...dept.projects, ...newProjects]
+              };
+            }
+            return dept;
+          })
+        }));
       }
     }),
     {
