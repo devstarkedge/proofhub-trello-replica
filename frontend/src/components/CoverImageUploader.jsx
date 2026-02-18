@@ -73,7 +73,8 @@ const CoverImageUploader = ({
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
       'image/webp': ['.webp'],
-      'image/gif': ['.gif']
+      'image/gif': ['.gif'],
+      'image/svg+xml': ['.svg']
     },
     maxSize: 5 * 1024 * 1024, // 5MB
     multiple: false,
@@ -334,7 +335,7 @@ const CoverImageUploader = ({
                     {isDragActive ? 'Drop image here...' : 'Drag & drop cover image'}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    or click to browse • JPG, PNG, WebP, GIF • Max 5MB
+                    or click to browse • JPG, PNG, WebP, GIF, SVG • Max 5MB
                   </p>
                 </div>
               </div>

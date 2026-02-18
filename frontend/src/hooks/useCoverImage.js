@@ -37,9 +37,9 @@ const useCoverImage = (projectId) => {
     }
 
     // Validate file type
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
     if (!validTypes.includes(file.type)) {
-      const errorMsg = 'Invalid file type. Only images allowed: JPG, PNG, WebP, GIF';
+      const errorMsg = 'Invalid file type. Only images allowed: JPG, PNG, WebP, GIF, SVG';
       setError(errorMsg);
       toast.error(errorMsg);
       return { success: false, error: errorMsg };

@@ -56,18 +56,22 @@ const GoogleDriveIcon = ({ size = 16, className = '' }) => (
   </svg>
 );
 
-const ACCEPTED_FILE_TYPES = {
-  'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
-  'application/pdf': ['.pdf'],
-  'application/msword': ['.doc'],
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'application/vnd.ms-excel': ['.xls'],
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-  'application/vnd.ms-powerpoint': ['.ppt'],
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
-  'text/plain': ['.txt'],
-  'text/csv': ['.csv']
-};
+
+// Build a comprehensive accept string that includes both MIME types and explicit extensions
+// This ensures .jpeg files are accepted on all browsers/OS (image/* alone can miss .jpeg on some systems)
+const ACCEPTED_FILE_TYPES_STRING = [
+  'image/*',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp',
+  'application/pdf', '.pdf',
+  'application/msword', '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx',
+  'application/vnd.ms-excel', '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx',
+  'application/vnd.ms-powerpoint', '.ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx',
+  'text/plain', '.txt',
+  'text/csv', '.csv'
+].join(',');
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_FILES = 10;
@@ -287,7 +291,7 @@ const AttachmentUploader = ({
           ref={fileInputRef}
           type="file"
           multiple
-          accept={Object.keys(ACCEPTED_FILE_TYPES).join(',')}
+          accept={ACCEPTED_FILE_TYPES_STRING}
           className="hidden"
           onChange={handleFileSelect}
         />
@@ -374,7 +378,7 @@ const AttachmentUploader = ({
             ref={fileInputRef}
             type="file"
             multiple
-            accept={Object.keys(ACCEPTED_FILE_TYPES).join(',')}
+            accept={ACCEPTED_FILE_TYPES_STRING}
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -449,7 +453,7 @@ const AttachmentUploader = ({
             ref={fileInputRef}
             type="file"
             multiple
-            accept={Object.keys(ACCEPTED_FILE_TYPES).join(',')}
+            accept={ACCEPTED_FILE_TYPES_STRING}
             onChange={handleFileSelect}
             className="hidden"
           />

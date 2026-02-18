@@ -126,8 +126,8 @@ export const uploadToCloudinaryMiddleware = multer({
 
 // Cover image specific upload - images only, 5MB limit
 const coverImageFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+  const allowedTypes = /jpeg|jpg|png|gif|webp|svg/;
+  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
 
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
   const mimetype = allowedMimeTypes.includes(file.mimetype);
@@ -135,7 +135,7 @@ const coverImageFilter = (req, file, cb) => {
   if (mimetype && extname) {
     return cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only images allowed: JPG, JPEG, PNG, GIF, WEBP'));
+    cb(new Error('Invalid file type. Only images allowed: JPG, JPEG, PNG, GIF, WEBP, SVG'));
   }
 };
 

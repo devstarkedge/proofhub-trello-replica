@@ -273,9 +273,12 @@ const useEditorAttachment = ({
   }, []);
 
   // Get accepted file types for input
+  // Note: We include both 'image/*' and explicit extensions (.jpg, .jpeg, etc.)
+  // because some browsers/OS don't show .jpeg files when only 'image/*' is specified
   const getAcceptedFileTypes = useCallback(() => {
     return [
       'image/*',
+      '.jpg', '.jpeg', '.png', '.gif', '.webp',
       '.pdf',
       '.doc', '.docx',
       '.xls', '.xlsx',

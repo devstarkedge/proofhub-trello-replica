@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Paperclip,
   Download,
   Trash2,
   ExternalLink,
@@ -257,51 +256,31 @@ const AttachmentList = ({
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.25 }}
-      className="space-y-3"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Paperclip size={20} className="text-gray-600" />
-          <h4 className="font-semibold text-gray-800 text-lg">
-            Attachments
-          </h4>
-          {(attachments.length > 0 || Object.keys(uploadProgress).length > 0) && (
-            <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full font-medium">
-              {attachments.length + Object.keys(uploadProgress).filter(k => uploadProgress[k].entityKey === entityKey).length}
-            </span>
-          )}
-        </div>
-
-        {/* Bulk actions */}
-        {selectedAttachments.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex items-center gap-2"
+    <div className="space-y-3">
+      {/* Bulk actions */}
+      {selectedAttachments.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex items-center gap-2 mb-2"
+        >
+          <span className="text-sm text-gray-500">
+            {selectedAttachments.length} selected
+          </span>
+          <button
+            onClick={handleBulkDelete}
+            className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
           >
-            <span className="text-sm text-gray-500">
-              {selectedAttachments.length} selected
-            </span>
-            <button
-              onClick={handleBulkDelete}
-              className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
-            >
-              Delete
-            </button>
-            <button
-              onClick={clearSelection}
-              className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
-            >
-              Clear
-            </button>
-          </motion.div>
-        )}
-      </div>
+            Delete
+          </button>
+          <button
+            onClick={clearSelection}
+            className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
+          >
+            Clear
+          </button>
+        </motion.div>
+      )}
 
       {/* Loading state */}
       {isLoading && attachments.length === 0 && (
@@ -548,7 +527,7 @@ const AttachmentList = ({
           />
         )}
       </Suspense>
-    </motion.div>
+    </div>
   );
 };
 

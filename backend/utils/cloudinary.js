@@ -621,7 +621,7 @@ export const getAvatarUrl = (publicId, size = 256) => {
 // =============================================
 
 // Allowed cover image types
-const COVER_ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+const COVER_ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
 const MAX_COVER_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 // Magic bytes for file type validation
@@ -642,6 +642,11 @@ const FILE_SIGNATURES = {
 export const validateFileSignature = (buffer, declaredMimetype) => {
   if (!buffer || buffer.length < 4) {
     return { valid: false, error: 'Invalid file buffer' };
+  }
+
+  // SVG is XML text — no binary magic bytes, skip signature check
+  if (declaredMimetype === 'image/svg+xml') {
+    return { valid: true };
   }
 
   const signatures = FILE_SIGNATURES[declaredMimetype];
@@ -671,7 +676,7 @@ export const validateCoverImage = (file) => {
   if (!COVER_ALLOWED_TYPES.includes(file.mimetype)) {
     return {
       valid: false,
-      error: `Invalid file type: ${file.mimetype}. Allowed: JPG, PNG, WebP, GIF`
+      error: `Invalid file type: ${file.mimetype}. Allowed: JPG, PNG, WebP, GIF, SVG`
     };
   }
 
