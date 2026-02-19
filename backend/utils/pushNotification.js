@@ -36,34 +36,69 @@ export const sendPushNotification = async (notification, pushSubscription) => {
   }
 
   try {
-    const payload = JSON.stringify({
-      title: notification.title,
-      body: notification.message,
+    // WNS (Windows) limits payload to 5120 bytes, FCM to ~4KB.
+    // Build a safe payload that fits within 4KB after JSON serialization.
+    const MAX_PAYLOAD_BYTES = 4000; // Leave headroom for encryption overhead
+
+    // Safely extract an ID string from a value that could be:
+    // - a plain string
+    // - a Mongoose ObjectId (has toHexString)
+    // - a populated Mongoose document (has _id)
+    const safeId = (val) => {
+      if (!val) return null;
+      if (typeof val === 'string') return val;
+      if (typeof val.toHexString === 'function') return val.toHexString();
+      if (val._id) return safeId(val._id);
+      const str = String(val);
+      return str.length <= 50 ? str : null;
+    };
+
+    const data = {
+      notificationId: safeId(notification._id),
+      type: notification.type,
+      url: getNotificationUrl(notification)
+    };
+
+    // Only include IDs if present (saves bytes)
+    const deptId = notification.departmentId || notification.metadata?.departmentId;
+    const projId = notification.projectId || notification.relatedBoard || notification.metadata?.projectId;
+    const tskId = notification.taskId || notification.relatedCard || notification.metadata?.taskId;
+    if (deptId) data.departmentId = safeId(deptId);
+    if (projId) data.projectId = safeId(projId);
+    if (tskId) data.taskId = safeId(tskId);
+
+    let title = notification.title || 'FlowTask';
+    let body = notification.message || '';
+
+    // Truncate title and body to ensure payload fits
+    if (title.length > 80) title = title.slice(0, 77) + '...';
+    if (body.length > 200) body = body.slice(0, 197) + '...';
+
+    let payloadObj = {
+      title,
+      body,
       icon: '/icon-192x192.png',
       badge: '/badge-72x72.png',
-      data: {
-        notificationId: notification._id,
-        type: notification.type,
-        departmentId: notification.departmentId || notification.metadata?.departmentId,
-        projectId: notification.projectId || notification.relatedBoard || notification.metadata?.projectId,
-        taskId: notification.taskId || notification.relatedCard || notification.metadata?.taskId,
-        url: getNotificationUrl(notification)
-      },
+      data,
       actions: [
-        {
-          action: 'view',
-          title: 'View'
-        },
-        {
-          action: 'reply',
-          title: 'Reply'
-        },
-        {
-          action: 'dismiss',
-          title: 'Dismiss'
-        }
+        { action: 'view', title: 'View' },
+        { action: 'dismiss', title: 'Dismiss' }
       ]
-    });
+    };
+
+    let payload = JSON.stringify(payloadObj);
+
+    // If still too large, progressively trim
+    if (Buffer.byteLength(payload, 'utf8') > MAX_PAYLOAD_BYTES) {
+      // Remove actions
+      delete payloadObj.actions;
+      payload = JSON.stringify(payloadObj);
+    }
+    if (Buffer.byteLength(payload, 'utf8') > MAX_PAYLOAD_BYTES) {
+      // Aggressively truncate body
+      payloadObj.body = body.slice(0, 80) + '...';
+      payload = JSON.stringify(payloadObj);
+    }
 
     await webpush.sendNotification(pushSubscription, payload);
     if (process.env.NODE_ENV !== 'production') console.log('Push notification sent successfully');
@@ -82,13 +117,23 @@ export const sendPushNotification = async (notification, pushSubscription) => {
   }
 };
 
+// Safely extract an ID string (handles ObjectId, populated docs, strings)
+const extractId = (val) => {
+  if (!val) return null;
+  if (typeof val === 'string') return val;
+  if (typeof val.toHexString === 'function') return val.toHexString();
+  if (val._id) return extractId(val._id);
+  const str = String(val);
+  return str.length <= 50 ? str : null;
+};
+
 // Get notification URL for click action
 const getNotificationUrl = (notification) => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-  const departmentId = notification.departmentId || notification.metadata?.departmentId;
-  const projectId = notification.projectId || notification.relatedBoard || notification.metadata?.projectId;
-  const taskId = notification.taskId || notification.relatedCard || notification.metadata?.taskId;
+  const departmentId = extractId(notification.departmentId || notification.metadata?.departmentId);
+  const projectId = extractId(notification.projectId || notification.relatedBoard || notification.metadata?.projectId);
+  const taskId = extractId(notification.taskId || notification.relatedCard || notification.metadata?.taskId);
 
   if (departmentId && projectId && taskId) {
     return `${baseUrl}/workflow/${departmentId}/${projectId}/${taskId}`;
@@ -97,8 +142,7 @@ const getNotificationUrl = (notification) => {
   switch (notification.type) {
     case 'announcement_created':
     case 'announcement':
-      // Deep link to announcements page with specific announcement to open
-      const announcementId = notification.relatedAnnouncement || notification.metadata?.announcementId;
+      const announcementId = extractId(notification.relatedAnnouncement || notification.metadata?.announcementId);
       return announcementId 
         ? `${baseUrl}/announcements?open=${announcementId}`
         : `${baseUrl}/announcements`;
@@ -114,7 +158,7 @@ const getNotificationUrl = (notification) => {
     case 'project_created':
     case 'project_deleted':
     case 'project_updates':
-      return `${baseUrl}/workflow/${notification.relatedBoard}`;
+      return `${baseUrl}/workflow/${extractId(notification.relatedBoard)}`;
     case 'user_registered':
       return `${baseUrl}/admin/users`;
     default:

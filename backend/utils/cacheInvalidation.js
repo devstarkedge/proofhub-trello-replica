@@ -3,7 +3,14 @@ import { invalidateCache } from '../middleware/cache.js';
 
 const ensureString = (id) => {
   if (!id) return null;
-  return typeof id === 'string' ? id : id.toString();
+  if (typeof id === 'string') return id;
+  // Handle Mongoose ObjectId (has toHexString)
+  if (typeof id.toHexString === 'function') return id.toHexString();
+  // Handle populated Mongoose documents — extract _id
+  if (id._id) return ensureString(id._id);
+  // Fallback — but reject absurdly long results (indicates a serialized object)
+  const str = String(id);
+  return str.length <= 50 ? str : null;
 };
 
 // ============================================

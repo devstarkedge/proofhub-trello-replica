@@ -4,7 +4,7 @@ import { createClient } from 'redis';
 // REDIS CLIENT CONFIGURATION
 // ============================================
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL ;
 
 // Create Redis client with retry strategy
 const redisClient = createClient({

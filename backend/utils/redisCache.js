@@ -80,30 +80,37 @@ export const deleteCache = async (key) => {
 export const clearCacheByPattern = async (pattern) => {
   try {
     if (!isRedisReady()) return 0;
-    let deletedCount = 0;
-    let cursor = 0;
 
-    do {
-      const result = await redisClient.scan(cursor, {
-        MATCH: pattern,
-        COUNT: 100
-      });
-      cursor = result.cursor;
-      const keys = result.keys;
-
-      if (keys.length > 0) {
-        await redisClient.del(keys);
-        deletedCount += keys.length;
+    // Sanity check: reject invalid or absurdly long patterns (likely a bug upstream)
+    if (typeof pattern !== 'string' || pattern.length > 300) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[RedisCache] Skipping invalid pattern (type=${typeof pattern}, len=${pattern?.length})`);
       }
-    } while (cursor !== 0);
-
-    if (deletedCount > 0 && process.env.NODE_ENV !== 'production') {
-      console.log(`[RedisCache] Cleared ${deletedCount} keys matching "${pattern}"`);
+      return 0;
     }
-    return deletedCount;
+
+    const keysToDelete = [];
+
+    // Use scanIterator to avoid cursor type issues across redis client versions
+    for await (const key of redisClient.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+      keysToDelete.push(key);
+    }
+
+    if (keysToDelete.length > 0) {
+      // Delete in batches of 100 to avoid overly large DEL commands
+      for (let i = 0; i < keysToDelete.length; i += 100) {
+        const batch = keysToDelete.slice(i, i + 100);
+        await redisClient.del(batch);
+      }
+    }
+
+    if (keysToDelete.length > 0 && process.env.NODE_ENV !== 'production') {
+      console.log(`[RedisCache] Cleared ${keysToDelete.length} keys matching "${pattern}"`);
+    }
+    return keysToDelete.length;
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error(`[RedisCache] SCAN/DEL error for pattern "${pattern}":`, err.message);
+      console.error(`[RedisCache] SCAN/DEL error for pattern "${pattern.slice(0, 80)}":`, err.message);
     }
     return 0;
   }
