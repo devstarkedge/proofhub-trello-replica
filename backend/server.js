@@ -346,6 +346,11 @@ export const emitToUserShortcuts = (userId, event, data) => {
   io.to(`user-shortcuts-${userId}`).emit(event, data);
 };
 
+// Helper function to emit to department room
+export const emitToDepartment = (departmentId, event, data) => {
+  io.to(`department-${departmentId}`).emit(event, data);
+};
+
 // Export io for use in other modules
 export { io };
 

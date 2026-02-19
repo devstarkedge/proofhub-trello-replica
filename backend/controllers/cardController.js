@@ -8,16 +8,23 @@ import Activity from "../models/Activity.js";
 import Notification from "../models/Notification.js";
 import RecurringTask from "../models/RecurringTask.js";
 import VersionHistory from "../models/VersionHistory.js";
+import Subtask from "../models/Subtask.js";
+import SubtaskNano from "../models/SubtaskNano.js";
+import Comment from "../models/Comment.js";
+import Attachment from "../models/Attachment.js";
 import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { emitToBoard, emitNotification } from "../server.js";
+import { emitToBoard, emitNotification, emitToDepartment } from "../server.js";
 import { invalidateCache } from "../middleware/cache.js";
 import notificationService from "../utils/notificationService.js";
 import { invalidateHierarchyCache } from "../utils/cacheInvalidation.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
 import { emitFinanceDataRefresh } from "../utils/socketEmitter.js";
+
+// In-memory store for undo tokens (move operations) — entries auto-expire after 10 seconds
+const undoTokenStore = new Map();
 
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
@@ -2045,5 +2052,660 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: { _id: entryId }
+  });
+});
+
+// ============================================================
+// HELPER: Re-map labels from source board to destination board
+// Finds or creates matching labels in destination board
+// ============================================================
+const remapLabels = async (labelIds, sourceBoardId, destBoardId) => {
+  if (!labelIds || labelIds.length === 0) return [];
+  if (sourceBoardId.toString() === destBoardId.toString()) return labelIds;
+
+  const sourceLabels = await Label.find({ _id: { $in: labelIds } }).lean();
+  const newLabelIds = [];
+
+  for (const sourceLabel of sourceLabels) {
+    // Find or create matching label in destination board
+    const destLabel = await Label.findOneAndUpdate(
+      { board: destBoardId, name: sourceLabel.name, color: sourceLabel.color },
+      { $setOnInsert: { board: destBoardId, name: sourceLabel.name, color: sourceLabel.color, createdBy: sourceLabel.createdBy } },
+      { upsert: true, new: true }
+    );
+    newLabelIds.push(destLabel._id);
+  }
+
+  return newLabelIds;
+};
+
+// HELPER: Update recent destinations for a user
+const updateRecentDestinations = async (userId, destination) => {
+  try {
+    const user = await User.findById(userId);
+    if (!user) return;
+
+    const destinations = user.recentCopyMoveDestinations || [];
+    
+    // Remove duplicate if exists
+    const filtered = destinations.filter(d =>
+      !(d.departmentId?.toString() === destination.departmentId?.toString() &&
+        d.projectId?.toString() === destination.projectId?.toString() &&
+        d.listId?.toString() === destination.listId?.toString())
+    );
+
+    // Add new at front, cap at 5
+    filtered.unshift({ ...destination, usedAt: new Date() });
+    user.recentCopyMoveDestinations = filtered.slice(0, 5);
+    await user.save();
+  } catch (err) {
+    console.error('Error updating recent destinations:', err);
+  }
+};
+
+// @desc    Copy a card to another board/list
+// @route   POST /api/cards/:id/copy
+// @access  Private (Admin/Manager)
+export const copyCard = asyncHandler(async (req, res, next) => {
+  const { destinationBoardId, destinationListId, options = {} } = req.body;
+  const {
+    copyComments = true,
+    copyAttachments = true,
+    copyChecklist = true,
+    copyAssignees = true,
+    copyDueDates = true
+  } = options;
+
+  // Load source card
+  const sourceCard = await Card.findById(req.params.id).lean();
+  if (!sourceCard) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  // Validate destination
+  const destBoard = await Board.findById(destinationBoardId).lean();
+  if (!destBoard) {
+    return next(new ErrorResponse("Destination project not found", 404));
+  }
+
+  const destList = await List.findById(destinationListId);
+  if (!destList) {
+    return next(new ErrorResponse("Destination list not found", 404));
+  }
+
+  // Get position (append to end of destination list)
+  const maxPosCard = await Card.findOne({ list: destinationListId, isArchived: false })
+    .sort({ position: -1 }).select('position').lean();
+  const newPosition = (maxPosCard?.position ?? -1) + 1;
+
+  // Re-map labels to destination board
+  const newLabels = await remapLabels(sourceCard.labels, sourceCard.board, destinationBoardId);
+
+  // Build new card data
+  const newCardData = {
+    title: `${sourceCard.title}`,
+    description: sourceCard.description || '',
+    descriptionMentions: sourceCard.descriptionMentions || [],
+    list: destinationListId,
+    board: destinationBoardId,
+    position: newPosition,
+    assignees: copyAssignees ? (sourceCard.assignees || []) : [],
+    members: copyAssignees ? (sourceCard.members || []) : [],
+    labels: newLabels,
+    priority: sourceCard.priority,
+    status: destList.title.toLowerCase().replace(/\s+/g, '-'),
+    dueDate: copyDueDates ? sourceCard.dueDate : null,
+    startDate: copyDueDates ? sourceCard.startDate : null,
+    subtaskStats: { total: 0, completed: 0, nanoTotal: 0, nanoCompleted: 0 },
+    // Skip all time entries
+    estimationTime: [],
+    loggedTime: [],
+    billedTime: [],
+    // Reset archive state
+    isArchived: false,
+    archivedAt: null,
+    autoDeleteAt: null,
+    createdBy: req.user.id,
+    createdFrom: 'board'
+  };
+
+  // Copy embedded attachments if requested
+  if (copyAttachments && sourceCard.attachments?.length > 0) {
+    newCardData.attachments = sourceCard.attachments.map(att => ({
+      filename: att.filename,
+      originalName: att.originalName,
+      mimetype: att.mimetype,
+      size: att.size,
+      url: att.url,
+      uploadedBy: att.uploadedBy,
+      isCover: false,
+      createdAt: new Date()
+    }));
+  }
+
+  const newCard = await Card.create(newCardData);
+
+  // Populate for response
+  const populatedCard = await Card.findById(newCard._id)
+    .populate('assignees', 'name email avatar')
+    .populate('members', 'name email avatar')
+    .populate('createdBy', 'name email avatar')
+    .lean();
+
+  // Send response immediately (optimistic for client)
+  res.status(201).json({
+    success: true,
+    data: populatedCard,
+    message: 'Task copied successfully'
+  });
+
+  // ===== Background async processing =====
+  (async () => {
+    try {
+      // 1. Copy comments if requested
+      if (copyComments) {
+        const comments = await Comment.find({ card: sourceCard._id, contextType: 'card' }).lean();
+        if (comments.length > 0) {
+          const commentDocs = comments.map(c => ({
+            text: c.text,
+            htmlContent: c.htmlContent,
+            card: newCard._id,
+            contextType: 'card',
+            contextRef: newCard._id,
+            user: c.user,
+            mentions: c.mentions || [],
+            attachments: c.attachments || [],
+            isEdited: false,
+            editHistory: [],
+            reactions: [],
+            isPinned: false,
+            replyCount: 0
+          }));
+          await Comment.insertMany(commentDocs);
+        }
+      }
+
+      // 2. Copy attachments (Attachment model records) if requested
+      if (copyAttachments) {
+        const attachments = await Attachment.find({
+          contextRef: sourceCard._id,
+          contextType: 'card',
+          isDeleted: false
+        }).lean();
+        if (attachments.length > 0) {
+          const attDocs = attachments.map(a => ({
+            fileName: a.fileName,
+            originalName: a.originalName,
+            fileType: a.fileType,
+            mimeType: a.mimeType,
+            fileSize: a.fileSize,
+            url: a.url,
+            secureUrl: a.secureUrl,
+            publicId: a.publicId,
+            resourceType: a.resourceType,
+            format: a.format,
+            thumbnailUrl: a.thumbnailUrl,
+            previewUrl: a.previewUrl,
+            contextType: 'card',
+            contextRef: newCard._id,
+            card: newCard._id,
+            board: destinationBoardId,
+            uploadedBy: a.uploadedBy,
+            width: a.width,
+            height: a.height,
+            duration: a.duration,
+            pages: a.pages,
+            fileExtension: a.fileExtension,
+            isCover: false,
+            isDeleted: false,
+            departmentId: destBoard.department
+          }));
+          await Attachment.insertMany(attDocs);
+        }
+      }
+
+      // 3. Copy subtasks (checklist) if requested
+      if (copyChecklist) {
+        const subtasks = await Subtask.find({ task: sourceCard._id }).lean();
+        if (subtasks.length > 0) {
+          for (const st of subtasks) {
+            const newSubtask = await Subtask.create({
+              task: newCard._id,
+              board: destinationBoardId,
+              title: st.title,
+              description: st.description,
+              status: st.status,
+              priority: st.priority,
+              assignees: copyAssignees ? (st.assignees || []) : [],
+              watchers: [],
+              tags: await remapLabels(st.tags, sourceCard.board, destinationBoardId),
+              dueDate: copyDueDates ? st.dueDate : null,
+              startDate: copyDueDates ? st.startDate : null,
+              attachments: copyAttachments ? (st.attachments || []) : [],
+              colorToken: st.colorToken,
+              estimationTime: [],
+              loggedTime: [],
+              billedTime: [],
+              order: st.order,
+              createdBy: req.user.id,
+              breadcrumbs: { project: destBoard.name, task: newCard.title }
+            });
+
+            // Copy nano-subtasks
+            const nanos = await SubtaskNano.find({ subtask: st._id }).lean();
+            if (nanos.length > 0) {
+              const nanoDocs = await Promise.all(nanos.map(async n => ({
+                subtask: newSubtask._id,
+                task: newCard._id,
+                board: destinationBoardId,
+                title: n.title,
+                description: n.description,
+                status: n.status,
+                priority: n.priority,
+                assignees: copyAssignees ? (n.assignees || []) : [],
+                dueDate: copyDueDates ? n.dueDate : null,
+                startDate: copyDueDates ? n.startDate : null,
+                tags: await remapLabels(n.tags, sourceCard.board, destinationBoardId),
+                attachments: copyAttachments ? (n.attachments || []) : [],
+                colorToken: n.colorToken,
+                estimationTime: [],
+                loggedTime: [],
+                billedTime: [],
+                order: n.order,
+                createdBy: req.user.id,
+                breadcrumbs: { project: destBoard.name, task: newCard.title, subtask: newSubtask.title }
+              })));
+              await SubtaskNano.insertMany(nanoDocs);
+            }
+          }
+
+          // Update subtask stats
+          const totalSubtasks = await Subtask.countDocuments({ task: newCard._id });
+          const completedSubtasks = await Subtask.countDocuments({ task: newCard._id, status: { $in: ['done', 'closed'] } });
+          const totalNanos = await SubtaskNano.countDocuments({ task: newCard._id });
+          const completedNanos = await SubtaskNano.countDocuments({ task: newCard._id, status: { $in: ['done', 'closed'] } });
+          
+          await Card.findByIdAndUpdate(newCard._id, {
+            subtaskStats: { total: totalSubtasks, completed: completedSubtasks, nanoTotal: totalNanos, nanoCompleted: completedNanos }
+          });
+        }
+      }
+
+      // 4. Log activity
+      await Activity.create({
+        type: 'card_copied',
+        description: `Copied card "${sourceCard.title}" to "${destBoard.name}"`,
+        user: req.user.id,
+        board: destinationBoardId,
+        card: newCard._id,
+        list: destinationListId,
+        contextType: 'task',
+        metadata: {
+          sourceCardId: sourceCard._id,
+          sourceBoardId: sourceCard.board,
+          destinationBoardId,
+          destinationListId
+        }
+      });
+
+      // 5. Emit socket events
+      emitToBoard(destinationBoardId.toString(), 'task-copied', {
+        card: populatedCard,
+        listId: destinationListId,
+        copiedBy: { id: req.user.id, name: req.user.name },
+        sourceBoardId: sourceCard.board.toString()
+      });
+
+      // 6. Update recent destinations
+      await updateRecentDestinations(req.user.id, {
+        departmentId: destBoard.department,
+        departmentName: (await Department.findById(destBoard.department).select('name').lean())?.name || '',
+        projectId: destinationBoardId,
+        projectName: destBoard.name,
+        listId: destinationListId,
+        listName: destList.title
+      });
+
+      // 7. Invalidate caches
+      invalidateHierarchyCache({ boardId: destinationBoardId, listId: destinationListId, cardId: newCard._id });
+      invalidateCache("/api/analytics/dashboard");
+      invalidateCache(`/api/analytics/department/`);
+
+    } catch (bgError) {
+      console.error('Error in copyCard background tasks:', bgError);
+    }
+  })();
+});
+
+// @desc    Move card across boards (cross-project move)
+// @route   PUT /api/cards/:id/cross-move
+// @access  Private (Admin/Manager)
+export const crossMoveCard = asyncHandler(async (req, res, next) => {
+  const { destinationBoardId, destinationListId, newPosition } = req.body;
+
+  const card = await Card.findById(req.params.id)
+    .populate('list', 'title')
+    .populate('board', 'name department');
+
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  const destBoard = await Board.findById(destinationBoardId).select('name department').lean();
+  if (!destBoard) {
+    return next(new ErrorResponse("Destination project not found", 404));
+  }
+
+  const destList = await List.findById(destinationListId);
+  if (!destList) {
+    return next(new ErrorResponse("Destination list not found", 404));
+  }
+
+  // Store original state for undo
+  const originalState = {
+    cardId: card._id.toString(),
+    sourceBoardId: card.board._id.toString(),
+    sourceListId: card.list._id.toString(),
+    sourcePosition: card.position,
+    sourceStatus: card.status,
+    sourceLabels: card.labels?.map(l => l.toString()) || []
+  };
+
+  const sourceListId = card.list._id;
+  const sourceListTitle = card.list.title;
+  const sourceBoardId = card.board._id;
+  const sourceBoardName = card.board.name;
+  const oldPosition = card.position;
+
+  // Decrement positions in source list
+  await Card.updateMany(
+    { list: sourceListId, position: { $gt: oldPosition }, isArchived: false },
+    { $inc: { position: -1 } }
+  );
+
+  // Calculate destination position
+  let destPosition = newPosition;
+  if (destPosition === undefined || destPosition === null) {
+    const maxPos = await Card.findOne({ list: destinationListId, isArchived: false })
+      .sort({ position: -1 }).select('position').lean();
+    destPosition = (maxPos?.position ?? -1) + 1;
+  } else {
+    // Make room at destination
+    await Card.updateMany(
+      { list: destinationListId, position: { $gte: destPosition }, isArchived: false },
+      { $inc: { position: 1 } }
+    );
+  }
+
+  // Re-map labels if cross-board
+  const isCrossBoard = sourceBoardId.toString() !== destinationBoardId.toString();
+  let newLabels = card.labels;
+  if (isCrossBoard) {
+    newLabels = await remapLabels(card.labels, sourceBoardId, destinationBoardId);
+  }
+
+  // Update the card
+  card.board = destinationBoardId;
+  card.list = destinationListId;
+  card.position = destPosition;
+  card.status = destList.title.toLowerCase().replace(/\s+/g, '-');
+  card.labels = newLabels;
+  await card.save();
+
+  // Update child entities if cross-board
+  if (isCrossBoard) {
+    await Promise.all([
+      Subtask.updateMany({ task: card._id }, { board: destinationBoardId }),
+      SubtaskNano.updateMany({ task: card._id }, { board: destinationBoardId }),
+      Attachment.updateMany(
+        { card: card._id, isDeleted: false },
+        { board: destinationBoardId, departmentId: destBoard.department }
+      )
+    ]);
+  }
+
+  // Generate undo token
+  const undoToken = new mongoose.Types.ObjectId().toString();
+  undoTokenStore.set(undoToken, originalState);
+  // Auto-expire after 10 seconds
+  setTimeout(() => undoTokenStore.delete(undoToken), 10000);
+
+  // Send response immediately
+  res.status(200).json({
+    success: true,
+    data: card,
+    undoToken,
+    message: 'Task moved successfully'
+  });
+
+  // ===== Background async processing =====
+  (async () => {
+    try {
+      // 1. Log activity
+      await Activity.create({
+        type: 'card_moved',
+        description: `Moved card "${card.title}" from "${sourceBoardName}" to "${destBoard.name}"`,
+        user: req.user.id,
+        board: destinationBoardId,
+        card: card._id,
+        list: destinationListId,
+        contextType: 'task',
+        metadata: {
+          sourceBoardId: sourceBoardId.toString(),
+          sourceListId: sourceListId.toString(),
+          sourceListTitle,
+          destinationBoardId: destinationBoardId.toString(),
+          destinationListId: destinationListId.toString(),
+          destinationListTitle: destList.title,
+          crossBoard: isCrossBoard
+        }
+      });
+
+      // 2. Emit socket events to BOTH boards
+      const movePayload = {
+        cardId: card._id,
+        card: card.toObject(),
+        sourceBoardId: sourceBoardId.toString(),
+        sourceListId: sourceListId.toString(),
+        destinationBoardId: destinationBoardId.toString(),
+        destinationListId: destinationListId.toString(),
+        newPosition: destPosition,
+        status: card.status,
+        movedBy: { id: req.user.id, name: req.user.name }
+      };
+
+      // Emit to source board (card removed)
+      emitToBoard(sourceBoardId.toString(), 'task-moved-cross', movePayload);
+      // Emit to destination board (card added) — only if different board
+      if (isCrossBoard) {
+        emitToBoard(destinationBoardId.toString(), 'task-moved-cross', movePayload);
+      }
+
+      // 3. Update recent destinations
+      await updateRecentDestinations(req.user.id, {
+        departmentId: destBoard.department,
+        departmentName: (await Department.findById(destBoard.department).select('name').lean())?.name || '',
+        projectId: destinationBoardId,
+        projectName: destBoard.name,
+        listId: destinationListId,
+        listName: destList.title
+      });
+
+      // 4. Send notifications
+      await notificationService.notifyTaskUpdated(card, req.user.id, {
+        moved: true,
+        fromList: sourceListTitle,
+        toList: destList.title,
+        crossBoard: isCrossBoard,
+        fromBoard: sourceBoardName,
+        toBoard: destBoard.name
+      });
+
+      // 5. Invalidate caches on both boards
+      invalidateHierarchyCache({ boardId: sourceBoardId, listId: sourceListId, cardId: card._id });
+      invalidateHierarchyCache({ boardId: destinationBoardId, listId: destinationListId, cardId: card._id });
+      invalidateCache("/api/analytics/dashboard");
+      invalidateCache(`/api/analytics/department/`);
+
+    } catch (bgError) {
+      console.error('Error in crossMoveCard background tasks:', bgError);
+    }
+  })();
+});
+
+// @desc    Undo a move operation
+// @route   POST /api/cards/:id/undo-move
+// @access  Private
+export const undoMove = asyncHandler(async (req, res, next) => {
+  const { undoToken } = req.body;
+  const cardId = req.params.id;
+
+  if (!undoToken) {
+    return next(new ErrorResponse("Undo token is required", 400));
+  }
+
+  const originalState = undoTokenStore.get(undoToken);
+  if (!originalState) {
+    return next(new ErrorResponse("Undo window has expired", 410));
+  }
+
+  // Consume the token
+  undoTokenStore.delete(undoToken);
+
+  if (originalState.cardId !== cardId) {
+    return next(new ErrorResponse("Token does not match this card", 400));
+  }
+
+  const card = await Card.findById(cardId);
+  if (!card) {
+    return next(new ErrorResponse("Card not found", 404));
+  }
+
+  const currentListId = card.list;
+  const currentBoardId = card.board;
+  const currentPosition = card.position;
+
+  // Decrement positions in current list
+  await Card.updateMany(
+    { list: currentListId, position: { $gt: currentPosition }, isArchived: false },
+    { $inc: { position: -1 } }
+  );
+
+  // Make room in original list
+  await Card.updateMany(
+    { list: originalState.sourceListId, position: { $gte: originalState.sourcePosition }, isArchived: false },
+    { $inc: { position: 1 } }
+  );
+
+  const isCrossBoard = currentBoardId.toString() !== originalState.sourceBoardId;
+
+  // Restore labels if cross-board
+  let restoredLabels = card.labels;
+  if (isCrossBoard) {
+    restoredLabels = await remapLabels(card.labels, currentBoardId, originalState.sourceBoardId);
+  }
+
+  // Restore card
+  card.board = originalState.sourceBoardId;
+  card.list = originalState.sourceListId;
+  card.position = originalState.sourcePosition;
+  card.status = originalState.sourceStatus;
+  card.labels = restoredLabels;
+  await card.save();
+
+  // Restore child entities if cross-board
+  if (isCrossBoard) {
+    await Promise.all([
+      Subtask.updateMany({ task: card._id }, { board: originalState.sourceBoardId }),
+      SubtaskNano.updateMany({ task: card._id }, { board: originalState.sourceBoardId }),
+      Attachment.updateMany({ card: card._id, isDeleted: false }, { board: originalState.sourceBoardId })
+    ]);
+  }
+
+  // Emit socket events to both boards for real-time sync
+  const undoPayload = {
+    cardId: card._id,
+    card: card.toObject(),
+    sourceBoardId: currentBoardId.toString(),
+    sourceListId: currentListId.toString(),
+    destinationBoardId: originalState.sourceBoardId,
+    destinationListId: originalState.sourceListId,
+    newPosition: originalState.sourcePosition,
+    status: originalState.sourceStatus,
+    movedBy: { id: req.user.id, name: req.user.name },
+    isUndo: true
+  };
+
+  emitToBoard(currentBoardId.toString(), 'task-moved-cross', undoPayload);
+  if (isCrossBoard) {
+    emitToBoard(originalState.sourceBoardId, 'task-moved-cross', undoPayload);
+  }
+
+  // Invalidate caches
+  invalidateHierarchyCache({ boardId: currentBoardId, listId: currentListId });
+  invalidateHierarchyCache({ boardId: originalState.sourceBoardId, listId: originalState.sourceListId });
+
+  res.status(200).json({
+    success: true,
+    data: card,
+    message: 'Move undone successfully'
+  });
+});
+
+// @desc    Get copy/move destination options — departments
+// @route   GET /api/cards/copy-move/departments
+// @access  Private
+export const getCopyMoveDepartments = asyncHandler(async (req, res) => {
+  const user = req.user;
+  let query = { isActive: true };
+
+  // Non-admin/manager: only departments they belong to
+  if (user.role !== 'admin' && user.role !== 'manager') {
+    query.$or = [{ members: user._id }, { managers: user._id }];
+  }
+
+  const departments = await Department.find(query).select('name').sort({ name: 1 }).lean();
+
+  res.status(200).json({ success: true, data: departments });
+});
+
+// @desc    Get copy/move destination options — projects by department
+// @route   GET /api/cards/copy-move/projects/:departmentId
+// @access  Private
+export const getCopyMoveProjects = asyncHandler(async (req, res) => {
+  const { departmentId } = req.params;
+
+  const boards = await Board.find({
+    department: departmentId,
+    isArchived: { $ne: true },
+    isDeleted: { $ne: true }
+  }).select('name').sort({ name: 1 }).lean();
+
+  res.status(200).json({ success: true, data: boards });
+});
+
+// @desc    Get copy/move destination options — lists by project
+// @route   GET /api/cards/copy-move/lists/:boardId
+// @access  Private
+export const getCopyMoveLists = asyncHandler(async (req, res) => {
+  const { boardId } = req.params;
+
+  const lists = await List.find({
+    board: boardId,
+    isArchived: { $ne: true }
+  }).select('title position').sort({ position: 1 }).lean();
+
+  res.status(200).json({ success: true, data: lists });
+});
+
+// @desc    Get user's recent copy/move destinations
+// @route   GET /api/cards/copy-move/recent
+// @access  Private
+export const getRecentDestinations = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id).select('recentCopyMoveDestinations').lean();
+
+  res.status(200).json({
+    success: true,
+    data: user?.recentCopyMoveDestinations || []
   });
 });

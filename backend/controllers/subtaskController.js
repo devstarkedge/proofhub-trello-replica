@@ -5,6 +5,13 @@ import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
+import Board from '../models/Board.js';
+import List from '../models/List.js';
+import Label from '../models/Label.js';
+import Department from '../models/Department.js';
+import User from '../models/User.js';
+import Comment from '../models/Comment.js';
+import Attachment from '../models/Attachment.js';
 import { emitToBoard } from '../server.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
@@ -707,6 +714,259 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
     success: true,
     data: { _id: entryId }
   });
+});
+
+// Helper: Re-map labels from source board to destination board
+const remapLabels = async (labelIds, sourceBoardId, destBoardId) => {
+  if (!labelIds || labelIds.length === 0) return [];
+  if (sourceBoardId.toString() === destBoardId.toString()) return labelIds;
+  const sourceLabels = await Label.find({ _id: { $in: labelIds } }).lean();
+  const newLabelIds = [];
+  for (const sl of sourceLabels) {
+    const dl = await Label.findOneAndUpdate(
+      { board: destBoardId, name: sl.name, color: sl.color },
+      { $setOnInsert: { board: destBoardId, name: sl.name, color: sl.color, createdBy: sl.createdBy } },
+      { upsert: true, new: true }
+    );
+    newLabelIds.push(dl._id);
+  }
+  return newLabelIds;
+};
+
+// @desc    Promote subtask to a normal card (copy/move from subtask detail)
+// @route   POST /api/subtasks/:id/promote
+// @access  Private (Admin/Manager)
+export const promoteSubtask = asyncHandler(async (req, res, next) => {
+  const { destinationBoardId, destinationListId, options = {} } = req.body;
+  const {
+    copyComments = true,
+    copyAttachments = true,
+    copyAssignees = true,
+    copyDueDates = true
+  } = options;
+
+  const subtask = await Subtask.findById(req.params.id).populate('task', 'title board').lean();
+  if (!subtask) {
+    return next(new ErrorResponse('Subtask not found', 404));
+  }
+
+  const destBoard = await Board.findById(destinationBoardId).select('name department').lean();
+  if (!destBoard) {
+    return next(new ErrorResponse('Destination project not found', 404));
+  }
+
+  const destList = await List.findById(destinationListId);
+  if (!destList) {
+    return next(new ErrorResponse('Destination list not found', 404));
+  }
+
+  // Get position
+  const maxPosCard = await Card.findOne({ list: destinationListId, isArchived: false })
+    .sort({ position: -1 }).select('position').lean();
+  const newPosition = (maxPosCard?.position ?? -1) + 1;
+
+  // Re-map labels/tags
+  const newLabels = await remapLabels(subtask.tags, subtask.board, destinationBoardId);
+
+  // Create a new Card from the subtask data
+  const newCard = await Card.create({
+    title: subtask.title,
+    description: subtask.description || '',
+    list: destinationListId,
+    board: destinationBoardId,
+    position: newPosition,
+    assignees: copyAssignees ? (subtask.assignees || []) : [],
+    members: [],
+    labels: newLabels,
+    priority: subtask.priority,
+    status: destList.title.toLowerCase().replace(/\s+/g, '-'),
+    dueDate: copyDueDates ? subtask.dueDate : null,
+    startDate: copyDueDates ? subtask.startDate : null,
+    attachments: copyAttachments ? (subtask.attachments || []) : [],
+    estimationTime: [],
+    loggedTime: [],
+    billedTime: [],
+    isArchived: false,
+    createdBy: req.user.id,
+    createdFrom: 'board'
+  });
+
+  // Convert nano-subtasks → subtasks of the new card
+  const nanos = await SubtaskNano.find({ subtask: subtask._id }).lean();
+  if (nanos.length > 0) {
+    const subtaskDocs = nanos.map((n, i) => ({
+      task: newCard._id,
+      board: destinationBoardId,
+      title: n.title,
+      description: n.description,
+      status: n.status,
+      priority: n.priority,
+      assignees: copyAssignees ? (n.assignees || []) : [],
+      watchers: [],
+      tags: [],
+      dueDate: copyDueDates ? n.dueDate : null,
+      startDate: copyDueDates ? n.startDate : null,
+      attachments: copyAttachments ? (n.attachments || []) : [],
+      colorToken: 'purple',
+      estimationTime: [],
+      loggedTime: [],
+      billedTime: [],
+      order: i,
+      createdBy: req.user.id,
+      breadcrumbs: { project: destBoard.name, task: newCard.title }
+    }));
+    await Subtask.insertMany(subtaskDocs);
+
+    // Update subtask stats
+    const totalSt = subtaskDocs.length;
+    const completedSt = subtaskDocs.filter(s => ['done', 'closed'].includes(s.status)).length;
+    await Card.findByIdAndUpdate(newCard._id, {
+      subtaskStats: { total: totalSt, completed: completedSt, nanoTotal: 0, nanoCompleted: 0 }
+    });
+  }
+
+  // Copy comments from subtask to new card if requested
+  if (copyComments) {
+    const comments = await Comment.find({ subtask: subtask._id, contextType: 'subtask' }).lean();
+    if (comments.length > 0) {
+      const cDocs = comments.map(c => ({
+        text: c.text,
+        htmlContent: c.htmlContent,
+        card: newCard._id,
+        contextType: 'card',
+        contextRef: newCard._id,
+        user: c.user,
+        mentions: c.mentions || [],
+        attachments: c.attachments || [],
+        isEdited: false,
+        editHistory: [],
+        reactions: [],
+        isPinned: false,
+        replyCount: 0
+      }));
+      await Comment.insertMany(cDocs);
+    }
+  }
+
+  // Copy attachment model records
+  if (copyAttachments) {
+    const atts = await Attachment.find({ contextRef: subtask._id, contextType: 'subtask', isDeleted: false }).lean();
+    if (atts.length > 0) {
+      const aDocs = atts.map(a => ({
+        fileName: a.fileName,
+        originalName: a.originalName,
+        fileType: a.fileType,
+        mimeType: a.mimeType,
+        fileSize: a.fileSize,
+        url: a.url,
+        secureUrl: a.secureUrl,
+        publicId: a.publicId,
+        resourceType: a.resourceType,
+        format: a.format,
+        thumbnailUrl: a.thumbnailUrl,
+        previewUrl: a.previewUrl,
+        contextType: 'card',
+        contextRef: newCard._id,
+        card: newCard._id,
+        board: destinationBoardId,
+        uploadedBy: a.uploadedBy,
+        width: a.width,
+        height: a.height,
+        fileExtension: a.fileExtension,
+        isCover: false,
+        isDeleted: false,
+        departmentId: destBoard.department
+      }));
+      await Attachment.insertMany(aDocs);
+    }
+  }
+
+  // Populate for response
+  const populatedCard = await Card.findById(newCard._id)
+    .populate('assignees', 'name email avatar')
+    .populate('members', 'name email avatar')
+    .populate('createdBy', 'name email avatar')
+    .lean();
+
+  res.status(201).json({
+    success: true,
+    data: populatedCard,
+    message: 'Subtask promoted to task successfully'
+  });
+
+  // Background: delete original subtask and nanos, update parent card stats, emit events
+  (async () => {
+    try {
+      const parentTaskId = subtask.task?._id || subtask.task;
+      const parentBoardId = subtask.board;
+
+      // Delete nano subtasks, then the subtask itself
+      await SubtaskNano.deleteMany({ subtask: subtask._id });
+      await Subtask.findByIdAndDelete(subtask._id);
+
+      // Refresh parent card stats
+      await refreshCardHierarchyStats(parentTaskId);
+
+      // Emit hierarchy change to source board
+      emitToBoard(parentBoardId.toString(), 'hierarchy-subtask-changed', {
+        type: 'deleted',
+        taskId: parentTaskId,
+        subtaskId: subtask._id
+      });
+
+      // Emit card-created to destination board
+      emitToBoard(destinationBoardId.toString(), 'task-copied', {
+        card: populatedCard,
+        listId: destinationListId,
+        copiedBy: { id: req.user.id, name: req.user.name },
+        isPromotion: true
+      });
+
+      // Activity
+      await Activity.create({
+        type: 'subtask_promoted',
+        description: `Promoted subtask "${subtask.title}" to task in "${destBoard.name}"`,
+        user: req.user.id,
+        board: destinationBoardId,
+        card: newCard._id,
+        list: destinationListId,
+        contextType: 'task',
+        metadata: {
+          sourceSubtaskId: subtask._id,
+          sourceTaskId: parentTaskId,
+          sourceBoardId: parentBoardId
+        }
+      });
+
+      // Update recent destinations
+      const deptName = (await Department.findById(destBoard.department).select('name').lean())?.name || '';
+      const user = await User.findById(req.user.id);
+      if (user) {
+        const dests = user.recentCopyMoveDestinations || [];
+        const filtered = dests.filter(d =>
+          !(d.departmentId?.toString() === destBoard.department?.toString() &&
+            d.projectId?.toString() === destinationBoardId?.toString() &&
+            d.listId?.toString() === destinationListId?.toString())
+        );
+        filtered.unshift({
+          departmentId: destBoard.department,
+          departmentName: deptName,
+          projectId: destinationBoardId,
+          projectName: destBoard.name,
+          listId: destinationListId,
+          listName: destList.title,
+          usedAt: new Date()
+        });
+        user.recentCopyMoveDestinations = filtered.slice(0, 5);
+        await user.save();
+      }
+
+      invalidateHierarchyCache({ boardId: parentBoardId, cardId: parentTaskId });
+      invalidateHierarchyCache({ boardId: destinationBoardId, listId: destinationListId, cardId: newCard._id });
+    } catch (bgErr) {
+      console.error('Error in promoteSubtask background:', bgErr);
+    }
+  })();
 });
 
 

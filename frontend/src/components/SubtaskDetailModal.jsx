@@ -1139,6 +1139,13 @@ const SubtaskDetailModal = ({
                   onDelete={runDelete}
                   isDeleting={deleteLoading}
                   disabled={!entityId}
+                  entityData={{ ...initialData, _id: entityId, title }}
+                  currentDepartmentId={(() => {
+                    const dept = initialData?.board?.department || currentProject?.department;
+                    return typeof dept === 'object' ? dept?._id : dept;
+                  })()}
+                  currentProjectId={resolvedProjectId}
+                  currentListId={typeof initialData?.list === 'object' ? initialData?.list?._id : initialData?.list}
                 />
                 <motion.button
                   whileHover={{ scale: 1.1 }}

@@ -1713,6 +1713,13 @@ const CardDetailModal = React.memo(({
                   isDeleting={deleteLoading}
                   isArchiving={isArchiving}
                   disabled={!taskId}
+                  entityData={card}
+                  currentDepartmentId={(() => {
+                    const dept = card?.board?.department || currentProject?.department || departments.find(d => d._id === card?.department);
+                    return typeof dept === 'object' ? dept?._id : dept;
+                  })()}
+                  currentProjectId={resolvedProjectId}
+                  currentListId={typeof card?.list === 'object' ? card?.list?._id : card?.list}
                 />
                 <motion.button
                   whileHover={{ scale: 1.1 }}

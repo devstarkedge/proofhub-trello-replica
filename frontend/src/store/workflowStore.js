@@ -453,6 +453,50 @@ const useWorkflowStore = create(
         });
       },
 
+      // Add card from socket event (e.g. another user copied/moved a card to this board)
+      addCardFromSocket: (card, listId) => {
+        set((state) => {
+          const targetListId = listId || card.list?._id || card.list;
+          if (!targetListId) return {};
+          // Don't add duplicates
+          if (state.cardsById[card._id]) return {};
+
+          const newCardsByList = { ...state.cardsByList };
+          const listCards = [...(newCardsByList[targetListId] || [])];
+          listCards.push(card);
+          // Re-sort by position
+          listCards.sort((a, b) => (a.position || 0) - (b.position || 0));
+          newCardsByList[targetListId] = listCards;
+
+          return {
+            cardsByList: newCardsByList,
+            cardsById: { ...state.cardsById, [card._id]: card },
+            lastUpdated: Date.now()
+          };
+        });
+      },
+
+      // Remove card from socket event (e.g. another user moved a card away from this board)
+      removeCardFromSocket: (cardId) => {
+        set((state) => {
+          if (!state.cardsById[cardId]) return {};
+          const newCardsByList = { ...state.cardsByList };
+          Object.keys(newCardsByList).forEach(listId => {
+            const idx = newCardsByList[listId].findIndex(c => c._id === cardId);
+            if (idx !== -1) {
+              newCardsByList[listId] = newCardsByList[listId].filter(c => c._id !== cardId);
+            }
+          });
+          const newCardsById = { ...state.cardsById };
+          delete newCardsById[cardId];
+          return {
+            cardsByList: newCardsByList,
+            cardsById: newCardsById,
+            lastUpdated: Date.now()
+          };
+        });
+      },
+
       // Move card with optimistic update
       moveCard: async (cardId, newListId, newPosition, newStatus) => {
         const state = get();

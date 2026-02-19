@@ -48,7 +48,9 @@ const WorkFlow = memo(() => {
     updateListTitle,
     moveList,
     getCard,
-    updateCardRecurrence
+    updateCardRecurrence,
+    addCardFromSocket,
+    removeCardFromSocket
   } = useWorkflowStore();
 
   const [statusFilter, setStatusFilter] = useState('All');
@@ -161,6 +163,46 @@ const WorkFlow = memo(() => {
       window.removeEventListener('socket-card-cover-updated', handleCardCoverUpdated);
     };
   }, [board, updateCardRecurrence]);
+
+// Listen for real-time task copy & cross-move events from other users
+useEffect(() => {
+  if (!board) return;
+  const boardId = board._id;
+
+  const handleTaskCopied = (event) => {
+    const { card: newCard, boardId: destBoardId } = event.detail || {};
+    if (!newCard) return;
+    // Only add card if it was copied INTO this board
+    if (destBoardId === boardId) {
+      const listId = typeof newCard.list === 'object' ? newCard.list._id : newCard.list;
+      addCardFromSocket(newCard, listId);
+    }
+  };
+
+  const handleTaskMovedCross = (event) => {
+    const { card: movedCard, sourceBoardId, destinationBoardId, sourceListId, isUndo } = event.detail || {};
+    if (!movedCard) return;
+    const cardId = movedCard._id || movedCard.id;
+    const destListId = typeof movedCard.list === 'object' ? movedCard.list._id : movedCard.list;
+
+    // Card was moved AWAY from this board
+    if (sourceBoardId === boardId) {
+      removeCardFromSocket(cardId);
+    }
+    // Card was moved INTO this board
+    if (destinationBoardId === boardId) {
+      addCardFromSocket(movedCard, destListId);
+    }
+  };
+
+  window.addEventListener('socket-task-copied', handleTaskCopied);
+  window.addEventListener('socket-task-moved-cross', handleTaskMovedCross);
+
+  return () => {
+    window.removeEventListener('socket-task-copied', handleTaskCopied);
+    window.removeEventListener('socket-task-moved-cross', handleTaskMovedCross);
+  };
+}, [board, addCardFromSocket, removeCardFromSocket]);
 
 useEffect(() => {
   if (board) {

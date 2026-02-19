@@ -634,6 +634,118 @@ class DatabaseService {
     return await updateRes.json();
   }
 
+  // ========== COPY / MOVE TASK APIs ==========
+
+  async copyCard(cardId, { destinationBoardId, destinationListId, options }) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/copy`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ destinationBoardId, destinationListId, options })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to copy card');
+    }
+    return await res.json();
+  }
+
+  async crossMoveCard(cardId, { destinationBoardId, destinationListId, newPosition }) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/cross-move`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ destinationBoardId, destinationListId, newPosition })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to move card');
+    }
+    return await res.json();
+  }
+
+  async undoMoveCard(cardId, undoToken) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/undo-move`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ undoToken })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to undo move');
+    }
+    return await res.json();
+  }
+
+  async promoteSubtask(subtaskId, { destinationBoardId, destinationListId, options }) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/promote`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ destinationBoardId, destinationListId, options })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to promote subtask');
+    }
+    return await res.json();
+  }
+
+  async getCopyMoveDepartments() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseURL}/api/cards/copy-move/departments`, { headers });
+    if (!res.ok) throw new Error('Failed to load departments');
+    return await res.json();
+  }
+
+  async getCopyMoveProjects(departmentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseURL}/api/cards/copy-move/projects/${departmentId}`, { headers });
+    if (!res.ok) throw new Error('Failed to load projects');
+    return await res.json();
+  }
+
+  async getCopyMoveLists(boardId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseURL}/api/cards/copy-move/lists/${boardId}`, { headers });
+    if (!res.ok) throw new Error('Failed to load lists');
+    return await res.json();
+  }
+
+  async getRecentDestinations() {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${baseURL}/api/cards/copy-move/recent`, { headers });
+    if (!res.ok) throw new Error('Failed to load recent destinations');
+    return await res.json();
+  }
+
+  // ========== END COPY / MOVE TASK APIs ==========
+
   async archiveCard(cardId) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };

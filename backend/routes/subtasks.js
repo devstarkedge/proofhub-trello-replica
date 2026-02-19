@@ -10,8 +10,10 @@ import {
   getSubtaskActivity,
   addTimeEntry,
   updateTimeEntry,
-  deleteTimeEntry
+  deleteTimeEntry,
+  promoteSubtask
 } from '../controllers/subtaskController.js';
+import { managerOrAdmin } from '../middleware/rbacMiddleware.js';
 
 const router = express.Router();
 
@@ -23,6 +25,8 @@ router.get('/:id/activity', protect, getSubtaskActivity);
 router.get('/:id', protect, getSubtaskById);
 router.put('/:id', protect, updateSubtask);
 router.delete('/:id', protect, deleteSubtask);
+
+router.post('/:id/promote', protect, managerOrAdmin, promoteSubtask);
 
 router.post('/:id/time-tracking', protect, addTimeEntry);
 router.put('/:id/time-tracking/:entryId', protect, updateTimeEntry);

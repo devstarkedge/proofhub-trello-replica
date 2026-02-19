@@ -95,6 +95,17 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-card-moved', { detail: data }));
     });
 
+    // Copy/Move cross-board events
+    this.socket.on('task-copied', (data) => {
+      console.log('Task copied:', data);
+      window.dispatchEvent(new CustomEvent('socket-task-copied', { detail: data }));
+    });
+
+    this.socket.on('task-moved-cross', (data) => {
+      console.log('Task moved cross-board:', data);
+      window.dispatchEvent(new CustomEvent('socket-task-moved-cross', { detail: data }));
+    });
+
     this.socket.on('comment-added', (data) => {
       console.log('Comment added:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-added', { detail: data }));

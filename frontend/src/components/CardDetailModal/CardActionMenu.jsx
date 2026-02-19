@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MoreVertical, Share2, Link as LinkIcon, Trash2, ArrowRightLeft, Copy, Archive, ArchiveRestore } from "lucide-react";
+import { MoreVertical, Share2, Link as LinkIcon, Trash2, ArrowRightLeft, Copy, Archive, ArchiveRestore, ArrowUpCircle } from "lucide-react";
 import DeletePopup from "../ui/DeletePopup";
+import CopyMoveModal from "../CopyMoveModal";
+import usePermissions from "../../hooks/usePermissions";
 
 const ENTITY_LABEL = {
   task: "Task",
@@ -19,13 +21,22 @@ const CardActionMenu = ({
   isDeleting = false,
   isArchiving = false,
   disabled = false,
+  // Copy/Move props
+  entityData = null,
+  currentDepartmentId = null,
+  currentProjectId = null,
+  currentListId = null,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showDeletePopup, setShowDeletePopup] = useState(false);
+  const [showCopyMoveModal, setShowCopyMoveModal] = useState(false);
+  const [copyMoveMode, setCopyMoveMode] = useState("copy");
   
   const wrapperRef = useRef(null);
+  const { role, isAdmin } = usePermissions();
+  const canCopyMove = isAdmin || role === "manager";
 
   useEffect(() => {
     if (!isOpen) return;
@@ -139,20 +150,46 @@ const CardActionMenu = ({
               className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-2xl border border-gray-100 z-50"
             >
               <div className="py-2">
-                <button
-                  onClick={() => console.log("Move button clicked")}
-                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                >
-                  <ArrowRightLeft size={16} className="text-gray-500" />
-                  <span className="font-medium text-gray-800">Move</span>
-                </button>
-                <button
-                  onClick={() => console.log("Copy button clicked")}
-                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
-                >
-                  <Copy size={16} className="text-gray-500" />
-                  <span className="font-medium text-gray-800">Copy</span>
-                </button>
+                {/* Copy/Move/Promote — only for admin/manager, hidden for subtaskNano */}
+                {canCopyMove && entityType !== "subtaskNano" && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsOpen(false);
+                        setCopyMoveMode("move");
+                        setShowCopyMoveModal(true);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <ArrowRightLeft size={16} className="text-gray-500" />
+                      <span className="font-medium text-gray-800">Move</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsOpen(false);
+                        setCopyMoveMode("copy");
+                        setShowCopyMoveModal(true);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <Copy size={16} className="text-gray-500" />
+                      <span className="font-medium text-gray-800">Copy</span>
+                    </button>
+                    {entityType === "subtask" && (
+                      <button
+                        onClick={() => {
+                          setIsOpen(false);
+                          setCopyMoveMode("promote");
+                          setShowCopyMoveModal(true);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-emerald-50 transition-colors"
+                      >
+                        <ArrowUpCircle size={16} className="text-emerald-600" />
+                        <span className="font-medium text-emerald-700">Promote to Task</span>
+                      </button>
+                    )}
+                  </>
+                )}
 
                 {/* Archive/Unarchive button - only visible for tasks */}
                 {entityType === "task" && (
@@ -254,6 +291,17 @@ const CardActionMenu = ({
         onConfirm={handleConfirmDelete}
         itemType={entityType === "subtaskNano" ? "subtaskNano" : entityType}
         isLoading={isDeleting}
+      />
+
+      <CopyMoveModal
+        isOpen={showCopyMoveModal}
+        onClose={() => setShowCopyMoveModal(false)}
+        mode={copyMoveMode}
+        entityType={entityType}
+        entityData={entityData}
+        currentDepartmentId={currentDepartmentId}
+        currentProjectId={currentProjectId || ids.projectId}
+        currentListId={currentListId}
       />
     </>
   );

@@ -57,7 +57,10 @@ const activitySchema = new mongoose.Schema({
       'recurrence_stopped',
       'recurrence_triggered',
       'recurrence_paused',
-      'recurrence_resumed'
+      'recurrence_resumed',
+      // Copy/Move activity types
+      'card_copied',
+      'subtask_promoted'
     ],
     required: true
   },

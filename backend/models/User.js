@@ -112,6 +112,15 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date
   },
+  recentCopyMoveDestinations: [{
+    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+    departmentName: String,
+    projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Board' },
+    projectName: String,
+    listId: { type: mongoose.Schema.Types.ObjectId, ref: 'List' },
+    listName: String,
+    usedAt: { type: Date, default: Date.now }
+  }],
   createdAt: {
     type: Date,
     default: Date.now
