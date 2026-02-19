@@ -3,15 +3,16 @@ import { body } from 'express-validator';
 import { getDepartments, getPublicDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment, getDepartmentsWithAssignments, getUserDepartmentFilterOptions, getDepartmentStats } from '../controllers/departmentController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
+import { cacheMiddleware, publicCacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
-router.get('/public', getPublicDepartments); // Public route must be before protected routes (or distinct)
-router.get('/', protect, getDepartments);
-router.get('/with-assignments', protect, getDepartmentsWithAssignments);
-router.get('/filter-options', protect, getUserDepartmentFilterOptions);
-router.get('/stats/summary', protect, getDepartmentStats);
-router.get('/:id', protect, getDepartment);
+router.get('/public', publicCacheMiddleware('departments', 300), getPublicDepartments); // Public route must be before protected routes (or distinct)
+router.get('/', protect, cacheMiddleware('departments', 180), getDepartments);
+router.get('/with-assignments', protect, cacheMiddleware('departments', 180), getDepartmentsWithAssignments);
+router.get('/filter-options', protect, cacheMiddleware('departments', 300), getUserDepartmentFilterOptions);
+router.get('/stats/summary', protect, cacheMiddleware('departments', 300), getDepartmentStats);
+router.get('/:id', protect, cacheMiddleware('departments', 180), getDepartment);
 
 router.post('/', protect, authorize('admin'), [
   body('name').trim().notEmpty().withMessage('Department name is required'),

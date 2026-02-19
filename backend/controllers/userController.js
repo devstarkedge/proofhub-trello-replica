@@ -362,10 +362,12 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
 
   // Invalidate cache for user-related endpoints
   const { invalidateCache } = await import('../middleware/cache.js');
+  const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
   invalidateCache('/api/users'); // Invalidate all user list caches
   invalidateCache('/api/auth/me'); // Invalidate user profile cache
   invalidateCache('/api/auth/verify'); // Invalidate session verification cache
   invalidateCache('/api/notifications'); // Invalidate notifications cache for the user
+  invalidateUserCache(user._id); // Invalidate Redis session cache for this user
 
   // Respond immediately for fast UI
   res.status(200).json({

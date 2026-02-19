@@ -94,9 +94,8 @@ import compression from 'compression';
 app.use(compression());
 
 
-// Caching middleware - DISABLED
-// import { cacheMiddleware } from './middleware/cache.js';
-// app.use('/api/', cacheMiddleware(300)); // 5 minutes cache
+// Redis caching is handled per-route via cacheMiddleware in route files
+// See backend/config/redis.js for Redis connection configuration
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -362,6 +361,7 @@ import { startArchivedCardCleanup } from './utils/archiveCleanup.js';
 import { startTrashCleanup } from './utils/trashCleanup.js';
 import { startBoardCleanup } from './utils/boardCleanup.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
+import { connectRedis, disconnectRedis } from './config/redis.js';
 
 // MongoDB connection with connection pooling
 mongoose.connect(process.env.MONGO_URI, {
@@ -369,8 +369,12 @@ mongoose.connect(process.env.MONGO_URI, {
   serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
   socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
 })
-  .then(() => {
+  .then(async () => {
     if (process.env.NODE_ENV !== 'production') console.log('Connected to MongoDB with connection pooling');
+    
+    // Connect to Redis (non-blocking — app works without it)
+    await connectRedis();
+    
     // Seed the admin user
     seedAdmin();
     // Start background jobs for scheduled announcements and expiry
@@ -403,12 +407,14 @@ mongoose.connect(process.env.MONGO_URI, {
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Shutting down gracefully...');
   await shutdownSlackServices();
+  await disconnectRedis();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received. Shutting down gracefully...');
   await shutdownSlackServices();
+  await disconnectRedis();
   process.exit(0);
 });
 

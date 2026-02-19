@@ -1,3 +1,4 @@
+import { clearMultipleCachePatterns, clearCacheByPattern, deleteCache } from './redisCache.js';
 import { invalidateCache } from '../middleware/cache.js';
 
 const ensureString = (id) => {
@@ -5,6 +6,14 @@ const ensureString = (id) => {
   return typeof id === 'string' ? id : id.toString();
 };
 
+// ============================================
+// HIERARCHY CACHE INVALIDATION
+// ============================================
+
+/**
+ * Invalidate all caches related to a board/list/card/subtask hierarchy.
+ * Clears user-scoped caches for ALL users (wildcard on user segment).
+ */
 export const invalidateHierarchyCache = ({
   boardId,
   listId,
@@ -18,69 +27,195 @@ export const invalidateHierarchyCache = ({
   const subtask = ensureString(subtaskId);
   const nano = ensureString(subtaskNanoId);
 
+  const patterns = [];
+
   if (board) {
-    invalidateCache(`/api/boards/${board}`);
-    invalidateCache(`/api/boards/${board}/workflow-complete`);
-    invalidateCache(`/api/lists/board/${board}`);
-    invalidateCache(`/api/cards/board/${board}`);
+    patterns.push(
+      `cache:boards:*${board}*`,
+      `cache:workflow:*${board}*`,
+      `cache:cards:*board/${board}*`,
+      `cache:lists:*${board}*`
+    );
   }
 
   if (list) {
-    invalidateCache(`/api/lists/${list}`);
-    invalidateCache(`/api/cards/list/${list}`);
+    patterns.push(
+      `cache:lists:*${list}*`,
+      `cache:cards:*list/${list}*`
+    );
   }
 
   if (card) {
-    invalidateCache(`/api/cards/${card}`);
-    invalidateCache(`/api/cards/${card}/activity`);
-    invalidateCache(`/api/subtasks/task/${card}`);
+    patterns.push(
+      `cache:cards:*${card}*`,
+      `cache:subtasks:*task/${card}*`
+    );
   }
 
   if (subtask) {
-    invalidateCache(`/api/subtasks/${subtask}`);
-    invalidateCache(`/api/subtask-nanos/subtask/${subtask}`);
+    patterns.push(
+      `cache:subtasks:*${subtask}*`,
+      `cache:subtask-nanos:*subtask/${subtask}*`
+    );
   }
 
   if (nano) {
-    invalidateCache(`/api/subtask-nanos/${nano}`);
+    patterns.push(`cache:subtask-nanos:*${nano}*`);
+  }
+
+  // Also invalidate analytics and finance caches (they depend on card/board data)
+  if (board || card) {
+    patterns.push(
+      'cache:analytics:*',
+      'cache:team-analytics:*',
+      'cache:calendar:*',
+      'cache:pm-sheet:*'
+    );
+  }
+
+  if (patterns.length > 0) {
+    clearMultipleCachePatterns(patterns).catch(() => {});
   }
 };
 
+// ============================================
+// ANNOUNCEMENT CACHE INVALIDATION
+// ============================================
+
 export const invalidateAnnouncementCache = ({ announcementId, clearAll = false }) => {
-  if (clearAll) {
-    // Clear all announcement-related caches
-    invalidateCache('/api/announcements');
-    invalidateCache('/api/announcements/stats/overview');
-  } else if (announcementId) {
-    // Clear specific announcement cache
+  const patterns = ['cache:announcements:*'];
+
+  if (!clearAll && announcementId) {
     const id = ensureString(announcementId);
     if (id) {
-      invalidateCache('/api/announcements');
-      invalidateCache(`/api/announcements/${id}`);
+      patterns.push(`cache:announcements:*${id}*`);
     }
   }
+
+  clearMultipleCachePatterns(patterns).catch(() => {});
 };
+
+// ============================================
+// RECURRENCE CACHE INVALIDATION
+// ============================================
 
 export const invalidateRecurrenceCache = ({ boardId, cardId, recurrenceId }) => {
   const board = ensureString(boardId);
   const card = ensureString(cardId);
   const recurrence = ensureString(recurrenceId);
+  const patterns = [];
 
-  // Invalidate board-level recurrence list
   if (board) {
-    invalidateCache(`/api/recurrence/all/${board}`);
+    patterns.push(`cache:*recurrence*${board}*`);
   }
 
-  // Invalidate card-specific recurrence
   if (card) {
-    invalidateCache(`/api/recurrence/card/${card}`);
-    // Also invalidate subtasks as recurrence creates subtasks
-    invalidateCache(`/api/subtasks/task/${card}`);
+    patterns.push(
+      `cache:*recurrence*${card}*`,
+      `cache:subtasks:*task/${card}*`
+    );
   }
 
-  // Invalidate specific recurrence
   if (recurrence) {
-    invalidateCache(`/api/recurrence/${recurrence}`);
+    patterns.push(`cache:*recurrence*${recurrence}*`);
   }
+
+  if (patterns.length > 0) {
+    clearMultipleCachePatterns(patterns).catch(() => {});
+  }
+};
+
+// ============================================
+// USER SESSION CACHE INVALIDATION
+// ============================================
+
+/**
+ * Invalidate a user's session cache (used by protect middleware)
+ * and all user-scoped route caches.
+ * Call after: profile update, role change, deactivation, avatar change.
+ * @param {string} userId
+ */
+export const invalidateUserCache = (userId) => {
+  const id = ensureString(userId);
+  if (!id) return;
+
+  // Clear session cache
+  deleteCache(`user-session:${id}`).catch(() => {});
+  // Clear all user-scoped route caches
+  clearCacheByPattern(`cache:*:user:${id}:*`).catch(() => {});
+  // Clear user-related caches
+  clearCacheByPattern(`cache:users:*`).catch(() => {});
+};
+
+// ============================================
+// DEPARTMENT CACHE INVALIDATION
+// ============================================
+
+export const invalidateDepartmentCache = (departmentId) => {
+  const patterns = ['cache:departments:*'];
+  if (departmentId) {
+    const id = ensureString(departmentId);
+    patterns.push(`cache:departments:*${id}*`);
+  }
+  // Department changes affect boards and analytics
+  patterns.push('cache:boards:*', 'cache:analytics:*');
+  clearMultipleCachePatterns(patterns).catch(() => {});
+};
+
+// ============================================
+// FINANCE CACHE INVALIDATION
+// ============================================
+
+export const invalidateFinanceCache = () => {
+  clearCacheByPattern('cache:finance:*').catch(() => {});
+};
+
+// ============================================
+// TEAM ANALYTICS CACHE INVALIDATION
+// ============================================
+
+export const invalidateTeamAnalyticsCache = () => {
+  clearMultipleCachePatterns([
+    'cache:team-analytics:*',
+    'cache:analytics:*',
+    'cache:pm-sheet:*'
+  ]).catch(() => {});
+};
+
+// ============================================
+// NOTIFICATION CACHE INVALIDATION
+// ============================================
+
+export const invalidateNotificationCache = (userId) => {
+  const id = ensureString(userId);
+  if (id) {
+    clearCacheByPattern(`cache:notifications:*:user:${id}:*`).catch(() => {});
+  }
+};
+
+// ============================================
+// LABEL & CATEGORY CACHE INVALIDATION
+// ============================================
+
+export const invalidateLabelCache = (boardId) => {
+  const id = ensureString(boardId);
+  if (id) {
+    clearCacheByPattern(`cache:labels:*${id}*`).catch(() => {});
+  }
+};
+
+export const invalidateCategoryCache = (departmentId) => {
+  const id = ensureString(departmentId);
+  if (id) {
+    clearCacheByPattern(`cache:categories:*${id}*`).catch(() => {});
+  }
+};
+
+// ============================================
+// SEARCH CACHE INVALIDATION
+// ============================================
+
+export const invalidateSearchCache = () => {
+  clearCacheByPattern('cache:search:*').catch(() => {});
 };
 

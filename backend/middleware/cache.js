@@ -1,103 +1,124 @@
-import NodeCache from 'node-cache';
+import { getCache, setCache, clearCacheByPattern } from '../utils/redisCache.js';
+import { isRedisReady } from '../config/redis.js';
 
-const cache = new NodeCache({ stdTTL: 60 }); // 1 minute default TTL
+// ============================================
+// REDIS-BASED CACHE MIDDLEWARE
+// ============================================
 
-// Clear all cache on startup
-cache.flushAll();
-console.log('Cache cleared on startup');
+/**
+ * User-scoped cache middleware for authenticated routes.
+ * Cache key: cache:{prefix}:user:{userId}:{originalUrl}
+ *
+ * @param {string} prefix - Cache key prefix (e.g., 'boards', 'cards', 'analytics')
+ * @param {number} ttl - Time to live in seconds (default: 120)
+ */
+export const cacheMiddleware = (prefix, ttl = 120) => {
+  return async (req, res, next) => {
+    // Only cache GET requests
+    if (req.method !== 'GET') return next();
+    // Skip if Redis is not available — fall through to controller
+    if (!isRedisReady()) return next();
 
-// Define paths that should have shorter cache times or no cache
-const DYNAMIC_PATHS = [
-  '/api/cards/list/',
-  '/api/cards/board/',
-  '/api/boards/',
-  '/api/departments/',
-  '/api/teams/',
-  '/api/users', // Skip caching for all user-related endpoints
-  '/api/auth/admin-create-user', // Skip caching for admin user creation
-  '/api/reminders', // Skip caching for all reminder endpoints
-  '/api/reminders/', // Skip caching for all reminder-related endpoints
-  '/api/slack', // Skip caching for all Slack endpoints
-  '/api/slack/' // Skip caching for all Slack-related endpoints
-];
+    try {
+      const userId = req.user?._id || req.user?.id || 'anon';
+      const cacheKey = `cache:${prefix}:user:${userId}:${req.originalUrl}`;
 
-export const cacheMiddleware = (ttl = 60) => {
-  // Skip caching for specific endpoints that need real-time data
-  const skipPaths = [
-    '/api/cards/list/',
-    '/api/cards/board/',
-    '/api/cards/', // Skip individual card endpoints for real-time updates
-    '/api/lists/', // Skip lists endpoint to ensure new projects show default lists
-    '/api/comments/', // Skip all comment endpoints for real-time updates
-    '/api/departments',
-    '/api/departments/',
-    '/api/teams/',
-    '/api/users', // Skip all user endpoints for real-time updates
-    '/api/auth/me', // Skip user profile endpoint
-    '/api/auth/verify', // Skip session verification endpoint for user-specific data
-    '/api/auth/admin-create-user', // Skip admin user creation for real-time updates
-    '/api/notifications', // Skip notifications endpoint for user-specific data
-    '/api/reminders', // Skip all reminder endpoints for real-time updates
-    '/api/reminders/', // Skip all reminder-related endpoints
-    '/api/reminders/dashboard', // Skip reminder dashboard stats
-    '/api/reminders/calendar', // Skip reminder calendar data
-    '/api/announcements', // Skip announcements to avoid clone issues with Mongoose documents
-    '/api/announcements/', // Skip all announcement-related endpoints
-    '/api/attachments', // Skip caching for all attachment endpoints
-    '/api/attachments/', // Skip caching for all attachment-related endpoints
-    '/api/attachments/', // Skip caching for all attachment-related endpoints
-    '/api/users/profile', // Skip caching for user profile (avatar updates)
-    '/api/labels', // Skip labels fetching to prevent stale data after delete
-    '/api/labels/', // Skip all label-related endpoints
-    '/api/slack', // Skip caching for all Slack endpoints
-    '/api/slack/' // Skip caching for all Slack-related endpoints
-  ];
-  return (req, res, next) => {
-    // Skip caching for non-GET requests
-    if (req.method !== 'GET') {
-      return next();
+      // Check cache
+      const cached = await getCache(cacheKey);
+      if (cached !== null) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[Cache HIT] ${cacheKey}`);
+        }
+        return res.json(cached);
+      }
+
+      // Cache miss — intercept response
+      const originalJson = res.json.bind(res);
+      res.json = function (data) {
+        // Store in cache asynchronously (don't block response)
+        setCache(cacheKey, data, ttl).catch(() => {});
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[Cache SET] ${cacheKey} (TTL: ${ttl}s)`);
+        }
+        return originalJson(data);
+      };
+
+      next();
+    } catch (err) {
+      // On any error, just skip caching and proceed normally
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[Cache Middleware] Error:', err.message);
+      }
+      next();
     }
-
-    // Skip caching for specific endpoints that need real-time data
-    if (skipPaths.some(path => req.originalUrl.includes(path))) {
-      return next();
-    }
-
-    const key = req.originalUrl;
-
-    // Check if response is cached
-    const cachedResponse = cache.get(key);
-    if (cachedResponse) {
-      console.log(`Cache hit for ${key}`);
-      return res.json(cachedResponse);
-    }
-
-    // Store original json method
-    const originalJson = res.json;
-
-    // Override json method to cache response
-    res.json = function(data) {
-      // Cache the response
-      cache.set(key, data, ttl);
-      console.log(`Cache set for ${key}`);
-
-      // Call original json method
-      return originalJson.call(this, data);
-    };
-
-    next();
   };
 };
 
-// Cache invalidation helper
-export const invalidateCache = (pattern) => {
-  const keys = cache.keys();
-  const matchingKeys = keys.filter(key => key.includes(pattern));
+/**
+ * Public (shared) cache middleware — NOT user-scoped.
+ * Use for endpoints that return the same data for all users.
+ * Cache key: cache:{prefix}:public:{originalUrl}
+ *
+ * @param {string} prefix - Cache key prefix
+ * @param {number} ttl - Time to live in seconds (default: 300)
+ */
+export const publicCacheMiddleware = (prefix, ttl = 300) => {
+  return async (req, res, next) => {
+    if (req.method !== 'GET') return next();
+    if (!isRedisReady()) return next();
 
-  matchingKeys.forEach(key => {
-    cache.del(key);
-    console.log(`Cache invalidated for ${key}`);
+    try {
+      const cacheKey = `cache:${prefix}:public:${req.originalUrl}`;
+
+      const cached = await getCache(cacheKey);
+      if (cached !== null) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[Cache HIT] ${cacheKey}`);
+        }
+        return res.json(cached);
+      }
+
+      const originalJson = res.json.bind(res);
+      res.json = function (data) {
+        setCache(cacheKey, data, ttl).catch(() => {});
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[Cache SET] ${cacheKey} (TTL: ${ttl}s)`);
+        }
+        return originalJson(data);
+      };
+
+      next();
+    } catch (err) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[Cache Middleware] Error:', err.message);
+      }
+      next();
+    }
+  };
+};
+
+// ============================================
+// CACHE INVALIDATION (drop-in replacement)
+// ============================================
+
+/**
+ * Invalidate cache keys matching a pattern string.
+ * Drop-in replacement for the old node-cache invalidateCache.
+ *
+ * Existing controllers call: invalidateCache('/api/boards/123')
+ * This translates to clearing Redis keys: cache:*<pattern>*
+ *
+ * @param {string} pattern - URL pattern or substring to match
+ */
+export const invalidateCache = (pattern) => {
+  if (!pattern) return;
+
+  // Fire-and-forget — do NOT await in controllers
+  clearCacheByPattern(`cache:*${pattern}*`).catch((err) => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(`[Cache Invalidate] Error for pattern "${pattern}":`, err.message);
+    }
   });
 };
 
-export default cache;
+export default { cacheMiddleware, publicCacheMiddleware, invalidateCache };

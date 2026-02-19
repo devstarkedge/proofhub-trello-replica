@@ -26,6 +26,7 @@ import {
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import upload, { uploadToCloudinaryMiddleware } from '../middleware/upload.js';
+import { cacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
@@ -66,22 +67,22 @@ const parseFormDataJSON = (req, res, next) => {
 };
 
 // Statistics routes
-router.get('/stats/overview', getAnnouncementStats);
+router.get('/stats/overview', cacheMiddleware('announcements', 300), getAnnouncementStats);
 
 // Unread count for user (must be before /:id route)
-router.get('/unread-count', getUnreadCount);
+router.get('/unread-count', cacheMiddleware('announcements', 60), getUnreadCount);
 
 // Get all announcements
-router.get('/', getAnnouncements);
+router.get('/', cacheMiddleware('announcements', 120), getAnnouncements);
 
 // Get single announcement
-router.get('/:id', getAnnouncement);
+router.get('/:id', cacheMiddleware('announcements', 120), getAnnouncement);
 
 // Mark announcement as seen (viewport detection)
 router.post('/:id/seen', markAsSeen);
 
 // Get engagement stats for announcement
-router.get('/:id/engagement', getEngagementStats);
+router.get('/:id/engagement', cacheMiddleware('announcements', 120), getEngagementStats);
 
 // Create announcement
 router.post(

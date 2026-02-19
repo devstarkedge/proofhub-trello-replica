@@ -2,6 +2,7 @@ import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import { emitNotification } from '../server.js';
 import notificationService from '../utils/notificationService.js';
+import { invalidateNotificationCache } from '../utils/cacheInvalidation.js';
 
 // Get paginated notifications
 export const getNotifications = async (req, res) => {
@@ -113,6 +114,7 @@ export const markAsRead = async (req, res) => {
     notification.isRead = true;
     notification.readAt = new Date();
     await notification.save();
+    invalidateNotificationCache(req.user.id);
     res.json(notification);
   } catch (err) {
     console.error(err.message);
@@ -127,6 +129,7 @@ export const markAllAsRead = async (req, res) => {
       { user: req.user.id, isRead: false, isArchived: { $ne: true } }, 
       { isRead: true, readAt: new Date() }
     );
+    invalidateNotificationCache(req.user.id);
     res.json({ msg: 'All notifications marked as read', modified: result.modifiedCount });
   } catch (err) {
     console.error(err.message);

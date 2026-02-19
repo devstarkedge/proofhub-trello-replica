@@ -6,6 +6,7 @@ import Card from "../models/Card.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { invalidateCache } from "../middleware/cache.js";
+import { invalidateDepartmentCache } from "../utils/cacheInvalidation.js";
 import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUsersUnassigned } from "../utils/socketEmitter.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
@@ -533,6 +534,7 @@ export const createDepartment = asyncHandler(async (req, res, next) => {
   // Invalidate relevant caches for real-time updates
   invalidateCache("/api/departments");
   invalidateCache("/api/users"); // Invalidate users cache to update manager assignments
+  invalidateDepartmentCache();
 
   res.status(201).json({
     success: true,
@@ -594,6 +596,7 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
   invalidateCache("/api/departments");
   invalidateCache(`/api/departments/${req.params.id}`);
   invalidateCache("/api/users"); // Invalidate users cache to update manager assignments
+  invalidateDepartmentCache(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -623,6 +626,7 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
   // Invalidate relevant caches
   invalidateCache("/api/departments");
   invalidateCache(`/api/departments/${req.params.id}`);
+  invalidateDepartmentCache(req.params.id);
 
   res.status(200).json({
     success: true,

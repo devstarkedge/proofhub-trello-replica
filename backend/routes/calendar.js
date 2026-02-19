@@ -7,6 +7,7 @@ import {
   getProjectsForDepartment,
   getListsForProject
 } from '../controllers/calendarController.js';
+import { cacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
@@ -14,12 +15,12 @@ const router = express.Router();
 router.use(protect);
 
 // Calendar tasks
-router.get('/tasks', getCalendarTasks);
+router.get('/tasks', cacheMiddleware('calendar', 120), getCalendarTasks);
 router.post('/tasks', createTaskFromCalendar);
 router.patch('/tasks/:id/dates', updateTaskDates);
 
 // Dropdown data for task creation
-router.get('/projects/:departmentId', getProjectsForDepartment);
-router.get('/lists/:projectId', getListsForProject);
+router.get('/projects/:departmentId', cacheMiddleware('calendar', 300), getProjectsForDepartment);
+router.get('/lists/:projectId', cacheMiddleware('calendar', 300), getListsForProject);
 
 export default router;

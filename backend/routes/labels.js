@@ -1,5 +1,6 @@
 import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
+import { cacheMiddleware } from '../middleware/cache.js';
 import {
   getLabelsByBoard,
   createLabel,
@@ -20,7 +21,7 @@ const router = express.Router();
 router.use(protect);
 
 // Label CRUD routes
-router.get('/board/:boardId', getLabelsByBoard);
+router.get('/board/:boardId', cacheMiddleware('labels', 300), getLabelsByBoard);
 router.post('/', createLabel);
 router.put('/:id', updateLabel);
 router.delete('/:id', deleteLabel);

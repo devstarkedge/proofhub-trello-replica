@@ -67,9 +67,11 @@ export const uploadAvatar = asyncHandler(async (req, res, next) => {
     // Invalidate cached user data so fresh data is returned on next request
     try {
       const { invalidateCache } = await import('../middleware/cache.js');
+      const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
       invalidateCache('/api/auth/me');
       invalidateCache('/api/auth/verify');
       invalidateCache('/api/users/profile');
+      invalidateUserCache(user._id);
     } catch (cacheErr) {
       console.error('Cache invalidation error:', cacheErr);
     }
@@ -182,9 +184,11 @@ export const uploadAvatarFromGoogleDrive = asyncHandler(async (req, res, next) =
     // Invalidate cached user data
     try {
       const { invalidateCache } = await import('../middleware/cache.js');
+      const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
       invalidateCache('/api/auth/me');
       invalidateCache('/api/auth/verify');
       invalidateCache('/api/users/profile');
+      invalidateUserCache(user._id);
     } catch (cacheErr) {
       console.error('Cache invalidation error:', cacheErr);
     }
@@ -245,9 +249,11 @@ export const removeAvatar = asyncHandler(async (req, res, next) => {
   // Invalidate cached user data
   try {
     const { invalidateCache } = await import('../middleware/cache.js');
+    const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
     invalidateCache('/api/auth/me');
     invalidateCache('/api/auth/verify');
     invalidateCache('/api/users/profile');
+    invalidateUserCache(user._id);
   } catch (cacheErr) {
     console.error('Cache invalidation error:', cacheErr);
   }

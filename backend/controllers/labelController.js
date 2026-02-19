@@ -3,6 +3,7 @@ import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import asyncHandler from '../middleware/asyncHandler.js';
+import { invalidateLabelCache } from '../utils/cacheInvalidation.js';
 
 // @desc    Get all labels for a board/project
 // @route   GET /api/labels/board/:boardId
@@ -49,6 +50,8 @@ export const createLabel = asyncHandler(async (req, res) => {
     createdBy: req.user._id
   });
 
+  invalidateLabelCache(boardId);
+
   res.status(201).json({
     success: true,
     data: label
@@ -87,6 +90,7 @@ export const updateLabel = asyncHandler(async (req, res) => {
   if (color) label.color = color;
 
   await label.save();
+  invalidateLabelCache(label.board);
 
   res.json({
     success: true,
@@ -124,6 +128,8 @@ export const deleteLabel = asyncHandler(async (req, res) => {
   ]);
 
   await Label.findByIdAndDelete(id);
+
+  invalidateLabelCache(label.board);
 
   res.json({
     success: true,

@@ -18,7 +18,7 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitToBoard, emitNotification, emitToDepartment } from "../server.js";
 import { invalidateCache } from "../middleware/cache.js";
 import notificationService from "../utils/notificationService.js";
-import { invalidateHierarchyCache } from "../utils/cacheInvalidation.js";
+import { invalidateHierarchyCache, invalidateFinanceCache, invalidateTeamAnalyticsCache } from "../utils/cacheInvalidation.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
 import { emitFinanceDataRefresh } from "../utils/socketEmitter.js";
@@ -1908,6 +1908,9 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
       cardId: card._id.toString(),
       boardId: card.board.toString()
     });
+    // Invalidate finance and analytics caches when time data changes
+    invalidateFinanceCache();
+    invalidateTeamAnalyticsCache();
   }
 
   res.status(200).json({
@@ -1981,6 +1984,8 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
       cardId: card._id.toString(),
       boardId: card.board.toString()
     });
+    invalidateFinanceCache();
+    invalidateTeamAnalyticsCache();
   }
 
   res.status(200).json({
@@ -2047,6 +2052,8 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
       cardId: card._id.toString(),
       boardId: card.board.toString()
     });
+    invalidateFinanceCache();
+    invalidateTeamAnalyticsCache();
   }
 
   res.status(200).json({

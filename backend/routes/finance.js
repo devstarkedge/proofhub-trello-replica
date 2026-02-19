@@ -20,6 +20,7 @@ import {
   reorderFinancePages
 } from '../controllers/financePageController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
+import { cacheMiddleware } from '../middleware/cache.js';
 
 
 const router = express.Router();
@@ -38,41 +39,41 @@ router.use(authorize('admin', 'manager'));
 // ============================================
 
 // Dashboard summary - All key metrics
-router.get('/summary', getFinanceSummary);
+router.get('/summary', cacheMiddleware('finance', 600), getFinanceSummary);
 
 // User-centric finance data (Users tab)
-router.get('/users', getUserFinanceData);
+router.get('/users', cacheMiddleware('finance', 600), getUserFinanceData);
 
 // Project-centric finance data (Projects tab)
-router.get('/projects', getProjectFinanceData);
+router.get('/projects', cacheMiddleware('finance', 600), getProjectFinanceData);
 
 // Weekly report data
-router.get('/weekly', getWeeklyReportData);
+router.get('/weekly', cacheMiddleware('finance', 600), getWeeklyReportData);
 
 // Year-wide weekly report data (for week-wise reporting mode)
-router.get('/weekly-report/year', getYearWideWeeklyData);
+router.get('/weekly-report/year', cacheMiddleware('finance', 600), getYearWideWeeklyData);
 
 // User contributions per project
-router.get('/projects/:projectId/contributions', getUserContributions);
+router.get('/projects/:projectId/contributions', cacheMiddleware('finance', 300), getUserContributions);
 
 // Get all departments for filtering
-router.get('/departments', getFinanceDepartments);
+router.get('/departments', cacheMiddleware('finance', 600), getFinanceDepartments);
 
 // Get all filter options (departments, users, projects, billing types)
-router.get('/filters', getFinanceFilterOptions);
+router.get('/filters', cacheMiddleware('finance', 600), getFinanceFilterOptions);
 
 // ============================================
 // CUSTOM PAGES ROUTES
 // ============================================
 
 // Get all pages (filtered by user role)
-router.get('/pages', getFinancePages);
+router.get('/pages', cacheMiddleware('finance', 300), getFinancePages);
 
 // Get pending pages (Admin only)
-router.get('/pages/pending', authorize('admin'), getPendingPages);
+router.get('/pages/pending', authorize('admin'), cacheMiddleware('finance', 120), getPendingPages);
 
 // Get single page
-router.get('/pages/:id', getFinancePageById);
+router.get('/pages/:id', cacheMiddleware('finance', 300), getFinancePageById);
 
 // Create new page
 router.post('/pages', createFinancePage);

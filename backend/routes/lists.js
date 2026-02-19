@@ -3,10 +3,11 @@ import { body } from 'express-validator';
 import { getLists, createList, updateList, updateListPosition, deleteList } from '../controllers/listController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
+import { cacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
-router.get('/board/:boardId', protect, getLists);
+router.get('/board/:boardId', protect, cacheMiddleware('lists', 120), getLists);
 
 router.post('/', protect, [
   body('title').trim().notEmpty().withMessage('List title is required'),

@@ -97,13 +97,13 @@ export const logProjectActivityInBackground = (activityData) => {
   });
 };
 
-// Background task for cache invalidation
+// Background task for cache invalidation (Redis-based)
 export const invalidateCacheInBackground = (cacheKeys) => {
   runBackground(async () => {
     try {
-      const { invalidateCache } = await import('../middleware/cache.js');
+      const { clearCacheByPattern } = await import('./redisCache.js');
       for (const key of cacheKeys) {
-        invalidateCache(key);
+        await clearCacheByPattern(`cache:*${key}*`);
       }
     } catch (err) {
       console.error('invalidateCacheInBackground error:', err);
