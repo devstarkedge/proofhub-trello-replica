@@ -12,14 +12,21 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const loginUser = (userData, userToken) => {
+    // Normalize user ID to ensure both id and _id exist
+    const normalizedUser = {
+      ...userData,
+      _id: userData._id || userData.id,
+      id: userData.id || userData._id
+    };
+
     // Only store token in localStorage, NOT user data (security improvement)
     localStorage.setItem("token", userToken);
     setToken(userToken);
-    setUser(userData);
+    setUser(normalizedUser);
     setIsAuthenticated(true);
 
     // Connect socket after authentication
-    socketService.connect(userData._id, userToken);
+    socketService.connect(normalizedUser._id, userToken);
   };
 
   const logoutUser = useCallback(() => {

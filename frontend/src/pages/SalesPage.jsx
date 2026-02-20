@@ -56,7 +56,7 @@ const SalesPage = () => {
     // Wait for auth restore to finish before initializing page
     if (authLoading) return;
 
-    if (user && user._id) {
+    if (user && (user._id || user.id)) {
       initializePage();
     }
 
@@ -76,6 +76,7 @@ const SalesPage = () => {
       window.removeEventListener('socket-sales-row-unlocked', onSocketRowUnlocked);
       window.removeEventListener('sales-permissions-updated', onPermsUpdate);
       window.removeEventListener('socket-sales-permissions-updated', onPermsUpdate);
+      window.removeEventListener('socket-connected', onSocketConnected);
 
       socketService.leaveSales();
     };
@@ -163,6 +164,9 @@ const SalesPage = () => {
       // Permissions listeners
       window.addEventListener('sales-permissions-updated', onPermsUpdate);
       window.addEventListener('socket-sales-permissions-updated', onPermsUpdate);
+
+      // Socket connection listener (handles reconnects and delayed connections)
+      window.addEventListener('socket-connected', onSocketConnected);
 
       // Fetch initial data
       await Promise.all([
@@ -253,6 +257,11 @@ const SalesPage = () => {
 
   const onSocketRowUnlocked = (e) => {
     handleRowUnlocked(e.detail);
+  };
+
+  const onSocketConnected = () => {
+    console.log('Socket re-connected, joining sales room...');
+    socketService.joinSales();
   };
 
   // Register listeners after joining the sales room (inside initializePage)
