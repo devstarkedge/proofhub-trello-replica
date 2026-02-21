@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -74,11 +75,29 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// Security headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false, // Disable CSP for API server
+}));
+
+// CORS
 app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
+
+// Request logger
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    if (duration > 1000 || res.statusCode >= 400) {
+      console.log(`[${req.method}] ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+    }
+  });
+  next();
+});
 
 // Capture raw body for Slack signature verification (before JSON parsing)
 // Slack sends different content types: JSON for events, URL-encoded for interactive
@@ -96,6 +115,29 @@ app.use(compression());
 
 // Redis caching is handled per-route via cacheMiddleware in route files
 // See backend/config/redis.js for Redis connection configuration
+
+// Health check endpoint (before auth middleware)
+app.get('/api/health', async (req, res) => {
+  const healthcheck = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    services: {
+      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      chatWebhook: process.env.CHAT_ENABLED === 'true' ? 'enabled' : 'disabled',
+    }
+  };
+  try {
+    // Quick DB ping
+    await mongoose.connection.db.admin().ping();
+    healthcheck.services.database = 'connected';
+  } catch {
+    healthcheck.services.database = 'disconnected';
+    healthcheck.status = 'degraded';
+  }
+  const statusCode = healthcheck.status === 'ok' ? 200 : 503;
+  res.status(statusCode).json(healthcheck);
+});
 
 // Routes
 app.use('/api/auth', authRoutes);

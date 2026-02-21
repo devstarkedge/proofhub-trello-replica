@@ -7,6 +7,7 @@ import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { sendEmail } from '../utils/email.js';
 import notificationService from '../utils/notificationService.js';
+import { chatHooks } from '../utils/chatHooks.js';
 import {
   runBackground,
   sendEmailInBackground,
@@ -88,6 +89,9 @@ export const register = asyncHandler(async (req, res, next) => {
 
       // Notify admins and managers about registration
       await notificationService.notifyUserRegistered(user, authorizedIds);
+
+      // Dispatch chat webhook for user registration
+      chatHooks.onUserRegistered(user).catch(console.error);
 
       // Compute department name inside background task to avoid blocking response
       let deptName = 'No department selected';
@@ -360,6 +364,9 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
       // Notify all admins about the new user creation
       const admins = await User.find({ role: 'admin', isActive: true });
       await notifyAdminsUserCreatedInBackground(user, admins, { departmentName, creatorId: req.user._id });
+
+      // Dispatch chat webhook for admin-created user
+      chatHooks.onUserCreated(user).catch(console.error);
     } catch (error) {
       console.error('Post-admin-create background failed:', error);
     }

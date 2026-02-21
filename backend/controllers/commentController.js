@@ -14,6 +14,7 @@ import { invalidateCache } from '../middleware/cache.js';
 import notificationService from '../utils/notificationService.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { slackHooks } from '../utils/slackHooks.js';
+import { chatHooks } from '../utils/chatHooks.js';
 
 // Helper to get context details from card, subtask, or nano
 const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
@@ -154,6 +155,9 @@ export const createComment = asyncHandler(async (req, res) => {
 
   // Send Slack notification for new comment
   slackHooks.onCommentAdded(populatedComment, cardDoc, cardDoc.board, req.user).catch(console.error);
+
+  // Dispatch chat webhook for comment
+  chatHooks.onCommentAdded(populatedComment, cardDoc, cardDoc.board, req.user).catch(console.error);
 
   // Invalidate relevant caches
   invalidateCache(`/api/cards/${cardId}`);

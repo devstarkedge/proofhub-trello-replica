@@ -8,6 +8,7 @@ import notificationService from "../utils/notificationService.js";
 import { invalidateAnnouncementCache } from "../utils/cacheInvalidation.js";
 import { emitNotification, io } from "../server.js";
 import { slackHooks } from "../utils/slackHooks.js";
+import { chatHooks } from "../utils/chatHooks.js";
 import {
   uploadAnnouncementAttachment,
   uploadMultipleAnnouncementAttachments,
@@ -427,6 +428,9 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     // Send Slack notifications
     console.log(`[Announcement] Triggering Slack notifications for ${subscriberIds.length} users...`);
     slackHooks.onAnnouncementPosted(announcement, subscriberIds, req.user).catch(console.error);
+
+    // Dispatch chat webhook for announcement
+    chatHooks.onAnnouncementCreated(announcement, req.user).catch(console.error);
   }
 
   invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });

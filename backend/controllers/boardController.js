@@ -18,6 +18,7 @@ import { invalidateCache } from "../middleware/cache.js";
 import { emitNotification, emitToAll } from "../server.js";
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
+import { chatHooks } from "../utils/chatHooks.js";
 import { 
   notifyProjectCreatedInBackground, 
   sendProjectEmailsInBackground, 
@@ -470,6 +471,9 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     // Send notifications in background
     notifyProjectCreatedInBackground(board, req.user.id);
 
+    // Dispatch chat webhook (fire-and-forget)
+    chatHooks.onProjectCreated(board, req.user).catch(console.error);
+
     // Send emails to members in background
     if (members && members.length > 0) {
       sendProjectEmailsInBackground(board, members);
@@ -492,6 +496,9 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     });
 
     await notificationService.notifyProjectCreated(board, req.user.id);
+
+    // Dispatch chat webhook (fire-and-forget)
+    chatHooks.onProjectCreated(board, req.user).catch(console.error);
 
     invalidateCache(`/api/boards`);
     invalidateCache(`/api/boards/department/${board.department}`);
@@ -591,6 +598,11 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
         contextType: 'board',
         metadata: { added }
       }));
+
+      // Dispatch chat webhook for each added member
+      for (const memberId of added) {
+        chatHooks.onProjectMemberAdded(board, memberId, req.user).catch(console.error);
+      }
     }
 
     if (removed.length > 0) {
@@ -603,6 +615,11 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
         contextType: 'board',
         metadata: { removed }
       }));
+
+      // Dispatch chat webhook for each removed member
+      for (const memberId of removed) {
+        chatHooks.onProjectMemberRemoved(board, memberId, req.user).catch(console.error);
+      }
     }
   }
 
@@ -613,6 +630,7 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   if (changes.length > 0) {
     await notificationService.notifyProjectUpdated(board, req.user.id, changes.slice(0, 3).join(', '));
     await slackHooks.onProjectUpdated(board, changes, req.user);
+    chatHooks.onProjectUpdated(board, { changes }, req.user).catch(console.error);
   }
 
   // Emit socket event for real-time updates (e.g., reminders page needs to update client info)
@@ -671,6 +689,9 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
 
   // Send notifications before deletion
   await notificationService.notifyTaskDeleted(board, req.user.id, true); // true for project deletion
+
+  // Dispatch chat webhook before cascade deletes
+  chatHooks.onProjectDeleted(board, req.user).catch(console.error);
 
   // Get all cards for this board (needed for cascade delete of card-related data)
   const cards = await Card.find({ board: board._id });

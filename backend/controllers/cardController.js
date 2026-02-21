@@ -20,6 +20,7 @@ import { invalidateCache } from "../middleware/cache.js";
 import notificationService from "../utils/notificationService.js";
 import { invalidateHierarchyCache, invalidateFinanceCache, invalidateTeamAnalyticsCache } from "../utils/cacheInvalidation.js";
 import { slackHooks } from "../utils/slackHooks.js";
+import { chatHooks } from "../utils/chatHooks.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
 import { emitFinanceDataRefresh } from "../utils/socketEmitter.js";
 
@@ -804,6 +805,10 @@ export const createCard = asyncHandler(async (req, res, next) => {
     // Send Slack notifications for task assignment
     const boardData = await Board.findById(board).select('name department').lean();
     slackHooks.onTaskAssigned(card, boardData, resolvedAssignees, req.user).catch(console.error);
+
+    // Dispatch chat webhook for task creation + assignment
+    chatHooks.onTaskCreated(card, boardData, req.user).catch(console.error);
+    chatHooks.onTaskAssigned(card, resolvedAssignees, boardData, req.user).catch(console.error);
   }
 
   // Notify all members
@@ -1090,6 +1095,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
             description: lastEntry.description
           }
         });
+
+        // Dispatch chat webhook for time entry
+        const boardForTime = await Board.findById(card.board).select('name department').lean();
+        chatHooks.onTimeEntryAdded(card, lastEntry, boardForTime, req.user).catch(console.error);
       }
     }
     
@@ -1202,6 +1211,9 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       // Send Slack notifications for new assignees
       const boardData = await Board.findById(card.board).select('name department').lean();
       slackHooks.onTaskAssigned(card, boardData, addedAssignees, req.user).catch(console.error);
+
+      // Dispatch chat webhook for assignee changes
+      chatHooks.onTaskAssigned(card, addedAssignees, boardData, req.user).catch(console.error);
     }
 
     if (removedAssignees.length > 0) {
@@ -1283,6 +1295,9 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     } else {
       slackHooks.onTaskStatusChanged(card, boardData, oldStatus, req.body.status, req.user).catch(console.error);
     }
+
+    // Dispatch chat webhook for status change
+    chatHooks.onTaskStatusChanged(card, oldStatus, req.body.status, boardData, req.user).catch(console.error);
   }
   
   // Send notifications based on changes (only if card has assignees to notify)
@@ -1311,6 +1326,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       const boardData = await Board.findById(card.board).select('name').lean();
       slackHooks.onTaskUpdated(card, boardData, nonStatusChanges.map(c => c.field), req.user).catch(console.error);
     }
+
+    // Dispatch chat webhook for general task update
+    const boardInfo = await Board.findById(card.board).select('name department').lean();
+    chatHooks.onTaskUpdated(card, { changedFields: changedFields.map(c => c.field) }, boardInfo, req.user).catch(console.error);
   }
 
   // Invalidate cache for the board
@@ -1504,6 +1523,10 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
 
   // Send notifications before deletion
   await notificationService.notifyTaskDeleted(card, req.user.id);
+
+  // Dispatch chat webhook before deletion
+  const boardForDelete = await Board.findById(card.board).select('name department').lean();
+  chatHooks.onTaskDeleted(card, boardForDelete, req.user).catch(console.error);
 
   // Log activity before deletion
   await Activity.create({

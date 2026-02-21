@@ -3,6 +3,7 @@ import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { sendWelcomeEmail, sendVerificationEmail } from '../utils/email.js';
 import notificationService from '../utils/notificationService.js';
+import { chatHooks } from '../utils/chatHooks.js';
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -156,6 +157,7 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
   await Activity.deleteMany({ user: req.params.id });
 
   // Finally, delete the user
+  chatHooks.onUserDeactivated(user).catch(console.error);
   await user.deleteOne();
 
   res.status(200).json({
@@ -418,6 +420,9 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
       }).select('_id');
       const authorizedIds = authorizedUsers.map(u => u._id);
       await notificationService.notifyUserVerified(user, authorizedIds);
+
+      // Dispatch chat webhook for user verification
+      chatHooks.onUserVerified(user).catch(console.error);
     } catch (error) {
       console.error('Background verification tasks failed:', error);
     }
