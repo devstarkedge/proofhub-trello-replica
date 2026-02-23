@@ -5,8 +5,6 @@ import Board from "../models/Board.js";
 import Card from "../models/Card.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { invalidateCache } from "../middleware/cache.js";
-import { invalidateDepartmentCache } from "../utils/cacheInvalidation.js";
 import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUsersUnassigned } from "../utils/socketEmitter.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
@@ -531,11 +529,6 @@ export const createDepartment = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Invalidate relevant caches for real-time updates
-  invalidateCache("/api/departments");
-  invalidateCache("/api/users"); // Invalidate users cache to update manager assignments
-  invalidateDepartmentCache();
-
   res.status(201).json({
     success: true,
     data: department,
@@ -592,12 +585,6 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
   // Populate managers data before returning
   await department.populate("managers", "name email");
 
-  // Invalidate relevant caches for real-time updates
-  invalidateCache("/api/departments");
-  invalidateCache(`/api/departments/${req.params.id}`);
-  invalidateCache("/api/users"); // Invalidate users cache to update manager assignments
-  invalidateDepartmentCache(req.params.id);
-
   res.status(200).json({
     success: true,
     data: department,
@@ -622,11 +609,6 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
 
   // Actually delete the department from database
   await Department.findByIdAndDelete(req.params.id);
-
-  // Invalidate relevant caches
-  invalidateCache("/api/departments");
-  invalidateCache(`/api/departments/${req.params.id}`);
-  invalidateDepartmentCache(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -670,10 +652,6 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
   // Update user's department field
   user.department = req.params.id;
   await user.save();
-
-  // Invalidate relevant caches
-  invalidateCache(`/api/departments/${req.params.id}`);
-  invalidateCache('/api/users');
 
   // Emit socket event for real-time updates
   emitUserAssigned(userId, req.params.id);
@@ -719,10 +697,6 @@ export const removeMemberFromDepartment = asyncHandler(
     await User.findByIdAndUpdate(req.params.userId, {
       $unset: { department: 1 },
     });
-
-    // Invalidate relevant caches
-    invalidateCache(`/api/departments/${req.params.id}`);
-    invalidateCache('/api/users');
 
     // Emit socket event for real-time updates
     emitUserUnassigned(req.params.userId, req.params.id);
@@ -901,10 +875,6 @@ export const unassignUserFromDepartment = asyncHandler(
       console.error('Unassignment notification failed:', error);
     }
 
-    // Invalidate relevant caches
-    invalidateCache(`/api/departments/${deptId}`);
-    invalidateCache('/api/users');
-
     // Emit socket event for real-time updates
     emitUserUnassigned(userId, deptId);
 
@@ -1011,10 +981,6 @@ export const bulkAssignUsersToDepartment = asyncHandler(async (req, res, next) =
   // Save department changes
   await department.save();
 
-  // Invalidate caches
-  invalidateCache(`/api/departments/${departmentId}`);
-  invalidateCache('/api/users');
-
   res.status(200).json({
     success: true,
     data: {
@@ -1112,10 +1078,6 @@ export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, nex
 
   // Emit bulk socket event for real-time updates
   emitBulkUsersUnassigned(results.map(r => r.userId), departmentId);
-
-  // Invalidate caches
-  invalidateCache(`/api/departments/${departmentId}`);
-  invalidateCache('/api/users');
 
   res.status(200).json({
     success: true,

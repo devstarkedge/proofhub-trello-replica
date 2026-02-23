@@ -16,9 +16,7 @@ import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitToBoard, emitNotification, emitToDepartment } from "../server.js";
-import { invalidateCache } from "../middleware/cache.js";
 import notificationService from "../utils/notificationService.js";
-import { invalidateHierarchyCache, invalidateFinanceCache, invalidateTeamAnalyticsCache } from "../utils/cacheInvalidation.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
@@ -783,11 +781,6 @@ export const createCard = asyncHandler(async (req, res, next) => {
     contextType: 'task'
   });
 
-  // Invalidate relevant caches
-  invalidateHierarchyCache({ boardId: board, listId: list, cardId: card._id });
-  invalidateCache("/api/analytics/dashboard");
-  invalidateCache(`/api/analytics/department/`);
-
   // Emit real-time update to board
   emitToBoard(board, 'card-created', {
     card,
@@ -1149,19 +1142,6 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // Invalidate caches for hierarchy
-  invalidateHierarchyCache({
-    boardId: card.board,
-    listId: card.list,
-    cardId: card._id
-  });
-  if (originalListId && originalListId.toString() !== card.list.toString()) {
-    invalidateHierarchyCache({
-      boardId: originalBoardId,
-      listId: originalListId
-    });
-  }
-  
   // Emit real-time update
   emitToBoard(card.board.toString(), 'card-updated', {
     cardId: card._id,
@@ -1332,12 +1312,6 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     chatHooks.onTaskUpdated(card, { changedFields: changedFields.map(c => c.field) }, boardInfo, req.user).catch(console.error);
   }
 
-  // Invalidate cache for the board
-  invalidateCache("/api/departments");
-  invalidateCache(`/api/departments/${card.board.department}/members-with-assignments`);
-  invalidateCache("/api/analytics/dashboard");
-  invalidateCache(`/api/analytics/department/`);
-
   res.status(200).json({
     success: true,
     data: card,
@@ -1487,21 +1461,6 @@ export const moveCard = asyncHandler(async (req, res, next) => {
         });
       }
 
-      // Invalidate caches
-      invalidateHierarchyCache({
-        boardId: card.board,
-        listId: destinationListId,
-        cardId: card._id
-      });
-      invalidateHierarchyCache({
-        boardId: card.board,
-        listId: sourceListId
-      });
-      invalidateCache("/api/departments");
-      invalidateCache(`/api/departments/${card.board.department}/members-with-assignments`);
-      invalidateCache("/api/analytics/dashboard");
-      invalidateCache(`/api/analytics/department/`);
-      
     } catch (backgroundError) {
       console.error("Error in moveCard background tasks:", backgroundError);
       // Do not crash or send error to response as it's already sent
@@ -1548,17 +1507,6 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   });
 
   await card.deleteOne();
-
-  // Invalidate caches after deletion
-  invalidateHierarchyCache({
-    boardId: boardId,
-    listId: card.list,
-    cardId: card._id
-  });
-  invalidateCache("/api/departments");
-  invalidateCache(`/api/departments/${card.board?.department}/members-with-assignments`);
-  invalidateCache("/api/analytics/dashboard");
-  invalidateCache(`/api/analytics/department/`);
 
   res.status(200).json({
     success: true,
@@ -1638,20 +1586,6 @@ export const archiveCard = asyncHandler(async (req, res, next) => {
     }
   });
 
-  // Invalidate caches
-  invalidateHierarchyCache({
-    boardId: card.board,
-    listId: card.list,
-    cardId: card._id
-  });
-  // CRITICAL: Invalidate workflow cache so archived card doesn't reappear on refresh
-  invalidateCache(`/api/boards/${card.board}/workflow-complete`);
-  invalidateCache(`/api/cards/board/${card.board}`);
-  invalidateCache(`/api/cards/list/${card.list}`);
-  invalidateCache("/api/departments");
-  invalidateCache(`/api/departments/${card.board?.department}/members-with-assignments`);
-  invalidateCache("/api/analytics/dashboard");
-
   res.status(200).json({
     success: true,
     message: "Card archived successfully",
@@ -1713,20 +1647,6 @@ export const restoreCard = asyncHandler(async (req, res, next) => {
       name: req.user.name
     }
   });
-
-  // Invalidate caches
-  invalidateHierarchyCache({
-    boardId: card.board,
-    listId: card.list,
-    cardId: card._id
-  });
-  // CRITICAL: Invalidate workflow cache so restored card appears on refresh
-  invalidateCache(`/api/boards/${card.board}/workflow-complete`);
-  invalidateCache(`/api/cards/board/${card.board}`);
-  invalidateCache(`/api/cards/list/${card.list}`);
-  invalidateCache("/api/departments");
-  invalidateCache(`/api/departments/${card.board?.department}/members-with-assignments`);
-  invalidateCache("/api/analytics/dashboard");
 
   res.status(200).json({
     success: true,
@@ -1931,9 +1851,6 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
       cardId: card._id.toString(),
       boardId: card.board.toString()
     });
-    // Invalidate finance and analytics caches when time data changes
-    invalidateFinanceCache();
-    invalidateTeamAnalyticsCache();
   }
 
   res.status(200).json({
@@ -2007,8 +1924,6 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
       cardId: card._id.toString(),
       boardId: card.board.toString()
     });
-    invalidateFinanceCache();
-    invalidateTeamAnalyticsCache();
   }
 
   res.status(200).json({
@@ -2075,8 +1990,6 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
       cardId: card._id.toString(),
       boardId: card.board.toString()
     });
-    invalidateFinanceCache();
-    invalidateTeamAnalyticsCache();
   }
 
   res.status(200).json({
@@ -2396,11 +2309,6 @@ export const copyCard = asyncHandler(async (req, res, next) => {
         listName: destList.title
       });
 
-      // 7. Invalidate caches
-      invalidateHierarchyCache({ boardId: destinationBoardId, listId: destinationListId, cardId: newCard._id });
-      invalidateCache("/api/analytics/dashboard");
-      invalidateCache(`/api/analytics/department/`);
-
     } catch (bgError) {
       console.error('Error in copyCard background tasks:', bgError);
     }
@@ -2571,12 +2479,6 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
         toBoard: destBoard.name
       });
 
-      // 5. Invalidate caches on both boards
-      invalidateHierarchyCache({ boardId: sourceBoardId, listId: sourceListId, cardId: card._id });
-      invalidateHierarchyCache({ boardId: destinationBoardId, listId: destinationListId, cardId: card._id });
-      invalidateCache("/api/analytics/dashboard");
-      invalidateCache(`/api/analytics/department/`);
-
     } catch (bgError) {
       console.error('Error in crossMoveCard background tasks:', bgError);
     }
@@ -2670,10 +2572,6 @@ export const undoMove = asyncHandler(async (req, res, next) => {
   if (isCrossBoard) {
     emitToBoard(originalState.sourceBoardId, 'task-moved-cross', undoPayload);
   }
-
-  // Invalidate caches
-  invalidateHierarchyCache({ boardId: currentBoardId, listId: currentListId });
-  invalidateHierarchyCache({ boardId: originalState.sourceBoardId, listId: originalState.sourceListId });
 
   res.status(200).json({
     success: true,

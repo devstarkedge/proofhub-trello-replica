@@ -15,7 +15,6 @@ import {
   subscribeToFeature
 } from '../controllers/notificationController.js';
 import { protect } from '../middleware/authMiddleware.js';
-import { cacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
@@ -23,10 +22,10 @@ const router = express.Router();
 router.post('/subscribe', subscribeToFeature);
 
 // Get notifications with pagination & filters
-router.get('/', protect, cacheMiddleware('notifications', 60), getNotifications);
+router.get('/', protect, getNotifications);
 
 // Get unread count (fast endpoint)
-router.get('/unread-count', protect, cacheMiddleware('notifications', 30), getUnreadCount);
+router.get('/unread-count', protect, getUnreadCount);
 
 // Get archived notifications
 router.get('/archived', protect, getArchivedNotifications);

@@ -9,15 +9,14 @@ import {
 } from '../controllers/categoryController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
-import { cacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
 // All routes require authentication
 router.use(protect);
 
-router.get('/department/:departmentId', cacheMiddleware('categories', 300), getCategoriesByDepartment);
-router.get('/:id', cacheMiddleware('categories', 300), getCategory);
+router.get('/department/:departmentId', getCategoriesByDepartment);
+router.get('/:id', getCategory);
 
 router.post('/', [
   body('name').trim().notEmpty().withMessage('Category name is required'),

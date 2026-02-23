@@ -8,7 +8,6 @@ import Activity from '../models/Activity.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { emitToBoard } from '../server.js';
 import { deleteFromCloudinary, deleteMultipleFromCloudinary } from '../utils/cloudinary.js';
-import { invalidateCache } from '../middleware/cache.js';
 
 const ensureRestorePermission = async (user, board) => {
   if (!user) return false;
@@ -175,9 +174,6 @@ export const restoreAttachment = asyncHandler(async (req, res) => {
     restoredBy: { id: req.user.id, name: req.user.name }
   });
 
-  // Invalidate trash cache
-  invalidateCache(`/api/projects/${att.board}/trash`);
-
   res.status(200).json({ success: true, data: att });
 });
 
@@ -213,9 +209,6 @@ export const permanentlyDeleteAttachment = asyncHandler(async (req, res) => {
   emitToBoard(att.board.toString(), 'attachment-permanently-deleted', {
     attachmentId: id
   });
-
-  // Invalidate trash cache
-  invalidateCache(`/api/projects/${att.board}/trash`);
 
   res.status(200).json({ success: true, message: 'Attachment permanently deleted' });
 });
@@ -291,8 +284,6 @@ export const bulkRestore = asyncHandler(async (req, res) => {
       restoredCount: updates.length,
       restoredBy: { id: req.user.id, name: req.user.name }
     });
-    // Invalidate trash cache per board
-    invalidateCache(`/api/projects/${boardId}/trash`);
   }
 
   res.status(200).json({ success: true, restored });
@@ -346,8 +337,6 @@ export const bulkPermanentDelete = asyncHandler(async (req, res) => {
       attachmentIds: list.map(a => a._id),
       deletedBy: { id: req.user.id, name: req.user.name }
     });
-    // Invalidate trash cache per board
-    invalidateCache(`/api/projects/${boardId}/trash`);
   }
 
   res.status(200).json({ success: true, deleted: atts.length });

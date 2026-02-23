@@ -64,18 +64,6 @@ export const uploadAvatar = asyncHandler(async (req, res, next) => {
 
     await user.save();
 
-    // Invalidate cached user data so fresh data is returned on next request
-    try {
-      const { invalidateCache } = await import('../middleware/cache.js');
-      const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
-      invalidateCache('/api/auth/me');
-      invalidateCache('/api/auth/verify');
-      invalidateCache('/api/users/profile');
-      invalidateUserCache(user._id);
-    } catch (cacheErr) {
-      console.error('Cache invalidation error:', cacheErr);
-    }
-
     // Delete old avatar from Cloudinary (non-blocking)
     if (oldAvatarPublicId) {
       deleteFromCloudinary(oldAvatarPublicId, 'image').catch(err => {
@@ -181,18 +169,6 @@ export const uploadAvatarFromGoogleDrive = asyncHandler(async (req, res, next) =
 
     await user.save();
 
-    // Invalidate cached user data
-    try {
-      const { invalidateCache } = await import('../middleware/cache.js');
-      const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
-      invalidateCache('/api/auth/me');
-      invalidateCache('/api/auth/verify');
-      invalidateCache('/api/users/profile');
-      invalidateUserCache(user._id);
-    } catch (cacheErr) {
-      console.error('Cache invalidation error:', cacheErr);
-    }
-
     // Delete old avatar
     if (oldAvatarPublicId) {
       deleteFromCloudinary(oldAvatarPublicId, 'image').catch(err => {
@@ -245,18 +221,6 @@ export const removeAvatar = asyncHandler(async (req, res, next) => {
   user.avatarMetadata = undefined;
 
   await user.save();
-
-  // Invalidate cached user data
-  try {
-    const { invalidateCache } = await import('../middleware/cache.js');
-    const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
-    invalidateCache('/api/auth/me');
-    invalidateCache('/api/auth/verify');
-    invalidateCache('/api/users/profile');
-    invalidateUserCache(user._id);
-  } catch (cacheErr) {
-    console.error('Cache invalidation error:', cacheErr);
-  }
 
   // Delete from Cloudinary (optional cleanup)
   if (avatarPublicId) {

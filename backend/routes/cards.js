@@ -5,23 +5,22 @@ import { protect } from '../middleware/authMiddleware.js';
 import { managerOrAdmin } from '../middleware/rbacMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import upload from '../middleware/upload.js';
-import { cacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
-router.get('/list/:listId', protect, cacheMiddleware('cards', 120), getCards);
-router.get('/list/:listId/archived', protect, cacheMiddleware('cards', 120), getArchivedCards);
-router.get('/board/:boardId', protect, cacheMiddleware('cards', 120), getCardsByBoard);
-router.get('/department/:departmentId', protect, cacheMiddleware('cards', 120), getCardsByDepartment);
+router.get('/list/:listId', protect, getCards);
+router.get('/list/:listId/archived', protect, getArchivedCards);
+router.get('/board/:boardId', protect, getCardsByBoard);
+router.get('/department/:departmentId', protect, getCardsByDepartment);
 
 // Copy/Move destination loaders
-router.get('/copy-move/departments', protect, cacheMiddleware('cards', 180), getCopyMoveDepartments);
-router.get('/copy-move/projects/:departmentId', protect, cacheMiddleware('cards', 180), getCopyMoveProjects);
-router.get('/copy-move/lists/:boardId', protect, cacheMiddleware('cards', 180), getCopyMoveLists);
+router.get('/copy-move/departments', protect, getCopyMoveDepartments);
+router.get('/copy-move/projects/:departmentId', protect, getCopyMoveProjects);
+router.get('/copy-move/lists/:boardId', protect, getCopyMoveLists);
 router.get('/copy-move/recent', protect, getRecentDestinations);
 
-router.get('/:id/activity', protect, cacheMiddleware('cards', 60), getCardActivity);
-router.get('/:id', protect, cacheMiddleware('cards', 120), getCard);
+router.get('/:id/activity', protect, getCardActivity);
+router.get('/:id', protect, getCard);
 
 router.post('/', protect, [
   body('title').trim().notEmpty().withMessage('Card title is required'),

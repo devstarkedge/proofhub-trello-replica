@@ -113,9 +113,6 @@ import compression from 'compression';
 app.use(compression());
 
 
-// Redis caching is handled per-route via cacheMiddleware in route files
-// See backend/config/redis.js for Redis connection configuration
-
 // Health check endpoint (before auth middleware)
 app.get('/api/health', async (req, res) => {
   const healthcheck = {
@@ -176,25 +173,36 @@ app.use('/api/project-options', projectOptionsRoutes);
 
 import jwt from 'jsonwebtoken';
 
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake?.auth?.token;
+    if (!token) {
+      return next(new Error('Authentication required'));
+    }
+
+    const decodedUser = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decodedUser?.id || decodedUser?._id;
+    if (!userId) {
+      return next(new Error('Invalid token payload'));
+    }
+
+    socket.data.user = decodedUser;
+    next();
+  } catch (error) {
+    next(new Error('Invalid or expired token'));
+  }
+});
+
 // Socket.IO connection
 io.on('connection', (socket) => {
   if (process.env.NODE_ENV !== 'production') console.log('New socket connection attempt:', socket.id);
   if (process.env.NODE_ENV !== 'production') console.log('Handshake auth:', socket.handshake.auth);
-  const { userId, token } = socket.handshake.auth;
+  const decodedUser = socket.data.user || {};
+  const userId = decodedUser.id || decodedUser._id?.toString();
 
   if (!userId) {
-    socket.disconnect();
+    socket.disconnect(true);
     return;
-  }
-
-  // Verify token if provided
-  let decodedUser = { _id: userId };
-  if (token) {
-    try {
-      decodedUser = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      if (process.env.NODE_ENV !== 'production') console.log('Invalid token');
-    }
   }
 
   // Join user room for personal notifications
@@ -403,7 +411,6 @@ import { startArchivedCardCleanup } from './utils/archiveCleanup.js';
 import { startTrashCleanup } from './utils/trashCleanup.js';
 import { startBoardCleanup } from './utils/boardCleanup.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
-import { connectRedis, disconnectRedis } from './config/redis.js';
 
 // MongoDB connection with connection pooling
 mongoose.connect(process.env.MONGO_URI, {
@@ -413,9 +420,6 @@ mongoose.connect(process.env.MONGO_URI, {
 })
   .then(async () => {
     if (process.env.NODE_ENV !== 'production') console.log('Connected to MongoDB with connection pooling');
-    
-    // Connect to Redis (non-blocking — app works without it)
-    await connectRedis();
     
     // Seed the admin user
     seedAdmin();
@@ -449,14 +453,12 @@ mongoose.connect(process.env.MONGO_URI, {
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Shutting down gracefully...');
   await shutdownSlackServices();
-  await disconnectRedis();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received. Shutting down gracefully...');
   await shutdownSlackServices();
-  await disconnectRedis();
   process.exit(0);
 });
 

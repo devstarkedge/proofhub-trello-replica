@@ -7,7 +7,6 @@ import Subtask from '../models/Subtask.js';
 import Activity from '../models/Activity.js';
 import { emitToBoard } from '../server.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
-import { invalidateRecurrenceCache, invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 
 // Helper: Generate subtask from recurring task
 const generateRecurringSubtask = async (recurringTask, userId) => {
@@ -181,14 +180,6 @@ export const createRecurrence = asyncHandler(async (req, res, next) => {
     .populate('createdBy', 'name email')
     .populate('subtaskTemplate.assignees', 'name email avatar');
 
-  // Invalidate cache
-  invalidateRecurrenceCache({
-    boardId: recurringTask.board,
-    cardId,
-    recurrenceId: recurringTask._id
-  });
-  invalidateHierarchyCache({ boardId: recurringTask.board, cardId });
-
   res.status(201).json({
     success: true,
     data: populated
@@ -352,13 +343,6 @@ export const updateRecurrence = asyncHandler(async (req, res, next) => {
     .populate('createdBy', 'name email')
     .populate('subtaskTemplate.assignees', 'name email avatar');
 
-  // Invalidate cache
-  invalidateRecurrenceCache({
-    boardId: recurrence.board,
-    cardId: recurrence.card,
-    recurrenceId: recurrence._id
-  });
-
   res.status(200).json({
     success: true,
     data: populated
@@ -397,13 +381,6 @@ export const deleteRecurrence = asyncHandler(async (req, res, next) => {
 
   // Emit real-time update
   emitToBoard(recurrence.board.toString(), 'recurrence-stopped', {
-    cardId: recurrence.card,
-    recurrenceId: recurrence._id
-  });
-
-  // Invalidate cache
-  invalidateRecurrenceCache({
-    boardId: recurrence.board,
     cardId: recurrence.card,
     recurrenceId: recurrence._id
   });
@@ -469,14 +446,6 @@ export const triggerRecurrence = asyncHandler(async (req, res, next) => {
 
   const populatedSubtask = await Subtask.findById(subtask._id)
     .populate('assignees', 'name email avatar');
-
-  // Invalidate cache
-  invalidateRecurrenceCache({
-    boardId: recurrence.board,
-    cardId: recurrence.card,
-    recurrenceId: recurrence._id
-  });
-  invalidateHierarchyCache({ boardId: recurrence.board, cardId: recurrence.card });
 
   res.status(200).json({
     success: true,

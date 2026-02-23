@@ -2,8 +2,6 @@ import Category from "../models/Category.js";
 import Department from "../models/Department.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { invalidateCache } from "../middleware/cache.js";
-import { invalidateCategoryCache } from "../utils/cacheInvalidation.js";
 
 // @desc    Get all categories for a department
 // @route   GET /api/categories/department/:departmentId
@@ -76,10 +74,6 @@ export const createCategory = asyncHandler(async (req, res, next) => {
   await category.populate('department', 'name');
   await category.populate('createdBy', 'name email');
 
-  // Invalidate relevant caches
-  invalidateCache(`/api/categories/department/${department}`);
-  invalidateCategoryCache(department);
-
   res.status(201).json({
     success: true,
     data: category,
@@ -121,10 +115,6 @@ export const updateCategory = asyncHandler(async (req, res, next) => {
   await category.populate('department', 'name');
   await category.populate('createdBy', 'name email');
 
-  // Invalidate relevant caches
-  invalidateCache(`/api/categories/department/${category.department}`);
-  invalidateCategoryCache(category.department);
-
   res.status(200).json({
     success: true,
     data: category,
@@ -144,10 +134,6 @@ export const deleteCategory = asyncHandler(async (req, res, next) => {
   // Soft delete - mark as inactive
   category.isActive = false;
   await category.save();
-
-  // Invalidate relevant caches
-  invalidateCache(`/api/categories/department/${category.department}`);
-  invalidateCategoryCache(category.department);
 
   res.status(200).json({
     success: true,

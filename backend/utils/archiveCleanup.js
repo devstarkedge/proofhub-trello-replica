@@ -6,7 +6,6 @@ import Activity from '../models/Activity.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import RecurringTask from '../models/RecurringTask.js';
-import { invalidateHierarchyCache } from './cacheInvalidation.js';
 
 const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -67,7 +66,6 @@ export const cleanupExpiredArchivedCards = async () => {
           await Card.deleteOne({ _id: card._id }, { session });
         });
 
-        invalidateHierarchyCache({ boardId: card.board, listId: card.list, cardId: card._id });
         console.log(`Archived card auto-deleted: ${card._id} (${card.title || 'untitled'})`);
       } catch (err) {
         console.error(`Failed to auto-delete archived card ${card._id}:`, err);

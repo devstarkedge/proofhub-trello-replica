@@ -14,7 +14,6 @@ import Comment from '../models/Comment.js';
 import Attachment from '../models/Attachment.js';
 import { emitToBoard } from '../server.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
-import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { slackHooks } from '../utils/slackHooks.js';
@@ -133,16 +132,6 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
             type: 'created',
             taskId,
             subtask: populated
-        });
-    }),
-
-    // Invalidate cache
-    Promise.resolve().then(() => {
-        invalidateHierarchyCache({
-            boardId: card.board,
-            listId: card.list,
-            cardId: taskId,
-            subtaskId: subtask._id
         });
     })
   ]);
@@ -360,17 +349,6 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
       subtask
     }),
 
-    // Invalidate cache
-    async () => {
-      const parentCard = await Card.findById(taskId).select('board list').lean();
-      invalidateHierarchyCache({
-        boardId: parentCard?.board || boardId,
-        listId: parentCard?.list,
-        cardId: taskId,
-        subtaskId: subtask._id
-      });
-    },
-
     // Emit finance data refresh for time tracking changes
     () => {
       if (req.body.loggedTime !== undefined || req.body.billedTime !== undefined) {
@@ -422,14 +400,6 @@ export const deleteSubtask = asyncHandler(async (req, res, next) => {
     subtaskId: subtask._id
   });
 
-  const parentCard = await Card.findById(taskId);
-  invalidateHierarchyCache({
-    boardId: parentCard?.board || subtask.board,
-    listId: parentCard?.list,
-    cardId: subtask.task,
-    subtaskId: subtask._id
-  });
-
   res.status(200).json({
     success: true,
     message: 'Subtask deleted'
@@ -456,11 +426,6 @@ export const reorderSubtasks = asyncHandler(async (req, res, next) => {
     type: 'reordered',
     taskId,
     subtasks
-  });
-  invalidateHierarchyCache({
-    boardId: card.board,
-    listId: card.list,
-    cardId: card._id
   });
 
   res.status(200).json({
@@ -961,8 +926,6 @@ export const promoteSubtask = asyncHandler(async (req, res, next) => {
         await user.save();
       }
 
-      invalidateHierarchyCache({ boardId: parentBoardId, cardId: parentTaskId });
-      invalidateHierarchyCache({ boardId: destinationBoardId, listId: destinationListId, cardId: newCard._id });
     } catch (bgErr) {
       console.error('Error in promoteSubtask background:', bgErr);
     }

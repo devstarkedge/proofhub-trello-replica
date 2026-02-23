@@ -7,7 +7,6 @@ import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
 import { emitToBoard } from '../server.js';
 import { refreshCardHierarchyStats, refreshSubtaskNanoStats } from '../utils/hierarchyStats.js';
-import { invalidateHierarchyCache } from '../utils/cacheInvalidation.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../utils/socketEmitter.js';
@@ -121,17 +120,6 @@ export const createNano = asyncHandler(async (req, res, next) => {
             type: 'created',
             subtaskId,
             nano: populated
-        });
-    }),
-
-    // Invalidate cache
-    Promise.resolve().then(() => {
-        invalidateHierarchyCache({
-            boardId: subtask.board,
-            listId: card?.list,
-            cardId: subtask.task,
-            subtaskId,
-            subtaskNanoId: nano._id
         });
     })
   ]);
@@ -334,18 +322,6 @@ export const updateNano = asyncHandler(async (req, res, next) => {
       nano
     }),
 
-    // Invalidate cache
-    async () => {
-      const parentCard = await Card.findById(taskId).select('board list').lean();
-      invalidateHierarchyCache({
-        boardId: parentCard?.board || boardId,
-        listId: parentCard?.list,
-        cardId: taskId,
-        subtaskId,
-        subtaskNanoId: nano._id
-      });
-    },
-
     // Emit finance data refresh for time tracking changes
     () => {
       if (req.body.loggedTime !== undefined || req.body.billedTime !== undefined) {
@@ -397,14 +373,6 @@ export const deleteNano = asyncHandler(async (req, res, next) => {
     subtaskId: subtaskId.toString(),
     nanoId: nano._id
   });
-  const parentCard = await Card.findById(taskId);
-  invalidateHierarchyCache({
-    boardId: parentCard?.board || boardId,
-    listId: parentCard?.list,
-    cardId: taskId,
-    subtaskId: subtaskId,
-    subtaskNanoId: nano._id
-  });
 
   res.status(200).json({
     success: true,
@@ -427,18 +395,11 @@ export const reorderNanos = asyncHandler(async (req, res, next) => {
 
   const nanos = await getOrderedNanos(subtaskId);
   const subtask = await Subtask.findById(subtaskId);
-  const parentCard = await Card.findById(subtask.task);
 
   emitToBoard(subtask.board.toString(), 'hierarchy-nano-changed', {
     type: 'reordered',
     subtaskId,
     nanos
-  });
-  invalidateHierarchyCache({
-    boardId: parentCard?.board || subtask.board,
-    listId: parentCard?.list,
-    cardId: subtask.task,
-    subtaskId
   });
 
   res.status(200).json({

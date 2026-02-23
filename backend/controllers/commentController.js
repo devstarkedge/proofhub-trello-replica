@@ -10,7 +10,6 @@ import Role from '../models/Role.js';
 import Team from '../models/Team.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { emitNotification, emitToBoard } from '../server.js';
-import { invalidateCache } from '../middleware/cache.js';
 import notificationService from '../utils/notificationService.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { slackHooks } from '../utils/slackHooks.js';
@@ -159,11 +158,6 @@ export const createComment = asyncHandler(async (req, res) => {
   // Dispatch chat webhook for comment
   chatHooks.onCommentAdded(populatedComment, cardDoc, cardDoc.board, req.user).catch(console.error);
 
-  // Invalidate relevant caches
-  invalidateCache(`/api/cards/${cardId}`);
-  invalidateCache(`/api/cards/${cardId}/comments`);
-  invalidateCache(`/api/versions/comment/${comment._id}/count`);
-
   res.status(201).json(populatedComment);
 });
 
@@ -257,10 +251,6 @@ export const createReply = asyncHandler(async (req, res) => {
       }
     });
   }
-
-  // Invalidate caches
-  invalidateCache(`/api/cards/${parentComment.card}`);
-  invalidateCache(`/api/cards/${parentComment.card}/comments`);
 
   res.status(201).json(populatedReply);
 });
@@ -641,11 +631,6 @@ export const updateComment = asyncHandler(async (req, res) => {
     });
   }
 
-  // Invalidate relevant caches
-  invalidateCache(`/api/cards/${comment.card._id}`);
-  invalidateCache(`/api/cards/${comment.card._id}/comments`);
-  invalidateCache(`/api/versions/comment/${comment._id}/count`);
-
   res.status(200).json({
     success: true,
     data: {
@@ -710,11 +695,6 @@ export const deleteComment = asyncHandler(async (req, res) => {
       parentCommentId: comment.parentComment,
     });
   }
-
-  // Invalidate relevant caches
-  invalidateCache(`/api/cards/${cardId}`);
-  invalidateCache(`/api/cards/${cardId}/comments`);
-  invalidateCache(`/api/versions/comment/${comment._id}/count`);
 
   res.status(200).json({
     success: true,

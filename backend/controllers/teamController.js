@@ -3,7 +3,6 @@ import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { invalidateCache } from '../middleware/cache.js';
 import { slackHooks } from '../utils/slackHooks.js';
 
 // @desc    Get teams for current user
@@ -51,9 +50,6 @@ export const getTeam = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Team not found', 404));
   }
 
-  // Invalidate relevant caches
-  invalidateCache(`/api/teams/${req.params.id}`);
-
   res.status(200).json({
     success: true,
     data: team
@@ -82,9 +78,6 @@ export const createTeam = asyncHandler(async (req, res, next) => {
 
   // Update user with team
   await User.findByIdAndUpdate(req.user.id, { team: team._id });
-
-  // Invalidate relevant caches
-  invalidateCache('/api/teams');
 
   res.status(201).json({
     success: true,
@@ -115,10 +108,6 @@ export const updateTeam = asyncHandler(async (req, res, next) => {
   if (members) team.members = members;
 
   await team.save();
-
-  // Invalidate relevant caches
-  invalidateCache('/api/teams');
-  invalidateCache(`/api/teams/${req.params.id}`);
 
   res.status(200).json({
     success: true,
@@ -199,9 +188,6 @@ export const deleteTeam = asyncHandler(async (req, res, next) => {
     { team: req.params.id },
     { $unset: { team: 1 } }
   );
-
-  // Invalidate relevant caches
-  invalidateCache('/api/teams');
 
   res.status(200).json({
     success: true,

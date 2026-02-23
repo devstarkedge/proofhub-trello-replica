@@ -11,7 +11,6 @@ import RecurringTask from '../models/RecurringTask.js';
 import Reminder from '../models/Reminder.js';
 import Department from '../models/Department.js';
 import Notification from '../models/Notification.js';
-import { invalidateCache } from '../middleware/cache.js';
 
 // Default: permanently delete boards soft-deleted more than 30 seconds ago
 const CLEANUP_THRESHOLD_MS = 30 * 1000;
@@ -95,13 +94,6 @@ export const permanentlyDeleteBoards = async (boardIds) => {
 
     // 5. Delete the boards themselves
     await Board.deleteMany({ _id: { $in: actualBoardIds } });
-
-    // 6. Invalidate caches
-    invalidateCache('/api/boards');
-    invalidateCache('/api/departments');
-    for (const deptId of Object.keys(deptMap)) {
-      invalidateCache(`/api/boards/department/${deptId}`);
-    }
 
     console.log(`[BoardCleanup] Permanently deleted ${actualBoardIds.length} boards and all related data.`);
     return { deleted: actualBoardIds.length };

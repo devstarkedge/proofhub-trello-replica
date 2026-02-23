@@ -5,7 +5,6 @@ import { uploadAvatar, uploadAvatarFromGoogleDrive, removeAvatar } from '../cont
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
 import { getVapidKeys } from '../utils/pushNotification.js';
-import { cacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
@@ -28,7 +27,7 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), uploadAvatar);
 router.post('/avatar/google-drive', protect, uploadAvatarFromGoogleDrive);
 router.delete('/avatar', protect, removeAvatar);
 
-router.get('/profile', protect, cacheMiddleware('users', 300), getProfile);
+router.get('/profile', protect, getProfile);
 router.put('/profile', protect, updateProfile);
 router.put('/settings', protect, updateSettings);
 

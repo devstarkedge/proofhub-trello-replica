@@ -7,7 +7,6 @@ import Activity from '../models/Activity.js';
 import Board from '../models/Board.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { emitToBoard } from '../server.js';
-import { invalidateCache } from '../middleware/cache.js';
 import {
   uploadToCloudinary,
   deleteFromCloudinary,
@@ -277,18 +276,6 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     });
   }
 
-  // Invalidate cache
-  if (parentType === 'card') {
-    invalidateCache(`/api/cards/${cardId}`);
-    invalidateCache(`/api/attachments/card/${cardId}`);
-  } else if (parentType === 'subtask') {
-    invalidateCache(`/api/attachments/subtask/${subtaskId}`);
-  } else if (parentType === 'nanoSubtask') {
-    invalidateCache(`/api/attachments/nano/${nanoSubtaskId}`);
-  } else if (parentType === 'board') {
-    invalidateCache(`/api/attachments/board/${resolvedBoardId}`);
-  }
-
   res.status(201).json({
     success: true,
     data: attachment
@@ -401,10 +388,6 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
       }
     });
   }
-
-  // Invalidate cache
-  invalidateCache(`/api/cards/${cardId}`);
-  invalidateCache(`/api/attachments/card/${cardId}`);
 
   res.status(201).json({
     success: true,
@@ -736,19 +719,6 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
     });
   }
 
-  // Invalidate cache
-  if (attachment.card) {
-    invalidateCache(`/api/cards/${attachment.card}`);
-    invalidateCache(`/api/attachments/card/${attachment.card}`);
-  }
-  if (isProjectAttachment && attachment.board) {
-    invalidateCache(`/api/attachments/board/${attachment.board}`);
-  }
-  // Also invalidate trash cache since attachment is now in trash
-  if (attachment.board) {
-    invalidateCache(`/api/projects/${attachment.board}/trash`);
-  }
-
   res.status(200).json({
     success: true,
     message: 'Attachment deleted successfully',
@@ -829,17 +799,6 @@ export const deleteMultipleAttachments = asyncHandler(async (req, res) => {
         name: req.user.name
       }
     });
-  });
-
-  // Invalidate caches
-  uniqueCards.forEach(cardId => {
-    invalidateCache(`/api/cards/${cardId}`);
-    invalidateCache(`/api/attachments/card/${cardId}`);
-  });
-
-  // Also invalidate trash caches for all affected boards
-  uniqueBoards.forEach(boardId => {
-    invalidateCache(`/api/projects/${boardId}/trash`);
   });
 
   res.status(200).json({
@@ -1054,16 +1013,6 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
       name: req.user.name
     }
   });
-
-  // Invalidate cache
-  if (parentType === 'card') {
-    invalidateCache(`/api/cards/${cardId}`);
-    invalidateCache(`/api/attachments/card/${cardId}`);
-  } else if (parentType === 'subtask') {
-    invalidateCache(`/api/attachments/subtask/${subtaskId}`);
-  } else if (parentType === 'nanoSubtask') {
-    invalidateCache(`/api/attachments/nano/${nanoSubtaskId}`);
-  }
 
   res.status(201).json({
     success: true,
@@ -1307,16 +1256,6 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
       },
       source: 'google-drive'
     });
-  }
-
-  // Invalidate cache
-  if (parentType === 'card') {
-    invalidateCache(`/api/cards/${cardId}`);
-    invalidateCache(`/api/attachments/card/${cardId}`);
-  } else if (parentType === 'subtask') {
-    invalidateCache(`/api/attachments/subtask/${subtaskId}`);
-  } else if (parentType === 'nanoSubtask') {
-    invalidateCache(`/api/attachments/nano/${nanoSubtaskId}`);
   }
 
   res.status(201).json({

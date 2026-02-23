@@ -151,14 +151,6 @@ export const login = asyncHandler(async (req, res, next) => {
   user.lastLogin = Date.now();
   await user.save();
 
-  // Invalidate any cached user data for this user to ensure fresh session
-  const { invalidateCache } = await import('../middleware/cache.js');
-  const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
-  invalidateCache('/api/auth/me');
-  invalidateCache('/api/auth/verify');
-  invalidateCache('/api/notifications');
-  invalidateUserCache(user._id);
-
   // Generate token
   const token = generateToken(user._id);
 
@@ -209,13 +201,6 @@ export const updateDetails = asyncHandler(async (req, res, next) => {
     runValidators: true
   });
 
-  // Invalidate cached user data after profile update
-  const { invalidateCache } = await import('../middleware/cache.js');
-  const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
-  invalidateCache('/api/auth/me');
-  invalidateCache('/api/auth/verify');
-  invalidateUserCache(req.user.id);
-
   res.status(200).json({
     success: true,
     data: user
@@ -235,13 +220,6 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
 
   user.password = req.body.newPassword;
   await user.save();
-
-  // Invalidate cached user data after password change
-  const { invalidateCache } = await import('../middleware/cache.js');
-  const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
-  invalidateCache('/api/auth/me');
-  invalidateCache('/api/auth/verify');
-  invalidateUserCache(user._id);
 
   const token = generateToken(user._id);
 
@@ -305,11 +283,6 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
     await Department.findByIdAndUpdate(department, {
       $addToSet: { members: user._id }
     });
-    // Invalidate department cache as well
-    const { invalidateCache } = await import('../middleware/cache.js');
-    const { invalidateDepartmentCache } = await import('../utils/cacheInvalidation.js');
-    invalidateCache(`/api/departments/${department}`);
-    invalidateDepartmentCache(department);
   }
   // Emit real-time update
   const { emitToTeam } = await import('../server.js');

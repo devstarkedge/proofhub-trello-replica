@@ -4,7 +4,6 @@ import Card from '../models/Card.js';
 import Comment from '../models/Comment.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { emitToBoard } from '../server.js';
-import { invalidateCache } from '../middleware/cache.js';
 
 // @desc    Get version history for an entity
 // @route   GET /api/versions/:entityType/:entityId
@@ -125,15 +124,6 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
         name: req.user.name
       }
     });
-  }
-
-  // Invalidate cache
-  if (entityType === 'card_description') {
-    invalidateCache(`/api/cards/${entityId}`);
-  } else if (entityType === 'comment') {
-    invalidateCache(`/api/cards/${card}/comments`);
-    // Invalidate version count cache for this comment
-    invalidateCache(`/api/versions/comment/${entityId}/count`);
   }
 
   // Return rollback info along with restored content so frontend can update UI

@@ -14,7 +14,6 @@ import Comment from "../models/Comment.js";
 import User from "../models/User.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { invalidateCache } from "../middleware/cache.js";
 import { emitNotification, emitToAll } from "../server.js";
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
@@ -22,8 +21,7 @@ import { chatHooks } from "../utils/chatHooks.js";
 import { 
   notifyProjectCreatedInBackground, 
   sendProjectEmailsInBackground, 
-  logProjectActivityInBackground,
-  invalidateCacheInBackground 
+  logProjectActivityInBackground 
 } from "../utils/backgroundTasks.js";
 import {
   uploadProjectCover,
@@ -479,13 +477,6 @@ export const createBoard = asyncHandler(async (req, res, next) => {
       sendProjectEmailsInBackground(board, members);
     }
 
-    // Invalidate caches in background
-    invalidateCacheInBackground([
-      `/api/boards`,
-      `/api/boards/department/${board.department}`,
-      "/api/departments",
-      "/api/analytics/dashboard"
-    ]);
   } else {
     // Synchronous fallback for non-optimistic requests
     await Activity.create({
@@ -500,10 +491,6 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     // Dispatch chat webhook (fire-and-forget)
     chatHooks.onProjectCreated(board, req.user).catch(console.error);
 
-    invalidateCache(`/api/boards`);
-    invalidateCache(`/api/boards/department/${board.department}`);
-    invalidateCache("/api/departments");
-    invalidateCache("/api/analytics/dashboard");
   }
 });
 
@@ -640,13 +627,6 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     projectName: board.name
   });
 
-  // Invalidate relevant caches
-  invalidateCache(`/api/boards`);
-  invalidateCache(`/api/boards/${req.params.id}`);
-  invalidateCache("/api/departments");
-  invalidateCache(`/api/departments/${board.department}/members-with-assignments`);
-  invalidateCache("/api/analytics/dashboard");
-
   res.status(200).json({
     success: true,
     data: board,
@@ -735,11 +715,6 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
 
   await board.deleteOne();
 
-  // Invalidate relevant caches
-  invalidateCache(`/api/boards`);
-  invalidateCache(`/api/boards/department/${board.department}`);
-  invalidateCache("/api/departments");
-
   res.status(200).json({
     success: true,
     message: "Board deleted successfully",
@@ -823,12 +798,6 @@ export const uploadCoverImage = asyncHandler(async (req, res, next) => {
 
     await board.save({ validateModifiedOnly: true });
 
-    // Invalidate caches
-    invalidateCache(`/api/boards`);
-    invalidateCache(`/api/boards/${req.params.id}`);
-    invalidateCache(`/api/boards/department/${board.department}`);
-    invalidateCache("/api/departments");
-
     res.status(200).json({
       success: true,
       data: {
@@ -883,12 +852,6 @@ export const removeCoverImage = asyncHandler(async (req, res, next) => {
     board.coverImage = undefined;
 
     await board.save({ validateModifiedOnly: true });
-
-    // Invalidate caches
-    invalidateCache(`/api/boards`);
-    invalidateCache(`/api/boards/${req.params.id}`);
-    invalidateCache(`/api/boards/department/${board.department}`);
-    invalidateCache("/api/departments");
 
     res.status(200).json({
       success: true,
@@ -958,12 +921,6 @@ export const restoreCoverImage = asyncHandler(async (req, res, next) => {
   };
 
   await board.save({ validateModifiedOnly: true });
-
-  // Invalidate caches
-  invalidateCache(`/api/boards`);
-  invalidateCache(`/api/boards/${id}`);
-  invalidateCache(`/api/boards/department/${board.department}`);
-  invalidateCache("/api/departments");
 
   res.status(200).json({
     success: true,
@@ -1051,13 +1008,6 @@ export const bulkDeleteBoards = asyncHandler(async (req, res, next) => {
     )
   );
 
-  // Invalidate caches
-  invalidateCache('/api/boards');
-  invalidateCache('/api/departments');
-  for (const deptId of Object.keys(deptMap)) {
-    invalidateCache(`/api/boards/department/${deptId}`);
-  }
-
   // Send notifications for deleted projects
   try {
     await Promise.all(
@@ -1134,13 +1084,6 @@ export const undoBulkDeleteBoards = asyncHandler(async (req, res, next) => {
       })
     )
   );
-
-  // Invalidate caches
-  invalidateCache('/api/boards');
-  invalidateCache('/api/departments');
-  for (const deptId of Object.keys(deptMap)) {
-    invalidateCache(`/api/boards/department/${deptId}`);
-  }
 
   res.status(200).json({
     success: true,

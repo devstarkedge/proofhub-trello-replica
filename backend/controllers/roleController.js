@@ -2,7 +2,6 @@ import Role from '../models/Role.js';
 import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { invalidateCache } from '../middleware/cache.js';
 
 /**
  * Permission definitions for UI rendering
@@ -117,9 +116,6 @@ export const createRole = asyncHandler(async (req, res, next) => {
     createdBy: req.user.id
   });
   
-  // Invalidate cache
-  invalidateCache('/api/roles');
-  
   res.status(201).json({
     success: true,
     data: role
@@ -160,10 +156,6 @@ export const updateRole = asyncHandler(async (req, res, next) => {
   
   await role.save();
   
-  // Invalidate cache
-  invalidateCache('/api/roles');
-  invalidateCache(`/api/roles/${req.params.id}`);
-  
   res.status(200).json({
     success: true,
     data: role
@@ -192,9 +184,6 @@ export const deleteRole = asyncHandler(async (req, res, next) => {
   }
   
   await role.deleteOne();
-  
-  // Invalidate cache
-  invalidateCache('/api/roles');
   
   res.status(200).json({
     success: true,
@@ -291,9 +280,6 @@ export const initializeRoles = asyncHandler(async (req, res, next) => {
       results.push({ role: roleData.name, status: 'already exists' });
     }
   }
-  
-  // Invalidate cache
-  invalidateCache('/api/roles');
   
   res.status(200).json({
     success: true,

@@ -1,12 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Role from '../models/Role.js';
-import { getCache, setCache } from '../utils/redisCache.js';
-
-// TTL for user session cache (5 minutes)
-const USER_SESSION_TTL = 300;
-// TTL for role permissions cache (10 minutes)
-const ROLE_CACHE_TTL = 600;
 
 export const protect = async (req, res, next) => {
   try {
@@ -29,30 +23,17 @@ export const protect = async (req, res, next) => {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // Try to get user from Redis cache first
-      const cacheKey = `user-session:${decoded.id}`;
-      const cachedUser = await getCache(cacheKey);
+      // Query DB directly
+      const user = await User.findById(decoded.id).select('-password').populate('roleId');
 
-      if (cachedUser) {
-        // Cache hit — skip DB query
-        req.user = cachedUser;
-      } else {
-        // Cache miss — query DB
-        const user = await User.findById(decoded.id).select('-password').populate('roleId');
-
-        if (!user) {
-          return res.status(401).json({
-            success: false,
-            message: 'User not found'
-          });
-        }
-
-        // Convert to plain object for caching
-        req.user = user.toObject ? user.toObject() : user;
-
-        // Cache user session (fire-and-forget)
-        setCache(cacheKey, req.user, USER_SESSION_TTL).catch(() => {});
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: 'User not found'
+        });
       }
+
+      req.user = user.toObject ? user.toObject() : user;
 
       if (!req.user.isActive) {
         return res.status(401).json({
@@ -109,15 +90,7 @@ export const authorize = (...roles) => {
         let userRoleDoc;
         const roleId = req.user.roleId?._id || req.user.roleId;
         if (roleId) {
-          // Try Redis cache for role permissions
-          const roleCacheKey = `role-permissions:${roleId}`;
-          userRoleDoc = await getCache(roleCacheKey);
-          if (!userRoleDoc) {
-            userRoleDoc = await Role.findById(roleId);
-            if (userRoleDoc) {
-              setCache(roleCacheKey, userRoleDoc.toObject ? userRoleDoc.toObject() : userRoleDoc, ROLE_CACHE_TTL).catch(() => {});
-            }
-          }
+          userRoleDoc = await Role.findById(roleId);
         } else {
           userRoleDoc = await Role.findOne({ slug: normalizedUserRole, isActive: true });
         }
@@ -141,14 +114,7 @@ export const authorize = (...roles) => {
       let userRoleDoc;
       const roleId = req.user.roleId?._id || req.user.roleId;
       if (roleId) {
-        const roleCacheKey = `role-permissions:${roleId}`;
-        userRoleDoc = await getCache(roleCacheKey);
-        if (!userRoleDoc) {
-          userRoleDoc = await Role.findById(roleId);
-          if (userRoleDoc) {
-            setCache(roleCacheKey, userRoleDoc.toObject ? userRoleDoc.toObject() : userRoleDoc, ROLE_CACHE_TTL).catch(() => {});
-          }
-        }
+        userRoleDoc = await Role.findById(roleId);
       } else {
         userRoleDoc = await Role.findOne({ slug: normalizedUserRole, isActive: true });
       }

@@ -19,7 +19,6 @@ import {
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import upload, { uploadCoverImageMiddleware } from '../middleware/upload.js';
-import { cacheMiddleware } from '../middleware/cache.js';
 
 const router = express.Router();
 
@@ -27,12 +26,12 @@ const router = express.Router();
 router.post('/bulk-delete', protect, authorize('admin', 'manager'), bulkDeleteBoards);
 router.post('/undo-bulk-delete', protect, authorize('admin', 'manager'), undoBulkDeleteBoards);
 
-router.get('/', protect, cacheMiddleware('boards', 120), getBoards);
-router.get('/department/:departmentId', protect, cacheMiddleware('boards', 120), getBoardsByDepartment);
-router.get('/workflow/:departmentId/:projectId', protect, cacheMiddleware('workflow', 180), getWorkflowData);
-router.get('/:id/workflow-complete', protect, cacheMiddleware('workflow', 180), getWorkflowComplete); // Optimized single-call endpoint
-router.get('/:id/activity', protect, cacheMiddleware('boards', 60), getProjectActivity);
-router.get('/:id', protect, cacheMiddleware('boards', 120), getBoard);
+router.get('/', protect, getBoards);
+router.get('/department/:departmentId', protect, getBoardsByDepartment);
+router.get('/workflow/:departmentId/:projectId', protect, getWorkflowData);
+router.get('/:id/workflow-complete', protect, getWorkflowComplete); // Optimized single-call endpoint
+router.get('/:id/activity', protect, getProjectActivity);
+router.get('/:id', protect, getBoard);
 
 router.post('/', protect, upload.array('attachments', 10), [
   body('name').trim().notEmpty().withMessage('Board name is required'),

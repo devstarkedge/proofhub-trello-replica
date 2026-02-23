@@ -5,7 +5,6 @@ import Department from "../models/Department.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import notificationService from "../utils/notificationService.js";
-import { invalidateAnnouncementCache } from "../utils/cacheInvalidation.js";
 import { emitNotification, io } from "../server.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
@@ -433,8 +432,6 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     chatHooks.onAnnouncementCreated(announcement, req.user).catch(console.error);
   }
 
-  invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });
-
   res.status(201).json({
     success: true,
     message: announcementData.isScheduled
@@ -511,8 +508,6 @@ export const updateAnnouncement = asyncHandler(async (req, res, next) => {
     console.error('Error notifying subscribers about update:', error);
   }
 
-  invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });
-
   res.status(200).json({
     success: true,
     message: 'Announcement updated successfully',
@@ -575,8 +570,6 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
     console.error('Error notifying subscribers about deletion:', error);
   }
 
-  invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });
-
   res.status(200).json({
     success: true,
     message: 'Announcement deleted successfully'
@@ -614,9 +607,6 @@ export const addComment = asyncHandler(async (req, res, next) => {
 
   await announcement.save();
   await announcement.populate('comments.author', 'name email avatar role');
-
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
 
   // Emit real-time update
   io.emit('announcement-comment-added', {
@@ -660,9 +650,6 @@ export const deleteComment = asyncHandler(async (req, res, next) => {
   announcement.commentsCount = announcement.comments.length;
 
   await announcement.save();
-
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
 
   // Emit real-time update
   io.emit('announcement-comment-deleted', {
@@ -713,9 +700,6 @@ export const addReaction = asyncHandler(async (req, res, next) => {
   await announcement.save();
   await announcement.populate('reactions.users', 'name avatar');
 
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
-
   // Emit real-time update
   io.emit('announcement-reaction-added', {
     announcementId: announcement._id,
@@ -760,9 +744,6 @@ export const removeReaction = asyncHandler(async (req, res, next) => {
   }
 
   await announcement.save();
-
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
 
   // Emit real-time update
   io.emit('announcement-reaction-removed', {
@@ -813,9 +794,6 @@ export const togglePin = asyncHandler(async (req, res, next) => {
 
   await announcement.save();
 
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });
-
   // Emit real-time update
   io.emit('announcement-pin-toggled', {
     announcementId: announcement._id,
@@ -855,9 +833,6 @@ export const toggleArchive = asyncHandler(async (req, res, next) => {
   }
 
   await announcement.save();
-
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id, clearAll: true });
 
   // Emit real-time update
   io.emit('announcement-archived', {
@@ -900,9 +875,6 @@ export const extendExpiry = asyncHandler(async (req, res, next) => {
   announcement.lastFor = { value, unit };
 
   await announcement.save();
-
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
 
   // Emit real-time update
   io.emit('announcement-expiry-extended', {
@@ -1009,9 +981,6 @@ export const uploadAttachments = asyncHandler(async (req, res, next) => {
     await announcement.populate('createdBy', 'name email avatar role');
   }
 
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
-
   // Emit real-time update
   io.emit('announcement-attachments-added', {
     announcementId: announcement._id,
@@ -1083,9 +1052,6 @@ export const deleteAttachment = asyncHandler(async (req, res, next) => {
 
   await announcement.save();
 
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
-
   // Emit real-time update
   io.emit('announcement-attachment-deleted', {
     announcementId: announcement._id,
@@ -1133,9 +1099,6 @@ export const restoreAttachment = asyncHandler(async (req, res, next) => {
 
   await announcement.save();
 
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
-
   // Emit real-time update
   io.emit('announcement-attachment-restored', {
     announcementId: announcement._id,
@@ -1181,9 +1144,6 @@ export const updateAttachmentTag = asyncHandler(async (req, res, next) => {
 
   attachment.tag = tag;
   await announcement.save();
-
-  // Invalidate cache
-  invalidateAnnouncementCache({ announcementId: announcement._id });
 
   res.status(200).json({
     success: true,

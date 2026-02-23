@@ -97,20 +97,6 @@ export const logProjectActivityInBackground = (activityData) => {
   });
 };
 
-// Background task for cache invalidation (Redis-based)
-export const invalidateCacheInBackground = (cacheKeys) => {
-  runBackground(async () => {
-    try {
-      const { clearCacheByPattern } = await import('./redisCache.js');
-      for (const key of cacheKeys) {
-        await clearCacheByPattern(`cache:*${key}*`);
-      }
-    } catch (err) {
-      console.error('invalidateCacheInBackground error:', err);
-    }
-  });
-};
-
 export const notifyAdminsUserRegisteredInBackground = (user, adminIds) => {
   runBackground(async () => {
     try {
@@ -374,6 +360,5 @@ export default {
   startBackgroundJobs,
   notifyProjectCreatedInBackground,
   sendProjectEmailsInBackground,
-  logProjectActivityInBackground,
-  invalidateCacheInBackground
+  logProjectActivityInBackground
 };
