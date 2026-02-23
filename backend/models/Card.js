@@ -177,47 +177,55 @@ const cardSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Indexes
+// ─── Indexes ────────────────────────────────────────────────────────────────
+// Redundant single-field indexes removed — covered by compound prefixes.
+// See: https://www.mongodb.com/docs/manual/core/index-compound/#prefixes
+
+// Core position/list ordering
 cardSchema.index({ list: 1, position: 1 });
-cardSchema.index({ board: 1 });
-cardSchema.index({ assignees: 1 });
-cardSchema.index({ members: 1 });
-cardSchema.index({ status: 1 });
-cardSchema.index({ priority: 1 });
-cardSchema.index({ dueDate: 1 });
-cardSchema.index({ isArchived: 1 });
-cardSchema.index({ createdBy: 1 });
-cardSchema.index({ board: 1, status: 1 });
-cardSchema.index({ board: 1, dueDate: 1 });
-cardSchema.index({ board: 1, priority: 1 });
+
+// Standalone fields only kept where no compound has them as prefix
+cardSchema.index({ status: 1 });            // Calendar/kanban queries filter on status alone
 cardSchema.index({ createdAt: -1 });
 cardSchema.index({ updatedAt: -1 });
 cardSchema.index({ startDate: 1 });
-cardSchema.index({ isArchived: 1, autoDeleteAt: 1 });
 cardSchema.index({ 'estimationTime.user': 1 });
 cardSchema.index({ 'loggedTime.user': 1 });
 
-// Additional optimized indexes for common query patterns
-cardSchema.index({ assignees: 1, status: 1 }); // For user task filtering by status
-cardSchema.index({ assignees: 1, dueDate: 1 }); // For user overdue tasks
-cardSchema.index({ assignees: 1, priority: 1 }); // For user priority filtering
-cardSchema.index({ members: 1, status: 1 }); // For member task filtering
-cardSchema.index({ board: 1, isArchived: 1 }); // For active board cards
-cardSchema.index({ dueDate: 1, status: 1 }); // For overdue task queries
-cardSchema.index({ priority: 1, dueDate: 1 }); // For priority + deadline sorting
-cardSchema.index({ createdBy: 1, createdAt: -1 }); // For user-created tasks timeline
+// Board-leading compounds (covers standalone { board: 1 })
+cardSchema.index({ board: 1, status: 1 });
+cardSchema.index({ board: 1, dueDate: 1 });
+cardSchema.index({ board: 1, priority: 1 });
+cardSchema.index({ board: 1, isArchived: 1 });
+cardSchema.index({ board: 1, list: 1, status: 1 });
+cardSchema.index({ board: 1, list: 1, position: 1 });
+cardSchema.index({ board: 1, assignees: 1 });
+cardSchema.index({ board: 1, members: 1 });
 
-// New compound indexes for optimized queries
-cardSchema.index({ list: 1, isArchived: 1, position: 1 }); // For list cards with position sorting
-cardSchema.index({ board: 1, list: 1, status: 1 }); // For board filtering by list and status
-cardSchema.index({ board: 1, list: 1, position: 1 }); // For board cards sorted by position
-cardSchema.index({ 'assignees': 1, 'dueDate': 1, 'status': 1 }); // For user overdue dashboard
-cardSchema.index({ board: 1, assignees: 1 }); // For project member tasks
-cardSchema.index({ board: 1, members: 1 }); // For project member involvement
+// Assignee-leading compounds (covers standalone { assignees: 1 })
+cardSchema.index({ assignees: 1, status: 1 });
+cardSchema.index({ assignees: 1, dueDate: 1 });
+cardSchema.index({ assignees: 1, priority: 1 });
+cardSchema.index({ assignees: 1, dueDate: 1, status: 1 });
+
+// Member compound (covers standalone { members: 1 })
+cardSchema.index({ members: 1, status: 1 });
+
+// Date/priority compounds (covers standalone { dueDate: 1 }, { priority: 1 })
+cardSchema.index({ dueDate: 1, status: 1 });
+cardSchema.index({ priority: 1, dueDate: 1 });
+
+// Creator + time compound (covers standalone { createdBy: 1 })
+cardSchema.index({ createdBy: 1, createdAt: -1 });
+
+// Archive compound (covers standalone { isArchived: 1 })
+cardSchema.index({ isArchived: 1, autoDeleteAt: 1 });
+cardSchema.index({ list: 1, isArchived: 1, position: 1 });
+
 // Text index for search
 cardSchema.index({ title: 'text', description: 'text', labels: 'text' }, {
   weights: { title: 10, labels: 5, description: 1 },
-  name: 'card_text_search'
+  name: 'card_text_search',
 });
 
 // Virtual for comments

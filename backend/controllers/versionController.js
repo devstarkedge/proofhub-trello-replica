@@ -3,7 +3,7 @@ import VersionHistory from '../models/VersionHistory.js';
 import Card from '../models/Card.js';
 import Comment from '../models/Comment.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { emitToBoard } from '../server.js';
+import { emitToBoard } from '../realtime/index.js';
 
 // @desc    Get version history for an entity
 // @route   GET /api/versions/:entityType/:entityId

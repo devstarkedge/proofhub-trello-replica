@@ -9,7 +9,7 @@ import User from '../models/User.js';
 import Role from '../models/Role.js';
 import Team from '../models/Team.js';
 import asyncHandler from '../middleware/asyncHandler.js';
-import { emitNotification, emitToBoard } from '../server.js';
+import { emitNotification, emitToBoard } from '../realtime/index.js';
 import notificationService from '../utils/notificationService.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { slackHooks } from '../utils/slackHooks.js';

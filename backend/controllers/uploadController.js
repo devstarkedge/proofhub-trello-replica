@@ -1,7 +1,7 @@
 import asyncHandler from '../middleware/asyncHandler.js';
 import upload, { getFileUrl } from '../middleware/upload.js';
 import Card from '../models/Card.js';
-import { emitToBoard } from '../server.js';
+import { emitToBoard } from '../realtime/index.js';
 
 // POST /api/uploads/image
 export const uploadImage = [

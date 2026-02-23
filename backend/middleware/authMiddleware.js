@@ -1,6 +1,36 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Role from '../models/Role.js';
+import { LRUCache } from 'lru-cache';
+import config from '../config/index.js';
+
+// ─── Auth Cache ─────────────────────────────────────────────────────────────
+// In-memory LRU cache for authenticated user lookups.
+// Eliminates 2+ DB queries per request for repeat calls within TTL window.
+// Cache is per-process — safe for stateless horizontal scaling (each instance
+// has its own cache; worst case is a cache miss on a new instance).
+const authCache = new LRUCache({
+  max: config.authCache.maxSize,
+  ttl: config.authCache.ttlMs,
+});
+
+/**
+ * Invalidate a user's auth cache entry.
+ * Call this when user data changes (profile update, role change, deactivation).
+ */
+export const invalidateAuthCache = (userId) => {
+  if (userId) {
+    authCache.delete(userId.toString());
+  }
+};
+
+/**
+ * Clear the entire auth cache.
+ * Call this for bulk operations (role deletions, mass deactivations).
+ */
+export const clearAuthCache = () => {
+  authCache.clear();
+};
 
 export const protect = async (req, res, next) => {
   try {
@@ -20,28 +50,52 @@ export const protect = async (req, res, next) => {
     }
 
     try {
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      // Verify token (CPU-only, no DB call)
+      const decoded = jwt.verify(token, config.jwt.secret);
+      const userId = decoded.id;
 
-      // Query DB directly
-      const user = await User.findById(decoded.id).select('-password').populate('roleId');
+      // Check LRU cache first
+      let userObj = authCache.get(userId);
 
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: 'User not found'
-        });
+      if (!userObj) {
+        // Cache miss — query DB with lean() + select() for minimal overhead
+        const user = await User.findById(userId)
+          .select('-password')
+          .populate('roleId')
+          .lean();
+
+        if (!user) {
+          return res.status(401).json({
+            success: false,
+            message: 'User not found'
+          });
+        }
+
+        userObj = user;
+        // Store in cache
+        authCache.set(userId, userObj);
       }
 
-      req.user = user.toObject ? user.toObject() : user;
+      // Normalize user shape for controller compatibility.
+      // Many controllers access req.user.id (not _id), while lean() returns _id.
+      if (!userObj.id && userObj._id) {
+        userObj = {
+          ...userObj,
+          id: userObj._id.toString(),
+        };
+        authCache.set(userId, userObj);
+      }
 
-      if (!req.user.isActive) {
+      if (!userObj.isActive) {
+        // Evict deactivated users from cache
+        authCache.delete(userId);
         return res.status(401).json({
           success: false,
           message: 'User account is deactivated'
         });
       }
 
+      req.user = userObj;
       next();
     } catch (error) {
       return res.status(401).json({

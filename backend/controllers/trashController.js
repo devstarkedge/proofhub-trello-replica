@@ -6,7 +6,7 @@ import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { emitToBoard } from '../server.js';
+import { emitToBoard } from '../realtime/index.js';
 import { deleteFromCloudinary, deleteMultipleFromCloudinary } from '../utils/cloudinary.js';
 
 const ensureRestorePermission = async (user, board) => {

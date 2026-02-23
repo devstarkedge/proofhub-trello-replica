@@ -5,7 +5,7 @@ import Department from "../models/Department.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import notificationService from "../utils/notificationService.js";
-import { emitNotification, io } from "../server.js";
+import { emitNotification, getIO } from "../realtime/index.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
 import {
@@ -401,19 +401,19 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     
     if (subscriberType === 'all') {
       // Broadcast to all connected users
-      io.emit('announcement-created', announcementPayload);
+      getIO().emit('announcement-created', announcementPayload);
     } else if (subscriberType === 'departments') {
       // Emit to each department room
       (rawSubscribers.departments || []).forEach(deptId => {
-        io.to(`department-${deptId}`).emit('announcement-created', announcementPayload);
+        getIO().to(`department-${deptId}`).emit('announcement-created', announcementPayload);
       });
     } else if (subscriberType === 'managers') {
       // Emit to managers room
-      io.to('managers').emit('announcement-created', announcementPayload);
+      getIO().to('managers').emit('announcement-created', announcementPayload);
     } else {
       // For 'users' and 'custom' types, emit to individual user rooms
       subscriberIds.forEach(userId => {
-        io.to(`user-${userId}`).emit('announcement-created', announcementPayload);
+        getIO().to(`user-${userId}`).emit('announcement-created', announcementPayload);
       });
     }
 
@@ -498,7 +498,7 @@ export const updateAnnouncement = asyncHandler(async (req, res, next) => {
 
     if (subscriberIds && Array.isArray(subscriberIds)) {
       subscriberIds.forEach(userId => {
-        io.to(`user-${userId}`).emit('announcement-updated', {
+        getIO().to(`user-${userId}`).emit('announcement-updated', {
           announcementId: announcement._id,
           announcement: announcement.toJSON()
         });
@@ -561,7 +561,7 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
 
     if (subscriberIds && Array.isArray(subscriberIds)) {
       subscriberIds.forEach(userId => {
-        io.to(`user-${userId}`).emit('announcement-deleted', {
+        getIO().to(`user-${userId}`).emit('announcement-deleted', {
           announcementId: announcement._id
         });
       });
@@ -609,7 +609,7 @@ export const addComment = asyncHandler(async (req, res, next) => {
   await announcement.populate('comments.author', 'name email avatar role');
 
   // Emit real-time update
-  io.emit('announcement-comment-added', {
+  getIO().emit('announcement-comment-added', {
     announcementId: announcement._id,
     comment: announcement.comments[announcement.comments.length - 1]
   });
@@ -652,7 +652,7 @@ export const deleteComment = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  io.emit('announcement-comment-deleted', {
+  getIO().emit('announcement-comment-deleted', {
     announcementId: announcement._id,
     commentId
   });
@@ -701,7 +701,7 @@ export const addReaction = asyncHandler(async (req, res, next) => {
   await announcement.populate('reactions.users', 'name avatar');
 
   // Emit real-time update
-  io.emit('announcement-reaction-added', {
+  getIO().emit('announcement-reaction-added', {
     announcementId: announcement._id,
     reaction
   });
@@ -746,7 +746,7 @@ export const removeReaction = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  io.emit('announcement-reaction-removed', {
+  getIO().emit('announcement-reaction-removed', {
     announcementId: announcement._id,
     emoji
   });
@@ -795,7 +795,7 @@ export const togglePin = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  io.emit('announcement-pin-toggled', {
+  getIO().emit('announcement-pin-toggled', {
     announcementId: announcement._id,
     isPinned: announcement.isPinned
   });
@@ -835,7 +835,7 @@ export const toggleArchive = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  io.emit('announcement-archived', {
+  getIO().emit('announcement-archived', {
     announcementId: announcement._id,
     isArchived: announcement.isArchived
   });
@@ -877,7 +877,7 @@ export const extendExpiry = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  io.emit('announcement-expiry-extended', {
+  getIO().emit('announcement-expiry-extended', {
     announcementId: announcement._id,
     newExpiresAt: announcement.expiresAt
   });
@@ -982,7 +982,7 @@ export const uploadAttachments = asyncHandler(async (req, res, next) => {
   }
 
   // Emit real-time update
-  io.emit('announcement-attachments-added', {
+  getIO().emit('announcement-attachments-added', {
     announcementId: announcement._id,
     newAttachments: uploadResults.successful
   });
@@ -1053,7 +1053,7 @@ export const deleteAttachment = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  io.emit('announcement-attachment-deleted', {
+  getIO().emit('announcement-attachment-deleted', {
     announcementId: announcement._id,
     attachmentId,
     permanent: permanent === 'true'
@@ -1100,7 +1100,7 @@ export const restoreAttachment = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  io.emit('announcement-attachment-restored', {
+  getIO().emit('announcement-attachment-restored', {
     announcementId: announcement._id,
     attachmentId
   });

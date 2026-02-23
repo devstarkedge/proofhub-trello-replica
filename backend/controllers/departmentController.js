@@ -5,7 +5,7 @@ import Board from "../models/Board.js";
 import Card from "../models/Card.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUsersUnassigned } from "../utils/socketEmitter.js";
+import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUsersUnassigned } from "../realtime/index.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
 

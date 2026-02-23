@@ -16,7 +16,7 @@ import Comment from '../../models/Comment.js';
 import User from '../../models/User.js';
 import Department from '../../models/Department.js';
 import List from '../../models/List.js';
-import { emitToBoard } from '../../server.js';
+import { emitToBoard } from '../../realtime/index.js';
 
 const blockBuilder = new SlackBlockKitBuilder(process.env.FRONTEND_URL);
 

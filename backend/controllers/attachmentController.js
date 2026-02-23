@@ -6,7 +6,7 @@ import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
 import Board from '../models/Board.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { emitToBoard } from '../server.js';
+import { emitToBoard } from '../realtime/index.js';
 import {
   uploadToCloudinary,
   deleteFromCloudinary,

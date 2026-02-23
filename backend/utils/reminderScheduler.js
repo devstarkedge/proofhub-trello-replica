@@ -3,7 +3,7 @@ import Board from '../models/Board.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import { sendEmail } from './email.js';
-import { emitNotification } from '../server.js';
+import { emitNotification } from '../realtime/index.js';
 import { runBackground } from './backgroundTasks.js';
 import { slackHooks } from './slackHooks.js';
 

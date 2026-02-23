@@ -14,7 +14,7 @@ import Comment from "../models/Comment.js";
 import User from "../models/User.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { emitNotification, emitToAll } from "../server.js";
+import { emitNotification, emitToAll } from "../realtime/index.js";
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
@@ -297,7 +297,8 @@ export const getBoard = asyncHandler(async (req, res, next) => {
     .populate("owner", "name email avatar")
     .populate("team", "name")
     .populate("department", "name")
-    .populate("members", "name email avatar");
+    .populate("members", "name email avatar")
+    .lean();
 
   if (!board || board.isDeleted) {
     return next(new ErrorResponse("Board not found", 404));
@@ -322,15 +323,14 @@ export const getBoard = asyncHandler(async (req, res, next) => {
   const completedCards = cards.filter(card => card.status === 'done').length;
   const progress = totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0;
 
-  // Convert to plain object and add progress
-  const boardData = board.toObject();
-  boardData.progress = progress;
-  boardData.totalCards = totalCards;
-  boardData.completedCards = completedCards;
+  // Add progress (board is already a plain object due to .lean())
+  board.progress = progress;
+  board.totalCards = totalCards;
+  board.completedCards = completedCards;
 
   res.status(200).json({
     success: true,
-    data: boardData,
+    data: board,
   });
 });
 
@@ -448,7 +448,8 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     .populate("owner", "name email avatar")
     .populate("team", "name")
     .populate("department", "name")
-    .populate("members", "name email avatar");
+    .populate("members", "name email avatar")
+    .lean();
 
   // Send response immediately for fast UI update
   res.status(201).json({
@@ -517,7 +518,8 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     runValidators: true,
   })
     .populate("owner", "name email avatar")
-    .populate("members", "name email avatar");
+    .populate("members", "name email avatar")
+    .lean();
 
   // Activity + notifications
   const changes = [];
@@ -674,7 +676,7 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   chatHooks.onProjectDeleted(board, req.user).catch(console.error);
 
   // Get all cards for this board (needed for cascade delete of card-related data)
-  const cards = await Card.find({ board: board._id });
+  const cards = await Card.find({ board: board._id }).select('_id').lean();
   const cardIds = cards.map(c => c._id);
 
   // Delete all reminders for this project

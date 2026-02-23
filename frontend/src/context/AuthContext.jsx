@@ -11,13 +11,30 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const loginUser = (userData, userToken) => {
-    // Normalize user ID to ensure both id and _id exist
+  const normalizeUser = useCallback((userData) => {
+    if (!userData || typeof userData !== "object") {
+      return null;
+    }
+
     const normalizedUser = {
       ...userData,
       _id: userData._id || userData.id,
-      id: userData.id || userData._id
+      id: userData.id || userData._id,
     };
+
+    if (!normalizedUser._id) {
+      return null;
+    }
+
+    return normalizedUser;
+  }, []);
+
+  const loginUser = (userData, userToken) => {
+    const normalizedUser = normalizeUser(userData);
+
+    if (!normalizedUser || !userToken) {
+      throw new Error("Invalid login response: missing user or token");
+    }
 
     // Only store token in localStorage, NOT user data (security improvement)
     localStorage.setItem("token", userToken);
@@ -46,34 +63,43 @@ export const AuthProvider = ({ children }) => {
   const restoreSession = useCallback(async () => {
     const savedToken = localStorage.getItem("token");
 
-    if (savedToken) {
-      try {
-        // Fetch fresh user data from API using the stored token
-        const response = await api.get(`/api/auth/verify?_t=${Date.now()}`);
-        const userData = response.data.data;
-
-        // Re-hydrate state from verified data (user data in memory only)
-        setToken(savedToken);
-        setUser(userData);
-        setIsAuthenticated(true);
-
-        // Connect socket after session restore
-        socketService.connect(userData._id, savedToken);
-        
-        // Load user permissions after session restore
-        try {
-          await useRoleStore.getState().loadMyPermissions();
-          await useRoleStore.getState().loadRoles();
-        } catch (permErr) {
-          console.error("Error loading permissions:", permErr);
-        }
-      } catch (error) {
-        console.error("Session restore failed:", error);
-        logoutUser();
-      }
+    if (!savedToken) {
+      setLoading(false);
+      return;
     }
+
+    try {
+      // Fetch fresh user data from API using the stored token
+      const response = await api.get(`/api/auth/verify?_t=${Date.now()}`);
+      const rawUser = response?.data?.data ?? response?.data?.user;
+      const normalizedUser = normalizeUser(rawUser);
+
+      if (!normalizedUser) {
+        throw new Error("Invalid session payload: user not found");
+      }
+
+      // Re-hydrate state from verified data (user data in memory only)
+      setToken(savedToken);
+      setUser(normalizedUser);
+      setIsAuthenticated(true);
+
+      // Connect socket after session restore
+      socketService.connect(normalizedUser._id, savedToken);
+
+      // Load user permissions after session restore
+      try {
+        await useRoleStore.getState().loadMyPermissions();
+        await useRoleStore.getState().loadRoles();
+      } catch (permErr) {
+        console.error("Error loading permissions:", permErr);
+      }
+    } catch (error) {
+      console.error("Session restore failed:", error);
+      logoutUser();
+    }
+
     setLoading(false);
-  }, [logoutUser]);
+  }, [logoutUser, normalizeUser]);
 
   useEffect(() => {
     restoreSession();

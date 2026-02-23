@@ -15,12 +15,12 @@ import Attachment from "../models/Attachment.js";
 import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { emitToBoard, emitNotification, emitToDepartment } from "../server.js";
+import { emitToBoard, emitNotification, emitToDepartment } from "../realtime/index.js";
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
-import { emitFinanceDataRefresh } from "../utils/socketEmitter.js";
+import { emitFinanceDataRefresh } from "../realtime/index.js";
 
 // In-memory store for undo tokens (move operations) — entries auto-expire after 10 seconds
 const undoTokenStore = new Map();
@@ -824,7 +824,8 @@ export const createCard = asyncHandler(async (req, res, next) => {
   const populatedCard = await Card.findById(card._id)
     .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
-    .populate("createdBy", "name email avatar");
+    .populate("createdBy", "name email avatar")
+    .lean();
 
   res.status(201).json({
     success: true,
@@ -919,7 +920,8 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     .populate("coverImage", "url secureUrl thumbnailUrl fileName fileType")
     .populate("estimationTime.user", "name email avatar")
     .populate("loggedTime.user", "name email avatar")
-    .populate("billedTime.user", "name email avatar");
+    .populate("billedTime.user", "name email avatar")
+    .lean();
 
   // Log specific activity types based on what changed - compare to OLD values
   if (req.body.title && req.body.title !== oldTitle) {
@@ -1472,7 +1474,7 @@ export const moveCard = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/cards/:id
 // @access  Private
 export const deleteCard = asyncHandler(async (req, res, next) => {
-  const card = await Card.findById(req.params.id);
+  const card = await Card.findById(req.params.id).select('board title assignees members list').lean();
 
   if (!card) {
     return next(new ErrorResponse("Card not found", 404));
@@ -1506,7 +1508,7 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
     }
   });
 
-  await card.deleteOne();
+  await Card.findByIdAndDelete(card._id);
 
   res.status(200).json({
     success: true,
@@ -1522,7 +1524,7 @@ export const getCardActivity = asyncHandler(async (req, res, next) => {
   const { limit = 100, page = 1 } = req.query;
 
   // Verify card exists and user has access
-  const card = await Card.findById(id);
+  const card = await Card.findById(id).select('_id board').lean();
   if (!card) {
     return next(new ErrorResponse("Card not found", 404));
   }
@@ -1532,7 +1534,8 @@ export const getCardActivity = asyncHandler(async (req, res, next) => {
     .populate("user", "name email avatar")
     .sort({ createdAt: -1 })
     .limit(parseInt(limit))
-    .skip((parseInt(page) - 1) * parseInt(limit));
+    .skip((parseInt(page) - 1) * parseInt(limit))
+    .lean();
 
   const total = await Activity.countDocuments({ card: id, contextType: 'task' });
 
@@ -1622,7 +1625,7 @@ export const restoreCard = asyncHandler(async (req, res, next) => {
   const maxPositionCard = await Card.findOne({ 
     list: card.list, 
     isArchived: false 
-  }).sort({ position: -1 });
+  }).sort({ position: -1 }).select('position').lean();
   
   card.position = (maxPositionCard?.position ?? -1) + 1;
   await card.save();

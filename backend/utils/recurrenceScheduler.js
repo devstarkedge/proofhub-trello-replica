@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import RecurringTask from '../models/RecurringTask.js';
 import Subtask from '../models/Subtask.js';
 import Card from '../models/Card.js';
-import { emitToBoard } from '../server.js';
+import { emitToBoard } from '../realtime/index.js';
 import { refreshCardHierarchyStats } from './hierarchyStats.js';
 
 // Generate subtask from recurring task (shared logic)

@@ -204,25 +204,30 @@ boardSchema.pre('save', function(next) {
   next();
 });
 
-// Indexes
-boardSchema.index({ team: 1 });
-boardSchema.index({ department: 1 });
-boardSchema.index({ owner: 1 });
-boardSchema.index({ members: 1 });
-boardSchema.index({ isArchived: 1 });
-boardSchema.index({ createdAt: -1 });
+// ─── Indexes ────────────────────────────────────────────────────────────────
+// Redundant single-field indexes removed where compound prefix covers them.
+
+boardSchema.index({ team: 1 });              // Team queries (no compound with team as prefix)
+boardSchema.index({ isArchived: 1 });         // Stand-alone archive filter across all depts
+boardSchema.index({ createdAt: -1 });         // Global timeline sort
+boardSchema.index({ status: 1 });             // Global status filter
+boardSchema.index({ priority: 1 });           // Global priority filter
+boardSchema.index({ dueDate: 1 });            // Global deadline queries
+
+// Department-leading compounds (covers standalone { department: 1 })
 boardSchema.index({ department: 1, isArchived: 1 });
 boardSchema.index({ department: 1, team: 1 });
 boardSchema.index({ department: 1, createdAt: -1 });
+boardSchema.index({ department: 1, status: 1 });
+boardSchema.index({ department: 1, priority: 1 });
 
-// Additional optimized indexes for common query patterns
-boardSchema.index({ status: 1 }); // For status-based filtering
-boardSchema.index({ priority: 1 }); // For priority-based filtering
-boardSchema.index({ dueDate: 1 }); // For deadline-based queries
-boardSchema.index({ department: 1, status: 1 }); // For department status filtering
-boardSchema.index({ department: 1, priority: 1 }); // For department priority filtering
-boardSchema.index({ owner: 1, createdAt: -1 }); // For user-owned boards timeline
-boardSchema.index({ members: 1, updatedAt: -1 }); // For member boards with recent activity
-boardSchema.index({ isDeleted: 1, deletedAt: 1 }); // For soft-delete cleanup queries
+// Owner compound (covers standalone { owner: 1 })
+boardSchema.index({ owner: 1, createdAt: -1 });
+
+// Members compound (covers standalone { members: 1 })
+boardSchema.index({ members: 1, updatedAt: -1 });
+
+// Soft-delete cleanup
+boardSchema.index({ isDeleted: 1, deletedAt: 1 });
 
 export default mongoose.model('Board', boardSchema);

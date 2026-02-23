@@ -6,7 +6,7 @@ import {
   emitFinancePageStatusChanged,
   emitFinancePageUpdated,
   emitFinancePageDeleted 
-} from '../utils/socketEmitter.js';
+} from '../realtime/index.js';
 
 /**
  * Finance Pages Controller

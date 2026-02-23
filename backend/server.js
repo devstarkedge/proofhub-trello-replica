@@ -2,9 +2,23 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import http from 'http';
-import { Server } from 'socket.io';
+import compression from 'compression';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import config from './config/index.js';
+import { socketManager } from './realtime/index.js';
+// Re-export emitters for any remaining legacy imports
+export {
+  emitNotification,
+  emitToUser,
+  emitToTeam,
+  emitToBoard,
+  emitToAll,
+  emitToUserShortcuts,
+  emitToDepartment,
+  getIO as io, // legacy compat: import { io } from '../server.js' → getIO()
+} from './realtime/index.js';
 
 import authRoutes from './routes/auth.js';
 import boardsRoutes from './routes/boards.js';
@@ -40,54 +54,29 @@ import salesRoutes from './routes/sales.js';
 import salesPermissionsRoutes from './routes/salesPermissions.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
-import path from 'path';
 import { errorHandler } from './middleware/errorHandler.js';
-import { fileURLToPath } from 'url';
-
-dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-// Allowed CORS origins
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'http://172.16.16.20:5173'
-].filter(Boolean);
 
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST']
-  },
-  // Socket.IO optimizations for high concurrency
-  transports: ['websocket', 'polling'], // Prefer WebSocket, fallback to polling
-  pingTimeout: 60000, // 60 seconds ping timeout
-  pingInterval: 25000, // 25 seconds ping interval
-  maxHttpBufferSize: 1e6, // 1MB max buffer size
-  allowEIO3: true, // Allow Engine.IO v3 clients
-  perMessageDeflate: {
-    threshold: 1024, // Compress messages over 1KB
-  }
-});
+// Initialize Socket.IO via the realtime module (all socket logic is in realtime/)
+socketManager.init(server);
 
-const PORT = process.env.PORT || 5000;
-
-// Security headers
+// ─── Security ────────────────────────────────────────────────────────────────
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: false, // Disable CSP for API server
+  contentSecurityPolicy: false,
 }));
 
-// CORS
 app.use(cors({
-  origin: allowedOrigins,
+  origin: config.allowedOrigins,
   credentials: true
 }));
 
-// Request logger
+// ─── Request Logger ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -99,21 +88,20 @@ app.use((req, res, next) => {
   next();
 });
 
-// Capture raw body for Slack signature verification (before JSON parsing)
-// Slack sends different content types: JSON for events, URL-encoded for interactive
+// ─── Body Parsing ────────────────────────────────────────────────────────────
+// Slack signature verification requires raw body (before JSON parsing)
 app.use('/api/slack', express.json({ verify: captureRawBody }));
 app.use('/api/slack', express.urlencoded({ extended: true, verify: captureRawBody }));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: config.http.bodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Compression middleware
-import compression from 'compression';
+// ─── Compression ─────────────────────────────────────────────────────────────
 app.use(compression());
 
 
-// Health check endpoint (before auth middleware)
+// ─── Health Check ────────────────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {
   const healthcheck = {
     status: 'ok',
@@ -121,11 +109,10 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
     services: {
       database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      chatWebhook: process.env.CHAT_ENABLED === 'true' ? 'enabled' : 'disabled',
+      chatWebhook: config.chat.enabled ? 'enabled' : 'disabled',
     }
   };
   try {
-    // Quick DB ping
     await mongoose.connection.db.admin().ping();
     healthcheck.services.database = 'connected';
   } catch {
@@ -171,238 +158,7 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 
-import jwt from 'jsonwebtoken';
-
-io.use((socket, next) => {
-  try {
-    const token = socket.handshake?.auth?.token;
-    if (!token) {
-      return next(new Error('Authentication required'));
-    }
-
-    const decodedUser = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decodedUser?.id || decodedUser?._id;
-    if (!userId) {
-      return next(new Error('Invalid token payload'));
-    }
-
-    socket.data.user = decodedUser;
-    next();
-  } catch (error) {
-    next(new Error('Invalid or expired token'));
-  }
-});
-
-// Socket.IO connection
-io.on('connection', (socket) => {
-  if (process.env.NODE_ENV !== 'production') console.log('New socket connection attempt:', socket.id);
-  if (process.env.NODE_ENV !== 'production') console.log('Handshake auth:', socket.handshake.auth);
-  const decodedUser = socket.data.user || {};
-  const userId = decodedUser.id || decodedUser._id?.toString();
-
-  if (!userId) {
-    socket.disconnect(true);
-    return;
-  }
-
-  // Join user room for personal notifications
-  socket.join(`user-${userId}`);
-
-  // Join admin room if user is admin
-  if (decodedUser.role === 'admin') {
-    socket.join('admin');
-    console.log(`Admin user ${userId} joined admin room`);
-  }
-
-  // Join managers room if user is manager (for finance updates and announcements)
-  if (decodedUser.role === 'manager') {
-    socket.join('managers');
-    console.log(`User ${userId} joined managers room`);
-  }
-
-  // Join department rooms for batched announcement delivery
-  if (decodedUser.department) {
-    const departments = Array.isArray(decodedUser.department) 
-      ? decodedUser.department 
-      : [decodedUser.department];
-    departments.forEach(deptId => {
-      if (deptId) {
-        socket.join(`department-${deptId}`);
-        if (process.env.NODE_ENV !== 'production') {
-          console.log(`User ${userId} joined department room: department-${deptId}`);
-        }
-      }
-    });
-  }
-
-  console.log(`User ${userId} connected`);
-
-  // Handle real-time updates for cards and related entities
-  socket.on('join-card', (cardId) => {
-    socket.join(`card-${cardId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined card room: card-${cardId}`);
-  });
-
-  socket.on('leave-card', (cardId) => {
-    socket.leave(`card-${cardId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left card room: card-${cardId}`);
-  });
-
-  // Handle joining teams and boards
-  socket.on('join-team', (teamId) => {
-    socket.join(`team-${teamId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined team ${teamId}`);
-  });
-
-  socket.on('leave-team', (teamId) => {
-    socket.leave(`team-${teamId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left team ${teamId}`);
-  });
-
-  // Handle real-time events (optional, can be emitted from controllers)
-  socket.on('update-card', ({ cardId, updates, boardId }) => {
-    // Broadcast to board room
-    io.to(`board-${boardId}`).emit('card-updated', { cardId, updates });
-  });
-
-  socket.on('add-comment', ({ cardId, comment, boardId }) => {
-    // Broadcast to board room
-    io.to(`board-${boardId}`).emit('comment-added', { cardId, comment });
-  });
-
-  // Announcement Socket events
-  socket.on('join-announcements', () => {
-    socket.join('announcements');
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined announcements room`);
-  });
-
-  socket.on('leave-announcements', () => {
-    socket.leave('announcements');
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left announcements room`);
-  });
-
-  socket.on('join-announcement', (announcementId) => {
-    socket.join(`announcement-${announcementId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined announcement room: announcement-${announcementId}`);
-  });
-
-  socket.on('leave-announcement', (announcementId) => {
-    socket.leave(`announcement-${announcementId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left announcement room: announcement-${announcementId}`);
-  });
-
-  socket.on('join-board', (boardId) => {
-    socket.join(`board-${boardId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined board ${boardId}`);
-  });
-
-  socket.on('leave-board', (boardId) => {
-    socket.leave(`board-${boardId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left board ${boardId}`);
-  });
-
-  // Finance room events - for real-time finance updates
-  socket.on('join-finance', () => {
-    socket.join('finance');
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined finance room`);
-  });
-
-  socket.on('leave-finance', () => {
-    socket.leave('finance');
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left finance room`);
-  });
-
-  // My Shortcuts room events - for real-time user-specific updates
-  socket.on('join-my-shortcuts', () => {
-    socket.join(`user-shortcuts-${userId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined my-shortcuts room`);
-  });
-
-  socket.on('leave-my-shortcuts', () => {
-    socket.leave(`user-shortcuts-${userId}`);
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left my-shortcuts room`);
-  });
-
-  // Sales room events - for real-time sales updates
-  socket.on('join-sales', () => {
-    socket.join('sales');
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} joined sales room`);
-  });
-
-  socket.on('leave-sales', () => {
-    socket.leave('sales');
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} left sales room`);
-  });
-
-  // Push notification subscription management
-  socket.on('subscribe-push', async (subscription) => {
-    try {
-      const User = (await import('./models/User.js')).default;
-      await User.findByIdAndUpdate(userId, {
-        pushSubscription: subscription
-      });
-      if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} subscribed to push notifications`);
-    } catch (error) {
-      if (process.env.NODE_ENV !== 'production') console.error('Error saving push subscription:', error);
-    }
-  });
-
-  socket.on('unsubscribe-push', async () => {
-    try {
-      const User = (await import('./models/User.js')).default;
-      await User.findByIdAndUpdate(userId, {
-        $unset: { pushSubscription: 1 }
-      });
-      if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} unsubscribed from push notifications`);
-    } catch (error) {
-      if (process.env.NODE_ENV !== 'production') console.error('Error removing push subscription:', error);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    if (process.env.NODE_ENV !== 'production') console.log(`User ${userId} disconnected`);
-  });
-});
-
-// Helper function to emit notification to user
-export const emitNotification = (userId, notification) => {
-  console.log(`[Socket] Emitting notification to user-${userId}:`, notification?.title || notification?.type);
-  io.to(`user-${userId}`).emit('notification', notification);
-};
-
-// Helper function to emit to specific user
-export const emitToUser = (userId, event, data) => {
-  io.to(`user-${userId}`).emit(event, data);
-};
-
-// Helper function to emit to team
-export const emitToTeam = (teamId, event, data) => {
-  io.to(`team-${teamId}`).emit(event, data);
-};
-
-// Helper function to emit to board
-export const emitToBoard = (boardId, event, data) => {
-  io.to(`board-${boardId}`).emit(event, data);
-};
-
-// Helper function to emit to all connected clients
-export const emitToAll = (event, data) => {
-  io.emit(event, data);
-};
-
-// Helper function to emit to user's My Shortcuts room
-export const emitToUserShortcuts = (userId, event, data) => {
-  io.to(`user-shortcuts-${userId}`).emit(event, data);
-};
-
-// Helper function to emit to department room
-export const emitToDepartment = (departmentId, event, data) => {
-  io.to(`department-${departmentId}`).emit(event, data);
-};
-
-// Export io for use in other modules
-export { io };
-
+// ─── Startup ─────────────────────────────────────────────────────────────────
 import seedAdmin from './utils/seed.js';
 import { startBackgroundJobs } from './utils/backgroundTasks.js';
 import { startRecurringTaskScheduler } from './utils/recurrenceScheduler.js';
@@ -411,62 +167,73 @@ import { startArchivedCardCleanup } from './utils/archiveCleanup.js';
 import { startTrashCleanup } from './utils/trashCleanup.js';
 import { startBoardCleanup } from './utils/boardCleanup.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
+import { initQueues, shutdownQueues } from './queues/queueManager.js';
 
-// MongoDB connection with connection pooling
-mongoose.connect(process.env.MONGO_URI, {
-  maxPoolSize: 100, // Maintain up to 10 socket connections
-  serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
-  socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+mongoose.connect(config.db.uri, {
+  maxPoolSize: config.db.maxPoolSize,
+  serverSelectionTimeoutMS: config.db.serverSelectionTimeoutMS,
+  socketTimeoutMS: config.db.socketTimeoutMS,
 })
   .then(async () => {
-    if (process.env.NODE_ENV !== 'production') console.log('Connected to MongoDB with connection pooling');
-    
-    // Seed the admin user
+    if (config.isDev) console.log('Connected to MongoDB with connection pooling');
+
+    // Initialize BullMQ queues (probes Redis, starts workers if available)
+    const queuesActive = await initQueues();
+    if (config.isDev) console.log(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
+
     seedAdmin();
-    // Start background jobs for scheduled announcements and expiry
-    startBackgroundJobs();
-    // Start recurring task scheduler
+    startBackgroundJobs();      // no-op if BullMQ handles scheduled tasks
     startRecurringTaskScheduler();
-    // Start reminder scheduler
     startReminderScheduler();
-    // Start archived card cleanup
     startArchivedCardCleanup();
-    // Start trashed attachments cleanup
     startTrashCleanup();
-    // Start soft-deleted boards permanent cleanup
     startBoardCleanup();
-    // Initialize Slack services (queues, etc.)
+
     initializeSlackServices().then(() => {
       console.log('Slack services initialized');
     }).catch(err => {
       console.error('Slack services initialization error (non-fatal):', err.message);
     });
-    server.listen(PORT, () => {
-      if (process.env.NODE_ENV !== 'production') console.log(`Server running on port ${PORT}`);
+
+    server.listen(config.port, () => {
+      if (config.isDev) console.log(`Server running on port ${config.port}`);
     });
+
+    // HTTP keep-alive tuning for load balancer compatibility
+    server.keepAliveTimeout = config.http.keepAliveTimeout;
+    server.headersTimeout = config.http.headersTimeout;
   })
   .catch((error) => {
     console.error('MongoDB connection error:', error);
   });
 
-// Graceful shutdown handler
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
-  await shutdownSlackServices();
-  process.exit(0);
-});
+// ─── Graceful Shutdown ───────────────────────────────────────────────────────
+const gracefulShutdown = async (signal) => {
+  console.log(`${signal} received. Shutting down gracefully...`);
+  try {
+    await Promise.allSettled([
+      shutdownSlackServices(),
+      shutdownQueues(),
+    ]);
+  } catch (err) {
+    console.error('Error during service shutdown:', err);
+  }
+  server.close(() => {
+    console.log('HTTP server closed');
+    mongoose.connection.close(false).then(() => {
+      console.log('MongoDB connection closed');
+      process.exit(0);
+    });
+  });
+  // Force exit after 10 seconds if graceful shutdown stalls
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+};
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT received. Shutting down gracefully...');
-  await shutdownSlackServices();
-  process.exit(0);
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Error handling middleware
-
+// ─── Error Handler (must be last middleware) ─────────────────────────────────
 app.use(errorHandler);
-
-// app.use((err, req, res, next) => {
-//   console.error(err.stack);
-//   res.status(500).json({ message: 'Something went wrong!' });
-// });

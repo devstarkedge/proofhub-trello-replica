@@ -1,6 +1,6 @@
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
-import { emitNotification } from '../server.js';
+import { emitNotification } from '../realtime/index.js';
 import notificationService from '../utils/notificationService.js';
 
 // Get paginated notifications

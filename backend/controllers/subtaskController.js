@@ -12,13 +12,13 @@ import Department from '../models/Department.js';
 import User from '../models/User.js';
 import Comment from '../models/Comment.js';
 import Attachment from '../models/Attachment.js';
-import { emitToBoard } from '../server.js';
+import { emitToBoard } from '../realtime/index.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { slackHooks } from '../utils/slackHooks.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
-import { emitFinanceDataRefresh } from '../utils/socketEmitter.js';
+import { emitFinanceDataRefresh } from '../realtime/index.js';
 
 const basePopulate = [
   { path: 'assignees', select: 'name email avatar' },

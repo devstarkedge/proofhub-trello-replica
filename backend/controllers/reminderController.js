@@ -2,7 +2,7 @@ import Reminder from '../models/Reminder.js';
 import Board from '../models/Board.js';
 import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
-import { emitNotification } from '../server.js';
+import { emitNotification } from '../realtime/index.js';
 import { sendReminderNotificationInBackground, checkAndTagAwaitingResponse } from '../utils/reminderScheduler.js';
 
 // @desc    Create a new reminder

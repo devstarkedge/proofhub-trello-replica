@@ -5,11 +5,11 @@ import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
-import { emitToBoard } from '../server.js';
+import { emitToBoard } from '../realtime/index.js';
 import { refreshCardHierarchyStats, refreshSubtaskNanoStats } from '../utils/hierarchyStats.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
-import { emitFinanceDataRefresh } from '../utils/socketEmitter.js';
+import { emitFinanceDataRefresh } from '../realtime/index.js';
 
 const populateConfig = [
   { path: 'assignees', select: 'name email avatar' },

@@ -4,7 +4,7 @@ import SalesColumn from '../models/SalesColumn.js';
 import SalesDropdownOption from '../models/SalesDropdownOption.js';
 import SalesPermission from '../models/SalesPermission.js';
 import SalesActivityLog from '../models/SalesActivityLog.js';
-import { io, emitToUser } from '../server.js';
+import { getIO, emitToUser } from '../realtime/index.js';
 import slackNotificationService from '../services/slack/SlackNotificationService.js';
 import notificationService from '../utils/notificationService.js';
 import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards.js';
@@ -344,7 +344,7 @@ export const createSalesRow = async (req, res) => {
     });
 
     // Emit real-time event with flattened row
-    io.to('sales').emit('sales:row:created', { row: flatRow });
+    getIO().to('sales').emit('sales:row:created', { row: flatRow });
 
     res.status(201).json({
       success: true,
@@ -433,9 +433,9 @@ export const updateSalesRow = async (req, res) => {
     }
 
     // Emit real-time events
-    io.to('sales').emit('sales:row:updated', { row: flatRow, changes });
+    getIO().to('sales').emit('sales:row:updated', { row: flatRow, changes });
     if (didUnlock) {
-      io.to('sales').emit('sales:row:unlocked', { rowId: row._id });
+      getIO().to('sales').emit('sales:row:unlocked', { rowId: row._id });
     }
 
     res.json({
@@ -484,7 +484,7 @@ export const deleteSalesRow = async (req, res) => {
     });
 
     // Emit real-time event
-    io.to('sales').emit('sales:row:deleted', { rowId: row._id });
+    getIO().to('sales').emit('sales:row:deleted', { rowId: row._id });
 
     res.json({
       success: true,
@@ -554,7 +554,7 @@ export const bulkUpdateRows = async (req, res) => {
     // Emit real-time event
     // Note: We emit the raw updates here. Frontend store handles optimistic update.
     // Ideally frontend fetching fresh rows on bulk update handles the flattening.
-    io.to('sales').emit('sales:rows:bulk-updated', { rowIds, updates });
+    getIO().to('sales').emit('sales:rows:bulk-updated', { rowIds, updates });
 
     res.json({
       success: true,
@@ -604,7 +604,7 @@ export const bulkDeleteRows = async (req, res) => {
     await Promise.all(logPromises);
 
     // Emit real-time event
-    io.to('sales').emit('sales:rows:bulk-deleted', { rowIds });
+    getIO().to('sales').emit('sales:rows:bulk-deleted', { rowIds });
 
     res.json({
       success: true,
@@ -651,7 +651,7 @@ export const lockRow = async (req, res) => {
     await row.save();
 
     // Emit real-time event
-    io.to('sales').emit('sales:row:locked', {
+    getIO().to('sales').emit('sales:row:locked', {
       rowId: row._id,
       lockedBy: { _id: userId, name: req.user.name }
     });
@@ -697,7 +697,7 @@ export const unlockRow = async (req, res) => {
       row.lockedAt = null;
       await row.save();
 
-      io.to('sales').emit('sales:row:unlocked', { rowId: row._id });
+      getIO().to('sales').emit('sales:row:unlocked', { rowId: row._id });
 
       return res.json({
         success: true,
@@ -706,7 +706,7 @@ export const unlockRow = async (req, res) => {
     }
 
     if (!row.lockedBy) {
-      io.to('sales').emit('sales:row:unlocked', { rowId: row._id });
+      getIO().to('sales').emit('sales:row:unlocked', { rowId: row._id });
       return res.json({
         success: true,
         message: 'Row already unlocked'
@@ -724,7 +724,7 @@ export const unlockRow = async (req, res) => {
     await row.save();
 
     // Emit real-time event
-    io.to('sales').emit('sales:row:unlocked', { rowId: row._id });
+    getIO().to('sales').emit('sales:row:unlocked', { rowId: row._id });
 
     res.json({
       success: true,
@@ -1157,7 +1157,7 @@ export const importRows = async (req, res) => {
 
     // Emit real-time events
     if (results.success.length > 0) {
-      io.to('sales').emit('sales:rows:imported', {
+      getIO().to('sales').emit('sales:rows:imported', {
         count: results.success.length,
         newColumnsCreated: results.newColumnsCreated,
         newDropdownOptionsCreated: results.newDropdownOptionsCreated
@@ -1165,13 +1165,13 @@ export const importRows = async (req, res) => {
     }
     // Also emit column/dropdown updates if new ones were created
     if (results.newColumnsCreated.length > 0) {
-      io.to('sales').emit('sales:column:created', { columns: results.newColumnsCreated });
+      getIO().to('sales').emit('sales:column:created', { columns: results.newColumnsCreated });
     }
     if (results.newDropdownOptionsCreated.length > 0) {
       // Group by columnName for targeted updates
       const affectedColumns = [...new Set(results.newDropdownOptionsCreated.map(o => o.columnName))];
       affectedColumns.forEach(colName => {
-        io.to('sales').emit('sales:dropdown:updated', { columnName: colName });
+        getIO().to('sales').emit('sales:dropdown:updated', { columnName: colName });
       });
     }
 
@@ -1244,7 +1244,7 @@ export const addDropdownOption = async (req, res) => {
     });
 
     // Emit real-time event
-    io.to('sales').emit('sales:dropdown:updated', { columnName, option });
+    getIO().to('sales').emit('sales:dropdown:updated', { columnName, option });
 
     res.status(201).json({
       success: true,
@@ -1285,7 +1285,7 @@ export const updateDropdownOption = async (req, res) => {
     }
 
     // Emit real-time event
-    io.to('sales').emit('sales:dropdown:updated', { columnName, option });
+    getIO().to('sales').emit('sales:dropdown:updated', { columnName, option });
 
     res.json({
       success: true,
@@ -1358,7 +1358,7 @@ export const deleteDropdownOption = async (req, res) => {
     await SalesDropdownOption.deleteOne({ _id: id, columnName });
 
     // Emit real-time event
-    io.to('sales').emit('sales:dropdown:updated', { columnName, deletedId: id });
+    getIO().to('sales').emit('sales:dropdown:updated', { columnName, deletedId: id });
 
     res.json({
       success: true,
@@ -1418,7 +1418,7 @@ export const createCustomColumn = async (req, res) => {
     });
 
     // Emit real-time event
-    io.to('sales').emit('sales:column:created', { column });
+    getIO().to('sales').emit('sales:column:created', { column });
 
     res.status(201).json({
       success: true,
@@ -1460,7 +1460,7 @@ export const deleteCustomColumn = async (req, res) => {
     await SalesColumn.deleteOne({ _id: id });
 
     // Emit real-time event
-    io.to('sales').emit('sales:column:deleted', { columnId: column._id, columnKey: column.key });
+    getIO().to('sales').emit('sales:column:deleted', { columnId: column._id, columnKey: column.key });
 
     res.json({
       success: true,
@@ -1502,7 +1502,7 @@ export const updateCustomColumn = async (req, res) => {
     await column.save();
 
     // Emit real-time event
-    io.to('sales').emit('sales:column:updated', { column });
+    getIO().to('sales').emit('sales:column:updated', { column });
 
     res.json({
       success: true,

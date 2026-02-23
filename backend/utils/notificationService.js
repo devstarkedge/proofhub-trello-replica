@@ -2,7 +2,7 @@ import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import Department from '../models/Department.js';
 import Board from '../models/Board.js';
-import { emitNotification } from '../server.js';
+import { emitNotification } from '../realtime/index.js';
 import { sendEmail } from './email.js';
 import { sendPushNotification } from './pushNotification.js';
 

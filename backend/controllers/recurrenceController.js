@@ -5,7 +5,7 @@ import RecurringTask from '../models/RecurringTask.js';
 import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import Activity from '../models/Activity.js';
-import { emitToBoard } from '../server.js';
+import { emitToBoard } from '../realtime/index.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 
 // Helper: Generate subtask from recurring task
