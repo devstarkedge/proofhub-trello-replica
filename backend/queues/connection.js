@@ -1,16 +1,24 @@
 /**
  * Shared Redis connection for BullMQ queues and workers.
- * 
+ *
  * BullMQ requires `maxRetriesPerRequest: null` on the IORedis connection.
  * Queues share one connection (publishing side).
  * Workers share another connection — BullMQ internally duplicates it
  * for blocking operations, keeping total connections low.
+ *
+ * Connection hygiene:
+ *  - lazyConnect: true         → connection opens on first command, not on import
+ *  - enableOfflineQueue: false → commands fail fast when disconnected
+ *  - retryStrategy capped      → stops after MAX_RETRIES to avoid orphan flood
+ *  - connectTimeout: 10 s      → fast failure detection
  */
 import IORedis from 'ioredis';
 import config from '../config/index.js';
 
 let _sharedConnection = null;
 let _workerConnection = null;
+
+const MAX_RETRIES = 10;
 
 /**
  * Create a new IORedis connection with BullMQ-compatible defaults.
@@ -22,10 +30,18 @@ export function createRedisConnection(overrides = {}) {
     host: config.redis.host,
     port: config.redis.port,
     password: config.redis.password,
-    maxRetriesPerRequest: null, // Required by BullMQ
+    maxRetriesPerRequest: null,   // Required by BullMQ
     enableReadyCheck: false,
+    lazyConnect: true,            // Don't connect until first command
+    enableOfflineQueue: false,    // Fail fast when disconnected
+    connectTimeout: 10000,        // 10 s connect timeout
+    disconnectTimeout: 5000,      // 5 s disconnect timeout
     retryStrategy(times) {
-      const delay = Math.min(times * 200, 5000);
+      if (times > MAX_RETRIES) {
+        console.error(`[Redis] Max retries (${MAX_RETRIES}) reached — giving up reconnection`);
+        return null;              // Stop reconnecting
+      }
+      const delay = Math.min(times * 500, 5000);
       return delay;
     },
     ...overrides,
@@ -70,11 +86,11 @@ export function getWorkerConnection() {
 export async function closeSharedConnection() {
   const closeTasks = [];
   if (_sharedConnection) {
-    closeTasks.push(_sharedConnection.quit());
+    closeTasks.push(_sharedConnection.quit().catch(() => {}));
     _sharedConnection = null;
   }
   if (_workerConnection) {
-    closeTasks.push(_workerConnection.quit());
+    closeTasks.push(_workerConnection.quit().catch(() => {}));
     _workerConnection = null;
   }
   await Promise.allSettled(closeTasks);

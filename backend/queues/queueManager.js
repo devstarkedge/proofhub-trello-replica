@@ -10,7 +10,7 @@
  *   await shutdownQueues();      // call on SIGTERM/SIGINT
  */
 import { announcementQueue, cleanupQueue, allQueues } from './index.js';
-import { closeSharedConnection, getSharedConnection } from './connection.js';
+import { closeSharedConnection, getSharedConnection, createRedisConnection } from './connection.js';
 import { startEmailWorker, getEmailWorker } from '../workers/emailWorker.js';
 import { startNotificationWorker, getNotificationWorker } from '../workers/notificationWorker.js';
 import { startActivityWorker, getActivityWorker } from '../workers/activityWorker.js';
@@ -23,14 +23,18 @@ let _redisAvailable = false;
 
 /**
  * Probe Redis availability without crashing if Redis is down.
- * Uses the shared queue connection to avoid creating throwaway clients.
+ * Uses a dedicated disposable connection so we don't eagerly open
+ * the shared connection when Redis is unreachable.
  * Returns true if Redis is reachable, false otherwise.
  */
 async function probeRedis() {
+  let probe = null;
   try {
-    const conn = getSharedConnection();
+    probe = createRedisConnection({ lazyConnect: true, enableOfflineQueue: false });
+    probe.on('error', () => {}); // Swallow errors during probe
+    await probe.connect();
     await Promise.race([
-      conn.ping(),
+      probe.ping(),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Redis probe timeout')), 3000)
       ),
@@ -38,6 +42,10 @@ async function probeRedis() {
     return true;
   } catch {
     return false;
+  } finally {
+    if (probe) {
+      try { await probe.quit(); } catch { probe.disconnect(); }
+    }
   }
 }
 

@@ -1,9 +1,11 @@
-import React, { useEffect, useCallback, lazy, Suspense, memo } from "react";
+import React, { useEffect, useCallback, lazy, Suspense, memo, useContext } from "react";
 import { Paperclip, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import useAttachmentStore, { getEntityKey } from "../../store/attachmentStore";
 import DeletePopup from "../ui/DeletePopup";
 import { toast } from "react-toastify";
+import usePermissions from "../../hooks/usePermissions";
+import AuthContext from "../../context/AuthContext";
 
 // Lazy load heavy components
 const AttachmentUploader = lazy(() => import("../AttachmentUploader"));
@@ -26,6 +28,10 @@ const AttachmentsSection = memo(({
   readOnly = false,
   currentCoverImageId // Pass the current cover image ID to avoid redundant updates
 }) => {
+  const { user } = useContext(AuthContext);
+  const { can } = usePermissions();
+  const canManageAttachments = can('canManageAttachments');
+  const currentUserId = user?._id;
   const store = useAttachmentStore();
   const entityKey = getEntityKey(entityType, entityId);
   
@@ -237,6 +243,8 @@ const AttachmentsSection = memo(({
             onSetCover={readOnly || entityType !== 'card' ? undefined : handleSetCover}
             entityType={entityType}
             entityId={entityId}
+            canManageAttachments={canManageAttachments}
+            currentUserId={currentUserId}
           />
         </Suspense>
       </div>

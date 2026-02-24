@@ -64,6 +64,9 @@ const usePermissions = () => {
     canAssignMembers: isAdmin || myPermissions?.canAssignMembers === true,
     canDeleteTasks: isAdmin || myPermissions?.canDeleteTasks === true,
     canDeleteProjects: isAdmin || myPermissions?.canDeleteProjects === true,
+    canEditPriority: isAdmin || myPermissions?.canEditPriority === true,
+    canEditDates: isAdmin || myPermissions?.canEditDates === true,
+    canManageAttachments: isAdmin || myPermissions?.canManageAttachments === true,
   }), [myPermissions, isAdmin]);
 
   return {

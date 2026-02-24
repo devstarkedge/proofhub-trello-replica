@@ -36,6 +36,14 @@ export const PERMISSION_CATEGORIES = {
       { key: 'canManageUsers', label: 'Manage users' },
       { key: 'canManageSystem', label: 'Full system access (Admin equivalent)' }
     ]
+  },
+  editing: {
+    label: '✏️ Editing Permissions',
+    permissions: [
+      { key: 'canEditPriority', label: 'Edit task priority' },
+      { key: 'canEditDates', label: 'Edit start/due dates' },
+      { key: 'canManageAttachments', label: 'Manage all attachments' }
+    ]
   }
 };
 
@@ -70,13 +78,21 @@ export const SYSTEM_ROLE_PERMISSIONS = {
     canCreateAnnouncement: true,
     canCreateReminder: true,
     canAssignMembers: true,
-    canDeleteTasks: true
+    canDeleteTasks: true,
+    canEditPriority: true,
+    canEditDates: true,
+    canManageAttachments: true
   },
-  employee: { ...DEFAULT_PERMISSIONS, canCreateTask: true },
+  employee: {
+    ...DEFAULT_PERMISSIONS,
+    canCreateTask: true
+  },
   hr: {
     ...DEFAULT_PERMISSIONS,
     canCreateAnnouncement: true,
-    canAssignMembers: true
+    canAssignMembers: true,
+    canEditPriority: true,
+    canEditDates: true
   }
 };
 /**

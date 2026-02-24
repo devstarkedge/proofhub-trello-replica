@@ -19,6 +19,11 @@ const permissionSchema = new mongoose.Schema({
   canDeleteTasks: { type: Boolean, default: false },
   canDeleteProjects: { type: Boolean, default: false },
 
+  // Task Editing Permissions
+  canEditPriority: { type: Boolean, default: false },
+  canEditDates: { type: Boolean, default: false },
+  canManageAttachments: { type: Boolean, default: false },
+
   // Management Permissions
   canManageRoles: { type: Boolean, default: false },
   canManageUsers: { type: Boolean, default: false },
@@ -100,9 +105,10 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canCreateReminder: true,
       canAssignMembers: true,
       canDeleteTasks: true,
-      canAssignMembers: true,
-      canDeleteTasks: true,
       canDeleteProjects: true,
+      canEditPriority: true,
+      canEditDates: true,
+      canManageAttachments: true,
       canManageRoles: true,
       canManageUsers: true,
       canManageSystem: true
@@ -115,7 +121,10 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canCreateReminder: true,
       canAssignMembers: true,
       canDeleteTasks: true,
-      canDeleteProjects: true
+      canDeleteProjects: true,
+      canEditPriority: true,
+      canEditDates: true,
+      canManageAttachments: true
     },
     hr: {
       canCreateDepartment: true,
@@ -125,7 +134,10 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canCreateReminder: true,
       canAssignMembers: true,
       canDeleteTasks: false,
-      canDeleteProjects: false
+      canDeleteProjects: false,
+      canEditPriority: true,
+      canEditDates: true,
+      canManageAttachments: false
     },
     employee: {
       canCreateDepartment: false,
@@ -135,7 +147,10 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canCreateReminder: true,
       canAssignMembers: false,
       canDeleteTasks: false,
-      canDeleteProjects: false
+      canDeleteProjects: false,
+      canEditPriority: false,
+      canEditDates: false,
+      canManageAttachments: false
     }
   };
   

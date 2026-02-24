@@ -1,8 +1,14 @@
 import { getSharedConnection } from '../../../queues/connection.js';
 import WorkspaceMember from '../models/WorkspaceMember.js';
 
-// Get redis instance lazily or directly
-const redis = getSharedConnection();
+// Lazy redis access — connection is only created when first cache operation runs
+function getRedis() {
+  try {
+    return getSharedConnection();
+  } catch {
+    return null;
+  }
+}
 
 class CacheService {
   /**
@@ -36,6 +42,7 @@ class CacheService {
     // Store in Redis (TTL: 24h, refreshed organically or invalidated)
     const cacheKey = `authz:usr:${userId}:ws:${workspaceId}`;
     try {
+      const redis = getRedis();
       if (redis) {
           await redis.set(cacheKey, JSON.stringify(cachePayload), 'EX', 86400);
       }
@@ -52,6 +59,7 @@ class CacheService {
   static async getUserCapabilities(userId, workspaceId) {
     const cacheKey = `authz:usr:${userId}:ws:${workspaceId}`;
     try {
+        const redis = getRedis();
         if (redis) {
             const cached = await redis.get(cacheKey);
             if (cached) return JSON.parse(cached);
@@ -67,6 +75,7 @@ class CacheService {
    */
   static async invalidateUser(userId, workspaceId) {
     try {
+        const redis = getRedis();
         if (redis) {
             await redis.del(`authz:usr:${userId}:ws:${workspaceId}`);
         }

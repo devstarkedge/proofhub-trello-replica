@@ -34,7 +34,9 @@ const AttachmentList = ({
   onSetCover,
   showUploader = false,
   maxVisible = 6,
-  virtualizeThreshold = 20
+  virtualizeThreshold = 20,
+  canManageAttachments = false,
+  currentUserId = null
 }) => {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
@@ -257,8 +259,8 @@ const AttachmentList = ({
 
   return (
     <div className="space-y-3">
-      {/* Bulk actions */}
-      {selectedAttachments.length > 0 && (
+      {/* Bulk actions - only for users with global manage permission */}
+      {canManageAttachments && selectedAttachments.length > 0 && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -308,20 +310,22 @@ const AttachmentList = ({
               `}
               onClick={() => handlePreview(attachment, index)}
             >
-              {/* Selection checkbox */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleSelectAttachment(attachment._id);
-                }}
-                className="absolute top-2 left-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                {isSelected(attachment._id) ? (
-                  <CheckSquare size={20} className="text-blue-500" />
-                ) : (
-                  <Square size={20} className="text-gray-400 hover:text-gray-600" />
-                )}
-              </button>
+              {/* Selection checkbox - only for users with global manage permission */}
+              {canManageAttachments && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSelectAttachment(attachment._id);
+                  }}
+                  className="absolute top-2 left-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  {isSelected(attachment._id) ? (
+                    <CheckSquare size={20} className="text-blue-500" />
+                  ) : (
+                    <Square size={20} className="text-gray-400 hover:text-gray-600" />
+                  )}
+                </button>
+              )}
 
               {/* Cover badge */}
               {attachment.isCover && (
@@ -461,14 +465,27 @@ const AttachmentList = ({
                           <ExternalLink size={14} />
                           Open in tab
                         </button>
-                        <hr className="my-1 border-gray-200" />
-                        <button
-                          onClick={(e) => handleDelete(attachment, e)}
-                          className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                        >
-                          <Trash2 size={14} />
-                          Delete
-                        </button>
+                        {/* Delete - only visible if user has manage permission OR is the uploader */}
+                        {(() => {
+                          const uploaderId = typeof attachment.uploadedBy === 'object'
+                            ? (attachment.uploadedBy?._id || attachment.uploadedBy?.id)
+                            : attachment.uploadedBy;
+                          const isOwner = currentUserId && uploaderId && String(uploaderId) === String(currentUserId);
+                          const canDeleteThis = canManageAttachments || isOwner;
+                          if (!canDeleteThis) return null;
+                          return (
+                            <>
+                              <hr className="my-1 border-gray-200" />
+                              <button
+                                onClick={(e) => handleDelete(attachment, e)}
+                                className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                              >
+                                <Trash2 size={14} />
+                                Delete
+                              </button>
+                            </>
+                          );
+                        })()}
                       </motion.div>
                     )}
                   </AnimatePresence>
