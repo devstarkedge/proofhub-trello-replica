@@ -325,10 +325,6 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={`flex-1 px-1 -mx-1 min-h-[50px] transition-colors rounded-lg z-0 ${snapshot.isDraggingOver ? 'bg-black/5' : ''}`}
-            style={{ 
-              scrollbarWidth: 'thin',
-              scrollbarColor: 'rgba(0,0,0,0.1) transparent'
-            }}
           >
             <div className="flex flex-col gap-2 pb-2">
               {cards.filter(c => {

@@ -6,7 +6,7 @@
  * Job type: cleanup-trash
  */
 import { Worker } from 'bullmq';
-import { createRedisConnection } from '../queues/connection.js';
+import { getWorkerConnection } from '../queues/connection.js';
 import Attachment from '../models/Attachment.js';
 import { deleteMultipleFromCloudinary } from '../utils/cloudinary.js';
 import config from '../config/index.js';
@@ -75,7 +75,7 @@ export function startCleanupWorker() {
       return handler(job);
     },
     {
-      connection: createRedisConnection(),
+      connection: getWorkerConnection(),
       concurrency: 1,
     }
   );

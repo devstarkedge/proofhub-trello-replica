@@ -2,13 +2,15 @@
  * Shared Redis connection for BullMQ queues and workers.
  * 
  * BullMQ requires `maxRetriesPerRequest: null` on the IORedis connection.
- * We export a factory function so each Queue/Worker gets its own connection
- * (BullMQ best practice — sharing a single connection can cause issues).
+ * Queues share one connection (publishing side).
+ * Workers share another connection — BullMQ internally duplicates it
+ * for blocking operations, keeping total connections low.
  */
 import IORedis from 'ioredis';
 import config from '../config/index.js';
 
 let _sharedConnection = null;
+let _workerConnection = null;
 
 /**
  * Create a new IORedis connection with BullMQ-compatible defaults.
@@ -32,7 +34,7 @@ export function createRedisConnection(overrides = {}) {
 
 /**
  * Get a shared IORedis connection (for Queue instances that only publish).
- * Workers should always get their own connection via createRedisConnection().
+ * Workers should use getWorkerConnection() instead.
  */
 export function getSharedConnection() {
   if (!_sharedConnection) {
@@ -48,11 +50,33 @@ export function getSharedConnection() {
 }
 
 /**
+ * Get a shared IORedis connection for Workers.
+ * BullMQ will internally call .duplicate() for each worker's blocking
+ * client, but this keeps the base connection count to 1 instead of N.
+ */
+export function getWorkerConnection() {
+  if (!_workerConnection) {
+    _workerConnection = createRedisConnection();
+    _workerConnection.on('error', (err) => {
+      console.error('[Redis] Worker connection error:', err.message);
+    });
+  }
+  return _workerConnection;
+}
+
+/**
  * Close the shared connection (call during graceful shutdown).
  */
 export async function closeSharedConnection() {
+  const closeTasks = [];
   if (_sharedConnection) {
-    await _sharedConnection.quit();
+    closeTasks.push(_sharedConnection.quit());
     _sharedConnection = null;
   }
+  if (_workerConnection) {
+    closeTasks.push(_workerConnection.quit());
+    _workerConnection = null;
+  }
+  await Promise.allSettled(closeTasks);
 }
+

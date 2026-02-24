@@ -5,7 +5,7 @@
  * Job types: log-activity
  */
 import { Worker } from 'bullmq';
-import { createRedisConnection } from '../queues/connection.js';
+import { getWorkerConnection } from '../queues/connection.js';
 import config from '../config/index.js';
 
 const JOB_HANDLERS = {
@@ -36,7 +36,7 @@ export function startActivityWorker() {
       return handler(job);
     },
     {
-      connection: createRedisConnection(),
+      connection: getWorkerConnection(),
       concurrency: config.queues.analytics.concurrency, // reuse analytics concurrency
     }
   );

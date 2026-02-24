@@ -13,8 +13,8 @@ import config from '../config/index.js';
 const defaultJobOptions = {
   attempts: config.queues.defaultAttempts,
   backoff: config.queues.defaultBackoff,
-  removeOnComplete: { count: 1000, age: 24 * 3600 },   // keep last 1000 or 24h
-  removeOnFail: { count: 5000, age: 7 * 24 * 3600 },   // keep last 5000 or 7d
+  removeOnComplete: { count: 100, age: 24 * 3600 },    // keep last 100 or 24h
+  removeOnFail: { count: 50, age: 24 * 3600 },         // keep last 50  or 24h
 };
 
 // ─── Queue Factory ────────────────────────────────────────────────────────────

@@ -13,10 +13,19 @@ const initTransporter = () => {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT) || 587,
     secure: process.env.SMTP_SECURE === 'true',
+    pool: true,                   // reuse connections
+    maxConnections: 3,            // limit pool size
+    maxMessages: 50,              // recycle connection after 50 msgs
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
-    }
+    },
+    connectionTimeout: 10000,     // 10s to establish connection
+    greetingTimeout: 10000,       // 10s for SMTP greeting
+    socketTimeout: 15000,         // 15s for socket inactivity
+    tls: {
+      rejectUnauthorized: false,  // accept self-signed certs (common on cloud)
+    },
   });
 };
 
@@ -37,7 +46,10 @@ export const sendEmail = async (options) => {
     if (process.env.NODE_ENV !== 'production') console.log('Email sent successfully to:', options.to);
   } catch (error) {
     console.error('Email sending failed:', error.message);
-    // We re-throw the error to let the caller handle it.
+    // Reset transporter on connection errors so next attempt creates a fresh one
+    if (error.code === 'ETIMEDOUT' || error.code === 'ECONNECTION' || error.code === 'ESOCKET') {
+      transporter = null;
+    }
     throw error;
   }
 };

@@ -5,7 +5,7 @@
  * Job types: send-email, send-bulk-email, send-project-emails
  */
 import { Worker } from 'bullmq';
-import { createRedisConnection } from '../queues/connection.js';
+import { getWorkerConnection } from '../queues/connection.js';
 import { sendEmail } from '../utils/email.js';
 import User from '../models/User.js';
 import config from '../config/index.js';
@@ -92,7 +92,7 @@ export function startEmailWorker() {
       return handler(job);
     },
     {
-      connection: createRedisConnection(),
+      connection: getWorkerConnection(),
       concurrency: config.queues.email.concurrency,
       limiter: {
         max: 20,         // max 20 emails per 10 seconds to avoid SMTP throttling

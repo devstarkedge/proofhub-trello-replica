@@ -10,38 +10,31 @@
  *   await shutdownQueues();      // call on SIGTERM/SIGINT
  */
 import { announcementQueue, cleanupQueue, allQueues } from './index.js';
-import { closeSharedConnection, createRedisConnection } from './connection.js';
+import { closeSharedConnection, getSharedConnection } from './connection.js';
 import { startEmailWorker, getEmailWorker } from '../workers/emailWorker.js';
 import { startNotificationWorker, getNotificationWorker } from '../workers/notificationWorker.js';
 import { startActivityWorker, getActivityWorker } from '../workers/activityWorker.js';
 import { startAnnouncementWorker, getAnnouncementWorker } from '../workers/announcementWorker.js';
 import { startCleanupWorker, getCleanupWorker } from '../workers/cleanupWorker.js';
+import { startQueueCleanupScheduler, stopQueueCleanupScheduler } from './queueCleanup.js';
 
 let _initialized = false;
 let _redisAvailable = false;
 
 /**
  * Probe Redis availability without crashing if Redis is down.
+ * Uses the shared queue connection to avoid creating throwaway clients.
  * Returns true if Redis is reachable, false otherwise.
  */
 async function probeRedis() {
   try {
-    const conn = createRedisConnection();
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        conn.disconnect();
-        reject(new Error('Redis connection timeout'));
-      }, 3000);
-      conn.on('ready', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-      conn.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-    });
-    await conn.quit();
+    const conn = getSharedConnection();
+    await Promise.race([
+      conn.ping(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Redis probe timeout')), 3000)
+      ),
+    ]);
     return true;
   } catch {
     return false;
@@ -71,6 +64,9 @@ export async function initQueues() {
   startActivityWorker();
   startAnnouncementWorker();
   startCleanupWorker();
+
+  // Start periodic queue cleanup (Redis-safe mode)
+  startQueueCleanupScheduler();
 
   // ─── Repeatable Jobs ────────────────────────────────────────────────────────
   // These replace the setInterval calls in backgroundTasks.js
@@ -133,6 +129,7 @@ export async function shutdownQueues() {
   if (!_initialized || !_redisAvailable) return;
 
   console.log('[QueueManager] Shutting down workers...');
+  stopQueueCleanupScheduler();
 
   const workers = [
     getEmailWorker(),

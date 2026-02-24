@@ -113,13 +113,13 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
+      <div className="h-full overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
       <Droppable droppableId="all-lists" direction="horizontal" type="list">
         {(provided) => (
           <div 
-            className="p-4 h-full overflow-x-auto"
+            className="p-4 h-full inline-flex min-w-full"
             ref={provided.innerRef}
             {...provided.droppableProps}
-            style={{ scrollbarWidth: 'thin' }}
           >
             <div className="flex gap-4 h-full items-start">
               {/* Lists */}
@@ -129,10 +129,9 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
                     <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
-                      className="max-h-full"
                     >
                       <div
-                        className={`max-h-full rounded-xl transition-transform ${snapshot.isDragging ? 'rotate-2 scale-105' : ''}`}
+                        className={`rounded-xl transition-transform ${snapshot.isDragging ? 'rotate-2 scale-105' : ''}`}
                       >
                          {/* We pass dragHandleProps to the List component so only header is draggable */}
                         <KanbanList
@@ -329,6 +328,7 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
           </div>
         )}
       </Droppable>
+      </div>
     </DragDropContext>
   );
 });

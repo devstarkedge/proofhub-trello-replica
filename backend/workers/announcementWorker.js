@@ -6,7 +6,7 @@
  * Job types: process-scheduled, archive-expired
  */
 import { Worker } from 'bullmq';
-import { createRedisConnection } from '../queues/connection.js';
+import { getWorkerConnection } from '../queues/connection.js';
 import Announcement from '../models/Announcement.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
@@ -162,7 +162,7 @@ export function startAnnouncementWorker() {
       return handler(job);
     },
     {
-      connection: createRedisConnection(),
+      connection: getWorkerConnection(),
       concurrency: 1, // Only one at a time to avoid duplicate broadcasts
     }
   );

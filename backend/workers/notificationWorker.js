@@ -7,7 +7,7 @@
  *            notify-user-created, send-push
  */
 import { Worker } from 'bullmq';
-import { createRedisConnection } from '../queues/connection.js';
+import { getWorkerConnection } from '../queues/connection.js';
 import notificationService from '../utils/notificationService.js';
 import { sendPushNotification } from '../utils/pushNotification.js';
 import config from '../config/index.js';
@@ -101,7 +101,7 @@ export function startNotificationWorker() {
       return handler(job);
     },
     {
-      connection: createRedisConnection(),
+      connection: getWorkerConnection(),
       concurrency: config.queues.notification.concurrency,
     }
   );
