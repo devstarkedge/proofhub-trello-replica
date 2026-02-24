@@ -15,6 +15,7 @@ import {
 import LabelDropdown from "../LabelDropdown";
 import DatePickerModal from "../DatePickerModal";
 import Avatar from "../Avatar";
+import usePermissions from "../../hooks/usePermissions";
 
 const CardSidebar = ({
   saving,
@@ -49,6 +50,9 @@ const CardSidebar = ({
   const dropdownRef = useRef(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
+  
+  const { can } = usePermissions();
+  const canAssign = can('canAssignMembers');
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -124,14 +128,18 @@ const CardSidebar = ({
                           <span>{assignee?.name || assignee?.email || "Unknown"}</span>
                           <span className="text-xs text-blue-600 font-normal">{departmentName}</span>
                         </div>
-                        <button
-                          onClick={() =>
-                            onRemoveAssignee(assigneeId)
-                          }
-                          className="text-blue-600 hover:text-blue-800 ml-1"
-                        >
-                          <X size={14} />
-                        </button>
+                        {canAssign ? (
+                          <button
+                            onClick={() =>
+                              onRemoveAssignee(assigneeId)
+                            }
+                            className="text-blue-600 hover:text-blue-800 ml-1"
+                          >
+                            <X size={14} />
+                          </button>
+                        ) : (
+                          <div className="w-1 ml-1" /> // Spacer for consistent padding
+                        )}
                       </motion.div>
                     );
                   })}
@@ -139,122 +147,122 @@ const CardSidebar = ({
               </div>
             )}
 
-            {/* Search Bar */}
-            <div className="mb-3 relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => onSearchQueryChange(e.target.value)}
-                onFocus={() => onIsDropdownOpenChange(true)}
-                placeholder="Search members by name or email..."
-                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-              />
+            {/* Search Bar & Dropdown - Only visible if has permission */}
+            {canAssign && (
+              <div className="mb-3 relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => onSearchQueryChange(e.target.value)}
+                  onFocus={() => onIsDropdownOpenChange(true)}
+                  placeholder="Search members by name or email..."
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
 
-              {/* Search Results */}
-              {isDropdownOpen && (
-                <div ref={dropdownRef} className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto z-50 custom-scrollbar">
-                  {Object.keys(groupedFilteredMembers).length > 0 ? (
-                    Object.entries(groupedFilteredMembers)
-                      .sort(([aId, aGroup], [bId, bGroup]) => {
-                        // Put "Unassigned" last
-                        if (aGroup.department.name === 'Unassigned') return 1;
-                        if (bGroup.department.name === 'Unassigned') return -1;
-                        // Otherwise sort alphabetically
-                        return aGroup.department.name.localeCompare(bGroup.department.name);
-                      })
-                      .map(([deptId, group], deptIdx) => {
-                        // Ensure key is never empty
-                        const safeKey = (String(deptId).trim()) || `dept-${deptIdx}`;
-                        return (
-                          <div key={safeKey} className="border-b border-gray-100 last:border-b-0">
-                            {/* Department Header */}
-                            <div
-                              className="flex items-center justify-between p-4 bg-gray-100 hover:bg-gray-200 cursor-pointer transition-all duration-200 border-l-4 border-blue-500 shadow-sm rounded-t-xl"
-                              onClick={() => onToggleDepartment(deptId)}
-                            >
-                              <div className="flex items-center gap-3">
-                                <motion.div
-                                  animate={{ rotate: expandedDepartments[deptId] ? 0 : -90 }}
-                                  transition={{ duration: 0.2 }}
-                                >
-                                  <ChevronDown size={16} className="text-gray-600" />
-                                </motion.div>
-                                <span className="font-bold text-gray-800 text-sm uppercase tracking-wide">
-                                  {group.department.name}
-                                </span>
-                                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full font-medium border border-blue-200">
-                                  {group.members.length}
-                                </span>
+                {/* Search Results */}
+                {isDropdownOpen && (
+                  <div ref={dropdownRef} className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto z-50 custom-scrollbar">
+                    {Object.keys(groupedFilteredMembers).length > 0 ? (
+                      Object.entries(groupedFilteredMembers)
+                        .sort(([aId, aGroup], [bId, bGroup]) => {
+                          // Put "Unassigned" last
+                          if (aGroup.department.name === 'Unassigned') return 1;
+                          if (bGroup.department.name === 'Unassigned') return -1;
+                          // Otherwise sort alphabetically
+                          return aGroup.department.name.localeCompare(bGroup.department.name);
+                        })
+                        .map(([deptId, group], deptIdx) => {
+                          // Ensure key is never empty
+                          const safeKey = (String(deptId).trim()) || `dept-${deptIdx}`;
+                          return (
+                            <div key={safeKey} className="border-b border-gray-100 last:border-b-0">
+                              {/* Department Header */}
+                              <div
+                                className="flex items-center justify-between p-4 bg-gray-100 hover:bg-gray-200 cursor-pointer transition-all duration-200 border-l-4 border-blue-500 shadow-sm rounded-t-xl"
+                                onClick={() => onToggleDepartment(deptId)}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <motion.div
+                                    animate={{ rotate: expandedDepartments[deptId] ? 0 : -90 }}
+                                    transition={{ duration: 0.2 }}
+                                  >
+                                    <ChevronDown size={16} className="text-gray-600" />
+                                  </motion.div>
+                                  <span className="font-bold text-gray-800 text-sm uppercase tracking-wide">
+                                    {group.department.name}
+                                  </span>
+                                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full font-medium border border-blue-200">
+                                    {group.members.length}
+                                  </span>
+                                </div>
                               </div>
+
+                              {/* Department Members */}
+                              <AnimatePresence>
+                                {expandedDepartments[deptId] && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="overflow-hidden"
+                                  >
+                                    {group.members.map((member, idx) => {
+                                      const isAssigned = assignees.includes(member._id);
+                                      const safeKey = String(member._id || `member-${idx}`).trim() || `member-${idx}`;
+                                      return (
+                                        <motion.button
+                                          key={safeKey}
+                                          whileHover={{ scale: 1.01, backgroundColor: "#f9fafb" }}
+                                          whileTap={{ scale: 0.99 }}
+                                          onClick={() => onSelectMember(member._id)}
+                                          disabled={isAssigned}
+                                          className={`w-full flex items-center gap-4 p-4 text-left hover:bg-gray-50 transition-all duration-200 ${
+                                            isAssigned ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'cursor-pointer'
+                                          }`}
+                                        >
+                                          <Avatar
+                                            src={member.avatar}
+                                            name={member.name}
+                                            role={member.role}
+                                            size="md"
+                                            showBadge={false}
+                                          />
+                                          <div className="flex-1 min-w-0">
+                                            <div className="text-sm font-semibold text-gray-900 truncate">
+                                              {member.name}
+                                            </div>
+                                            <div className="text-xs text-gray-500 truncate">
+                                              {member.email}
+                                            </div>
+                                          </div>
+                                          {isAssigned ? (
+                                            <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded-full border border-green-200">
+                                              Assigned
+                                            </span>
+                                          ) : (
+                                            <div className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 flex items-center justify-center transition-colors">
+                                              <Plus size={16} className="text-white" />
+                                            </div>
+                                          )}
+                                        </motion.button>
+                                      );
+                                    })}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
                             </div>
-
-                            {/* Department Members */}
-                            <AnimatePresence>
-                              {expandedDepartments[deptId] && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: "auto", opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.2 }}
-                                  className="overflow-hidden"
-                                >
-                                  {group.members.map((member, idx) => {
-                                    const isAssigned = assignees.includes(member._id);
-                                    const safeKey = String(member._id || `member-${idx}`).trim() || `member-${idx}`;
-                                    return (
-                                      <motion.button
-                                        key={safeKey}
-                                        whileHover={{ scale: 1.01, backgroundColor: "#f9fafb" }}
-                                        whileTap={{ scale: 0.99 }}
-                                        onClick={() => onSelectMember(member._id)}
-                                        disabled={isAssigned}
-                                        className={`w-full flex items-center gap-4 p-4 text-left hover:bg-gray-50 transition-all duration-200 ${
-                                          isAssigned ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'cursor-pointer'
-                                        }`}
-                                      >
-                                        <Avatar
-                                          src={member.avatar}
-                                          name={member.name}
-                                          role={member.role}
-                                          size="md"
-                                          showBadge={false}
-                                        />
-                                        <div className="flex-1 min-w-0">
-                                          <div className="text-sm font-semibold text-gray-900 truncate">
-                                            {member.name}
-                                          </div>
-                                          <div className="text-xs text-gray-500 truncate">
-                                            {member.email}
-                                          </div>
-                                        </div>
-                                        {isAssigned ? (
-                                          <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded-full border border-green-200">
-                                            Assigned
-                                          </span>
-                                        ) : (
-                                          <div className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 flex items-center justify-center transition-colors">
-                                            <Plus size={16} className="text-white" />
-                                          </div>
-                                        )}
-                                      </motion.button>
-                                    );
-                                  })}
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        );
-                      })
-                  ) : (
-                    <div className="text-center text-gray-500 text-sm py-8">
-                      No members found
-                    </div>
-                  )}
-                </div>
-              )}
-
-
-            </div>
+                          );
+                        })
+                    ) : (
+                      <div className="text-center text-gray-500 text-sm py-8">
+                        No members found
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Priority */}

@@ -13,7 +13,7 @@ import {
   Settings,
   RefreshCw
 } from 'lucide-react';
-import useRoleStore, { PERMISSION_CATEGORIES, SYSTEM_ROLES } from '../../store/roleStore';
+import useRoleStore, { PERMISSION_CATEGORIES, ALL_PERMISSION_KEYS, SYSTEM_ROLES } from '../../store/roleStore';
 import useThemeStore from '../../store/themeStore';
 
 /**
@@ -63,11 +63,13 @@ const RoleManagementPanel = memo(({
     return 'from-indigo-500 to-purple-600';
   };
 
-  // Count permissions
+  // Count permissions accurately against the full definition set
   const countPermissions = (permissions) => {
-    if (!permissions) return { enabled: 0, total: 0 };
-    const total = Object.keys(permissions).length;
-    const enabled = Object.values(permissions).filter(Boolean).length;
+    const total = ALL_PERMISSION_KEYS.length;
+    if (!permissions) return { enabled: 0, total };
+    
+    // Only count enabled permissions that exist in our current category definitions
+    const enabled = ALL_PERMISSION_KEYS.filter(key => permissions[key] === true).length;
     return { enabled, total };
   };
 

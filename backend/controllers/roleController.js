@@ -41,9 +41,18 @@ export const getRoles = asyncHandler(async (req, res, next) => {
   
   const query = includeInactive === 'true' ? {} : { isActive: true };
   
-  const roles = await Role.find(query)
+  const dbRoles = await Role.find(query)
     .populate('createdBy', 'name email')
     .sort({ isSystem: -1, name: 1 }); // System roles first, then alphabetically
+    
+  // Dynamically sync system roles to ensure actual permissions are always perfectly accurate
+  const roles = dbRoles.map(r => {
+    const roleObj = r.toObject ? r.toObject() : r;
+    if (roleObj.isSystem) {
+       roleObj.permissions = Role.getDefaultPermissions(roleObj.slug);
+    }
+    return roleObj;
+  });
   
   res.status(200).json({
     success: true,
@@ -56,11 +65,18 @@ export const getRoles = asyncHandler(async (req, res, next) => {
 // @route   GET /api/roles/:id
 // @access  Private
 export const getRole = asyncHandler(async (req, res, next) => {
-  const role = await Role.findById(req.params.id)
+  let role = await Role.findById(req.params.id)
     .populate('createdBy', 'name email');
   
   if (!role) {
     return next(new ErrorResponse('Role not found', 404));
+  }
+
+  // Sync if system role
+  if (role.isSystem) {
+    const roleObj = role.toObject ? role.toObject() : role;
+    roleObj.permissions = Role.getDefaultPermissions(roleObj.slug);
+    role = roleObj;
   }
   
   res.status(200).json({
@@ -228,7 +244,7 @@ export const getMyPermissions = asyncHandler(async (req, res, next) => {
     data: {
       role: role.slug,
       roleName: role.name,
-      permissions: role.permissions,
+      permissions: role.isSystem ? Role.getDefaultPermissions(role.slug) : role.permissions,
       isSystem: role.isSystem
     }
   });
@@ -277,7 +293,9 @@ export const initializeRoles = asyncHandler(async (req, res, next) => {
       const role = await Role.create(roleData);
       results.push({ role: roleData.name, status: 'created' });
     } else {
-      results.push({ role: roleData.name, status: 'already exists' });
+      existingRole.permissions = roleData.permissions;
+      await existingRole.save();
+      results.push({ role: roleData.name, status: 'updated' });
     }
   }
   

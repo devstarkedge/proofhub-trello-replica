@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, X, Check, AlertCircle, Loader2, Trash2, Zap } from 'lucide-react';
-import { PERMISSION_CATEGORIES, SYSTEM_ROLE_PERMISSIONS } from '../../../store/roleStore';
+import { PERMISSION_CATEGORIES, SYSTEM_ROLE_PERMISSIONS, ALL_PERMISSION_KEYS } from '../../../store/roleStore';
 
 /**
  * EditRoleModal Component
@@ -141,11 +141,9 @@ const EditRoleModal = memo(({
     }
   }, []);
 
-  // Count selected permissions
-  const selectedPermissionsCount = Object.values(permissions).filter(Boolean).length;
-  const totalPermissionsCount = Object.keys(PERMISSION_CATEGORIES).reduce(
-    (acc, key) => acc + PERMISSION_CATEGORIES[key].permissions.length, 0
-  );
+  // Count selected permissions against known keys
+  const selectedPermissionsCount = ALL_PERMISSION_KEYS.filter(key => permissions[key] === true).length;
+  const totalPermissionsCount = ALL_PERMISSION_KEYS.length;
 
   // Check if this is a system role
   const isSystemRole = role?.isSystem;

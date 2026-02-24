@@ -86,6 +86,7 @@ const useRoleStore = create((set, get) => ({
   // State
   roles: [],
   myPermissions: null,
+  capabilities: null,
   myRole: null,
   loading: false,
   error: null,
@@ -130,6 +131,28 @@ const useRoleStore = create((set, get) => ({
       console.error('Error loading permissions:', error);
       set({ error: error.message, loading: false });
       throw error;
+    }
+  },
+
+  /**
+   * Load current user's enterprise capabilities (ABAC/PBAC)
+   */
+  loadCapabilities: async () => {
+    try {
+      const workspaceId = localStorage.getItem('workspaceId');
+      if (!workspaceId) return null; // Wait until workspace is selected
+      
+      const response = await api.get('/api/authorization/my-capabilities');
+      const data = response.data.data;
+      
+      set({
+        capabilities: data.capabilities,
+      });
+      return data;
+    } catch (error) {
+      console.error('Error loading capabilities:', error);
+      // Silently fail during migration if the endpoint doesn't exist yet
+      return null;
     }
   },
 
@@ -260,6 +283,18 @@ const useRoleStore = create((set, get) => ({
   },
 
   /**
+   * Check if user has capability (Enterprise ABAC)
+   */
+  hasCapability: (resource, action) => {
+    const { capabilities, myRole } = get();
+    if (myRole === 'admin') return true;
+    if (!capabilities) return false;
+    
+    const key = `${resource}:${action}`;
+    return Array.isArray(capabilities[key]) && capabilities[key].length > 0;
+  },
+
+  /**
    * Check if current user is admin
    */
   isAdmin: () => {
@@ -297,6 +332,7 @@ const useRoleStore = create((set, get) => ({
   reset: () => set({
     roles: [],
     myPermissions: null,
+    capabilities: null,
     myRole: null,
     loading: false,
     error: null,

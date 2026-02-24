@@ -37,6 +37,8 @@ import useRoleStore from '../store/roleStore';
  */
 const PermissionGate = memo(({
   permission,
+  resource,
+  action,
   mode = 'any',
   children,
   fallback = null
@@ -44,6 +46,7 @@ const PermissionGate = memo(({
   // Subscribe to reactive state directly (this will cause re-renders when state changes)
   const myPermissions = useRoleStore((state) => state.myPermissions);
   const myRole = useRoleStore((state) => state.myRole);
+  const hasCapability = useRoleStore((state) => state.hasCapability);
   
   // Compute access based on current state
   const hasAccess = useMemo(() => {
@@ -51,8 +54,13 @@ const PermissionGate = memo(({
     if (myRole === 'admin') {
       return true;
     }
+
+    // Enterprise Capability Check
+    if (resource && action) {
+      return hasCapability(resource, action);
+    }
     
-    // No permissions loaded yet - deny access
+    // Legacy Check: No permissions loaded yet - deny access
     if (!myPermissions) {
       return false;
     }
@@ -67,7 +75,7 @@ const PermissionGate = memo(({
       // 'any' mode
       return permissions.some(perm => myPermissions[perm] === true);
     }
-  }, [myPermissions, myRole, permission, mode]);
+  }, [myPermissions, myRole, permission, mode, resource, action, hasCapability]);
   
   if (hasAccess) {
     return <>{children}</>;
@@ -94,12 +102,23 @@ PermissionGate.displayName = 'PermissionGate';
  */
 export const withPermission = (
   WrappedComponent,
-  permission,
+  permissionOrConfig,
   mode = 'any',
   fallback = null
 ) => {
+  const isEnterprise = typeof permissionOrConfig === 'object' && permissionOrConfig.resource;
+  const permission = isEnterprise ? null : permissionOrConfig;
+  const resource = isEnterprise ? permissionOrConfig.resource : null;
+  const action = isEnterprise ? permissionOrConfig.action : null;
+
   const WithPermissionComponent = (props) => (
-    <PermissionGate permission={permission} mode={mode} fallback={fallback}>
+    <PermissionGate 
+      permission={permission} 
+      resource={resource}
+      action={action}
+      mode={mode} 
+      fallback={fallback}
+    >
       <WrappedComponent {...props} />
     </PermissionGate>
   );

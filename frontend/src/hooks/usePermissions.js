@@ -15,12 +15,20 @@ const usePermissions = () => {
   const error = useRoleStore((state) => state.error);
   const loadMyPermissions = useRoleStore((state) => state.loadMyPermissions);
 
+  // Enterprise ABAC Capabilities
+  const capabilities = useRoleStore((state) => state.capabilities);
+  const loadCapabilities = useRoleStore((state) => state.loadCapabilities);
+  const hasCapability = useRoleStore((state) => state.hasCapability);
+
   // Load permissions on mount if not already loaded
   useEffect(() => {
     if (!myPermissions && !loading) {
       loadMyPermissions().catch(console.error);
     }
-  }, [myPermissions, loading, loadMyPermissions]);
+    if (!capabilities && !loading) {
+      loadCapabilities().catch(console.error);
+    }
+  }, [myPermissions, capabilities, loading, loadMyPermissions, loadCapabilities]);
 
   // Check if user is admin
   const isAdmin = useMemo(() => myRole === 'admin', [myRole]);
@@ -70,12 +78,18 @@ const usePermissions = () => {
     canAny,
     canAll,
     isAdmin,
+    // Enterprise ABAC Checks
+    capabilities: capabilities || {},
+    hasCapability,
     
     // Spread individual permission flags
     ...permissionFlags,
     
     // Refresh permissions
-    refresh: loadMyPermissions
+    refresh: async () => {
+      await loadMyPermissions();
+      await loadCapabilities();
+    }
   };
 };
 
