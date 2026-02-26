@@ -10,17 +10,17 @@ dotenv.config();
 const configureCloudinary = () => {
   if (cloudinary.config().cloud_name) return;
 
-  const { CLOUDINARY_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
+  const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
 
-  if (!CLOUDINARY_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
     if (process.env.NODE_ENV === 'production') {
       console.error('Missing Cloudinary configuration in production!');
     }
-    throw new Error('Cloudinary configuration missing. Please check CLOUDINARY_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.');
+    throw new Error('Cloudinary configuration missing. Please check CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.');
   }
 
   cloudinary.config({
-    cloud_name: CLOUDINARY_NAME,
+    cloud_name: CLOUDINARY_CLOUD_NAME,
     api_key: CLOUDINARY_API_KEY,
     api_secret: CLOUDINARY_API_SECRET,
     secure: true
