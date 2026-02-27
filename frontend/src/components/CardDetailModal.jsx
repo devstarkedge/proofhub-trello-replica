@@ -1409,36 +1409,34 @@ const CardDetailModal = React.memo(({
     }
   };
 
-  const handleToggleSubtask = async (subtask) => {
+  const handleToggleSubtask = useCallback((subtask) => {
     if (!subtask?._id) return;
     
     const newStatus = subtask.status === 'done' || subtask.completed ? 'todo' : 'done';
     
     // 1. Optimistic Update Local State immediately
     setSubtasks(prev => prev.map(s => 
-      s._id === subtask._id ? { ...s, status: newStatus, completed: newStatus === 'done' } : s
+      s._id === subtask._id ? { ...s, status: newStatus, completed: newStatus === 'done', _isModifying: true } : s
     ));
 
-    try {
-      // 2. Perform API call in background
-      await Database.updateSubtask(subtask._id, {
-        status: newStatus
-      });
-      // Optionally fetch strictly in the background so it doesn't block
-      fetchSubtasks();
-    } catch (error) {
+    // 2. Perform API call in background (fire and forget)
+    Database.updateSubtask(subtask._id, {
+      status: newStatus
+    }).then(() => {
+      // Clear modifying state on success
+      setSubtasks(prev => prev.map(s => 
+        s._id === subtask._id ? { ...s, _isModifying: false } : s
+      ));
+    }).catch(error => {
       console.error("Error updating subtask:", error);
       toast.error("Failed to update subtask");
       
-      // 3. Rollback
+      // 3. Rollback on failure
       setSubtasks(prev => prev.map(s => 
-        s._id === subtask._id ? { ...s, status: subtask.status, completed: subtask.completed } : s
+        s._id === subtask._id ? { ...s, status: subtask.status, completed: subtask.completed, _isModifying: false } : s
       ));
-      
-      // Rethrow to let the child SubtaskItem know it needs to rollback
-      throw error;
-    }
-  };
+    });
+  }, []);
 
   const handleDeleteSubtask = async (subtask) => {
     if (!subtask?._id) return;

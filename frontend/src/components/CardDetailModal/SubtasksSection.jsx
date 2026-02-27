@@ -9,37 +9,14 @@ const themeProgress = {
 };
 
 
-const SubtaskItem = React.memo(({ item, index, onToggleComplete, onOpenItem, onDeleteItem }) => {
+const SubtaskItem = React.memo(({ item, index, onToggleComplete, onOpenItem, onDeleteItem, isItemLoading }) => {
   const safeKey = String(item._id || item.id || `subtask-${index}`).trim() || `subtask-${index}`;
-  const actualCompleted = item.status === 'done' || item.completed;
+  const actualCompleted = Boolean(item.status === 'done' || item.completed);
   
-  // Local optimistic state
-  const [optimisticCompleted, setOptimisticCompleted] = React.useState(actualCompleted);
-  const [isOptimistic, setIsOptimistic] = React.useState(false);
-
-  // Sync local state with actual props when external updates happen
-  React.useEffect(() => {
-    if (!isOptimistic) {
-      setOptimisticCompleted(actualCompleted);
-    }
-  }, [actualCompleted, isOptimistic]);
-
-  const handleToggle = async () => {
-    // 1. Immediately update local UI state
-    const newStatus = !optimisticCompleted;
-    setOptimisticCompleted(newStatus);
-    setIsOptimistic(true);
-    
-    // 2. Call parent and await result
-    try {
-      await onToggleComplete(item);
-    } catch (error) {
-      // 3. Rollback purely local state if parent handler explicitly throws
-      setOptimisticCompleted(!newStatus);
-    } finally {
-      // 4. Conclude optimistic grace period
-      setIsOptimistic(false);
-    }
+  const handleToggle = (e) => {
+    e.stopPropagation(); // Prevent opening item when clicking checkbox
+    // Call parent handler directly - parent will manage optimistic UI
+    onToggleComplete(item);
   };
 
   const renderStatus = (status) => {
@@ -62,25 +39,30 @@ const SubtaskItem = React.memo(({ item, index, onToggleComplete, onOpenItem, onD
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
-      className={`flex items-center gap-3 p-3 bg-gray-50 rounded-lg transition-colors group border border-gray-100 shadow-sm ${isOptimistic ? 'opacity-80' : 'hover:bg-white'}`}
+      className={`flex items-center gap-3 p-3 bg-gray-50 rounded-lg transition-colors group border border-gray-100 shadow-sm hover:bg-white`}
     >
-      <input
-        type="checkbox"
-        checked={optimisticCompleted || false}
-        onChange={handleToggle}
-        disabled={isOptimistic}
-        className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
-      />
+      {isItemLoading ? (
+        <div className="w-5 h-5 flex items-center justify-center">
+          <RefreshCw size={14} className="animate-spin text-blue-500" />
+        </div>
+      ) : (
+        <input
+          type="checkbox"
+          checked={actualCompleted}
+          onChange={handleToggle}
+          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+        />
+      )}
       <div
         className="flex-1 cursor-pointer flex items-center justify-between gap-3"
         onClick={() => onOpenItem && onOpenItem(item)}
       >
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium truncate ${optimisticCompleted ? "line-through text-gray-400" : "text-gray-800"}`}>
+          <p className={`text-sm font-medium truncate ${actualCompleted ? "line-through text-gray-400" : "text-gray-800"}`}>
             {item.title || item.text}
           </p>
           <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-            {renderStatus(optimisticCompleted ? 'done' : (item.status === 'done' ? 'todo' : item.status))}
+            {renderStatus(actualCompleted ? 'done' : (item.status === 'done' ? 'todo' : item.status))}
             {/* Recurring Task indicator */}
             {(item.isRecurring || item.tags?.includes('Recurring Task')) && (
               <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
@@ -211,15 +193,10 @@ const SubtasksSection = ({
               onToggleComplete={onToggleComplete}
               onOpenItem={onOpenItem}
               onDeleteItem={onDeleteItem}
+              isItemLoading={item._isModifying}
             />
           ))}
         </AnimatePresence>
-
-        {loading && (
-          <div className="p-4 bg-white rounded-lg border border-gray-200 text-gray-500 text-sm">
-            Loading...
-          </div>
-        )}
 
         {!items.length && !loading && (
           <div className="p-4 bg-white rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">

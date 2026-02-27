@@ -623,30 +623,30 @@ const SubtaskDetailModal = ({
     }
   }, [newNanoTitle, entityId, parentTaskId, currentProject?._id, initialData.board]);
 
-  const handleToggleNano = useCallback(async (nano) => {
+  const handleToggleNano = useCallback((nano) => {
     if (!nano?._id) return;
     
     // Optimistic Toggle
     const newStatus = nano.status === "done" ? "todo" : "done";
     
     setNanoItems(prev => prev.map(item => 
-       item._id === nano._id ? { ...item, status: newStatus } : item
+       item._id === nano._id ? { ...item, status: newStatus, _isModifying: true } : item
     ));
 
-    try {
-      await Database.updateNano(nano._id, { status: newStatus });
-      // No need to reload, we already updated state
-    } catch (error) {
+    // Background API Call
+    Database.updateNano(nano._id, { status: newStatus }).then(() => {
+      // Clear modifying state on success
+      setNanoItems(prev => prev.map(item => 
+         item._id === nano._id ? { ...item, _isModifying: false } : item
+      ));
+    }).catch(error => {
       console.error("Error updating nano subtask:", error);
       toast.error("Failed to update nano subtask");
       // Revert on failure
       setNanoItems(prev => prev.map(item => 
-         item._id === nano._id ? { ...item, status: nano.status } : item
+         item._id === nano._id ? { ...item, status: nano.status, _isModifying: false } : item
       ));
-      
-      // Rethrow to let the child SubtaskItem know it needs to rollback
-      throw error;
-    }
+    });
   }, []);
 
   const handleDeleteNano = useCallback((nano) => {
