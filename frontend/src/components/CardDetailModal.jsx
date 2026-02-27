@@ -1411,14 +1411,32 @@ const CardDetailModal = React.memo(({
 
   const handleToggleSubtask = async (subtask) => {
     if (!subtask?._id) return;
+    
+    const newStatus = subtask.status === 'done' || subtask.completed ? 'todo' : 'done';
+    
+    // 1. Optimistic Update Local State immediately
+    setSubtasks(prev => prev.map(s => 
+      s._id === subtask._id ? { ...s, status: newStatus, completed: newStatus === 'done' } : s
+    ));
+
     try {
+      // 2. Perform API call in background
       await Database.updateSubtask(subtask._id, {
-        status: subtask.status === 'done' || subtask.completed ? 'todo' : 'done'
+        status: newStatus
       });
+      // Optionally fetch strictly in the background so it doesn't block
       fetchSubtasks();
     } catch (error) {
       console.error("Error updating subtask:", error);
       toast.error("Failed to update subtask");
+      
+      // 3. Rollback
+      setSubtasks(prev => prev.map(s => 
+        s._id === subtask._id ? { ...s, status: subtask.status, completed: subtask.completed } : s
+      ));
+      
+      // Rethrow to let the child SubtaskItem know it needs to rollback
+      throw error;
     }
   };
 

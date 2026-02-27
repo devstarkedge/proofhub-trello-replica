@@ -643,6 +643,9 @@ const SubtaskDetailModal = ({
       setNanoItems(prev => prev.map(item => 
          item._id === nano._id ? { ...item, status: nano.status } : item
       ));
+      
+      // Rethrow to let the child SubtaskItem know it needs to rollback
+      throw error;
     }
   }, []);
 
