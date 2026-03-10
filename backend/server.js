@@ -94,7 +94,7 @@ const corsHandler = cors({
 app.options('*', corsHandler);
 app.use(corsHandler);
 
-app.use(helmet({
+
 
 // ─── Request Logger ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
