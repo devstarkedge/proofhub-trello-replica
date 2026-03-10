@@ -33,11 +33,20 @@ const config = {
   // Server
   port: parseInt(process.env.PORT, 10) || 5000,
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+
+  // CORS: all origins that are allowed to call this API.
+  // Strip trailing slashes so "https://example.com/" and "https://example.com" both match.
+  // Always include known dev ports so local testing never silently breaks.
   allowedOrigins: [
-    process.env.FRONTEND_URL,
-    process.env.CHATAPP_URL,
-    process.env.EXTRA_ALLOWED_ORIGIN,
-  ].filter(Boolean),
+    process.env.FRONTEND_URL,          // FlowTask frontend (prod or dev)
+    process.env.CHATAPP_URL,           // Chat frontend (prod or dev)
+    process.env.EXTRA_ALLOWED_ORIGIN,  // any additional override
+    // Dev fallbacks — present when not overridden by env:
+    !process.env.FRONTEND_URL && 'http://localhost:5173',
+    !process.env.CHATAPP_URL  && 'http://localhost:5174',
+  ]
+    .filter(Boolean)
+    .map((o) => o.replace(/\/+$/, '')), // strip trailing slashes
 
   // Database
   db: {

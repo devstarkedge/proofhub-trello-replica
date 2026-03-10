@@ -68,15 +68,33 @@ const server = http.createServer(app);
 socketManager.init(server);
 
 // ─── Security ────────────────────────────────────────────────────────────────
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: false,
-}));
+// Function-based CORS: logs every blocked request so you can see the exact
+// mismatch in the console / Render logs.
+const corsHandler = cors({
+  origin: (incomingOrigin, callback) => {
+    // Allow server-to-server / same-origin requests (no Origin header)
+    if (!incomingOrigin) return callback(null, true);
+    const normalized = incomingOrigin.replace(/\/+$/, '');
+    if (config.allowedOrigins.includes(normalized)) {
+      callback(null, true);
+    } else {
+      console.warn(
+        `[CORS] Blocked: origin="${normalized}" not in allowedOrigins=${JSON.stringify(config.allowedOrigins)}. ` +
+        `Fix: add "${normalized}" to FRONTEND_URL, CHATAPP_URL, or EXTRA_ALLOWED_ORIGIN in your env.`
+      );
+      callback(null, false);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+});
 
-app.use(cors({
-  origin: config.allowedOrigins,
-  credentials: true
-}));
+// Explicit OPTIONS preflight handler must come BEFORE Helmet and all routes
+app.options('*', corsHandler);
+app.use(corsHandler);
+
+app.use(helmet({
 
 // ─── Request Logger ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
