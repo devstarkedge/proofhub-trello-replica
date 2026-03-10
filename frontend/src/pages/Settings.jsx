@@ -11,6 +11,7 @@ import AuthContext from '../context/AuthContext';
 import NotificationContext from '../context/NotificationContext';
 import Loading from '../components/Loading';
 import SlackSettings from '../components/SlackSettings';
+import ChatIntegrationSettings from '../components/ChatIntegrationSettings';
 import { validateField, validatePasswordMatch, validateForm, validationRules } from '../utils/validationUtils';
 
 const Settings = () => {
@@ -392,6 +393,16 @@ const Settings = () => {
               className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
             >
               <SlackSettings />
+            </motion.div>
+
+            {/* Chat Integration Settings */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.35 }}
+              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+            >
+              <ChatIntegrationSettings />
             </motion.div>
 
             {/* Save Button */}

@@ -98,11 +98,13 @@ const config = {
     signingSecret: process.env.SLACK_SIGNING_SECRET,
   },
 
-  // Chat Webhook
+  // Chat Integration
   chat: {
     enabled: process.env.CHAT_ENABLED === 'true',
     webhookUrl: process.env.CHAT_WEBHOOK_URL,
     webhookSecret: process.env.CHAT_WEBHOOK_SECRET,
+    chatAppUrl: process.env.CHATAPP_URL || '',
+    jwtSecret: process.env.CHAT_JWT_SECRET || '',
   },
 
   // Admin Seed

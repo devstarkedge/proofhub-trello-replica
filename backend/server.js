@@ -54,6 +54,7 @@ import salesRoutes from './routes/sales.js';
 import salesPermissionsRoutes from './routes/salesPermissions.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
 import authzRoutes from './modules/authorization/routes/index.js';
+import chatIntegrationRoutes from './routes/chatIntegration.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -159,6 +160,7 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 app.use('/api/authorization', authzRoutes);
+app.use('/api/chat-integration', chatIntegrationRoutes);
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 import seedAdmin from './utils/seed.js';
