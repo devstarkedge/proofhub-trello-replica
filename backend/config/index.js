@@ -35,7 +35,8 @@ const config = {
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   allowedOrigins: [
     process.env.FRONTEND_URL,
-    'http://172.16.16.20:5173',
+    process.env.CHATAPP_URL,
+    process.env.EXTRA_ALLOWED_ORIGIN,
   ].filter(Boolean),
 
   // Database
