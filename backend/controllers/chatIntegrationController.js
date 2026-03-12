@@ -149,7 +149,7 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     source: 'flowtask',
   };
 
-  const token = jwt.sign(payload, chatJwtSecret, { expiresIn: '5m' });
+  const token = jwt.sign(payload, chatJwtSecret, { expiresIn: '10m' });
 
   // Build redirect URL
   const redirectUrl = `${chatAppUrl.replace(/\/+$/, '')}/login?token=${encodeURIComponent(token)}&source=flowtask`;
