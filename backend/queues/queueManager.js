@@ -17,6 +17,7 @@ import { startActivityWorker, getActivityWorker } from '../workers/activityWorke
 import { startAnnouncementWorker, getAnnouncementWorker } from '../workers/announcementWorker.js';
 import { startCleanupWorker, getCleanupWorker } from '../workers/cleanupWorker.js';
 import { startQueueCleanupScheduler, stopQueueCleanupScheduler } from './queueCleanup.js';
+import logger from '../utils/logger.js';
 
 let _initialized = false;
 let _redisAvailable = false;
@@ -59,12 +60,12 @@ export async function initQueues() {
   _redisAvailable = await probeRedis();
 
   if (!_redisAvailable) {
-    console.warn('[QueueManager] Redis not available — falling back to in-process background tasks');
+    logger.warn('QueueManager: Redis not available — falling back to in-process background tasks');
     _initialized = true;
     return false;
   }
 
-  console.log('[QueueManager] Redis available — starting BullMQ workers');
+  logger.info('QueueManager: Redis available — starting BullMQ workers');
 
   // Start all workers
   startEmailWorker();
@@ -119,7 +120,7 @@ export async function initQueues() {
   await cleanupQueue.add('cleanup-trash', {}, { jobId: 'initial-cleanup' });
 
   _initialized = true;
-  console.log('[QueueManager] All workers started, repeatable jobs registered');
+  logger.info('QueueManager: all workers started, repeatable jobs registered');
   return true;
 }
 
@@ -136,7 +137,7 @@ export function isQueueActive() {
 export async function shutdownQueues() {
   if (!_initialized || !_redisAvailable) return;
 
-  console.log('[QueueManager] Shutting down workers...');
+  logger.info('QueueManager: shutting down workers...');
   stopQueueCleanupScheduler();
 
   const workers = [
@@ -158,5 +159,5 @@ export async function shutdownQueues() {
 
   _initialized = false;
   _redisAvailable = false;
-  console.log('[QueueManager] Shutdown complete');
+  logger.info('QueueManager: shutdown complete');
 }

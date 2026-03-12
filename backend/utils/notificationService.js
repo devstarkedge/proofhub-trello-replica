@@ -176,7 +176,7 @@ class NotificationService {
 
   // Generate email HTML template
   generateEmailTemplate(notification, user) {
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const baseUrl = process.env.FRONTEND_URL || '';
     let specificUrl = baseUrl;
 
     // Generate specific URL based on notification type
@@ -721,7 +721,7 @@ class NotificationService {
 
   // Generate announcement email template
   generateAnnouncementEmailTemplate(announcement, subscriber) {
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const baseUrl = process.env.FRONTEND_URL || '';
     const announcementUrl = `${baseUrl}/announcements?id=${announcement._id}`;
 
     const categoryColor = {

@@ -59,9 +59,8 @@ const NOTIFICATION_EMOJI = {
 
 class SlackBlockKitBuilder {
   constructor(appUrl) {
-    this.appUrl = appUrl || process.env.FRONTEND_URL || 'http://localhost:5173';
+      this.appUrl = appUrl || process.env.FRONTEND_URL;
   }
-
   /**
    * Create a divider block
    */
@@ -788,7 +787,7 @@ class SlackBlockKitBuilder {
     } = data;
 
     const blocks = [];
-    const frontendUrl = this.appUrl || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = this.appUrl || process.env.FRONTEND_URL || '';
 
     // ═══════════════════════════════════════════════════════════════
     // HEADER SECTION

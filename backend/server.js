@@ -7,6 +7,7 @@ import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import config from './config/index.js';
+import logger from './utils/logger.js';
 import { socketManager } from './realtime/index.js';
 // Re-export emitters for any remaining legacy imports
 export {
@@ -78,10 +79,11 @@ const corsHandler = cors({
     if (config.allowedOrigins.includes(normalized)) {
       callback(null, true);
     } else {
-      console.warn(
-        `[CORS] Blocked: origin="${normalized}" not in allowedOrigins=${JSON.stringify(config.allowedOrigins)}. ` +
-        `Fix: add "${normalized}" to FRONTEND_URL, CHATAPP_URL, or EXTRA_ALLOWED_ORIGIN in your env.`
-      );
+      logger.warn('CORS blocked request', {
+        origin: normalized,
+        allowedOrigins: config.allowedOrigins,
+        hint: `Add "${normalized}" to FRONTEND_URL, CHATAPP_URL, or EXTRA_ALLOWED_ORIGIN in your env.`,
+      });
       callback(null, false);
     }
   },
@@ -102,7 +104,7 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const duration = Date.now() - start;
     if (duration > 1000 || res.statusCode >= 400) {
-      console.log(`[${req.method}] ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+      logger.http(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
     }
   });
   next();
@@ -197,11 +199,11 @@ mongoose.connect(config.db.uri, {
   socketTimeoutMS: config.db.socketTimeoutMS,
 })
   .then(async () => {
-    if (config.isDev) console.log('Connected to MongoDB with connection pooling');
+    logger.info('Connected to MongoDB with connection pooling');
 
     // Initialize BullMQ queues (probes Redis, starts workers if available)
     const queuesActive = await initQueues();
-    if (config.isDev) console.log(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
+    logger.info(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
 
     seedAdmin();
     startBackgroundJobs();      // no-op if BullMQ handles scheduled tasks
@@ -212,13 +214,13 @@ mongoose.connect(config.db.uri, {
     startBoardCleanup();
 
     initializeSlackServices().then(() => {
-      console.log('Slack services initialized');
+      logger.info('Slack services initialized');
     }).catch(err => {
-      console.error('Slack services initialization error (non-fatal):', err.message);
+      logger.error('Slack services initialization error (non-fatal)', { error: err.message });
     });
 
     server.listen(config.port, () => {
-      if (config.isDev) console.log(`Server running on port ${config.port}`);
+      logger.info(`Server running on port ${config.port}`, { env: config.env });
     });
 
     // HTTP keep-alive tuning for load balancer compatibility
@@ -226,30 +228,30 @@ mongoose.connect(config.db.uri, {
     server.headersTimeout = config.http.headersTimeout;
   })
   .catch((error) => {
-    console.error('MongoDB connection error:', error);
+    logger.error('MongoDB connection error', { error: error.message });
   });
 
 // ─── Graceful Shutdown ───────────────────────────────────────────────────────
 const gracefulShutdown = async (signal) => {
-  console.log(`${signal} received. Shutting down gracefully...`);
+  logger.info(`${signal} received. Shutting down gracefully...`);
   try {
     await Promise.allSettled([
       shutdownSlackServices(),
       shutdownQueues(),
     ]);
   } catch (err) {
-    console.error('Error during service shutdown:', err);
+    logger.error('Error during service shutdown', { error: err.message });
   }
   server.close(() => {
-    console.log('HTTP server closed');
+    logger.info('HTTP server closed');
     mongoose.connection.close(false).then(() => {
-      console.log('MongoDB connection closed');
+      logger.info('MongoDB connection closed');
       process.exit(0);
     });
   });
   // Force exit after 10 seconds if graceful shutdown stalls
   setTimeout(() => {
-    console.error('Forced shutdown after timeout');
+    logger.error('Forced shutdown after timeout');
     process.exit(1);
   }, 10000);
 };

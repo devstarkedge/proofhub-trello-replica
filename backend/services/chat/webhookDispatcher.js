@@ -13,6 +13,7 @@
 
 import crypto from 'crypto';
 import axios from 'axios';
+import logger from '../../utils/logger.js';
 
 const CHAT_ENABLED = process.env.CHAT_ENABLED === 'true';
 const CHAT_WEBHOOK_URL = process.env.CHAT_WEBHOOK_URL;
@@ -53,9 +54,7 @@ async function dispatch(eventName, payload) {
   if (!CHAT_ENABLED) return;
 
   if (!CHAT_WEBHOOK_URL || !WEBHOOK_SECRET) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[ChatWebhook] Skipping dispatch — missing CHAT_WEBHOOK_URL or FLOWTASK_WEBHOOK_SECRET`);
-    }
+    logger.debug('ChatWebhook: skipping dispatch — missing CHAT_WEBHOOK_URL or FLOWTASK_WEBHOOK_SECRET');
     return;
   }
 
@@ -82,11 +81,7 @@ async function dispatch(eventName, payload) {
         transformRequest: [(data) => data],
       });
 
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(
-          `[ChatWebhook] Dispatched: ${eventName}, deliveryId: ${deliveryId}, status: ${response.status}`
-        );
-      }
+      logger.debug('ChatWebhook: dispatched', { eventName, deliveryId, status: response.status });
       return; // Success — exit retry loop
     } catch (error) {
       const status = error.response?.status;
@@ -94,22 +89,16 @@ async function dispatch(eventName, payload) {
 
       if (!isRetryable) {
         // 4xx — do not retry
-        console.error(
-          `[ChatWebhook] Failed (no-retry): ${eventName}, deliveryId: ${deliveryId}, status: ${status}, error: ${error.message}`
-        );
+        logger.error('ChatWebhook: failed (no-retry)', { eventName, deliveryId, status, error: error.message });
         return;
       }
 
       if (attempt < MAX_RETRIES) {
         const delay = RETRY_DELAYS[attempt];
-        console.warn(
-          `[ChatWebhook] Retrying: ${eventName}, deliveryId: ${deliveryId}, attempt: ${attempt + 1}/${MAX_RETRIES}, delay: ${delay}ms`
-        );
+        logger.warn('ChatWebhook: retrying', { eventName, deliveryId, attempt: attempt + 1, maxRetries: MAX_RETRIES, delay });
         await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
-        console.error(
-          `[ChatWebhook] Failed after ${MAX_RETRIES} retries: ${eventName}, deliveryId: ${deliveryId}, error: ${error.message}`
-        );
+        logger.error('ChatWebhook: failed after retries', { eventName, deliveryId, retries: MAX_RETRIES, error: error.message });
       }
     }
   }

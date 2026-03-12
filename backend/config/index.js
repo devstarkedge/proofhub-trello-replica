@@ -17,6 +17,15 @@ const isTest = env === 'test';
 
 // ─── Required Environment Variables ─────────────────────────────────────────
 const required = ['MONGO_URI', 'JWT_SECRET'];
+
+// Production-only requirements — ensures no localhost defaults leak into prod
+if (isProd) {
+  required.push('FRONTEND_URL');
+  if (process.env.CHAT_ENABLED === 'true') {
+    required.push('CHATAPP_URL', 'CHAT_WEBHOOK_URL', 'CHAT_JWT_SECRET', 'FLOWTASK_WEBHOOK_SECRET');
+  }
+}
+
 const missing = required.filter(key => !process.env[key]);
 if (missing.length > 0 && !isTest) {
   console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
@@ -36,14 +45,15 @@ const config = {
 
   // CORS: all origins that are allowed to call this API.
   // Strip trailing slashes so "https://example.com/" and "https://example.com" both match.
-  // Always include known dev ports so local testing never silently breaks.
+  // In production, FRONTEND_URL and CHATAPP_URL are required (see validation above).
+  // In development, localhost defaults are used when env vars are not set.
   allowedOrigins: [
     process.env.FRONTEND_URL,          // FlowTask frontend (prod or dev)
     process.env.CHATAPP_URL,           // Chat frontend (prod or dev)
     process.env.EXTRA_ALLOWED_ORIGIN,  // any additional override
-    // Dev fallbacks — present when not overridden by env:
-    !process.env.FRONTEND_URL && 'http://localhost:5173',
-    !process.env.CHATAPP_URL  && 'http://localhost:5174',
+    // Dev-only fallbacks — only active in non-production when env vars are missing:
+    isDev && !process.env.FRONTEND_URL && 'http://localhost:5173',
+    isDev && !process.env.CHATAPP_URL  && 'http://localhost:5174',
   ]
     .filter(Boolean)
     .map((o) => o.replace(/\/+$/, '')), // strip trailing slashes

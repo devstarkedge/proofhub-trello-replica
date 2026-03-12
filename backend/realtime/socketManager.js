@@ -13,6 +13,7 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import config from '../config/index.js';
+import logger from '../utils/logger.js';
 import { setIO } from './emitters.js';
 import { ROOM } from './events.js';
 
@@ -24,7 +25,7 @@ let _io = null;
  */
 function init(httpServer) {
   if (_io) {
-    console.warn('[SocketManager] Already initialized — returning existing io instance');
+    logger.warn('SocketManager: already initialized — returning existing io instance');
     return _io;
   }
 
@@ -69,8 +70,8 @@ function init(httpServer) {
 
   // ─── Connection Handler ────────────────────────────────────────────────
   _io.on('connection', (socket) => {
-    if (config.isDev) console.log('New socket connection attempt:', socket.id);
-    if (config.isDev) console.log('Handshake auth:', socket.handshake.auth);
+    if (config.isDev) logger.debug('New socket connection attempt', { socketId: socket.id });
+    if (config.isDev) logger.debug('Handshake auth', { auth: socket.handshake.auth });
 
     const decodedUser = socket.data.user || {};
     const userId = decodedUser.id || decodedUser._id?.toString();
@@ -85,12 +86,12 @@ function init(httpServer) {
 
     if (decodedUser.role === 'admin') {
       socket.join(ROOM.admin);
-      console.log(`Admin user ${userId} joined admin room`);
+      logger.debug(`Admin user ${userId} joined admin room`);
     }
 
     if (decodedUser.role === 'manager') {
       socket.join(ROOM.managers);
-      console.log(`User ${userId} joined managers room`);
+      logger.debug(`User ${userId} joined managers room`);
     }
 
     if (decodedUser.department) {
@@ -100,41 +101,41 @@ function init(httpServer) {
       departments.forEach((deptId) => {
         if (deptId) {
           socket.join(ROOM.department(deptId));
-          if (config.isDev) console.log(`User ${userId} joined department room: department-${deptId}`);
+    if (config.isDev) logger.debug(`User ${userId} joined department room: department-${deptId}`);
         }
       });
     }
 
-    console.log(`User ${userId} connected`);
+    logger.debug('User connected', { userId });
 
     // ── Card rooms ──
     socket.on('join-card', (cardId) => {
       socket.join(ROOM.card(cardId));
-      if (config.isDev) console.log(`User ${userId} joined card room: card-${cardId}`);
+      if (config.isDev) logger.debug(`User ${userId} joined card room: card-${cardId}`);
     });
     socket.on('leave-card', (cardId) => {
       socket.leave(ROOM.card(cardId));
-      if (config.isDev) console.log(`User ${userId} left card room: card-${cardId}`);
+      if (config.isDev) logger.debug(`User ${userId} left card room: card-${cardId}`);
     });
 
     // ── Team rooms ──
     socket.on('join-team', (teamId) => {
       socket.join(ROOM.team(teamId));
-      if (config.isDev) console.log(`User ${userId} joined team ${teamId}`);
+      if (config.isDev) logger.debug(`User ${userId} joined team ${teamId}`);
     });
     socket.on('leave-team', (teamId) => {
       socket.leave(ROOM.team(teamId));
-      if (config.isDev) console.log(`User ${userId} left team ${teamId}`);
+      if (config.isDev) logger.debug(`User ${userId} left team ${teamId}`);
     });
 
     // ── Board rooms ──
     socket.on('join-board', (boardId) => {
       socket.join(ROOM.board(boardId));
-      if (config.isDev) console.log(`User ${userId} joined board ${boardId}`);
+      if (config.isDev) logger.debug(`User ${userId} joined board ${boardId}`);
     });
     socket.on('leave-board', (boardId) => {
       socket.leave(ROOM.board(boardId));
-      if (config.isDev) console.log(`User ${userId} left board ${boardId}`);
+      if (config.isDev) logger.debug(`User ${userId} left board ${boardId}`);
     });
 
     // ── Client-side real-time relay ──
@@ -148,49 +149,49 @@ function init(httpServer) {
     // ── Announcement rooms ──
     socket.on('join-announcements', () => {
       socket.join(ROOM.announcements);
-      if (config.isDev) console.log(`User ${userId} joined announcements room`);
+      if (config.isDev) logger.debug(`User ${userId} joined announcements room`);
     });
     socket.on('leave-announcements', () => {
       socket.leave(ROOM.announcements);
-      if (config.isDev) console.log(`User ${userId} left announcements room`);
+      if (config.isDev) logger.debug(`User ${userId} left announcements room`);
     });
     socket.on('join-announcement', (announcementId) => {
       socket.join(ROOM.announcement(announcementId));
-      if (config.isDev) console.log(`User ${userId} joined announcement room: announcement-${announcementId}`);
+      if (config.isDev) logger.debug(`User ${userId} joined announcement room: announcement-${announcementId}`);
     });
     socket.on('leave-announcement', (announcementId) => {
       socket.leave(ROOM.announcement(announcementId));
-      if (config.isDev) console.log(`User ${userId} left announcement room: announcement-${announcementId}`);
+      if (config.isDev) logger.debug(`User ${userId} left announcement room: announcement-${announcementId}`);
     });
 
     // ── Finance rooms ──
     socket.on('join-finance', () => {
       socket.join(ROOM.finance);
-      if (config.isDev) console.log(`User ${userId} joined finance room`);
+      if (config.isDev) logger.debug(`User ${userId} joined finance room`);
     });
     socket.on('leave-finance', () => {
       socket.leave(ROOM.finance);
-      if (config.isDev) console.log(`User ${userId} left finance room`);
+      if (config.isDev) logger.debug(`User ${userId} left finance room`);
     });
 
     // ── My Shortcuts rooms ──
     socket.on('join-my-shortcuts', () => {
       socket.join(ROOM.userShortcuts(userId));
-      if (config.isDev) console.log(`User ${userId} joined my-shortcuts room`);
+      if (config.isDev) logger.debug(`User ${userId} joined my-shortcuts room`);
     });
     socket.on('leave-my-shortcuts', () => {
       socket.leave(ROOM.userShortcuts(userId));
-      if (config.isDev) console.log(`User ${userId} left my-shortcuts room`);
+      if (config.isDev) logger.debug(`User ${userId} left my-shortcuts room`);
     });
 
     // ── Sales rooms ──
     socket.on('join-sales', () => {
       socket.join(ROOM.sales);
-      if (config.isDev) console.log(`User ${userId} joined sales room`);
+      if (config.isDev) logger.debug(`User ${userId} joined sales room`);
     });
     socket.on('leave-sales', () => {
       socket.leave(ROOM.sales);
-      if (config.isDev) console.log(`User ${userId} left sales room`);
+      if (config.isDev) logger.debug(`User ${userId} left sales room`);
     });
 
     // ── Push notification subscription ──
@@ -198,9 +199,9 @@ function init(httpServer) {
       try {
         const User = (await import('../models/User.js')).default;
         await User.findByIdAndUpdate(userId, { pushSubscription: subscription });
-        if (config.isDev) console.log(`User ${userId} subscribed to push notifications`);
+        if (config.isDev) logger.debug(`User ${userId} subscribed to push notifications`);
       } catch (error) {
-        if (config.isDev) console.error('Error saving push subscription:', error);
+        if (config.isDev) logger.error('Error saving push subscription', { error: error.message });
       }
     });
 
@@ -208,15 +209,15 @@ function init(httpServer) {
       try {
         const User = (await import('../models/User.js')).default;
         await User.findByIdAndUpdate(userId, { $unset: { pushSubscription: 1 } });
-        if (config.isDev) console.log(`User ${userId} unsubscribed from push notifications`);
+        if (config.isDev) logger.debug(`User ${userId} unsubscribed from push notifications`);
       } catch (error) {
-        if (config.isDev) console.error('Error removing push subscription:', error);
+        if (config.isDev) logger.error('Error removing push subscription', { error: error.message });
       }
     });
 
     // ── Disconnect ──
     socket.on('disconnect', () => {
-      if (config.isDev) console.log(`User ${userId} disconnected`);
+      if (config.isDev) logger.debug(`User ${userId} disconnected`);
     });
   });
 

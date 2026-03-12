@@ -129,8 +129,7 @@ const extractId = (val) => {
 
 // Get notification URL for click action
 const getNotificationUrl = (notification) => {
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-
+    const baseUrl = process.env.FRONTEND_URL || '';
   const departmentId = extractId(notification.departmentId || notification.metadata?.departmentId);
   const projectId = extractId(notification.projectId || notification.relatedBoard || notification.metadata?.projectId);
   const taskId = extractId(notification.taskId || notification.relatedCard || notification.metadata?.taskId);
