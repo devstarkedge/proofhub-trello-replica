@@ -7,6 +7,21 @@
  * Each builder produces a plain object safe for JSON serialization.
  */
 
+function toId(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return toId(value[0]);
+  return (value._id || value.id)?.toString() || null;
+}
+
+function resolveWorkspaceId(...candidates) {
+  for (const candidate of candidates) {
+    const id = toId(candidate);
+    if (id) return id;
+  }
+  return null;
+}
+
 // ─── Actor Payload ───────────────────────────────────────────────────────────
 
 /**
@@ -26,7 +41,9 @@ export function buildActor(user) {
 // ─── Project / Board Payloads ────────────────────────────────────────────────
 
 export function buildProjectCreatedPayload(board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department);
   return {
+    workspaceId,
     project: {
       id: board._id?.toString(),
       name: board.name,
@@ -44,7 +61,9 @@ export function buildProjectCreatedPayload(board, actor) {
 }
 
 export function buildProjectUpdatedPayload(board, changes, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department);
   return {
+    workspaceId,
     project: {
       id: board._id?.toString(),
       name: board.name,
@@ -56,7 +75,9 @@ export function buildProjectUpdatedPayload(board, changes, actor) {
 }
 
 export function buildProjectDeletedPayload(board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department);
   return {
+    workspaceId,
     project: {
       id: board._id?.toString(),
       name: board.name,
@@ -67,7 +88,9 @@ export function buildProjectDeletedPayload(board, actor) {
 }
 
 export function buildProjectMemberPayload(board, memberId, role, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department);
   return {
+    workspaceId,
     project: {
       id: board._id?.toString(),
       name: board.name,
@@ -85,7 +108,9 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
 // ─── Task / Card Payloads ────────────────────────────────────────────────────
 
 export function buildTaskCreatedPayload(card, board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
   return {
+    workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
@@ -105,7 +130,9 @@ export function buildTaskCreatedPayload(card, board, actor) {
 }
 
 export function buildTaskUpdatedPayload(card, changes, board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
   return {
+    workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
@@ -121,7 +148,9 @@ export function buildTaskUpdatedPayload(card, changes, board, actor) {
 }
 
 export function buildTaskDeletedPayload(card, board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
   return {
+    workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
@@ -136,7 +165,9 @@ export function buildTaskDeletedPayload(card, board, actor) {
 }
 
 export function buildTaskAssignedPayload(card, assignees, board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
   return {
+    workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
@@ -156,7 +187,9 @@ export function buildTaskAssignedPayload(card, assignees, board, actor) {
 }
 
 export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
   return {
+    workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
@@ -173,7 +206,9 @@ export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board,
 }
 
 export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
   return {
+    workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
@@ -192,7 +227,9 @@ export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, ac
 // ─── Comment Payloads ────────────────────────────────────────────────────────
 
 export function buildCommentAddedPayload(comment, card, board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
   return {
+    workspaceId,
     comment: {
       id: comment._id?.toString(),
       text: (comment.text || comment.htmlContent || '').substring(0, 300),
@@ -214,7 +251,9 @@ export function buildCommentAddedPayload(comment, card, board, actor) {
 // ─── Time Entry Payload ──────────────────────────────────────────────────────
 
 export function buildTimeEntryPayload(card, entry, board, actor) {
+  const workspaceId = resolveWorkspaceId(board?.department, card?.department, entry?.department);
   return {
+    workspaceId,
     timeEntry: {
       hours: entry.hours || 0,
       minutes: entry.minutes || 0,
@@ -237,7 +276,9 @@ export function buildTimeEntryPayload(card, entry, board, actor) {
 // ─── User Payloads ───────────────────────────────────────────────────────────
 
 export function buildUserPayload(user, event) {
+  const workspaceId = resolveWorkspaceId(user?.department);
   return {
+    workspaceId,
     user: {
       id: (user._id || user.id)?.toString(),
       name: user.name || '',
@@ -267,7 +308,13 @@ export function buildUserUpdatedPayload(user, changes, actor) {
 // ─── Announcement Payloads ───────────────────────────────────────────────────
 
 export function buildAnnouncementPayload(announcement, actor) {
+  const workspaceId = resolveWorkspaceId(
+    announcement?.department,
+    announcement?.departmentId,
+    announcement?.subscribers?.departments,
+  );
   return {
+    workspaceId,
     announcement: {
       id: announcement._id?.toString(),
       title: announcement.title || '',

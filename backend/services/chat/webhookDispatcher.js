@@ -58,8 +58,14 @@ async function dispatch(eventName, payload) {
     return;
   }
 
+  if (!payload?.workspaceId) {
+    logger.warn('ChatWebhook: skipping dispatch — workspaceId is required', { eventName });
+    return;
+  }
+
   const deliveryId = generateDeliveryId();
   const timestamp = Math.floor(Date.now() / 1000).toString();
+  const workspaceId = payload?.workspaceId || null;
   const body = JSON.stringify(payload);
   const signaturePayload = `${timestamp}.${body}`;
   const signature = computeSignature(signaturePayload);
@@ -70,6 +76,7 @@ async function dispatch(eventName, payload) {
     'X-FlowTask-Timestamp': timestamp,
     'X-FlowTask-Delivery-Id': deliveryId,
     'X-FlowTask-Event': eventName,
+    ...(workspaceId ? { 'X-FlowTask-Workspace': workspaceId.toString() } : {}),
   };
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -81,7 +88,13 @@ async function dispatch(eventName, payload) {
         transformRequest: [(data) => data],
       });
 
-      logger.debug('ChatWebhook: dispatched', { eventName, deliveryId, status: response.status });
+      logger.info('ChatWebhook: dispatched', {
+        eventName,
+        deliveryId,
+        workspaceId,
+        status: response.status,
+        attempt: attempt + 1,
+      });
       return; // Success — exit retry loop
     } catch (error) {
       const status = error.response?.status;
@@ -89,16 +102,35 @@ async function dispatch(eventName, payload) {
 
       if (!isRetryable) {
         // 4xx — do not retry
-        logger.error('ChatWebhook: failed (no-retry)', { eventName, deliveryId, status, error: error.message });
+        logger.error('ChatWebhook: failed (no-retry)', {
+          eventName,
+          deliveryId,
+          workspaceId,
+          status,
+          error: error.message,
+        });
         return;
       }
 
       if (attempt < MAX_RETRIES) {
         const delay = RETRY_DELAYS[attempt];
-        logger.warn('ChatWebhook: retrying', { eventName, deliveryId, attempt: attempt + 1, maxRetries: MAX_RETRIES, delay });
+        logger.warn('ChatWebhook: retrying', {
+          eventName,
+          deliveryId,
+          workspaceId,
+          attempt: attempt + 1,
+          maxRetries: MAX_RETRIES,
+          delay,
+        });
         await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
-        logger.error('ChatWebhook: failed after retries', { eventName, deliveryId, retries: MAX_RETRIES, error: error.message });
+        logger.error('ChatWebhook: failed after retries', {
+          eventName,
+          deliveryId,
+          workspaceId,
+          retries: MAX_RETRIES,
+          error: error.message,
+        });
       }
     }
   }

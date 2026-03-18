@@ -5,6 +5,22 @@ import { ErrorResponse } from '../middleware/errorHandler.js';
 import config from '../config/index.js';
 import webhookDispatcher from '../services/chat/webhookDispatcher.js';
 
+function resolveWorkspaceIdFromRequest(req) {
+  const fromHeader = req.headers['x-workspace-id'];
+  if (fromHeader) return fromHeader.toString();
+
+  const fromQuery = req.query?.workspaceId;
+  if (fromQuery) return fromQuery.toString();
+
+  const departments = req.user?.department;
+  if (Array.isArray(departments) && departments.length > 0) {
+    const first = departments[0];
+    return (first?._id || first)?.toString?.() || null;
+  }
+
+  return null;
+}
+
 /**
  * @desc    Get current chat integration status
  * @route   GET /api/chat-integration/status
@@ -103,8 +119,14 @@ export const testConnection = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Chat integration is not connected', 400));
   }
 
+  const workspaceId = resolveWorkspaceIdFromRequest(req);
+  if (!workspaceId) {
+    return next(new ErrorResponse('Workspace context is required to test chat integration', 400));
+  }
+
   try {
     await webhookDispatcher.dispatch('INTEGRATION_TEST', {
+      workspaceId,
       message: 'Test event from FlowTask',
       timestamp: new Date().toISOString(),
       triggeredBy: {
@@ -131,6 +153,7 @@ export const testConnection = asyncHandler(async (req, res, next) => {
 export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
   const chatAppUrl = config.chat.chatAppUrl;
   const chatJwtSecret = config.chat.jwtSecret;
+  const workspaceId = resolveWorkspaceIdFromRequest(req);
 
   if (!chatAppUrl) {
     return next(new ErrorResponse('ChatApp URL is not configured. Set CHATAPP_URL in environment.', 400));
@@ -146,13 +169,15 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     name: req.user.name,
     role: req.user.role,
     avatar: req.user.avatar || req.user.profileImage || '',
+    workspaceId,
     source: 'flowtask',
   };
 
   const token = jwt.sign(payload, chatJwtSecret, { expiresIn: '10m' });
 
   // Build redirect URL
-  const redirectUrl = `${chatAppUrl.replace(/\/+$/, '')}/login?token=${encodeURIComponent(token)}&source=flowtask`;
+  const workspaceQuery = workspaceId ? `&workspaceId=${encodeURIComponent(workspaceId)}` : '';
+  const redirectUrl = `${chatAppUrl.replace(/\/+$/, '')}/login?token=${encodeURIComponent(token)}&source=flowtask${workspaceQuery}`;
 
   res.json({
     success: true,
@@ -172,9 +197,15 @@ export const triggerSync = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Chat integration is not connected', 400));
   }
 
+  const workspaceId = resolveWorkspaceIdFromRequest(req);
+  if (!workspaceId) {
+    return next(new ErrorResponse('Workspace context is required to trigger chat sync', 400));
+  }
+
   // Dispatch a SYNC_REQUESTED event — ChatApp's webhook handler
   // will orchestrate the actual sync using its sync.service.js
   await webhookDispatcher.dispatch('SYNC_REQUESTED', {
+    workspaceId,
     requestedBy: {
       userId: req.user._id,
       name: req.user.name,
