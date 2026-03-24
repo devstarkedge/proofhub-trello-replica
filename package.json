@@ -1,1 +1,12 @@
-{}
+{
+  "name": "flowtask",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FlowTask - Enterprise Project Management System",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "node backend/server.js",
+    "install:all": "npm install --prefix frontend && npm install --prefix backend"
+  }
+}
+

@@ -10,6 +10,11 @@ export default ({ mode }) => {
   const backend = env.VITE_BACKEND_URL
 
   return defineConfig({
+    // Explicit root-relative base ensures asset URLs are always /assets/...
+    // regardless of which platform hosts the build. Without this, some
+    // environments resolve to a relative path that breaks when index.html is
+    // served from a non-root URL (e.g., a sub-directory or CDN prefix).
+    base: '/',
     plugins: [react(), tailwindcss()],
     server: {
       proxy: {

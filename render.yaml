@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: flowtask
+    runtime: node
+    # Render sets rootDir as the working directory for both build and start commands.
+    # All paths below are relative to the repo root.
+    rootDir: .
+    # Build: install frontend deps, compile Vite bundle, then install backend deps.
+    buildCommand: cd frontend && npm install && npm run build && cd ../backend && npm install
+    # Start: run the Express server which serves both the API and the compiled SPA.
+    startCommand: node backend/server.js
+    # Render auto-detects Node version from .node-version / engines field.
+    # Set NODE_ENV so the backend enforces production-only env var checks.
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # All secrets below must be set in the Render dashboard (not committed here).
+      # Required: MONGO_URI, JWT_SECRET, FRONTEND_URL
+      # Optional: REDIS_URL, EMAIL_USER, EMAIL_PASS, CLOUDINARY_*, VAPID_*, SLACK_*, CHAT_*

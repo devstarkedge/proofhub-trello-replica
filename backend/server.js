@@ -119,6 +119,27 @@ app.use(express.json({ limit: config.http.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// ─── Frontend Static Assets ───────────────────────────────────────────────────
+// Serve compiled frontend assets. Hashed filenames (/assets/*.js, /assets/*.css)
+// get a 1-year immutable cache. index: false defers index.html to the SPA fallback
+// so we can always set Cache-Control: no-cache on HTML (critical after re-deploys).
+const frontendDist = path.join(__dirname, '../frontend/dist');
+app.use(
+  express.static(frontendDist, {
+    maxAge: '1y',
+    immutable: true,
+    etag: true,
+    index: false,
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+    },
+  })
+);
+
 // ─── Compression ─────────────────────────────────────────────────────────────
 app.use(compression());
 
@@ -181,6 +202,22 @@ app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 app.use('/api/authorization', authzRoutes);
 app.use('/api/chat-integration', chatIntegrationRoutes);
+
+// ─── SPA Fallback ─────────────────────────────────────────────────────────────
+// Must come AFTER all API routes. Serves index.html for every non-API GET so
+// React Router can handle client-side navigation (direct URL, page refresh).
+// Never cache HTML — browsers must re-fetch after each deployment so they pick
+// up the new hashed asset filenames embedded in the freshly built index.html.
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  res
+    .set('Cache-Control', 'no-cache, no-store, must-revalidate')
+    .set('Pragma', 'no-cache')
+    .set('Expires', '0')
+    .sendFile(path.join(__dirname, '../frontend/dist/index.html'), (err) => {
+      if (err) next(err);
+    });
+});
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 import seedAdmin from './utils/seed.js';
