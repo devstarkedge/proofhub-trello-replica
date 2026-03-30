@@ -42,33 +42,52 @@ export function buildActor(user) {
 
 export function buildProjectCreatedPayload(board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department);
+  const projectData = {
+    id: board._id?.toString(),
+    name: board.name,
+    description: board.description || '',
+    department: board.department?.toString() || null,
+    departmentName: board.department?.name || null,
+    owner: board.owner?.toString(),
+    members: (board.members || []).map((m) => (m._id || m).toString()),
+    visibility: board.visibility || 'private',
+    status: board.status || 'planning',
+    createdAt: board.createdAt || new Date().toISOString(),
+  };
   return {
     workspaceId,
-    project: {
-      id: board._id?.toString(),
-      name: board.name,
-      description: board.description || '',
-      department: board.department?.toString() || null,
-      departmentName: board.department?.name || null,
-      owner: board.owner?.toString(),
-      members: (board.members || []).map((m) => (m._id || m).toString()),
-      visibility: board.visibility || 'private',
-      status: board.status || 'planning',
-      createdAt: board.createdAt || new Date().toISOString(),
+    project: projectData,
+    // ChatApp-compatible aliases (handlers expect board/_id/title)
+    board: {
+      _id: projectData.id,
+      title: projectData.name,
+      name: projectData.name,
+      description: projectData.description,
+      department: projectData.departmentName
+        ? { _id: projectData.department, name: projectData.departmentName }
+        : projectData.department,
+      owner: projectData.owner,
+      members: projectData.members,
+      visibility: projectData.visibility,
+      status: projectData.status,
     },
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     actor: buildActor(actor),
   };
 }
 
 export function buildProjectUpdatedPayload(board, changes, actor) {
   const workspaceId = resolveWorkspaceId(board?.department);
+  const projectId = board._id?.toString();
   return {
     workspaceId,
     project: {
-      id: board._id?.toString(),
+      id: projectId,
       name: board.name,
       department: board.department?.toString() || null,
     },
+    board: { _id: projectId, title: board.name, name: board.name },
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     changes: changes || {},
     actor: buildActor(actor),
   };
@@ -76,19 +95,23 @@ export function buildProjectUpdatedPayload(board, changes, actor) {
 
 export function buildProjectDeletedPayload(board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department);
+  const projectId = board._id?.toString();
   return {
     workspaceId,
     project: {
-      id: board._id?.toString(),
+      id: projectId,
       name: board.name,
       department: board.department?.toString() || null,
     },
+    boardId: projectId,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     actor: buildActor(actor),
   };
 }
 
 export function buildProjectMemberPayload(board, memberId, role, actor) {
   const workspaceId = resolveWorkspaceId(board?.department);
+  const memberUserId = (memberId?._id || memberId)?.toString();
   return {
     workspaceId,
     project: {
@@ -96,11 +119,16 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
       name: board.name,
     },
     member: {
-      userId: (memberId?._id || memberId)?.toString(),
+      userId: memberUserId,
       name: memberId?.name || null,
       email: memberId?.email || null,
       role: role || 'member',
     },
+    // ChatApp-compatible aliases
+    boardId: board._id?.toString(),
+    memberId: memberUserId,
+    role: role || 'member',
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     actor: buildActor(actor),
   };
 }
@@ -109,18 +137,22 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
 
 export function buildTaskCreatedPayload(card, board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const taskData = {
+    id: card._id?.toString(),
+    title: card.title,
+    description: card.description?.substring(0, 500) || '',
+    status: card.status || null,
+    priority: card.priority || null,
+    dueDate: card.dueDate || null,
+    assignees: (card.assignees || card.members || []).map((a) => (a._id || a).toString()),
+    boardId: (card.board || board?._id)?.toString(),
+  };
   return {
     workspaceId,
-    task: {
-      id: card._id?.toString(),
-      title: card.title,
-      description: card.description?.substring(0, 500) || '',
-      status: card.status || null,
-      priority: card.priority || null,
-      dueDate: card.dueDate || null,
-      assignees: (card.assignees || card.members || []).map((a) => (a._id || a).toString()),
-      boardId: (card.board || board?._id)?.toString(),
-    },
+    task: taskData,
+    card: { _id: taskData.id, title: taskData.title, description: taskData.description, status: taskData.status, priority: taskData.priority, dueDate: taskData.dueDate, assignedTo: taskData.assignees?.[0] },
+    boardId: taskData.boardId,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
@@ -131,13 +163,17 @@ export function buildTaskCreatedPayload(card, board, actor) {
 
 export function buildTaskUpdatedPayload(card, changes, board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
-      boardId: (card.board || board?._id)?.toString(),
+      boardId,
     },
+    card: { _id: card._id?.toString(), title: card.title },
+    boardId,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     changes: changes || {},
     project: {
       id: board?._id?.toString(),
@@ -149,13 +185,18 @@ export function buildTaskUpdatedPayload(card, changes, board, actor) {
 
 export function buildTaskDeletedPayload(card, board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
-      boardId: (card.board || board?._id)?.toString(),
+      boardId,
     },
+    cardId: card._id?.toString(),
+    cardTitle: card.title,
+    boardId,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
@@ -166,18 +207,24 @@ export function buildTaskDeletedPayload(card, board, actor) {
 
 export function buildTaskAssignedPayload(card, assignees, board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const boardId = (card.board || board?._id)?.toString();
+  const assigneeList = (assignees || []).map((a) => ({
+    userId: (a._id || a).toString(),
+    name: a.name || null,
+    email: a.email || null,
+  }));
   return {
     workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
-      boardId: (card.board || board?._id)?.toString(),
+      boardId,
     },
-    assignees: (assignees || []).map((a) => ({
-      userId: (a._id || a).toString(),
-      name: a.name || null,
-      email: a.email || null,
-    })),
+    card: { _id: card._id?.toString(), title: card.title },
+    boardId,
+    assignees: assigneeList,
+    assigneeId: assigneeList[0]?.userId || null,
+    assignerId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
@@ -188,15 +235,19 @@ export function buildTaskAssignedPayload(card, assignees, board, actor) {
 
 export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
-      boardId: (card.board || board?._id)?.toString(),
+      boardId,
     },
+    card: { _id: card._id?.toString(), title: card.title },
+    boardId,
     oldStatus,
     newStatus,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
@@ -207,15 +258,19 @@ export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board,
 
 export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
     task: {
       id: card._id?.toString(),
       title: card.title,
-      boardId: (card.board || board?._id)?.toString(),
+      boardId,
     },
+    card: { _id: card._id?.toString(), title: card.title },
+    boardId,
     oldDueDate: oldDate || null,
     newDueDate: newDate || null,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
@@ -228,6 +283,7 @@ export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, ac
 
 export function buildCommentAddedPayload(comment, card, board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const boardId = (card?.board || board?._id)?.toString();
   return {
     workspaceId,
     comment: {
@@ -238,8 +294,11 @@ export function buildCommentAddedPayload(comment, card, board, actor) {
     task: {
       id: card?._id?.toString(),
       title: card?.title || '',
-      boardId: (card?.board || board?._id)?.toString(),
+      boardId,
     },
+    card: { _id: card?._id?.toString(), title: card?.title || '' },
+    boardId,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
@@ -252,6 +311,7 @@ export function buildCommentAddedPayload(comment, card, board, actor) {
 
 export function buildTimeEntryPayload(card, entry, board, actor) {
   const workspaceId = resolveWorkspaceId(board?.department, card?.department, entry?.department);
+  const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
     timeEntry: {
@@ -263,8 +323,11 @@ export function buildTimeEntryPayload(card, entry, board, actor) {
     task: {
       id: card._id?.toString(),
       title: card.title,
-      boardId: (card.board || board?._id)?.toString(),
+      boardId,
     },
+    card: { _id: card._id?.toString(), title: card.title },
+    boardId,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
