@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Chat Webhook Payload Builders
  *
  * Transforms FlowTask Mongoose documents into the JSON payload schemas
- * defined in FLOWTASK_CHAT_INTEGRATION.md §3.
+ * defined in FLOWTASK_CHAT_INTEGRATION.md Â§3.
  *
  * Each builder produces a plain object safe for JSON serialization.
  */
@@ -14,15 +14,18 @@ function toId(value) {
   return (value._id || value.id)?.toString() || null;
 }
 
-function resolveWorkspaceId(...candidates) {
-  for (const candidate of candidates) {
-    const id = toId(candidate);
-    if (id) return id;
-  }
-  return null;
+/**
+ * Resolve the ChatApp workspace identifier for webhook payloads.
+ * Returns the configured ChatApp workspace slug (NOT a FlowTask department ID).
+ * ChatApp is a single-workspace setup â€” all FlowTask departments map to one workspace.
+ */
+const CHAT_WORKSPACE_SLUG = process.env.CHAT_WORKSPACE_SLUG || 'flowtask';
+
+function resolveWorkspaceId() {
+  return CHAT_WORKSPACE_SLUG;
 }
 
-// ─── Actor Payload ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Actor Payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Build actor object from a FlowTask user (req.user or populated user doc).
@@ -38,10 +41,10 @@ export function buildActor(user) {
   };
 }
 
-// ─── Project / Board Payloads ────────────────────────────────────────────────
+// â”€â”€â”€ Project / Board Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function buildProjectCreatedPayload(board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department);
+  const workspaceId = resolveWorkspaceId();
   const projectData = {
     id: board._id?.toString(),
     name: board.name,
@@ -77,7 +80,7 @@ export function buildProjectCreatedPayload(board, actor) {
 }
 
 export function buildProjectUpdatedPayload(board, changes, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department);
+  const workspaceId = resolveWorkspaceId();
   const projectId = board._id?.toString();
   return {
     workspaceId,
@@ -94,7 +97,7 @@ export function buildProjectUpdatedPayload(board, changes, actor) {
 }
 
 export function buildProjectDeletedPayload(board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department);
+  const workspaceId = resolveWorkspaceId();
   const projectId = board._id?.toString();
   return {
     workspaceId,
@@ -110,7 +113,7 @@ export function buildProjectDeletedPayload(board, actor) {
 }
 
 export function buildProjectMemberPayload(board, memberId, role, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department);
+  const workspaceId = resolveWorkspaceId();
   const memberUserId = (memberId?._id || memberId)?.toString();
   return {
     workspaceId,
@@ -133,10 +136,10 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
   };
 }
 
-// ─── Task / Card Payloads ────────────────────────────────────────────────────
+// â”€â”€â”€ Task / Card Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function buildTaskCreatedPayload(card, board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const workspaceId = resolveWorkspaceId();
   const taskData = {
     id: card._id?.toString(),
     title: card.title,
@@ -162,7 +165,7 @@ export function buildTaskCreatedPayload(card, board, actor) {
 }
 
 export function buildTaskUpdatedPayload(card, changes, board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const workspaceId = resolveWorkspaceId();
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -184,7 +187,7 @@ export function buildTaskUpdatedPayload(card, changes, board, actor) {
 }
 
 export function buildTaskDeletedPayload(card, board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const workspaceId = resolveWorkspaceId();
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -206,7 +209,7 @@ export function buildTaskDeletedPayload(card, board, actor) {
 }
 
 export function buildTaskAssignedPayload(card, assignees, board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const workspaceId = resolveWorkspaceId();
   const boardId = (card.board || board?._id)?.toString();
   const assigneeList = (assignees || []).map((a) => ({
     userId: (a._id || a).toString(),
@@ -234,7 +237,7 @@ export function buildTaskAssignedPayload(card, assignees, board, actor) {
 }
 
 export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const workspaceId = resolveWorkspaceId();
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -257,7 +260,7 @@ export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board,
 }
 
 export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const workspaceId = resolveWorkspaceId();
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -279,10 +282,10 @@ export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, ac
   };
 }
 
-// ─── Comment Payloads ────────────────────────────────────────────────────────
+// â”€â”€â”€ Comment Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function buildCommentAddedPayload(comment, card, board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department, card?.department);
+  const workspaceId = resolveWorkspaceId();
   const boardId = (card?.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -307,10 +310,10 @@ export function buildCommentAddedPayload(comment, card, board, actor) {
   };
 }
 
-// ─── Time Entry Payload ──────────────────────────────────────────────────────
+// â”€â”€â”€ Time Entry Payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function buildTimeEntryPayload(card, entry, board, actor) {
-  const workspaceId = resolveWorkspaceId(board?.department, card?.department, entry?.department);
+  const workspaceId = resolveWorkspaceId();
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -336,10 +339,10 @@ export function buildTimeEntryPayload(card, entry, board, actor) {
   };
 }
 
-// ─── User Payloads ───────────────────────────────────────────────────────────
+// â”€â”€â”€ User Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function buildUserPayload(user, event) {
-  const workspaceId = resolveWorkspaceId(user?.department);
+  const workspaceId = resolveWorkspaceId();
   return {
     workspaceId,
     user: {
@@ -368,14 +371,10 @@ export function buildUserUpdatedPayload(user, changes, actor) {
   };
 }
 
-// ─── Announcement Payloads ───────────────────────────────────────────────────
+// â”€â”€â”€ Announcement Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function buildAnnouncementPayload(announcement, actor) {
-  const workspaceId = resolveWorkspaceId(
-    announcement?.department,
-    announcement?.departmentId,
-    announcement?.subscribers?.departments,
-  );
+  const workspaceId = resolveWorkspaceId();
   return {
     workspaceId,
     announcement: {

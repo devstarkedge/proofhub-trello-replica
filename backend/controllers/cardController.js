@@ -1273,7 +1273,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
     
     // Send Slack notification for status change
-    const boardData = await Board.findById(card.board).select('name').lean();
+    const boardData = await Board.findById(card.board).select('name department').lean();
     if (req.body.status === 'done') {
       slackHooks.onTaskCompleted(card, boardData, req.user).catch(console.error);
     } else {
@@ -1307,7 +1307,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     // Send Slack notification for task updates (except status changes which are handled above)
     const nonStatusChanges = changedFields.filter(c => c.field !== 'status');
     if (nonStatusChanges.length > 0) {
-      const boardData2 = await Board.findById(card.board).select('name').lean();
+      const boardData2 = await Board.findById(card.board).select('name department').lean();
       slackHooks.onTaskUpdated(card, boardData2, nonStatusChanges.map(c => c.field), req.user).catch(console.error);
     }
   }

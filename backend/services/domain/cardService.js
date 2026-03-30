@@ -466,7 +466,7 @@ class CardService {
         description: `Changed status from "${old.status}" to "${updates.status}"`,
         metadata: { oldStatus: old.status, newStatus: updates.status },
       });
-      const boardData = await Board.findById(card.board).select('name').lean();
+      const boardData = await Board.findById(card.board).select('name department').lean();
       if (updates.status === 'done') {
         changedFields.push({ field: 'status', message: `"${card.title}" has been marked as complete`, special: 'done' });
         slackHooks.onTaskCompleted(card, boardData, user).catch(() => {});
@@ -634,7 +634,7 @@ class CardService {
 
       const nonStatus = changedFields.filter((c) => c.field !== 'status');
       if (nonStatus.length) {
-        const boardData = await Board.findById(card.board).select('name').lean();
+        const boardData = await Board.findById(card.board).select('name department').lean();
         slackHooks.onTaskUpdated(card, boardData, nonStatus.map((c) => c.field), user).catch(() => {});
       }
     }
