@@ -81,6 +81,10 @@ class CardService {
     this._notifyAssignees(card, resolvedAssignees, board, user).catch(() => {});
     this._notifyMembers(card, members, user).catch(() => {});
 
+    // Dispatch chat webhook for task creation (always, regardless of assignees)
+    const boardData = await Board.findById(board).select('name department').lean();
+    chatHooks.onTaskCreated(card, boardData, user).catch(() => {});
+
     const populated = await Card.findById(card._id)
       .populate('assignees', 'name email avatar')
       .populate('members', 'name email avatar')
@@ -380,7 +384,6 @@ class CardService {
     await notificationService.notifyTaskAssigned(card, assignees, user.id);
     const boardData = await Board.findById(boardId).select('name department').lean();
     slackHooks.onTaskAssigned(card, boardData, assignees, user).catch(() => {});
-    chatHooks.onTaskCreated(card, boardData, user).catch(() => {});
     chatHooks.onTaskAssigned(card, assignees, boardData, user).catch(() => {});
   }
 
@@ -634,9 +637,22 @@ class CardService {
         const boardData = await Board.findById(card.board).select('name').lean();
         slackHooks.onTaskUpdated(card, boardData, nonStatus.map((c) => c.field), user).catch(() => {});
       }
+    }
 
+    // Dispatch chat webhook for general task update (always when fields changed, regardless of assignees)
+    if (changedFields.length > 0) {
+      // Build changes object with actual new values so ChatApp handler can display them
+      const chatChanges = {};
+      for (const c of changedFields) {
+        if (c.field === 'status') chatChanges.status = updates.status;
+        else if (c.field === 'priority') chatChanges.priority = updates.priority;
+        else if (c.field === 'title') chatChanges.title = updates.title;
+        else if (c.field === 'dueDate') chatChanges.dueDate = updates.dueDate;
+        else if (c.field === 'listId') chatChanges.listId = updates.listId || updates.list;
+        else if (c.field === 'description') chatChanges.description = true;
+      }
       const boardInfo = await Board.findById(card.board).select('name department').lean();
-      chatHooks.onTaskUpdated(card, { changedFields: changedFields.map((c) => c.field) }, boardInfo, user).catch(() => {});
+      chatHooks.onTaskUpdated(card, chatChanges, boardInfo, user).catch(() => {});
     }
   }
 }

@@ -791,16 +791,18 @@ export const createCard = asyncHandler(async (req, res, next) => {
     }
   });
 
+  // Dispatch chat webhook for task creation (always, regardless of assignees)
+  const boardData = await Board.findById(board).select('name department').lean();
+  chatHooks.onTaskCreated(card, boardData, req.user).catch(console.error);
+
   // Send notifications using the notification service
   if (resolvedAssignees.length > 0) {
     await notificationService.notifyTaskAssigned(card, resolvedAssignees, req.user.id);
 
     // Send Slack notifications for task assignment
-    const boardData = await Board.findById(board).select('name department').lean();
     slackHooks.onTaskAssigned(card, boardData, resolvedAssignees, req.user).catch(console.error);
 
-    // Dispatch chat webhook for task creation + assignment
-    chatHooks.onTaskCreated(card, boardData, req.user).catch(console.error);
+    // Dispatch chat webhook for task assignment
     chatHooks.onTaskAssigned(card, resolvedAssignees, boardData, req.user).catch(console.error);
   }
 
@@ -1305,13 +1307,25 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     // Send Slack notification for task updates (except status changes which are handled above)
     const nonStatusChanges = changedFields.filter(c => c.field !== 'status');
     if (nonStatusChanges.length > 0) {
-      const boardData = await Board.findById(card.board).select('name').lean();
-      slackHooks.onTaskUpdated(card, boardData, nonStatusChanges.map(c => c.field), req.user).catch(console.error);
+      const boardData2 = await Board.findById(card.board).select('name').lean();
+      slackHooks.onTaskUpdated(card, boardData2, nonStatusChanges.map(c => c.field), req.user).catch(console.error);
     }
+  }
 
-    // Dispatch chat webhook for general task update
+  // Dispatch chat webhook for general task update (always, regardless of assignees)
+  if (changedFields.length > 0) {
+    // Build changes object with actual new values so ChatApp handler can display them
+    const chatChanges = {};
+    for (const c of changedFields) {
+      if (c.field === 'status') chatChanges.status = req.body.status;
+      else if (c.field === 'priority') chatChanges.priority = req.body.priority;
+      else if (c.field === 'title') chatChanges.title = req.body.title;
+      else if (c.field === 'dueDate') chatChanges.dueDate = req.body.dueDate;
+      else if (c.field === 'listId') chatChanges.listId = req.body.listId || req.body.list;
+      else if (c.field === 'description') chatChanges.description = true;
+    }
     const boardInfo = await Board.findById(card.board).select('name department').lean();
-    chatHooks.onTaskUpdated(card, { changedFields: changedFields.map(c => c.field) }, boardInfo, req.user).catch(console.error);
+    chatHooks.onTaskUpdated(card, chatChanges, boardInfo, req.user).catch(console.error);
   }
 
   res.status(200).json({
