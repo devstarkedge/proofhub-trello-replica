@@ -443,7 +443,7 @@ const HomePage = () => {
           <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
             <div className="flex flex-wrap items-center justify-between gap-4">
               {/* Search */}
-              <div className="flex-1 min-w-[300px]">
+              <div className="flex-1 w-full sm:w-auto min-w-[200px] sm:min-w-[300px]">
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                   <input

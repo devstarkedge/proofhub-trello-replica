@@ -250,7 +250,7 @@ const NotificationPanel = ({
       initial={{ opacity: 0, y: -10, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -10, scale: 0.95 }}
-      className="notification-panel absolute right-0 top-full mt-2 w-[420px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl z-50 overflow-hidden"
+      className="notification-panel absolute right-0 sm:-right-4 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[420px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl z-50 overflow-hidden"
     >
       {/* Header */}
       <div 

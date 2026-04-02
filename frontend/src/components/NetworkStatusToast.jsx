@@ -19,7 +19,7 @@ const NetworkStatusToast = () => {
             : 'translate-x-full opacity-0 pointer-events-none'
         }`}
       >
-        <div className="flex items-center gap-3 px-5 py-4 rounded-xl shadow-2xl backdrop-blur-xl bg-gradient-to-r from-amber-500/95 to-orange-500/95 border border-amber-400/30 min-w-[320px] max-w-[400px]">
+        <div className="flex items-center gap-3 px-5 py-4 rounded-xl shadow-2xl backdrop-blur-xl bg-gradient-to-r from-amber-500/95 to-orange-500/95 border border-amber-400/30 w-[calc(100vw-2rem)] sm:w-auto sm:min-w-[320px] max-w-[400px]">
           {/* Animated Wifi Off Icon */}
           <div className="flex-shrink-0 relative">
             <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center animate-pulse">
@@ -83,7 +83,7 @@ const NetworkStatusToast = () => {
             : 'translate-x-full opacity-0 pointer-events-none'
         }`}
       >
-        <div className="flex items-center gap-3 px-5 py-4 rounded-xl shadow-2xl backdrop-blur-xl bg-gradient-to-r from-emerald-500/95 to-green-500/95 border border-emerald-400/30 min-w-[320px] max-w-[400px]">
+        <div className="flex items-center gap-3 px-5 py-4 rounded-xl shadow-2xl backdrop-blur-xl bg-gradient-to-r from-emerald-500/95 to-green-500/95 border border-emerald-400/30 w-[calc(100vw-2rem)] sm:w-auto sm:min-w-[320px] max-w-[400px]">
           {/* Animated Wifi Icon */}
           <div className="flex-shrink-0 relative">
             <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center">

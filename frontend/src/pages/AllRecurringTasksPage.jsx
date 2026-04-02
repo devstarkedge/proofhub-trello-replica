@@ -203,21 +203,21 @@ const AllRecurringTasksPage = ({ boardId, boardName, onBack, onOpenCard }) => {
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200 shadow-sm z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-6">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+              <div className="flex items-center gap-4 sm:gap-6 w-full lg:w-auto">
                 <button
                   onClick={onBack}
-                  className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-gray-900 hover:bg-white/50 rounded-lg transition-all duration-200"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 text-gray-700 hover:text-gray-900 hover:bg-white/50 rounded-lg transition-all duration-200"
                 >
                   <ChevronLeft size={20} />
-                  <span className="font-medium">Back</span>
+                  <span className="font-medium hidden sm:inline">Back</span>
                 </button>
                 <div className="flex items-center gap-4">
-                  <div className="p-3 bg-blue-100 rounded-xl">
+                  <div className="p-3 bg-blue-100 rounded-xl hidden sm:block">
                     <RefreshCw className="text-blue-600" size={28} />
                   </div>
                   <div>
-                    <h1 className="text-3xl font-bold text-gray-900">
+                    <h1 className="text-xl sm:text-3xl font-bold text-gray-900">
                       All Recurring Tasks
                     </h1>
                     <p className="text-sm text-gray-600 mt-1">
@@ -226,15 +226,15 @@ const AllRecurringTasksPage = ({ boardId, boardName, onBack, onOpenCard }) => {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="relative">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
+                <div className="relative w-full sm:w-auto">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search recurring tasks..."
-                    className="pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-72 shadow-sm"
+                    className="pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-72 shadow-sm"
                   />
                 </div>
                 <div className="flex bg-white rounded-xl border border-gray-300 p-1 shadow-sm">

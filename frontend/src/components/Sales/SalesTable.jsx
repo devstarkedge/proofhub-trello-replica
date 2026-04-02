@@ -316,7 +316,6 @@ SkeletonRow.displayName = 'SkeletonRow';
 const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
   const { user } = useContext(AuthContext);
   const scrollRef = useRef(null);
-  const parentRef = useRef(null);
 
   const {
     rows,
@@ -419,7 +418,7 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
   /* ──── Virtual row renderer ──── */
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 15,
   });
@@ -497,8 +496,8 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
       <div className={`pointer-events-none absolute left-0 top-0 bottom-0 w-5 z-30 transition-opacity duration-200 bg-gradient-to-r from-black/[0.07] dark:from-black/25 to-transparent ${shadows.left ? 'opacity-100' : 'opacity-0'}`} />
       <div className={`pointer-events-none absolute right-0 top-0 bottom-0 w-5 z-30 transition-opacity duration-200 bg-gradient-to-l from-black/[0.07] dark:from-black/25 to-transparent ${shadows.right ? 'opacity-100' : 'opacity-0'}`} />
 
-      {/* ── Horizontal scroll wrapper ── */}
-      <div ref={scrollRef} className="overflow-x-auto flex-1 flex flex-col min-h-0">
+      {/* ── Single scroll wrapper (both axes) ── */}
+      <div ref={scrollRef} className="overflow-auto flex-1 flex flex-col min-h-0" style={{ WebkitOverflowScrolling: 'touch' }}>
 
         {/* ── Table header (sticky) ── */}
         <div
@@ -541,8 +540,7 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
 
         {/* ── Virtualized body ── */}
         <div
-          ref={parentRef}
-          className="flex-1 overflow-y-auto min-h-0 custom-scrollbar"
+          className="flex-1 min-h-0"
           style={{ minWidth: totalWidth }}
         >
           <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', width: '100%' }}>

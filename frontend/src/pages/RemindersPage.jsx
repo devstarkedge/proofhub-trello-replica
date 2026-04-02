@@ -410,7 +410,7 @@ const RemindersPage = memo(() => {
                 className="bg-white rounded-xl shadow-sm p-4 border border-gray-200"
               >
                 <div className="flex flex-wrap gap-4">
-                  <div className="flex-1 min-w-[200px]">
+                  <div className="flex-1 w-full sm:w-auto min-w-[150px] sm:min-w-[200px]">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -424,7 +424,7 @@ const RemindersPage = memo(() => {
                     </div>
                   </div>
 
-                  <div className="min-w-[150px]">
+                  <div className="flex-1 sm:flex-none w-full sm:w-auto min-w-[120px] sm:min-w-[150px]">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                     <select
                       value={statusFilter}
@@ -439,7 +439,7 @@ const RemindersPage = memo(() => {
                     </select>
                   </div>
 
-                  <div className="min-w-[150px]">
+                  <div className="flex-1 sm:flex-none w-full sm:w-auto min-w-[120px] sm:min-w-[150px]">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
                     <select
                       value={selectedDepartment}

@@ -43,7 +43,7 @@ const UserProfilePreview = ({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: position.includes('bottom') ? -10 : 10, scale: 0.95 }}
         transition={{ duration: 0.15 }}
-        className={`absolute z-50 w-72 rounded-xl shadow-2xl overflow-hidden ${
+        className={`absolute z-50 w-64 sm:w-72 max-w-[calc(100vw-1rem)] rounded-xl shadow-2xl overflow-hidden ${
           isDark 
             ? 'bg-gray-800 border border-gray-700' 
             : 'bg-white border border-gray-200'

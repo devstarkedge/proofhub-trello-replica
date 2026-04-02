@@ -839,7 +839,7 @@ const ListView = () => {
             <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
               <div className="flex flex-wrap items-center gap-3 flex-1">
                 {/* Advanced Search */}
-                <div className="relative flex-1 min-w-[280px] max-w-lg group z-[9999]">
+                <div className="relative flex-1 w-full min-w-[200px] sm:min-w-[280px] max-w-lg group z-[9999]">
                   <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
                   <input
                     type="text"

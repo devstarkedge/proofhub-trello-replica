@@ -520,13 +520,13 @@ const UsersTab = () => {
       {/* Department-wise Data Tables */}
       {(loading || weeklyDataLoading) ? (
         <div 
-          className="rounded-xl border overflow-hidden"
+          className="rounded-xl border overflow-x-auto overflow-y-hidden"
           style={{ 
             backgroundColor: 'var(--color-bg-secondary)',
             borderColor: 'var(--color-border-subtle)'
           }}
         >
-          <table className="w-full">
+          <table className="min-w-full">
             <thead>
               <tr style={{ backgroundColor: 'var(--color-bg-muted)' }}>
                 <th className="px-4 py-3 text-left text-xs font-semibold">User Name</th>

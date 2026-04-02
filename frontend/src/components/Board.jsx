@@ -156,7 +156,7 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
               {provided.placeholder}
               
               {/* Add List */}
-              <div className="w-72 flex-shrink-0">
+              <div className="w-[280px] md:w-[320px] shrink-0">
                 {isAddingList ? (
                   <div 
                     className="relative overflow-hidden rounded-xl transition-all duration-300 ease-out"

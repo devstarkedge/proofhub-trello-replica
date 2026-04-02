@@ -232,7 +232,7 @@ const AnnouncementDetailModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row">
         {/* Left Section - Announcement Content */}
         <div className="flex-1 overflow-y-auto p-6 border-r border-gray-200">
           {/* Header */}
@@ -536,7 +536,7 @@ const AnnouncementDetailModal = ({
         </div>
 
         {/* Right Section - Comments */}
-        <div className="w-96 flex flex-col bg-gray-50 border-l border-gray-200">
+        <div className="w-full md:w-96 flex flex-col bg-gray-50 md:border-l border-t md:border-t-0 border-gray-200 min-h-[300px] md:min-h-0">
           {/* Comments Header */}
           <div className="flex items-center gap-2 p-4 border-b border-gray-200 bg-white">
             <MessageCircle className="w-5 h-5 text-gray-600" />

@@ -538,7 +538,7 @@ const ProjectsTab = () => {
       {/* Data by Department */}
       {(loading || weeklyDataLoading) ? (
         <div 
-          className="rounded-xl border overflow-hidden"
+          className="rounded-xl border overflow-x-auto overflow-y-hidden"
           style={{ 
             backgroundColor: 'var(--color-bg-secondary)',
             borderColor: 'var(--color-border-subtle)'

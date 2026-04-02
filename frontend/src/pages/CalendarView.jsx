@@ -1230,7 +1230,7 @@ const CalendarView = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -5 }}
             transition={{ duration: 0.15 }}
-            className="relative min-w-[260px] max-w-[340px] p-4 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100"
+            className="relative w-[calc(100vw-2rem)] sm:w-auto sm:min-w-[260px] max-w-[340px] p-4 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100"
           >
             {/* Arrow */}
             <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 border-l border-t border-gray-200 dark:border-gray-700 rotate-45" />

@@ -110,6 +110,13 @@ const Header = ({ boardName }) => {
     return () => document.body.classList.remove('overflow-hidden');
   }, [mobileSidebarOpen]);
 
+  // Close mobile sidebar when the route changes
+  useEffect(() => {
+    if (mobileSidebarOpen) {
+      setMobileSidebarOpen(false);
+    }
+  }, [location.pathname]);
+
   const navItems = [
     { path: '/', icon: Kanban, label: 'Board' },
     { path: '/list-view', icon: List, label: 'Task-List' },
@@ -304,7 +311,7 @@ const Header = ({ boardName }) => {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute top-full left-0 mt-2 w-72 rounded-2xl shadow-2xl z-50 overflow-hidden border"
+                      className="absolute top-full left-0 mt-2 w-[calc(100vw-2rem)] sm:w-72 max-w-sm rounded-2xl shadow-2xl z-50 overflow-hidden border"
                       style={{
                         backgroundColor: 'var(--color-card-bg)',
                         borderColor: 'var(--color-border-default)',
@@ -406,7 +413,7 @@ const Header = ({ boardName }) => {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute top-full left-0 mt-2 w-72 rounded-2xl shadow-2xl z-50 overflow-hidden border"
+                      className="absolute top-full left-0 mt-2 w-[calc(100vw-2rem)] sm:w-72 max-w-sm rounded-2xl shadow-2xl z-50 overflow-hidden border"
                       style={{
                         backgroundColor: 'var(--color-card-bg)',
                         borderColor: 'var(--color-border-default)',
@@ -465,7 +472,7 @@ const Header = ({ boardName }) => {
                     <motion.div
                       initial={{ opacity: 0, y: -10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      className="absolute right-0 top-full mt-2 w-[420px] rounded-2xl shadow-2xl z-50 p-4 border"
+                      className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[420px] sm:max-w-[420px] rounded-2xl shadow-2xl z-50 p-4 border"
                       style={{
                         backgroundColor: 'var(--color-card-bg)',
                         borderColor: 'var(--color-border-default)',
@@ -683,9 +690,11 @@ const Header = ({ boardName }) => {
       </div>
 
       {/* Mobile Sidebar */}
-      {mobileSidebarOpen && (
-        <Sidebar isMobile={true} onClose={() => setMobileSidebarOpen(false)} />
-      )}
+      <AnimatePresence>
+        {mobileSidebarOpen && (
+          <Sidebar isMobile={true} onClose={() => setMobileSidebarOpen(false)} />
+        )}
+      </AnimatePresence>
       
     </header>
     

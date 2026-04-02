@@ -69,7 +69,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
   
   // Dynamic list class
   const listClass = useMemo(() => 
-    `${listColors[list.color] || 'bg-gray-100/50 border-gray-200'} border rounded-xl p-3 w-72 flex-shrink-0 flex flex-col transition-shadow relative group/list ${isDragging ? 'shadow-2xl ring-2 ring-purple-500/50' : 'shadow-sm'}`,
+    `${listColors[list.color] || 'bg-gray-100/50 border-gray-200'} border rounded-xl p-3 w-[280px] md:w-[320px] shrink-0 flex flex-col transition-shadow relative group/list ${isDragging ? 'shadow-2xl ring-2 ring-purple-500/50' : 'shadow-sm'}`,
     [list.color, isDragging]
   );
 
@@ -86,11 +86,11 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
       
       {/* List Header */}
       <div 
-        className="flex items-center justify-between mb-3 relative z-20"
+        className="flex items-center justify-between mb-3 relative z-20 min-h-[32px]"
         {...dragHandleProps}
         style={{ cursor: 'grab' }}
       >
-        <h3 className="font-bold text-gray-900 text-[15px] px-2 flex-1 truncate uppercase tracking-tight">{list.title}</h3>
+        <h3 className="font-bold text-gray-900 text-[15px] px-2 flex-1 truncate uppercase tracking-tight py-1">{list.title}</h3>
         <div className="flex items-center gap-1 opacity-0 group-hover/list:opacity-100 transition-opacity duration-200">
           <span className="text-xs font-bold text-gray-600 bg-white/60 px-2 py-0.5 rounded-full shadow-sm border border-black/5">{cards.length}</span>
           <div className="relative z-10">
@@ -115,7 +115,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
                   }}
                 />
                 <div 
-                  className="absolute right-0 mt-2 w-72 z-50 animate-in fade-in zoom-in-95 duration-200 origin-top-right"
+                  className="absolute right-0 mt-2 w-64 sm:w-72 max-w-[calc(100vw-2rem)] z-50 animate-in fade-in zoom-in-95 duration-200 origin-top-right"
                   style={{
                     background: 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.95) 100%)',
                     boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.9)',

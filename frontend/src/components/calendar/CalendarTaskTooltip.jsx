@@ -47,7 +47,7 @@ const CalendarTaskTooltip = memo(({ task, position = { x: 0, y: 0 } }) => {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -10, scale: 0.95 }}
       transition={{ duration: 0.15 }}
-      className="absolute z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 min-w-[280px] max-w-[320px]"
+      className="absolute z-50 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-[calc(100vw-2rem)] sm:w-auto sm:min-w-[280px] max-w-[320px]"
       style={{
         left: position.x,
         top: position.y,

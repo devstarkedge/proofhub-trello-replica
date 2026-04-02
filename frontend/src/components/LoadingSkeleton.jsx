@@ -105,7 +105,7 @@ const WorkflowSkeleton = () => (
       <div className="flex gap-3 pb-4 h-full overflow-x-auto">
         {/* List Skeletons */}
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="w-72 flex-shrink-0">
+          <div key={i} className="w-[280px] max-w-[85vw] shrink-0">
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 h-full min-h-[600px]">
               {/* List Header */}
               <div className="flex items-center justify-between mb-4">
@@ -137,7 +137,7 @@ const WorkflowSkeleton = () => (
         ))}
 
         {/* Add List Skeleton */}
-        <div className="w-72 flex-shrink-0">
+        <div className="w-[280px] max-w-[85vw] shrink-0">
           <div className="h-12 bg-white/10 rounded-xl animate-pulse"></div>
         </div>
       </div>
@@ -535,7 +535,7 @@ const ListViewSkeleton = () => (
            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 p-5 mb-8">
               <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
                  <div className="flex flex-wrap items-center gap-3 flex-1 w-full">
-                    <div className="h-12 flex-1 min-w-[280px] rounded-xl skeleton-loader"></div>
+                    <div className="h-12 flex-1 w-full sm:w-auto min-w-[200px] sm:min-w-[280px] rounded-xl skeleton-loader"></div>
                     <div className="h-10 w-24 rounded-xl skeleton-loader"></div>
                     <div className="h-10 w-24 rounded-xl skeleton-loader"></div>
                     <div className="h-10 w-64 rounded-xl skeleton-loader"></div>

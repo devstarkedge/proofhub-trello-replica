@@ -194,31 +194,33 @@ export const PMGroupedTableSkeleton = ({ groups = 3, rowsPerGroup = 4, columns =
         </div>
 
         {/* Group content */}
-        <table className="w-full">
-          <thead>
-            <tr className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-              {Array.from({ length: columns }).map((_, i) => (
-                <th key={i} className="px-4 py-2">
-                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" style={{ width: '70%' }} />
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {Array.from({ length: rowsPerGroup }).map((_, rowIndex) => (
-              <tr key={rowIndex}>
-                {Array.from({ length: columns }).map((_, colIndex) => (
-                  <td key={colIndex} className="px-4 py-3">
-                    <div 
-                      className="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"
-                      style={{ width: `${Math.random() * 40 + 40}%` }}
-                    />
-                  </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                {Array.from({ length: columns }).map((_, i) => (
+                  <th key={i} className="px-4 py-2">
+                    <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" style={{ width: '70%' }} />
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {Array.from({ length: rowsPerGroup }).map((_, rowIndex) => (
+                <tr key={rowIndex}>
+                  {Array.from({ length: columns }).map((_, colIndex) => (
+                    <td key={colIndex} className="px-4 py-3">
+                      <div 
+                        className="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"
+                        style={{ width: `${Math.random() * 40 + 40}%` }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     ))}
   </div>

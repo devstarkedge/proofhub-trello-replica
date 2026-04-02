@@ -205,30 +205,32 @@ const ActivityLogModal = ({ isOpen, onClose, rowId }) => {
                         {/* Collapsible Changes */}
                         {log.changes && log.changes.length > 0 && (
                           <div className="mt-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            <table className="w-full text-sm text-left">
-                              <thead className="bg-gray-50 dark:bg-gray-900/50 text-xs uppercase text-gray-500 dark:text-gray-400 font-medium border-b border-gray-200 dark:border-gray-700">
-                                <tr>
-                                  <th className="px-3 py-2 w-1/3">Field</th>
-                                  <th className="px-3 py-2 w-1/3">Old Value</th>
-                                  <th className="px-3 py-2 w-1/3 text-blue-600 dark:text-blue-400">New Value</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                {log.changes.map((change, idx) => (
-                                  <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                    <td className="px-3 py-2 font-medium text-gray-700 dark:text-gray-300">
-                                      {change.fieldLabel}
-                                    </td>
-                                    <td className="px-3 py-2 text-gray-500 dark:text-gray-500 line-through decoration-red-300 decoration-1">
-                                      {renderChangeValue(change.oldValue)}
-                                    </td>
-                                    <td className="px-3 py-2 text-gray-900 dark:text-gray-100 font-medium">
-                                      {renderChangeValue(change.newValue)}
-                                    </td>
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full text-sm text-left">
+                                <thead className="bg-gray-50 dark:bg-gray-900/50 text-xs uppercase text-gray-500 dark:text-gray-400 font-medium border-b border-gray-200 dark:border-gray-700">
+                                  <tr>
+                                    <th className="px-3 py-2 w-1/3">Field</th>
+                                    <th className="px-3 py-2 w-1/3">Old Value</th>
+                                    <th className="px-3 py-2 w-1/3 text-blue-600 dark:text-blue-400">New Value</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                  {log.changes.map((change, idx) => (
+                                    <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                      <td className="px-3 py-2 font-medium text-gray-700 dark:text-gray-300">
+                                        {change.fieldLabel}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-500 dark:text-gray-500 line-through decoration-red-300 decoration-1">
+                                        {renderChangeValue(change.oldValue)}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-900 dark:text-gray-100 font-medium">
+                                        {renderChangeValue(change.newValue)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         )}
                       </div>

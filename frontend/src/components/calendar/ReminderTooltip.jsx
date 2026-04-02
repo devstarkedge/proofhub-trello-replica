@@ -167,7 +167,7 @@ const ReminderTooltip = memo(({
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="fixed z-[100] w-80"
+              className="fixed z-[100] w-[320px] max-w-[calc(100vw-2rem)]"
               style={{ 
                 left: position.x, 
                 top: position.y,
