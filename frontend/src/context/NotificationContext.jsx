@@ -6,6 +6,7 @@ import Database from '../services/database';
 import socketService from '../services/socket';
 import { Bell } from 'lucide-react';
 import api from '../services/api';
+import { resolveNotificationRoute } from '../utils/notificationRouteResolver';
 
 const NotificationContext = createContext();
 
@@ -478,7 +479,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Handle notification click
   const handleNotificationClick = (notification) => {
-    // Verification flow for admins/managers
+    // Verification flow for admins/managers (special modal, no navigation)
     if (notification.type === 'user_registered' && (user?.role === 'admin' || user?.role === 'manager')) {
       setVerificationModal(notification);
       markAsRead(notification._id);
@@ -488,28 +489,38 @@ export const NotificationProvider = ({ children }) => {
     // Mark read optimistically
     if (!notification.isRead) markAsRead(notification._id);
 
-    const departmentId = notification?.departmentId || notification?.metadata?.departmentId;
-    const projectId = notification?.projectId || notification?.metadata?.projectId;
-    const taskId = notification?.taskId || notification?.metadata?.taskId;
+    // Use central route resolver
+    const resolved = resolveNotificationRoute(notification);
 
-    if (notification?.type === 'task_assigned') {
-      if (departmentId && projectId && taskId) {
-        setIsOpen(false);
-        navigate(`/workflow/${departmentId}/${projectId}/${taskId}`);
-        return;
-      }
-
-      toast.error('Task not found');
-      setIsOpen(false);
-      navigate('/');
+    // Special flows that don't navigate
+    if (resolved.isSpecialFlow) {
       return;
     }
 
-    // If notification carries a URL in metadata, navigate there
-    const targetUrl = notification?.metadata?.url || (notification.type === 'module_access' ? '/sales' : null);
-    if (targetUrl) {
-      setIsOpen(false);
-      navigate(targetUrl);
+    // Show toast if resolver indicated a fallback message
+    if (resolved.toastMessage) {
+      toast.info(resolved.toastMessage, { autoClose: 3000 });
+    }
+
+    // Close the notification panel
+    setIsOpen(false);
+
+    // Navigate with optional state for highlighting / deep-linking
+    if (resolved.route) {
+      // For announcement routes with query params, parse properly
+      if (resolved.route.includes('?')) {
+        const [path, query] = resolved.route.split('?');
+        const params = new URLSearchParams(query);
+        navigate(`${path}?${params.toString()}`, {
+          state: resolved.navigationState || undefined,
+        });
+      } else {
+        navigate(resolved.route, {
+          state: resolved.navigationState || undefined,
+        });
+      }
+    } else {
+      navigate(resolved.fallbackRoute || '/');
     }
   };
 

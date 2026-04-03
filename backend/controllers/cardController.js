@@ -808,6 +808,8 @@ export const createCard = asyncHandler(async (req, res, next) => {
 
   // Notify all members
   if (members && members.length > 0) {
+    const boardData2 = boardData || await Board.findById(board).select('name department').lean();
+    const memberDeptId = boardData2?.department || null;
     for (const memberId of members) {
       if (memberId.toString() !== req.user.id && memberId.toString() !== assignee?.toString()) {
         await notificationService.createNotification({
@@ -818,6 +820,15 @@ export const createCard = asyncHandler(async (req, res, next) => {
           sender: req.user.id,
           relatedCard: card._id,
           relatedBoard: board,
+          departmentId: memberDeptId,
+          projectId: board,
+          taskId: card._id,
+          metadata: {
+            departmentId: memberDeptId,
+            projectId: board,
+            taskId: card._id,
+            url: memberDeptId ? `/workflow/${memberDeptId}/${board}/${card._id}` : null
+          }
         });
       }
     }

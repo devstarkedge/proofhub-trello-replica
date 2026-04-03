@@ -306,6 +306,16 @@ class NotificationService {
   async notifyTaskUpdated(card, updaterId, changes = {}) {
     const notifications = [];
 
+    // Resolve routing IDs for deep linking
+    let board = null;
+    const boardId = card?.board?._id || card?.board;
+    if (boardId) {
+      board = await Board.findById(boardId).select('department').lean();
+    }
+    const departmentId = board?.department || card?.department || null;
+    const projectId = boardId || null;
+    const taskId = card?._id || null;
+
     // Notify assignees
     if (card.assignees && card.assignees.length > 0) {
       card.assignees.forEach(assigneeId => {
@@ -355,8 +365,15 @@ class NotificationService {
             sender: updaterId,
             relatedCard: card._id,
             relatedBoard: card.board,
+            departmentId,
+            projectId,
+            taskId,
             metadata: {
-              changedFields: changes.changedFields || (changes.multipleChanges ? [] : [Object.keys(changes)[0]])
+              departmentId,
+              projectId,
+              taskId,
+              changedFields: changes.changedFields || (changes.multipleChanges ? [] : [Object.keys(changes)[0]]),
+              url: departmentId && projectId && taskId ? `/workflow/${departmentId}/${projectId}/${taskId}` : null
             }
           });
         }
@@ -370,6 +387,15 @@ class NotificationService {
   async notifyTaskDeleted(card, deleterId) {
     const notifications = [];
 
+    // Resolve routing IDs for deep linking (task is deleted, so link to project)
+    let board = null;
+    const boardId = card?.board?._id || card?.board;
+    if (boardId) {
+      board = await Board.findById(boardId).select('department').lean();
+    }
+    const departmentId = board?.department || card?.department || null;
+    const projectId = boardId || null;
+
     // Notify assignees
     if (card.assignees && card.assignees.length > 0) {
       card.assignees.forEach(assigneeId => {
@@ -381,7 +407,15 @@ class NotificationService {
             user: assigneeId,
             sender: deleterId,
             relatedCard: card._id,
-            relatedBoard: card.board
+            relatedBoard: card.board,
+            departmentId,
+            projectId,
+            metadata: {
+              departmentId,
+              projectId,
+              cardTitle: card.title,
+              url: departmentId && projectId ? `/workflow/${departmentId}/${projectId}` : null
+            }
           });
         }
       });
@@ -395,6 +429,15 @@ class NotificationService {
     const notifications = [];
     const boardId = card.board?._id || card.board;
     const boardName = card.board?.name || 'Project';
+
+    // Resolve routing IDs for deep linking
+    let board = null;
+    if (boardId) {
+      board = await Board.findById(boardId).select('department').lean();
+    }
+    const departmentId = board?.department || null;
+    const projectId = boardId || null;
+    const taskId = card?._id || null;
 
     // Notify assignees
     if (card.assignees && card.assignees.length > 0) {
@@ -411,14 +454,21 @@ class NotificationService {
             relatedBoard: boardId,
             entityId: comment._id,
             entityType: 'Comment',
+            departmentId,
+            projectId,
+            taskId,
             deepLink: {
               commentId: comment._id,
               contextType: comment.contextType,
               contextRef: comment.contextRef,
             },
             metadata: {
+              departmentId,
+              projectId,
+              taskId,
               projectName: boardName,
               cardTitle: card.title,
+              url: departmentId && projectId && taskId ? `/workflow/${departmentId}/${projectId}/${taskId}` : null
             }
           });
         }
@@ -457,6 +507,15 @@ class NotificationService {
     const boardId = card.board?._id || card.board;
     const boardName = card.board?.name || 'Project';
 
+    // Resolve routing IDs for deep linking
+    let mentionBoard = null;
+    if (boardId) {
+      mentionBoard = await Board.findById(boardId).select('department').lean();
+    }
+    const mentionDeptId = mentionBoard?.department || null;
+    const mentionProjectId = boardId || null;
+    const mentionTaskId = card?._id || null;
+
     // Process user mentions
     for (const mentionedId of userMentions) {
       if (mentionedId !== senderId) {
@@ -470,14 +529,21 @@ class NotificationService {
           relatedBoard: boardId,
           entityId: comment?._id,
           entityType: 'Comment',
+          departmentId: mentionDeptId,
+          projectId: mentionProjectId,
+          taskId: mentionTaskId,
           deepLink: comment ? {
             commentId: comment._id,
             contextType: comment.contextType,
             contextRef: comment.contextRef,
           } : undefined,
           metadata: {
+            departmentId: mentionDeptId,
+            projectId: mentionProjectId,
+            taskId: mentionTaskId,
             projectName: boardName,
             cardTitle: card.title,
+            url: mentionDeptId && mentionProjectId && mentionTaskId ? `/workflow/${mentionDeptId}/${mentionProjectId}/${mentionTaskId}` : null
           }
         });
       }
@@ -504,15 +570,22 @@ class NotificationService {
                 relatedBoard: boardId,
                 entityId: comment?._id,
                 entityType: 'Comment',
+                departmentId: mentionDeptId,
+                projectId: mentionProjectId,
+                taskId: mentionTaskId,
                 deepLink: comment ? {
                   commentId: comment._id,
                   contextType: comment.contextType,
                   contextRef: comment.contextRef,
                 } : undefined,
                 metadata: {
+                  departmentId: mentionDeptId,
+                  projectId: mentionProjectId,
+                  taskId: mentionTaskId,
                   projectName: boardName,
                   cardTitle: card.title,
                   roleName: role.name,
+                  url: mentionDeptId && mentionProjectId && mentionTaskId ? `/workflow/${mentionDeptId}/${mentionProjectId}/${mentionTaskId}` : null
                 }
               });
             }
@@ -542,15 +615,22 @@ class NotificationService {
                 relatedBoard: boardId,
                 entityId: comment?._id,
                 entityType: 'Comment',
+                departmentId: mentionDeptId,
+                projectId: mentionProjectId,
+                taskId: mentionTaskId,
                 deepLink: comment ? {
                   commentId: comment._id,
                   contextType: comment.contextType,
                   contextRef: comment.contextRef,
                 } : undefined,
                 metadata: {
+                  departmentId: mentionDeptId,
+                  projectId: mentionProjectId,
+                  taskId: mentionTaskId,
                   projectName: boardName,
                   cardTitle: card.title,
                   teamName: team.name,
+                  url: mentionDeptId && mentionProjectId && mentionTaskId ? `/workflow/${mentionDeptId}/${mentionProjectId}/${mentionTaskId}` : null
                 }
               });
             }

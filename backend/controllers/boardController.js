@@ -385,17 +385,29 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Managers can only create boards for their department
-  if (
-    req.user.role === "manager" &&
-    projectDepartment.toString() !== req.user.department?.toString()
-  ) {
-    return next(
-      new ErrorResponse(
-        "Managers can only create boards for their department",
-        403
-      )
-    );
+  // Managers can only create boards for their own department(s).
+  // req.user.department is an array of ObjectIds (User schema: department: [{ type: ObjectId }]).
+  // Always normalise to an array of strings for safe comparison.
+  if (req.user.role === "manager") {
+    const userDepts = Array.isArray(req.user.department)
+      ? req.user.department.map(d => d.toString())
+      : req.user.department
+        ? [req.user.department.toString()]
+        : [];
+
+    if (!userDepts.includes(projectDepartment.toString())) {
+      console.warn(
+        `[Board Permissions] Manager ${req.user.id} attempted to create project in ` +
+        `dept "${projectDepartment}" but their assigned depts are [${userDepts.join(", ") || "none"}]. ` +
+        `If this is unexpected, check that the auth cache was invalidated after department assignment.`
+      );
+      return next(
+        new ErrorResponse(
+          "Managers can only create boards for their department",
+          403
+        )
+      );
+    }
   }
 
   // Check if background tasks should be used (for optimistic UI)

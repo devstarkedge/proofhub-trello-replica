@@ -6,6 +6,7 @@ import {
   MessageSquare, Clock, AlertTriangle, Megaphone, User,
   CheckCircle2, XCircle, Settings
 } from 'lucide-react';
+import { getNotificationRouteHint } from '../../utils/notificationRouteResolver';
 
 // Get notification icon and styling based on type
 const getNotificationStyle = (type) => {
@@ -74,6 +75,7 @@ const NotificationCard = ({
   const style = getNotificationStyle(notification.type);
   const IconComponent = style.icon;
   const priorityStyle = getPriorityStyle(notification.priority);
+  const routeHint = getNotificationRouteHint(notification);
 
   return (
     <motion.div
@@ -87,11 +89,14 @@ const NotificationCard = ({
         damping: 30,
         delay: index * 0.02
       }}
-      className={`group relative p-4 border-b border-gray-50 dark:border-gray-800 cursor-pointer transition-all duration-200 ${priorityStyle} ${
+      className={`group relative p-4 border-b border-gray-50 dark:border-gray-800 cursor-pointer transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-inset ${priorityStyle} ${
         !notification.isRead
           ? 'bg-gradient-to-r from-blue-50/80 to-indigo-50/50 dark:from-blue-900/20 dark:to-indigo-900/10'
           : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
       }`}
+      tabIndex={0}
+      role="button"
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(notification); } }}
       onClick={() => onClick(notification)}
     >
       <div className="flex items-start gap-3">
@@ -135,6 +140,11 @@ const NotificationCard = ({
             {notification.sender?.name && (
               <span className="text-xs text-gray-400 dark:text-gray-500">
                 by {notification.sender.name}
+              </span>
+            )}
+            {routeHint && (
+              <span className="text-xs text-indigo-400 dark:text-indigo-500 ml-auto">
+                → {routeHint}
               </span>
             )}
           </div>

@@ -189,9 +189,12 @@ const Announcements = () => {
       const response = await announcementService.getAnnouncement(announcementId);
       if (response.success) {
         setSelectedAnnouncement(response.data);
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Error fetching announcement detail:', error);
+      return false;
     }
   };
 
@@ -223,8 +226,12 @@ const Announcements = () => {
         setSearchParams({}, { replace: true });
       } else {
         // Announcement not in list, try to fetch it directly
-        fetchAnnouncementDetail(openAnnouncementId).then(() => {
-          setShowDetailModal(true);
+        fetchAnnouncementDetail(openAnnouncementId).then((found) => {
+          if (found) {
+            setShowDetailModal(true);
+          } else {
+            toast.info('This announcement is no longer available.');
+          }
           setSearchParams({}, { replace: true });
         });
       }

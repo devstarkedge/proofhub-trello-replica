@@ -1,6 +1,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckSquare, Trash2, Plus, Clock, RefreshCw } from "lucide-react";
+import TruncatedTaskText from '../ui/TruncatedTaskText';
 
 const themeProgress = {
   blue: 'from-blue-400 to-cyan-400',
@@ -54,13 +55,14 @@ const SubtaskItem = React.memo(({ item, index, onToggleComplete, onOpenItem, onD
         />
       )}
       <div
-        className="flex-1 cursor-pointer flex items-center justify-between gap-3"
+        className="flex-1 min-w-0 cursor-pointer flex items-center justify-between gap-3"
         onClick={() => onOpenItem && onOpenItem(item)}
       >
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium truncate ${actualCompleted ? "line-through text-gray-400" : "text-gray-800"}`}>
-            {item.title || item.text}
-          </p>
+          <TruncatedTaskText
+            text={item.title || item.text || ''}
+            className={`text-sm font-medium ${actualCompleted ? 'line-through text-gray-400' : 'text-gray-800'}`}
+          />
           <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
             {renderStatus(actualCompleted ? 'done' : (item.status === 'done' ? 'todo' : item.status))}
             {/* Recurring Task indicator */}

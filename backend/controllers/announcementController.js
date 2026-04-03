@@ -380,8 +380,14 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
       message: `${req.user.name} posted: ${title}`,
       user: userId,
       sender: req.user.id,
-      relatedAnnouncement: announcement._id,
-      isRead: false
+      entityId: announcement._id,
+      entityType: 'Announcement',
+      isRead: false,
+      metadata: {
+        announcementId: announcement._id.toString(),
+        announcementTitle: title,
+        url: `/announcements?open=${announcement._id}`
+      }
     }));
 
     await Notification.insertMany(notifications);

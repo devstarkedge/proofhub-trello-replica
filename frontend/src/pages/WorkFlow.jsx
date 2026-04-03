@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, Suspense, memo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw, Archive, Trash2, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import Database from '../services/database';
@@ -21,6 +21,7 @@ import Avatar from '../components/Avatar';
 const WorkFlow = memo(() => {
   const { deptId, projectId, taskId, subtaskId, nenoId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentTeam, loading: teamLoading } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
   
@@ -66,6 +67,7 @@ const WorkFlow = memo(() => {
   const [showArchived, setShowArchived] = useState(false);
   const [archivedCardsByList, setArchivedCardsByList] = useState({});
   const [loadingArchived, setLoadingArchived] = useState(false);
+  const [highlightedEntityId, setHighlightedEntityId] = useState(null);
   const shareKey = `${taskId || ''}-${subtaskId || ''}-${nenoId || ''}`;
   const modalStack = useModalHierarchyStore((state) => state.stack);
   const openHierarchyModal = useModalHierarchyStore((state) => state.openModalByType);
@@ -302,6 +304,33 @@ useEffect(() => {
       // Store already handles error state
     }
   }, [projectId, initializeWorkflow]);
+
+  // Handle notification navigation state — highlight entity or fallback on error
+  useEffect(() => {
+    const navState = location.state;
+    if (navState?.highlightEntity) {
+      setHighlightedEntityId(navState.highlightEntity);
+      // Clear highlight after 3 seconds
+      const timer = setTimeout(() => setHighlightedEntityId(null), 3000);
+      // Clear the state so refreshing doesn't re-trigger
+      window.history.replaceState({}, document.title);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
+
+  // When loading finishes with error and navigation came from a notification, redirect gracefully
+  useEffect(() => {
+    if (!loading && error && location.state?.highlightEntity) {
+      // Entity likely deleted — navigate to parent or home
+      if (taskId && deptId && projectId) {
+        toast.info('This task no longer exists. Opening project instead.');
+        navigate(`/workflow/${deptId}/${projectId}`, { replace: true });
+      } else {
+        toast.info('This item is no longer available.');
+        navigate('/', { replace: true });
+      }
+    }
+  }, [loading, error, location.state, taskId, deptId, projectId, navigate]);
   
   // Memoize card handlers
   const handleAddCard = useCallback(async (listId, title) => {

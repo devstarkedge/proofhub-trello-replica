@@ -151,7 +151,14 @@ export const addMember = asyncHandler(async (req, res, next) => {
       title: 'Added to Team',
       message: `You have been added to ${team.name}`,
       user: userId,
-      sender: req.user.id
+      sender: req.user.id,
+      entityId: team._id,
+      entityType: 'Team',
+      relatedTeam: team._id,
+      metadata: {
+        teamName: team.name,
+        url: '/teams'
+      }
     });
     
     // Send Slack notification
@@ -218,7 +225,14 @@ export const inviteUser = async (req, res) => {
         title: 'Team Invitation',
         message: `You have been invited to join ${team.name}`,
         user: user._id,
-        sender: req.user.id
+        sender: req.user.id,
+        entityId: team._id,
+        entityType: 'Team',
+        relatedTeam: team._id,
+        metadata: {
+          teamName: team.name,
+          url: '/teams'
+        }
       });
     }
 
@@ -245,7 +259,14 @@ export const joinTeam = async (req, res) => {
         type: 'team_join',
         title: 'Joined Team',
         message: `You joined ${team.name}`,
-        user: req.user.id
+        user: req.user.id,
+        entityId: team._id,
+        entityType: 'Team',
+        relatedTeam: team._id,
+        metadata: {
+          teamName: team.name,
+          url: '/teams'
+        }
       });
     }
 

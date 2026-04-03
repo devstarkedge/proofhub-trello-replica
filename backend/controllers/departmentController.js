@@ -6,6 +6,7 @@ import Card from "../models/Card.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUsersUnassigned } from "../realtime/index.js";
+import { invalidateAuthCache } from "../middleware/authMiddleware.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
 
@@ -633,9 +634,19 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("User not found", 404));
   }
 
-  // Check if user is already assigned to another department
-  if (user.department && user.department.toString() !== req.params.id) {
-    const currentDept = await Department.findById(user.department);
+  // Check if user is already assigned to a DIFFERENT department.
+  // user.department is an array (schema: [{ type: ObjectId }]).
+  // Normalise defensively so the check is safe for empty arrays, null, or scalars.
+  const existingDepts = Array.isArray(user.department)
+    ? user.department
+    : user.department
+      ? [user.department]
+      : [];
+
+  const alreadyInThisDept = existingDepts.some(d => d.toString() === req.params.id);
+
+  if (!alreadyInThisDept && existingDepts.length > 0) {
+    const currentDept = await Department.findById(existingDepts[0]);
     return res.status(400).json({
       success: false,
       message: `Employee ${user.name} is already assigned to ${
@@ -649,9 +660,14 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
     $addToSet: { members: userId }
   });
 
-  // Update user's department field
-  user.department = req.params.id;
-  await user.save();
+  // Update user's department field — push rather than overwrite so the array stays intact
+  await User.findByIdAndUpdate(userId, {
+    $addToSet: { department: req.params.id }
+  });
+
+  // Evict the manager's LRU auth cache so the next request fetches the updated
+  // department list from the database (no re-login required).
+  invalidateAuthCache(userId);
 
   // Emit socket event for real-time updates
   emitUserAssigned(userId, req.params.id);
@@ -669,7 +685,15 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
         title: 'Department Assignment',
         message: `You have been assigned to the department: ${department.name}`,
         user: userId,
-        sender: req.user._id
+        sender: req.user._id,
+        entityId: department._id,
+        entityType: 'Department',
+        departmentId: department._id,
+        metadata: {
+          departmentId: department._id,
+          departmentName: department.name,
+          url: '/'
+        }
       });
     } catch (err) {
       console.error('Background assignment notification failed:', err);
@@ -697,6 +721,9 @@ export const removeMemberFromDepartment = asyncHandler(
     await User.findByIdAndUpdate(req.params.userId, {
       $unset: { department: 1 },
     });
+
+    // Evict the user's LRU auth cache so stale department data is not served.
+    invalidateAuthCache(req.params.userId);
 
     // Emit socket event for real-time updates
     emitUserUnassigned(req.params.userId, req.params.id);
@@ -869,7 +896,15 @@ export const unassignUserFromDepartment = asyncHandler(
         title: 'Department Assignment Updated',
         message: `You have been unassigned from the department: ${department.name}`,
         user: user._id,
-        sender: req.user._id
+        sender: req.user._id,
+        entityId: department._id,
+        entityType: 'Department',
+        departmentId: department._id,
+        metadata: {
+          departmentId: department._id,
+          departmentName: department.name,
+          url: '/'
+        }
       });
     } catch (error) {
       console.error('Unassignment notification failed:', error);
@@ -934,6 +969,8 @@ export const bulkAssignUsersToDepartment = asyncHandler(async (req, res, next) =
       if (!deptExists) {
         user.department = [...deptArray, departmentId];
         await user.save();
+        // Evict stale auth cache so the user's next request sees the updated departments.
+        invalidateAuthCache(user._id.toString());
       }
 
       // Add user to department's members array if not already present
@@ -953,7 +990,15 @@ export const bulkAssignUsersToDepartment = asyncHandler(async (req, res, next) =
           title: 'Department Assignment',
           message: `You have been assigned to the department: ${department.name}`,
           user: user._id,
-          sender: req.user._id
+          sender: req.user._id,
+          entityId: department._id,
+          entityType: 'Department',
+          departmentId: department._id,
+          metadata: {
+            departmentId: department._id,
+            departmentName: department.name,
+            url: '/'
+          }
         });
       } catch (notificationError) {
         console.error('Assignment notification failed:', notificationError);
@@ -1034,6 +1079,8 @@ export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, nex
       // Remove department from user's department array
       user.department = user.department.filter(id => id.toString() !== departmentId);
       await user.save();
+      // Evict stale auth cache so the user's next request sees the updated departments.
+      invalidateAuthCache(user._id.toString());
 
       // Remove user from department's members array
       department.members = department.members.filter(
@@ -1048,7 +1095,15 @@ export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, nex
           title: 'Department Assignment Updated',
           message: `You have been unassigned from the department: ${department.name}`,
           user: user._id,
-          sender: req.user._id
+          sender: req.user._id,
+          entityId: department._id,
+          entityType: 'Department',
+          departmentId: department._id,
+          metadata: {
+            departmentId: department._id,
+            departmentName: department.name,
+            url: '/'
+          }
         });
       } catch (notificationError) {
         console.error('Unassignment notification failed:', notificationError);

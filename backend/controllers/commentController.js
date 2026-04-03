@@ -1,5 +1,6 @@
 import Comment from '../models/Comment.js';
 import Card from '../models/Card.js';
+import Board from '../models/Board.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Notification from '../models/Notification.js';
@@ -233,6 +234,10 @@ export const createReply = asyncHandler(async (req, res) => {
 
   // Notify parent comment author
   if (parentComment.user._id.toString() !== req.user.id) {
+    const boardDoc = await Board.findById(cardDoc.board?._id || cardDoc.board).select('department').lean();
+    const deptId = boardDoc?.department || null;
+    const projId = cardDoc.board?._id || cardDoc.board || null;
+    const tskId = parentComment.card || null;
     await notificationService.createNotification({
       type: 'comment_reply',
       title: 'New Reply',
@@ -243,11 +248,20 @@ export const createReply = asyncHandler(async (req, res) => {
       relatedBoard: cardDoc.board?._id || cardDoc.board,
       entityId: reply._id,
       entityType: 'Comment',
+      departmentId: deptId,
+      projectId: projId,
+      taskId: tskId,
       deepLink: {
         commentId: reply._id,
         contextType: parentComment.contextType,
         contextRef: parentComment.contextRef,
         threadParentId: parentCommentId,
+      },
+      metadata: {
+        departmentId: deptId,
+        projectId: projId,
+        taskId: tskId,
+        url: deptId && projId && tskId ? `/workflow/${deptId}/${projId}/${tskId}` : null
       }
     });
   }
@@ -367,6 +381,10 @@ export const addReaction = asyncHandler(async (req, res) => {
 
   // Notify comment author (if not self)
   if (comment.user._id.toString() !== req.user.id) {
+    const boardRef = cardDoc?.board?._id || cardDoc?.board;
+    const boardMeta = boardRef ? await Board.findById(boardRef).select('department').lean() : null;
+    const deptId = boardMeta?.department || null;
+    const tskId = comment.card || null;
     await notificationService.createNotification({
       type: 'comment_reaction',
       title: 'New Reaction',
@@ -374,13 +392,22 @@ export const addReaction = asyncHandler(async (req, res) => {
       user: comment.user._id,
       sender: req.user.id,
       relatedCard: comment.card,
-      relatedBoard: cardDoc?.board?._id || cardDoc?.board,
+      relatedBoard: boardRef,
       entityId: commentId,
       entityType: 'Comment',
+      departmentId: deptId,
+      projectId: boardRef,
+      taskId: tskId,
       deepLink: {
         commentId,
         contextType: comment.contextType,
         contextRef: comment.contextRef,
+      },
+      metadata: {
+        departmentId: deptId,
+        projectId: boardRef,
+        taskId: tskId,
+        url: deptId && boardRef && tskId ? `/workflow/${deptId}/${boardRef}/${tskId}` : null
       }
     });
   }
@@ -471,6 +498,10 @@ export const pinComment = asyncHandler(async (req, res) => {
 
   // Notify comment author (if not self)
   if (comment.user._id.toString() !== req.user.id) {
+    const boardRef = cardDoc?.board?._id || cardDoc?.board;
+    const boardMeta = boardRef ? await Board.findById(boardRef).select('department').lean() : null;
+    const deptId = boardMeta?.department || null;
+    const tskId = comment.card || null;
     await notificationService.createNotification({
       type: 'comment_pinned',
       title: 'Comment Pinned',
@@ -478,13 +509,22 @@ export const pinComment = asyncHandler(async (req, res) => {
       user: comment.user._id,
       sender: req.user.id,
       relatedCard: comment.card,
-      relatedBoard: cardDoc?.board?._id || cardDoc?.board,
+      relatedBoard: boardRef,
       entityId: commentId,
       entityType: 'Comment',
+      departmentId: deptId,
+      projectId: boardRef,
+      taskId: tskId,
       deepLink: {
         commentId,
         contextType: comment.contextType,
         contextRef: comment.contextRef,
+      },
+      metadata: {
+        departmentId: deptId,
+        projectId: boardRef,
+        taskId: tskId,
+        url: deptId && boardRef && tskId ? `/workflow/${deptId}/${boardRef}/${tskId}` : null
       }
     });
   }

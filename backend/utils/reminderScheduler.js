@@ -90,7 +90,14 @@ export const sendReminderNotification = async (reminder) => {
       title: 'Reminder Due Soon',
       message: `Reminder for project "${reminder.project?.name || 'Unknown'}" is due in 24 hours. Client: ${reminder.client?.name || 'N/A'}`,
       user: user._id,
-      relatedBoard: reminder.project._id || reminder.project
+      relatedBoard: reminder.project._id || reminder.project,
+      entityId: reminder._id,
+      entityType: 'Reminder',
+      metadata: {
+        reminderId: reminder._id,
+        projectName: reminder.project?.name,
+        url: '/reminders'
+      }
     });
 
     // Emit real-time notification
@@ -297,7 +304,14 @@ export const checkAndTagAwaitingResponse = async (reminder) => {
           title: 'Project Awaiting Client Response',
           message: `Project "${reminder.project?.name || 'Unknown'}" has had ${reminder.reminderCount} reminders sent without client response.`,
           user: admin._id,
-          relatedBoard: reminder.project._id || reminder.project
+          relatedBoard: reminder.project._id || reminder.project,
+          entityId: reminder._id,
+          entityType: 'Reminder',
+          metadata: {
+            reminderId: reminder._id,
+            projectName: reminder.project?.name,
+            url: '/reminders'
+          }
         });
 
         emitNotification(admin._id.toString(), notification);
