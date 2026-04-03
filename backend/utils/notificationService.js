@@ -648,6 +648,12 @@ class NotificationService {
   async notifyProjectCreated(board, creatorId) {
     const notifications = [];
 
+    // Resolve departmentId as a plain string for routing
+    const deptId = board.department?._id
+      ? board.department._id.toString()
+      : board.department?.toString?.() || null;
+    const boardId = board._id.toString();
+
     // Notify project members
     if (board.members && board.members.length > 0) {
       board.members.forEach(memberId => {
@@ -658,7 +664,15 @@ class NotificationService {
             message: `You have been assigned to the project "${board.name}"`,
             user: memberId,
             sender: creatorId,
-            relatedBoard: board._id
+            relatedBoard: board._id,
+            departmentId: deptId,
+            projectId: boardId,
+            metadata: {
+              departmentId: deptId,
+              projectId: boardId,
+              projectName: board.name,
+              url: deptId ? `/workflow/${deptId}/${boardId}` : '/'
+            }
           });
         }
       });
@@ -675,7 +689,15 @@ class NotificationService {
             message: `A new project "${board.name}" has been created in your department`,
             user: manager._id,
             sender: creatorId,
-            relatedBoard: board._id
+            relatedBoard: board._id,
+            departmentId: deptId,
+            projectId: boardId,
+            metadata: {
+              departmentId: deptId,
+              projectId: boardId,
+              projectName: board.name,
+              url: deptId ? `/workflow/${deptId}/${boardId}` : '/'
+            }
           });
         }
       });
@@ -692,6 +714,12 @@ class NotificationService {
       ? `Project "${board.name}" updated: ${changesSummary}`
       : `Project "${board.name}" was updated`;
 
+    // Resolve routing IDs for project_updates notifications
+    const deptId = board.department?._id
+      ? board.department._id.toString()
+      : board.department?.toString?.() || null;
+    const boardId = board._id.toString();
+
     // Notify project members
     if (board.members && board.members.length > 0) {
       board.members.forEach(memberId => {
@@ -702,7 +730,15 @@ class NotificationService {
             message,
             user: memberId,
             sender: updaterId,
-            relatedBoard: board._id
+            relatedBoard: board._id,
+            departmentId: deptId,
+            projectId: boardId,
+            metadata: {
+              departmentId: deptId,
+              projectId: boardId,
+              projectName: board.name,
+              url: deptId ? `/workflow/${deptId}/${boardId}` : '/'
+            }
           });
         }
       });
@@ -719,7 +755,15 @@ class NotificationService {
             message,
             user: manager._id,
             sender: updaterId,
-            relatedBoard: board._id
+            relatedBoard: board._id,
+            departmentId: deptId,
+            projectId: boardId,
+            metadata: {
+              departmentId: deptId,
+              projectId: boardId,
+              projectName: board.name,
+              url: deptId ? `/workflow/${deptId}/${boardId}` : '/'
+            }
           });
         }
       });
