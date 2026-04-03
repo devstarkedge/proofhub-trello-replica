@@ -10,6 +10,7 @@ const useSalesStore = create(
       selectedRows: new Set(),
       filters: {
         search: '',
+        name: '',
         platform: '',
         technology: '',
         status: '',
@@ -46,6 +47,10 @@ const useSalesStore = create(
       
       // Pending drafts (offline edits)
       pendingDrafts: [],
+
+      // Name tabs
+      nameTab: 'All',
+      uniqueNames: [],
 
       // Per-column filters (key: column key, value: filter value or object)
       columnFilters: {},
@@ -279,6 +284,7 @@ const useSalesStore = create(
         set({
           filters: {
             search: '',
+            name: '',
             platform: '',
             technology: '',
             status: '',
@@ -289,7 +295,8 @@ const useSalesStore = create(
             dateFrom: null,
             dateTo: null
           },
-          columnFilters: {}
+          columnFilters: {},
+          nameTab: 'All'
         });
         get().fetchRows(1);
       },
@@ -657,6 +664,32 @@ const useSalesStore = create(
       },
 
       /**
+       * Fetch unique names for tabs
+       */
+      fetchUniqueNames: async () => {
+        try {
+          const response = await salesApi.getUniqueNames();
+          set({ uniqueNames: response.data });
+          return response.data;
+        } catch (error) {
+          console.error('Failed to fetch unique names:', error);
+        }
+      },
+
+      /**
+       * Set active name tab and filter
+       */
+      setNameTab: (name) => {
+        const filterName = name === 'All' ? '' : name;
+        set(state => ({
+          nameTab: name,
+          filters: { ...state.filters, name: filterName },
+          pagination: { ...state.pagination, page: 1 }
+        }));
+        get().fetchRows(1);
+      },
+
+      /**
        * Save draft (offline support)
        */
       saveDraft: (rowId, updates) => {
@@ -692,6 +725,7 @@ const useSalesStore = create(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         filters: state.filters,
+        nameTab: state.nameTab,
         columnFilters: state.columnFilters,
         columnWidths: state.columnWidths,
         sortBy: state.sortBy,

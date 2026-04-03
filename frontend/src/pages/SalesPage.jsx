@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import socketService from '../services/socket';
@@ -8,6 +8,7 @@ import { getUserPermissions } from '../services/salesApi';
 import SalesTable from '../components/Sales/SalesTable';
 import SalesToolbar from '../components/Sales/SalesToolbar';
 import SalesFilters from '../components/Sales/SalesFilters';
+import SalesNameTabs from '../components/Sales/SalesNameTabs';
 import AddSalesRowModal from '../components/Sales/AddSalesRowModal';
 import ImportDataModal from '../components/Sales/ImportDataModal';
 import ActivityLogModal from '../components/Sales/ActivityLogModal';
@@ -18,6 +19,7 @@ import BulkActionsToolbar from '../components/Sales/BulkActionsToolbar';
 
 const SalesPage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
@@ -35,6 +37,9 @@ const SalesPage = () => {
     fetchRows,
     fetchCustomColumns,
     fetchDropdownOptions,
+    fetchUniqueNames,
+    setNameTab,
+    nameTab,
     selectedRows,
     lockedRows,
     lockRow,
@@ -94,6 +99,20 @@ const SalesPage = () => {
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
   }, [syncDrafts]);
+
+  // Sync URL query params with nameTab
+  useEffect(() => {
+    const currentUrl = searchParams.get('name') || '';
+    const expected = nameTab === 'All' ? '' : nameTab;
+    if (currentUrl !== expected) {
+      if (expected) {
+        setSearchParams({ name: expected }, { replace: true });
+      } else {
+        searchParams.delete('name');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [nameTab]);
 
   const onPermsUpdate = async (e) => {
     try {
@@ -169,9 +188,16 @@ const SalesPage = () => {
       window.addEventListener('socket-connected', onSocketConnected);
 
       // Fetch initial data
+      // Initialize name tab from URL query param if present
+      const urlName = searchParams.get('name');
+      if (urlName) {
+        setNameTab(urlName);
+      }
+
       await Promise.all([
         fetchRows(),
         fetchCustomColumns(),
+        fetchUniqueNames(),
         fetchDropdownOptions('platform'),
         fetchDropdownOptions('technology'),
         fetchDropdownOptions('status'),
@@ -196,6 +222,7 @@ const SalesPage = () => {
   // Named handlers so they can be removed on unmount
   const onSocketRowCreated = (e) => {
     handleRowCreated(e.detail.row);
+    fetchUniqueNames();
     toast.info('New sales row added');
   };
 
@@ -205,6 +232,7 @@ const SalesPage = () => {
 
   const onSocketRowDeleted = (e) => {
     handleRowDeleted(e.detail.rowId);
+    fetchUniqueNames();
     toast.info('Sales row deleted');
   };
 
@@ -215,6 +243,7 @@ const SalesPage = () => {
 
   const onSocketRowsBulkDeleted = () => {
     handleBulkDelete();
+    fetchUniqueNames();
     toast.info('Bulk delete completed');
   };
 
@@ -242,6 +271,7 @@ const SalesPage = () => {
     const newColCount = Array.isArray(detail.newColumnsCreated) ? detail.newColumnsCreated.length : (detail.newColumnsCreated || 0);
     const newOptCount = Array.isArray(detail.newDropdownOptionsCreated) ? detail.newDropdownOptionsCreated.length : (detail.newDropdownOptionsCreated || 0);
     fetchRows();
+    fetchUniqueNames();
     if (newColCount > 0) {
       fetchCustomColumns();
     }
@@ -345,6 +375,9 @@ const SalesPage = () => {
 
               {/* Filters Panel (always visible, toggle built-in) */}
               <SalesFilters />
+
+              {/* Name Tabs */}
+              <SalesNameTabs />
 
               {/* Bulk Actions Toolbar */}
               {selectedRows.size > 0 && (

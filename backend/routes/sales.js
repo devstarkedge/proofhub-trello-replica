@@ -12,6 +12,7 @@ import {
   getActivityLog,
   exportRows,
   importRows,
+  getUniqueNames,
   getDropdownOptions,
   addDropdownOption,
   updateDropdownOption,
@@ -40,6 +41,9 @@ router.use(checkSalesPermission);
 
 // Get all sales rows with filters/search
 router.get('/rows', getSalesRows);
+
+// Get unique names for tabs/filters
+router.get('/names', getUniqueNames);
 
 // Export sales rows (requires canExport)
 router.get('/rows/export', requireSalesPermission('canExport'), exportRows);

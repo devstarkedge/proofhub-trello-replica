@@ -1,15 +1,18 @@
-import React, { useEffect } from 'react';
-import { X, Calendar } from 'lucide-react';
+import React, { useEffect, useContext, useCallback, useRef } from 'react';
+import { X, Calendar, User, AlertCircle } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import DatePickerModal from '../DatePickerModal';
 import { formatSalesDate, parseSalesDate } from '../../utils/dateUtils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { salesRowSchemaFlexible } from '../../utils/salesValidation';
+import { salesRowSchemaFlexible, SALES_FIELD_LABELS, getErrorSummary } from '../../utils/salesValidation';
 import useSalesStore from '../../store/salesStore';
 import SalesDropdown from './SalesDropdown';
+import AuthContext from '../../context/AuthContext';
+import { toast } from 'react-toastify';
 
 const defaultValues = {
   date: '',
+  name: '',
   bidLink: '',
   platform: '',
   profile: '',
@@ -49,8 +52,10 @@ function convertRowForForm(row) {
 
 const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   const { createRow, updateRow, dropdownOptions, customColumns, fetchCustomColumns } = useSalesStore();
+  const { user } = useContext(AuthContext);
   const isEdit = Boolean(editingRow);
-  const [activeSection, setActiveSection] = React.useState('all'); // 'all' | 'deal' | 'client' | 'status'
+  const isAdmin = user?.role === 'admin';
+  const formScrollRef = useRef(null);
   
   // Date Picker State
   const [datePickerState, setDatePickerState] = React.useState({
@@ -65,12 +70,53 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
     control,
     reset,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isValid, isDirty },
     setValue,
+    trigger,
   } = useForm({
     resolver: zodResolver(salesRowSchemaFlexible),
     defaultValues: isEdit ? { ...defaultValues, ...convertRowForForm(editingRow) } : defaultValues,
+    mode: 'onTouched', // Validate on blur + submit for instant feedback
   });
+
+  const hasErrors = Object.keys(errors).length > 0;
+
+  // Scroll to first invalid field and focus it
+  const scrollToFirstError = useCallback((fieldErrors) => {
+    const firstKey = Object.keys(fieldErrors)[0];
+    if (!firstKey || !formScrollRef.current) return;
+
+    // Find the field wrapper by data-field attribute
+    const fieldEl = formScrollRef.current.querySelector(`[data-field="${firstKey}"]`);
+    if (fieldEl) {
+      fieldEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Focus the input/button inside after scroll animation
+      setTimeout(() => {
+        const focusable = fieldEl.querySelector('input, button, select, textarea');
+        if (focusable) focusable.focus();
+      }, 350);
+    }
+  }, []);
+
+  // Called by react-hook-form when validation fails on submit
+  const onInvalid = useCallback((fieldErrors) => {
+    const { message } = getErrorSummary(fieldErrors);
+    toast.error(message, { toastId: 'sales-validation', autoClose: 6000 });
+    scrollToFirstError(fieldErrors);
+  }, [scrollToFirstError]);
+
+  // Ctrl+S / Cmd+S keyboard shortcut to save
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        document.getElementById('sales-form')?.requestSubmit();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen]);
 
   // Watch date fields for display
   const watchedDate = watch('date');
@@ -115,6 +161,8 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       reset(base);
     } else {
       const base = { ...defaultValues };
+      // Auto-fill name with logged-in user's name for new records
+      base.name = user?.name || '';
       if (customColumns && customColumns.length) {
         customColumns.forEach(col => { base[col.key] = ''; });
       }
@@ -156,7 +204,15 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       }
       onClose();
     } catch (err) {
-      console.error(err);
+      // Show backend validation errors as toast
+      const backendMsg = err?.response?.data?.message;
+      const fields = err?.response?.data?.fields;
+      if (backendMsg) {
+        toast.error(backendMsg, { toastId: 'sales-api-error', autoClose: 6000 });
+      } else {
+        toast.error('Failed to save record. Please try again.', { toastId: 'sales-api-error' });
+      }
+      console.error('Save sales row error:', err);
     }
   };
 
@@ -193,14 +249,46 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
         </div>
 
         {/* content */}
-        <div className="overflow-y-auto flex-1 p-8 custom-scrollbar bg-gradient-to-b from-transparent via-blue-50/10 to-transparent dark:via-blue-900/5">
-          <form id="sales-form" onSubmit={handleSubmit(onSubmit)} className="space-y-10">
+        <div ref={formScrollRef} className="overflow-y-auto flex-1 p-8 custom-scrollbar bg-gradient-to-b from-transparent via-blue-50/10 to-transparent dark:via-blue-900/5">
+          {/* Error Summary Banner */}
+          {hasErrors && (
+            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-red-700 dark:text-red-400">Please fix the following errors:</p>
+                <ul className="mt-1.5 space-y-0.5">
+                  {Object.entries(errors).map(([key, err]) => (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        className="text-xs text-red-600 dark:text-red-400 hover:underline cursor-pointer"
+                        onClick={() => {
+                          const el = formScrollRef.current?.querySelector(`[data-field="${key}"]`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            setTimeout(() => {
+                              const focusable = el.querySelector('input, button, select, textarea');
+                              if (focusable) focusable.focus();
+                            }, 350);
+                          }
+                        }}
+                      >
+                        {SALES_FIELD_LABELS[key] || key}: {err.message}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          <form id="sales-form" onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-10">
             
             {/* Deal Details Section */}
             <div>
               <SectionHeader title="Deal Details" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="date">
                   <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
                     Date
                     <span className="text-red-500 font-bold">*</span>
@@ -211,20 +299,41 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         readOnly
                         value={formatSalesDate(watchedDate)}
                         onClick={() => openDatePicker('date', 'Select Deal Date')}
-                        className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl cursor-pointer transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium"
+                        aria-invalid={errors.date ? 'true' : undefined}
+                        className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.date ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl cursor-pointer transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium`}
                         placeholder="dd-mm-yyyy"
                     />
                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
                   </div>
-                  {/* Hidden input to register with hook form if needed, but we used setValue. 
-                      However, we are not using register('date') anymore on the visible input because it's read-only and formatted.
-                      We need to register the field so it exists in formData.
-                  */}
                   <input type="hidden" {...register('date')} />
-                  {errors.date && <p className="text-red-500 text-xs mt-1">{errors.date.message}</p>}
+                  {errors.date && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.date.message}</p>}
                 </div>
 
-                <div className="col-span-1">
+                <div className="col-span-1" data-field="name">
+                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                    Name
+                    <span className="text-red-500 font-bold">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
+                      <User className="w-3.5 h-3.5 text-white" />
+                    </div>
+                    <input
+                      type="text"
+                      {...register('name')}
+                      readOnly={!isAdmin}
+                      aria-invalid={errors.name ? 'true' : undefined}
+                      className={`input w-full pl-12 bg-gray-50 dark:bg-gray-900 border-2 ${errors.name ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium ${!isAdmin ? 'cursor-not-allowed opacity-75' : ''}`}
+                      placeholder="User name"
+                    />
+                  </div>
+                  {!isAdmin && (
+                    <p className="text-[11px] text-gray-400 mt-1">Auto-filled with your name</p>
+                  )}
+                  {errors.name && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.name.message}</p>}
+                </div>
+
+                <div className="col-span-1" data-field="platform">
                   <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
                     Platform
                     <span className="text-red-500 font-bold">*</span>
@@ -238,13 +347,14 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Select Platform"
+                        error={!!errors.platform}
                       />
                     )}
                   />
-                  {errors.platform && <p className="text-red-500 text-xs mt-1">{errors.platform.message}</p>}
+                  {errors.platform && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.platform.message}</p>}
                 </div>
 
-                <div className="col-span-1">
+                <div className="col-span-1" data-field="technology">
                   <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
                     Technology
                     <span className="text-red-500 font-bold">*</span>
@@ -258,13 +368,14 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Select Tech"
+                        error={!!errors.technology}
                       />
                     )}
                   />
-                   {errors.technology && <p className="text-red-500 text-xs mt-1">{errors.technology.message}</p>}
+                   {errors.technology && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.technology.message}</p>}
                 </div>
 
-                <div className="col-span-1">
+                <div className="col-span-1" data-field="profile">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Profile</label>
                   <Controller
                     name="profile"
@@ -280,10 +391,10 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                   />
                 </div>
 
-                <div className="col-span-1 lg:col-span-2">
+                <div className="col-span-1 lg:col-span-2" data-field="bidLink">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Bid Link</label>
-                  <input type="url" placeholder="https://..." {...register('bidLink')} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
-                   {errors.bidLink && <p className="text-red-500 text-xs mt-1">{errors.bidLink.message}</p>}
+                  <input type="url" placeholder="https://..." {...register('bidLink')} aria-invalid={errors.bidLink ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.bidLink ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
+                   {errors.bidLink && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.bidLink.message}</p>}
                 </div>
               </div>
             </div>
@@ -292,17 +403,19 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
             <div>
               <SectionHeader title="Client Information" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="clientRating">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Rating (0-5)</label>
-                  <input type="number" min={0} max={5} step="0.5" {...register('clientRating', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
+                  <input type="number" min={0} max={5} step="0.5" {...register('clientRating', { valueAsNumber: true })} aria-invalid={errors.clientRating ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.clientRating ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
+                  {errors.clientRating && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.clientRating.message}</p>}
                 </div>
                 
-                <div className="col-span-1">
+                <div className="col-span-1" data-field="clientHireRate">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Hire Rate (%)</label>
-                   <input type="number" min={0} max={100} {...register('clientHireRate', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
+                   <input type="number" min={0} max={100} {...register('clientHireRate', { valueAsNumber: true })} aria-invalid={errors.clientHireRate ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.clientHireRate ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
+                   {errors.clientHireRate && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.clientHireRate.message}</p>}
                 </div>
 
-                <div className="col-span-1">
+                <div className="col-span-1" data-field="clientLocation">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Location</label>
                    <Controller
                     name="clientLocation"
@@ -318,7 +431,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                   />
                 </div>
 
-                <div className="col-span-1">
+                <div className="col-span-1" data-field="clientBudget">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Budget</label>
                    <Controller
                     name="clientBudget"
@@ -334,7 +447,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                   />
                 </div>
                 
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="clientSpending">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Spending</label>
                    <input type="text" {...register('clientSpending')} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
                 </div>
@@ -345,17 +458,20 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
              <div>
               <SectionHeader title="Deal Mechanics" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="rate">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Rate ($)</label>
-                   <input type="number" min={0} {...register('rate', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
+                   <input type="number" min={0} {...register('rate', { valueAsNumber: true })} aria-invalid={errors.rate ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.rate ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
+                   {errors.rate && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.rate.message}</p>}
                 </div>
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="connects">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Connects</label>
-                   <input type="number" min={0} {...register('connects', { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
+                   <input type="number" min={0} {...register('connects', { valueAsNumber: true })} aria-invalid={errors.connects ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.connects ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
+                   {errors.connects && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.connects.message}</p>}
                 </div>
-                 <div className="col-span-1 lg:col-span-1">
+                 <div className="col-span-1 lg:col-span-1" data-field="proposalScreenshot">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Proposal Screenshot</label>
-                   <input type="url" placeholder="https://..." {...register('proposalScreenshot')} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
+                   <input type="url" placeholder="https://..." {...register('proposalScreenshot')} aria-invalid={errors.proposalScreenshot ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.proposalScreenshot ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
+                   {errors.proposalScreenshot && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.proposalScreenshot.message}</p>}
                 </div>
               </div>
             </div>
@@ -364,7 +480,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
             <div>
               <SectionHeader title="Status & Tracking" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="status">
                   <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
                     Current Status
                     <span className="text-red-500 font-bold">*</span>
@@ -378,13 +494,14 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Select Status"
+                        error={!!errors.status}
                       />
                     )}
                   />
-                   {errors.status && <p className="text-red-500 text-xs mt-1">{errors.status.message}</p>}
+                   {errors.status && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.status.message}</p>}
                 </div>
 
-                <div className="col-span-1">
+                <div className="col-span-1" data-field="replyFromClient">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Client Reply</label>
                    <Controller
                     name="replyFromClient"
@@ -400,7 +517,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                   />
                 </div>
 
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="rowColor">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Row Color</label>
                    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 transition-all">
                      <input type="color" {...register('rowColor')} className="w-12 h-12 p-1 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer hover:scale-110 transition-transform" />
@@ -408,7 +525,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                    </div>
                 </div>
 
-                <div className="col-span-1">
+                <div className="col-span-1" data-field="followUps">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Follow Up Status</label>
                    <Controller
                     name="followUps"
@@ -424,7 +541,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                   />
                 </div>
 
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="followUpDate">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Next Follow Up Date</label>
                   <div className="relative group">
                     <input 
@@ -493,7 +610,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
             <div>
                <SectionHeader title="Additional Notes" />
                <div className="grid grid-cols-1 gap-5">
-                 <div className="col-span-1">
+                 <div className="col-span-1" data-field="comments">
                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Comments</label>
                     <textarea {...register('comments')} rows={4} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl resize-none transition-all hover:border-blue-300 dark:hover:border-blue-600" placeholder="Add any relevant notes here..."></textarea>
                  </div>
@@ -504,7 +621,11 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-8 py-5 border-t border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50 via-blue-50/30 to-gray-50 dark:from-gray-800 dark:via-blue-900/10 dark:to-gray-800 flex justify-end gap-4 rounded-b-3xl shadow-inner">
+        <div className="px-8 py-5 border-t border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50 via-blue-50/30 to-gray-50 dark:from-gray-800 dark:via-blue-900/10 dark:to-gray-800 flex items-center justify-between rounded-b-3xl shadow-inner">
+           <span className="text-[11px] text-gray-400 dark:text-gray-500 hidden sm:inline">
+             {hasErrors ? `${Object.keys(errors).length} field error${Object.keys(errors).length > 1 ? 's' : ''}` : 'Ctrl+S to save'}
+           </span>
+           <div className="flex gap-4">
            <button
              type="button"
              onClick={onClose}
@@ -528,6 +649,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 <span>{isEdit ? '✅ Save Changes' : '✨ Create Record'}</span>
              )}
            </button>
+           </div>
         </div>
       </div>
       

@@ -1,7 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 
-const Select = ({ children, value, onValueChange, disabled = false, ...props }) => {
+const Select = ({ children, value, onValueChange, disabled = false, onOpenChange, ...props }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [selectedValue, setSelectedValue] = React.useState(value);
   const selectRef = useRef(null);
@@ -17,6 +17,7 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
     const handleClickOutside = (event) => {
       if (selectRef.current && !selectRef.current.contains(event.target)) {
         setIsOpen(false);
+        onOpenChange?.(false);
       }
     };
 
@@ -24,19 +25,24 @@ const Select = ({ children, value, onValueChange, disabled = false, ...props }) 
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isOpen]);
+  }, [isOpen, onOpenChange]);
 
   const handleSelect = useCallback((newValue) => {
     setSelectedValue(newValue);
     onValueChange?.(newValue);
     setIsOpen(false);
-  }, [onValueChange]);
+    onOpenChange?.(false);
+  }, [onValueChange, onOpenChange]);
 
   const toggleOpen = useCallback(() => {
     if (!disabled) {
-      setIsOpen(prev => !prev);
+      setIsOpen(prev => {
+        const next = !prev;
+        onOpenChange?.(next);
+        return next;
+      });
     }
-  }, [disabled]);
+  }, [disabled, onOpenChange]);
 
   const { placeholder, displayValue } = useMemo(() => {
     let placeholderText = 'Select...';

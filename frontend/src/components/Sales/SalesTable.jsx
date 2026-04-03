@@ -3,7 +3,8 @@ import { formatSalesDate } from '../../utils/dateUtils';
 import { motion } from 'framer-motion';
 import {
   ExternalLink, History, Edit2, Trash2, Lock, Copy,
-  ChevronLeft, ChevronRight, DollarSign, ArrowUp, ArrowDown, ArrowUpDown
+  ChevronLeft, ChevronRight, DollarSign, ArrowUp, ArrowDown, ArrowUpDown,
+  User
 } from 'lucide-react';
 import StarRating from '../ui/StarRating';
 import { toast } from 'react-toastify';
@@ -22,6 +23,7 @@ const BASE_COLUMNS = [
   { key: 'checkbox',           label: '',                    width: 44,  minWidth: 44,  maxWidth: 44,  priority: 'high',   type: null },
   { key: 'date',               label: 'Date',                width: 115, minWidth: 90,  maxWidth: 160, priority: 'high',   type: 'date' },
   { key: 'monthName',          label: 'Month',               width: 95,  minWidth: 70,  maxWidth: 140, priority: 'high',   type: 'text', readOnly: true },
+  { key: 'name',               label: 'Name',                width: 130, minWidth: 90,  maxWidth: 220, priority: 'high',   type: 'name' },
   { key: 'platform',           label: 'Platform',            width: 130, minWidth: 90,  maxWidth: 220, priority: 'medium', type: 'dropdown' },
   { key: 'status',             label: 'Status',              width: 120, minWidth: 80,  maxWidth: 180, priority: 'high',   type: 'dropdown' },
   { key: 'bidLink',            label: 'Bid Link',            width: 110, minWidth: 80,  maxWidth: 250, priority: 'low',    type: 'link' },
@@ -59,6 +61,26 @@ const mapCustomColumns = (customColumns) =>
 /* ═══════════════════════════════════════════════════════════ */
 const ROW_HEIGHT = 48;
 const HEADER_HEIGHT = 44;
+
+/* ═══════════════════════════════════════════════════════════
+   NAME AVATAR — deterministic color based on name string
+   ═══════════════════════════════════════════════════════════ */
+const NAME_COLORS = [
+  'bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500',
+  'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-teal-500',
+  'bg-pink-500', 'bg-orange-500', 'bg-lime-600', 'bg-fuchsia-500'
+];
+const getNameColor = (name) => {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return NAME_COLORS[Math.abs(hash) % NAME_COLORS.length];
+};
+const getInitials = (name) => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return parts[0][0].toUpperCase();
+};
 
 /* ═══════════════════════════════════════════════════════════
    CELL TOOLTIP — shown on hover when text is truncated
@@ -123,6 +145,7 @@ const TableRow = memo(({
   permissions,
   lockedRows,
   style,
+  index,
 }) => {
   const isLocked = lockedRows[row._id];
 
@@ -181,6 +204,21 @@ const TableRow = memo(({
 
     /* ─── Data cells by type ─── */
     switch (column.type) {
+      case 'name': {
+        if (!value) return <span className="text-gray-400 select-none">-</span>;
+        const nameStr = String(value);
+        return (
+          <div className="flex items-center gap-2 min-w-0 w-full">
+            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold text-white shrink-0 ${getNameColor(nameStr)}`}>
+              {getInitials(nameStr)}
+            </span>
+            <CellTooltip text={nameStr}>
+              <span className="truncate font-medium text-gray-800 dark:text-gray-200">{nameStr}</span>
+            </CellTooltip>
+          </div>
+        );
+      }
+
       case 'date':
         return <span className="tabular-nums text-gray-700 dark:text-gray-300">{formatSalesDate(value) || <span className="text-gray-400">-</span>}</span>;
 
@@ -246,7 +284,9 @@ const TableRow = memo(({
   /* Row background */
   const bgClass = isSelected
     ? 'bg-blue-50/70 dark:bg-blue-900/20'
-    : 'bg-white dark:bg-[#1e2330]';
+    : index % 2 === 0
+      ? 'bg-white dark:bg-[#1e2330]'
+      : 'bg-gray-50/50 dark:bg-[#1b2030]';
 
   const customBg = !isSelected && row.rowColor && row.rowColor !== '#FFFFFF'
     ? `${row.rowColor}1A`
@@ -474,17 +514,30 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
 
   /* ══════════ EMPTY ══════════ */
   if (rows.length === 0) {
+    const hasFilters = useSalesStore.getState().filters && Object.values(useSalesStore.getState().filters).some(v => v !== '' && v !== null && v !== undefined);
     return (
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-16 text-center"
       >
-        <div className="text-6xl mb-5">📊</div>
-        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No bids yet</h3>
-        <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto text-sm">
-          Start tracking your sales pipeline by adding your first bid record.
+        <div className="text-6xl mb-5">{hasFilters ? '🔍' : '📊'}</div>
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+          {hasFilters ? 'No matching records' : 'No bids yet'}
+        </h3>
+        <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto text-sm mb-4">
+          {hasFilters
+            ? 'Try adjusting your filters or search query to find what you\'re looking for.'
+            : 'Start tracking your sales pipeline by adding your first bid record.'}
         </p>
+        {hasFilters && (
+          <button
+            onClick={() => useSalesStore.getState().clearFilters()}
+            className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:text-blue-400 rounded-xl transition-colors"
+          >
+            Clear all filters
+          </button>
+        )}
       </motion.div>
     );
   }
@@ -559,6 +612,7 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
                   onDelete={handleDelete}
                   permissions={permissions}
                   lockedRows={lockedRows}
+                  index={vRow.index}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -578,12 +632,23 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
       {pagination.pages > 1 && (
         <div className="bg-gray-50 dark:bg-[#151924] px-4 py-2.5 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 shrink-0 text-sm">
           <span className="text-gray-500 dark:text-gray-400 text-xs">
+            Showing{' '}
+            <span className="font-semibold text-gray-800 dark:text-gray-200">
+              {Math.min((pagination.page - 1) * pagination.limit + 1, pagination.total)}–{Math.min(pagination.page * pagination.limit, pagination.total)}
+            </span>{' '}
+            of <span className="font-semibold text-gray-800 dark:text-gray-200">{pagination.total}</span> rows
+            <span className="mx-1.5 text-gray-300 dark:text-gray-600">·</span>
             Page <span className="font-semibold text-gray-800 dark:text-gray-200">{pagination.page}</span> of{' '}
             <span className="font-semibold text-gray-800 dark:text-gray-200">{pagination.pages}</span>
-            <span className="mx-1.5 text-gray-300 dark:text-gray-600">·</span>
-            <span className="font-semibold text-gray-800 dark:text-gray-200">{pagination.total}</span> rows
           </span>
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 items-center">
+            <button
+              onClick={() => goToPage(1)}
+              disabled={pagination.page === 1}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+            >
+              First
+            </button>
             <button
               onClick={() => goToPage(pagination.page - 1)}
               disabled={pagination.page === 1}
@@ -591,12 +656,42 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
             >
               <ChevronLeft className="w-3.5 h-3.5" /> Prev
             </button>
+            {/* Page number pills */}
+            {(() => {
+              const pages = [];
+              const current = pagination.page;
+              const total = pagination.pages;
+              let start = Math.max(1, current - 2);
+              let end = Math.min(total, start + 4);
+              if (end - start < 4) start = Math.max(1, end - 4);
+              for (let i = start; i <= end; i++) pages.push(i);
+              return pages.map(p => (
+                <button
+                  key={p}
+                  onClick={() => goToPage(p)}
+                  className={`inline-flex items-center justify-center w-8 h-8 text-xs font-semibold rounded-lg transition-colors ${
+                    p === current
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  {p}
+                </button>
+              ));
+            })()}
             <button
               onClick={() => goToPage(pagination.page + 1)}
               disabled={pagination.page === pagination.pages}
               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
             >
               Next <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => goToPage(pagination.pages)}
+              disabled={pagination.page === pagination.pages}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+            >
+              Last
             </button>
           </div>
         </div>

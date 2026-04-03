@@ -248,6 +248,14 @@ export const deleteCustomColumn = async (columnId) => {
   return data;
 };
 
+/**
+ * Get unique names for tabs/filters
+ */
+export const getUniqueNames = async () => {
+  const { data } = await api.get('/names');
+  return data;
+};
+
 // ============================================
 // PERMISSIONS API
 // ============================================

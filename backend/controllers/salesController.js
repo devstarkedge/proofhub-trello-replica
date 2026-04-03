@@ -14,6 +14,7 @@ import ExcelJS from 'exceljs';
 const fieldLabels = {
   date: 'Date',
   monthName: 'Month',
+  name: 'Name',
   bidLink: 'Bid Link',
   platform: 'Platform',
   profile: 'Profile',
@@ -75,8 +76,56 @@ const trackChanges = (oldRow, newData) => {
 
 
 // Helper to identify standard schema fields (excluding system fields)
+const REQUIRED_FIELDS = { date: 'Date', name: 'Name', platform: 'Platform', technology: 'Technology', status: 'Status' };
+
+/**
+ * Parse Mongoose ValidationError into structured field-level errors.
+ * Returns { message: string, fields: string[] } or null if not a ValidationError.
+ */
+const parseValidationError = (error) => {
+  if (error.name === 'ValidationError' && error.errors) {
+    const fields = [];
+    const messages = [];
+    Object.entries(error.errors).forEach(([field, err]) => {
+      const label = fieldLabels[field] || field;
+      fields.push(field);
+      messages.push(`${label}: ${err.message}`);
+    });
+    return {
+      message: `Validation failed — ${messages.join(', ')}`,
+      fields,
+      fieldErrors: messages,
+    };
+  }
+  return null;
+};
+
+/**
+ * Validate required fields before save — returns structured 400 or null if valid.
+ * @param {object} data - The standard fields object
+ * @param {object} overrides - Fields to skip checking (e.g. { name: true } if server-set)
+ */
+const validateRequiredFields = (data, overrides = {}) => {
+  const missing = [];
+  Object.entries(REQUIRED_FIELDS).forEach(([field, label]) => {
+    if (overrides[field]) return; // Skip fields handled elsewhere
+    const val = data[field];
+    if (val === undefined || val === null || (typeof val === 'string' && !val.trim())) {
+      missing.push(label);
+    }
+  });
+  if (missing.length > 0) {
+    return {
+      success: false,
+      message: `Missing required fields: ${missing.join(', ')}`,
+      fields: missing,
+    };
+  }
+  return null;
+};
+
 const STANDARD_FIELDS = [
-  'date', 'monthName', 'bidLink', 'platform', 'profile', 'technology',
+  'date', 'monthName', 'name', 'bidLink', 'platform', 'profile', 'technology',
   'clientRating', 'clientHireRate', 'clientBudget', 'clientSpending',
   'clientLocation', 'replyFromClient', 'followUps', 'followUpDate',
   'connects', 'rate', 'proposalScreenshot', 'status', 'comments',
@@ -142,10 +191,12 @@ const buildSalesQuery = (params) => {
       { profile: { $regex: search, $options: 'i' } },
       { technology: { $regex: search, $options: 'i' } },
       { clientLocation: { $regex: search, $options: 'i' } },
+      { name: { $regex: search, $options: 'i' } },
     ];
   }
 
   // Apply standard filters
+  if (params.name) query.name = params.name;
   if (platform) query.platform = platform;
   if (technology) query.technology = technology;
   if (status) query.status = status;
@@ -312,6 +363,15 @@ export const createSalesRow = async (req, res) => {
     const userId = req.user._id;
     const { standard, custom } = prepareRowForSave(req.body);
 
+    // Server-side enforcement: always set name to logged-in user's name on create
+    standard.name = req.user.name;
+
+    // Validate required fields before hitting Mongoose
+    const validationErr = validateRequiredFields(standard, { name: true }); // name is server-set
+    if (validationErr) {
+      return res.status(400).json(validationErr);
+    }
+
     // Initialize row with standard fields
     const row = new SalesRow({
       ...standard,
@@ -353,10 +413,13 @@ export const createSalesRow = async (req, res) => {
     });
   } catch (error) {
     console.error('Create sales row error:', error);
+    const parsed = parseValidationError(error);
+    if (parsed) {
+      return res.status(400).json({ success: false, ...parsed });
+    }
     res.status(400).json({
       success: false,
-      message: 'Failed to create sales row',
-      error: error.message
+      message: error.message || 'Failed to create sales row',
     });
   }
 };
@@ -390,6 +453,19 @@ export const updateSalesRow = async (req, res) => {
 
     // Separate standard and custom fields
     const { standard, custom } = prepareRowForSave(req.body);
+
+    // Non-admin users cannot change the name field
+    if (req.user.role !== 'admin') {
+      delete standard.name;
+    }
+
+    // Validate: don't allow clearing required fields to empty
+    // Merge existing row values with updates, then validate
+    const merged = { date: row.date, name: row.name, platform: row.platform, technology: row.technology, status: row.status, ...standard };
+    const validationErr = validateRequiredFields(merged);
+    if (validationErr) {
+      return res.status(400).json(validationErr);
+    }
 
     // Track changes for activity log (complex due to custom fields, keeping simple for now)
     const changes = trackChanges(flattenRow(row), { ...standard, ...custom });
@@ -445,10 +521,13 @@ export const updateSalesRow = async (req, res) => {
     });
   } catch (error) {
     console.error('Update sales row error:', error);
+    const parsed = parseValidationError(error);
+    if (parsed) {
+      return res.status(400).json({ success: false, ...parsed });
+    }
     res.status(400).json({
       success: false,
-      message: 'Failed to update sales row',
-      error: error.message
+      message: error.message || 'Failed to update sales row',
     });
   }
 };
@@ -847,6 +926,7 @@ export const exportRows = async (req, res) => {
       const base = {
         'Date': formatExportDate(row.date),
         'Month': row.monthName || '',
+        'Name': row.name || '',
         'Bid Link': row.bidLink || '',
         'Platform': row.platform || '',
         'Profile': row.profile || '',
@@ -1123,6 +1203,11 @@ export const importRows = async (req, res) => {
           }
         }
 
+        // Ensure name is set — use imported value if present, otherwise default to importing user's name
+        if (!standard.name) {
+          standard.name = req.user.name;
+        }
+
         const row = new SalesRow({
           ...standard,
           createdBy: userId,
@@ -1147,10 +1232,12 @@ export const importRows = async (req, res) => {
           userAgent: req.get('user-agent')
         });
       } catch (error) {
+        // Parse Mongoose ValidationError for human-readable messages
+        const parsed = parseValidationError(error);
         results.failed.push({
           index: i,
           data: data[i],
-          error: error.message
+          error: parsed ? parsed.message : error.message
         });
       }
     }
@@ -1185,6 +1272,35 @@ export const importRows = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to import rows',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * @desc    Get unique names with counts for tabs/filters
+ * @route   GET /api/sales/names
+ * @access  Private (requires sales module permission)
+ */
+export const getUniqueNames = async (req, res) => {
+  try {
+    const results = await SalesRow.aggregate([
+      { $match: { isDeleted: false, name: { $exists: true, $ne: '' } } },
+      { $group: { _id: '$name', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    const names = results.map(r => ({ name: r._id, count: r.count }));
+
+    res.json({
+      success: true,
+      data: names
+    });
+  } catch (error) {
+    console.error('Get unique names error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch unique names',
       error: error.message
     });
   }

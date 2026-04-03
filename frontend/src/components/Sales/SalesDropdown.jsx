@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '../ui/select';
-import { Plus, X, Check, Trash2 } from 'lucide-react';
+import { Plus, X, Check, Trash2, Search } from 'lucide-react';
 import useSalesStore from '../../store/salesStore';
 import { toast } from 'react-toastify';
 import AuthContext from '../../context/AuthContext';
 import DeletePopup from '../ui/DeletePopup';
 
-const SalesDropdown = ({ columnName, value, onChange, placeholder, disabled }) => {
+const SalesDropdown = ({ columnName, value, onChange, placeholder, disabled, error }) => {
   const { fetchDropdownOptions, addDropdownOption, deleteDropdownOption, dropdownOptions } = useSalesStore();
   const { user } = useContext(AuthContext);
   const isAdmin = user?.role?.toLowerCase() === 'admin';
@@ -15,6 +15,23 @@ const SalesDropdown = ({ columnName, value, onChange, placeholder, disabled }) =
   const [newOption, setNewOption] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter options based on search term
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) return options;
+    const term = searchTerm.toLowerCase();
+    return options.filter(opt => opt.label.toLowerCase().includes(term));
+  }, [options, searchTerm]);
+
+  // Clear search when dropdown opens/closes
+  const handleOpenChange = useCallback((open) => {
+    if (open) {
+      setSearchTerm('');
+      setIsAdding(false);
+      setNewOption('');
+    }
+  }, []);
 
   useEffect(() => {
     if (columnName) {
@@ -76,16 +93,52 @@ const SalesDropdown = ({ columnName, value, onChange, placeholder, disabled }) =
   };
 
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className="w-full">
+    <Select value={value} onValueChange={onChange} disabled={disabled} onOpenChange={handleOpenChange}>
+      <SelectTrigger className={`w-full ${error ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : ''}`} aria-invalid={error ? 'true' : undefined}>
          <SelectValue placeholder={placeholder || "Select..."} />
       </SelectTrigger>
       <SelectContent className="max-h-[300px]">
-         {options.length === 0 && (
-             <div className="p-2 text-sm text-gray-500 text-center">No options yet</div>
+         {/* Search Input */}
+         {options.length > 3 && (
+           <div className="sticky top-0 z-10 bg-white dark:bg-gray-800 p-2 border-b border-gray-100 dark:border-gray-700">
+             <div className="relative">
+               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+               <input
+                 type="text"
+                 value={searchTerm}
+                 onChange={(e) => setSearchTerm(e.target.value)}
+                 onClick={(e) => e.stopPropagation()}
+                 onKeyDown={(e) => {
+                   e.stopPropagation();
+                   if (e.key === 'Enter') e.preventDefault();
+                 }}
+                 placeholder="Search options..."
+                 className="w-full h-8 text-sm border border-gray-200 dark:border-gray-600 rounded-md pl-8 pr-8 bg-gray-50 dark:bg-gray-900 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+                 autoFocus
+               />
+               {searchTerm && (
+                 <button
+                   type="button"
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     setSearchTerm('');
+                   }}
+                   className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                 >
+                   <X className="w-3.5 h-3.5" />
+                 </button>
+               )}
+             </div>
+           </div>
+         )}
+
+         {filteredOptions.length === 0 && (
+             <div className="p-3 text-sm text-gray-500 text-center">
+               {searchTerm ? `No options matching "${searchTerm}"` : 'No options yet'}
+             </div>
          )}
          
-         {options.map(opt => {
+         {filteredOptions.map(opt => {
             const createdById = typeof opt.createdBy === 'object' ? opt.createdBy?._id : opt.createdBy;
             const canDelete = isAdmin || (createdById && user?._id && createdById.toString() === user._id.toString());
 

@@ -7,6 +7,7 @@ import useSalesStore from '../../store/salesStore';
 import * as salesApi from '../../services/salesApi';
 import { toast } from 'react-toastify';
 import { parseSalesDate } from '../../utils/dateUtils';
+import { validateImportRows, SALES_REQUIRED_FIELDS, SALES_FIELD_LABELS } from '../../utils/salesValidation';
 
 const ImportDataModal = ({ isOpen, onClose }) => {
   const { importRows, customColumns, fetchCustomColumns, fetchRows, fetchDropdownOptions } = useSalesStore();
@@ -107,6 +108,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           
           // Standard fields are always available
           const standardFieldsList = [
+            { key: 'name', label: 'Name' },
             { key: 'date', label: 'Date' },
             { key: 'bidLink', label: 'Bid Link' },
             { key: 'platform', label: 'Platform' },
@@ -196,6 +198,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
   // Predefined sales fields for mapping (standard + custom columns)
   const salesFields = useMemo(() => {
     const standardFields = [
+      { key: 'name', label: 'Name' },
       { key: 'date', label: 'Date' },
       { key: 'bidLink', label: 'Bid Link' },
       { key: 'platform', label: 'Platform' },
@@ -280,14 +283,14 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         }
       });
 
-      // Check if required fields are mapped (for user guidance only)
-      const requiredFields = ['date', 'platform', 'technology', 'status'];
-      const mappedRequiredFields = requiredFields.filter(f => Object.values(extendedMap).includes(f));
-      const unmappedFields = requiredFields.filter(f => !Object.values(extendedMap).includes(f));
+      // Check if required fields are mapped — block import if any required field is unmapped
+      const mappedValues = Object.values(extendedMap);
+      const unmappedRequired = SALES_REQUIRED_FIELDS.filter(f => !mappedValues.includes(f));
       
-      // Warn user if no required fields are mapped, but allow import
-      if (mappedRequiredFields.length === 0 && unmappedFields.length === requiredFields.length) {
-        setError(`Warning: No required fields mapped (${requiredFields.join(', ')}). Consider mapping at least some fields.`);
+      if (unmappedRequired.length > 0) {
+        const labels = unmappedRequired.map(f => SALES_FIELD_LABELS[f] || f).join(', ');
+        setError(`Required fields not mapped: ${labels}. Please map all required fields before importing.`);
+        toast.error(`Map required fields: ${labels}`);
         setImporting(false);
         return;
       }
@@ -523,59 +526,31 @@ const ImportDataModal = ({ isOpen, onClose }) => {
 
       const normalizedWithIndex = nonEmptyMapped.map(normalizeRow);
       
-      // Apply default values for optional fields and separate valid/invalid rows
-      const validRows = [];
-      const invalidRows = [];
+      // Strict pre-import validation using validateImportRows
+      const normalizedRows = normalizedWithIndex.map(({ row }) => row);
+      const originalIndices = normalizedWithIndex.map(({ originalIndex }) => originalIndex);
+      const { valid: validatedValid, invalid: validatedInvalid } = validateImportRows(normalizedRows);
       
-      // Default values for optional fields (enterprise-level: allow import with sensible defaults)
-      const defaultValues = {
-        status: '',
-        platform: '',
-        technology: '',
-        profile: ''
-      };
-      
-      normalizedWithIndex.forEach(({ row, originalIndex }) => {
-        const missingFields = [];
-        const rowWithDefaults = { ...row };
-        
-        // Only date is strictly required - apply defaults for other fields
-        if (Object.values(columnMap).includes('date') && !row.date) {
-          missingFields.push('date');
-        }
-        
-        // Apply default values for optional fields if they're mapped but empty
-        if (Object.values(columnMap).includes('platform') && !row.platform) {
-          rowWithDefaults.platform = defaultValues.platform;
-        }
-        if (Object.values(columnMap).includes('technology') && !row.technology) {
-          rowWithDefaults.technology = defaultValues.technology;
-        }
-        if (Object.values(columnMap).includes('status') && !row.status) {
-          rowWithDefaults.status = defaultValues.status;
-        }
-        if (Object.values(columnMap).includes('profile') && !row.profile) {
-          rowWithDefaults.profile = defaultValues.profile;
-        }
-        
-        if (missingFields.length > 0) {
-          invalidRows.push({
-            index: originalIndex,
-            data: row,
-            error: `Missing or invalid: ${missingFields.join(', ')}`
-          });
-        } else {
-          validRows.push(rowWithDefaults);
-        }
-      });
+      // Re-map invalid rows with their original spreadsheet indices
+      const invalidRows = validatedInvalid.map(item => ({
+        ...item,
+        index: originalIndices[item.index] ?? item.index,
+      }));
+      const validRows = validatedValid;
 
       // If all rows are invalid after validation
       if (validRows.length === 0 && invalidRows.length > 0) {
         setError(`All ${invalidRows.length} rows have validation errors. No data was imported.`);
         setFailedResults({ failed: invalidRows, success: [] });
+        toast.error(`All ${invalidRows.length} rows failed validation. Check required fields: Date, Name, Platform, Technology, Status.`);
         setImporting(false);
         setStep(3);
         return;
+      }
+
+      // Show summary toast when some rows are invalid
+      if (invalidRows.length > 0) {
+        toast.warning(`${invalidRows.length} row(s) skipped due to validation errors. Importing ${validRows.length} valid rows.`);
       }
 
       // =========================================
@@ -903,22 +878,29 @@ const ImportDataModal = ({ isOpen, onClose }) => {
                     </div>
                     <button 
                       onClick={() => {
-                        const dataStr = JSON.stringify(failedResults.failed, null, 2);
-                        const blob = new Blob([dataStr], { type: 'application/json' });
+                        const failedData = failedResults.failed;
+                        const allKeys = [...new Set(failedData.flatMap(f => Object.keys(f.data || {})))];
+                        const csvHeader = ['Row #', 'Error', ...allKeys].map(h => `"${String(h).replace(/"/g, '""')}"`).join(',');
+                        const csvRows = failedData.map(f => {
+                          const row = [f.index + 1, f.error, ...allKeys.map(k => f.data?.[k] ?? '')];
+                          return row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',');
+                        });
+                        const csv = [csvHeader, ...csvRows].join('\n');
+                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = 'failed_import_rows.json';
+                        a.download = 'failed_import_rows.csv';
                         a.click();
                         URL.revokeObjectURL(url);
                       }}
                       className="text-xs px-2 py-1 bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-700 transition-colors"
                     >
-                      Download Failed Rows
+                      Download Failed Rows (CSV)
                     </button>
                   </div>
                   <div className="text-xs text-red-600 dark:text-red-400 mb-2">
-                    Showing first 10 failed rows. Download for complete list.
+                    Showing first 10 failed rows. Download CSV for complete list.
                   </div>
                   <ul className="space-y-2 max-h-48 overflow-auto">
                     {failedResults.failed.slice(0, 10).map((f, i) => (
@@ -1082,22 +1064,29 @@ const ImportDataModal = ({ isOpen, onClose }) => {
                     </div>
                     <button 
                       onClick={() => {
-                        const dataStr = JSON.stringify(failedResults.failed, null, 2);
-                        const blob = new Blob([dataStr], { type: 'application/json' });
+                        const failedData = failedResults.failed;
+                        const allKeys = [...new Set(failedData.flatMap(f => Object.keys(f.data || {})))];
+                        const csvHeader = ['Row #', 'Error', ...allKeys].map(h => `"${String(h).replace(/"/g, '""')}"`).join(',');
+                        const csvRows = failedData.map(f => {
+                          const row = [f.index + 1, f.error, ...allKeys.map(k => f.data?.[k] ?? '')];
+                          return row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',');
+                        });
+                        const csv = [csvHeader, ...csvRows].join('\n');
+                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = 'failed_import_rows.json';
+                        a.download = 'failed_import_rows.csv';
                         a.click();
                         URL.revokeObjectURL(url);
                       }}
                       className="text-xs px-3 py-1.5 bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300 rounded-md hover:bg-red-200 dark:hover:bg-red-700 transition-colors font-medium"
                     >
-                      Download Failed Rows
+                      Download Failed Rows (CSV)
                     </button>
                   </div>
                   <div className="text-xs text-red-600 dark:text-red-400 mb-3">
-                    Showing first 5 failed rows. Download for complete list.
+                    Showing first 5 failed rows. Download CSV for complete list.
                   </div>
                   <ul className="space-y-2 max-h-40 overflow-auto">
                     {failedResults.failed.slice(0, 5).map((f, i) => (

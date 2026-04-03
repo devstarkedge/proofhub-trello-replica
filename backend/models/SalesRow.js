@@ -11,6 +11,12 @@ const salesRowSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  name: {
+    type: String,
+    required: [true, 'Name is required'],
+    trim: true,
+    index: true
+  },
   bidLink: {
     type: String,
     trim: true,
@@ -40,7 +46,7 @@ const salesRowSchema = new mongoose.Schema({
   },
   clientRating: {
     type: Number,
-    min: [0.5, 'Rating must be at least 0.5'],
+    min: [0, 'Rating must be at least 0'],
     max: [5, 'Rating must not exceed 5']
   },
   clientHireRate: {
@@ -92,6 +98,7 @@ const salesRowSchema = new mongoose.Schema({
   },
   status: {
     type: String,
+    required: [true, 'Status is required'],
     trim: true,
     index: true
   },
@@ -169,6 +176,8 @@ salesRowSchema.index({ profile: 1, date: -1 });
 // Compound index for common queries
 salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, date: -1 });
 salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, technology: 1, date: -1 });
+salesRowSchema.index({ name: 1, date: -1 });
+salesRowSchema.index({ isDeleted: 1, name: 1, date: -1 });
 
 // Pre-save hook to auto-generate month name from date
 salesRowSchema.pre('save', function(next) {

@@ -2,14 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Calendar, X, Search, Filter, ChevronDown, ChevronUp, 
-  Star, DollarSign, MapPin, Zap
+  Star, DollarSign, MapPin, Zap, User
 } from 'lucide-react';
 import useSalesStore from '../../store/salesStore';
 import DatePickerModal from '../DatePickerModal';
 import { formatSalesDate } from '../../utils/dateUtils';
 
 const SalesFilters = () => {
-  const { rows, filters, setFilters, clearFilters, dropdownOptions, fetchDropdownOptions } = useSalesStore();
+  const { rows, filters, setFilters, clearFilters, dropdownOptions, fetchDropdownOptions, uniqueNames, nameTab, setNameTab } = useSalesStore();
   const [isExpanded, setIsExpanded] = useState(false);
   const [searchInput, setSearchInput] = useState(filters.search || '');
 
@@ -259,6 +259,31 @@ const SalesFilters = () => {
                         </div>
                       </>
                     )}
+                </div>
+
+                {/* Name */}
+                <div>
+                  <label className={labelClass}>
+                    <User className="w-3 h-3 inline mr-1" />
+                    Name
+                  </label>
+                  <select
+                    value={filters.name || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleFilterChange('name', val);
+                      // Sync with tabs
+                      setNameTab(val || 'All');
+                    }}
+                    className={selectClass}
+                  >
+                    <option value="">All Names</option>
+                    {uniqueNames.map((item) => (
+                      <option key={item.name} value={item.name}>
+                        {item.name} ({item.count})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Platform */}
