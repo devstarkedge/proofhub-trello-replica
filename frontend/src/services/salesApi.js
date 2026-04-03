@@ -3,6 +3,19 @@ import { toast } from 'react-toastify';
 
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 
+// Separate axios instance for non-sales API routes (e.g. user management)
+const rootApi = axios.create({
+  baseURL: `${baseURL}/api`,
+  headers: { 'Content-Type': 'application/json' },
+});
+rootApi.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const workspaceId = localStorage.getItem('workspaceId');
+  if (workspaceId) config.headers['x-workspace-id'] = workspaceId;
+  return config;
+});
+
 // Create axios instance with base config
 const api = axios.create({
   baseURL: `${baseURL}/api/sales`,
@@ -275,4 +288,16 @@ export const updateUserPermissions = async (userId, permissions) => {
   const { data } = await api.put(`/permissions/${userId}`, permissions);
   toast.success(data.message || 'Permissions updated successfully');
   return data;
+};
+
+// ============================================
+// USER MANAGEMENT API (used by Sales module)
+// ============================================
+
+/**
+ * Get all verified, active users — used for admin name selector in Sales
+ */
+export const getVerifiedUsers = async () => {
+  const { data } = await rootApi.get('/users/verified');
+  return data?.data || [];
 };

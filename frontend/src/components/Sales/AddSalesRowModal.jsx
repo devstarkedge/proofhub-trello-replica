@@ -1,5 +1,5 @@
-import React, { useEffect, useContext, useCallback, useRef } from 'react';
-import { X, Calendar, User, AlertCircle } from 'lucide-react';
+import React, { useEffect, useContext, useCallback, useRef, useState } from 'react';
+import { X, Calendar, AlertCircle, ChevronDown, Search, Check } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import DatePickerModal from '../DatePickerModal';
 import { formatSalesDate, parseSalesDate } from '../../utils/dateUtils';
@@ -9,6 +9,11 @@ import useSalesStore from '../../store/salesStore';
 import SalesDropdown from './SalesDropdown';
 import AuthContext from '../../context/AuthContext';
 import { toast } from 'react-toastify';
+import { getVerifiedUsers } from '../../services/salesApi';
+
+// Month names for auto-derivation from date
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
 
 const defaultValues = {
   date: '',
@@ -56,6 +61,13 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   const isEdit = Boolean(editingRow);
   const isAdmin = user?.role === 'admin';
   const formScrollRef = useRef(null);
+
+  // Verified users state (admin name selector)
+  const [verifiedUsers, setVerifiedUsers] = useState([]);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const userDropdownRef = useRef(null);
   
   // Date Picker State
   const [datePickerState, setDatePickerState] = React.useState({
@@ -63,6 +75,36 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
     target: null, // 'date' | 'followUpDate' | customColumnKey
     title: ''
   });
+
+  // Load verified users for admin name selector
+  useEffect(() => {
+    if (!isOpen || !isAdmin) return;
+    setLoadingUsers(true);
+    getVerifiedUsers()
+      .then(users => setVerifiedUsers(users || []))
+      .catch(() => setVerifiedUsers([]))
+      .finally(() => setLoadingUsers(false));
+  }, [isOpen, isAdmin]);
+
+  // Close user dropdown on outside click
+  useEffect(() => {
+    if (!userDropdownOpen) return;
+    const handler = (e) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [userDropdownOpen]);
+
+  // Reset dropdown/search state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setUserDropdownOpen(false);
+      setUserSearch('');
+    }
+  }, [isOpen]);
 
   const {
     register,
@@ -128,6 +170,19 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   // Let's use `watch()` to get all values for rendering custom date fields correctly.
   const allValues = watch();
 
+  // Derive month name from the watched date value (Date object or empty)
+  const derivedMonth = (watchedDate instanceof Date && !isNaN(watchedDate))
+    ? MONTH_NAMES[watchedDate.getMonth()]
+    : '';
+
+  // Filtered verified users for admin name selector
+  const filteredUsers = verifiedUsers.filter(u =>
+    u.name.toLowerCase().includes(userSearch.toLowerCase())
+  );
+
+  // Current name value (for admin selector display)
+  const selectedNameValue = watch('name') || '';
+
   const openDatePicker = (target, title) => {
     setDatePickerState({
       isOpen: true,
@@ -142,8 +197,15 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
           // Parse string (dd-mm-yyyy or yyyy-mm-dd) to Date object for Zod validation
           const dateObj = parseSalesDate(dateString);
           setValue(datePickerState.target, dateObj, { shouldValidate: true, shouldDirty: true });
+          // Auto-set monthName when the main date field is updated
+          if (datePickerState.target === 'date' && dateObj instanceof Date && !isNaN(dateObj)) {
+            setValue('monthName', MONTH_NAMES[dateObj.getMonth()], { shouldDirty: true });
+          }
       } else {
           setValue(datePickerState.target, null, { shouldValidate: true, shouldDirty: true });
+          if (datePickerState.target === 'date') {
+            setValue('monthName', '', { shouldDirty: true });
+          }
       }
     }
   };
@@ -157,6 +219,12 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
         customColumns.forEach(col => {
           base[col.key] = editingRow?.[col.key] ?? '';
         });
+      }
+      // Seed monthName from existing date on edit
+      if (base.date instanceof Date && !isNaN(base.date)) {
+        base.monthName = MONTH_NAMES[base.date.getMonth()];
+      } else if (editingRow.monthName) {
+        base.monthName = editingRow.monthName;
       }
       reset(base);
     } else {
@@ -309,28 +377,100 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                   {errors.date && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.date.message}</p>}
                 </div>
 
+                {/* Month — auto-derived from Date, never manually typed */}
+                <div className="col-span-1">
+                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                    Month
+                    <span className="text-[10px] font-normal text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded-full">Auto</span>
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={derivedMonth}
+                    tabIndex={-1}
+                    className="input w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-100 dark:border-blue-900/40 text-blue-700 dark:text-blue-300 rounded-xl cursor-default select-none font-medium"
+                    placeholder="Fills from Date"
+                  />
+                  <input type="hidden" {...register('monthName')} value={derivedMonth} />
+                  <p className="text-[10px] text-gray-400 mt-1">Auto-filled when you pick a date</p>
+                </div>
+
                 <div className="col-span-1" data-field="name">
                   <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
                     Name
                     <span className="text-red-500 font-bold">*</span>
+                    {isAdmin && <span className="text-[10px] font-normal text-indigo-500 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded-full ml-1">Admin</span>}
                   </label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
-                      <User className="w-3.5 h-3.5 text-white" />
+                  {isAdmin ? (
+                    // Admin: searchable verified-users dropdown selector
+                    <div className="relative" ref={userDropdownRef}>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={userDropdownOpen ? userSearch : selectedNameValue}
+                          readOnly={!userDropdownOpen}
+                          onChange={(e) => setUserSearch(e.target.value)}
+                          onFocus={() => { setUserSearch(''); setUserDropdownOpen(true); }}
+                          aria-invalid={errors.name ? 'true' : undefined}
+                          aria-haspopup="listbox"
+                          aria-expanded={userDropdownOpen}
+                          className={`input w-full pr-9 bg-gray-50 dark:bg-gray-900 border-2 ${errors.name ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 rounded-xl transition-all hover:border-indigo-300 dark:hover:border-indigo-600 font-medium cursor-pointer`}
+                          placeholder={loadingUsers ? 'Loading users…' : 'Select a verified user'}
+                        />
+                        <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none transition-transform duration-200 ${userDropdownOpen ? 'rotate-180' : ''}`} />
+                      </div>
+                      {userDropdownOpen && (
+                        <div role="listbox" className="absolute z-[60] top-full mt-1.5 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden">
+                          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-900/60 border-b border-gray-100 dark:border-gray-700">
+                            <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                            <span className="text-[11px] text-gray-400">
+                              {loadingUsers ? 'Loading…' : `${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}`}
+                            </span>
+                          </div>
+                          <div className="overflow-y-auto max-h-44">
+                            {filteredUsers.length === 0 ? (
+                              <div className="px-3 py-3 text-sm text-gray-400 text-center">
+                                {loadingUsers ? 'Loading…' : 'No matching users'}
+                              </div>
+                            ) : (
+                              filteredUsers.map(u => (
+                                <button
+                                  key={u._id}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={selectedNameValue === u.name}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setValue('name', u.name, { shouldValidate: true, shouldDirty: true });
+                                    setUserDropdownOpen(false);
+                                    setUserSearch('');
+                                  }}
+                                  className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 text-sm text-left transition-colors ${selectedNameValue === u.name ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-semibold' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-300'}`}
+                                >
+                                  <span>{u.name}</span>
+                                  {selectedNameValue === u.name && <Check className="w-4 h-4 shrink-0 text-indigo-500" />}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <input type="hidden" {...register('name')} />
                     </div>
+                  ) : (
+                    // Non-admin: readonly, auto-filled, no cursor confusion
                     <input
                       type="text"
                       {...register('name')}
-                      readOnly={!isAdmin}
+                      readOnly
                       aria-invalid={errors.name ? 'true' : undefined}
-                      className={`input w-full pl-12 bg-gray-50 dark:bg-gray-900 border-2 ${errors.name ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium ${!isAdmin ? 'cursor-not-allowed opacity-75' : ''}`}
-                      placeholder="User name"
+                      className="input w-full bg-gray-100 dark:bg-gray-900/60 border-2 border-gray-200 dark:border-gray-700 rounded-xl font-medium text-gray-700 dark:text-gray-300 cursor-not-allowed"
+                      placeholder="Your name"
                     />
-                  </div>
-                  {!isAdmin && (
-                    <p className="text-[11px] text-gray-400 mt-1">Auto-filled with your name</p>
                   )}
-                  {errors.name && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.name.message}</p>}
+                  {!isAdmin && <p className="text-[11px] text-gray-400 mt-1">Auto-filled with your account name</p>}
+                  {isAdmin && !userDropdownOpen && <p className="text-[11px] text-gray-400 mt-1">Click to select a verified team member</p>}
+                  {errors.name && <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.name.message}</p>}
                 </div>
 
                 <div className="col-span-1" data-field="platform">
@@ -433,18 +573,13 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
 
                 <div className="col-span-1" data-field="clientBudget">
                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Budget</label>
-                   <Controller
-                    name="clientBudget"
-                    control={control}
-                    render={({ field }) => (
-                      <SalesDropdown
-                        columnName="clientBudget"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select Budget"
-                      />
-                    )}
-                  />
+                   <input
+                     type="text"
+                     {...register('clientBudget')}
+                     maxLength={100}
+                     className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600"
+                     placeholder="e.g. $500, 1000-1500, Negotiable"
+                   />
                 </div>
                 
                  <div className="col-span-1" data-field="clientSpending">

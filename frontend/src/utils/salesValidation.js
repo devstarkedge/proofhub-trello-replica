@@ -24,6 +24,7 @@ export const SALES_FIELD_LABELS = {
   status: 'Status',
   comments: 'Comments',
   rowColor: 'Row Color',
+  monthName: 'Month',
 };
 
 /**
@@ -80,7 +81,9 @@ export const salesRowSchema = z.object({
   proposalScreenshot: z.string().url('Please enter a valid URL').optional().or(z.literal('')),
   status: z.string().min(1, 'Status is required'),
   comments: z.string().optional(),
-  rowColor: z.string().optional()
+  rowColor: z.string().optional(),
+  // Auto-derived from date on frontend; overwritten by pre-save hook on backend
+  monthName: z.string().optional(),
 });
 // Allow additional dynamic custom column keys (created columns)
 export const salesRowSchemaFlexible = salesRowSchema.passthrough();
