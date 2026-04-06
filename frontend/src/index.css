@@ -1,5 +1,6 @@
 @import url('./theme/tokens.css');
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ============================================
    GLOBAL THEME BASE STYLES
