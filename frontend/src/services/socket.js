@@ -261,6 +261,12 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-user-verified', { detail: data }));
     });
 
+    // User role change events
+    this.socket.on('user-role-changed', (data) => {
+      console.log('User role changed:', data);
+      window.dispatchEvent(new CustomEvent('socket-user-role-changed', { detail: data }));
+    });
+
     // Department assignment events
     this.socket.on('user-assigned', (data) => {
       console.log('User assigned to department:', data);

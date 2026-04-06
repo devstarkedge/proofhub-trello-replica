@@ -9,31 +9,15 @@ import slackNotificationService from '../services/slack/SlackNotificationService
 import notificationService from '../utils/notificationService.js';
 import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards.js';
 import ExcelJS from 'exceljs';
+import {
+  SALES_FIELD_LABELS,
+  SALES_REQUIRED_LABELS,
+  SALES_STANDARD_FIELD_KEYS,
+  validateSalesRequired,
+} from '../config/salesFieldConfig.js';
 
-// Field label mapping for better activity log readability
-const fieldLabels = {
-  date: 'Date',
-  monthName: 'Month',
-  name: 'Name',
-  bidLink: 'Bid Link',
-  platform: 'Platform',
-  profile: 'Profile',
-  technology: 'Technology',
-  clientRating: 'Client Rating',
-  clientHireRate: 'Client % Hire Rate',
-  clientBudget: 'Client Budget',
-  clientSpending: 'Client Spending',
-  clientLocation: 'Client Location',
-  replyFromClient: 'Reply From Client',
-  followUps: 'Follow Ups',
-  followUpDate: 'Follow Up Date',
-  connects: 'Connects',
-  rate: 'Rate',
-  proposalScreenshot: 'Proposal Screenshot',
-  status: 'Status',
-  comments: 'Comments',
-  rowColor: 'Row Color'
-};
+// Field label mapping — derived from single-source-of-truth config
+const fieldLabels = SALES_FIELD_LABELS;
 
 // Helper function to track changes between old and new values
 const trackChanges = (oldRow, newData) => {
@@ -75,8 +59,8 @@ const trackChanges = (oldRow, newData) => {
 };
 
 
-// Helper to identify standard schema fields (excluding system fields)
-const REQUIRED_FIELDS = { date: 'Date', name: 'Name', platform: 'Platform', technology: 'Technology', status: 'Status' };
+// Helper to identify standard schema fields — derived from config
+const REQUIRED_FIELDS = SALES_REQUIRED_LABELS;
 
 /**
  * Parse Mongoose ValidationError into structured field-level errors.
@@ -124,13 +108,7 @@ const validateRequiredFields = (data, overrides = {}) => {
   return null;
 };
 
-const STANDARD_FIELDS = [
-  'date', 'monthName', 'name', 'bidLink', 'platform', 'profile', 'technology',
-  'clientRating', 'clientHireRate', 'clientBudget', 'clientSpending',
-  'clientLocation', 'replyFromClient', 'followUps', 'followUpDate',
-  'connects', 'rate', 'proposalScreenshot', 'status', 'comments',
-  'rowColor'
-];
+const STANDARD_FIELDS = SALES_STANDARD_FIELD_KEYS;
 
 // Helper to flatten row (merge customFields into root) for response
 const flattenRow = (row) => {
@@ -461,7 +439,9 @@ export const updateSalesRow = async (req, res) => {
 
     // Validate: don't allow clearing required fields to empty
     // Merge existing row values with updates, then validate
-    const merged = { date: row.date, name: row.name, platform: row.platform, technology: row.technology, status: row.status, ...standard };
+    const existingRequired = {};
+    Object.keys(REQUIRED_FIELDS).forEach(k => { existingRequired[k] = row[k]; });
+    const merged = { ...existingRequired, ...standard };
     const validationErr = validateRequiredFields(merged);
     if (validationErr) {
       return res.status(400).json(validationErr);

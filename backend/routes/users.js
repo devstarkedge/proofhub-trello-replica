@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser, getVerifiedUsers, getUsersByDepartments, getManagerUsers } from '../controllers/userController.js';
+import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser, getVerifiedUsers, getUsersByDepartments, getManagerUsers, changeUserRole } from '../controllers/userController.js';
 import { uploadAvatar, uploadAvatarFromGoogleDrive, removeAvatar } from '../controllers/avatarController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
@@ -94,6 +94,9 @@ router.delete('/:id/decline', protect, authorize('admin'), declineUser);
 
 // Admin and Manager can assign Employee to departments/teams
 router.put('/:id/assign', protect, managerHrOrAdmin, assignUser);
+
+// Only admin can change user roles
+router.put('/:id/role', protect, authorize('admin'), changeUserRole);
 
 // Only admin can delete users
 router.delete('/:id', protect, authorize('admin'), deleteUser);

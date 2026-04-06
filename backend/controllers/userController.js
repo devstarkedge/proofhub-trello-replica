@@ -507,3 +507,78 @@ export const assignUser = asyncHandler(async (req, res, next) => {
     data: user
   });
 });
+
+// @desc    Change user's role
+// @route   PUT /api/users/:id/role
+// @access  Private/Admin
+export const changeUserRole = asyncHandler(async (req, res, next) => {
+  const { role } = req.body;
+
+  if (!role || typeof role !== 'string') {
+    return next(new ErrorResponse('Role is required', 400));
+  }
+
+  const normalizedRole = role.toLowerCase().trim();
+
+  // Validate against known roles
+  const Role = (await import('../models/Role.js')).default;
+  const roleDoc = await Role.findOne({ slug: normalizedRole, isActive: true });
+  if (!roleDoc) {
+    return next(new ErrorResponse('Invalid role', 400));
+  }
+
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  // Prevent changing own role
+  if (user._id.toString() === req.user.id) {
+    return next(new ErrorResponse('Cannot change your own role', 403));
+  }
+
+  const previousRole = user.role;
+  if (previousRole === normalizedRole) {
+    return res.status(200).json({ success: true, data: user, message: 'Role unchanged' });
+  }
+
+  user.role = normalizedRole;
+  user.roleId = roleDoc._id;
+  await user.save();
+
+  // Invalidate caches
+  const { invalidateCache } = await import('../middleware/cache.js');
+  const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
+  invalidateCache('/api/users');
+  invalidateCache('/api/auth/me');
+  invalidateCache('/api/auth/verify');
+  invalidateUserCache(user._id);
+
+  res.status(200).json({
+    success: true,
+    data: user
+  });
+
+  // Emit real-time role change in background
+  const { runBackground } = await import('../utils/backgroundTasks.js');
+  runBackground(async () => {
+    try {
+      const { emitToUser, emitToTeam } = await import('../server.js');
+
+      const payload = {
+        userId: user._id,
+        previousRole,
+        newRole: normalizedRole,
+        roleId: roleDoc._id
+      };
+
+      // Notify the affected user
+      emitToUser(user._id.toString(), 'user-role-changed', payload);
+
+      // Notify admins viewing HR panel
+      emitToTeam('admin', 'user-role-changed', payload);
+    } catch (err) {
+      console.error('Error emitting role change socket event:', err);
+    }
+  });
+});

@@ -241,6 +241,14 @@ const useRoleStore = create((set, get) => ({
   },
 
   /**
+   * Change a user's role (admin only)
+   */
+  changeUserRole: async (userId, role) => {
+    const response = await api.put(`/api/users/${userId}/role`, { role });
+    return response.data.data;
+  },
+
+  /**
    * Initialize default roles (admin only)
    */
   initializeRoles: async () => {

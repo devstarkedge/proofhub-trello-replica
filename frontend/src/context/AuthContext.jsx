@@ -105,6 +105,23 @@ export const AuthProvider = ({ children }) => {
     restoreSession();
   }, [restoreSession]);
 
+  // Listen for real-time role changes affecting the current user
+  useEffect(() => {
+    const handleRoleChanged = (event) => {
+      const { userId, newRole } = event.detail;
+      if (user && user._id === userId) {
+        setUser(prev => prev ? { ...prev, role: newRole } : prev);
+        // Reload permissions so the UI reflects the new role immediately
+        useRoleStore.getState().loadMyPermissions().catch(err =>
+          console.error('Error reloading permissions after role change:', err)
+        );
+      }
+    };
+
+    window.addEventListener('socket-user-role-changed', handleRoleChanged);
+    return () => window.removeEventListener('socket-user-role-changed', handleRoleChanged);
+  }, [user]);
+
   // Axios interceptor for automatic token refresh
   useEffect(() => {
     const interceptor = api.interceptors.response.use(

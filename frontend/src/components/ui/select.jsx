@@ -1,7 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, X } from 'lucide-react';
 
-const Select = ({ children, value, onValueChange, disabled = false, onOpenChange, ...props }) => {
+const Select = ({ children, value, onValueChange, disabled = false, onOpenChange, clearable = false, ...props }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [selectedValue, setSelectedValue] = React.useState(value);
   const selectRef = useRef(null);
@@ -34,6 +34,15 @@ const Select = ({ children, value, onValueChange, disabled = false, onOpenChange
     onOpenChange?.(false);
   }, [onValueChange, onOpenChange]);
 
+  const handleClear = useCallback((e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setSelectedValue('');
+    onValueChange?.('');
+    setIsOpen(false);
+    onOpenChange?.(false);
+  }, [onValueChange, onOpenChange]);
+
   const toggleOpen = useCallback(() => {
     if (!disabled) {
       setIsOpen(prev => {
@@ -51,40 +60,26 @@ const Select = ({ children, value, onValueChange, disabled = false, onOpenChange
     const findSelectedLabel = (nodes) => {
       React.Children.forEach(nodes, (child) => {
         if (!child) return;
-        
-        // If we already found the label, stop looking (optimization)
         if (selectedLabel) return;
-
-        // Check for SelectValue to update placeholder
         if (child.type === SelectValue) {
           placeholderText = child.props.placeholder || placeholderText;
         }
-
-        // Check for SelectItem matching the value
         if (child.type === SelectItem && child.props.value === resolvedValue) {
           selectedLabel = child.props.label ?? child.props.children;
           return;
         }
-
-        // Recurse into SelectContent or Fragments or Arrays
-        // Note: React.Children.forEach automatically flattens arrays, so we just check for containers
         if (child.type === SelectContent || child.type === React.Fragment) {
           findSelectedLabel(child.props.children);
-        }
-        
-        // Also handle the case where children is just an array/fragment implied
-        if (child.props && child.props.children && typeof child.type !== 'string') {
-             // We generally don't want to dive into ALL components, potentially expensive or wrong.
-             // But for SelectContent specifically it's needed.
-             // The logic above handles SelectContent.
         }
       });
     };
 
     findSelectedLabel(children);
-    
     return { placeholder: placeholderText, displayValue: selectedLabel || placeholderText };
   }, [children, resolvedValue]);
+
+  const hasValue = resolvedValue !== undefined && resolvedValue !== null && resolvedValue !== '';
+  const showClear = clearable && hasValue && !disabled;
 
   return (
     <div className="relative" ref={selectRef} {...props}>
@@ -95,7 +90,9 @@ const Select = ({ children, value, onValueChange, disabled = false, onOpenChange
             isOpen,
             selectedValue: resolvedValue,
             displayValue,
-            disabled
+            disabled,
+            showClear,
+            onClear: handleClear,
           });
         }
         if (child?.type === SelectContent) {
@@ -111,18 +108,41 @@ const Select = ({ children, value, onValueChange, disabled = false, onOpenChange
   );
 };
 
-const SelectTrigger = forwardRef(({ className = '', children, onClick, isOpen, selectedValue, displayValue, disabled, ...props }, ref) => {
+const SelectTrigger = forwardRef(({ className = '', children, onClick, isOpen, selectedValue, displayValue, disabled, showClear, onClear, ...props }, ref) => {
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Escape' && showClear) {
+      e.preventDefault();
+      e.stopPropagation();
+      onClear?.(e);
+    }
+  }, [showClear, onClear]);
+
   return (
     <button
       type="button"
       onClick={onClick}
+      onKeyDown={handleKeyDown}
       disabled={disabled}
       className={`flex h-10 w-full items-center justify-between rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white ring-offset-white dark:ring-offset-gray-900 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer transition-all duration-200 hover:border-blue-400 dark:hover:border-blue-500 active:scale-[0.99] ${className}`}
       ref={ref}
       {...props}
     >
       <span className="truncate text-gray-900 dark:text-white">{displayValue}</span>
-      <ChevronDown className={`h-4 w-4 opacity-50 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      <div className="flex items-center gap-1 shrink-0 ml-1">
+        {showClear && (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label="Clear selection"
+            onClick={onClear}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClear?.(e); } }}
+            className="p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </span>
+        )}
+        <ChevronDown className={`h-4 w-4 opacity-50 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </div>
     </button>
   );
 });

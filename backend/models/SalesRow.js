@@ -9,7 +9,9 @@ const salesRowSchema = new mongoose.Schema({
   },
   monthName: {
     type: String,
-    trim: true
+    required: [true, 'Month is required'],
+    trim: true,
+    default: ''
   },
   name: {
     type: String,
@@ -19,10 +21,12 @@ const salesRowSchema = new mongoose.Schema({
   },
   bidLink: {
     type: String,
+    required: [true, 'Bid Link is required'],
     trim: true,
+    default: '',
     validate: {
       validator: function(v) {
-        if (!v) return true; // Optional field
+        if (!v) return true; // Allow empty for backward compat on read
         return /^https?:\/\/.+/.test(v);
       },
       message: 'Bid Link must be a valid URL'
@@ -36,7 +40,9 @@ const salesRowSchema = new mongoose.Schema({
   },
   profile: {
     type: String,
-    trim: true
+    required: [true, 'Profile is required'],
+    trim: true,
+    default: ''
   },
   technology: {
     type: String,
@@ -98,8 +104,8 @@ const salesRowSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    required: [true, 'Status is required'],
     trim: true,
+    default: '',
     index: true
   },
   comments: {

@@ -11,6 +11,7 @@ import { toast } from 'react-toastify';
 import useSalesStore from '../../store/salesStore';
 import AuthContext from '../../context/AuthContext';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { SALES_FIELD_LABELS } from '../../config/salesFieldConfig';
 
 /* ═══════════════════════════════════════════════════════════
    COLUMN CONFIGURATION — Priority-Based Width System

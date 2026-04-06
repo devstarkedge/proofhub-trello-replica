@@ -22,6 +22,7 @@ import api from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import AuthContext from '../context/AuthContext';
 import useDepartmentStore from '../store/departmentStore';
+import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
 
 // Memoized User Row Component for better performance
@@ -133,11 +134,14 @@ UserRow.displayName = 'UserRow';
 const HRPanel = () => {
   const { user } = useContext(AuthContext);
   const departmentStore = useDepartmentStore();
+  const { roles, loadRoles, changeUserRole } = useRoleStore();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedDepartments, setSelectedDepartments] = useState([]);
+  const [selectedRole, setSelectedRole] = useState('');
+  const [roleLoading, setRoleLoading] = useState(false);
   const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
   const [filters, setFilters] = useState({
     role: '',
@@ -168,11 +172,25 @@ const HRPanel = () => {
       );
     };
 
+    // Listen for real-time role change updates
+    const handleRoleChanged = (event) => {
+      const { userId, newRole } = event.detail;
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user._id === userId
+            ? { ...user, role: newRole }
+            : user
+        )
+      );
+    };
+
     window.addEventListener('socket-user-verified', handleUserVerified);
+    window.addEventListener('socket-user-role-changed', handleRoleChanged);
 
     return () => {
       cleanup();
       window.removeEventListener('socket-user-verified', handleUserVerified);
+      window.removeEventListener('socket-user-role-changed', handleRoleChanged);
     };
   }, []);
 
@@ -181,7 +199,8 @@ const HRPanel = () => {
       setLoading(true);
       await Promise.all([
         departmentStore.loadDepartments(),
-        departmentStore.loadUsers()
+        departmentStore.loadUsers(),
+        loadRoles()
       ]);
       // Load users for local state management
       const res = await api.get('/api/users');
@@ -240,6 +259,13 @@ const HRPanel = () => {
 
   const handleAssignUser = async (userId, departmentIds) => {
     try {
+      setRoleLoading(true);
+
+      // Change role if it differs from current
+      if (selectedUser && selectedRole && selectedRole !== selectedUser.role) {
+        await changeUserRole(userId, selectedRole);
+      }
+
       await api.put(`/api/users/${userId}/assign`, {
         departments: departmentIds,
         team: null
@@ -247,8 +273,13 @@ const HRPanel = () => {
       loadData();
       setShowModal(false);
       setSelectedDepartments([]);
+      setSelectedRole('');
     } catch (error) {
       console.error('Error assigning user:', error);
+      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to update user' });
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setRoleLoading(false);
     }
   };
 
@@ -288,6 +319,7 @@ const HRPanel = () => {
     setSelectedUser(user);
     const userDeptIds = user.department?.map(d => d._id) || [];
     setSelectedDepartments(userDeptIds);
+    setSelectedRole(user.role || 'employee');
     setShowModal(true);
   };
 
@@ -580,7 +612,7 @@ const HRPanel = () => {
                         <UserCog className="w-6 h-6" />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold">Assign Departments</h3>
+                        <h3 className="text-xl font-bold">Assign Role & Departments</h3>
                         <p className="text-blue-100 text-sm">{selectedUser.name}</p>
                       </div>
                     </div>
@@ -588,6 +620,7 @@ const HRPanel = () => {
                       onClick={() => {
                         setShowModal(false);
                         setSelectedDepartments([]);
+                        setSelectedRole('');
                       }}
                       className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-colors duration-200"
                     >
@@ -599,6 +632,37 @@ const HRPanel = () => {
                 {/* Modal Body */}
                 <div className="p-6">
                   <div className="space-y-4">
+                    {/* Role Selector */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <Shield className="w-4 h-4 text-gray-500" />
+                          Role
+                        </div>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={selectedRole}
+                          onChange={(e) => setSelectedRole(e.target.value)}
+                          disabled={selectedUser?._id === user?._id}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {roles.filter(r => r.isActive !== false).map(r => (
+                            <option key={r._id} value={r.slug}>
+                              {r.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                      </div>
+                      {selectedUser?.role !== selectedRole && (
+                        <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                          <Shield className="w-3 h-3" />
+                          Role will change from <span className="font-semibold">{selectedUser?.role}</span> to <span className="font-semibold">{selectedRole}</span>
+                        </p>
+                      )}
+                    </div>
+
                     {/* Department Selector */}
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -671,6 +735,7 @@ const HRPanel = () => {
                     onClick={() => {
                       setShowModal(false);
                       setSelectedDepartments([]);
+                      setSelectedRole('');
                     }}
                     className="px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors duration-200 font-semibold"
                   >
@@ -678,9 +743,17 @@ const HRPanel = () => {
                   </button>
                   <button
                     onClick={() => handleAssignUser(selectedUser._id, selectedDepartments)}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-semibold shadow-md hover:shadow-lg transform hover:scale-105"
+                    disabled={roleLoading}
+                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-semibold shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Assign Departments
+                    {roleLoading ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </span>
+                    ) : (
+                      'Save Changes'
+                    )}
                   </button>
                 </div>
               </div>

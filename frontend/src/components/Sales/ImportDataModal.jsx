@@ -8,6 +8,7 @@ import * as salesApi from '../../services/salesApi';
 import { toast } from 'react-toastify';
 import { parseSalesDate } from '../../utils/dateUtils';
 import { validateImportRows, SALES_REQUIRED_FIELDS, SALES_FIELD_LABELS } from '../../utils/salesValidation';
+import { SALES_MAPPING_FIELDS } from '../../config/salesFieldConfig';
 
 const ImportDataModal = ({ isOpen, onClose }) => {
   const { importRows, customColumns, fetchCustomColumns, fetchRows, fetchDropdownOptions } = useSalesStore();
@@ -106,29 +107,8 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           const normalize = (s) => (s === null || s === undefined) ? '' : String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
           const fieldByNorm = {};
           
-          // Standard fields are always available
-          const standardFieldsList = [
-            { key: 'name', label: 'Name' },
-            { key: 'date', label: 'Date' },
-            { key: 'bidLink', label: 'Bid Link' },
-            { key: 'platform', label: 'Platform' },
-            { key: 'profile', label: 'Profile' },
-            { key: 'technology', label: 'Technology' },
-            { key: 'clientRating', label: 'Client Rating' },
-            { key: 'clientHireRate', label: 'Client % Hire Rate' },
-            { key: 'clientBudget', label: 'Client Budget' },
-            { key: 'clientSpending', label: 'Client Spending' },
-            { key: 'clientLocation', label: 'Client Location' },
-            { key: 'replyFromClient', label: 'Reply From Client' },
-            { key: 'followUps', label: 'Follow Ups' },
-            { key: 'followUpDate', label: 'Follow Up Date' },
-            { key: 'connects', label: 'Connects' },
-            { key: 'rate', label: 'Rate' },
-            { key: 'proposalScreenshot', label: 'Proposal Screenshot' },
-            { key: 'status', label: 'Status' },
-            { key: 'comments', label: 'Comments' },
-            { key: 'rowColor', label: 'Row Color' },
-          ];
+          // Standard fields from config
+          const standardFieldsList = SALES_MAPPING_FIELDS;
           const customFieldsList = (useSalesStore.getState().customColumns || []).map(col => ({ key: col.key, label: col.name }));
           const currentSalesFields = [...standardFieldsList, ...customFieldsList];
           
@@ -197,28 +177,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
 
   // Predefined sales fields for mapping (standard + custom columns)
   const salesFields = useMemo(() => {
-    const standardFields = [
-      { key: 'name', label: 'Name' },
-      { key: 'date', label: 'Date' },
-      { key: 'bidLink', label: 'Bid Link' },
-      { key: 'platform', label: 'Platform' },
-      { key: 'profile', label: 'Profile' },
-      { key: 'technology', label: 'Technology' },
-      { key: 'clientRating', label: 'Client Rating' },
-      { key: 'clientHireRate', label: 'Client % Hire Rate' },
-      { key: 'clientBudget', label: 'Client Budget' },
-      { key: 'clientSpending', label: 'Client Spending' },
-      { key: 'clientLocation', label: 'Client Location' },
-      { key: 'replyFromClient', label: 'Reply From Client' },
-      { key: 'followUps', label: 'Follow Ups' },
-      { key: 'followUpDate', label: 'Follow Up Date' },
-      { key: 'connects', label: 'Connects' },
-      { key: 'rate', label: 'Rate' },
-      { key: 'proposalScreenshot', label: 'Proposal Screenshot' },
-      { key: 'status', label: 'Status' },
-      { key: 'comments', label: 'Comments' },
-      { key: 'rowColor', label: 'Row Color' },
-    ];
+    const standardFields = SALES_MAPPING_FIELDS;
 
     // Add custom columns to the mapping list
     const customFields = customColumns.map(col => ({

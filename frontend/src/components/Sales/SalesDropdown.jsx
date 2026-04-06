@@ -6,7 +6,7 @@ import { toast } from 'react-toastify';
 import AuthContext from '../../context/AuthContext';
 import DeletePopup from '../ui/DeletePopup';
 
-const SalesDropdown = ({ columnName, value, onChange, placeholder, disabled, error }) => {
+const SalesDropdown = ({ columnName, value, onChange, placeholder, disabled, error, clearable = false }) => {
   const { fetchDropdownOptions, addDropdownOption, deleteDropdownOption, dropdownOptions } = useSalesStore();
   const { user } = useContext(AuthContext);
   const isAdmin = user?.role?.toLowerCase() === 'admin';
@@ -93,7 +93,7 @@ const SalesDropdown = ({ columnName, value, onChange, placeholder, disabled, err
   };
 
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled} onOpenChange={handleOpenChange}>
+    <Select value={value} onValueChange={onChange} disabled={disabled} onOpenChange={handleOpenChange} clearable={clearable}>
       <SelectTrigger className={`w-full ${error ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : ''}`} aria-invalid={error ? 'true' : undefined}>
          <SelectValue placeholder={placeholder || "Select..."} />
       </SelectTrigger>

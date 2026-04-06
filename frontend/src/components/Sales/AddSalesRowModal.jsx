@@ -488,6 +488,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         onChange={field.onChange}
                         placeholder="Select Platform"
                         error={!!errors.platform}
+                        clearable
                       />
                     )}
                   />
@@ -509,6 +510,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         onChange={field.onChange}
                         placeholder="Select Tech"
                         error={!!errors.technology}
+                        clearable
                       />
                     )}
                   />
@@ -516,7 +518,10 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                 </div>
 
                 <div className="col-span-1" data-field="profile">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Profile</label>
+                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                    Profile
+                    <span className="text-red-500 font-bold">*</span>
+                  </label>
                   <Controller
                     name="profile"
                     control={control}
@@ -526,13 +531,19 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Select Profile"
+                        error={!!errors.profile}
+                        clearable
                       />
                     )}
                   />
+                  {errors.profile && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.profile.message}</p>}
                 </div>
 
                 <div className="col-span-1 lg:col-span-2" data-field="bidLink">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Bid Link</label>
+                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                    Bid Link
+                    <span className="text-red-500 font-bold">*</span>
+                  </label>
                   <input type="url" placeholder="https://..." {...register('bidLink')} aria-invalid={errors.bidLink ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.bidLink ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
                    {errors.bidLink && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.bidLink.message}</p>}
                 </div>
@@ -566,6 +577,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Select Location"
+                        clearable
                       />
                     )}
                   />
@@ -616,9 +628,8 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
               <SectionHeader title="Status & Tracking" />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                  <div className="col-span-1" data-field="status">
-                  <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
                     Current Status
-                    <span className="text-red-500 font-bold">*</span>
                   </label>
                   <Controller
                     name="status"
@@ -630,6 +641,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         onChange={field.onChange}
                         placeholder="Select Status"
                         error={!!errors.status}
+                        clearable
                       />
                     )}
                   />
@@ -647,6 +659,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="No Reply Yet"
+                        clearable
                       />
                     )}
                   />
@@ -671,6 +684,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                         value={field.value}
                         onChange={field.onChange}
                         placeholder="Select Follow Up"
+                        clearable
                       />
                     )}
                   />
@@ -712,6 +726,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                                     value={field.value}
                                     onChange={field.onChange}
                                     placeholder={`Select ${col.name}`}
+                                    clearable
                                   />
                                 )}
                               />

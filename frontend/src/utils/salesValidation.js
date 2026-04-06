@@ -1,36 +1,19 @@
 import { z } from 'zod';
+import {
+  SALES_FIELDS,
+  SALES_FIELD_LABELS as _LABELS,
+  SALES_REQUIRED_FIELDS as _REQUIRED,
+} from '../config/salesFieldConfig';
 
 /**
- * Human-readable labels for sales fields — used in toasts, error summaries, and import errors
+ * Human-readable labels — re-exported from single-source-of-truth config
  */
-export const SALES_FIELD_LABELS = {
-  date: 'Date',
-  name: 'Name',
-  bidLink: 'Bid Link',
-  platform: 'Platform',
-  profile: 'Profile',
-  technology: 'Technology',
-  clientRating: 'Client Rating',
-  clientHireRate: 'Client Hire Rate',
-  clientBudget: 'Client Budget',
-  clientSpending: 'Client Spending',
-  clientLocation: 'Client Location',
-  replyFromClient: 'Reply From Client',
-  followUps: 'Follow Ups',
-  followUpDate: 'Follow Up Date',
-  connects: 'Connects',
-  rate: 'Rate',
-  proposalScreenshot: 'Proposal Screenshot',
-  status: 'Status',
-  comments: 'Comments',
-  rowColor: 'Row Color',
-  monthName: 'Month',
-};
+export const SALES_FIELD_LABELS = _LABELS;
 
 /**
- * Required fields for sales rows — used by import validation and error summaries
+ * Required field keys — re-exported from single-source-of-truth config
  */
-export const SALES_REQUIRED_FIELDS = ['date', 'name', 'platform', 'technology', 'status'];
+export const SALES_REQUIRED_FIELDS = _REQUIRED;
 
 /**
  * Build a human-readable error summary from react-hook-form errors object
@@ -56,9 +39,9 @@ export const salesRowSchema = z.object({
     invalid_type_error: 'Please select a valid date'
   }),
   name: z.string().min(1, 'Name is required'),
-  bidLink: z.string().url('Please enter a valid URL').optional().or(z.literal('')),
+  bidLink: z.string().min(1, 'Bid Link is required').url('Please enter a valid URL'),
   platform: z.string().min(1, 'Platform is required'),
-  profile: z.string().optional(),
+  profile: z.string().min(1, 'Profile is required'),
   technology: z.string().min(1, 'Technology is required'),
   clientRating: z.number()
     .min(0, 'Rating must be at least 0')
@@ -79,7 +62,7 @@ export const salesRowSchema = z.object({
   connects: z.number().min(0, 'Connects must be a positive number').optional().nullable(),
   rate: z.number().min(0, 'Rate must be a positive number').optional().nullable(),
   proposalScreenshot: z.string().url('Please enter a valid URL').optional().or(z.literal('')),
-  status: z.string().min(1, 'Status is required'),
+  status: z.string().optional(),
   comments: z.string().optional(),
   rowColor: z.string().optional(),
   // Auto-derived from date on frontend; overwritten by pre-save hook on backend
@@ -126,31 +109,39 @@ export const importRowSchema = salesRowSchema
     }),
     // For import, name can default to importer so it's optional here
     name: z.string().optional(),
+    // For import, monthName is auto-derived from date
+    monthName: z.string().optional(),
+    // For import, bidLink may not always be present — validated at preview step
+    bidLink: z.string().url('Please enter a valid URL').optional().or(z.literal('')),
   })
   .partial({
-    // Only these fields stay optional during import
-    bidLink: true, profile: true, clientRating: true, clientHireRate: true,
+    // Non-required fields stay optional during import
+    clientRating: true, clientHireRate: true,
     clientBudget: true, clientSpending: true, clientLocation: true,
     replyFromClient: true, followUps: true, followUpDate: true,
     connects: true, rate: true, proposalScreenshot: true,
-    comments: true, rowColor: true,
+    status: true, comments: true, rowColor: true,
   });
 
 /**
- * Strict import validation — checks required fields (platform, technology, status)
+ * Strict import validation — checks required fields from config
  * Returns { valid: [], invalid: [] } with human-readable per-row errors
  */
 export const validateImportRows = (rows) => {
   const valid = [];
   const invalid = [];
 
+  // Required fields from config (skip monthName — auto-derived from date)
+  const importRequired = SALES_REQUIRED_FIELDS.filter(k => k !== 'monthName');
+
   rows.forEach((row, index) => {
     const missing = [];
-    // date is always present after normalizeRow, but check anyway
-    if (!row.date) missing.push('Date');
-    if (!row.platform || !String(row.platform).trim()) missing.push('Platform');
-    if (!row.technology || !String(row.technology).trim()) missing.push('Technology');
-    if (!row.status || !String(row.status).trim()) missing.push('Status');
+    importRequired.forEach(key => {
+      const val = row[key];
+      if (val === undefined || val === null || (typeof val === 'string' && !String(val).trim())) {
+        missing.push(SALES_FIELD_LABELS[key] || key);
+      }
+    });
 
     // Validate URL fields if present
     const urlErrors = [];
