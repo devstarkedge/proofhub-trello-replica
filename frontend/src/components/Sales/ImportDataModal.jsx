@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useContext } from 'react';
 import { X, Upload, AlertCircle, Plus, Check } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
@@ -9,9 +9,11 @@ import { toast } from 'react-toastify';
 import { parseSalesDate } from '../../utils/dateUtils';
 import { validateImportRows, SALES_REQUIRED_FIELDS, SALES_FIELD_LABELS } from '../../utils/salesValidation';
 import { SALES_MAPPING_FIELDS } from '../../config/salesFieldConfig';
+import AuthContext from '../../context/AuthContext';
 
 const ImportDataModal = ({ isOpen, onClose }) => {
   const { importRows, customColumns, fetchCustomColumns, fetchRows, fetchDropdownOptions } = useSalesStore();
+  const { user } = useContext(AuthContext);
   const [step, setStep] = useState(1); // 1: Upload, 2: Map, 3: Preview, 4: Importing, 5: Complete
   const [fileName, setFileName] = useState('');
   const [columns, setColumns] = useState([]);
@@ -460,6 +462,11 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           if (typeof out[k] === 'string') out[k] = out[k].trim();
           if (out[k] === '') delete out[k];
         });
+
+        // Auto-fill missing Name with logged-in user's name (before validation)
+        if (!out.name && user?.name) {
+          out.name = user.name;
+        }
         
         return { row: out, originalIndex };
       };
