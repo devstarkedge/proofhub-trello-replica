@@ -50,12 +50,15 @@ class BoardService {
     return Board.find(query).populate(BOARD_POPULATE).sort('-createdAt').lean();
   }
 
-  async getBoardsByDepartment(departmentId) {
-    return Board.find({
+  async getBoardsByDepartment(departmentId, { projectType } = {}) {
+    const filter = {
       department: departmentId,
       isArchived: false,
       isDeleted: { $ne: true },
-    })
+    };
+    if (projectType) filter.projectType = projectType;
+
+    return Board.find(filter)
       .populate(BOARD_POPULATE)
       .sort('-createdAt')
       .lean();

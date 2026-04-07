@@ -359,7 +359,8 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     fixedPrice,
     hourlyPrice,
     clientDetails,
-    projectCategory
+    projectCategory,
+    projectType
   } = req.body;
 
   // Handle file attachments
@@ -425,18 +426,19 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     startDate,
     dueDate,
     labels: labels || [],
-    estimatedTime,
+    estimatedTime: projectType === 'Inhouse' ? undefined : estimatedTime,
     status: status || "planning",
     priority: priority || "medium",
     attachments,
-    projectUrl,
-    projectSource,
-    upworkId,
-    billingCycle,
-    fixedPrice,
-    hourlyPrice,
-    clientDetails,
-    projectCategory
+    projectUrl: projectType === 'Inhouse' ? undefined : projectUrl,
+    projectSource: projectType === 'Inhouse' ? undefined : projectSource,
+    upworkId: projectType === 'Inhouse' ? undefined : upworkId,
+    billingCycle: projectType === 'Inhouse' ? undefined : billingCycle,
+    fixedPrice: projectType === 'Inhouse' ? undefined : fixedPrice,
+    hourlyPrice: projectType === 'Inhouse' ? undefined : hourlyPrice,
+    clientDetails: projectType === 'Inhouse' ? undefined : clientDetails,
+    projectCategory,
+    projectType: projectType || 'Hired Client'
   });
 
   // Add board to department's projects array
@@ -525,7 +527,20 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
 
   const previousBoard = board.toObject();
 
-  board = await Board.findByIdAndUpdate(req.params.id, req.body, {
+  // When switching to Inhouse, clear client/billing fields
+  const updateBody = { ...req.body };
+  if (updateBody.projectType === 'Inhouse') {
+    updateBody.projectSource = null;
+    updateBody.billingCycle = null;
+    updateBody.fixedPrice = null;
+    updateBody.hourlyPrice = null;
+    updateBody.projectUrl = null;
+    updateBody.upworkId = null;
+    updateBody.estimatedTime = null;
+    updateBody.clientDetails = { clientName: null, clientEmail: null, clientWhatsappNumber: null };
+  }
+
+  board = await Board.findByIdAndUpdate(req.params.id, updateBody, {
     new: true,
     runValidators: true,
   })
@@ -580,6 +595,18 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
       board: board._id,
       contextType: 'board',
       metadata: { from: previousBoard.priority, to: req.body.priority }
+    }));
+  }
+
+  if (req.body.projectType && req.body.projectType !== previousBoard.projectType) {
+    changes.push(`Project type changed to ${req.body.projectType}`);
+    activityTasks.push(Activity.create({
+      type: 'project_updated',
+      description: `Project type changed to ${req.body.projectType}`,
+      user: req.user.id,
+      board: board._id,
+      contextType: 'board',
+      metadata: { from: previousBoard.projectType || 'Hired Client', to: req.body.projectType }
     }));
   }
 

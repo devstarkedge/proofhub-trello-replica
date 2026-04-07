@@ -65,7 +65,7 @@ const drawerVariants = {
   exit: { x: '100%', opacity: 0, transition: { duration: 0.2 } }
 };
 
-// Form field component
+// Form field component — CSS transitions instead of framer-motion for error messages
 const FormField = memo(({ label, icon: Icon, required, error, helperText, children, className = '' }) => (
   <div className={`space-y-2 ${className}`}>
     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -77,18 +77,13 @@ const FormField = memo(({ label, icon: Icon, required, error, helperText, childr
     {helperText && !error && (
       <p className="text-xs text-gray-500">{helperText}</p>
     )}
-    <AnimatePresence>
-      {error && (
-        <motion.p
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -5 }}
-          className="text-red-600 text-sm flex items-center gap-1"
-        >
-          <AlertCircle size={14} /> {error}
-        </motion.p>
-      )}
-    </AnimatePresence>
+    <p
+      className={`text-red-600 text-sm flex items-center gap-1 transition-all duration-200 ${
+        error ? 'opacity-100 max-h-8' : 'opacity-0 max-h-0 overflow-hidden'
+      }`}
+    >
+      <AlertCircle size={14} /> {error || ''}
+    </p>
   </div>
 ));
 
@@ -136,6 +131,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     assignees: [],
     estimatedTime: "",
     visibility: "public",
+    projectType: "Hired Client",
   }), []);
 
   const [formData, setFormData] = useState(initialFormData);
@@ -154,6 +150,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const [countrySearchQuery, setCountrySearchQuery] = useState("");
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const [visibilityDropdownOpen, setVisibilityDropdownOpen] = useState(false);
+  const [projectTypeDropdownOpen, setProjectTypeDropdownOpen] = useState(false);
   const [coverImageFile, setCoverImageFile] = useState(null);
   const [coverImagePreview, setCoverImagePreview] = useState(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -162,9 +159,11 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const [uploadErrors, setUploadErrors] = useState([]);
   const [draftStatus, setDraftStatus] = useState("");
   const draftTimerRef = useRef(null);
+  const urlValidationTimer = useRef(null);
   const countryDropdownRef = useRef(null);
   const categoryDropdownRef = useRef(null);
   const visibilityDropdownRef = useRef(null);
+  const projectTypeDropdownRef = useRef(null);
   const uploadProgressTimers = useRef(new Map());
 
   // Filter countries
@@ -206,10 +205,13 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       if (visibilityDropdownOpen && visibilityDropdownRef.current && !visibilityDropdownRef.current.contains(event.target)) {
         setVisibilityDropdownOpen(false);
       }
+      if (projectTypeDropdownOpen && projectTypeDropdownRef.current && !projectTypeDropdownRef.current.contains(event.target)) {
+        setProjectTypeDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [countryDropdownOpen, categoryDropdownOpen]);
+  }, [countryDropdownOpen, categoryDropdownOpen, projectTypeDropdownOpen]);
 
   // Fetch categories
   useEffect(() => {
@@ -306,6 +308,28 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     }
   }, []);
 
+  const handleProjectTypeChange = useCallback((type) => {
+    setFormData((prev) => {
+      const next = { ...prev, projectType: type };
+      // Clear client/billing fields when switching to Inhouse
+      if (type === 'Inhouse') {
+        next.projectSource = 'Direct';
+        next.billingCycle = 'hr';
+        next.fixedPrice = '';
+        next.hourlyPrice = '';
+        next.projectUrl = '';
+        next.upworkId = '';
+        next.estimatedTime = '';
+        next.clientName = '';
+        next.clientEmail = '';
+        next.clientCountryCode = '+91';
+        next.clientMobileNumber = '';
+      }
+      return next;
+    });
+    setProjectTypeDropdownOpen(false);
+  }, []);
+
   const handleCreateCategory = useCallback(async () => {
     if (!newCategoryName.trim()) {
       toast.error("Category name is required");
@@ -373,17 +397,21 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     }
 
     if (name === 'projectUrl') {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        setProjectUrlValid(false);
-        setErrors((prev) => ({ ...prev, projectUrl: "" }));
-      } else if (!PROJECT_URL_REGEX.test(trimmed)) {
-        setProjectUrlValid(false);
-        setErrors((prev) => ({ ...prev, projectUrl: "Please enter a valid URL" }));
-      } else {
-        setProjectUrlValid(true);
-        setErrors((prev) => ({ ...prev, projectUrl: "" }));
-      }
+      // Debounce URL validation to avoid per-keystroke regex + state updates
+      clearTimeout(urlValidationTimer.current);
+      urlValidationTimer.current = setTimeout(() => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          setProjectUrlValid(false);
+          setErrors((prev) => ({ ...prev, projectUrl: "" }));
+        } else if (!PROJECT_URL_REGEX.test(trimmed)) {
+          setProjectUrlValid(false);
+          setErrors((prev) => ({ ...prev, projectUrl: "Please enter a valid URL" }));
+        } else {
+          setProjectUrlValid(true);
+          setErrors((prev) => ({ ...prev, projectUrl: "" }));
+        }
+      }, 300);
     }
   }, [errors]);
 
@@ -509,11 +537,14 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       newErrors.dueDate = "Due date must be after start date";
     }
     if (formData.assignees.length === 0) newErrors.assignees = "At least one assignee is required";
-    if (formData.clientEmail && !EMAIL_REGEX.test(formData.clientEmail)) {
-      newErrors.clientEmail = "Invalid email format";
-    }
-    if (formData.clientMobileNumber && formData.clientMobileNumber.length !== selectedCountry.digits) {
-      newErrors.clientMobileNumber = `Must be ${selectedCountry.digits} digits`;
+    // Only validate client fields for Hired Client projects
+    if (formData.projectType !== 'Inhouse') {
+      if (formData.clientEmail && !EMAIL_REGEX.test(formData.clientEmail)) {
+        newErrors.clientEmail = "Invalid email format";
+      }
+      if (formData.clientMobileNumber && formData.clientMobileNumber.length !== selectedCountry.digits) {
+        newErrors.clientMobileNumber = `Must be ${selectedCountry.digits} digits`;
+      }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -569,21 +600,26 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         startDate: formData.startDate,
         dueDate: formData.dueDate,
         visibility: formData.visibility,
-        projectUrl: formData.projectUrl,
-        projectSource: formData.projectSource,
-        upworkId: formData.upworkId,
-        billingCycle: formData.billingCycle,
-        fixedPrice: formData.fixedPrice,
-        hourlyPrice: formData.hourlyPrice,
-        clientDetails: {
+        projectCategory: formData.projectCategory,
+        projectType: formData.projectType,
+        runBackgroundTasks: true
+      };
+
+      // Only include client/billing fields for Hired Client projects
+      if (formData.projectType !== 'Inhouse') {
+        projectData.projectUrl = formData.projectUrl;
+        projectData.projectSource = formData.projectSource;
+        projectData.upworkId = formData.upworkId;
+        projectData.billingCycle = formData.billingCycle;
+        projectData.fixedPrice = formData.fixedPrice;
+        projectData.hourlyPrice = formData.hourlyPrice;
+        projectData.estimatedTime = formData.estimatedTime;
+        projectData.clientDetails = {
           clientName: formData.clientName,
           clientEmail: formData.clientEmail,
           clientWhatsappNumber: fullPhoneNumber
-        },
-        projectCategory: formData.projectCategory,
-        estimatedTime: formData.estimatedTime,
-        runBackgroundTasks: true
-      };
+        };
+      }
 
       const response = await Database.createProject(projectData);
 
@@ -697,14 +733,13 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
             <div className="flex-shrink-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-6 py-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                  <button
+                    type="button"
                     onClick={onClose}
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-all active:scale-95"
                   >
                     <ChevronLeft size={24} />
-                  </motion.button>
+                  </button>
                   <div>
                     <h2 className="text-xl font-bold text-white">Add New Project</h2>
                     <p className="text-blue-200 text-sm">Fill in the details to create a new project</p>
@@ -722,6 +757,46 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                     <span>Planning</span>
                   </div>
 
+                  {/* Project Type Dropdown */}
+                  <div className="relative" ref={projectTypeDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setProjectTypeDropdownOpen(!projectTypeDropdownOpen)}
+                      className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full text-sm text-white hover:bg-white/20 transition-all font-medium min-w-[130px] justify-between border border-white/10"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Briefcase size={14} className={formData.projectType === 'Inhouse' ? 'text-emerald-300' : 'text-orange-300'} />
+                        <span>{formData.projectType}</span>
+                      </div>
+                      <ChevronDown size={14} className={`transition-transform duration-200 ${projectTypeDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {projectTypeDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 origin-top-right">
+                        <div className="p-1">
+                          {[{ value: 'Inhouse', icon: Shield, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                            { value: 'Hired Client', icon: Briefcase, color: 'text-orange-600', bg: 'bg-orange-50' }
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => handleProjectTypeChange(option.value)}
+                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                                formData.projectType === option.value
+                                  ? `${option.bg} ${option.color} font-medium`
+                                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                              }`}
+                            >
+                              <option.icon size={16} />
+                              <span>{option.value}</span>
+                              {formData.projectType === option.value && <CheckCircle2 size={14} className="ml-auto" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="relative" ref={visibilityDropdownRef}>
                     <button
                       type="button"
@@ -737,10 +812,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
 
                     <AnimatePresence>
                       {visibilityDropdownOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        <div
                           className="absolute right-0 top-full mt-2 w-40 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 origin-top-right"
                         >
                           <div className="p-1">
@@ -764,26 +836,24 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                               </button>
                             ))}
                           </div>
-                        </motion.div>
+                        </div>
                       )}
                     </AnimatePresence>
                   </div>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+                  <button
+                    type="button"
                     onClick={() => setIsFullScreen(!isFullScreen)}
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-all active:scale-95"
                   >
                     {isFullScreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1, rotate: 90 }}
-                    whileTap={{ scale: 0.9 }}
+                  </button>
+                  <button
+                    type="button"
                     onClick={onClose}
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-all active:scale-95 hover:rotate-90 duration-200"
                   >
                     <X size={24} />
-                  </motion.button>
+                  </button>
                 </div>
               </div>
 
@@ -905,7 +975,8 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                       </div>
                     </section>
 
-                    {/* Project Details */}
+                    {/* Project Details — only for Hired Client */}
+                    {formData.projectType !== 'Inhouse' && (
                     <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
                       <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                         <Briefcase size={16} className="text-indigo-600" />
@@ -1109,8 +1180,10 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         )}
                       </AnimatePresence>
                     </section>
+                    )}
 
-                    {/* Client Information */}
+                    {/* Client Information — only for Hired Client */}
+                    {formData.projectType !== 'Inhouse' && (
                     <section className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-200">
                       <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                         <Mail size={16} className="text-blue-600" />
@@ -1160,10 +1233,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
 
                                 <AnimatePresence>
                                   {countryDropdownOpen && (
-                                    <motion.div
-                                      initial={{ opacity: 0, y: 10 }}
-                                      animate={{ opacity: 1, y: 0 }}
-                                      exit={{ opacity: 0, y: 10 }}
+                                    <div
                                       className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50"
                                     >
                                       <div className="p-2 border-b border-gray-100">
@@ -1190,7 +1260,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                                           </div>
                                         ))}
                                       </div>
-                                    </motion.div>
+                                    </div>
                                   )}
                                 </AnimatePresence>
                               </div>
@@ -1211,6 +1281,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         </div>
                       </div>
                     </section>
+                    )}
                   </form>
                 )}
 
@@ -1349,23 +1420,20 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
             {/* Footer */}
             <div className="flex-shrink-0 bg-gray-50 border-t border-gray-200 px-6 py-4">
               <div className="flex items-center justify-between">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                <button
                   type="button"
                   onClick={onClose}
                   disabled={isSaving}
-                  className="px-6 py-3 text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 font-semibold transition-all disabled:opacity-50"
+                  className="px-6 py-3 text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 font-semibold transition-all active:scale-[0.98] disabled:opacity-50"
                 >
                   Cancel
-                </motion.button>
+                </button>
 
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                <button
+                  type="button"
                   onClick={handleSubmit}
                   disabled={isSaving || !isFormReady}
-                  className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 font-semibold transition-all shadow-lg shadow-blue-500/30"
+                  className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 font-semibold transition-all active:scale-[0.98] shadow-lg shadow-blue-500/30"
                 >
                   {isSaving ? (
                     <>
@@ -1378,7 +1446,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                       Create Project
                     </>
                   )}
-                </motion.button>
+                </button>
               </div>
             </div>
           </motion.div>

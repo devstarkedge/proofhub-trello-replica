@@ -104,6 +104,11 @@ const boardSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  projectType: {
+    type: String,
+    enum: ['Inhouse', 'Hired Client'],
+    default: 'Hired Client'
+  },
   projectSource: {
     type: String
   },
@@ -220,6 +225,9 @@ boardSchema.index({ department: 1, team: 1 });
 boardSchema.index({ department: 1, createdAt: -1 });
 boardSchema.index({ department: 1, status: 1 });
 boardSchema.index({ department: 1, priority: 1 });
+
+// Project type filter
+boardSchema.index({ department: 1, projectType: 1 });
 
 // Owner compound (covers standalone { owner: 1 })
 boardSchema.index({ owner: 1, createdAt: -1 });

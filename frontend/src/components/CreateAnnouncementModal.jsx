@@ -48,6 +48,31 @@ const ALLOWED_TYPES = {
   documents: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 };
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+// Avatar color palette - extracted to avoid re-computation on every render
+const AVATAR_COLORS = [
+  'bg-gradient-to-br from-red-500 to-red-600',
+  'bg-gradient-to-br from-orange-500 to-orange-600',
+  'bg-gradient-to-br from-amber-500 to-amber-600',
+  'bg-gradient-to-br from-green-500 to-green-600',
+  'bg-gradient-to-br from-emerald-500 to-emerald-600',
+  'bg-gradient-to-br from-teal-500 to-teal-600',
+  'bg-gradient-to-br from-cyan-500 to-cyan-600',
+  'bg-gradient-to-br from-blue-500 to-blue-600',
+  'bg-gradient-to-br from-indigo-500 to-indigo-600',
+  'bg-gradient-to-br from-violet-500 to-violet-600',
+  'bg-gradient-to-br from-purple-500 to-purple-600',
+  'bg-gradient-to-br from-fuchsia-500 to-fuchsia-600',
+  'bg-gradient-to-br from-pink-500 to-pink-600',
+  'bg-gradient-to-br from-rose-500 to-rose-600'
+];
+const getAvatarColor = (name) => {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+};
 const MAX_FILES = 10;
 
 const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
@@ -579,26 +604,23 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
               <div className="absolute inset-0 bg-black/10 backdrop-blur-sm"></div>
               <div className="relative flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <motion.div
-                    animate={{ rotate: [0, 10, -10, 0] }}
-                    transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+                  <div
                     className="p-2 bg-white/20 rounded-xl backdrop-blur-sm"
                   >
                     <Sparkles className="w-6 h-6" />
-                  </motion.div>
+                  </div>
                   <div>
                     <h2 className="text-2xl font-bold">Create Announcement</h2>
                     <p className="text-blue-100 text-sm">Share important updates with your team</p>
                   </div>
                 </div>
-                <motion.button
-                  whileHover={{ scale: 1.1, rotate: 90 }}
-                  whileTap={{ scale: 0.9 }}
+                <button
+                  type="button"
                   onClick={onClose}
-                  className="p-2 hover:bg-white/20 rounded-xl transition-all duration-300 backdrop-blur-sm"
+                  className="p-2 hover:bg-white/20 rounded-xl transition-all duration-200 backdrop-blur-sm active:scale-95 hover:rotate-90"
                 >
                   <X className="w-6 h-6" />
-                </motion.button>
+                </button>
               </div>
             </div>
 
@@ -608,10 +630,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                 {/* Left Column */}
                 <div className="space-y-6">
                   {/* Title */}
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 }}
+                  <div
                     className="space-y-2"
                   >
                     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -633,13 +652,10 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                         <span className="text-xs text-orange-500 font-medium">Approaching limit</span>
                       )}
                     </div>
-                  </motion.div>
+                  </div>
 
                   {/* Description */}
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.2 }}
+                  <div
                     className="space-y-2"
                   >
                     <label className="block text-sm font-semibold text-gray-700">
@@ -653,13 +669,10 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                       rows={4}
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50/50 backdrop-blur-sm transition-all duration-300 resize-none"
                     />
-                  </motion.div>
+                  </div>
 
                   {/* Category */}
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.3 }}
+                  <div
                     className="space-y-2"
                   >
                     <label className="block text-sm font-semibold text-gray-700">
@@ -678,7 +691,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                       <option value="Events">🎉 Events</option>
                       <option value="Custom">✨ Custom</option>
                     </select>
-                  </motion.div>
+                  </div>
 
                   {/* Custom Category */}
                   <AnimatePresence>
@@ -707,10 +720,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                   </AnimatePresence>
 
                   {/* Additional Options - Half Width, Aligned with Left */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.8 }}
+                  <div
                     className="bg-gray-50/50 backdrop-blur-sm rounded-2xl p-4 border border-gray-100"
                   >
                     <h3 className="text-sm font-semibold text-gray-700 mb-3">Additional Options</h3>
@@ -737,16 +747,13 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                         <span className="text-sm text-gray-700 group-hover:text-gray-900 transition-colors">Pin to top (max 3 pinned announcements)</span>
                       </label>
                     </div>
-                  </motion.div>
+                  </div>
                 </div>
 
                 {/* Right Column */}
                 <div className="space-y-6">
                   {/* Subscriber Type */}
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.4 }}
+                  <div
                     className="space-y-2"
                   >
                     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -766,16 +773,11 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                       <option value="departments">🏢 Specific departments</option>
                       <option value="managers">👔 Only managers</option>
                     </select>
-                  </motion.div>
+                  </div>
 
                   {/* Department Selection with Checkboxes */}
-                  <AnimatePresence>
                     {formData.subscribers.type === 'departments' && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.3 }}
+                      <div
                         className="space-y-3"
                       >
                         <label className="block text-sm font-semibold text-gray-700">
@@ -784,11 +786,8 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                         <div className="bg-gray-50/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 max-h-64 overflow-y-auto">
                           <div className="space-y-3">
                             {departments.map((dept, index) => (
-                              <motion.label
+                              <label
                                 key={dept._id}
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: index * 0.05 }}
                                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-200 ${
                                   selectedDepartments.includes(dept._id)
                                     ? 'bg-blue-50 border-2 border-blue-200'
@@ -818,31 +817,23 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                                     <p className="text-sm text-gray-600 mt-1">{dept.description}</p>
                                   )}
                                 </div>
-                              </motion.label>
+                              </label>
                             ))}
                           </div>
                         </div>
                         {selectedDepartments.length > 0 && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
+                          <div
                             className="flex items-center gap-2 text-sm text-blue-600 font-medium"
                           >
                             <span>{selectedDepartments.length} department{selectedDepartments.length > 1 ? 's' : ''} selected</span>
-                          </motion.div>
+                          </div>
                         )}
-                      </motion.div>
+                      </div>
                     )}
-                  </AnimatePresence>
 
                   {/* Target Users Display */}
-                  <AnimatePresence>
                     {(formData.subscribers.type === 'all' || formData.subscribers.type === 'departments' || formData.subscribers.type === 'managers') && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.3 }}
+                      <div
                         className="space-y-3"
                       >
                         <div className="flex items-center justify-between">
@@ -851,10 +842,8 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                           </label>
                           {loadingUsers && (
                             <div className="flex items-center gap-2 text-sm text-gray-500">
-                              <motion.div
-                                animate={{ rotate: 360 }}
-                                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"
+                              <div
+                                className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"
                               />
                               Loading...
                             </div>
@@ -862,18 +851,13 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                         </div>
 
                         {targetUsers.length > 0 && (
-                          <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
+                          <div
                             className="bg-gray-50/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100"
                           >
                             <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
                               {targetUsers.slice(0, 20).map((user, index) => (
-                                <motion.div
+                                <div
                                   key={user._id}
-                                  initial={{ scale: 0.8, opacity: 0 }}
-                                  animate={{ scale: 1, opacity: 1 }}
-                                  transition={{ delay: index * 0.05 }}
                                   className="flex items-center gap-2 bg-white rounded-full px-3 py-1 border border-gray-200 shadow-sm"
                                 >
 {user.avatar ? (
@@ -883,31 +867,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                                       className="w-6 h-6 rounded-full object-cover border border-gray-200"
                                     />
                                   ) : (
-                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm border border-white/20 ${
-                                      (() => {
-                                        const colors = [
-                                          'bg-gradient-to-br from-red-500 to-red-600',
-                                          'bg-gradient-to-br from-orange-500 to-orange-600',
-                                          'bg-gradient-to-br from-amber-500 to-amber-600',
-                                          'bg-gradient-to-br from-green-500 to-green-600',
-                                          'bg-gradient-to-br from-emerald-500 to-emerald-600',
-                                          'bg-gradient-to-br from-teal-500 to-teal-600',
-                                          'bg-gradient-to-br from-cyan-500 to-cyan-600',
-                                          'bg-gradient-to-br from-blue-500 to-blue-600',
-                                          'bg-gradient-to-br from-indigo-500 to-indigo-600',
-                                          'bg-gradient-to-br from-violet-500 to-violet-600',
-                                          'bg-gradient-to-br from-purple-500 to-purple-600',
-                                          'bg-gradient-to-br from-fuchsia-500 to-fuchsia-600',
-                                          'bg-gradient-to-br from-pink-500 to-pink-600',
-                                          'bg-gradient-to-br from-rose-500 to-rose-600'
-                                        ];
-                                        let hash = 0;
-                                        for (let i = 0; i < user.name.length; i++) {
-                                          hash = user.name.charCodeAt(i) + ((hash << 5) - hash);
-                                        }
-                                        return colors[Math.abs(hash) % colors.length];
-                                      })()
-                                    }`}>
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm border border-white/20 ${getAvatarColor(user.name)}`}>
                                       {user.name
                                         .split(' ')
                                         .map(n => n[0])
@@ -917,19 +877,17 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                                     </div>
                                   )}
                                   <span className="text-sm text-gray-700 font-medium">{user.name}</span>
-                                </motion.div>
+                                </div>
                               ))}
                               {targetUsers.length > 20 && (
-                                <motion.div
-                                  initial={{ scale: 0.8, opacity: 0 }}
-                                  animate={{ scale: 1, opacity: 1 }}
+                                <div
                                   className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full px-3 py-1 shadow-sm"
                                 >
                                   <span className="text-sm font-medium">+{targetUsers.length - 20} more</span>
-                                </motion.div>
+                                </div>
                               )}
                             </div>
-                          </motion.div>
+                          </div>
                         )}
 
                         {targetUsers.length === 0 && !loadingUsers && formData.subscribers.type === 'departments' && selectedDepartments.length === 0 && (
@@ -937,15 +895,11 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                             Select departments above to see recipients
                           </div>
                         )}
-                      </motion.div>
+                      </div>
                     )}
-                  </AnimatePresence>
 
                   {/* Duration */}
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.5 }}
+                  <div
                     className="space-y-2"
                   >
                     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -972,13 +926,10 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                         <option value="months">Months</option>
                       </select>
                     </div>
-                  </motion.div>
+                  </div>
 
                   {/* Schedule */}
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.6 }}
+                  <div
                     className="space-y-2"
                   >
                     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -1005,13 +956,10 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                       <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                     </div>
                     <p className="text-xs text-gray-500">Leave empty for immediate broadcast</p>
-                  </motion.div>
+                  </div>
 
                   {/* Attachments with Drag & Drop */}
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.7 }}
+                  <div
                     className="space-y-3"
                   >
                     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -1047,9 +995,8 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                           className="hidden"
                         />
                         
-                        <motion.div
-                          animate={isDragging ? { scale: 1.02 } : { scale: 1 }}
-                          className="flex items-center justify-center gap-3"
+                        <div
+                          className={`flex items-center justify-center gap-3 transition-transform duration-200 ${isDragging ? 'scale-[1.02]' : 'scale-100'}`}
                         >
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                             isDragging ? 'bg-blue-100' : 'bg-gray-100'
@@ -1064,22 +1011,20 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                                Click or drag files
                             </p>
                           </div>
-                        </motion.div>
+                        </div>
                       </div>
 
                       {/* Google Drive Button */}
                       {isDriveAvailable && (
-                        <motion.button
+                        <button
                           type="button"
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
                           onClick={handleGoogleDriveSelect}
                           disabled={isPickerLoading}
                           className="flex-1 flex items-center justify-center gap-3 px-4 py-3
                                      bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100
                                      border-2 border-blue-200 hover:border-blue-300 rounded-xl 
-                                     text-blue-700 font-medium transition-all
-                                     disabled:opacity-50 disabled:cursor-not-allowed"
+                                     text-blue-700 font-medium transition-all duration-200
+                                     disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
                         >
                           <div className="w-8 h-8 rounded-full flex items-center justify-center bg-white shadow-sm">
                             {isPickerLoading ? (
@@ -1092,7 +1037,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                             <p className="text-sm font-medium">Google Drive</p>
                             <p className="text-[10px] text-blue-500">Pick from Drive</p>
                           </div>
-                        </motion.button>
+                        </button>
                       )}
                     </div>
 
@@ -1100,10 +1045,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
 
                     <AnimatePresence>
                       {isUploading && uploadProgress > 0 && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
+                        <div
                           className="space-y-1"
                         >
                           <div className="flex justify-between text-xs text-gray-600">
@@ -1111,23 +1053,19 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                             <span>{uploadProgress}%</span>
                           </div>
                           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${uploadProgress}%` }}
-                              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                            <div
+                              style={{ width: `${uploadProgress}%` }}
+                              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
                             />
                           </div>
-                        </motion.div>
+                        </div>
                       )}
                     </AnimatePresence>
 
                     {/* File List */}
                     <AnimatePresence>
                       {files.length > 0 && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
+                        <div
                           className="space-y-2"
                         >
                           <div className="flex items-center justify-between text-sm">
@@ -1155,13 +1093,9 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                               const isImage = ALLOWED_TYPES.images.includes(file.type);
                               
                               return (
-                                <motion.div
+                                <div
                                   key={file.name}
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  transition={{ duration: 0.2, delay: idx * 0.05 }}
-                                  className={`relative group rounded-xl overflow-hidden border-2 transition-all duration-300 ${
+                                  className={`relative group rounded-xl overflow-hidden border-2 transition-all duration-200 ${
                                     state.status === 'error' 
                                       ? 'border-red-300 bg-red-50' 
                                       : state.status === 'success'
@@ -1238,47 +1172,38 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                                       </p>
                                     )}
                                   </div>
-                                </motion.div>
+                                </div>
                               );
                             })}
                           </div>
-                        </motion.div>
+                        </div>
                       )}
                     </AnimatePresence>
-                  </motion.div>
+                  </div>
                 </div>
               </div>
 
               {/* Buttons */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.9 }}
+              <div
                 className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-200"
               >
-                <motion.button
-                  whileHover={{ scale: 1.02, backgroundColor: "#f3f4f6" }}
-                  whileTap={{ scale: 0.98 }}
+                <button
                   type="button"
                   onClick={onClose}
                   disabled={isLoading || isUploading}
-                  className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all duration-300 bg-white/50 backdrop-blur-sm disabled:opacity-50"
+                  className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-100 transition-all duration-200 bg-white/50 backdrop-blur-sm disabled:opacity-50 active:scale-[0.98]"
                 >
                   Cancel
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02, boxShadow: "0 10px 25px rgba(59, 130, 246, 0.3)" }}
-                  whileTap={{ scale: 0.98 }}
+                </button>
+                <button
                   type="submit"
                   disabled={isLoading || isUploading || !allFilesReady()}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg flex items-center justify-center gap-2"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-[0.98] flex items-center justify-center gap-2"
                 >
                   {isLoading || isUploading ? (
                     <>
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
+                      <div
+                        className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"
                       />
                       {isUploading ? `Uploading ${uploadProgress}%...` : 'Creating...'}
                     </>
@@ -1288,8 +1213,8 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                       Create Announcement
                     </>
                   )}
-                </motion.button>
-              </motion.div>
+                </button>
+              </div>
             </form>
           </motion.div>
         </motion.div>
@@ -1298,7 +1223,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   );
 };
 
-export default CreateAnnouncementModal;
+export default React.memo(CreateAnnouncementModal);
 
 // Custom styles for react-datepicker
 const styles = `

@@ -106,7 +106,7 @@ const PriorityBadge = React.memo(({ priority }) => {
   );
 });
 
-// Form field component with validation
+// Form field component with validation — CSS transitions for errors
 const FormField = React.memo(({ 
   label, 
   icon: Icon, 
@@ -126,23 +126,18 @@ const FormField = React.memo(({
     {helperText && !error && (
       <p className="text-xs text-gray-500">{helperText}</p>
     )}
-    <AnimatePresence>
-      {error && (
-        <motion.p
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -5 }}
-          className="text-red-600 text-sm flex items-center gap-1"
-        >
-          <AlertCircle size={14} /> {error}
-        </motion.p>
-      )}
-    </AnimatePresence>
+    <p
+      className={`text-red-600 text-sm flex items-center gap-1 transition-all duration-200 ${
+        error ? 'opacity-100 max-h-8' : 'opacity-0 max-h-0 overflow-hidden'
+      }`}
+    >
+      <AlertCircle size={14} /> {error || ''}
+    </p>
   </div>
 ));
 
 // Main Enterprise Edit Project Modal
-const EnterpriseEditProjectModal = ({ 
+const EnterpriseEditProjectModal = React.memo(({ 
   isOpen, 
   onClose, 
   project, 
@@ -175,7 +170,8 @@ const EnterpriseEditProjectModal = ({
     estimatedTime: '',
     status: 'planning',
     priority: 'medium',
-    visibility: 'public'
+    visibility: 'public',
+    projectType: 'Hired Client'
   });
 
   const managers = useMemo(() => departmentManagers || [], [departmentManagers]);
@@ -204,6 +200,8 @@ const EnterpriseEditProjectModal = ({
   // Date picker state
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
+  const [projectTypeDropdownOpen, setProjectTypeDropdownOpen] = useState(false);
+  const projectTypeDropdownRef = useRef(null);
 
   const userRole = user?.role || 'employee';
   const canManageReminders = userRole === 'admin' || userRole === 'manager';
@@ -291,7 +289,8 @@ const EnterpriseEditProjectModal = ({
             estimatedTime: fullProject.estimatedTime || '',
             status: fullProject.status || 'planning',
             priority: fullProject.priority || 'medium',
-            visibility: fullProject.visibility || 'public'
+            visibility: fullProject.visibility || 'public',
+            projectType: fullProject.projectType || 'Hired Client'
           });
           
           setCoverImage(fullProject.coverImage || null);
@@ -364,6 +363,26 @@ const EnterpriseEditProjectModal = ({
         ? prev.assignees.filter(id => id !== userId)
         : [...prev.assignees, userId]
     }));
+  }, []);
+
+  const handleProjectTypeChange = useCallback((type) => {
+    setFormData(prev => {
+      const next = { ...prev, projectType: type };
+      if (type === 'Inhouse') {
+        next.projectSource = 'Direct';
+        next.billingCycle = 'hr';
+        next.fixedPrice = '';
+        next.hourlyPrice = '';
+        next.projectUrl = '';
+        next.upworkId = '';
+        next.estimatedTime = '';
+        next.clientName = '';
+        next.clientEmail = '';
+        next.clientWhatsappNumber = '';
+      }
+      return next;
+    });
+    setProjectTypeDropdownOpen(false);
   }, []);
 
   // File handlers
@@ -468,8 +487,11 @@ const EnterpriseEditProjectModal = ({
       newErrors.dueDate = 'Due date must be after start date';
     }
     if (formData.assignees.length === 0) newErrors.assignees = 'At least one assignee is required';
-    if (formData.clientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.clientEmail)) {
-      newErrors.clientEmail = 'Invalid email format';
+    // Only validate client fields for Hired Client projects
+    if (formData.projectType !== 'Inhouse') {
+      if (formData.clientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.clientEmail)) {
+        newErrors.clientEmail = 'Invalid email format';
+      }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -488,26 +510,31 @@ const EnterpriseEditProjectModal = ({
       const updates = {
         name: formData.title,
         description: formData.description,
-        projectUrl: formData.projectUrl,
         startDate: formData.startDate,
-        projectSource: formData.projectSource,
-        upworkId: formData.upworkId,
-        billingCycle: formData.billingCycle,
-        fixedPrice: formData.fixedPrice,
-        hourlyPrice: formData.hourlyPrice,
         dueDate: formData.dueDate,
-        clientDetails: {
+        projectCategory: formData.projectCategory,
+        members: formData.assignees,
+        status: formData.status,
+        priority: formData.priority,
+        visibility: formData.visibility,
+        projectType: formData.projectType
+      };
+
+      // Only include client/billing fields for Hired Client projects
+      if (formData.projectType !== 'Inhouse') {
+        updates.projectUrl = formData.projectUrl;
+        updates.projectSource = formData.projectSource;
+        updates.upworkId = formData.upworkId;
+        updates.billingCycle = formData.billingCycle;
+        updates.fixedPrice = formData.fixedPrice;
+        updates.hourlyPrice = formData.hourlyPrice;
+        updates.estimatedTime = formData.estimatedTime;
+        updates.clientDetails = {
           clientName: formData.clientName,
           clientEmail: formData.clientEmail,
           clientWhatsappNumber: formData.clientWhatsappNumber,
-        },
-        projectCategory: formData.projectCategory,
-        members: formData.assignees,
-        estimatedTime: formData.estimatedTime,
-        status: formData.status,
-        priority: formData.priority,
-        visibility: formData.visibility
-      };
+        };
+      }
 
       const response = await Database.updateProject(project.id || project._id, updates);
 
@@ -594,14 +621,13 @@ const EnterpriseEditProjectModal = ({
             <div className="flex-shrink-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 px-6 py-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                  <button
+                    type="button"
                     onClick={handleClose}
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-all active:scale-95"
                   >
                     <ChevronLeft size={24} />
-                  </motion.button>
+                  </button>
                   <div>
                     <div className="flex items-center gap-3">
                       <h2 className="text-xl font-bold text-white truncate max-w-md">
@@ -622,22 +648,61 @@ const EnterpriseEditProjectModal = ({
                       {draftStatus}
                     </span>
                   )}
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+
+                  {/* Project Type Dropdown */}
+                  <div className="relative" ref={projectTypeDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setProjectTypeDropdownOpen(!projectTypeDropdownOpen)}
+                      className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full text-sm text-white hover:bg-white/20 transition-all font-medium min-w-[130px] justify-between border border-white/10"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Briefcase size={14} className={formData.projectType === 'Inhouse' ? 'text-emerald-300' : 'text-orange-300'} />
+                        <span>{formData.projectType}</span>
+                      </div>
+                      <ChevronDown size={14} className={`transition-transform duration-200 ${projectTypeDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {projectTypeDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 origin-top-right">
+                        <div className="p-1">
+                          {[{ value: 'Inhouse', icon: Shield, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                            { value: 'Hired Client', icon: Briefcase, color: 'text-orange-600', bg: 'bg-orange-50' }
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => handleProjectTypeChange(option.value)}
+                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                                formData.projectType === option.value
+                                  ? `${option.bg} ${option.color} font-medium`
+                                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                              }`}
+                            >
+                              <option.icon size={16} />
+                              <span>{option.value}</span>
+                              {formData.projectType === option.value && <CheckCircle2 size={14} className="ml-auto" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
                     onClick={() => setIsFullScreen(!isFullScreen)}
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-all active:scale-95"
                   >
                     {isFullScreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1, rotate: 90 }}
-                    whileTap={{ scale: 0.9 }}
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleClose}
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-all active:scale-95 hover:rotate-90 duration-200"
                   >
                     <X size={24} />
-                  </motion.button>
+                  </button>
                 </div>
               </div>
               
@@ -835,7 +900,8 @@ const EnterpriseEditProjectModal = ({
                         </section>
                       )}
 
-                      {/* Project Details */}
+                      {/* Project Details — only for Hired Client */}
+                      {formData.projectType !== 'Inhouse' && (
                       <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
                         <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                           <Briefcase size={16} className="text-indigo-600" />
@@ -951,8 +1017,10 @@ const EnterpriseEditProjectModal = ({
                           </FormField>
                         </div>
                       </section>
+                      )}
 
-                      {/* Client Information */}
+                      {/* Client Information — only for Hired Client */}
+                      {formData.projectType !== 'Inhouse' && (
                       <section className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-200">
                         <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                           <Mail size={16} className="text-blue-600" />
@@ -996,6 +1064,7 @@ const EnterpriseEditProjectModal = ({
                           </FormField>
                         </div>
                       </section>
+                      )}
 
                     </form>
                   )}
@@ -1120,23 +1189,20 @@ const EnterpriseEditProjectModal = ({
             {/* Footer */}
             <div className="flex-shrink-0 bg-gray-50 border-t border-gray-200 px-6 py-4">
               <div className="flex items-center justify-between">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                <button
                   type="button"
                   onClick={handleClose}
                   disabled={loading}
-                  className="px-6 py-3 text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 font-semibold transition-all disabled:opacity-50"
+                  className="px-6 py-3 text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 font-semibold transition-all active:scale-[0.98] disabled:opacity-50"
                 >
                   Cancel
-                </motion.button>
+                </button>
                 
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                <button
+                  type="button"
                   onClick={handleSubmit}
                   disabled={loading}
-                  className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 font-semibold transition-all shadow-lg shadow-indigo-500/30"
+                  className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 font-semibold transition-all active:scale-[0.98] shadow-lg shadow-indigo-500/30"
                 >
                   {loading ? (
                     <>
@@ -1149,7 +1215,7 @@ const EnterpriseEditProjectModal = ({
                       Save Changes
                     </>
                   )}
-                </motion.button>
+                </button>
               </div>
             </div>
           </motion.div>
@@ -1203,6 +1269,8 @@ const EnterpriseEditProjectModal = ({
     </AnimatePresence>,
     document.body
   );
-};
+});
+
+EnterpriseEditProjectModal.displayName = 'EnterpriseEditProjectModal';
 
 export default EnterpriseEditProjectModal;
