@@ -119,25 +119,34 @@ const ImportDataModal = ({ isOpen, onClose }) => {
 
           const autoMap = {};
           const unmappedHeaders = [];
+
+          // Pass 1: Exact matches only (by normalized key or label)
+          // This ensures exact name matches always win before partial matching runs
           filteredHeader.forEach((h) => {
             const n = normalize(h);
+            const exactMatch = fieldByNorm[n];
+            if (exactMatch && !Object.values(autoMap).includes(exactMatch)) {
+              autoMap[h] = exactMatch;
+            }
+          });
+
+          // Pass 2: Partial/contains matches for remaining unmapped headers
+          filteredHeader.forEach((h) => {
+            if (autoMap[h]) return; // Already mapped exactly in pass 1
+            const n = normalize(h);
             let mapped = null;
-            if (fieldByNorm[n]) mapped = fieldByNorm[n];
-            else {
-              // try partial/contains match
-              for (const f of currentSalesFields) {
-                const nk = normalize(f.key);
-                const nl = normalize(f.label);
-                if (nk && (nk.includes(n) || n.includes(nk)) || (nl && (nl.includes(n) || n.includes(nl)))) {
-                  mapped = f.key;
-                  break;
-                }
+            for (const f of currentSalesFields) {
+              const nk = normalize(f.key);
+              const nl = normalize(f.label);
+              if (nk && (nk.includes(n) || n.includes(nk)) || (nl && (nl.includes(n) || n.includes(nl)))) {
+                mapped = f.key;
+                break;
               }
             }
-            // avoid mapping multiple headers to same field; prefer first match
             if (mapped && !Object.values(autoMap).includes(mapped)) {
               autoMap[h] = mapped;
-            } else if (!mapped) {
+            } else {
+              // No match found, or matched field already taken → treat as unmapped
               unmappedHeaders.push(h);
             }
           });
@@ -147,7 +156,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           }
 
           // Auto-detect new columns from unmapped headers (exclude system-like columns)
-          const skipHeaders = new Set(['_id', 'id', '__v', 'createdat', 'updatedat', 'deletedat', 'deletedby', 'isdeleted', 'lockedby', 'lockedat', 'createdby', 'updatedby', 'monthname']);
+          const skipHeaders = new Set(['_id', 'id', '__v', 'createdat', 'updatedat', 'deletedat', 'deletedby', 'isdeleted', 'lockedby', 'lockedat', 'createdby', 'updatedby', 'monthname', 'month']);
           const detectedNewCols = unmappedHeaders
             .filter(h => !skipHeaders.has(normalize(h)))
             .map(h => ({
@@ -434,7 +443,8 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         };
         
         // Standard numeric fields - apply comprehensive parsing
-        ['clientRating', 'clientHireRate', 'connects', 'rate', 'clientBudget', 'clientSpending'].forEach(k => {
+        // Note: clientBudget and clientSpending are text fields, not numeric — keep original values
+        ['clientRating', 'clientHireRate', 'connects', 'rate'].forEach(k => {
           if (out[k] !== undefined) {
             const parsed = parseNumericValue(out[k]);
             if (parsed === null) {

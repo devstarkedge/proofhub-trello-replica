@@ -32,7 +32,7 @@ const BASE_COLUMNS = [
   { key: 'technology',         label: 'Technology',          width: 140, minWidth: 100, maxWidth: 240, priority: 'medium', type: 'dropdown' },
   { key: 'clientRating',       label: 'Client Rating',       width: 125, minWidth: 100, maxWidth: 170, priority: 'medium', type: 'rating' },
   { key: 'clientHireRate',     label: '% Hire Rate',         width: 110, minWidth: 85,  maxWidth: 150, priority: 'medium', type: 'percent' },
-  { key: 'clientBudget',       label: 'Client Budget',       width: 130, minWidth: 100, maxWidth: 200, priority: 'medium', type: 'dropdown' },
+  { key: 'clientBudget',       label: 'Client Budget',       width: 130, minWidth: 100, maxWidth: 200, priority: 'medium', type: 'text' },
   { key: 'clientSpending',     label: 'Client Spending',     width: 140, minWidth: 100, maxWidth: 220, priority: 'medium', type: 'text' },
   { key: 'clientLocation',     label: 'Client Location',     width: 140, minWidth: 100, maxWidth: 220, priority: 'medium', type: 'dropdown' },
   { key: 'replyFromClient',    label: 'Reply From Client',   width: 150, minWidth: 110, maxWidth: 240, priority: 'medium', type: 'dropdown' },
