@@ -79,8 +79,8 @@ export const SALES_REQUIRED_LABELS = Object.fromEntries(
 /** Flat array of all standard field keys (excludes system keys like _id, createdBy, etc.) */
 export const SALES_STANDARD_FIELD_KEYS = SALES_FIELDS.map(f => f.key);
 
-/** Array of field objects for import / column mapping UIs */
-export const SALES_MAPPING_FIELDS = SALES_FIELDS.map(f => ({
+/** Array of field objects for import / column mapping UIs (excludes readOnly auto-derived fields) */
+export const SALES_MAPPING_FIELDS = SALES_FIELDS.filter(f => !f.readOnly).map(f => ({
   key: f.key,
   label: f.label,
 }));

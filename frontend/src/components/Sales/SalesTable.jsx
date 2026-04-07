@@ -223,20 +223,25 @@ const TableRow = memo(({
       case 'date':
         return <span className="tabular-nums text-gray-700 dark:text-gray-300">{formatSalesDate(value) || <span className="text-gray-400">-</span>}</span>;
 
-      case 'link':
+      case 'link': {
         if (!value) return <span className="text-gray-400 select-none">-</span>;
-        return (
-          <div className="flex items-center gap-1 min-w-0 w-full">
-            <a href={value} target="_blank" rel="noopener noreferrer"
-              className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 flex items-center gap-1 font-medium transition-colors min-w-0">
-              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Link</span>
-            </a>
-            <button onClick={(e) => handleCopyLink(e, value)} className="p-0.5 text-gray-400 hover:text-blue-600 rounded transition-colors shrink-0" title="Copy link">
-              <Copy className="w-3 h-3" />
-            </button>
-          </div>
-        );
+        const isUrl = /^https?:\/\//i.test(value);
+        if (isUrl) {
+          return (
+            <div className="flex items-center gap-1 min-w-0 w-full">
+              <a href={value} target="_blank" rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 flex items-center gap-1 font-medium transition-colors min-w-0">
+                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Link</span>
+              </a>
+              <button onClick={(e) => handleCopyLink(e, value)} className="p-0.5 text-gray-400 hover:text-blue-600 rounded transition-colors shrink-0" title="Copy link">
+                <Copy className="w-3 h-3" />
+              </button>
+            </div>
+          );
+        }
+        return <span className="text-gray-700 dark:text-gray-300 truncate">{value}</span>;
+      }
 
       case 'rating':
         if (value === null || value === undefined || value === '') return <span className="text-gray-400 select-none">-</span>;

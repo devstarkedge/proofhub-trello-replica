@@ -243,8 +243,9 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       });
 
       // Check if required fields are mapped — block import if any required field is unmapped
+      // Skip monthName — it is auto-derived from date, not user-mapped
       const mappedValues = Object.values(extendedMap);
-      const unmappedRequired = SALES_REQUIRED_FIELDS.filter(f => !mappedValues.includes(f));
+      const unmappedRequired = SALES_REQUIRED_FIELDS.filter(f => f !== 'monthName').filter(f => !mappedValues.includes(f));
       
       if (unmappedRequired.length > 0) {
         const labels = unmappedRequired.map(f => SALES_FIELD_LABELS[f] || f).join(', ');
@@ -299,7 +300,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         const originalIndex = out._originalIndex;
         delete out._originalIndex;
 
-        // Extract and remove the imported month name (it's metadata, not a DB field)
+        // Extract the imported month name — used for date validation and as monthName fallback
         const importedMonth = out._importedMonthName;
         delete out._importedMonthName;
 
@@ -345,58 +346,28 @@ const ImportDataModal = ({ isOpen, onClose }) => {
 
           out.date = d ? d.toISOString() : null;
         }
+
+        // Set monthName: if date exists the backend pre-validate hook derives it,
+        // but if date is missing and a Month column was provided, pass it through
+        // so the backend can use it directly.
+        if (importedMonth && (!out.date || out.date === null)) {
+          out.monthName = importedMonth;
+        }
+
         if (out.followUpDate !== undefined && out.followUpDate !== null && out.followUpDate !== '') {
           const d = parseSalesDate(out.followUpDate);
           out.followUpDate = d ? d.toISOString() : null;
         }
         
         // =========================================
-        // URL VALIDATION FOR BIDLINK
+        // NORMALIZE BIDLINK — accepts URLs and plain text (Invite, Direct, etc.)
         // =========================================
-        // Helper to validate URL
-        const isValidUrl = (urlString) => {
-          if (!urlString || typeof urlString !== 'string') return false;
-          const trimmed = urlString.trim();
-          if (!trimmed) return false;
-          
-          // Check for common placeholder values
-          const placeholders = ['-', '--', 'N/A', 'n/a', 'NA', 'na', 'null', 'none', 'None', '#', '0'];
-          if (placeholders.includes(trimmed)) return false;
-          
-          // Try to parse as URL
-          try {
-            const url = new URL(trimmed);
-            // Must be http or https
-            return url.protocol === 'http:' || url.protocol === 'https:';
-          } catch {
-            // If it starts with http:// or https://, it's a malformed URL
-            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-              return false;
-            }
-            // Try prepending https:// and check again
-            try {
-              const url = new URL('https://' + trimmed);
-              // Only accept if it looks like a real domain
-              return url.hostname.includes('.');
-            } catch {
-              return false;
-            }
-          }
-        };
-        
-        // Validate and normalize bidLink
         if (out.bidLink !== undefined) {
           const bidLinkVal = String(out.bidLink || '').trim();
-          if (!bidLinkVal || !isValidUrl(bidLinkVal)) {
-            // Invalid URL - remove the field so it imports as empty
+          if (!bidLinkVal) {
             delete out.bidLink;
           } else {
-            // Valid URL - ensure it has protocol
-            if (!bidLinkVal.startsWith('http://') && !bidLinkVal.startsWith('https://')) {
-              out.bidLink = 'https://' + bidLinkVal;
-            } else {
-              out.bidLink = bidLinkVal;
-            }
+            out.bidLink = bidLinkVal;
           }
         }
         

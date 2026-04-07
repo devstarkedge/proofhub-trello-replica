@@ -29,7 +29,7 @@ const defaultValues = {
   clientLocation: '',
   replyFromClient: '',
   followUps: '',
-  followUpDate: '',
+  followUpDate: null,
   connects: '',
   rate: '',
   proposalScreenshot: '',
@@ -544,7 +544,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
                     Bid Link
                     <span className="text-red-500 font-bold">*</span>
                   </label>
-                  <input type="url" placeholder="https://..." {...register('bidLink')} aria-invalid={errors.bidLink ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.bidLink ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
+                  <input type="text" placeholder="https://... or Invite, Direct, etc." {...register('bidLink')} aria-invalid={errors.bidLink ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.bidLink ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
                    {errors.bidLink && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.bidLink.message}</p>}
                 </div>
               </div>

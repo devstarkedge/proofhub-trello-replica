@@ -24,13 +24,6 @@ const salesRowSchema = new mongoose.Schema({
     required: [true, 'Bid Link is required'],
     trim: true,
     default: '',
-    validate: {
-      validator: function(v) {
-        if (!v) return true; // Allow empty for backward compat on read
-        return /^https?:\/\/.+/.test(v);
-      },
-      message: 'Bid Link must be a valid URL'
-    }
   },
   platform: {
     type: String,
@@ -185,8 +178,9 @@ salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, technology: 1, date
 salesRowSchema.index({ name: 1, date: -1 });
 salesRowSchema.index({ isDeleted: 1, name: 1, date: -1 });
 
-// Pre-save hook to auto-generate month name from date
-salesRowSchema.pre('save', function(next) {
+// Pre-validate hook to auto-generate month name from date (must run before validation
+// so the required monthName field is set when date is present)
+salesRowSchema.pre('validate', function(next) {
   if (this.date && (!this.monthName || this.isModified('date'))) {
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                        'July', 'August', 'September', 'October', 'November', 'December'];

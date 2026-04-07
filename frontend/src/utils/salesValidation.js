@@ -39,28 +39,32 @@ export const salesRowSchema = z.object({
     invalid_type_error: 'Please select a valid date'
   }),
   name: z.string().min(1, 'Name is required'),
-  bidLink: z.string().min(1, 'Bid Link is required').url('Please enter a valid URL'),
+  bidLink: z.string().min(1, 'Bid Link is required'),
   platform: z.string().min(1, 'Platform is required'),
   profile: z.string().min(1, 'Profile is required'),
   technology: z.string().min(1, 'Technology is required'),
-  clientRating: z.number()
-    .min(0, 'Rating must be at least 0')
-    .max(5, 'Rating must not exceed 5')
-    .optional()
-    .nullable(),
-  clientHireRate: z.number()
-    .min(0, 'Hire rate must be at least 0%')
-    .max(100, 'Hire rate must not exceed 100%')
-    .optional()
-    .nullable(),
+  clientRating: z.preprocess(
+    (v) => (v === '' || Number.isNaN(v) ? null : v),
+    z.number().min(0, 'Rating must be at least 0').max(5, 'Rating must not exceed 5').optional().nullable()
+  ),
+  clientHireRate: z.preprocess(
+    (v) => (v === '' || Number.isNaN(v) ? null : v),
+    z.number().min(0, 'Hire rate must be at least 0%').max(100, 'Hire rate must not exceed 100%').optional().nullable()
+  ),
   clientBudget: z.string().optional(),
   clientSpending: z.string().optional(),
   clientLocation: z.string().optional(),
   replyFromClient: z.string().optional(),
   followUps: z.string().optional(),
   followUpDate: z.date().optional().nullable(),
-  connects: z.number().min(0, 'Connects must be a positive number').optional().nullable(),
-  rate: z.number().min(0, 'Rate must be a positive number').optional().nullable(),
+  connects: z.preprocess(
+    (v) => (v === '' || Number.isNaN(v) ? null : v),
+    z.number().min(0, 'Connects must be a positive number').optional().nullable()
+  ),
+  rate: z.preprocess(
+    (v) => (v === '' || Number.isNaN(v) ? null : v),
+    z.number().min(0, 'Rate must be a positive number').optional().nullable()
+  ),
   proposalScreenshot: z.string().url('Please enter a valid URL').optional().or(z.literal('')),
   status: z.string().optional(),
   comments: z.string().optional(),
@@ -111,8 +115,8 @@ export const importRowSchema = salesRowSchema
     name: z.string().optional(),
     // For import, monthName is auto-derived from date
     monthName: z.string().optional(),
-    // For import, bidLink may not always be present — validated at preview step
-    bidLink: z.string().url('Please enter a valid URL').optional().or(z.literal('')),
+    // For import, bidLink may not always be present — accepts URLs or plain text (e.g. Invite, Direct)
+    bidLink: z.string().optional().or(z.literal('')),
   })
   .partial({
     // Non-required fields stay optional during import
@@ -143,13 +147,8 @@ export const validateImportRows = (rows) => {
       }
     });
 
-    // Validate URL fields if present
+    // Validate URL fields if present (bidLink accepts plain text so skip URL check for it)
     const urlErrors = [];
-    if (row.bidLink && typeof row.bidLink === 'string' && row.bidLink.trim()) {
-      try { new URL(row.bidLink); } catch {
-        if (!/^https?:\/\/.+/.test(row.bidLink)) urlErrors.push('Bid Link is not a valid URL');
-      }
-    }
     if (row.proposalScreenshot && typeof row.proposalScreenshot === 'string' && row.proposalScreenshot.trim()) {
       try { new URL(row.proposalScreenshot); } catch {
         if (!/^https?:\/\/.+/.test(row.proposalScreenshot)) urlErrors.push('Proposal Screenshot is not a valid URL');
