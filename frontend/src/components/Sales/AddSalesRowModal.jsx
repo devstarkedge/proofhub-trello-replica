@@ -1,5 +1,5 @@
-import React, { useEffect, useContext, useCallback, useRef, useState } from 'react';
-import { X, Calendar, AlertCircle, ChevronDown, Search, Check } from 'lucide-react';
+import React, { useEffect, useContext, useCallback, useRef, useState, useMemo } from 'react';
+import { X, Calendar, AlertCircle, ChevronDown, Search, Check, Briefcase, Users, Calculator, Activity, LayoutGrid, MessageSquare, Keyboard } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import DatePickerModal from '../DatePickerModal';
 import { formatSalesDate, parseSalesDate } from '../../utils/dateUtils';
@@ -10,8 +10,11 @@ import SalesDropdown from './SalesDropdown';
 import AuthContext from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 import { getVerifiedUsers } from '../../services/salesApi';
+import { useSalesPreferences } from '../../hooks/useSalesPreferences';
 
-// Month names for auto-derivation from date
+// ────────────────────────────────────────────────────────────
+// Constants
+// ────────────────────────────────────────────────────────────
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -38,29 +41,430 @@ const defaultValues = {
   rowColor: '#FFFFFF',
 };
 
-// Convert backend row object to values compatible with react-hook-form
-// Convert backend row object to values compatible with react-hook-form
 function convertRowForForm(row) {
   if (!row) return {};
   const out = { ...row };
-  
-  // Convert strings to Date objects for Zod schema compliance
-  if (out.date) {
-    out.date = new Date(out.date);
-  }
-  if (out.followUpDate) {
-    out.followUpDate = new Date(out.followUpDate);
-  }
-  
+  if (out.date) out.date = new Date(out.date);
+  if (out.followUpDate) out.followUpDate = new Date(out.followUpDate);
   return out;
 }
 
+// ────────────────────────────────────────────────────────────
+// Shared style tokens (consistent across all sections)
+// ────────────────────────────────────────────────────────────
+const inputBase = 'w-full h-11 bg-white dark:bg-gray-900/80 border border-gray-200 dark:border-gray-700 rounded-xl px-3.5 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 hover:border-gray-300 dark:hover:border-gray-500';
+const inputError = 'border-red-400 dark:border-red-500 ring-1 ring-red-400/20 focus:ring-red-500/30 focus:border-red-500';
+const labelBase = 'block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5';
+const labelRequired = 'text-red-500 ml-0.5';
+const errorText = 'text-red-500 text-xs mt-1 flex items-center gap-1';
+
+// ────────────────────────────────────────────────────────────
+// Section Header (pure component, no re-renders)
+// ────────────────────────────────────────────────────────────
+const SectionHeader = React.memo(({ title, icon: Icon, description }) => (
+  <div className="flex items-center gap-3 mb-5 pb-3 border-b border-gray-100 dark:border-gray-700/60">
+    {Icon && (
+      <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+        <Icon className="w-4.5 h-4.5 text-blue-600 dark:text-blue-400" />
+      </div>
+    )}
+    <div>
+      <h3 className="font-semibold text-[15px] text-gray-800 dark:text-gray-100 tracking-tight">{title}</h3>
+      {description && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{description}</p>}
+    </div>
+  </div>
+));
+SectionHeader.displayName = 'SectionHeader';
+
+// ────────────────────────────────────────────────────────────
+// Field wrapper with auto-scroll on focus
+// ────────────────────────────────────────────────────────────
+const FieldWrapper = React.memo(({ name, className = 'col-span-1', children }) => {
+  const ref = useRef(null);
+  const handleFocusIn = useCallback(() => {
+    // Auto-scroll to field when focused (for long modals)
+    requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }, []);
+  return (
+    <div ref={ref} className={className} data-field={name} onFocusCapture={handleFocusIn}>
+      {children}
+    </div>
+  );
+});
+FieldWrapper.displayName = 'FieldWrapper';
+
+// ────────────────────────────────────────────────────────────
+// Shared Form Elements (Anti-Autofill)
+// ────────────────────────────────────────────────────────────
+const FormInput = React.forwardRef((props, ref) => (
+  <input
+    ref={ref}
+    autoComplete="off"
+    autoCorrect="off"
+    autoCapitalize="off"
+    spellCheck="false"
+    data-form-type="other"
+    data-lpignore="true"
+    data-1p-ignore="true"
+    {...props}
+  />
+));
+FormInput.displayName = 'FormInput';
+
+const FormTextarea = React.forwardRef((props, ref) => (
+  <textarea
+    ref={ref}
+    autoComplete="off"
+    autoCorrect="off"
+    autoCapitalize="off"
+    spellCheck="false"
+    data-form-type="other"
+    data-lpignore="true"
+    data-1p-ignore="true"
+    {...props}
+  />
+));
+FormTextarea.displayName = 'FormTextarea';
+
+// ────────────────────────────────────────────────────────────
+// Memoized sections
+// ────────────────────────────────────────────────────────────
+const DealDetailsSection = React.memo(({ control, register, errors, watchedDate, derivedMonth, isAdmin, loadingUsers, filteredUsers, selectedNameValue, userDropdownOpen, setUserDropdownOpen, userSearch, setUserSearch, userDropdownRef, setValue, formatSalesDate, openDatePicker, suggestions }) => (
+  <section>
+    <SectionHeader title="Deal Details" icon={Briefcase} description="Core deal information" />
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+      {/* Date */}
+      <FieldWrapper name="date">
+        <label className={labelBase}>Date<span className={labelRequired}>*</span></label>
+        <div className="relative group">
+          <FormInput
+            type="text"
+            readOnly
+            value={formatSalesDate(watchedDate)}
+            onClick={() => openDatePicker('date', 'Select Deal Date')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDatePicker('date', 'Select Deal Date'); } }}
+            aria-invalid={errors.date ? 'true' : undefined}
+            className={`${inputBase} cursor-pointer font-medium pr-10 ${errors.date ? inputError : ''}`}
+            placeholder="Select date..."
+          />
+          <Calendar className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
+        </div>
+        <input type="hidden" {...register('date')} />
+        {errors.date && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.date.message}</p>}
+      </FieldWrapper>
+
+      {/* Month (auto) */}
+      <FieldWrapper name="monthName" className="col-span-1">
+        <label className={labelBase}>
+          Month
+          <span className="text-[10px] font-normal text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded-full ml-2">Auto</span>
+        </label>
+        <input
+          type="text"
+          readOnly
+          value={derivedMonth}
+          tabIndex={-1}
+          className="w-full h-11 bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/50 text-blue-600 dark:text-blue-400 rounded-xl px-3.5 text-sm cursor-default select-none font-medium"
+          placeholder="Fills from date"
+        />
+        <input type="hidden" {...register('monthName')} value={derivedMonth} />
+      </FieldWrapper>
+
+      {/* Name */}
+      <FieldWrapper name="name">
+        <label className={labelBase}>
+          Name<span className={labelRequired}>*</span>
+          {isAdmin && <span className="text-[10px] font-normal text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded-full ml-2">Admin</span>}
+        </label>
+        {isAdmin ? (
+          <div className="relative" ref={userDropdownRef}>
+            <div className="relative">
+              <FormInput
+                type="text"
+                value={userDropdownOpen ? userSearch : selectedNameValue}
+                readOnly={!userDropdownOpen}
+                onChange={(e) => setUserSearch(e.target.value)}
+                onFocus={() => { setUserSearch(''); setUserDropdownOpen(true); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') { setUserDropdownOpen(false); }
+                  if (e.key === 'ArrowDown' && !userDropdownOpen) { setUserDropdownOpen(true); }
+                }}
+                aria-invalid={errors.name ? 'true' : undefined}
+                aria-haspopup="listbox"
+                aria-expanded={userDropdownOpen}
+                className={`${inputBase} pr-10 cursor-pointer font-medium ${errors.name ? inputError : ''}`}
+                placeholder={loadingUsers ? 'Loading users…' : 'Select user'}
+              />
+              <ChevronDown className={`absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none transition-transform duration-200 ${userDropdownOpen ? 'rotate-180' : ''}`} />
+            </div>
+            {userDropdownOpen && (
+              <div role="listbox" className="absolute z-[100] top-full mt-1.5 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl shadow-black/8 dark:shadow-black/25 overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50/80 dark:bg-gray-900/40 border-b border-gray-100 dark:border-gray-700">
+                  <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  <span className="text-[11px] text-gray-400">{loadingUsers ? 'Loading…' : `${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}`}</span>
+                </div>
+                <div className="overflow-y-auto max-h-44">
+                  {filteredUsers.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-gray-400 text-center">{loadingUsers ? 'Loading…' : 'No matching users'}</div>
+                  ) : filteredUsers.map(u => (
+                    <button
+                      key={u._id}
+                      type="button"
+                      role="option"
+                      aria-selected={selectedNameValue === u.name}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setValue('name', u.name, { shouldValidate: true, shouldDirty: true });
+                        setUserDropdownOpen(false);
+                        setUserSearch('');
+                      }}
+                      className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 text-sm text-left transition-colors ${selectedNameValue === u.name ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-300'}`}
+                    >
+                      <span>{u.name}</span>
+                      {selectedNameValue === u.name && <Check className="w-4 h-4 shrink-0 text-indigo-500" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <input type="hidden" {...register('name')} />
+          </div>
+        ) : (
+          <FormInput
+            type="text"
+            {...register('name')}
+            readOnly
+            tabIndex={-1}
+            aria-invalid={errors.name ? 'true' : undefined}
+            className="w-full h-11 bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/50 rounded-xl px-3.5 font-medium text-gray-600 dark:text-gray-400 cursor-not-allowed text-sm"
+            placeholder="Your name"
+          />
+        )}
+        {errors.name && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.name.message}</p>}
+      </FieldWrapper>
+
+      {/* Platform */}
+      <FieldWrapper name="platform">
+        <label className={labelBase}>Platform<span className={labelRequired}>*</span></label>
+        <Controller name="platform" control={control} render={({ field }) => (
+          <SalesDropdown columnName="platform" value={field.value} onChange={field.onChange} placeholder="Select platform" error={!!errors.platform} clearable autoOpenOnFocus autoSelectOnTab prioritizedValues={suggestions?.platform} />
+        )} />
+        {errors.platform && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.platform.message}</p>}
+      </FieldWrapper>
+
+      {/* Technology */}
+      <FieldWrapper name="technology">
+        <label className={labelBase}>Technology<span className={labelRequired}>*</span></label>
+        <Controller name="technology" control={control} render={({ field }) => (
+          <SalesDropdown columnName="technology" value={field.value} onChange={field.onChange} placeholder="Select technology" error={!!errors.technology} clearable autoOpenOnFocus autoSelectOnTab prioritizedValues={suggestions?.technology} />
+        )} />
+        {errors.technology && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.technology.message}</p>}
+      </FieldWrapper>
+
+      {/* Profile */}
+      <FieldWrapper name="profile">
+        <label className={labelBase}>Profile<span className={labelRequired}>*</span></label>
+        <Controller name="profile" control={control} render={({ field }) => (
+          <SalesDropdown columnName="profile" value={field.value} onChange={field.onChange} placeholder="Select profile" error={!!errors.profile} clearable autoOpenOnFocus autoSelectOnTab prioritizedValues={suggestions?.profile} />
+        )} />
+        {errors.profile && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.profile.message}</p>}
+      </FieldWrapper>
+
+      {/* Bid Link */}
+      <FieldWrapper name="bidLink" className="col-span-1 lg:col-span-2">
+        <label className={labelBase}>Bid Link<span className={labelRequired}>*</span></label>
+        <FormInput type="text" placeholder="https://... or Invite, Direct" {...register('bidLink')} aria-invalid={errors.bidLink ? 'true' : undefined} className={`${inputBase} ${errors.bidLink ? inputError : ''}`} />
+        {errors.bidLink && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.bidLink.message}</p>}
+      </FieldWrapper>
+    </div>
+  </section>
+));
+DealDetailsSection.displayName = 'DealDetailsSection';
+
+const ClientInfoSection = React.memo(({ control, register, errors, suggestions }) => (
+  <section>
+    <SectionHeader title="Client Information" icon={Users} description="Client profile and engagement data" />
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+      <FieldWrapper name="clientRating">
+        <label className={labelBase}>Rating (0-5)</label>
+        <FormInput type="number" min={0} max={5} step="0.5" {...register('clientRating', { valueAsNumber: true })} placeholder="e.g. 4.5" aria-invalid={errors.clientRating ? 'true' : undefined} className={`${inputBase} ${errors.clientRating ? inputError : ''}`} />
+        {errors.clientRating && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.clientRating.message}</p>}
+      </FieldWrapper>
+
+      <FieldWrapper name="clientHireRate">
+        <label className={labelBase}>Hire Rate (%)</label>
+        <FormInput type="number" min={0} max={100} {...register('clientHireRate', { valueAsNumber: true })} placeholder="e.g. 85" aria-invalid={errors.clientHireRate ? 'true' : undefined} className={`${inputBase} ${errors.clientHireRate ? inputError : ''}`} />
+        {errors.clientHireRate && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.clientHireRate.message}</p>}
+      </FieldWrapper>
+
+      <FieldWrapper name="clientLocation">
+        <label className={labelBase}>Location</label>
+        <Controller name="clientLocation" control={control} render={({ field }) => (
+          <SalesDropdown columnName="clientLocation" value={field.value} onChange={field.onChange} placeholder="Select location" clearable autoOpenOnFocus autoSelectOnTab prioritizedValues={suggestions?.clientLocation} />
+        )} />
+      </FieldWrapper>
+
+      <FieldWrapper name="clientBudget">
+        <label className={labelBase}>Budget</label>
+        <FormInput type="text" {...register('clientBudget')} maxLength={100} className={inputBase} placeholder="e.g. $500, 1000-1500" />
+      </FieldWrapper>
+
+      <FieldWrapper name="clientSpending">
+        <label className={labelBase}>Spending</label>
+        <FormInput type="text" {...register('clientSpending')} className={inputBase} placeholder="Total client spending" />
+      </FieldWrapper>
+    </div>
+  </section>
+));
+ClientInfoSection.displayName = 'ClientInfoSection';
+
+const DealMechanicsSection = React.memo(({ register, errors }) => (
+  <section>
+    <SectionHeader title="Deal Mechanics" icon={Calculator} description="Pricing and proposal details" />
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+      <FieldWrapper name="rate">
+        <label className={labelBase}>Rate ($)</label>
+        <FormInput type="number" min={0} {...register('rate', { valueAsNumber: true })} placeholder="e.g. 50" aria-invalid={errors.rate ? 'true' : undefined} className={`${inputBase} ${errors.rate ? inputError : ''}`} />
+        {errors.rate && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.rate.message}</p>}
+      </FieldWrapper>
+
+      <FieldWrapper name="connects">
+        <label className={labelBase}>Connects</label>
+        <FormInput type="number" min={0} {...register('connects', { valueAsNumber: true })} placeholder="e.g. 6" aria-invalid={errors.connects ? 'true' : undefined} className={`${inputBase} ${errors.connects ? inputError : ''}`} />
+        {errors.connects && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.connects.message}</p>}
+      </FieldWrapper>
+
+      <FieldWrapper name="proposalScreenshot">
+        <label className={labelBase}>Proposal Screenshot</label>
+        <FormInput type="url" placeholder="https://screenshot.url" {...register('proposalScreenshot')} aria-invalid={errors.proposalScreenshot ? 'true' : undefined} className={`${inputBase} ${errors.proposalScreenshot ? inputError : ''}`} />
+        {errors.proposalScreenshot && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.proposalScreenshot.message}</p>}
+      </FieldWrapper>
+    </div>
+  </section>
+));
+DealMechanicsSection.displayName = 'DealMechanicsSection';
+
+const StatusTrackingSection = React.memo(({ control, register, errors, watchedFollowUpDate, formatSalesDate, openDatePicker, suggestions }) => (
+  <section>
+    <SectionHeader title="Status & Tracking" icon={Activity} description="Deal progress and follow-ups" />
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+      <FieldWrapper name="status">
+        <label className={labelBase}>Current Status</label>
+        <Controller name="status" control={control} render={({ field }) => (
+          <SalesDropdown columnName="status" value={field.value} onChange={field.onChange} placeholder="Select status" error={!!errors.status} clearable autoOpenOnFocus autoSelectOnTab prioritizedValues={suggestions?.status} />
+        )} />
+        {errors.status && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.status.message}</p>}
+      </FieldWrapper>
+
+      <FieldWrapper name="replyFromClient">
+        <label className={labelBase}>Client Reply</label>
+        <Controller name="replyFromClient" control={control} render={({ field }) => (
+          <SalesDropdown columnName="replyFromClient" value={field.value} onChange={field.onChange} placeholder="No reply yet" clearable autoOpenOnFocus autoSelectOnTab prioritizedValues={suggestions?.replyFromClient} />
+        )} />
+      </FieldWrapper>
+
+      <FieldWrapper name="followUps">
+        <label className={labelBase}>Follow Up Status</label>
+        <Controller name="followUps" control={control} render={({ field }) => (
+          <SalesDropdown columnName="followUps" value={field.value} onChange={field.onChange} placeholder="Select follow up" clearable autoOpenOnFocus autoSelectOnTab prioritizedValues={suggestions?.followUps} />
+        )} />
+      </FieldWrapper>
+
+      <FieldWrapper name="followUpDate">
+        <label className={labelBase}>Next Follow Up Date</label>
+        <div className="relative group">
+          <FormInput
+            type="text"
+            readOnly
+            value={formatSalesDate(watchedFollowUpDate)}
+            onClick={() => openDatePicker('followUpDate', 'Select Follow Up Date')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDatePicker('followUpDate', 'Select Follow Up Date'); } }}
+            className={`${inputBase} cursor-pointer font-medium pr-10`}
+            placeholder="Select date..."
+          />
+          <Calendar className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
+        </div>
+        <input type="hidden" {...register('followUpDate')} />
+      </FieldWrapper>
+
+      <FieldWrapper name="rowColor">
+        <label className={labelBase}>Row Color</label>
+        <div className="flex items-center gap-3 h-11 bg-white dark:bg-gray-900/80 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500 transition-all px-3">
+          <input type="color" {...register('rowColor')} className="w-8 h-8 p-0.5 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:scale-105 transition-transform" />
+          <span className="text-sm text-gray-400 dark:text-gray-500">Highlight color</span>
+        </div>
+      </FieldWrapper>
+    </div>
+  </section>
+));
+StatusTrackingSection.displayName = 'StatusTrackingSection';
+
+const CustomColumnsSection = React.memo(({ customColumns, control, register, allValues, formatSalesDate, openDatePicker }) => {
+  if (!customColumns || customColumns.length === 0) return null;
+  return (
+    <section>
+      <SectionHeader title="Additional Information" icon={LayoutGrid} description="Custom fields" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
+        {customColumns.map(col => (
+          <FieldWrapper key={col.key} name={col.key}>
+            <label className={labelBase}>{col.name}{col.isRequired && <span className={labelRequired}>*</span>}</label>
+            {col.type === 'dropdown' ? (
+              <Controller name={col.key} control={control} render={({ field }) => (
+                <SalesDropdown columnName={col.key} value={field.value} onChange={field.onChange} placeholder={`Select ${col.name}`} clearable />
+              )} />
+            ) : col.type === 'date' ? (
+              <div className="relative group">
+                <FormInput
+                  type="text"
+                  readOnly
+                  value={formatSalesDate(allValues[col.key])}
+                  onClick={() => openDatePicker(col.key, `Select ${col.name}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDatePicker(col.key, `Select ${col.name}`); } }}
+                  className={`${inputBase} cursor-pointer font-medium pr-10`}
+                  placeholder="Select date..."
+                />
+                <Calendar className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
+                <input type="hidden" {...register(col.key)} />
+              </div>
+            ) : col.type === 'number' ? (
+              <FormInput type="number" {...register(col.key, { valueAsNumber: true })} className={inputBase} placeholder={`Enter ${col.name}`} />
+            ) : col.type === 'link' ? (
+              <FormInput type="url" {...register(col.key)} className={inputBase} placeholder="https://..." />
+            ) : (
+              <FormInput type="text" {...register(col.key)} className={inputBase} placeholder={`Enter ${col.name}`} />
+            )}
+          </FieldWrapper>
+        ))}
+      </div>
+    </section>
+  );
+});
+CustomColumnsSection.displayName = 'CustomColumnsSection';
+
+const NotesSection = React.memo(({ register }) => (
+  <section>
+    <SectionHeader title="Notes" icon={MessageSquare} description="Additional context" />
+    <FieldWrapper name="comments" className="col-span-1">
+      <label className={labelBase}>Comments</label>
+      <FormTextarea {...register('comments')} rows={3} className={`${inputBase} h-auto py-2.5 resize-none`} placeholder="Add any relevant notes, context, or observations..." />
+    </FieldWrapper>
+  </section>
+));
+NotesSection.displayName = 'NotesSection';
+
+// ────────────────────────────────────────────────────────────
+// Main Modal Component
+// ────────────────────────────────────────────────────────────
 const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   const { createRow, updateRow, dropdownOptions, customColumns, fetchCustomColumns } = useSalesStore();
   const { user } = useContext(AuthContext);
+  const { defaults: prefDefaults, getSuggestionsForField, clearCache: clearSuggestionCache } = useSalesPreferences();
   const isEdit = Boolean(editingRow);
   const isAdmin = user?.role === 'admin';
   const formScrollRef = useRef(null);
+  const firstFieldRef = useRef(null);
 
   // Verified users state (admin name selector)
   const [verifiedUsers, setVerifiedUsers] = useState([]);
@@ -68,11 +472,11 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   const [userSearch, setUserSearch] = useState('');
   const [loadingUsers, setLoadingUsers] = useState(false);
   const userDropdownRef = useRef(null);
-  
+
   // Date Picker State
-  const [datePickerState, setDatePickerState] = React.useState({
+  const [datePickerState, setDatePickerState] = useState({
     isOpen: false,
-    target: null, // 'date' | 'followUpDate' | customColumnKey
+    target: null,
     title: ''
   });
 
@@ -90,9 +494,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   useEffect(() => {
     if (!userDropdownOpen) return;
     const handler = (e) => {
-      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) {
-        setUserDropdownOpen(false);
-      }
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) setUserDropdownOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -100,10 +502,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
 
   // Reset dropdown/search state when modal closes
   useEffect(() => {
-    if (!isOpen) {
-      setUserDropdownOpen(false);
-      setUserSearch('');
-    }
+    if (!isOpen) { setUserDropdownOpen(false); setUserSearch(''); }
   }, [isOpen]);
 
   const {
@@ -112,27 +511,23 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
     control,
     reset,
     watch,
-    formState: { errors, isSubmitting, isValid, isDirty },
+    formState: { errors, isSubmitting },
     setValue,
-    trigger,
   } = useForm({
     resolver: zodResolver(salesRowSchemaFlexible),
     defaultValues: isEdit ? { ...defaultValues, ...convertRowForForm(editingRow) } : defaultValues,
-    mode: 'onTouched', // Validate on blur + submit for instant feedback
+    mode: 'onTouched',
   });
 
   const hasErrors = Object.keys(errors).length > 0;
 
-  // Scroll to first invalid field and focus it
+  // Scroll to first invalid field
   const scrollToFirstError = useCallback((fieldErrors) => {
     const firstKey = Object.keys(fieldErrors)[0];
     if (!firstKey || !formScrollRef.current) return;
-
-    // Find the field wrapper by data-field attribute
     const fieldEl = formScrollRef.current.querySelector(`[data-field="${firstKey}"]`);
     if (fieldEl) {
       fieldEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Focus the input/button inside after scroll animation
       setTimeout(() => {
         const focusable = fieldEl.querySelector('input, button, select, textarea');
         if (focusable) focusable.focus();
@@ -140,14 +535,13 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
     }
   }, []);
 
-  // Called by react-hook-form when validation fails on submit
   const onInvalid = useCallback((fieldErrors) => {
     const { message } = getErrorSummary(fieldErrors);
     toast.error(message, { toastId: 'sales-validation', autoClose: 6000 });
     scrollToFirstError(fieldErrors);
   }, [scrollToFirstError]);
 
-  // Ctrl+S / Cmd+S keyboard shortcut to save
+  // Ctrl+S / Cmd+S to save + Escape to close
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e) => {
@@ -155,72 +549,104 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
         e.preventDefault();
         document.getElementById('sales-form')?.requestSubmit();
       }
+      if (e.key === 'Escape' && !datePickerState.isOpen) {
+        e.preventDefault();
+        onClose();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+  }, [isOpen, onClose, datePickerState.isOpen]);
+
+  // Auto-focus first field when modal opens (after animation)
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => {
+      const dateInput = formScrollRef.current?.querySelector('[data-field="date"] input');
+      if (dateInput) dateInput.focus();
+    }, 350);
+    return () => clearTimeout(timer);
   }, [isOpen]);
 
-  // Watch date fields for display
+  // Watch fields
   const watchedDate = watch('date');
   const watchedFollowUpDate = watch('followUpDate');
-  // We need to watch all fields to support custom columns potentially, but for now we can just rely on getValues or specific watches if needed.
-  // Actually, for custom columns, we might need to watch them dynamically or just pass current value to the renderer.
-  // Using watch() without arguments watches everything, but might be performance heavy.
-  // Instead, we'll watch specific known dates, and for custom columns we can use Controller or watch specifically.
-  // Let's use `watch()` to get all values for rendering custom date fields correctly.
   const allValues = watch();
 
-  // Derive month name from the watched date value (Date object or empty)
-  const derivedMonth = (watchedDate instanceof Date && !isNaN(watchedDate))
-    ? MONTH_NAMES[watchedDate.getMonth()]
-    : '';
+  // Derive month from date — auto-sync
+  const derivedMonth = useMemo(() => {
+    return (watchedDate instanceof Date && !isNaN(watchedDate))
+      ? MONTH_NAMES[watchedDate.getMonth()]
+      : '';
+  }, [watchedDate]);
+
+  // Auto-set monthName when derivedMonth changes
+  useEffect(() => {
+    setValue('monthName', derivedMonth, { shouldDirty: false });
+  }, [derivedMonth, setValue]);
 
   // Filtered verified users for admin name selector
-  const filteredUsers = verifiedUsers.filter(u =>
-    u.name.toLowerCase().includes(userSearch.toLowerCase())
-  );
+  const filteredUsers = useMemo(() => {
+    return verifiedUsers.filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()));
+  }, [verifiedUsers, userSearch]);
 
-  // Current name value (for admin selector display)
   const selectedNameValue = watch('name') || '';
 
-  const openDatePicker = (target, title) => {
-    setDatePickerState({
-      isOpen: true,
-      target,
-      title
-    });
-  };
+  // ── Smart suggestions per-field (based on current form context) ──
+  const [suggestions, setSuggestions] = useState({});
+  const watchedPlatform = watch('platform');
+  const watchedTechnology = watch('technology');
+  const watchedProfile = watch('profile');
+  const watchedStatus = watch('status');
 
-  const handleDateSelect = (dateString) => {
+  // Re-compute suggestions when key fields change
+  useEffect(() => {
+    if (!isOpen) return;
+    const context = { platform: watchedPlatform, technology: watchedTechnology, profile: watchedProfile, status: watchedStatus };
+    const fields = ['platform', 'technology', 'profile', 'status', 'clientLocation', 'replyFromClient', 'followUps'];
+    let cancelled = false;
+    Promise.all(fields.map(f => getSuggestionsForField(f, context).then(vals => [f, vals])))
+      .then(entries => {
+        if (!cancelled) setSuggestions(Object.fromEntries(entries));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isOpen, watchedPlatform, watchedTechnology, watchedProfile, watchedStatus, getSuggestionsForField]);
+
+  // Clear suggestion cache when modal opens to get fresh data
+  useEffect(() => {
+    if (isOpen) clearSuggestionCache();
+  }, [isOpen, clearSuggestionCache]);
+
+  const openDatePicker = useCallback((target, title) => {
+    setDatePickerState({ isOpen: true, target, title });
+  }, []);
+
+  const handleDateSelect = useCallback((dateString) => {
     if (datePickerState.target) {
       if (dateString) {
-          // Parse string (dd-mm-yyyy or yyyy-mm-dd) to Date object for Zod validation
-          const dateObj = parseSalesDate(dateString);
-          setValue(datePickerState.target, dateObj, { shouldValidate: true, shouldDirty: true });
-          // Auto-set monthName when the main date field is updated
-          if (datePickerState.target === 'date' && dateObj instanceof Date && !isNaN(dateObj)) {
-            setValue('monthName', MONTH_NAMES[dateObj.getMonth()], { shouldDirty: true });
-          }
+        const dateObj = parseSalesDate(dateString);
+        setValue(datePickerState.target, dateObj, { shouldValidate: true, shouldDirty: true });
+        if (datePickerState.target === 'date' && dateObj instanceof Date && !isNaN(dateObj)) {
+          setValue('monthName', MONTH_NAMES[dateObj.getMonth()], { shouldDirty: true });
+        }
       } else {
-          setValue(datePickerState.target, null, { shouldValidate: true, shouldDirty: true });
-          if (datePickerState.target === 'date') {
-            setValue('monthName', '', { shouldDirty: true });
-          }
+        setValue(datePickerState.target, null, { shouldValidate: true, shouldDirty: true });
+        if (datePickerState.target === 'date') {
+          setValue('monthName', '', { shouldDirty: true });
+        }
       }
     }
-  };
+  }, [datePickerState.target, setValue]);
 
+  // Initialize form on mount / edit change
   useEffect(() => {
     fetchCustomColumns();
     if (isEdit && editingRow) {
-      // merge custom column values into defaults
       const base = { ...defaultValues, ...convertRowForForm(editingRow) };
-      if (customColumns && customColumns.length) {
-        customColumns.forEach(col => {
-          base[col.key] = editingRow?.[col.key] ?? '';
-        });
+      if (customColumns?.length) {
+        customColumns.forEach(col => { base[col.key] = editingRow?.[col.key] ?? ''; });
       }
-      // Seed monthName from existing date on edit
       if (base.date instanceof Date && !isNaN(base.date)) {
         base.monthName = MONTH_NAMES[base.date.getMonth()];
       } else if (editingRow.monthName) {
@@ -229,9 +655,18 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       reset(base);
     } else {
       const base = { ...defaultValues };
-      // Auto-fill name with logged-in user's name for new records
       base.name = user?.name || '';
-      if (customColumns && customColumns.length) {
+      // Auto-fill today's date for new records
+      base.date = new Date();
+      base.monthName = MONTH_NAMES[new Date().getMonth()];
+      // Apply smart defaults from user preferences (last-used values)
+      if (prefDefaults) {
+        const prefFields = ['platform', 'technology', 'profile', 'status', 'clientLocation'];
+        for (const f of prefFields) {
+          if (prefDefaults[f]) base[f] = prefDefaults[f];
+        }
+      }
+      if (customColumns?.length) {
         customColumns.forEach(col => { base[col.key] = ''; });
       }
       reset(base);
@@ -241,30 +676,22 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   // Keep form in sync when customColumns change while modal is open
   useEffect(() => {
     if (!isOpen) return;
-    const additions = {};
     customColumns.forEach(col => {
-      additions[col.key] = editingRow ? (editingRow[col.key] ?? '') : '';
+      setValue(col.key, editingRow ? (editingRow[col.key] ?? '') : '');
     });
-    if (Object.keys(additions).length) {
-      Object.entries(additions).forEach(([k, v]) => setValue(k, v));
-    }
   }, [customColumns, isOpen, editingRow, setValue]);
 
-  const onSubmit = async (data) => {
+  const onSubmit = useCallback(async (data) => {
     try {
-      // Convert date fields to Date objects if needed
       if (typeof data.date === 'string') data.date = new Date(data.date);
       if (data.followUpDate && typeof data.followUpDate === 'string') data.followUpDate = new Date(data.followUpDate);
-      
-      // Also handle custom date columns if any
       if (customColumns) {
         customColumns.forEach(col => {
-            if (col.type === 'date' && data[col.key] && typeof data[col.key] === 'string') {
-                data[col.key] = new Date(data[col.key]);
-            }
+          if (col.type === 'date' && data[col.key] && typeof data[col.key] === 'string') {
+            data[col.key] = new Date(data[col.key]);
+          }
         });
       }
-
       if (isEdit) {
         await updateRow(editingRow._id, data);
       } else {
@@ -272,9 +699,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       }
       onClose();
     } catch (err) {
-      // Show backend validation errors as toast
       const backendMsg = err?.response?.data?.message;
-      const fields = err?.response?.data?.fields;
       if (backendMsg) {
         toast.error(backendMsg, { toastId: 'sales-api-error', autoClose: 6000 });
       } else {
@@ -282,527 +707,151 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       }
       console.error('Save sales row error:', err);
     }
-  };
+  }, [isEdit, editingRow, customColumns, updateRow, createRow, onClose]);
 
   if (!isOpen) return null;
 
-  const SectionHeader = ({ title, icon: Icon }) => (
-    <div className="flex items-center gap-3 mb-5 pb-3 border-b-2 border-gradient-to-r from-blue-100 via-indigo-100 to-blue-100 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-blue-900/30">
-      {Icon && <Icon className="w-6 h-6 text-blue-600 dark:text-blue-400" />}
-      <h3 className="font-bold text-lg text-gray-800 dark:text-gray-100 tracking-tight">{title}</h3>
-    </div>
-  );
-
   return (
-    <div className="fixed inset-0 backdrop-blur-md bg-black/40 flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
-      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 border border-gray-200/50 dark:border-gray-700/50">
-        
-        {/* Header */}
-        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-white via-blue-50/30 to-white dark:from-gray-800 dark:via-blue-900/10 dark:to-gray-800 sticky top-0 z-10 shadow-sm">
+    <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl shadow-black/10 dark:shadow-black/30 w-full max-w-[1100px] max-h-[92vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 border border-gray-200/60 dark:border-gray-700/60">
+
+        {/* ── Header ─────────────────────────────────────── */}
+        <div className="px-6 sm:px-8 py-5 border-b border-gray-100 dark:border-gray-700/60 flex items-center justify-between bg-white dark:bg-gray-800 shrink-0">
           <div>
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent flex items-center gap-3">
-              {isEdit ? '✏️ Edit Record' : '✨ New Sales Record'}
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2.5">
+              {isEdit ? 'Edit Sales Record' : 'New Sales Record'}
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {isEdit ? 'Update the details below' : 'Fill in the information to add a new sales record'}
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+              {isEdit ? 'Update the details below' : 'Fill in the details to create a new record'}
+              <span className="hidden sm:inline"> · Press <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-[10px] font-mono mx-0.5">Tab</kbd> to navigate, <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-[10px] font-mono mx-0.5">Ctrl+S</kbd> to save</span>
             </p>
           </div>
-          <button 
-            type="button" 
-            onClick={onClose} 
-            className="p-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:scale-110 hover:rotate-90 duration-200"
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* content */}
-        <div ref={formScrollRef} className="overflow-y-auto flex-1 p-8 custom-scrollbar bg-gradient-to-b from-transparent via-blue-50/10 to-transparent dark:via-blue-900/5">
+        {/* ── Scrollable Content ─────────────────────────── */}
+        <div ref={formScrollRef} className="overflow-y-auto flex-1 px-6 sm:px-8 py-6 custom-scrollbar scroll-smooth" style={{ scrollPaddingBottom: '80px' }}>
           {/* Error Summary Banner */}
           {hasErrors && (
-            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-              <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+            <div className="mb-6 p-3.5 bg-red-50 dark:bg-red-900/15 border border-red-200/80 dark:border-red-800/40 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <AlertCircle className="w-4.5 h-4.5 text-red-500 mt-0.5 shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-red-700 dark:text-red-400">Please fix the following errors:</p>
-                <ul className="mt-1.5 space-y-0.5">
+                <p className="text-sm font-medium text-red-700 dark:text-red-400">Please fix {Object.keys(errors).length} error{Object.keys(errors).length > 1 ? 's' : ''}</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {Object.entries(errors).map(([key, err]) => (
-                    <li key={key}>
-                      <button
-                        type="button"
-                        className="text-xs text-red-600 dark:text-red-400 hover:underline cursor-pointer"
-                        onClick={() => {
-                          const el = formScrollRef.current?.querySelector(`[data-field="${key}"]`);
-                          if (el) {
-                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            setTimeout(() => {
-                              const focusable = el.querySelector('input, button, select, textarea');
-                              if (focusable) focusable.focus();
-                            }, 350);
-                          }
-                        }}
-                      >
-                        {SALES_FIELD_LABELS[key] || key}: {err.message}
-                      </button>
-                    </li>
+                    <button
+                      key={key}
+                      type="button"
+                      className="text-xs px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-md hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
+                      onClick={() => {
+                        const el = formScrollRef.current?.querySelector(`[data-field="${key}"]`);
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          setTimeout(() => { el.querySelector('input, button, select, textarea')?.focus(); }, 350);
+                        }
+                      }}
+                    >
+                      {SALES_FIELD_LABELS[key] || key}
+                    </button>
                   ))}
-                </ul>
+                </div>
               </div>
             </div>
           )}
 
-          <form id="sales-form" onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-10">
-            
-            {/* Deal Details Section */}
-            <div>
-              <SectionHeader title="Deal Details" />
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                 <div className="col-span-1" data-field="date">
-                  <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
-                    Date
-                    <span className="text-red-500 font-bold">*</span>
-                  </label>
-                  <div className="relative group">
-                    <input 
-                        type="text" 
-                        readOnly
-                        value={formatSalesDate(watchedDate)}
-                        onClick={() => openDatePicker('date', 'Select Deal Date')}
-                        aria-invalid={errors.date ? 'true' : undefined}
-                        className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.date ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl cursor-pointer transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium`}
-                        placeholder="dd-mm-yyyy"
-                    />
-                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
-                  </div>
-                  <input type="hidden" {...register('date')} />
-                  {errors.date && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.date.message}</p>}
-                </div>
+          <form id="sales-form" onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-8">
+            <DealDetailsSection
+              control={control}
+              register={register}
+              errors={errors}
+              watchedDate={watchedDate}
+              derivedMonth={derivedMonth}
+              isAdmin={isAdmin}
+              loadingUsers={loadingUsers}
+              filteredUsers={filteredUsers}
+              selectedNameValue={selectedNameValue}
+              userDropdownOpen={userDropdownOpen}
+              setUserDropdownOpen={setUserDropdownOpen}
+              userSearch={userSearch}
+              setUserSearch={setUserSearch}
+              userDropdownRef={userDropdownRef}
+              setValue={setValue}
+              formatSalesDate={formatSalesDate}
+              openDatePicker={openDatePicker}
+              suggestions={suggestions}
+            />
 
-                {/* Month — auto-derived from Date, never manually typed */}
-                <div className="col-span-1">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
-                    Month
-                    <span className="text-[10px] font-normal text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded-full">Auto</span>
-                  </label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={derivedMonth}
-                    tabIndex={-1}
-                    className="input w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-100 dark:border-blue-900/40 text-blue-700 dark:text-blue-300 rounded-xl cursor-default select-none font-medium"
-                    placeholder="Fills from Date"
-                  />
-                  <input type="hidden" {...register('monthName')} value={derivedMonth} />
-                  <p className="text-[10px] text-gray-400 mt-1">Auto-filled when you pick a date</p>
-                </div>
+            <ClientInfoSection control={control} register={register} errors={errors} suggestions={suggestions} />
 
-                <div className="col-span-1" data-field="name">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
-                    Name
-                    <span className="text-red-500 font-bold">*</span>
-                    {isAdmin && <span className="text-[10px] font-normal text-indigo-500 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded-full ml-1">Admin</span>}
-                  </label>
-                  {isAdmin ? (
-                    // Admin: searchable verified-users dropdown selector
-                    <div className="relative" ref={userDropdownRef}>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={userDropdownOpen ? userSearch : selectedNameValue}
-                          readOnly={!userDropdownOpen}
-                          onChange={(e) => setUserSearch(e.target.value)}
-                          onFocus={() => { setUserSearch(''); setUserDropdownOpen(true); }}
-                          aria-invalid={errors.name ? 'true' : undefined}
-                          aria-haspopup="listbox"
-                          aria-expanded={userDropdownOpen}
-                          className={`input w-full pr-9 bg-gray-50 dark:bg-gray-900 border-2 ${errors.name ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 rounded-xl transition-all hover:border-indigo-300 dark:hover:border-indigo-600 font-medium cursor-pointer`}
-                          placeholder={loadingUsers ? 'Loading users…' : 'Select a verified user'}
-                        />
-                        <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none transition-transform duration-200 ${userDropdownOpen ? 'rotate-180' : ''}`} />
-                      </div>
-                      {userDropdownOpen && (
-                        <div role="listbox" className="absolute z-[60] top-full mt-1.5 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden">
-                          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-900/60 border-b border-gray-100 dark:border-gray-700">
-                            <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                            <span className="text-[11px] text-gray-400">
-                              {loadingUsers ? 'Loading…' : `${filteredUsers.length} user${filteredUsers.length !== 1 ? 's' : ''}`}
-                            </span>
-                          </div>
-                          <div className="overflow-y-auto max-h-44">
-                            {filteredUsers.length === 0 ? (
-                              <div className="px-3 py-3 text-sm text-gray-400 text-center">
-                                {loadingUsers ? 'Loading…' : 'No matching users'}
-                              </div>
-                            ) : (
-                              filteredUsers.map(u => (
-                                <button
-                                  key={u._id}
-                                  type="button"
-                                  role="option"
-                                  aria-selected={selectedNameValue === u.name}
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    setValue('name', u.name, { shouldValidate: true, shouldDirty: true });
-                                    setUserDropdownOpen(false);
-                                    setUserSearch('');
-                                  }}
-                                  className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 text-sm text-left transition-colors ${selectedNameValue === u.name ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-semibold' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-300'}`}
-                                >
-                                  <span>{u.name}</span>
-                                  {selectedNameValue === u.name && <Check className="w-4 h-4 shrink-0 text-indigo-500" />}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      <input type="hidden" {...register('name')} />
-                    </div>
-                  ) : (
-                    // Non-admin: readonly, auto-filled, no cursor confusion
-                    <input
-                      type="text"
-                      {...register('name')}
-                      readOnly
-                      aria-invalid={errors.name ? 'true' : undefined}
-                      className="input w-full bg-gray-100 dark:bg-gray-900/60 border-2 border-gray-200 dark:border-gray-700 rounded-xl font-medium text-gray-700 dark:text-gray-300 cursor-not-allowed"
-                      placeholder="Your name"
-                    />
-                  )}
-                  {!isAdmin && <p className="text-[11px] text-gray-400 mt-1">Auto-filled with your account name</p>}
-                  {isAdmin && !userDropdownOpen && <p className="text-[11px] text-gray-400 mt-1">Click to select a verified team member</p>}
-                  {errors.name && <p className="text-red-500 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.name.message}</p>}
-                </div>
+            <DealMechanicsSection register={register} errors={errors} />
 
-                <div className="col-span-1" data-field="platform">
-                  <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
-                    Platform
-                    <span className="text-red-500 font-bold">*</span>
-                  </label>
-                  <Controller
-                    name="platform"
-                    control={control}
-                    render={({ field }) => (
-                      <SalesDropdown
-                        columnName="platform"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select Platform"
-                        error={!!errors.platform}
-                        clearable
-                      />
-                    )}
-                  />
-                  {errors.platform && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.platform.message}</p>}
-                </div>
+            <StatusTrackingSection
+              control={control}
+              register={register}
+              errors={errors}
+              watchedFollowUpDate={watchedFollowUpDate}
+              formatSalesDate={formatSalesDate}
+              openDatePicker={openDatePicker}
+              suggestions={suggestions}
+            />
 
-                <div className="col-span-1" data-field="technology">
-                  <label className=" text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
-                    Technology
-                    <span className="text-red-500 font-bold">*</span>
-                  </label>
-                  <Controller
-                    name="technology"
-                    control={control}
-                    render={({ field }) => (
-                      <SalesDropdown
-                        columnName="technology"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select Tech"
-                        error={!!errors.technology}
-                        clearable
-                      />
-                    )}
-                  />
-                   {errors.technology && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.technology.message}</p>}
-                </div>
+            <CustomColumnsSection
+              customColumns={customColumns}
+              control={control}
+              register={register}
+              allValues={allValues}
+              formatSalesDate={formatSalesDate}
+              openDatePicker={openDatePicker}
+            />
 
-                <div className="col-span-1" data-field="profile">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
-                    Profile
-                    <span className="text-red-500 font-bold">*</span>
-                  </label>
-                  <Controller
-                    name="profile"
-                    control={control}
-                    render={({ field }) => (
-                      <SalesDropdown
-                        columnName="profile"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select Profile"
-                        error={!!errors.profile}
-                        clearable
-                      />
-                    )}
-                  />
-                  {errors.profile && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.profile.message}</p>}
-                </div>
-
-                <div className="col-span-1 lg:col-span-2" data-field="bidLink">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
-                    Bid Link
-                    <span className="text-red-500 font-bold">*</span>
-                  </label>
-                  <input type="text" placeholder="https://... or Invite, Direct, etc." {...register('bidLink')} aria-invalid={errors.bidLink ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.bidLink ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
-                   {errors.bidLink && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.bidLink.message}</p>}
-                </div>
-              </div>
-            </div>
-
-            {/* Client Info Section */}
-            <div>
-              <SectionHeader title="Client Information" />
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                 <div className="col-span-1" data-field="clientRating">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Rating (0-5)</label>
-                  <input type="number" min={0} max={5} step="0.5" {...register('clientRating', { valueAsNumber: true })} aria-invalid={errors.clientRating ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.clientRating ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
-                  {errors.clientRating && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.clientRating.message}</p>}
-                </div>
-                
-                <div className="col-span-1" data-field="clientHireRate">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Hire Rate (%)</label>
-                   <input type="number" min={0} max={100} {...register('clientHireRate', { valueAsNumber: true })} aria-invalid={errors.clientHireRate ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.clientHireRate ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
-                   {errors.clientHireRate && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.clientHireRate.message}</p>}
-                </div>
-
-                <div className="col-span-1" data-field="clientLocation">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Location</label>
-                   <Controller
-                    name="clientLocation"
-                    control={control}
-                    render={({ field }) => (
-                      <SalesDropdown
-                        columnName="clientLocation"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select Location"
-                        clearable
-                      />
-                    )}
-                  />
-                </div>
-
-                <div className="col-span-1" data-field="clientBudget">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Budget</label>
-                   <input
-                     type="text"
-                     {...register('clientBudget')}
-                     maxLength={100}
-                     className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600"
-                     placeholder="e.g. $500, 1000-1500, Negotiable"
-                   />
-                </div>
-                
-                 <div className="col-span-1" data-field="clientSpending">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Spending</label>
-                   <input type="text" {...register('clientSpending')} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
-                </div>
-              </div>
-            </div>
-
-            {/* Deal Mechanics */}
-             <div>
-              <SectionHeader title="Deal Mechanics" />
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                 <div className="col-span-1" data-field="rate">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Rate ($)</label>
-                   <input type="number" min={0} {...register('rate', { valueAsNumber: true })} aria-invalid={errors.rate ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.rate ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
-                   {errors.rate && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.rate.message}</p>}
-                </div>
-                 <div className="col-span-1" data-field="connects">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Connects</label>
-                   <input type="number" min={0} {...register('connects', { valueAsNumber: true })} aria-invalid={errors.connects ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.connects ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
-                   {errors.connects && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.connects.message}</p>}
-                </div>
-                 <div className="col-span-1 lg:col-span-1" data-field="proposalScreenshot">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Proposal Screenshot</label>
-                   <input type="url" placeholder="https://..." {...register('proposalScreenshot')} aria-invalid={errors.proposalScreenshot ? 'true' : undefined} className={`input w-full bg-gray-50 dark:bg-gray-900 border-2 ${errors.proposalScreenshot ? 'border-red-500 dark:border-red-500 ring-1 ring-red-500/30' : 'border-gray-200 dark:border-gray-700'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600`} />
-                   {errors.proposalScreenshot && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.proposalScreenshot.message}</p>}
-                </div>
-              </div>
-            </div>
-
-            {/* Status & Tracking */}
-            <div>
-              <SectionHeader title="Status & Tracking" />
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                 <div className="col-span-1" data-field="status">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
-                    Current Status
-                  </label>
-                  <Controller
-                    name="status"
-                    control={control}
-                    render={({ field }) => (
-                      <SalesDropdown
-                        columnName="status"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select Status"
-                        error={!!errors.status}
-                        clearable
-                      />
-                    )}
-                  />
-                   {errors.status && <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.status.message}</p>}
-                </div>
-
-                <div className="col-span-1" data-field="replyFromClient">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Client Reply</label>
-                   <Controller
-                    name="replyFromClient"
-                    control={control}
-                    render={({ field }) => (
-                      <SalesDropdown
-                        columnName="replyFromClient"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="No Reply Yet"
-                        clearable
-                      />
-                    )}
-                  />
-                </div>
-
-                 <div className="col-span-1" data-field="rowColor">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Row Color</label>
-                   <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 transition-all">
-                     <input type="color" {...register('rowColor')} className="w-12 h-12 p-1 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer hover:scale-110 transition-transform" />
-                     <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Pick a highlight color</span>
-                   </div>
-                </div>
-
-                <div className="col-span-1" data-field="followUps">
-                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Follow Up Status</label>
-                   <Controller
-                    name="followUps"
-                    control={control}
-                    render={({ field }) => (
-                      <SalesDropdown
-                        columnName="followUps"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select Follow Up"
-                        clearable
-                      />
-                    )}
-                  />
-                </div>
-
-                 <div className="col-span-1" data-field="followUpDate">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Next Follow Up Date</label>
-                  <div className="relative group">
-                    <input 
-                        type="text" 
-                        readOnly
-                        value={formatSalesDate(watchedFollowUpDate)}
-                        onClick={() => openDatePicker('followUpDate', 'Select Follow Up Date')}
-                        className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl cursor-pointer transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium"
-                        placeholder="dd-mm-yyyy"
-                    />
-                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
-                  </div>
-                  <input type="hidden" {...register('followUpDate')} />
-                </div>
-              </div>
-            </div>
-
-            {/* Custom Columns Section */}
-            {customColumns && customColumns.length > 0 && (
-              <div>
-                 <SectionHeader title="Additional Information" />
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {customColumns.map(col => (
-                        <div key={col.key}>
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{col.name}{col.isRequired ? <span className="text-red-500 font-bold ml-1">*</span> : null}</label>
-                          {col.type === 'dropdown' ? (
-                            <Controller
-                                name={col.key}
-                                control={control}
-                                render={({ field }) => (
-                                  <SalesDropdown
-                                    columnName={col.key}
-                                    value={field.value}
-                                    onChange={field.onChange}
-                                    placeholder={`Select ${col.name}`}
-                                    clearable
-                                  />
-                                )}
-                              />
-                          ) : col.type === 'date' ? (
-                            <div className="relative group">
-                                <input 
-                                    type="text" 
-                                    readOnly
-                                    value={formatSalesDate(allValues[col.key])} // Accesing value from watch() result
-                                    onClick={() => openDatePicker(col.key, `Select ${col.name}`)}
-                                    className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl cursor-pointer transition-all hover:border-blue-300 dark:hover:border-blue-600 font-medium"
-                                    placeholder="dd-mm-yyyy"
-                                />
-                                 <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors pointer-events-none" />
-                                 <input type="hidden" {...register(col.key)} />
-                            </div>
-                          ) : col.type === 'number' ? (
-                            <input type="number" {...register(col.key, { valueAsNumber: true })} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
-                          ) : col.type === 'link' ? (
-                            <input type="url" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
-                          ) : (
-                            <input type="text" {...register(col.key)} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl transition-all hover:border-blue-300 dark:hover:border-blue-600" />
-                          )}
-                        </div>
-                    ))}
-                 </div>
-              </div>
-            )}
-
-            {/* Comments & Extras */}
-            <div>
-               <SectionHeader title="Additional Notes" />
-               <div className="grid grid-cols-1 gap-5">
-                 <div className="col-span-1" data-field="comments">
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Comments</label>
-                    <textarea {...register('comments')} rows={4} className="input w-full bg-gray-50 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-xl resize-none transition-all hover:border-blue-300 dark:hover:border-blue-600" placeholder="Add any relevant notes here..."></textarea>
-                 </div>
-               </div>
-            </div>
-
+            <NotesSection register={register} />
           </form>
         </div>
 
-        {/* Footer */}
-        <div className="px-8 py-5 border-t border-gray-100 dark:border-gray-700 bg-gradient-to-r from-gray-50 via-blue-50/30 to-gray-50 dark:from-gray-800 dark:via-blue-900/10 dark:to-gray-800 flex items-center justify-between rounded-b-3xl shadow-inner">
-           <span className="text-[11px] text-gray-400 dark:text-gray-500 hidden sm:inline">
-             {hasErrors ? `${Object.keys(errors).length} field error${Object.keys(errors).length > 1 ? 's' : ''}` : 'Ctrl+S to save'}
-           </span>
-           <div className="flex gap-4">
-           <button
-             type="button"
-             onClick={onClose}
-             disabled={isSubmitting}
-             className="px-8 py-3 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-all shadow-sm hover:shadow-md hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-           >
-             Cancel
-           </button>
-           <button
-             type="submit"
-             form="sales-form"
-             disabled={isSubmitting}
-             className="px-8 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 hover:from-blue-700 hover:via-blue-700 hover:to-indigo-700 focus:ring-4 focus:ring-blue-500/30 transition-all shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-105 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2.5"
-           >
-             {isSubmitting ? (
+        {/* ── Sticky Footer ──────────────────────────────── */}
+        <div className="px-6 sm:px-8 py-4 border-t border-gray-100 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-800/95 flex items-center justify-between shrink-0">
+          <div className="hidden sm:flex items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
+            <Keyboard className="w-3.5 h-3.5" />
+            {hasErrors ? (
+              <span className="text-red-400">{Object.keys(errors).length} error{Object.keys(errors).length > 1 ? 's' : ''} remaining</span>
+            ) : (
+              <span>Ctrl+S to save · Esc to close · Tab to navigate</span>
+            )}
+          </div>
+          <div className="flex gap-3 ml-auto">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-5 sm:px-6 py-2.5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="sales-form"
+              disabled={isSubmitting}
+              className="px-5 sm:px-8 py-2.5 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500/30 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-all shadow-sm shadow-blue-600/20 hover:shadow-md hover:shadow-blue-600/30 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isSubmitting ? (
                 <>
-                  <div className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin"/>
-                  <span>Saving...</span>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Saving...
                 </>
-             ) : (
-                <span>{isEdit ? '✅ Save Changes' : '✨ Create Record'}</span>
-             )}
-           </button>
-           </div>
+              ) : (
+                isEdit ? 'Save Changes' : 'Create Record'
+              )}
+            </button>
+          </div>
         </div>
       </div>
-      
+
       {/* Global Date Picker Modal */}
       <DatePickerModal
         isOpen={datePickerState.isOpen}

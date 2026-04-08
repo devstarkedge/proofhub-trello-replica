@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Calendar, X, Search, Filter, ChevronDown, ChevronUp, 
@@ -7,6 +7,7 @@ import {
 import useSalesStore from '../../store/salesStore';
 import DatePickerModal from '../DatePickerModal';
 import { formatSalesDate } from '../../utils/dateUtils';
+import SearchableSelect from '../ui/SearchableSelect';
 
 const SalesFilters = () => {
   const { rows, filters, setFilters, clearFilters, dropdownOptions, fetchDropdownOptions, uniqueNames, nameTab, setNameTab } = useSalesStore();
@@ -119,6 +120,39 @@ const SalesFilters = () => {
 
 
   const activeFilterCount = Object.values(filters).filter(v => v !== '' && v !== null && v !== undefined).length;
+
+  // Build option arrays for SearchableSelect (filters use read-only mode)
+  const nameOptions = useMemo(() =>
+    uniqueNames.map(item => ({ value: item.name, label: `${item.name} (${item.count})` })),
+    [uniqueNames],
+  );
+
+  const getDropdownOptionsList = useCallback((key) => {
+    const opts = dropdownOptions[key];
+    if (opts && opts.length > 0) return opts;
+    return Array.from(
+      new Map(rows.map(r => [r[key], { _id: r[key], value: r[key], label: r[key] }]).filter(([k]) => k)).values()
+    );
+  }, [dropdownOptions, rows]);
+
+  const platformOptions = useMemo(() => getDropdownOptionsList('platform'), [getDropdownOptionsList]);
+  const technologyOptions = useMemo(() => getDropdownOptionsList('technology'), [getDropdownOptionsList]);
+  const statusOptions = useMemo(() => getDropdownOptionsList('status'), [getDropdownOptionsList]);
+  const locationOptions = useMemo(() => {
+    const opts = dropdownOptions.clientLocation;
+    if (opts && opts.length > 0) return opts;
+    return Array.from(
+      new Map(rows.map(r => [r.clientLocation, { _id: r.clientLocation, value: r.clientLocation, label: r.clientLocation }]).filter(([k]) => k)).values()
+    );
+  }, [dropdownOptions.clientLocation, rows]);
+  const budgetOptions = useMemo(() => {
+    const opts = dropdownOptions.clientBudget;
+    if (opts && opts.length > 0) return opts;
+    return Array.from(
+      new Map(rows.map(r => [r.clientBudget, { _id: r.clientBudget, value: r.clientBudget, label: r.clientBudget }]).filter(([k]) => k)).values()
+    );
+  }, [dropdownOptions.clientBudget, rows]);
+  const profileOptions = useMemo(() => getDropdownOptionsList('profile'), [getDropdownOptionsList]);
 
   const selectClass = "w-full px-4 py-3 text-sm border-2 border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 shadow-sm hover:shadow-md font-medium";
   const inputClass = "w-full px-4 py-3 text-sm border-2 border-gray-200 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 font-medium";
@@ -267,23 +301,19 @@ const SalesFilters = () => {
                     <User className="w-3 h-3 inline mr-1" />
                     Name
                   </label>
-                  <select
+                  <SearchableSelect
                     value={filters.name || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
+                    onChange={(val) => {
                       handleFilterChange('name', val);
-                      // Sync with tabs
                       setNameTab(val || 'All');
                     }}
-                    className={selectClass}
-                  >
-                    <option value="">All Names</option>
-                    {uniqueNames.map((item) => (
-                      <option key={item.name} value={item.name}>
-                        {item.name} ({item.count})
-                      </option>
-                    ))}
-                  </select>
+                    options={nameOptions}
+                    placeholder="All Names"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
                 </div>
 
                 {/* Platform */}
@@ -292,61 +322,46 @@ const SalesFilters = () => {
                     <Zap className="w-3 h-3 inline mr-1" />
                     Platform
                   </label>
-                  <select
-                    value={filters.platform}
-                    onChange={(e) => handleFilterChange('platform', e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">All Platforms</option>
-                    {(dropdownOptions.platform && dropdownOptions.platform.length > 0
-                      ? dropdownOptions.platform
-                      : Array.from(new Map(rows.map(r => [r.platform, { _id: r.platform || r.platform, value: r.platform, label: r.platform }]).filter(([k]) => k)).values())
-                    ).map((option) => (
-                      <option key={option._id || option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={filters.platform || ''}
+                    onChange={(val) => handleFilterChange('platform', val)}
+                    options={platformOptions}
+                    placeholder="All Platforms"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
                 </div>
 
                 {/* Technology */}
                 <div>
                   <label className={labelClass}>Technology</label>
-                  <select
-                    value={filters.technology}
-                    onChange={(e) => handleFilterChange('technology', e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">All Technologies</option>
-                    {(dropdownOptions.technology && dropdownOptions.technology.length > 0
-                      ? dropdownOptions.technology
-                      : Array.from(new Map(rows.map(r => [r.technology, { _id: r.technology, value: r.technology, label: r.technology }]).filter(([k]) => k)).values())
-                    ).map((option) => (
-                      <option key={option._id || option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={filters.technology || ''}
+                    onChange={(val) => handleFilterChange('technology', val)}
+                    options={technologyOptions}
+                    placeholder="All Technologies"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
                 </div>
 
                 {/* Status */}
                 <div>
                   <label className={labelClass}>Status</label>
-                  <select
-                    value={filters.status}
-                    onChange={(e) => handleFilterChange('status', e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">All Statuses</option>
-                    {(dropdownOptions.status && dropdownOptions.status.length > 0
-                      ? dropdownOptions.status
-                      : Array.from(new Map(rows.map(r => [r.status, { _id: r.status, value: r.status, label: r.status }]).filter(([k]) => k)).values())
-                    ).map((option) => (
-                      <option key={option._id || option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={filters.status || ''}
+                    onChange={(val) => handleFilterChange('status', val)}
+                    options={statusOptions}
+                    placeholder="All Statuses"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
                 </div>
 
                 {/* Location */}
@@ -355,21 +370,16 @@ const SalesFilters = () => {
                     <MapPin className="w-3 h-3 inline mr-1" />
                     Location
                   </label>
-                  <select
-                    value={filters.location}
-                    onChange={(e) => handleFilterChange('location', e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">All Locations</option>
-                    {(dropdownOptions.clientLocation && dropdownOptions.clientLocation.length > 0
-                      ? dropdownOptions.clientLocation
-                      : Array.from(new Map(rows.map(r => [r.clientLocation, { _id: r.clientLocation, value: r.clientLocation, label: r.clientLocation }]).filter(([k]) => k)).values())
-                    ).map((option) => (
-                      <option key={option._id || option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={filters.location || ''}
+                    onChange={(val) => handleFilterChange('location', val)}
+                    options={locationOptions}
+                    placeholder="All Locations"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
                 </div>
 
                 {/* Min Rating */}
@@ -412,41 +422,31 @@ const SalesFilters = () => {
                     <DollarSign className="w-3 h-3 inline mr-1" />
                     Budget
                   </label>
-                  <select
+                  <SearchableSelect
                     value={filters.budget || ''}
-                    onChange={(e) => handleFilterChange('budget', e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">All Budgets</option>
-                    {(dropdownOptions.clientBudget && dropdownOptions.clientBudget.length > 0
-                      ? dropdownOptions.clientBudget
-                      : Array.from(new Map(rows.map(r => [r.clientBudget, { _id: r.clientBudget, value: r.clientBudget, label: r.clientBudget }]).filter(([k]) => k)).values())
-                    ).map((option) => (
-                      <option key={option._id || option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => handleFilterChange('budget', val)}
+                    options={budgetOptions}
+                    placeholder="All Budgets"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
                 </div>
 
                 {/* Profile */}
                 <div>
                   <label className={labelClass}>Profile</label>
-                  <select
+                  <SearchableSelect
                     value={filters.profile || ''}
-                    onChange={(e) => handleFilterChange('profile', e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">All Profiles</option>
-                    {(dropdownOptions.profile && dropdownOptions.profile.length > 0
-                      ? dropdownOptions.profile
-                      : Array.from(new Map(rows.map(r => [r.profile, { _id: r.profile, value: r.profile, label: r.profile }]).filter(([k]) => k)).values())
-                    ).map((option) => (
-                      <option key={option._id || option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => handleFilterChange('profile', val)}
+                    options={profileOptions}
+                    placeholder="All Profiles"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
                 </div>
               </div>
             </div>

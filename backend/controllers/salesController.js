@@ -9,6 +9,7 @@ import slackNotificationService from '../services/slack/SlackNotificationService
 import notificationService from '../utils/notificationService.js';
 import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards.js';
 import ExcelJS from 'exceljs';
+import SalesUserPreference from '../models/SalesUserPreference.js';
 import {
   SALES_FIELD_LABELS,
   SALES_REQUIRED_LABELS,
@@ -381,6 +382,11 @@ export const createSalesRow = async (req, res) => {
       userAgent: req.get('user-agent')
     });
 
+    // Record user preferences (fire-and-forget — non-blocking)
+    SalesUserPreference.recordSelection(userId, standard).catch(err =>
+      console.error('Failed to record sales preference:', err)
+    );
+
     // Emit real-time event with flattened row
     getIO().to('sales').emit('sales:row:created', { row: flatRow });
 
@@ -487,6 +493,11 @@ export const updateSalesRow = async (req, res) => {
         userAgent: req.get('user-agent')
       });
     }
+
+    // Record user preferences on update (fire-and-forget — non-blocking)
+    SalesUserPreference.recordSelection(userId, standard).catch(err =>
+      console.error('Failed to record sales preference:', err)
+    );
 
     // Emit real-time events
     getIO().to('sales').emit('sales:row:updated', { row: flatRow, changes });

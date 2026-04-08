@@ -270,6 +270,28 @@ export const getUniqueNames = async () => {
 };
 
 // ============================================
+// USER PREFERENCES & SUGGESTIONS API
+// ============================================
+
+/**
+ * Get user's sales preferences (last-used defaults)
+ */
+export const getSalesPreferences = async () => {
+  const { data } = await api.get('/preferences');
+  return data;
+};
+
+/**
+ * Get intelligent suggestions for a field based on current form context
+ * @param {string} field - The target dropdown field
+ * @param {Object} context - Current form values for co-occurrence matching
+ */
+export const getSalesSuggestions = async (field, context = {}) => {
+  const { data } = await api.post('/preferences/suggestions', { field, context });
+  return data;
+};
+
+// ============================================
 // PERMISSIONS API
 // ============================================
 

@@ -24,6 +24,7 @@ import {
   getUserPermissions,
   updateUserPermissions
 } from '../controllers/salesController.js';
+import { getPreferences, getSuggestions } from '../controllers/salesPreferenceController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { checkSalesPermission, requireSalesPermission } from '../middleware/salesPermissionMiddleware.js';
 
@@ -34,6 +35,16 @@ const router = express.Router();
  */
 router.use(protect);
 router.use(checkSalesPermission);
+
+// ============================================
+// USER PREFERENCES & SUGGESTIONS ROUTES
+// ============================================
+
+// Get user's sales preferences (last-used defaults)
+router.get('/preferences', getPreferences);
+
+// Get intelligent suggestions for a field based on context
+router.post('/preferences/suggestions', getSuggestions);
 
 // ============================================
 // SALES ROWS ROUTES
