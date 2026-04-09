@@ -362,15 +362,7 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
 
   await user.save();
 
-  // Invalidate cache for user-related endpoints
-  const { invalidateCache } = await import('../middleware/cache.js');
-  const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
-  invalidateCache('/api/users'); // Invalidate all user list caches
-  invalidateCache('/api/auth/me'); // Invalidate user profile cache
-  invalidateCache('/api/auth/verify'); // Invalidate session verification cache
-  invalidateCache('/api/notifications'); // Invalidate notifications cache for the user
-  invalidateUserCache(user._id); // Invalidate Redis session cache for this user
-
+  // Caching mechanism removed 
   // Respond immediately for fast UI
   res.status(200).json({
     success: true,
@@ -546,13 +538,7 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
   user.roleId = roleDoc._id;
   await user.save();
 
-  // Invalidate caches
-  const { invalidateCache } = await import('../middleware/cache.js');
-  const { invalidateUserCache } = await import('../utils/cacheInvalidation.js');
-  invalidateCache('/api/users');
-  invalidateCache('/api/auth/me');
-  invalidateCache('/api/auth/verify');
-  invalidateUserCache(user._id);
+  // Caching mechanism removed
 
   res.status(200).json({
     success: true,
