@@ -4,7 +4,6 @@ import { deleteMultipleFromCloudinary } from './cloudinary.js';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 30;
-let intervalId = null;
 
 export const cleanupTrashedAttachments = async (retentionDays = DEFAULT_RETENTION_DAYS) => {
   const threshold = new Date(Date.now() - retentionDays * ONE_DAY_MS);
@@ -49,20 +48,8 @@ export const cleanupTrashedAttachments = async (retentionDays = DEFAULT_RETENTIO
   }
 };
 
-export const startTrashCleanup = (intervalMs = 6 * 60 * 60 * 1000) => {
-  if (intervalId) return intervalId;
-  // Run once on startup
-  cleanupTrashedAttachments().catch(() => {});
-  intervalId = setInterval(() => {
-    cleanupTrashedAttachments().catch(() => {});
-  }, intervalMs);
-  console.log('Trash cleanup scheduled');
-  return intervalId;
-};
-
-export const stopTrashCleanup = () => {
-  if (intervalId) clearInterval(intervalId);
-  intervalId = null;
-};
+// Legacy no-ops — polling replaced by BullMQ repeatable jobs via maintenanceScheduler
+export const startTrashCleanup = () => {};
+export const stopTrashCleanup = () => {};
 
 export default { cleanupTrashedAttachments, startTrashCleanup, stopTrashCleanup };

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, forwardRef } from 'react';
-import { flushSync } from 'react-dom';
+import { flushSync, createPortal } from 'react-dom';
 import { ChevronDown, Check, X, Search, Plus, Trash2 } from 'lucide-react';
 import useKeyboardNavigation from '../../hooks/useKeyboardNavigation';
 import { focusNextTabbable } from '../../utils/focusUtils';
@@ -50,6 +50,15 @@ const SearchableSelect = React.memo(forwardRef(({
   // click. When true, handleTriggerFocus skips auto-open because the click event
   // (which fires right after focus) will call toggleDropdown and open it instead.
   const pointerDownRef = useRef(false);
+
+  // Portal: ref to the dropdown DOM node rendered at document.body level.
+  // Required so the outside-click handler can differentiate clicks inside
+  // the portal from clicks truly outside the component.
+  const dropdownRef = useRef(null);
+
+  // Portal: computed `position: fixed` style for the dropdown panel.
+  // Recalculated whenever the dropdown opens or the viewport scrolls/resizes.
+  const [dropdownStyle, setDropdownStyle] = useState({});
 
   // Unique instance ID for the global dropdown manager
   const instanceId = useRef(`ss-${Math.random().toString(36).slice(2, 9)}`).current;
@@ -201,17 +210,55 @@ const SearchableSelect = React.memo(forwardRef(({
     return () => unregisterDropdown(instanceId);
   }, [instanceId]);
 
-  // Close on outside click
+  // Close on outside click — must check both the trigger container AND the
+  // portal dropdown (which lives outside the container in the DOM tree).
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+      if (
+        containerRef.current && !containerRef.current.contains(e.target) &&
+        dropdownRef.current && !dropdownRef.current.contains(e.target)
+      ) {
         closeDropdown();
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [isOpen, closeDropdown]);
+
+  // Portal: recalculate dropdown panel position relative to its trigger button.
+  // Uses getBoundingClientRect so the result is always correct regardless of
+  // scroll position, parent transforms, or sticky headers.
+  const updateDropdownPosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const estimatedMenuHeight = 320;
+    const gap = 6;
+    const spaceBelow = viewportHeight - rect.bottom - gap;
+    const openUpward = spaceBelow < estimatedMenuHeight && rect.top > estimatedMenuHeight;
+    setDropdownStyle({
+      left: rect.left,
+      width: rect.width,
+      minWidth: '8rem',
+      ...(openUpward
+        ? { bottom: viewportHeight - rect.top + gap, top: 'auto' }
+        : { top: rect.bottom + gap, bottom: 'auto' }),
+    });
+  }, []);
+
+  // Sync dropdown position whenever it opens, and keep it in sync during
+  // scroll (capture phase catches scroll from any ancestor container) and resize.
+  useEffect(() => {
+    if (!isOpen) return;
+    updateDropdownPosition();
+    window.addEventListener('scroll', updateDropdownPosition, { passive: true, capture: true });
+    window.addEventListener('resize', updateDropdownPosition);
+    return () => {
+      window.removeEventListener('scroll', updateDropdownPosition, { capture: true });
+      window.removeEventListener('resize', updateDropdownPosition);
+    };
+  }, [isOpen, updateDropdownPosition]);
 
   // Auto-focus search on open
   useEffect(() => {
@@ -393,11 +440,17 @@ const SearchableSelect = React.memo(forwardRef(({
         </div>
       </button>
 
-      {/* Dropdown Panel */}
-      {isOpen && (
+      {/* Dropdown Panel — rendered via createPortal at document.body so it is
+           never clipped by parent overflow:hidden or constrained by stacking
+           contexts (e.g. the AnimatePresence collapse wrapper in filter panels).
+           Position is kept in sync with the trigger via position:fixed coords
+           computed from getBoundingClientRect(). */}
+      {isOpen && createPortal(
         <div
+          ref={dropdownRef}
           role="listbox"
-          className={`absolute top-full left-0 right-0 z-[100] min-w-[8rem] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-2xl shadow-black/12 dark:shadow-black/30 mt-1.5 animate-in fade-in-0 zoom-in-95 duration-150 overflow-hidden`}
+          style={dropdownStyle}
+          className="fixed z-[9999] min-w-[8rem] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-2xl shadow-black/12 dark:shadow-black/30 animate-in fade-in-0 zoom-in-95 duration-150 overflow-hidden"
         >
           {/* Search */}
           {searchable && (
@@ -563,7 +616,8 @@ const SearchableSelect = React.memo(forwardRef(({
               )}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

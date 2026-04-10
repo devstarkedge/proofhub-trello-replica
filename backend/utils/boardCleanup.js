@@ -14,8 +14,6 @@ import Notification from '../models/Notification.js';
 
 // Default: permanently delete boards soft-deleted more than 30 seconds ago
 const CLEANUP_THRESHOLD_MS = 30 * 1000;
-const CLEANUP_INTERVAL_MS = 60 * 1000; // Run every 60 seconds
-let cleanupIntervalId = null;
 
 /**
  * Permanently delete boards and all related data in batched operations.
@@ -126,31 +124,8 @@ export const cleanupSoftDeletedBoards = async () => {
   }
 };
 
-/**
- * Start the periodic cleanup scheduler.
- */
-export const startBoardCleanup = (intervalMs = CLEANUP_INTERVAL_MS) => {
-  if (cleanupIntervalId) return cleanupIntervalId;
-
-  // Run once on startup after a short delay
-  setTimeout(() => {
-    cleanupSoftDeletedBoards().catch(() => {});
-  }, 5000);
-
-  cleanupIntervalId = setInterval(() => {
-    cleanupSoftDeletedBoards().catch(() => {});
-  }, intervalMs);
-
-  console.log('Board cleanup scheduler started (interval: ' + intervalMs / 1000 + 's)');
-  return cleanupIntervalId;
-};
-
-/**
- * Stop the periodic cleanup scheduler.
- */
-export const stopBoardCleanup = () => {
-  if (cleanupIntervalId) clearInterval(cleanupIntervalId);
-  cleanupIntervalId = null;
-};
+// Legacy no-ops — polling replaced by BullMQ repeatable jobs via maintenanceScheduler
+export const startBoardCleanup = () => {};
+export const stopBoardCleanup = () => {};
 
 export default { permanentlyDeleteBoards, cleanupSoftDeletedBoards, startBoardCleanup, stopBoardCleanup };

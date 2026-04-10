@@ -1,22 +1,27 @@
 /**
  * Queue Manager
- * 
- * Initializes all BullMQ workers and sets up repeatable (cron-like) jobs.
+ *
+ * Initializes all BullMQ workers, registers maintenance repeat jobs,
+ * and runs recovery scans for event-driven schedulers.
  * Provides graceful shutdown for all queues and workers.
- * 
+ *
  * Usage:
  *   import { initQueues, shutdownQueues } from './queues/queueManager.js';
  *   await initQueues();          // call after DB is connected
  *   await shutdownQueues();      // call on SIGTERM/SIGINT
  */
-import { announcementQueue, cleanupQueue, allQueues } from './index.js';
-import { closeSharedConnection, getSharedConnection, createRedisConnection } from './connection.js';
+import { allQueues, announcementQueue } from './index.js';
+import { closeSharedConnection, createRedisConnection } from './connection.js';
 import { startEmailWorker, getEmailWorker } from '../workers/emailWorker.js';
 import { startNotificationWorker, getNotificationWorker } from '../workers/notificationWorker.js';
 import { startActivityWorker, getActivityWorker } from '../workers/activityWorker.js';
 import { startAnnouncementWorker, getAnnouncementWorker } from '../workers/announcementWorker.js';
 import { startCleanupWorker, getCleanupWorker } from '../workers/cleanupWorker.js';
-import { startQueueCleanupScheduler, stopQueueCleanupScheduler } from './queueCleanup.js';
+import { startRecurringTaskWorker, getRecurringTaskWorker } from '../workers/recurringTaskWorker.js';
+import { registerMaintenanceJobs } from '../schedulers/maintenanceScheduler.js';
+import { recoverAnnouncementSchedules } from '../schedulers/announcementScheduler.js';
+import { recoverRecurringSchedules } from '../schedulers/recurringTaskScheduler.js';
+import { recoverReminderSchedules } from '../schedulers/reminderScheduler.js';
 import logger from '../utils/logger.js';
 
 let _initialized = false;
@@ -24,15 +29,12 @@ let _redisAvailable = false;
 
 /**
  * Probe Redis availability without crashing if Redis is down.
- * Uses a dedicated disposable connection so we don't eagerly open
- * the shared connection when Redis is unreachable.
- * Returns true if Redis is reachable, false otherwise.
  */
 async function probeRedis() {
   let probe = null;
   try {
     probe = createRedisConnection({ lazyConnect: true, enableOfflineQueue: false });
-    probe.on('error', () => {}); // Swallow errors during probe
+    probe.on('error', () => {});
     await probe.connect();
     await Promise.race([
       probe.ping(),
@@ -51,8 +53,37 @@ async function probeRedis() {
 }
 
 /**
- * Initialize all BullMQ workers and set up repeatable jobs.
- * Falls back gracefully to setImmediate-based tasks if Redis is unavailable.
+ * Remove repeatable jobs that no longer have handlers (left over from the
+ * polling-based architecture). Dynamically finds them by job name so key
+ * format changes across BullMQ versions don't matter.
+ */
+async function removeStaleRepeatableJobs() {
+  const staleNames = new Set(['process-scheduled', 'archive-expired']);
+  try {
+    const repeatable = await announcementQueue.getRepeatableJobs();
+    const toRemove = repeatable.filter(r => staleNames.has(r.name));
+    await Promise.allSettled(toRemove.map(r => announcementQueue.removeRepeatableByKey(r.key)));
+    if (toRemove.length) {
+      logger.info(`QueueManager: removed ${toRemove.length} stale announcement repeatable job(s)`);
+    }
+  } catch (err) {
+    logger.warn('QueueManager: stale repeatable job cleanup warning (non-fatal)', { error: err.message });
+  }
+  // Drain any already-enqueued instances still sitting in waiting/delayed
+  try {
+    const jobs = await announcementQueue.getJobs(['waiting', 'delayed']);
+    const stale = jobs.filter(j => staleNames.has(j.name));
+    await Promise.allSettled(stale.map(j => j.remove()));
+    if (stale.length) {
+      logger.info(`QueueManager: drained ${stale.length} stale announcement polling job instance(s)`);
+    }
+  } catch (err) {
+    logger.warn('QueueManager: stale job drain warning (non-fatal)', { error: err.message });
+  }
+}
+
+/**
+ * Initialize all BullMQ workers, register maintenance jobs, and run recovery scans.
  */
 export async function initQueues() {
   if (_initialized) return _redisAvailable;
@@ -67,60 +98,34 @@ export async function initQueues() {
 
   logger.info('QueueManager: Redis available — starting BullMQ workers');
 
-  // Start all workers
+  // ─── Remove stale repeatable jobs from old polling architecture ───────────
+  await removeStaleRepeatableJobs();
+
+  // ─── Start all workers ────────────────────────────────────────────────────
   startEmailWorker();
   startNotificationWorker();
   startActivityWorker();
   startAnnouncementWorker();
   startCleanupWorker();
+  startRecurringTaskWorker();
 
-  // Start periodic queue cleanup (Redis-safe mode)
-  startQueueCleanupScheduler();
+  // ─── Register maintenance repeat jobs ─────────────────────────────────────
+  await registerMaintenanceJobs();
 
-  // ─── Repeatable Jobs ────────────────────────────────────────────────────────
-  // These replace the setInterval calls in backgroundTasks.js
-
-  // Process scheduled announcements every 30 seconds
-  await announcementQueue.add(
-    'process-scheduled',
-    {},
-    {
-      repeat: { every: 30_000 },
-      jobId: 'repeat:process-scheduled',
-      removeOnComplete: true,
-      removeOnFail: { count: 100 },
-    }
-  );
-
-  // Archive expired announcements every 5 minutes
-  await announcementQueue.add(
-    'archive-expired',
-    {},
-    {
-      repeat: { every: 300_000 },
-      jobId: 'repeat:archive-expired',
-      removeOnComplete: true,
-      removeOnFail: { count: 100 },
-    }
-  );
-
-  // Trash cleanup every 6 hours
-  await cleanupQueue.add(
-    'cleanup-trash',
-    {},
-    {
-      repeat: { every: 6 * 60 * 60 * 1000 },
-      jobId: 'repeat:cleanup-trash',
-      removeOnComplete: true,
-      removeOnFail: { count: 50 },
-    }
-  );
-
-  // Run cleanup once immediately
-  await cleanupQueue.add('cleanup-trash', {}, { jobId: 'initial-cleanup' });
+  // ─── Recovery scans (catch jobs missed during downtime) ───────────────────
+  try {
+    await Promise.allSettled([
+      recoverAnnouncementSchedules(),
+      recoverRecurringSchedules(),
+      recoverReminderSchedules(),
+    ]);
+    logger.info('QueueManager: recovery scans complete');
+  } catch (err) {
+    logger.error('QueueManager: recovery scan error (non-fatal)', { error: err.message });
+  }
 
   _initialized = true;
-  logger.info('QueueManager: all workers started, repeatable jobs registered');
+  logger.info('QueueManager: all workers started, maintenance jobs registered');
   return true;
 }
 
@@ -138,7 +143,6 @@ export async function shutdownQueues() {
   if (!_initialized || !_redisAvailable) return;
 
   logger.info('QueueManager: shutting down workers...');
-  stopQueueCleanupScheduler();
 
   const workers = [
     getEmailWorker(),
@@ -146,6 +150,7 @@ export async function shutdownQueues() {
     getActivityWorker(),
     getAnnouncementWorker(),
     getCleanupWorker(),
+    getRecurringTaskWorker(),
   ].filter(Boolean);
 
   // Close workers (stop processing new jobs, wait for current)

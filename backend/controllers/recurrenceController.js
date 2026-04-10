@@ -7,6 +7,11 @@ import Subtask from '../models/Subtask.js';
 import Activity from '../models/Activity.js';
 import { emitToBoard } from '../realtime/index.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
+import {
+  scheduleNextOccurrence,
+  cancelRecurringSchedule,
+  rescheduleOccurrence,
+} from '../schedulers/recurringTaskScheduler.js';
 
 // Helper: Generate subtask from recurring task
 const generateRecurringSubtask = async (recurringTask, userId) => {
@@ -159,6 +164,11 @@ export const createRecurrence = asyncHandler(async (req, res, next) => {
   } catch (error) {
     console.error('Error creating first recurring subtask:', error);
   }
+
+  // Schedule the next occurrence as a delayed BullMQ job
+  scheduleNextOccurrence(recurringTask).catch(err =>
+    console.error('Failed to schedule next occurrence:', err.message)
+  );
 
   // Log activity
   await Activity.create({
@@ -318,6 +328,13 @@ export const updateRecurrence = asyncHandler(async (req, res, next) => {
 
   await recurrence.save();
 
+  // Reschedule or cancel the delayed BullMQ job based on active state
+  if (recurrence.isActive && recurrence.nextOccurrence) {
+    rescheduleOccurrence(recurrence).catch(console.error);
+  } else if (!recurrence.isActive) {
+    cancelRecurringSchedule(recurrence._id).catch(console.error);
+  }
+
   // Log activity
   await Activity.create({
     type: 'recurrence_updated',
@@ -368,6 +385,9 @@ export const deleteRecurrence = asyncHandler(async (req, res, next) => {
     recurrence.isActive = false;
     await recurrence.save();
   }
+
+  // Cancel any pending delayed job
+  cancelRecurringSchedule(recurrence._id).catch(console.error);
 
   // Log activity
   await Activity.create({

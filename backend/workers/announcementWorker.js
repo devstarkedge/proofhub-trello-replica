@@ -1,9 +1,12 @@
 /**
- * Announcement Worker
- * 
- * Processes repeatable jobs from the 'flowtask:announcement' queue.
- * Replaces the setInterval-based approach in backgroundTasks.js.
- * Job types: process-scheduled, archive-expired
+ * Announcement Worker (Event-Driven)
+ *
+ * Processes exact delayed jobs from the 'flowtask.announcement' queue.
+ * Each job targets a single announcement by ID — no DB scanning.
+ *
+ * Job types:
+ *   broadcast-announcement  — broadcast a single scheduled announcement
+ *   archive-announcement    — archive a single expired announcement
  */
 import { Worker } from 'bullmq';
 import { getWorkerConnection } from '../queues/connection.js';
@@ -12,138 +15,129 @@ import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import { getIO } from '../realtime/index.js';
 import notificationService from '../utils/notificationService.js';
+import { scheduleAnnouncementArchive } from '../schedulers/announcementScheduler.js';
 import config from '../config/index.js';
 
 const JOB_HANDLERS = {
   /**
-   * Process scheduled announcements that are due for broadcast.
+   * Broadcast a single scheduled announcement by ID.
+   * Idempotent: skips if already broadcasted.
    */
-  async 'process-scheduled'(job) {
-    const now = new Date();
+  async 'broadcast-announcement'(job) {
+    const { announcementId } = job.data;
 
-    const scheduledAnnouncements = await Announcement.find({
-      isScheduled: true,
-      scheduleBroadcasted: false,
-      scheduledFor: { $lte: now },
-    })
+    const announcement = await Announcement.findById(announcementId)
       .populate('createdBy')
       .populate('subscribers.users')
       .populate('subscribers.departments');
 
-    let totalBroadcasted = 0;
+    if (!announcement) {
+      return { skipped: true, reason: 'not found' };
+    }
 
-    for (const announcement of scheduledAnnouncements) {
-      try {
-        let subscriberIds = [];
+    // Idempotency: already broadcasted
+    if (announcement.scheduleBroadcasted) {
+      return { skipped: true, reason: 'already broadcasted' };
+    }
 
-        if (announcement.subscribers.type === 'all') {
-          const users = await User.find({ isActive: true, isVerified: true }).select('_id');
-          subscriberIds = users.map((u) => u._id);
-        } else if (announcement.subscribers.type === 'departments') {
-          const users = await User.find({
-            department: { $in: announcement.subscribers.departments },
-            isActive: true,
-            isVerified: true,
-          }).select('_id');
-          subscriberIds = users.map((u) => u._id);
-        } else if (announcement.subscribers.type === 'users') {
-          subscriberIds = announcement.subscribers.users.map((u) => u._id || u);
-        } else if (announcement.subscribers.type === 'managers') {
-          const users = await User.find({
-            role: 'manager',
-            isActive: true,
-            isVerified: true,
-          }).select('_id');
-          subscriberIds = users.map((u) => u._id);
-        }
+    let subscriberIds = [];
 
-        // Create notifications
-        const notifications = subscriberIds.map((userId) => ({
+    if (announcement.subscribers.type === 'all') {
+      const users = await User.find({ isActive: true, isVerified: true }).select('_id');
+      subscriberIds = users.map((u) => u._id);
+    } else if (announcement.subscribers.type === 'departments') {
+      const users = await User.find({
+        department: { $in: announcement.subscribers.departments },
+        isActive: true,
+        isVerified: true,
+      }).select('_id');
+      subscriberIds = users.map((u) => u._id);
+    } else if (announcement.subscribers.type === 'users') {
+      subscriberIds = announcement.subscribers.users.map((u) => u._id || u);
+    } else if (announcement.subscribers.type === 'managers') {
+      const users = await User.find({
+        role: 'manager',
+        isActive: true,
+        isVerified: true,
+      }).select('_id');
+      subscriberIds = users.map((u) => u._id);
+    }
+
+    // Create notifications
+    const notifications = subscriberIds.map((userId) => ({
+      type: 'announcement_created',
+      title: 'New Announcement',
+      message: `${announcement.createdBy.name} posted: ${announcement.title}`,
+      user: userId,
+      sender: announcement.createdBy._id,
+      relatedAnnouncement: announcement._id,
+      isRead: false,
+    }));
+
+    await Notification.insertMany(notifications);
+
+    // Emit real-time
+    const io = getIO();
+    subscriberIds.forEach((userId) => {
+      io.to(`user-${userId}`).emit('announcement-created', {
+        announcement: announcement.toJSON(),
+        notification: {
           type: 'announcement_created',
           title: 'New Announcement',
           message: `${announcement.createdBy.name} posted: ${announcement.title}`,
-          user: userId,
-          sender: announcement.createdBy._id,
-          relatedAnnouncement: announcement._id,
-          isRead: false,
-        }));
+        },
+      });
+    });
 
-        await Notification.insertMany(notifications);
+    // Mark broadcasted
+    announcement.scheduleBroadcasted = true;
+    announcement.broadcastedAt = new Date();
+    announcement.broadcastedTo = subscriberIds;
+    await announcement.save();
 
-        // Emit real-time
-        const io = getIO();
-        subscriberIds.forEach((userId) => {
-          io.to(`user-${userId}`).emit('announcement-created', {
-            announcement: announcement.toJSON(),
-            notification: {
-              type: 'announcement_created',
-              title: 'New Announcement',
-              message: `${announcement.createdBy.name} posted: ${announcement.title}`,
-            },
-          });
-        });
+    // Send emails (fire-and-forget)
+    notificationService.sendAnnouncementEmails(announcement, subscriberIds);
 
-        // Mark broadcasted
-        announcement.scheduleBroadcasted = true;
-        announcement.broadcastedAt = new Date();
-        announcement.broadcastedTo = subscriberIds;
-        await announcement.save();
-
-        // Send emails (fire-and-forget within worker)
-        notificationService.sendAnnouncementEmails(announcement, subscriberIds);
-
-        totalBroadcasted++;
-        console.log(`[AnnouncementWorker] Broadcasted ${announcement._id} to ${subscriberIds.length} users`);
-      } catch (error) {
-        console.error(`[AnnouncementWorker] Broadcast error for ${announcement._id}:`, error.message);
-      }
-    }
-
-    return { processed: scheduledAnnouncements.length, broadcasted: totalBroadcasted };
+    console.log(`[Worker:Announcement] broadcast:${announcementId} → ${subscriberIds.length} users`);
+    return { broadcasted: true, recipients: subscriberIds.length };
   },
 
   /**
-   * Archive announcements that have passed their expiry date.
+   * Archive a single expired announcement by ID.
+   * Idempotent: skips if already archived.
    */
-  async 'archive-expired'(job) {
-    const now = new Date();
+  async 'archive-announcement'(job) {
+    const { announcementId } = job.data;
 
-    const expiredAnnouncements = await Announcement.find({
-      expiresAt: { $lte: now },
-      isArchived: false,
+    const announcement = await Announcement.findById(announcementId);
+
+    if (!announcement) {
+      return { skipped: true, reason: 'not found' };
+    }
+
+    // Idempotency: already archived
+    if (announcement.isArchived) {
+      return { skipped: true, reason: 'already archived' };
+    }
+
+    announcement.isArchived = true;
+    announcement.archivedAt = new Date();
+
+    if (announcement.isPinned) {
+      announcement.isPinned = false;
+      announcement.pinPosition = undefined;
+    }
+
+    await announcement.save();
+
+    getIO().emit('announcement-archived', {
+      announcementId: announcement._id,
+      isArchived: true,
+      reason: 'expired',
     });
 
-    let archived = 0;
-
-    for (const announcement of expiredAnnouncements) {
-      try {
-        announcement.isArchived = true;
-        announcement.archivedAt = now;
-
-        if (announcement.isPinned) {
-          announcement.isPinned = false;
-          announcement.pinPosition = undefined;
-        }
-
-        await announcement.save();
-
-        getIO().emit('announcement-archived', {
-          announcementId: announcement._id,
-          isArchived: true,
-          reason: 'expired',
-        });
-
-        archived++;
-      } catch (error) {
-        console.error(`[AnnouncementWorker] Archive error for ${announcement._id}:`, error.message);
-      }
-    }
-
-    if (archived > 0) {
-      console.log(`[AnnouncementWorker] Archived ${archived} expired announcements`);
-    }
-
-    return { found: expiredAnnouncements.length, archived };
+    console.log(`[Worker:Announcement] archive:${announcementId} completed`);
+    return { archived: true };
   },
 };
 
@@ -163,19 +157,15 @@ export function startAnnouncementWorker() {
     },
     {
       connection: getWorkerConnection(),
-      concurrency: 1, // Only one at a time to avoid duplicate broadcasts
+      concurrency: 2,
     }
   );
 
-  announcementWorker.on('completed', (job, result) => {
-    if (config.isDev) console.log(`[AnnouncementWorker] Job ${job.id} (${job.name}) completed:`, result);
-  });
-
   announcementWorker.on('failed', (job, err) => {
-    console.error(`[AnnouncementWorker] Job ${job?.id} (${job?.name}) failed:`, err.message);
+    console.error(`[Worker:Announcement] ${job?.name}:${job?.id} failed: ${err.message}`);
   });
 
-  console.log('[AnnouncementWorker] Started');
+  console.log('[Worker:Announcement] started');
   return announcementWorker;
 }
 

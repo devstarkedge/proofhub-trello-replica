@@ -16,6 +16,12 @@ import {
   validateAnnouncementFile,
   generateFileHash
 } from "../utils/cloudinary.js";
+import {
+  scheduleAnnouncementBroadcast,
+  scheduleAnnouncementArchive,
+  rescheduleAnnouncementArchive,
+  cancelAnnouncementJobs,
+} from "../schedulers/announcementScheduler.js";
 
 // Helper function to calculate expiration date
 const calculateExpiryDate = (value, unit) => {
@@ -436,7 +442,17 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
 
     // Dispatch chat webhook for announcement
     chatHooks.onAnnouncementCreated(announcement, req.user).catch(console.error);
+  } else {
+    // Scheduled announcement — create a delayed broadcast job at exact time
+    scheduleAnnouncementBroadcast(announcement).catch(err =>
+      console.error('[Announcement] Failed to schedule broadcast job:', err.message)
+    );
   }
+
+  // Schedule archive job at exact expiry time (for ALL announcements)
+  scheduleAnnouncementArchive(announcement).catch(err =>
+    console.error('[Announcement] Failed to schedule archive job:', err.message)
+  );
 
   res.status(201).json({
     success: true,
@@ -514,6 +530,11 @@ export const updateAnnouncement = asyncHandler(async (req, res, next) => {
     console.error('Error notifying subscribers about update:', error);
   }
 
+  // Reschedule broadcast job if it's a scheduled announcement that hasn't broadcast yet
+  if (announcement.isScheduled && !announcement.scheduleBroadcasted && announcement.scheduledFor) {
+    scheduleAnnouncementBroadcast(announcement).catch(console.error);
+  }
+
   res.status(200).json({
     success: true,
     message: 'Announcement updated successfully',
@@ -560,6 +581,9 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
   }
 
   await Announcement.findByIdAndDelete(req.params.id);
+
+  // Cancel any pending broadcast/archive jobs
+  cancelAnnouncementJobs(req.params.id).catch(console.error);
 
   // Notify subscribers
   try {
@@ -840,6 +864,14 @@ export const toggleArchive = asyncHandler(async (req, res, next) => {
 
   await announcement.save();
 
+  // If manually archived, cancel the pending archive job.
+  // If unarchived, reschedule the archive job for the expiry time.
+  if (archive) {
+    cancelAnnouncementJobs(announcement._id).catch(console.error);
+  } else if (announcement.expiresAt && new Date(announcement.expiresAt) > new Date()) {
+    scheduleAnnouncementArchive(announcement).catch(console.error);
+  }
+
   // Emit real-time update
   getIO().emit('announcement-archived', {
     announcementId: announcement._id,
@@ -881,6 +913,16 @@ export const extendExpiry = asyncHandler(async (req, res, next) => {
   announcement.lastFor = { value, unit };
 
   await announcement.save();
+
+  // Reschedule archive job at the new expiry time
+  rescheduleAnnouncementArchive(announcement).catch(console.error);
+
+  // If announcement was archived, unarchive it since expiry is extended
+  if (announcement.isArchived) {
+    announcement.isArchived = false;
+    announcement.archivedAt = null;
+    await announcement.save();
+  }
 
   // Emit real-time update
   getIO().emit('announcement-expiry-extended', {

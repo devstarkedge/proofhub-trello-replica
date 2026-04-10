@@ -10,6 +10,12 @@ import { Worker } from 'bullmq';
 import { getWorkerConnection } from '../queues/connection.js';
 import notificationService from '../utils/notificationService.js';
 import { sendPushNotification } from '../utils/pushNotification.js';
+import {
+  sendReminderNotification,
+  markOverdueReminders,
+  scheduleNextReminder,
+} from '../utils/reminderScheduler.js';
+import Reminder from '../models/Reminder.js';
 import config from '../config/index.js';
 
 const JOB_HANDLERS = {
@@ -84,6 +90,61 @@ const JOB_HANDLERS = {
     }
     return { sent: !!pushSubscription };
   },
+
+  /**
+   * Process a reminder notification (fires 24 hours before due).
+   * Data: { reminderId }
+   */
+  async 'process-reminder-notification'(job) {
+    const { reminderId } = job.data;
+
+    const reminder = await Reminder.findById(reminderId)
+      .populate('project', 'name clientDetails')
+      .populate('createdBy', 'name email')
+      .populate('department', 'name');
+
+    if (!reminder || reminder.status !== 'pending') {
+      return { skipped: true, reason: 'not pending or not found' };
+    }
+
+    // Skip if already notified
+    if (reminder.notificationSentAt) {
+      return { skipped: true, reason: 'already notified' };
+    }
+
+    await sendReminderNotification(reminder);
+    return { notified: true, reminderId };
+  },
+
+  /**
+   * Mark a reminder as overdue/missed (fires 24 hours after due date).
+   * Data: { reminderId }
+   */
+  async 'process-reminder-overdue'(job) {
+    const { reminderId } = job.data;
+
+    const reminder = await Reminder.findById(reminderId);
+    if (!reminder || reminder.status !== 'pending') {
+      return { skipped: true, reason: 'not pending or not found' };
+    }
+
+    // Only mark missed if scheduledDate + 24h has actually passed
+    const overdueTime = new Date(reminder.scheduledDate).getTime() + 24 * 60 * 60 * 1000;
+    if (Date.now() < overdueTime) {
+      return { skipped: true, reason: 'not yet overdue' };
+    }
+
+    reminder.status = 'missed';
+    reminder.history.push({
+      action: 'missed',
+      timestamp: new Date(),
+      notes: 'Automatically marked as missed (overdue by more than 24 hours)',
+    });
+    await reminder.save();
+
+    console.log(`[Worker:Notification] reminder ${reminderId} marked as missed`);
+    return { marked: 'missed' };
+  },
 };
 
 // ─── Worker Creation ──────────────────────────────────────────────────────────
@@ -103,18 +164,18 @@ export function startNotificationWorker() {
     {
       connection: getWorkerConnection(),
       concurrency: config.queues.notification.concurrency,
+      limiter: {
+        max: 50,
+        duration: 10_000,   // max 50 notifications per 10 seconds
+      },
     }
   );
 
-  notificationWorker.on('completed', (job, result) => {
-    if (config.isDev) console.log(`[NotificationWorker] Job ${job.id} (${job.name}) completed:`, result);
-  });
-
   notificationWorker.on('failed', (job, err) => {
-    console.error(`[NotificationWorker] Job ${job?.id} (${job?.name}) failed:`, err.message);
+    console.error(`[Worker:Notification] ${job?.name}:${job?.id} failed: ${err.message}`);
   });
 
-  console.log('[NotificationWorker] Started');
+  console.log('[Worker:Notification] started');
   return notificationWorker;
 }
 

@@ -42,14 +42,14 @@ export function startActivityWorker() {
   );
 
   activityWorker.on('completed', (job, result) => {
-    if (config.isDev) console.log(`[ActivityWorker] Job ${job.id} completed`);
+    if (config.isDev) console.log(`[Worker:Activity] ${job.name}:${job.id} completed`);
   });
 
   activityWorker.on('failed', (job, err) => {
-    console.error(`[ActivityWorker] Job ${job?.id} failed:`, err.message);
+    console.error(`[Worker:Activity] ${job?.name}:${job?.id} failed:`, err.message);
   });
 
-  console.log('[ActivityWorker] Started');
+  console.log('[Worker:Activity] started');
   return activityWorker;
 }
 

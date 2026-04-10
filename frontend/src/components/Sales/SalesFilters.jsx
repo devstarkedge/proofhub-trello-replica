@@ -234,11 +234,11 @@ const SalesFilters = () => {
             className="overflow-hidden"
           >
             <div className="px-6 pb-5 pt-3 border-t border-gray-100/60 dark:border-gray-700/60 bg-gradient-to-b from-blue-50/30 to-transparent dark:from-blue-900/5 dark:to-transparent">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-5">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-4">
                 
                 {/* Date Presets Dropdown */}
-                <div className={`col-span-2 xl:col-span-2 grid ${datePreset === 'custom' ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
-                    <div className={datePreset === 'custom' ? "col-span-1" : "col-span-2"}>
+                <div className={`col-span-2 grid gap-3 ${datePreset === 'custom' ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                    <div>
                       <label className={labelClass}>
                         <Calendar className="w-3 h-3 inline mr-1" />
                         Date Filter

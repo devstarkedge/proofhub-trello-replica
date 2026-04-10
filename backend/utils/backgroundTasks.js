@@ -1,23 +1,18 @@
 /**
  * Background Tasks — BullMQ-first with in-process fallback
- * 
+ *
  * When Redis/BullMQ is available (isQueueActive() === true), tasks are
  * enqueued as durable jobs with retry, backoff, and persistence.
- * 
+ *
  * When Redis is unavailable, tasks run in-process via setImmediate
  * (original behavior) so the app still works in development without Redis.
- * 
+ *
  * Callers don't need to change — the same exported functions work either way.
  */
 import { sendEmail } from './email.js';
 import notificationService from './notificationService.js';
 import { sendPushNotification } from './pushNotification.js';
-import Announcement from '../models/Announcement.js';
 import User from '../models/User.js';
-import Notification from '../models/Notification.js';
-import Attachment from '../models/Attachment.js';
-import { getIO } from '../realtime/index.js';
-import { deleteFromCloudinary, deleteMultipleFromCloudinary } from './cloudinary.js';
 import { isQueueActive } from '../queues/queueManager.js';
 import {
   enqueueEmail,
@@ -199,138 +194,16 @@ export const sendPushInBackground = (notification, pushSubscription) => {
   });
 };
 
-// ─── Scheduled / Repeatable Tasks (fallback only) ──────────────────────────
-// When BullMQ is active, these are handled by repeatable jobs in queueManager.
-// The functions below only run when Redis is unavailable.
+// ─── Legacy Scheduled Tasks (no-ops — handled by event-driven BullMQ jobs) ──
 
-export const processScheduledAnnouncements = () => {
-  runBackground(async () => {
-    try {
-      const now = new Date();
-      const scheduledAnnouncements = await Announcement.find({
-        isScheduled: true,
-        scheduleBroadcasted: false,
-        scheduledFor: { $lte: now },
-      }).populate('createdBy').populate('subscribers.users').populate('subscribers.departments');
-
-      for (const announcement of scheduledAnnouncements) {
-        try {
-          let subscriberIds = [];
-          if (announcement.subscribers.type === 'all') {
-            const users = await User.find({ isActive: true, isVerified: true }).select('_id');
-            subscriberIds = users.map((u) => u._id);
-          } else if (announcement.subscribers.type === 'departments') {
-            const users = await User.find({
-              department: { $in: announcement.subscribers.departments },
-              isActive: true, isVerified: true,
-            }).select('_id');
-            subscriberIds = users.map((u) => u._id);
-          } else if (announcement.subscribers.type === 'users') {
-            subscriberIds = announcement.subscribers.users.map((u) => u._id || u);
-          } else if (announcement.subscribers.type === 'managers') {
-            const users = await User.find({ role: 'manager', isActive: true, isVerified: true }).select('_id');
-            subscriberIds = users.map((u) => u._id);
-          }
-
-          const notifications = subscriberIds.map((userId) => ({
-            type: 'announcement_created',
-            title: 'New Announcement',
-            message: `${announcement.createdBy.name} posted: ${announcement.title}`,
-            user: userId,
-            sender: announcement.createdBy._id,
-            relatedAnnouncement: announcement._id,
-            isRead: false,
-          }));
-          await Notification.insertMany(notifications);
-
-          subscriberIds.forEach((userId) => {
-            getIO().to(`user-${userId}`).emit('announcement-created', {
-              announcement: announcement.toJSON(),
-              notification: { type: 'announcement_created', title: 'New Announcement', message: `${announcement.createdBy.name} posted: ${announcement.title}` },
-            });
-          });
-
-          announcement.scheduleBroadcasted = true;
-          announcement.broadcastedAt = new Date();
-          announcement.broadcastedTo = subscriberIds;
-          await announcement.save();
-          notificationService.sendAnnouncementEmails(announcement, subscriberIds);
-          console.log(`Scheduled announcement ${announcement._id} broadcasted to ${subscriberIds.length} users`);
-        } catch (error) {
-          console.error(`Error broadcasting scheduled announcement ${announcement._id}:`, error);
-        }
-      }
-    } catch (error) {
-      console.error('Error processing scheduled announcements:', error);
-    }
-  });
-};
-
-export const archiveExpiredAnnouncements = () => {
-  runBackground(async () => {
-    try {
-      const now = new Date();
-      const expiredAnnouncements = await Announcement.find({ expiresAt: { $lte: now }, isArchived: false });
-
-      for (const announcement of expiredAnnouncements) {
-        try {
-          announcement.isArchived = true;
-          announcement.archivedAt = now;
-          if (announcement.isPinned) { announcement.isPinned = false; announcement.pinPosition = undefined; }
-          await announcement.save();
-          getIO().emit('announcement-archived', { announcementId: announcement._id, isArchived: true, reason: 'expired' });
-          console.log(`Announcement ${announcement._id} archived due to expiry`);
-        } catch (error) {
-          console.error(`Error archiving announcement ${announcement._id}:`, error);
-        }
-      }
-      if (expiredAnnouncements.length > 0) console.log(`${expiredAnnouncements.length} announcements archived`);
-    } catch (error) {
-      console.error('Error archiving expired announcements:', error);
-    }
-  });
-};
-
-export const cleanupTrash = () => {
-  setTimeout(async () => {
-    try {
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const trashItems = await Attachment.find({ isDeleted: true, deletedAt: { $lte: thirtyDaysAgo } }).lean();
-      if (trashItems.length === 0) { console.log('[Trash Cleanup] No items to clean up'); return; }
-      console.log(`[Trash Cleanup] Found ${trashItems.length} items to permanently delete`);
-
-      const imageIds = trashItems.filter((a) => a.resourceType === 'image').map((a) => a.publicId);
-      const rawIds = trashItems.filter((a) => a.resourceType !== 'image').map((a) => a.publicId);
-      try {
-        if (imageIds.length > 0) { await deleteMultipleFromCloudinary(imageIds, 'image'); console.log(`[Trash Cleanup] Deleted ${imageIds.length} images from Cloudinary`); }
-        if (rawIds.length > 0) { await deleteMultipleFromCloudinary(rawIds, 'raw'); console.log(`[Trash Cleanup] Deleted ${rawIds.length} raw files from Cloudinary`); }
-      } catch (error) { console.error('[Trash Cleanup] Cloudinary deletion error:', error.message); }
-
-      const deleted = await Attachment.deleteMany({ _id: { $in: trashItems.map((a) => a._id) } });
-      console.log(`[Trash Cleanup] Deleted ${deleted.deletedCount} attachments from database`);
-    } catch (error) {
-      console.error('[Trash Cleanup] Error during cleanup:', error);
-    }
-  }, 5000);
-};
+export const processScheduledAnnouncements = () => {};
+export const archiveExpiredAnnouncements = () => {};
+export const cleanupTrash = () => {};
 
 // ─── Startup ────────────────────────────────────────────────────────────────
-// When BullMQ is active, repeatable jobs handle scheduled tasks.
-// This function is only needed as fallback when Redis is unavailable.
+// No-op — all scheduled work is now handled by BullMQ workers and schedulers.
 
-export const startBackgroundJobs = () => {
-  if (isQueueActive()) {
-    console.log('[BackgroundTasks] BullMQ active — repeatable jobs handle scheduled work');
-    return;
-  }
-
-  console.log('[BackgroundTasks] No Redis — using in-process setInterval fallback');
-  setInterval(() => processScheduledAnnouncements(), 30000);
-  setInterval(() => archiveExpiredAnnouncements(), 300000);
-  setInterval(() => cleanupTrash(), 6 * 60 * 60 * 1000);
-  cleanupTrash();
-  console.log('Background jobs started: scheduled announcements, expiry handler, and trash cleanup');
-};
+export const startBackgroundJobs = () => {};
 
 export default {
   runBackground,

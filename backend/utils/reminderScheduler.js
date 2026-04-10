@@ -7,70 +7,12 @@ import { emitNotification } from '../realtime/index.js';
 import { runBackground } from './backgroundTasks.js';
 import { slackHooks } from './slackHooks.js';
 
-// Interval for checking reminders (every 15 minutes)
-const CHECK_INTERVAL = 15 * 60 * 1000;
-
-// Store interval reference
-let reminderCheckInterval = null;
-
-/**
- * Start the reminder scheduler
- */
+// ── Legacy no-ops (polling replaced by event-driven BullMQ jobs) ──
 export const startReminderScheduler = () => {
-  if (reminderCheckInterval) {
-    clearInterval(reminderCheckInterval);
-  }
-
-  // Run immediately on start
-  checkAndSendReminders();
-
-  // Then run at regular intervals
-  reminderCheckInterval = setInterval(checkAndSendReminders, CHECK_INTERVAL);
-  console.log('Reminder scheduler started');
+  console.log('[reminderScheduler] No-op: reminders are now event-driven via BullMQ');
 };
-
-/**
- * Stop the reminder scheduler
- */
-export const stopReminderScheduler = () => {
-  if (reminderCheckInterval) {
-    clearInterval(reminderCheckInterval);
-    reminderCheckInterval = null;
-    console.log('Reminder scheduler stopped');
-  }
-};
-
-/**
- * Check for reminders that need notification (1 day before)
- */
-export const checkAndSendReminders = async () => {
-  try {
-    const now = new Date();
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    
-    // Find reminders due within 24 hours that haven't been notified yet
-    const remindersToNotify = await Reminder.find({
-      status: 'pending',
-      scheduledDate: { $gte: now, $lte: tomorrow },
-      notificationSentAt: { $exists: false }
-    })
-    .populate('project', 'name clientDetails')
-    .populate('createdBy', 'name email')
-    .populate('department', 'name');
-
-    console.log(`Found ${remindersToNotify.length} reminders to notify`);
-
-    for (const reminder of remindersToNotify) {
-      await sendReminderNotification(reminder);
-    }
-
-    // Check for overdue reminders and mark them as missed
-    await markOverdueReminders();
-
-  } catch (error) {
-    console.error('Error checking reminders:', error);
-  }
-};
+export const stopReminderScheduler = () => {};
+export const checkAndSendReminders = async () => {};
 
 /**
  * Send notification for a reminder

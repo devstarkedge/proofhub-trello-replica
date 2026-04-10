@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { emitNotification } from '../realtime/index.js';
 import { sendReminderNotificationInBackground, checkAndTagAwaitingResponse } from '../utils/reminderScheduler.js';
+import { scheduleReminderJobs, cancelReminderJobs } from '../schedulers/reminderScheduler.js';
 
 // @desc    Create a new reminder
 // @route   POST /api/reminders
@@ -57,6 +58,11 @@ export const createReminder = asyncHandler(async (req, res) => {
   // Add history entry
   reminder.addHistoryEntry('created', req.user._id, 'Reminder created');
   await reminder.save();
+
+  // Schedule notification and overdue check as delayed BullMQ jobs
+  scheduleReminderJobs(reminder).catch(err =>
+    console.error('Failed to schedule reminder jobs:', err.message)
+  );
 
   // Populate for response
   const populatedReminder = await Reminder.findById(reminder._id)
@@ -178,6 +184,13 @@ export const updateReminder = asyncHandler(async (req, res) => {
 
   await reminder.save();
 
+  // Reschedule jobs if date changed, or cancel if status is no longer pending
+  if (reminder.status === 'pending' && isRescheduling) {
+    scheduleReminderJobs(reminder).catch(console.error);
+  } else if (reminder.status !== 'pending') {
+    cancelReminderJobs(reminder._id).catch(console.error);
+  }
+
   const updatedReminder = await Reminder.findById(reminder._id)
     .populate('project', 'name status clientDetails')
     .populate('createdBy', 'name avatar email')
@@ -206,6 +219,9 @@ export const completeReminder = asyncHandler(async (req, res) => {
   reminder.markCompleted(req.user._id, notes || 'Marked as completed');
   await reminder.save();
 
+  // Cancel scheduled notification/overdue jobs
+  await cancelReminderJobs(reminder._id);
+
   const updatedReminder = await Reminder.findById(reminder._id)
     .populate('project', 'name status')
     .populate('createdBy', 'name avatar')
@@ -230,6 +246,9 @@ export const deleteReminder = asyncHandler(async (req, res) => {
       message: 'Reminder not found'
     });
   }
+
+  // Cancel scheduled notification/overdue jobs
+  await cancelReminderJobs(reminder._id);
 
   await reminder.deleteOne();
 

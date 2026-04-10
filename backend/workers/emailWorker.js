@@ -34,7 +34,7 @@ const JOB_HANDLERS = {
           await sendEmail({ to: recipient.email, subject, html });
           sent++;
         } catch (err) {
-          console.error(`[EmailWorker] Failed to send to ${recipient.email}:`, err.message);
+          console.error(`[Worker:Email] Failed to send to ${recipient.email}:`, err.message);
         }
       }
     }
@@ -69,7 +69,7 @@ const JOB_HANDLERS = {
           });
           sent++;
         } catch (err) {
-          console.error(`[EmailWorker] Project email failed for ${member.email}:`, err.message);
+          console.error(`[Worker:Email] Project email failed for ${member.email}:`, err.message);
         }
       }
     }
@@ -102,14 +102,14 @@ export function startEmailWorker() {
   );
 
   emailWorker.on('completed', (job, result) => {
-    if (config.isDev) console.log(`[EmailWorker] Job ${job.id} (${job.name}) completed:`, result);
+    if (config.isDev) console.log(`[Worker:Email] ${job.name}:${job.id} completed:`, result);
   });
 
   emailWorker.on('failed', (job, err) => {
-    console.error(`[EmailWorker] Job ${job?.id} (${job?.name}) failed:`, err.message);
+    console.error(`[Worker:Email] ${job?.name}:${job?.id} failed:`, err.message);
   });
 
-  console.log('[EmailWorker] Started');
+  console.log('[Worker:Email] started');
   return emailWorker;
 }
 

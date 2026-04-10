@@ -40,6 +40,9 @@ export const activityQueue = createQueue('flowtask.activity');
 /** Scheduled announcements & expiry archiving */
 export const announcementQueue = createQueue('flowtask.announcement');
 
+/** Recurring task instance generation */
+export const recurringTaskQueue = createQueue('flowtask.recurring-task');
+
 /** Trash / attachment cleanup */
 export const cleanupQueue = createQueue('flowtask.cleanup');
 
@@ -128,6 +131,7 @@ export const allQueues = [
   notificationQueue,
   activityQueue,
   announcementQueue,
+  recurringTaskQueue,
   cleanupQueue,
   slackQueue,
 ];

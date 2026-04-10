@@ -221,12 +221,6 @@ app.get('*', (req, res, next) => {
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 import seedAdmin from './utils/seed.js';
-import { startBackgroundJobs } from './utils/backgroundTasks.js';
-import { startRecurringTaskScheduler } from './utils/recurrenceScheduler.js';
-import { startReminderScheduler } from './utils/reminderScheduler.js';
-import { startArchivedCardCleanup } from './utils/archiveCleanup.js';
-import { startTrashCleanup } from './utils/trashCleanup.js';
-import { startBoardCleanup } from './utils/boardCleanup.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
 import { initQueues, shutdownQueues } from './queues/queueManager.js';
 
@@ -238,17 +232,11 @@ mongoose.connect(config.db.uri, {
   .then(async () => {
     logger.info('Connected to MongoDB with connection pooling');
 
-    // Initialize BullMQ queues (probes Redis, starts workers if available)
+    // Initialize BullMQ queues (probes Redis, starts workers, recovery scans)
     const queuesActive = await initQueues();
     logger.info(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
 
     seedAdmin();
-    startBackgroundJobs();      // no-op if BullMQ handles scheduled tasks
-    startRecurringTaskScheduler();
-    startReminderScheduler();
-    startArchivedCardCleanup();
-    startTrashCleanup();
-    startBoardCleanup();
 
     initializeSlackServices().then(() => {
       logger.info('Slack services initialized');

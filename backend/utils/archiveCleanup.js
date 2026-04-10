@@ -7,9 +7,6 @@ import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import RecurringTask from '../models/RecurringTask.js';
 
-const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-
-let cleanupIntervalId = null;
 let isRunningCleanup = false;
 
 /**
@@ -80,35 +77,8 @@ export const cleanupExpiredArchivedCards = async () => {
   }
 };
 
-export const startArchivedCardCleanup = (intervalMs = CLEANUP_INTERVAL_MS) => {
-  if (cleanupIntervalId) {
-    return cleanupIntervalId;
-  }
+// Legacy no-ops — polling replaced by BullMQ repeatable jobs via maintenanceScheduler
+export const startArchivedCardCleanup = () => {};
+export const stopArchivedCardCleanup = () => {};
 
-  // Run once on startup so expired cards are cleared after restarts.
-  cleanupExpiredArchivedCards().catch((err) => {
-    console.error('Startup archived card cleanup failed:', err);
-  });
-
-  cleanupIntervalId = setInterval(() => {
-    cleanupExpiredArchivedCards().catch((err) => {
-      console.error('Scheduled archived card cleanup failed:', err);
-    });
-  }, intervalMs);
-
-  console.log(`Archived card cleanup scheduled every ${intervalMs / (60 * 60 * 1000)} hours`);
-  return cleanupIntervalId;
-};
-
-export const stopArchivedCardCleanup = () => {
-  if (cleanupIntervalId) {
-    clearInterval(cleanupIntervalId);
-    cleanupIntervalId = null;
-  }
-};
-
-export default {
-  cleanupExpiredArchivedCards,
-  startArchivedCardCleanup,
-  stopArchivedCardCleanup
-};
+export default { cleanupExpiredArchivedCards, startArchivedCardCleanup, stopArchivedCardCleanup };

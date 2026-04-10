@@ -1,62 +1,51 @@
 /**
  * Cleanup Worker
- * 
- * Processes jobs from the 'flowtask:cleanup' queue.
- * Handles trash cleanup (permanently delete attachments after 30 days).
- * Job type: cleanup-trash
+ *
+ * Processes all maintenance / cleanup jobs from the 'flowtask.cleanup' queue:
+ *   - cleanup-trash           : permanently delete soft-deleted attachments (30+ days)
+ *   - cleanup-archived-cards  : auto-delete archived cards past their deadline
+ *   - cleanup-boards          : permanently delete soft-deleted boards
+ *   - cleanup-queues          : purge old completed/failed BullMQ jobs from Redis
  */
 import { Worker } from 'bullmq';
 import { getWorkerConnection } from '../queues/connection.js';
-import Attachment from '../models/Attachment.js';
-import { deleteMultipleFromCloudinary } from '../utils/cloudinary.js';
+import { cleanupTrashedAttachments } from '../utils/trashCleanup.js';
+import { cleanupExpiredArchivedCards } from '../utils/archiveCleanup.js';
+import { cleanupSoftDeletedBoards } from '../utils/boardCleanup.js';
+import { cleanAllQueues } from '../schedulers/maintenanceScheduler.js';
 import config from '../config/index.js';
 
 const JOB_HANDLERS = {
   /**
    * Permanently delete attachments that have been in trash for 30+ days.
    */
-  async 'cleanup-trash'(job) {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const trashItems = await Attachment.find({
-      isDeleted: true,
-      deletedAt: { $lte: thirtyDaysAgo },
-    }).lean();
+  async 'cleanup-trash'(_job) {
+    await cleanupTrashedAttachments();
+    return { status: 'ok' };
+  },
 
-    if (trashItems.length === 0) {
-      return { deleted: 0, message: 'No items to clean up' };
-    }
+  /**
+   * Auto-delete archived cards that passed their autoDeleteAt deadline.
+   */
+  async 'cleanup-archived-cards'(_job) {
+    await cleanupExpiredArchivedCards();
+    return { status: 'ok' };
+  },
 
-    console.log(`[CleanupWorker] Found ${trashItems.length} items to permanently delete`);
+  /**
+   * Permanently delete soft-deleted boards (and all related data).
+   */
+  async 'cleanup-boards'(_job) {
+    await cleanupSoftDeletedBoards();
+    return { status: 'ok' };
+  },
 
-    // Separate by resource type for batch Cloudinary deletion
-    const imageIds = trashItems
-      .filter((a) => a.resourceType === 'image')
-      .map((a) => a.publicId);
-    const rawIds = trashItems
-      .filter((a) => a.resourceType !== 'image')
-      .map((a) => a.publicId);
-
-    // Delete from Cloudinary
-    try {
-      if (imageIds.length > 0) {
-        await deleteMultipleFromCloudinary(imageIds, 'image');
-        console.log(`[CleanupWorker] Deleted ${imageIds.length} images from Cloudinary`);
-      }
-      if (rawIds.length > 0) {
-        await deleteMultipleFromCloudinary(rawIds, 'raw');
-        console.log(`[CleanupWorker] Deleted ${rawIds.length} raw files from Cloudinary`);
-      }
-    } catch (error) {
-      console.error('[CleanupWorker] Cloudinary deletion error:', error.message);
-    }
-
-    // Delete from MongoDB
-    const result = await Attachment.deleteMany({
-      _id: { $in: trashItems.map((a) => a._id) },
-    });
-
-    console.log(`[CleanupWorker] Permanently deleted ${result.deletedCount} attachments`);
-    return { deleted: result.deletedCount, total: trashItems.length };
+  /**
+   * Purge old completed/failed jobs from all BullMQ queues (Redis memory).
+   */
+  async 'cleanup-queues'(_job) {
+    await cleanAllQueues();
+    return { status: 'ok' };
   },
 };
 
@@ -81,14 +70,14 @@ export function startCleanupWorker() {
   );
 
   cleanupWorker.on('completed', (job, result) => {
-    if (config.isDev) console.log(`[CleanupWorker] Job ${job.id} completed:`, result);
+    if (config.isDev) console.log(`[Worker:Cleanup] ${job.name}:${job.id} completed:`, result);
   });
 
   cleanupWorker.on('failed', (job, err) => {
-    console.error(`[CleanupWorker] Job ${job?.id} failed:`, err.message);
+    console.error(`[Worker:Cleanup] ${job?.name}:${job?.id} failed:`, err.message);
   });
 
-  console.log('[CleanupWorker] Started');
+  console.log('[Worker:Cleanup] started');
   return cleanupWorker;
 }
 
