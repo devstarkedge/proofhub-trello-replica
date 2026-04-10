@@ -436,8 +436,13 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     slackHooks.onAnnouncementPosted(announcement, subscriberIds, req.user).catch(console.error);
 
     // Dispatch chat webhook for announcement
-    chatHooks.onAnnouncementCreated(announcement, req.user).catch(console.error);
-  }
+    const enrichedAnnouncement = {
+      ...announcement.toJSON(),
+      subscriberIds
+    };
+
+    chatHooks.onAnnouncementCreated(enrichedAnnouncement, req.user).catch(console.error);
+      }
 
   res.status(201).json({
     success: true,
