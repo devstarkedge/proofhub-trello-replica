@@ -417,6 +417,32 @@ class SocketService {
 
     });
 
+    // Sales Tab events
+    this.socket.on('sales:tab:created', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-sales-tab-created', { detail: data }));
+    });
+    this.socket.on('sales:tab:updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-sales-tab-updated', { detail: data }));
+    });
+    this.socket.on('sales:tab:deleted', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-sales-tab-deleted', { detail: data }));
+    });
+    this.socket.on('sales:tab:approved', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-sales-tab-approved', { detail: data }));
+    });
+    this.socket.on('sales:tab:ignored', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-sales-tab-ignored', { detail: data }));
+    });
+    this.socket.on('sales:tab:alert', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-sales-tab-alert', { detail: data }));
+    });
+    this.socket.on('sales:tab:unread-update', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-sales-tab-unread-update', { detail: data }));
+    });
+    this.socket.on('sales:tab:approval-pending', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-sales-tab-approval-pending', { detail: data }));
+    });
+
     // Announcement events
     this.socket.on('announcement-created', (data) => {
       console.log('Announcement created:', data);

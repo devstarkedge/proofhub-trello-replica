@@ -42,7 +42,9 @@ const notificationSchema = new mongoose.Schema({
       'user_declined',
       'deadline_approaching',
       'status_change',
-      'system_alert'
+      'system_alert',
+      'sales_tab_approval',
+      'sales_tab_result'
     ],
     required: true
   },
@@ -72,7 +74,7 @@ const notificationSchema = new mongoose.Schema({
   },
   entityType: {
     type: String,
-    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', null],
+    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', null],
     default: null
   },
   action: {

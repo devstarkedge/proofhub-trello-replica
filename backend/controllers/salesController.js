@@ -10,6 +10,7 @@ import notificationService from '../utils/notificationService.js';
 import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards.js';
 import ExcelJS from 'exceljs';
 import SalesUserPreference from '../models/SalesUserPreference.js';
+import { enqueueSalesAlertNewRow, enqueueSalesAlertRowUpdate } from '../queues/index.js';
 import {
   SALES_FIELD_LABELS,
   SALES_REQUIRED_LABELS,
@@ -390,6 +391,11 @@ export const createSalesRow = async (req, res) => {
     // Emit real-time event with flattened row
     getIO().to('sales').emit('sales:row:created', { row: flatRow });
 
+    // Evaluate watch tab alerts (fire-and-forget via queue)
+    enqueueSalesAlertNewRow(flatRow).catch(err =>
+      console.error('Failed to enqueue sales alert for new row:', err.message)
+    );
+
     res.status(201).json({
       success: true,
       message: 'Sales row created successfully',
@@ -453,8 +459,11 @@ export const updateSalesRow = async (req, res) => {
       return res.status(400).json(validationErr);
     }
 
+    // Capture old row state for alert evaluation
+    const oldRowSnapshot = flattenRow(row);
+
     // Track changes for activity log (complex due to custom fields, keeping simple for now)
-    const changes = trackChanges(flattenRow(row), { ...standard, ...custom });
+    const changes = trackChanges(oldRowSnapshot, { ...standard, ...custom });
 
     // Update standard fields
     Object.assign(row, standard);
@@ -503,6 +512,13 @@ export const updateSalesRow = async (req, res) => {
     getIO().to('sales').emit('sales:row:updated', { row: flatRow, changes });
     if (didUnlock) {
       getIO().to('sales').emit('sales:row:unlocked', { rowId: row._id });
+    }
+
+    // Evaluate watch tab alerts on update (fire-and-forget via queue)
+    if (changes.length > 0) {
+      enqueueSalesAlertRowUpdate(oldRowSnapshot, flatRow).catch(err =>
+        console.error('Failed to enqueue sales alert for row update:', err.message)
+      );
     }
 
     res.json({
@@ -1212,7 +1228,8 @@ export const importRows = async (req, res) => {
         }
 
         await row.save();
-        results.success.push({ index: i, id: row._id });
+        const importedFlatRow = flattenRow(row);
+        results.success.push({ index: i, id: row._id, flatRow: importedFlatRow });
 
         await SalesActivityLog.logActivity({
           salesRow: row._id,
@@ -1240,6 +1257,13 @@ export const importRows = async (req, res) => {
         newColumnsCreated: results.newColumnsCreated,
         newDropdownOptionsCreated: results.newDropdownOptionsCreated
       });
+
+      // Evaluate watch tab alerts for imported rows (fire-and-forget, batch)
+      for (const s of results.success) {
+        if (s.flatRow) {
+          enqueueSalesAlertNewRow(s.flatRow).catch(() => {});
+        }
+      }
     }
     // Also emit column/dropdown updates if new ones were created
     if (results.newColumnsCreated.length > 0) {

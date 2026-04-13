@@ -1,6 +1,22 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import * as salesApi from '../services/salesApi';
+import * as salesTabApi from '../services/salesTabApi';
+
+const DEFAULT_FILTERS = {
+  search: '',
+  name: '',
+  platform: '',
+  technology: '',
+  status: '',
+  location: '',
+  minRating: null,
+  minHireRate: null,
+  budget: '',
+  profile: '',
+  dateFrom: null,
+  dateTo: null,
+};
 
 const useSalesStore = create(
   persist(
@@ -57,6 +73,11 @@ const useSalesStore = create(
 
       // User-customized column widths (key: column key, value: width in px)
       columnWidths: {},
+
+      // Custom saved tabs
+      savedTabs: [],
+      activeTabId: null,
+      tabsLoading: false,
 
       // ============================================
       // ACTIONS
@@ -677,14 +698,19 @@ const useSalesStore = create(
       },
 
       /**
-       * Set active name tab and filter
+       * Set active name tab and filter — also clears any active custom tab
        */
       setNameTab: (name) => {
         const filterName = name === 'All' ? '' : name;
         set(state => ({
           nameTab: name,
-          filters: { ...state.filters, name: filterName },
-          pagination: { ...state.pagination, page: 1 }
+          activeTabId: null,
+          filters: { ...DEFAULT_FILTERS, name: filterName },
+          columnFilters: {},
+          selectedRows: new Set(),
+          sortBy: 'date',
+          sortOrder: 'desc',
+          pagination: { ...state.pagination, page: 1 },
         }));
         get().fetchRows(1);
       },
@@ -718,7 +744,236 @@ const useSalesStore = create(
 
         set({ pendingDrafts: [] });
         await get().fetchRows();
-      }
+      },
+
+      // ============================================
+      // SAVED TABS ACTIONS
+      // ============================================
+
+      fetchSavedTabs: async () => {
+        set({ tabsLoading: true });
+        try {
+          const response = await salesTabApi.getSalesTabs();
+          set({ savedTabs: response.data, tabsLoading: false });
+        } catch (error) {
+          set({ tabsLoading: false });
+          console.error('Failed to fetch saved tabs:', error);
+        }
+      },
+
+      createSavedTab: async (tabData) => {
+        try {
+          const response = await salesTabApi.createSalesTab(tabData);
+          set((state) => ({
+            savedTabs: [...state.savedTabs, response.data],
+          }));
+          return response.data;
+        } catch (error) {
+          throw error;
+        }
+      },
+
+      updateSavedTab: async (tabId, updates) => {
+        const previousTabs = get().savedTabs;
+        // Optimistic update
+        set((state) => ({
+          savedTabs: state.savedTabs.map((t) =>
+            t._id === tabId ? { ...t, ...updates } : t
+          ),
+        }));
+        try {
+          const response = await salesTabApi.updateSalesTab(tabId, updates);
+          set((state) => ({
+            savedTabs: state.savedTabs.map((t) =>
+              t._id === tabId ? response.data : t
+            ),
+          }));
+          return response.data;
+        } catch (error) {
+          set({ savedTabs: previousTabs });
+          throw error;
+        }
+      },
+
+      deleteSavedTab: async (tabId) => {
+        const previousTabs = get().savedTabs;
+        set((state) => ({
+          savedTabs: state.savedTabs.filter((t) => t._id !== tabId),
+          activeTabId: state.activeTabId === tabId ? null : state.activeTabId,
+        }));
+        try {
+          await salesTabApi.deleteSalesTab(tabId);
+        } catch (error) {
+          set({ savedTabs: previousTabs });
+          throw error;
+        }
+      },
+
+      approveSavedTab: async (tabId) => {
+        try {
+          const response = await salesTabApi.approveSalesTab(tabId);
+          set((state) => ({
+            savedTabs: state.savedTabs.map((t) =>
+              t._id === tabId ? response.data : t
+            ),
+          }));
+        } catch (error) {
+          throw error;
+        }
+      },
+
+      ignoreSavedTab: async (tabId) => {
+        try {
+          const response = await salesTabApi.ignoreSalesTab(tabId);
+          set((state) => ({
+            savedTabs: state.savedTabs.map((t) =>
+              t._id === tabId ? response.data : t
+            ),
+          }));
+        } catch (error) {
+          throw error;
+        }
+      },
+
+      markTabRead: async (tabId) => {
+        // Optimistic
+        set((state) => ({
+          savedTabs: state.savedTabs.map((t) =>
+            t._id === tabId ? { ...t, unreadMatches: 0 } : t
+          ),
+        }));
+        try {
+          await salesTabApi.markSalesTabRead(tabId);
+        } catch (error) {
+          console.error('Failed to mark tab read:', error);
+        }
+      },
+
+      /**
+       * Activate a saved tab — restore its full workspace state
+       */
+      activateTab: (tabOrId) => {
+        const id = typeof tabOrId === 'string' ? tabOrId : tabOrId?._id;
+        const tab = get().savedTabs.find((t) => t._id === id);
+        if (!tab) return;
+
+        const updates = {
+          activeTabId: id,
+          nameTab: 'All', // Reset name tab when using saved tab
+        };
+
+        // Restore filters
+        if (tab.filters) {
+          updates.filters = {
+            search: tab.filters.search || tab.search || '',
+            name: tab.filters.name || '',
+            platform: tab.filters.platform || '',
+            technology: tab.filters.technology || '',
+            status: tab.filters.status || '',
+            location: tab.filters.location || '',
+            minRating: tab.filters.minRating ?? null,
+            minHireRate: tab.filters.minHireRate ?? null,
+            budget: tab.filters.budget || '',
+            profile: tab.filters.profile || '',
+            dateFrom: tab.filters.dateFrom || null,
+            dateTo: tab.filters.dateTo || null,
+          };
+        }
+
+        // Restore sorting
+        if (tab.sorting) {
+          updates.sortBy = tab.sorting.sortBy || 'date';
+          updates.sortOrder = tab.sorting.sortOrder || 'desc';
+        }
+
+        // Restore column filters
+        if (tab.filters?.columnFilters) {
+          updates.columnFilters = tab.filters.columnFilters;
+        }
+
+        // Reset pagination
+        updates.pagination = { ...get().pagination, page: 1 };
+
+        set(updates);
+        get().fetchRows(1);
+
+        // Mark as read if it's a watch tab with unread
+        if (tab.isWatchTab && tab.unreadMatches > 0) {
+          get().markTabRead(id);
+        }
+      },
+
+      /**
+       * Deactivate saved tab — return to default view and reset all filters
+       */
+      deactivateTab: () => {
+        set(state => ({
+          activeTabId: null,
+          filters: { ...DEFAULT_FILTERS },
+          columnFilters: {},
+          selectedRows: new Set(),
+          sortBy: 'date',
+          sortOrder: 'desc',
+          pagination: { ...state.pagination, page: 1 },
+        }));
+        get().fetchRows(1);
+      },
+
+      // ============================================
+      // SAVED TAB SOCKET HANDLERS
+      // ============================================
+
+      handleTabCreated: (tab) => {
+        set((state) => {
+          const exists = state.savedTabs.some((t) => t._id === tab._id);
+          if (exists) return { savedTabs: state.savedTabs.map((t) => (t._id === tab._id ? tab : t)) };
+          return { savedTabs: [...state.savedTabs, tab] };
+        });
+      },
+
+      handleTabUpdated: (tab) => {
+        set((state) => ({
+          savedTabs: state.savedTabs.map((t) => (t._id === tab._id ? tab : t)),
+        }));
+      },
+
+      handleTabDeleted: (tabId) => {
+        set((state) => ({
+          savedTabs: state.savedTabs.filter((t) => t._id !== tabId),
+          activeTabId: state.activeTabId === tabId ? null : state.activeTabId,
+        }));
+      },
+
+      handleTabApproved: (tab) => {
+        set((state) => ({
+          savedTabs: state.savedTabs.map((t) => (t._id === tab._id ? tab : t)),
+        }));
+      },
+
+      handleTabIgnored: (tab) => {
+        set((state) => ({
+          savedTabs: state.savedTabs.map((t) => (t._id === tab._id ? tab : t)),
+        }));
+      },
+
+      handleTabAlert: (alertData) => {
+        // Update unread count in matching tab
+        set((state) => ({
+          savedTabs: state.savedTabs.map((t) =>
+            t._id === alertData.tabId
+              ? { ...t, unreadMatches: (t.unreadMatches || 0) + 1 }
+              : t
+          ),
+        }));
+      },
+
+      handleTabUnreadUpdate: (tabId, unreadMatches) => {
+        set((state) => ({
+          savedTabs: state.savedTabs.map((t) =>
+            t._id === tabId ? { ...t, unreadMatches } : t
+          ),
+        }));
+      },
     }),
     {
       name: 'sales-storage',
@@ -731,7 +986,8 @@ const useSalesStore = create(
         sortBy: state.sortBy,
         sortOrder: state.sortOrder,
         dropdownOptions: state.dropdownOptions,
-        pendingDrafts: state.pendingDrafts
+        pendingDrafts: state.pendingDrafts,
+        activeTabId: state.activeTabId
       })
     }
   )

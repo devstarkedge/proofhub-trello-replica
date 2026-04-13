@@ -1,10 +1,11 @@
-const CACHE_NAME = 'flowtask-cache-v1';
+const CACHE_NAME = 'flowtask-cache-v2';
 const urlsToCache = [
   '/',
   '/index.html'
 ];
 
 self.addEventListener('install', event => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(async cache => {
@@ -18,7 +19,31 @@ self.addEventListener('install', event => {
   );
 });
 
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(names =>
+      Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
+    ).then(() => self.clients.claim())
+  );
+});
+
 self.addEventListener('fetch', event => {
+  // Skip non-GET requests (POST, PATCH, DELETE, etc.)
+  if (event.request.method !== 'GET') return;
+
+  // Skip API calls and socket requests
+  const url = new URL(event.request.url);
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return;
+
+  // For navigation requests (HTML pages), use network-first to let the SPA router handle them
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // For static assets, try cache first then network
   event.respondWith(
     caches.match(event.request)
       .then(response => {

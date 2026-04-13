@@ -29,6 +29,7 @@ export const NotificationProvider = ({ children }) => {
   
   // UI state
   const [verificationModal, setVerificationModal] = useState(null);
+  const [tabApprovalModal, setTabApprovalModal] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
@@ -214,6 +215,8 @@ export const NotificationProvider = ({ children }) => {
 
   // Show toast for new notification
   const showToast = (notification) => {
+    // sales_tab_approval has its own dedicated TabApprovalToast — skip generic toast
+    if (notification.type === 'sales_tab_approval') return;
     const toastContent = (
       <div className="flex items-start gap-3">
         <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${
@@ -486,6 +489,14 @@ export const NotificationProvider = ({ children }) => {
       return;
     }
 
+    // Sales tab approval flow — open modal for admin to review/approve/ignore
+    if (notification.type === 'sales_tab_approval' && user?.role === 'admin') {
+      setTabApprovalModal(notification);
+      if (!notification.isRead) markAsRead(notification._id);
+      setIsOpen(false);
+      return;
+    }
+
     // Mark read optimistically
     if (!notification.isRead) markAsRead(notification._id);
 
@@ -647,6 +658,11 @@ export const NotificationProvider = ({ children }) => {
         verificationModal,
         handleVerificationAction,
         closeVerificationModal,
+
+        // Sales tab approval modal
+        tabApprovalModal,
+        closeTabApprovalModal: () => setTabApprovalModal(null),
+        openTabApprovalModal: (data) => setTabApprovalModal(data),
         
         // Push notifications
         pushSupported,

@@ -114,6 +114,16 @@ export const SALES_COLUMN_DELETED = 'sales:column:deleted';
 export const SALES_ROWS_IMPORTED = 'sales:rows:imported';
 export const SALES_PERMISSIONS_UPDATED = 'sales:permissions:updated';
 
+// Sales Tab events
+export const SALES_TAB_CREATED = 'sales:tab:created';
+export const SALES_TAB_UPDATED = 'sales:tab:updated';
+export const SALES_TAB_DELETED = 'sales:tab:deleted';
+export const SALES_TAB_APPROVED = 'sales:tab:approved';
+export const SALES_TAB_IGNORED = 'sales:tab:ignored';
+export const SALES_TAB_ALERT = 'sales:tab:alert';
+export const SALES_TAB_UNREAD_UPDATE = 'sales:tab:unread-update';
+export const SALES_TAB_APPROVAL_PENDING = 'sales:tab:approval-pending';
+
 // Announcement events
 export const ANNOUNCEMENT_CREATED = 'announcement-created';
 export const ANNOUNCEMENT_UPDATED = 'announcement-updated';

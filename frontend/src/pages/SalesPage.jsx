@@ -2,6 +2,7 @@ import React, { useEffect, useState, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
+import NotificationContext from '../context/NotificationContext';
 import socketService from '../services/socket';
 import useSalesStore from '../store/salesStore';
 import { getUserPermissions } from '../services/salesApi';
@@ -15,12 +16,18 @@ import ActivityLogModal from '../components/Sales/ActivityLogModal';
 import DropdownManagerModal from '../components/Sales/DropdownManagerModal';
 import CustomColumnModal from '../components/Sales/CustomColumnModal';
 import BulkActionsToolbar from '../components/Sales/BulkActionsToolbar';
+import CustomTabBar from '../components/Sales/CustomTabBar';
+import AddTabButton from '../components/Sales/AddTabButton';
+import SaveTabModal from '../components/Sales/SaveTabModal';
+import TabApprovalToast from '../components/Sales/TabApprovalToast';
+import WatchAlertToast from '../components/Sales/WatchAlertToast';
 
 
 const SalesPage = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useContext(AuthContext);
+  const { openTabApprovalModal } = useContext(NotificationContext);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -30,6 +37,8 @@ const SalesPage = () => {
   const [showCustomColumn, setShowCustomColumn] = useState(false);
   const [selectedRowForActivity, setSelectedRowForActivity] = useState(null);
   const [editingRow, setEditingRow] = useState(null);
+  const [showSaveTabModal, setShowSaveTabModal] = useState(false);
+  const [editingTab, setEditingTab] = useState(null);
 
   const {
     permissions,
@@ -54,7 +63,20 @@ const SalesPage = () => {
     handleColumnDeleted,
     handleRowLocked,
     handleRowUnlocked,
-    syncDrafts
+    syncDrafts,
+    fetchSavedTabs,
+    savedTabs,
+    activeTabId,
+    activateTab,
+    deactivateTab,
+    deleteSavedTab,
+    handleTabCreated,
+    handleTabUpdated,
+    handleTabDeleted,
+    handleTabApproved,
+    handleTabIgnored,
+    handleTabAlert,
+    handleTabUnreadUpdate,
   } = useSalesStore();
 
   useEffect(() => {
@@ -82,6 +104,13 @@ const SalesPage = () => {
       window.removeEventListener('sales-permissions-updated', onPermsUpdate);
       window.removeEventListener('socket-sales-permissions-updated', onPermsUpdate);
       window.removeEventListener('socket-connected', onSocketConnected);
+      window.removeEventListener('socket-sales-tab-created', onSocketTabCreated);
+      window.removeEventListener('socket-sales-tab-updated', onSocketTabUpdated);
+      window.removeEventListener('socket-sales-tab-deleted', onSocketTabDeleted);
+      window.removeEventListener('socket-sales-tab-approved', onSocketTabApproved);
+      window.removeEventListener('socket-sales-tab-ignored', onSocketTabIgnored);
+      window.removeEventListener('socket-sales-tab-alert', onSocketTabAlert);
+      window.removeEventListener('socket-sales-tab-unread-update', onSocketTabUnreadUpdate);
 
       socketService.leaveSales();
     };
@@ -113,6 +142,21 @@ const SalesPage = () => {
       }
     }
   }, [nameTab]);
+
+  // Deep link: open tab approval modal from push notification URL
+  useEffect(() => {
+    const approvalTabId = searchParams.get('openApproval');
+    if (approvalTabId && user?.role === 'admin' && !loading) {
+      openTabApprovalModal({
+        metadata: { tabId: approvalTabId },
+        entityId: approvalTabId,
+        type: 'sales_tab_approval',
+      });
+      // Clean up URL param
+      searchParams.delete('openApproval');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [loading, searchParams, user]);
 
   const onPermsUpdate = async (e) => {
     try {
@@ -187,6 +231,15 @@ const SalesPage = () => {
       // Socket connection listener (handles reconnects and delayed connections)
       window.addEventListener('socket-connected', onSocketConnected);
 
+      // Tab event listeners
+      window.addEventListener('socket-sales-tab-created', onSocketTabCreated);
+      window.addEventListener('socket-sales-tab-updated', onSocketTabUpdated);
+      window.addEventListener('socket-sales-tab-deleted', onSocketTabDeleted);
+      window.addEventListener('socket-sales-tab-approved', onSocketTabApproved);
+      window.addEventListener('socket-sales-tab-ignored', onSocketTabIgnored);
+      window.addEventListener('socket-sales-tab-alert', onSocketTabAlert);
+      window.addEventListener('socket-sales-tab-unread-update', onSocketTabUnreadUpdate);
+
       // Fetch initial data
       // Initialize name tab from URL query param if present
       const urlName = searchParams.get('name');
@@ -206,6 +259,9 @@ const SalesPage = () => {
         fetchDropdownOptions('replyFromClient'),
         fetchDropdownOptions('followUps')
       ]);
+
+      // Fetch saved tabs
+      fetchSavedTabs().catch(() => {});
 
       // Sync any pending offline drafts
       await syncDrafts();
@@ -294,8 +350,29 @@ const SalesPage = () => {
     socketService.joinSales();
   };
 
+  // Tab socket handlers
+  const onSocketTabCreated = (e) => handleTabCreated(e.detail);
+  const onSocketTabUpdated = (e) => handleTabUpdated(e.detail);
+  const onSocketTabDeleted = (e) => handleTabDeleted(e.detail);
+  const onSocketTabApproved = (e) => handleTabApproved(e.detail);
+  const onSocketTabIgnored = (e) => handleTabIgnored(e.detail);
+  const onSocketTabAlert = (e) => handleTabAlert(e.detail);
+  const onSocketTabUnreadUpdate = (e) => handleTabUnreadUpdate(e.detail);
+
   // Register listeners after joining the sales room (inside initializePage)
   // Note: listeners are attached in `initializePage` to ensure permissions and socket join succeeded
+
+  // Tab management handlers
+  const handleEditTab = (tab) => {
+    setEditingTab(tab);
+    setShowSaveTabModal(true);
+  };
+
+  const handleDeleteTab = async (tabId) => {
+    if (window.confirm('Delete this saved tab?')) {
+      await deleteSavedTab(tabId);
+    }
+  };
 
   const openActivityLog = (row) => {
     setSelectedRowForActivity(row);
@@ -365,19 +442,29 @@ const SalesPage = () => {
             
             {/* Toolbar */}
             <div className="flex-shrink-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border-b border-gray-200/50 dark:border-gray-700/50 shadow-sm">
-              <SalesToolbar
-                onAddRow={() => setShowAddModal(true)}
-                onImport={() => setShowImportModal(true)}
-                onManageDropdowns={() => setShowDropdownManager(true)}
-                onCreateColumn={() => setShowCustomColumn(true)}
-                permissions={permissions}
-              />
+              <div className="flex items-center">
+                <div className="flex-1">
+                  <SalesToolbar
+                    onAddRow={() => setShowAddModal(true)}
+                    onImport={() => setShowImportModal(true)}
+                    onManageDropdowns={() => setShowDropdownManager(true)}
+                    onCreateColumn={() => setShowCustomColumn(true)}
+                    permissions={permissions}
+                  />
+                </div>
+                <div className="pr-4">
+                  <AddTabButton onClick={() => { setEditingTab(null); setShowSaveTabModal(true); }} />
+                </div>
+              </div>
 
               {/* Filters Panel (always visible, toggle built-in) */}
               <SalesFilters />
 
               {/* Name Tabs */}
               <SalesNameTabs />
+
+              {/* Custom Saved Tabs */}
+              <CustomTabBar onEditTab={handleEditTab} onDeleteTab={handleDeleteTab} />
 
               {/* Bulk Actions Toolbar */}
               {selectedRows.size > 0 && (
@@ -430,6 +517,17 @@ const SalesPage = () => {
           onClose={() => setShowCustomColumn(false)}
         />
       )}
+
+      {/* Save Tab Modal */}
+      <SaveTabModal
+        isOpen={showSaveTabModal}
+        onClose={() => { setShowSaveTabModal(false); setEditingTab(null); }}
+        editingTab={editingTab}
+      />
+
+      {/* Real-time toast overlays */}
+      <TabApprovalToast />
+      <WatchAlertToast />
     </div>
   );
 };

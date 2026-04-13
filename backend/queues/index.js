@@ -49,6 +49,9 @@ export const cleanupQueue = createQueue('flowtask.cleanup');
 /** Slack notification delivery */
 export const slackQueue = createQueue('flowtask.slack');
 
+/** Sales tab watch alert processing */
+export const salesAlertQueue = createQueue('flowtask.sales-alert');
+
 // ─── Convenience: add jobs ────────────────────────────────────────────────────
 
 /**
@@ -124,6 +127,20 @@ export function enqueueActivity(activityData, opts = {}) {
   return activityQueue.add('log-activity', activityData, opts);
 }
 
+/**
+ * Enqueue: evaluate a new sales row against watch tabs.
+ */
+export function enqueueSalesAlertNewRow(row, opts = {}) {
+  return salesAlertQueue.add('evaluate-new-row', { row }, opts);
+}
+
+/**
+ * Enqueue: evaluate an updated sales row against watch tabs.
+ */
+export function enqueueSalesAlertRowUpdate(oldRow, newRow, opts = {}) {
+  return salesAlertQueue.add('evaluate-row-update', { oldRow, newRow }, opts);
+}
+
 // ─── Export all queues for health checks / shutdown ───────────────────────────
 
 export const allQueues = [
@@ -134,4 +151,5 @@ export const allQueues = [
   recurringTaskQueue,
   cleanupQueue,
   slackQueue,
+  salesAlertQueue,
 ];

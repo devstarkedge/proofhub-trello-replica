@@ -272,6 +272,30 @@ export function resolveNotificationRoute(notification) {
     );
   }
 
+  // ── Sales tab approval (admin opens modal, no navigation) ────
+  if (type === 'sales_tab_approval') {
+    return {
+      route: null,
+      openModal: null,
+      entityId: notification?.metadata?.tabId || notification?.entityId || null,
+      fallbackRoute: '/sales',
+      toastMessage: null,
+      navigationState: null,
+      isSpecialFlow: true,
+      specialFlowType: 'sales_tab_approval',
+    };
+  }
+
+  // ── Sales tab result (creator sees result, navigate to sales) ─
+  if (type === 'sales_tab_result') {
+    return result(
+      '/sales',
+      null,
+      notification?.metadata?.tabId || notification?.entityId || null,
+      '/sales',
+    );
+  }
+
   // ── Catch-all: use metadata.url or fall to home ───────────────
   return tryMetadataUrl(notification, null);
 }
@@ -334,6 +358,8 @@ export function getNotificationRouteHint(notification) {
   if (type === 'announcement_created') return 'Announcements';
   if (TEAM_TYPES.has(type)) return 'Teams';
   if (REMINDER_TYPES.has(type)) return 'Reminders';
+  if (type === 'sales_tab_approval') return 'Sales → Tab Approval';
+  if (type === 'sales_tab_result') return 'Sales → Tab Result';
   if (DEPARTMENT_TYPES.has(type)) {
     return notification.metadata?.departmentName
       ? `Department: ${notification.metadata.departmentName}`

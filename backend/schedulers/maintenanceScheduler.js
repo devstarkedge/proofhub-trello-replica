@@ -11,11 +11,12 @@
  * BullMQ deduplicates by jobId so re-registering is safe.
  */
 import { cleanupQueue } from '../queues/index.js';
-import { allQueues } from '../queues/index.js';
+import { allQueues, salesAlertQueue } from '../queues/index.js';
 
 const SIX_HOURS   = 6 * 60 * 60 * 1000;
 const EIGHT_HOURS  = 8 * 60 * 60 * 1000;
 const ONE_MINUTE   = 60 * 1000;
+const ONE_HOUR     = 60 * 60 * 1000;
 
 /**
  * Register all maintenance repeat jobs on the cleanup queue.
@@ -73,6 +74,18 @@ export async function registerMaintenanceJobs() {
   await cleanupQueue.add('cleanup-trash', {}, { jobId: 'initial-cleanup-trash' });
   await cleanupQueue.add('cleanup-archived-cards', {}, { jobId: 'initial-cleanup-archived' });
   await cleanupQueue.add('cleanup-boards', {}, { jobId: 'initial-cleanup-boards' });
+
+  // 5. Sales alert overdue checks — check overdue/no-response watch tab rules every hour
+  await salesAlertQueue.add(
+    'check-overdue-alerts',
+    {},
+    {
+      repeat: { every: ONE_HOUR },
+      jobId: 'repeat:check-overdue-alerts',
+      removeOnComplete: true,
+      removeOnFail: { count: 50 },
+    }
+  );
 }
 
 /**

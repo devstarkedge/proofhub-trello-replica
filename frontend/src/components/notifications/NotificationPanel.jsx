@@ -34,7 +34,9 @@ const getNotificationStyle = (type) => {
     reminder_sent: { icon: Bell, bg: 'from-blue-400 to-indigo-500' },
     status_change: { icon: ArrowRight, bg: 'from-purple-400 to-indigo-500' },
     system_alert: { icon: AlertTriangle, bg: 'from-red-500 to-rose-600' },
-    test_notification: { icon: Settings, bg: 'from-gray-400 to-slate-500' }
+    test_notification: { icon: Settings, bg: 'from-gray-400 to-slate-500' },
+    sales_tab_approval: { icon: Bell, bg: 'from-amber-400 to-orange-500' },
+    sales_tab_result: { icon: CheckCircle2, bg: 'from-green-400 to-emerald-500' }
   };
   return styles[type] || { icon: Bell, bg: 'from-gray-400 to-slate-500' };
 };

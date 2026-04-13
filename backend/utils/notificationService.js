@@ -134,6 +134,8 @@ class NotificationService {
       user_created: notificationSettings.userCreated,
       user_assigned: true, // Always send assignment notifications
       user_unassigned: true, // Always send unassignment notifications
+      sales_tab_approval: true, // Always send to admins
+      sales_tab_result: true, // Always send tab result to creator
     };
 
     return notificationPreferences[type] !== undefined ? notificationPreferences[type] : true;

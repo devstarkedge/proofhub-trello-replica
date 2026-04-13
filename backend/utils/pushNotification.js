@@ -160,6 +160,11 @@ const getNotificationUrl = (notification) => {
       return `${baseUrl}/workflow/${extractId(notification.relatedBoard)}`;
     case 'user_registered':
       return `${baseUrl}/admin/users`;
+    case 'sales_tab_approval':
+    case 'sales_tab_result': {
+      const tabId = extractId(notification.metadata?.tabId || notification.entityId);
+      return tabId ? `${baseUrl}/sales?openApproval=${tabId}` : `${baseUrl}/sales`;
+    }
     default:
       return baseUrl;
   }

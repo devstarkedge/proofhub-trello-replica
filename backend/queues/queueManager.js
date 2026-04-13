@@ -18,6 +18,7 @@ import { startActivityWorker, getActivityWorker } from '../workers/activityWorke
 import { startAnnouncementWorker, getAnnouncementWorker } from '../workers/announcementWorker.js';
 import { startCleanupWorker, getCleanupWorker } from '../workers/cleanupWorker.js';
 import { startRecurringTaskWorker, getRecurringTaskWorker } from '../workers/recurringTaskWorker.js';
+import { startSalesAlertWorker, getSalesAlertWorker } from '../workers/salesAlertWorker.js';
 import { registerMaintenanceJobs } from '../schedulers/maintenanceScheduler.js';
 import { recoverAnnouncementSchedules } from '../schedulers/announcementScheduler.js';
 import { recoverRecurringSchedules } from '../schedulers/recurringTaskScheduler.js';
@@ -119,6 +120,17 @@ export async function initQueues() {
   startCleanupWorker();
   startRecurringTaskWorker();
 
+  // SalesAlert worker uses concurrency 1 to minimise Redis connections.
+  // Start it with a small delay so core workers connect first.
+  setTimeout(() => {
+    try {
+      startSalesAlertWorker();
+      logger.info('QueueManager: salesAlertWorker started (deferred)');
+    } catch (err) {
+      logger.warn('QueueManager: salesAlertWorker could not start — alerts will be processed on next restart', { error: err.message });
+    }
+  }, 3000);
+
   // ─── Register maintenance repeat jobs ─────────────────────────────────────
   await registerMaintenanceJobs();
 
@@ -161,6 +173,7 @@ export async function shutdownQueues() {
     getAnnouncementWorker(),
     getCleanupWorker(),
     getRecurringTaskWorker(),
+    getSalesAlertWorker(),
   ].filter(Boolean);
 
   // Close workers (stop processing new jobs, wait for current)

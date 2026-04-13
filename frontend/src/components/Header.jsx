@@ -16,6 +16,7 @@ import Avatar from './Avatar';
 const UserVerificationModal = lazy(() => import('./UserVerificationModal'));
 const AppearanceModal = lazy(() => import('./AppearanceModal'));
 const NotificationPanel = lazy(() => import('./notifications/NotificationPanel'));
+const TabApprovalModal = lazy(() => import('./Sales/TabApprovalModal'));
 
 // Icon color configuration for navigation items
 const navIconColors = {
@@ -53,9 +54,11 @@ const Header = ({ boardName }) => {
     loadMore,
     handleFilterChange,
     handleNotificationClick, 
-    verificationModal, 
-    handleVerificationAction, 
+    verificationModal,
+    handleVerificationAction,
     closeVerificationModal,
+    tabApprovalModal,
+    closeTabApprovalModal,
     // Archived notifications
     archivedNotifications,
     isLoadingArchived,
@@ -708,6 +711,16 @@ const Header = ({ boardName }) => {
           />
         </Suspense>
       )}
+
+    {/* Sales Tab Approval Modal */}
+    {tabApprovalModal && (
+      <Suspense fallback={null}>
+        <TabApprovalModal
+          notification={tabApprovalModal}
+          onClose={closeTabApprovalModal}
+        />
+      </Suspense>
+    )}
     
     {/* Appearance Modal - Outside header for proper z-index stacking */}
     <Suspense fallback={null}>

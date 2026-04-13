@@ -189,3 +189,49 @@ export const emitFinanceDataRefresh = (context = {}) => {
   io.to(ROOM.admin).emit('finance:data:refresh', payload);
   io.to(ROOM.managers).emit('finance:data:refresh', payload);
 };
+
+// ─── Sales Tab Emitters ─────────────────────────────────────────────────────
+
+/** Broadcast tab created to sales room */
+export const emitSalesTabCreated = (tab) => {
+  getIO().to(ROOM.sales).emit('sales:tab:created', { tab });
+};
+
+/** Broadcast tab updated to sales room */
+export const emitSalesTabUpdated = (tab) => {
+  getIO().to(ROOM.sales).emit('sales:tab:updated', { tab });
+};
+
+/** Broadcast tab deleted to sales room */
+export const emitSalesTabDeleted = (tabId) => {
+  getIO().to(ROOM.sales).emit('sales:tab:deleted', { tabId });
+};
+
+/** Notify the tab owner that their tab was approved */
+export const emitSalesTabApproved = (tab) => {
+  getIO().to(ROOM.user(tab.ownerId)).emit('sales:tab:approved', { tab });
+  getIO().to(ROOM.sales).emit('sales:tab:updated', { tab });
+};
+
+/** Notify the tab owner that their tab was ignored */
+export const emitSalesTabIgnored = (tab) => {
+  getIO().to(ROOM.user(tab.ownerId)).emit('sales:tab:ignored', { tab });
+};
+
+/** Send watch tab alert to a specific user */
+export const emitSalesTabAlert = (userId, alertData) => {
+  getIO().to(ROOM.user(userId)).emit('sales:tab:alert', alertData);
+};
+
+/** Broadcast unread badge count update to sales room */
+export const emitSalesTabUnreadUpdate = (tabId, unreadMatches) => {
+  getIO().to(ROOM.sales).emit('sales:tab:unread-update', { tabId, unreadMatches });
+};
+
+/** Notify admins of a pending shared/public tab */
+export const emitSalesTabApprovalPending = (tab) => {
+  getIO().to(ROOM.admin).emit('sales:tab:approval-pending', {
+    tab,
+    message: `New shared Sales ${tab.isWatchTab ? 'Watch ' : ''}Tab "${tab.name}" from ${tab.ownerName} — pending approval`,
+  });
+};
