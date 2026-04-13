@@ -62,20 +62,30 @@ async function removeStaleRepeatableJobs() {
   try {
     const repeatable = await announcementQueue.getRepeatableJobs();
     const toRemove = repeatable.filter(r => staleNames.has(r.name));
-    await Promise.allSettled(toRemove.map(r => announcementQueue.removeRepeatableByKey(r.key)));
-    if (toRemove.length) {
-      logger.info(`QueueManager: removed ${toRemove.length} stale announcement repeatable job(s)`);
+    for (const r of toRemove) {
+      try {
+        await announcementQueue.removeRepeatableByKey(r.key);
+        logger.info(`QueueManager: removed stale repeatable "${r.name}" (key: ${r.key})`);
+      } catch (err) {
+        logger.warn(`QueueManager: failed to remove repeatable "${r.name}": ${err.message}`);
+      }
     }
   } catch (err) {
     logger.warn('QueueManager: stale repeatable job cleanup warning (non-fatal)', { error: err.message });
   }
-  // Drain any already-enqueued instances still sitting in waiting/delayed
+  // Drain already-spawned instances sitting in waiting/delayed/active
   try {
-    const jobs = await announcementQueue.getJobs(['waiting', 'delayed']);
+    const jobs = await announcementQueue.getJobs(['waiting', 'delayed', 'active']);
     const stale = jobs.filter(j => staleNames.has(j.name));
-    await Promise.allSettled(stale.map(j => j.remove()));
+    for (const j of stale) {
+      try {
+        await j.remove();
+      } catch {
+        // job may be locked/active — ignore
+      }
+    }
     if (stale.length) {
-      logger.info(`QueueManager: drained ${stale.length} stale announcement polling job instance(s)`);
+      logger.info(`QueueManager: drained ${stale.length} stale announcement job instance(s)`);
     }
   } catch (err) {
     logger.warn('QueueManager: stale job drain warning (non-fatal)', { error: err.message });

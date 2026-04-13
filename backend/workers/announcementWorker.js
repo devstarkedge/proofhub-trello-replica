@@ -151,7 +151,9 @@ export function startAnnouncementWorker() {
     async (job) => {
       const handler = JOB_HANDLERS[job.name];
       if (!handler) {
-        throw new Error(`Unknown announcement job type: ${job.name}`);
+        // Silently skip stale/unknown jobs (e.g. leftover polling jobs in Redis)
+        console.warn(`[Worker:Announcement] skipping unknown job type: ${job.name} (${job.id})`);
+        return { skipped: true, reason: `unknown job type: ${job.name}` };
       }
       return handler(job);
     },

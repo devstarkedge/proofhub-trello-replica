@@ -14,6 +14,12 @@ const SalesFilters = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [searchInput, setSearchInput] = useState(filters.search || '');
 
+  // Keep local search input synced with global store filters.search so
+  // external clears (from other components) update the visible input.
+  useEffect(() => {
+    setSearchInput(filters.search || '');
+  }, [filters.search]);
+
   // Date Picker State
   const [datePickerState, setDatePickerState] = useState({
     isOpen: false,
@@ -212,8 +218,13 @@ const SalesFilters = () => {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => {
+              // Clear global filters
               clearFilters();
-              setDatePreset('all'); 
+              // Ensure local search input is cleared (prevents debounce from
+              // re-applying stale search back into global filters)
+              setSearchInput('');
+              // Reset date preset visual
+              setDatePreset('all');
             }}
             className="flex items-center gap-2 px-5 py-3 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-2xl transition-all border-2 border-red-200 dark:border-red-800 hover:border-red-300 dark:hover:border-red-700 shadow-sm hover:shadow-md"
           >

@@ -530,9 +530,13 @@ const SearchableSelect = React.memo(forwardRef(({
                           : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
                     }`}
                   >
-                    {/* Check mark */}
-                    <span className={`w-4 h-4 flex items-center justify-center shrink-0 ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-transparent'}`}>
-                      <Check className="w-3.5 h-3.5" />
+                    {/* Check mark — only rendered for the selected item so
+                         unselected rows are clean; the fixed-width spacer span
+                         keeps all option labels perfectly left-aligned. */}
+                    <span className="w-4 h-4 flex items-center justify-center shrink-0">
+                      {isSelected && (
+                        <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                      )}
                     </span>
 
                     {/* Option content */}
