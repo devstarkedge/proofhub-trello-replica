@@ -119,17 +119,27 @@ const useCommentDraft = (draftKey, options = {}) => {
         }
       }
     }, debounceMs);
-  }, [enabled, draftKey, getStorageKey, debounceMs]);
+  }, [enabled, draftKey, debounceMs, getStorageKey, clearDraft, cleanupOldDrafts]);
 
   // Clear draft from localStorage
   const clearDraft = useCallback(() => {
     if (!draftKey) return;
-    
+
     try {
       const key = getStorageKey();
+
+      //  remove current draft key
       if (key) {
         localStorage.removeItem(key);
       }
+
+      // remove any matching drafts for same channel/thread
+      Object.keys(localStorage).forEach((k) => {
+        if (k.includes(draftKey)) {
+          localStorage.removeItem(k);
+        }
+      });
+
       setHasDraft(false);
       setDraft(null);
     } catch (error) {

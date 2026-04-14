@@ -49,6 +49,7 @@ const EVENTS = {
   USER_UPDATED: 'USER_UPDATED',
   USER_DEACTIVATED: 'USER_DEACTIVATED',
   ANNOUNCEMENT_CREATED: 'ANNOUNCEMENT_CREATED',
+  ANNOUNCEMENT_DELETED: 'ANNOUNCEMENT_DELETED',
 };
 
 export const chatHooks = {
@@ -301,6 +302,32 @@ export const chatHooks = {
     const payload = buildAnnouncementPayload(announcement, actor);
     await webhookDispatcher.dispatch(EVENTS.ANNOUNCEMENT_CREATED, payload);
   },
+
+  async onAnnouncementDeleted(announcement, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+
+    const payload = buildAnnouncementPayload(announcement, actor);
+
+    console.log(" SENDING DELETE WEBHOOK", payload);
+
+    await webhookDispatcher.dispatch(
+      EVENTS.ANNOUNCEMENT_DELETED,
+      payload
+    );
+  },
+
+    async onAnnouncementUpdated(announcement, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+
+    const payload = buildAnnouncementPayload(announcement, actor);
+
+    await webhookDispatcher.dispatch(
+      EVENTS.ANNOUNCEMENT_UPDATED,
+      payload
+    );
+  }
+
+  
 };
 
 export default chatHooks;

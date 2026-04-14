@@ -392,6 +392,7 @@ export function buildAnnouncementPayload(announcement, actor) {
       category: announcement.category || null,
       priority: announcement.priority || 'normal',
       createdAt: announcement.createdAt || new Date().toISOString(),
+      subscriberIds: announcement.subscriberIds || []
     },
     actor: buildActor(actor),
   };

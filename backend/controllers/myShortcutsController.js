@@ -21,7 +21,7 @@ export const getMyDashboardSummary = asyncHandler(async (req, res, next) => {
   const userId = req.user._id;
 
   // Run all queries in parallel for performance
-  const [taskCount, loggedTimeData, activityCount, projectCount, announcementCount] = await Promise.all([
+  const [taskCount, loggedTimeData, activityCount, projectCount, Count] = await Promise.all([
     // 1. Count tasks assigned to user (check both assignees and members)
     Card.countDocuments({
       $or: [

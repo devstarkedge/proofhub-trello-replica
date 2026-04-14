@@ -366,6 +366,7 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
 
   await announcement.populate('createdBy', 'name email avatar role');
 
+
   // If not scheduled, broadcast immediately
   if (!announcementData.isScheduled) {
     // Use the saved announcement's subscribers to avoid mismatches and ensure structure
@@ -441,13 +442,13 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     slackHooks.onAnnouncementPosted(announcement, subscriberIds, req.user).catch(console.error);
 
     // Dispatch chat webhook for announcement
-    chatHooks.onAnnouncementCreated(announcement, req.user).catch(console.error);
-  } else {
-    // Scheduled announcement — create a delayed broadcast job at exact time
-    scheduleAnnouncementBroadcast(announcement).catch(err =>
-      console.error('[Announcement] Failed to schedule broadcast job:', err.message)
-    );
-  }
+    const enrichedAnnouncement = {
+      ...announcement.toJSON(),
+      subscriberIds
+    };
+
+    chatHooks.onAnnouncementCreated(enrichedAnnouncement, req.user).catch(console.error);
+      }
 
   // Schedule archive job at exact expiry time (for ALL announcements)
   scheduleAnnouncementArchive(announcement).catch(err =>
@@ -549,19 +550,25 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
   const announcement = await Announcement.findById(req.params.id);
 
   if (!announcement) {
-    // If announcement doesn't exist, consider it already deleted
     return res.status(200).json({
       success: true,
       message: 'Announcement already deleted or does not exist'
     });
   }
 
-  // Check authorization
-  if (announcement.createdBy.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'manager') {
+  // Authorization
+  if (
+    announcement.createdBy.toString() !== req.user.id &&
+    req.user.role !== 'admin' &&
+    req.user.role !== 'manager'
+  ) {
     return next(new ErrorResponse('Not authorized to delete this announcement', 403));
   }
 
-  // Delete attachments from Cloudinary
+  //  convert BEFORE delete
+  const announcementData = announcement.toObject();
+
+  // Delete attachments
   if (announcement.attachments && announcement.attachments.length > 0) {
     try {
       const attachmentsToDelete = announcement.attachments
@@ -570,20 +577,19 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
           public_id: att.public_id,
           resource_type: att.resource_type
         }));
-      
+
       if (attachmentsToDelete.length > 0) {
         await deleteMultipleAnnouncementAttachments(attachmentsToDelete);
       }
     } catch (error) {
       console.error('Error deleting Cloudinary attachments:', error);
-      // Continue with deletion even if Cloudinary cleanup fails
     }
   }
 
+  // Delete once
   await Announcement.findByIdAndDelete(req.params.id);
 
-  // Cancel any pending broadcast/archive jobs
-  cancelAnnouncementJobs(req.params.id).catch(console.error);
+  chatHooks.onAnnouncementDeleted(announcementData, req.user).catch(console.error);
 
   // Notify subscribers
   try {
