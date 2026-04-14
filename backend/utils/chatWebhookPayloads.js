@@ -159,6 +159,7 @@ export function buildTaskCreatedPayload(card, board, actor) {
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
     },
     actor: buildActor(actor),
   };
@@ -181,6 +182,7 @@ export function buildTaskUpdatedPayload(card, changes, board, actor) {
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
     },
     actor: buildActor(actor),
   };
@@ -203,6 +205,7 @@ export function buildTaskDeletedPayload(card, board, actor) {
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
     },
     actor: buildActor(actor),
   };
@@ -231,6 +234,7 @@ export function buildTaskAssignedPayload(card, assignees, board, actor) {
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
     },
     actor: buildActor(actor),
   };
@@ -254,6 +258,7 @@ export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
     },
     actor: buildActor(actor),
   };
@@ -277,6 +282,7 @@ export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, ac
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
     },
     actor: buildActor(actor),
   };
@@ -305,6 +311,7 @@ export function buildCommentAddedPayload(comment, card, board, actor) {
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
     },
     actor: buildActor(actor),
   };
@@ -334,6 +341,7 @@ export function buildTimeEntryPayload(card, entry, board, actor) {
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
     },
     actor: buildActor(actor),
   };
