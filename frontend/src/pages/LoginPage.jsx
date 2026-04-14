@@ -239,6 +239,14 @@ const LoginPage = () => {
                   {errors.password}
                 </motion.p>
               )}
+              <div className="flex justify-end mt-2">
+                <Link
+                  to="/forgot-password"
+                  className="text-sm text-purple-300 hover:text-purple-200 transition-colors"
+                >
+                  Forgot Password?
+                </Link>
+              </div>
             </motion.div>
 
             {/* Submit Button */}

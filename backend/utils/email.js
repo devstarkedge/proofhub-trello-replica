@@ -154,6 +154,69 @@ export const sendVerificationEmail = async (user) => {
   });
 };
 
+// Send password reset email
+export const sendPasswordResetEmail = async (user, resetUrl) => {
+  const resetHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Reset your FlowTask password</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+          .header p { margin: 0; font-size: 16px; opacity: 0.9; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
+          .cta-wrapper { text-align: center; margin: 32px 0; }
+          .button { display: inline-block; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #ffffff; padding: 16px 40px; text-decoration: none; border-radius: 12px; font-size: 16px; font-weight: 700; letter-spacing: 0.3px; }
+          .link-fallback { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin: 24px 0; word-break: break-all; font-size: 13px; color: #64748b; }
+          .link-fallback a { color: #6366f1; text-decoration: none; }
+          .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 24px 0; font-size: 14px; color: #92400e; }
+          .security-note { font-size: 13px; color: #94a3b8; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Reset Your Password</h1>
+            <p>FlowTask Account Recovery</p>
+          </div>
+          <div class="content">
+            <p class="message">Hi <strong>${user.name}</strong>,</p>
+            <p class="message">
+              We received a request to reset the password for your FlowTask account. Click the button below to set a new password:
+            </p>
+            <div class="cta-wrapper">
+              <a href="${resetUrl}" class="button">Reset Password</a>
+            </div>
+            <div class="warning">
+              <strong>⏱ This link expires in 15 minutes.</strong> After that, you'll need to request a new password reset.
+            </div>
+            <div class="security-note">
+              <strong>Didn't request this?</strong> If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged. If you're concerned about your account security, please contact your administrator.
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This is an automated security email — please do not reply.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: user.email,
+    subject: 'Reset your FlowTask password',
+    html: resetHtml
+  });
+};
+
 // Send Coming Soon Subscription Email
 export const sendComingSoonSubscriptionEmail = async (email, feature) => {
   const subscriptionHtml = `

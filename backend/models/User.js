@@ -112,6 +112,14 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date
   },
+  resetPasswordToken: {
+    type: String,
+    select: false
+  },
+  resetPasswordExpires: {
+    type: Date,
+    select: false
+  },
   recentCopyMoveDestinations: [{
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
     departmentName: String,
@@ -139,6 +147,7 @@ userSchema.index({ role: 1 });
 userSchema.index({ isVerified: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ createdAt: -1 });
+userSchema.index({ resetPasswordToken: 1, resetPasswordExpires: 1 });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {

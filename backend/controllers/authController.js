@@ -1,13 +1,15 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import User from '../models/User.js';
 import Department from '../models/Department.js';
 import Notification from '../models/Notification.js';
 import Role from '../models/Role.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { sendEmail } from '../utils/email.js';
+import { sendEmail, sendPasswordResetEmail } from '../utils/email.js';
 import notificationService from '../utils/notificationService.js';
 import { chatHooks } from '../utils/chatHooks.js';
+import config from '../config/index.js';
 import {
   runBackground,
   sendEmailInBackground,
@@ -381,5 +383,114 @@ export const refreshToken = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     token
+  });
+});
+
+// @desc    Forgot password — send reset email
+// @route   POST /api/auth/forgot-password
+// @access  Public
+export const forgotPassword = asyncHandler(async (req, res, next) => {
+  const { email } = req.body;
+
+  // Always return generic response to prevent email enumeration
+  const genericResponse = {
+    success: true,
+    message: 'If an account with that email exists, a password reset link has been sent.'
+  };
+
+  const user = await User.findOne({ email });
+
+  if (!user || !user.isActive) {
+    return res.status(200).json(genericResponse);
+  }
+
+  // Generate reset token (plaintext for URL, hashed for DB storage)
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  // Store hashed token and expiry
+  user.resetPasswordToken = hashedToken;
+  user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+  await user.save({ validateBeforeSave: false });
+
+  // Build reset URL and send email in background
+  const resetUrl = `${config.frontendUrl}/reset-password/${resetToken}`;
+
+  runBackground(async () => {
+    try {
+      await sendPasswordResetEmail(user, resetUrl);
+    } catch (error) {
+      console.error('Password reset email failed:', error.message);
+      // Clear token if email fails so user can retry immediately
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpires = undefined;
+      await user.save({ validateBeforeSave: false });
+    }
+  });
+
+  res.status(200).json(genericResponse);
+});
+
+// @desc    Verify reset token validity
+// @route   GET /api/auth/verify-reset-token/:token
+// @access  Public
+export const verifyResetToken = asyncHandler(async (req, res, next) => {
+  const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid or expired reset token'
+    });
+  }
+
+  res.status(200).json({ success: true, valid: true });
+});
+
+// @desc    Reset password using token
+// @route   POST /api/auth/reset-password/:token
+// @access  Public
+export const resetPassword = asyncHandler(async (req, res, next) => {
+  const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return next(new ErrorResponse('Invalid or expired reset token. Please request a new password reset.', 400));
+  }
+
+  // Set new password (triggers bcrypt pre-save hook)
+  user.password = req.body.password;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
+  user.lastLogin = Date.now();
+  await user.save();
+
+  // Generate fresh JWT for auto-login
+  const token = generateToken(user._id);
+
+  res.status(200).json({
+    success: true,
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      roleId: user.roleId,
+      department: user.department,
+      team: user.team,
+      avatar: user.avatar,
+      isVerified: user.isVerified,
+      forcePasswordChange: false
+    }
   });
 });
