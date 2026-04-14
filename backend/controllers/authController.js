@@ -392,28 +392,32 @@ export const refreshToken = asyncHandler(async (req, res, next) => {
 export const forgotPassword = asyncHandler(async (req, res, next) => {
   const { email } = req.body;
 
-  // Always return generic response to prevent email enumeration
-  const genericResponse = {
-    success: true,
-    message: 'If an account with that email exists, a password reset link has been sent.'
-  };
-
+  // Step 1: Find user by email
   const user = await User.findOne({ email });
 
-  if (!user || !user.isActive) {
-    return res.status(200).json(genericResponse);
+  if (!user) {
+    return next(new ErrorResponse('No account found with this email address.', 404));
   }
 
-  // Generate reset token (plaintext for URL, hashed for DB storage)
+  if (!user.isActive) {
+    return next(new ErrorResponse('This account has been deactivated. Please contact support.', 403));
+  }
+
+  // Step 2: Check verification status
+  if (!user.isVerified) {
+    return next(new ErrorResponse('Please verify your account before resetting your password. Contact your administrator for verification.', 403));
+  }
+
+  // Step 3: Generate reset token (plaintext for URL, hashed for DB storage)
   const resetToken = crypto.randomBytes(32).toString('hex');
   const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
-  // Store hashed token and expiry
+  // Step 4: Store hashed token and expiry
   user.resetPasswordToken = hashedToken;
   user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
   await user.save({ validateBeforeSave: false });
 
-  // Build reset URL and send email in background
+  // Step 5: Build reset URL and send email in background
   const resetUrl = `${config.frontendUrl}/reset-password/${resetToken}`;
 
   runBackground(async () => {
@@ -428,7 +432,10 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
     }
   });
 
-  res.status(200).json(genericResponse);
+  res.status(200).json({
+    success: true,
+    message: 'Password reset link has been sent to your email address.'
+  });
 });
 
 // @desc    Verify reset token validity

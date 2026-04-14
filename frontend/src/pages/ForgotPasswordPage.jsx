@@ -56,9 +56,14 @@ const ForgotPasswordPage = () => {
         autoClose: 4000
       });
     } catch (err) {
-      const msg = err.response?.status === 429
-        ? 'Too many requests. Please try again later.'
-        : 'Something went wrong. Please try again.';
+      let msg = 'Something went wrong. Please try again.';
+
+      if (err.response?.status === 429) {
+        msg = 'Too many requests. Please try again later.';
+      } else if (err.response?.data?.message) {
+        msg = err.response.data.message;
+      }
+
       toast.error(msg, {
         icon: <AlertCircle className="text-red-500" size={20} />,
         autoClose: 4000
