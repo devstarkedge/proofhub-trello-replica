@@ -7,6 +7,7 @@ import Activity from '../models/Activity.js';
 import Board from '../models/Board.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { emitToBoard } from '../realtime/index.js';
+import { chatHooks } from '../utils/chatHooks.js';
 import {
   uploadToCloudinary,
   deleteFromCloudinary,
@@ -274,6 +275,16 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
         name: req.user.name
       }
     });
+  }
+
+  // Chat webhook for attachment added (card-level only)
+  if (parentType === 'card' && cardId && resolvedBoardId) {
+    chatHooks.onAttachmentAdded(
+      { fileName: req.file.originalname, mimeType: req.file.mimetype, fileSize: req.file.size },
+      { _id: cardId },
+      { _id: resolvedBoardId },
+      req.user
+    ).catch(console.error);
   }
 
   res.status(201).json({

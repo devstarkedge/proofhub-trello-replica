@@ -397,3 +397,92 @@ export function buildAnnouncementPayload(announcement, actor) {
     actor: buildActor(actor),
   };
 }
+
+// ─── Subtask Event Payloads ──────────────────────────────────────────────────
+
+export function buildSubtaskEventPayload(subtask, card, board, actor, eventType) {
+  const workspaceId = resolveWorkspaceId();
+  return {
+    workspaceId,
+    eventType,
+    subtask: {
+      id: (subtask._id || subtask.id)?.toString(),
+      title: subtask.title || '',
+      isCompleted: subtask.isCompleted || false,
+    },
+    task: {
+      id: card._id?.toString(),
+      title: card.title || '',
+      boardId: (card.board || board?._id)?.toString(),
+    },
+    boardId: (card.board || board?._id)?.toString(),
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
+    actor: buildActor(actor),
+  };
+}
+
+// ─── Nano Subtask Event Payloads ─────────────────────────────────────────────
+
+export function buildNanoEventPayload(nano, subtask, card, board, actor, eventType) {
+  const workspaceId = resolveWorkspaceId();
+  return {
+    workspaceId,
+    eventType,
+    nano: {
+      id: (nano._id || nano.id)?.toString(),
+      title: nano.title || '',
+      isCompleted: nano.isCompleted || false,
+    },
+    subtask: {
+      id: (subtask._id || subtask.id)?.toString(),
+      title: subtask.title || '',
+    },
+    task: {
+      id: card._id?.toString(),
+      title: card.title || '',
+      boardId: (card.board || board?._id)?.toString(),
+    },
+    boardId: (card.board || board?._id)?.toString(),
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
+    actor: buildActor(actor),
+  };
+}
+
+// ─── Attachment Event Payloads ───────────────────────────────────────────────
+
+export function buildAttachmentEventPayload(attachment, card, board, actor) {
+  const workspaceId = resolveWorkspaceId();
+  return {
+    workspaceId,
+    eventType: 'ATTACHMENT_ADDED',
+    attachment: {
+      id: (attachment._id || attachment.id)?.toString(),
+      fileName: attachment.fileName || attachment.originalName || attachment.name || 'file',
+      mimeType: attachment.mimeType || attachment.type || null,
+      fileSize: attachment.fileSize || attachment.size || null,
+    },
+    task: {
+      id: card._id?.toString(),
+      title: card.title || '',
+      boardId: (card.board || board?._id)?.toString(),
+    },
+    boardId: (card.board || board?._id)?.toString(),
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
+    actor: buildActor(actor),
+  };
+}

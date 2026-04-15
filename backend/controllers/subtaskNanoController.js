@@ -10,6 +10,7 @@ import { refreshCardHierarchyStats, refreshSubtaskNanoStats } from '../utils/hie
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../realtime/index.js';
+import { chatHooks } from '../utils/chatHooks.js';
 
 const populateConfig = [
   { path: 'assignees', select: 'name email avatar' },
@@ -121,7 +122,10 @@ export const createNano = asyncHandler(async (req, res, next) => {
             subtaskId,
             nano: populated
         });
-    })
+    }),
+
+    // Chat webhook
+    chatHooks.onNanoCreated(nano, subtask, card, card.board, req.user).catch(console.error)
   ]);
 
   res.status(201).json({
@@ -267,6 +271,16 @@ export const updateNano = asyncHandler(async (req, res, next) => {
           type: 'status_changed',
           description: `Changed status from ${oldNano.status} to ${nano.status}`
         });
+        // Chat webhook for nano completion
+        if (nano.status === 'done' || nano.status === 'closed') {
+          try {
+            const parentSubtask = await Subtask.findById(subtaskId);
+            const parentCard = await Card.findById(taskId).populate('board', 'name');
+            if (parentSubtask && parentCard) {
+              chatHooks.onNanoCompleted(nano, parentSubtask, parentCard, parentCard.board, req.user).catch(console.error);
+            }
+          } catch (e) { console.error('chatHooks nano completed error:', e); }
+        }
       }
       if (oldNano.priority !== nano.priority) {
         activities.push({
@@ -373,6 +387,19 @@ export const deleteNano = asyncHandler(async (req, res, next) => {
     subtaskId: subtaskId.toString(),
     nanoId: nano._id
   });
+
+  // Chat webhook for nano deletion
+  const parentSubtask = await Subtask.findById(subtaskId);
+  const parentCard = await Card.findById(taskId).populate('board', 'name');
+  if (parentSubtask && parentCard) {
+    chatHooks.onNanoDeleted(
+      { _id: nano._id, title: nanoTitle },
+      parentSubtask,
+      parentCard,
+      parentCard.board,
+      req.user
+    ).catch(console.error);
+  }
 
   res.status(200).json({
     success: true,

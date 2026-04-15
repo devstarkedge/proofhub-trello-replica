@@ -25,6 +25,9 @@ import {
   buildUserPayload,
   buildUserUpdatedPayload,
   buildAnnouncementPayload,
+  buildSubtaskEventPayload,
+  buildNanoEventPayload,
+  buildAttachmentEventPayload,
 } from './chatWebhookPayloads.js';
 
 // ─── Event Constants (must match ChatApp's FLOWTASK_EVENTS) ──────────────────
@@ -50,6 +53,13 @@ const EVENTS = {
   USER_DEACTIVATED: 'USER_DEACTIVATED',
   ANNOUNCEMENT_CREATED: 'ANNOUNCEMENT_CREATED',
   ANNOUNCEMENT_DELETED: 'ANNOUNCEMENT_DELETED',
+  SUBTASK_CREATED: 'SUBTASK_CREATED',
+  SUBTASK_COMPLETED: 'SUBTASK_COMPLETED',
+  SUBTASK_DELETED: 'SUBTASK_DELETED',
+  NANO_CREATED: 'NANO_CREATED',
+  NANO_COMPLETED: 'NANO_COMPLETED',
+  NANO_DELETED: 'NANO_DELETED',
+  ATTACHMENT_ADDED: 'ATTACHMENT_ADDED',
 };
 
 export const chatHooks = {
@@ -325,7 +335,55 @@ export const chatHooks = {
       EVENTS.ANNOUNCEMENT_UPDATED,
       payload
     );
-  }
+  },
+
+  // ─── Subtask Hooks ─────────────────────────────────────────────────────
+
+  async onSubtaskCreated(subtask, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildSubtaskEventPayload(subtask, card, board, actor, 'SUBTASK_CREATED');
+    await webhookDispatcher.dispatch(EVENTS.SUBTASK_CREATED, payload);
+  },
+
+  async onSubtaskCompleted(subtask, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildSubtaskEventPayload(subtask, card, board, actor, 'SUBTASK_COMPLETED');
+    await webhookDispatcher.dispatch(EVENTS.SUBTASK_COMPLETED, payload);
+  },
+
+  async onSubtaskDeleted(subtask, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildSubtaskEventPayload(subtask, card, board, actor, 'SUBTASK_DELETED');
+    await webhookDispatcher.dispatch(EVENTS.SUBTASK_DELETED, payload);
+  },
+
+  // ─── Nano Subtask Hooks ────────────────────────────────────────────────
+
+  async onNanoCreated(nano, subtask, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildNanoEventPayload(nano, subtask, card, board, actor, 'NANO_CREATED');
+    await webhookDispatcher.dispatch(EVENTS.NANO_CREATED, payload);
+  },
+
+  async onNanoCompleted(nano, subtask, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildNanoEventPayload(nano, subtask, card, board, actor, 'NANO_COMPLETED');
+    await webhookDispatcher.dispatch(EVENTS.NANO_COMPLETED, payload);
+  },
+
+  async onNanoDeleted(nano, subtask, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildNanoEventPayload(nano, subtask, card, board, actor, 'NANO_DELETED');
+    await webhookDispatcher.dispatch(EVENTS.NANO_DELETED, payload);
+  },
+
+  // ─── Attachment Hooks ──────────────────────────────────────────────────
+
+  async onAttachmentAdded(attachment, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildAttachmentEventPayload(attachment, card, board, actor);
+    await webhookDispatcher.dispatch(EVENTS.ATTACHMENT_ADDED, payload);
+  },
 
   
 };

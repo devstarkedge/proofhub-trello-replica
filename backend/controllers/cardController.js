@@ -1325,15 +1325,17 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
   // Dispatch chat webhook for general task update (always, regardless of assignees)
   if (changedFields.length > 0) {
-    // Build changes object with actual new values so ChatApp handler can display them
+    // Build changes object with old/new diffs so ChatApp can display field-level details
     const chatChanges = {};
     for (const c of changedFields) {
-      if (c.field === 'status') chatChanges.status = req.body.status;
-      else if (c.field === 'priority') chatChanges.priority = req.body.priority;
-      else if (c.field === 'title') chatChanges.title = req.body.title;
-      else if (c.field === 'dueDate') chatChanges.dueDate = req.body.dueDate;
-      else if (c.field === 'listId') chatChanges.listId = req.body.listId || req.body.list;
-      else if (c.field === 'description') chatChanges.description = true;
+      if (c.field === 'status') chatChanges.status = { old: oldStatus, new: req.body.status };
+      else if (c.field === 'priority') chatChanges.priority = { old: oldPriority || 'None', new: req.body.priority || 'None' };
+      else if (c.field === 'title') chatChanges.title = { old: oldTitle, new: req.body.title };
+      else if (c.field === 'dueDate') chatChanges.dueDate = { old: oldDueDate ? new Date(oldDueDate).toLocaleDateString() : 'None', new: req.body.dueDate ? new Date(req.body.dueDate).toLocaleDateString() : 'Removed' };
+      else if (c.field === 'startDate') chatChanges.startDate = { old: oldStartDate ? new Date(oldStartDate).toLocaleDateString() : 'None', new: req.body.startDate ? new Date(req.body.startDate).toLocaleDateString() : 'Removed' };
+      else if (c.field === 'description') chatChanges.description = { old: 'Updated', new: 'Updated' };
+      else if (c.field === 'labels') chatChanges.labels = { old: oldLabels, new: (req.body.labels || []).map(l => l.toString()) };
+      else if (c.field === 'listId') chatChanges.listId = { old: null, new: req.body.listId || req.body.list };
     }
     const boardInfo = await Board.findById(card.board).select('name department').lean();
     chatHooks.onTaskUpdated(card, chatChanges, boardInfo, req.user).catch(console.error);

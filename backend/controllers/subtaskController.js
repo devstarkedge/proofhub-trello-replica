@@ -17,6 +17,7 @@ import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { slackHooks } from '../utils/slackHooks.js';
+import { chatHooks } from '../utils/chatHooks.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../realtime/index.js';
 
@@ -133,7 +134,10 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
             taskId,
             subtask: populated
         });
-    })
+    }),
+
+    // Chat webhook
+    chatHooks.onSubtaskCreated(subtask, card, card.board, req.user).catch(console.error)
   ]);
 
   res.status(201).json({
@@ -286,6 +290,7 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
           const parentTask = await Card.findById(taskId).populate('board', 'name');
           if (parentTask) {
             slackHooks.onSubtaskCompleted(subtask, parentTask, parentTask.board, req.user).catch(console.error);
+            chatHooks.onSubtaskCompleted(subtask, parentTask, parentTask.board, req.user).catch(console.error);
             
             // Check if all subtasks are completed
             const remainingSubtasks = await Subtask.countDocuments({ 
@@ -399,6 +404,14 @@ export const deleteSubtask = asyncHandler(async (req, res, next) => {
     taskId: taskId.toString(),
     subtaskId: subtask._id
   });
+
+  // Chat webhook for subtask deletion
+  chatHooks.onSubtaskDeleted(
+    { _id: subtask._id, title: subtaskTitle },
+    { _id: taskId },
+    { _id: boardId },
+    req.user
+  ).catch(console.error);
 
   res.status(200).json({
     success: true,
