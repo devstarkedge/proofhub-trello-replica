@@ -124,17 +124,17 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
       }
     }),
 
-    // Update stats
-    refreshCardHierarchyStats(taskId),
-
-    // Emit socket
-    Promise.resolve().then(() => {
-        emitToBoard(card.board.toString(), 'hierarchy-subtask-changed', {
-            type: 'created',
-            taskId,
-            subtask: populated
-        });
-    }),
+    // Update stats then emit socket with updated stats
+    (async () => {
+      await refreshCardHierarchyStats(taskId);
+      const updatedCard = await Card.findById(taskId).select('subtaskStats').lean();
+      emitToBoard(card.board.toString(), 'hierarchy-subtask-changed', {
+        type: 'created',
+        taskId,
+        subtask: populated,
+        subtaskStats: updatedCard?.subtaskStats || null
+      });
+    })(),
 
     // Chat webhook
     chatHooks.onSubtaskCreated(subtask, card, card.board, req.user).catch(console.error)
@@ -344,15 +344,17 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
       }
     },
 
-    // Refresh hierarchy stats
-    () => refreshCardHierarchyStats(taskId),
-
-    // Emit socket event
-    () => emitToBoard(boardId.toString(), 'hierarchy-subtask-changed', {
-      type: 'updated',
-      taskId: taskId.toString(),
-      subtask
-    }),
+    // Refresh hierarchy stats, then emit socket event with updated stats
+    async () => {
+      await refreshCardHierarchyStats(taskId);
+      const updatedCard = await Card.findById(taskId).select('subtaskStats').lean();
+      emitToBoard(boardId.toString(), 'hierarchy-subtask-changed', {
+        type: 'updated',
+        taskId: taskId.toString(),
+        subtask,
+        subtaskStats: updatedCard?.subtaskStats || null
+      });
+    },
 
     // Emit finance data refresh for time tracking changes
     () => {
@@ -399,10 +401,12 @@ export const deleteSubtask = asyncHandler(async (req, res, next) => {
 
   await refreshCardHierarchyStats(taskId);
 
+  const updatedCard = await Card.findById(taskId).select('subtaskStats').lean();
   emitToBoard(boardId.toString(), 'hierarchy-subtask-changed', {
     type: 'deleted',
     taskId: taskId.toString(),
-    subtaskId: subtask._id
+    subtaskId: subtask._id,
+    subtaskStats: updatedCard?.subtaskStats || null
   });
 
   // Chat webhook for subtask deletion
@@ -885,11 +889,13 @@ export const promoteSubtask = asyncHandler(async (req, res, next) => {
       // Refresh parent card stats
       await refreshCardHierarchyStats(parentTaskId);
 
+      const updatedParent = await Card.findById(parentTaskId).select('subtaskStats').lean();
       // Emit hierarchy change to source board
       emitToBoard(parentBoardId.toString(), 'hierarchy-subtask-changed', {
         type: 'deleted',
         taskId: parentTaskId,
-        subtaskId: subtask._id
+        subtaskId: subtask._id,
+        subtaskStats: updatedParent?.subtaskStats || null
       });
 
       // Emit card-created to destination board

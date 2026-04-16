@@ -9,11 +9,16 @@ import {
   Clock,
   RefreshCw,
   MoreHorizontal,
-  RotateCcw
+  RotateCcw,
+  Flag,
+  Hash,
+  UserCircle,
+  BarChart3
 } from "lucide-react";
 
 import DeletePopup from "./ui/DeletePopup";
 import Avatar from "./Avatar";
+import useFieldVisibilityStore from "../store/fieldVisibilityStore";
 
 // Helper to get text color based on background
 const getTextColor = (bgColor) => {
@@ -32,6 +37,9 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
   const [showDeletePopup, setShowDeletePopup] = React.useState(false);
   const [restoreLoading, setRestoreLoading] = React.useState(false);
   const [deleteLoading, setDeleteLoading] = React.useState(false);
+  
+  // Field visibility — shallow subscribe to avoid unnecessary re-renders
+  const visibleFields = useFieldVisibilityStore((s) => s.visibleFields);
   
   // Check if card is optimistic/temporary (not yet saved to database)
   const isOptimistic = card.isOptimistic || (card._id && card._id.toString().startsWith('temp-'));
@@ -199,7 +207,7 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
             <img src={coverImageUrl} alt="Cover" className="w-full h-full object-cover" />
           </div>
           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300" />
-          {allLabels.length > 0 && renderLabels(true)}
+          {visibleFields.labels && allLabels.length > 0 && renderLabels(true)}
         </div>
       )}
 
@@ -209,7 +217,7 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
         {/* Floating Actions on Hover */}
         <div className={`absolute top-2 right-2 flex gap-1 z-20 transition-all duration-200 ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'}`}>
            {/* Date moves here on hover (only show in active view) */}
-           {!isArchivedView && card.dueDate && (
+           {visibleFields.dueDate && !isArchivedView && card.dueDate && (
              <div className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-1 rounded-md shadow-sm border backdrop-blur-md transition-colors ${isOverdue ? "bg-red-50 text-red-600 border-red-100" : "bg-white/90 text-gray-500 border-gray-200"}`}>
                <Clock size={11} strokeWidth={2.5} />
                <span>{new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
@@ -249,12 +257,79 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
         </div>
 
         {/* Labels (if no cover) */}
-        {!coverImageUrl && allLabels.length > 0 && renderLabels(false)}
+        {visibleFields.labels && !coverImageUrl && allLabels.length > 0 && renderLabels(false)}
+
+        {/* Priority badge */}
+        {visibleFields.priority && card.priority && (
+          <div className="mb-2">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-md ${
+              card.priority === 'high' ? 'bg-red-50 text-red-600 border border-red-100' :
+              card.priority === 'critical' ? 'bg-red-100 text-red-700 border border-red-200' :
+              card.priority === 'medium' ? 'bg-yellow-50 text-yellow-700 border border-yellow-100' :
+              'bg-gray-50 text-gray-600 border border-gray-100'
+            }`}>
+              <Flag size={9} strokeWidth={2.5} />
+              {card.priority.charAt(0).toUpperCase() + card.priority.slice(1)}
+            </span>
+          </div>
+        )}
 
         {/* Title */}
         <h4 className={`text-[14px] leading-snug font-medium text-gray-800 line-clamp-2 mb-3 group-hover/card:text-purple-700 transition-colors ${!coverImageUrl && allLabels.length === 0 ? 'mt-1' : ''}`}>
           {card.title}
         </h4>
+
+        {/* Task ID */}
+        {visibleFields.taskId && card._id && (
+          <div className="mb-2 text-[10px] font-mono text-gray-400 truncate">
+            <Hash size={9} className="inline mr-0.5" />{card._id.slice(-8)}
+          </div>
+        )}
+
+        {/* Start Date */}
+        {visibleFields.startDate && card.startDate && (
+          <div className="mb-2 flex items-center gap-1 text-[11px] text-gray-500">
+            <Calendar size={11} strokeWidth={2} />
+            <span>Start: {new Date(card.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+          </div>
+        )}
+
+        {/* Progress bar */}
+        {visibleFields.progress && stats.subtasks?.total > 0 && (
+          <div className="mb-2.5">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-medium text-gray-500 flex items-center gap-1">
+                <BarChart3 size={10} />
+                Progress
+              </span>
+              <span className="text-[10px] font-bold text-gray-600">
+                {Math.round((stats.subtasks.completed / stats.subtasks.total) * 100)}%
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-300 bg-gradient-to-r from-purple-500 to-blue-500"
+                style={{ width: `${(stats.subtasks.completed / stats.subtasks.total) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Created by */}
+        {visibleFields.createdBy && card.createdBy && (
+          <div className="mb-2 flex items-center gap-1 text-[10px] text-gray-400">
+            <UserCircle size={10} />
+            <span>By {typeof card.createdBy === 'object' ? card.createdBy.name : 'Unknown'}</span>
+          </div>
+        )}
+
+        {/* Last updated */}
+        {visibleFields.lastUpdated && card.updatedAt && (
+          <div className="mb-2 flex items-center gap-1 text-[10px] text-gray-400">
+            <Clock size={10} />
+            <span>Updated {new Date(card.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+          </div>
+        )}
 
         {/* Archive countdown (read-only) */}
         {autoDeleteCountdown && (
@@ -268,6 +343,7 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
         <div className="flex items-center justify-between pt-2 mt-auto border-t border-gray-100/60">
           
           {/* Members */}
+          {visibleFields.assignees && (
           <div className="flex items-center gap-1">
             {card.assignees?.length === 1 ? (
               // Single Assignee - Show Name
@@ -307,49 +383,60 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
               </>
             )}
           </div>
+          )}
+          {!visibleFields.assignees && <div />}
 
           {/* Badges */}
           <div className="flex items-center gap-1 text-gray-500 flex-shrink-0">
             {/* Date - Hidden on Hover */}
-            {card.dueDate && (
+            {visibleFields.dueDate && card.dueDate && (
                <div className={`flex items-center gap-1 text-[11px] font-medium px-1 py-0.5 rounded-md group-hover/card:hidden ${isOverdue ? "text-red-600 bg-red-50" : "bg-gray-50 text-gray-500"}`}>
                  <Clock size={12} strokeWidth={2.5} />
                  <span>{new Date(card.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                </div>
             )}
             
-            {/* Logged Time - Shown on Hover */}
-             <div className="hidden group-hover/card:flex items-center gap-1 text-[11px] font-bold px-1 py-0.5 rounded-md bg-green-50 text-green-600 border border-green-100">
-               <Clock size={12} strokeWidth={2.5} />
-               <span>{(() => {
-                 const totalMinutes = card.loggedTime?.reduce((acc, log) => acc + (log.hours * 60) + log.minutes, 0) || 0;
-                 const h = Math.floor(totalMinutes / 60);
-                 const m = totalMinutes % 60;
-                 return `${h}h${m > 0 ? ` ${m}m` : ''}`;
-               })()}</span>
-             </div>
+            {/* Logged Time - Shown on Hover (or always if timeTracked field is visible) */}
+            {visibleFields.timeTracked ? (
+              <div className="flex items-center gap-1 text-[11px] font-bold px-1 py-0.5 rounded-md bg-green-50 text-green-600 border border-green-100">
+                <Clock size={12} strokeWidth={2.5} />
+                <span>{(() => {
+                  const totalMinutes = card.loggedTime?.reduce((acc, log) => acc + (log.hours * 60) + log.minutes, 0) || 0;
+                  const h = Math.floor(totalMinutes / 60);
+                  const m = totalMinutes % 60;
+                  return `${h}h${m > 0 ? ` ${m}m` : ''}`;
+                })()}</span>
+              </div>
+            ) : (
+              <div className="hidden group-hover/card:flex items-center gap-1 text-[11px] font-bold px-1 py-0.5 rounded-md bg-green-50 text-green-600 border border-green-100">
+                <Clock size={12} strokeWidth={2.5} />
+                <span>{(() => {
+                  const totalMinutes = card.loggedTime?.reduce((acc, log) => acc + (log.hours * 60) + log.minutes, 0) || 0;
+                  const h = Math.floor(totalMinutes / 60);
+                  const m = totalMinutes % 60;
+                  return `${h}h${m > 0 ? ` ${m}m` : ''}`;
+                })()}</span>
+              </div>
+            )}
             
-            {stats.subtasks?.total > 0 && (
+            {visibleFields.subtaskCount && stats.subtasks?.total > 0 && (
               <div className="flex items-center gap-1 text-[11px] font-medium" title="Subtasks">
                 <CheckSquare size={14} className={stats.subtasks.completed === stats.subtasks.total ? 'text-green-500' : 'text-gray-400'} />
                 <span>{stats.subtasks.completed}/{stats.subtasks.total}</span>
               </div>
             )}
 
-            {(stats.attachments > 0 || stats.comments > 0) && (
-              <div className="flex items-center gap-1">
-                 {stats.attachments > 0 && (
-                   <div className="flex items-center gap-0.5">
-                     <Paperclip size={12} />
-                     <span className="text-[11px] font-medium">{stats.attachments}</span>
-                   </div>
-                 )}
-                 {stats.comments > 0 && (
-                    <div className="flex items-center gap-0.5">
-                      <MessageSquare size={12} />
-                      <span className="text-[11px] font-medium">{stats.comments}</span>
-                    </div>
-                 )}
+            {visibleFields.attachments && stats.attachments > 0 && (
+              <div className="flex items-center gap-0.5">
+                <Paperclip size={12} />
+                <span className="text-[11px] font-medium">{stats.attachments}</span>
+              </div>
+            )}
+            
+            {visibleFields.commentsCount && stats.comments > 0 && (
+              <div className="flex items-center gap-0.5">
+                <MessageSquare size={12} />
+                <span className="text-[11px] font-medium">{stats.comments}</span>
               </div>
             )}
           </div>

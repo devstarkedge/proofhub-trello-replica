@@ -323,18 +323,21 @@ export const updateNano = asyncHandler(async (req, res, next) => {
       }
     },
 
-    // Refresh stats in parallel
-    () => Promise.all([
-      refreshSubtaskNanoStats(subtaskId),
-      refreshCardHierarchyStats(taskId)
-    ]),
-
-    // Emit socket event
-    () => emitToBoard(boardId.toString(), 'hierarchy-nano-changed', {
-      type: 'updated',
-      subtaskId: subtaskId.toString(),
-      nano
-    }),
+    // Refresh stats then emit socket event with updated card stats
+    async () => {
+      await Promise.all([
+        refreshSubtaskNanoStats(subtaskId),
+        refreshCardHierarchyStats(taskId)
+      ]);
+      const updatedCard = await Card.findById(taskId).select('subtaskStats').lean();
+      emitToBoard(boardId.toString(), 'hierarchy-nano-changed', {
+        type: 'updated',
+        subtaskId: subtaskId.toString(),
+        taskId: taskId.toString(),
+        nano,
+        subtaskStats: updatedCard?.subtaskStats || null
+      });
+    },
 
     // Emit finance data refresh for time tracking changes
     () => {

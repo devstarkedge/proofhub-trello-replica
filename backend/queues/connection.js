@@ -33,7 +33,7 @@ export function createRedisConnection(overrides = {}) {
     maxRetriesPerRequest: null,   // Required by BullMQ
     enableReadyCheck: false,
     lazyConnect: true,            // Don't connect until first command
-    enableOfflineQueue: false,    // Fail fast when disconnected
+    enableOfflineQueue: true,    // Fail fast when disconnected
     connectTimeout: 10000,        // 10 s connect timeout
     disconnectTimeout: 5000,      // 5 s disconnect timeout
     retryStrategy(times) {

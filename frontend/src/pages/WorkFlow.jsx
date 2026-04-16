@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useContext, Suspense, memo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useContext, Suspense, memo, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Filter, Search, Users, Calendar, Loader2, Pencil, Shield, User, Crown, RefreshCw, Archive, Trash2, ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import Database from '../services/database';
 import Board from '../components/Board';
 import { lazy } from 'react';
@@ -11,12 +11,19 @@ import socketService from '../services/socket';
 import AuthContext from '../context/AuthContext';
 import useWorkflowStore from '../store/workflowStore';
 import useModalHierarchyStore from '../store/modalHierarchyStore';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../components/ui/dropdown-menu';
+import useFieldVisibilityStore from '../store/fieldVisibilityStore';
+import useWorkflowFilterStore from '../store/workflowFilterStore';
+
 import HierarchyModalStack from '../components/hierarchy/HierarchyModalStack';
 import { WorkflowSkeleton } from '../components/LoadingSkeleton';
 import { toast } from 'react-toastify';
 import AllRecurringTasksPage from './AllRecurringTasksPage';
-import Avatar from '../components/Avatar';
+
+import WorkflowHeader from '../components/workflow/WorkflowHeader';
+import ShowFieldsPanel from '../components/workflow/ShowFieldsPanel';
+import FilterPanel from '../components/workflow/FilterPanel';
+import FilterChipsBar from '../components/workflow/FilterChipsBar';
+import { generateWorkflowCSV } from '../utils/csvExport';
 
 const WorkFlow = memo(() => {
   const { deptId, projectId, taskId, subtaskId, nenoId } = useParams();
@@ -54,9 +61,6 @@ const WorkFlow = memo(() => {
     removeCardFromSocket
   } = useWorkflowStore();
 
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [priorityFilter, setPriorityFilter] = useState('All');
-  const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -68,6 +72,9 @@ const WorkFlow = memo(() => {
   const [archivedCardsByList, setArchivedCardsByList] = useState({});
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [highlightedEntityId, setHighlightedEntityId] = useState(null);
+  const [showFieldsPanel, setShowFieldsPanel] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [boardLabels, setBoardLabels] = useState([]);
   const shareKey = `${taskId || ''}-${subtaskId || ''}-${nenoId || ''}`;
   const modalStack = useModalHierarchyStore((state) => state.stack);
   const openHierarchyModal = useModalHierarchyStore((state) => state.openModalByType);
@@ -76,22 +83,52 @@ const WorkFlow = memo(() => {
   const updateHierarchyLabel = useModalHierarchyStore((state) => state.updateItemLabel);
   const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
 
+  // Field visibility & filter stores
+  const initializeFieldVisibility = useFieldVisibilityStore((s) => s.initialize);
+  const initializeFilters = useWorkflowFilterStore((s) => s.initialize);
+  const filters = useWorkflowFilterStore((s) => s.filters);
+  const matchesFilters = useWorkflowFilterStore((s) => s.matchesFilters);
+  const getActiveFilterCount = useWorkflowFilterStore((s) => s.getActiveFilterCount);
+  const clearAllFilters = useWorkflowFilterStore((s) => s.clearAllFilters);
+  const startDraft = useWorkflowFilterStore((s) => s.startDraft);
+
+  // Initialize stores when project + user change
+  useEffect(() => {
+    if (projectId && user?.id) {
+      initializeFieldVisibility(projectId, user.id);
+      initializeFilters(projectId, user.id);
+    }
+  }, [projectId, user?.id, initializeFieldVisibility, initializeFilters]);
+
+  // Fetch board labels for filter panel
+  useEffect(() => {
+    if (board?._id) {
+      Database.getLabelsByBoard(board._id)
+        .then(res => {
+          if (res.success || res.data) {
+            setBoardLabels(res.data || res || []);
+          }
+        })
+        .catch(() => setBoardLabels([]));
+    }
+  }, [board?._id]);
+
   // Reset local state when projectId changes
   useEffect(() => {
     // We rely on store's initializeWorkflow to handle data loading/clearing.
     // However, we MUST reset local UI state (filters, etc.) when switching projects.
     if (prevProjectIdRef.current && prevProjectIdRef.current !== projectId) {
-       setStatusFilter('All');
-       setPriorityFilter('All');
        setSearchQuery('');
        setDebouncedSearch('');
-       setShowFilters(false);
        setEditModalOpen(false);
        setSelectedProject(null);
        setFullProjectData(null);
        setShareAutoOpened(false);
        setShowRecurringPage(false);
        setShowArchived(false);
+       setShowFieldsPanel(false);
+       setShowFilterPanel(false);
+       setBoardLabels([]);
        closeHierarchy();
     }
     prevProjectIdRef.current = projectId;
@@ -205,6 +242,31 @@ useEffect(() => {
     window.removeEventListener('socket-task-moved-cross', handleTaskMovedCross);
   };
 }, [board, addCardFromSocket, removeCardFromSocket]);
+
+// Listen for real-time subtask/nano changes to update card progress bar
+useEffect(() => {
+  const handleSubtaskHierarchy = (event) => {
+    const { taskId, subtaskStats } = event.detail || {};
+    if (taskId && subtaskStats) {
+      useWorkflowStore.getState().updateCardLocal(taskId, { subtaskStats });
+    }
+  };
+
+  const handleNanoHierarchy = (event) => {
+    const { taskId, subtaskStats } = event.detail || {};
+    if (taskId && subtaskStats) {
+      useWorkflowStore.getState().updateCardLocal(taskId, { subtaskStats });
+    }
+  };
+
+  window.addEventListener('socket-subtask-hierarchy', handleSubtaskHierarchy);
+  window.addEventListener('socket-nano-hierarchy', handleNanoHierarchy);
+
+  return () => {
+    window.removeEventListener('socket-subtask-hierarchy', handleSubtaskHierarchy);
+    window.removeEventListener('socket-nano-hierarchy', handleNanoHierarchy);
+  };
+}, []);
 
 useEffect(() => {
   if (board) {
@@ -342,8 +404,6 @@ useEffect(() => {
   }, [addCard, board?._id]);
 
   const handleSearchChange = useCallback((e) => setSearchQuery(e.target.value), []);
-  const handleStatusChange = useCallback((e) => setStatusFilter(e.target.value), []);
-  const handlePriorityChange = useCallback((e) => setPriorityFilter(e.target.value), []);
 
   const handleDeleteCard = useCallback(async (cardId, options = {}) => {
     if (!cardId) return;
@@ -608,49 +668,30 @@ useEffect(() => {
 
   // Memoize filter values to prevent unnecessary re-computations
   const activeFilters = React.useMemo(() => {
-    const mapPriorityValue = (val) => {
-      if (!val || val === 'All') return null;
-      const map = { 'Low': 'low', 'Medium': 'medium', 'High': 'high' };
-      return map[val] || val.toLowerCase();
-    };
-
-    const normalize = (s) => (s || '').toString().trim().toLowerCase();
-
     return {
-      status: statusFilter && statusFilter !== 'All' ? normalize(statusFilter) : null,
-      priority: mapPriorityValue(priorityFilter),
       search: debouncedSearch ? debouncedSearch.toLowerCase() : '',
-      selectedProjectId: selectedProject ? (selectedProject._id || selectedProject) : null
+      selectedProjectId: selectedProject ? (selectedProject._id || selectedProject) : null,
+      hasStoreFilters: getActiveFilterCount() > 0,
     };
-  }, [statusFilter, priorityFilter, debouncedSearch, selectedProject]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, selectedProject, getActiveFilterCount, filters]);
 
-  // Compute filtered cards per list with optimized filtering
+  // Compute filtered cards per list with enterprise filtering
   const { filteredCardsByList, totalFilteredCount } = React.useMemo(() => {
     const result = {};
     let total = 0;
-
-    // Pre-compute normalized values for better performance
-    const normalize = (s) => (s || '').toString().trim().toLowerCase();
 
     for (const list of lists) {
       const listId = list._id;
       // Use archived cards if showing archived view, otherwise use active cards
       const cards = showArchived ? (archivedCardsByList[listId] || []) : (cardsByList[listId] || []);
 
-      // Only filter if we have active filters
-      const hasFilters = activeFilters.status || activeFilters.priority || activeFilters.search || activeFilters.selectedProjectId;
+      const hasFilters = activeFilters.search || activeFilters.selectedProjectId || activeFilters.hasStoreFilters;
 
       const filtered = hasFilters ? cards.filter(card => {
-        // Status filter
-        if (activeFilters.status) {
-          const cstatus = normalize(card.status);
-          if (cstatus !== activeFilters.status) return false;
-        }
-
-        // Priority filter
-        if (activeFilters.priority) {
-          const cprio = normalize(card.priority);
-          if (cprio !== activeFilters.priority) return false;
+        // Enterprise multi-filter via store
+        if (activeFilters.hasStoreFilters) {
+          if (!matchesFilters(card, list.title)) return false;
         }
 
         // Project filter
@@ -668,7 +709,10 @@ useEffect(() => {
           if (desc.includes(activeFilters.search)) return true;
 
           const labels = card.labels || [];
-          if (labels.some(l => ('' + l).toLowerCase().includes(activeFilters.search))) return true;
+          if (labels.some(l => {
+            const labelText = typeof l === 'object' ? l.name : String(l);
+            return (labelText || '').toLowerCase().includes(activeFilters.search);
+          })) return true;
 
           return false;
         }
@@ -681,7 +725,39 @@ useEffect(() => {
     }
 
     return { filteredCardsByList: result, totalFilteredCount: total };
-  }, [lists, cardsByList, archivedCardsByList, activeFilters, showArchived]);
+  }, [lists, cardsByList, archivedCardsByList, activeFilters, showArchived, matchesFilters]);
+
+  // Flat array of all cards for FilterPanel preview counts
+  const allCards = useMemo(() => {
+    const all = [];
+    for (const list of lists) {
+      const cards = cardsByList[list._id] || [];
+      all.push(...cards);
+    }
+    return all;
+  }, [lists, cardsByList]);
+
+  // Maps for FilterChipsBar display names
+  const assigneeMap = useMemo(() => {
+    const map = {};
+    allCards.forEach(card => {
+      (card.assignees || []).forEach(a => {
+        if (typeof a === 'object' && a._id) map[a._id] = a.name || a.email || 'Unknown';
+      });
+    });
+    return map;
+  }, [allCards]);
+
+  const labelMap = useMemo(() => {
+    const map = {};
+    (boardLabels || []).forEach(l => { if (l._id) map[l._id] = l.name; });
+    allCards.forEach(card => {
+      (card.labels || []).forEach(l => {
+        if (typeof l === 'object' && l._id && !map[l._id]) map[l._id] = l.name;
+      });
+    });
+    return map;
+  }, [allCards, boardLabels]);
 
   const autoOpenSharedPath = useCallback(async () => {
     if (!taskId || !board) return;
@@ -752,6 +828,31 @@ useEffect(() => {
     }
     autoOpenSharedPath();
   }, [taskId, loading, shareAutoOpened, board, autoOpenSharedPath]);
+
+  // CSV export handler
+  const handleDownloadCSV = useCallback(() => {
+    try {
+      const filename = generateWorkflowCSV({
+        board,
+        lists,
+        cardsByList: filteredCardsByList,
+        userName: user?.name || user?.email || 'Unknown',
+      });
+      toast.success(`Exported: ${filename}`);
+    } catch (err) {
+      console.error('CSV export failed:', err);
+      toast.error('Failed to export CSV');
+    }
+  }, [board, lists, filteredCardsByList, user]);
+
+  // Navigation handler for header
+  const handleNavigateBack = useCallback(() => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/');
+    }
+  }, [navigate]);
   
   // Show loading skeleton while loading, team loading, or when projectId doesn't match current data
   const isProjectMismatch = currentProjectId && currentProjectId !== projectId;
@@ -813,226 +914,49 @@ useEffect(() => {
 
   return (
     <div className="h-full flex flex-col bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 overflow-hidden">
-      {/* Custom Header for Workflow */}
-      <header className="bg-white/10 backdrop-blur-lg border-b border-white/20 shadow-lg">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  // Use browser history if available, otherwise fallback to home
-                  if (window.history.length > 1) {
-                    navigate(-1);
-                  } else {
-                    navigate('/');
-                  }
-                }}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white"
-              >
-                <ArrowLeft size={24} />
-              </motion.button>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-bold text-white truncate">{board.name}</h1>
-                  {board.description && (
-                    <FileText size={14} className="text-white/60" title="Description available" />
-                  )}
-                  {(user?.role === 'admin' || user?.role === 'manager') && (
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={handleOpenEditModal}
-                      className="p-1.5 hover:bg-white/20 rounded-lg text-white/70 hover:text-white transition-colors flex-shrink-0"
-                      title="Edit Project"
-                    >
-                      <Pencil size={16} />
-                    </motion.button>
-                  )}
-                </div>
-              </div>
-            </div>
+      {/* Enterprise Workflow Header */}
+      <WorkflowHeader
+        board={board}
+        user={user}
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
+        onFilterToggle={() => {
+          if (!showFilterPanel) startDraft();
+          setShowFilterPanel(prev => !prev);
+          setShowFieldsPanel(false);
+        }}
+        activeFilterCount={getActiveFilterCount()}
+        onNavigateBack={handleNavigateBack}
+        onEditProject={handleOpenEditModal}
+        onDownloadCSV={handleDownloadCSV}
+        onShowFields={() => {
+          setShowFieldsPanel(prev => !prev);
+          setShowFilterPanel(false);
+        }}
+        onTrash={() => navigate(`/workflow/${deptId}/${projectId}/trash`)}
+        onRecurringTasks={() => setShowRecurringPage(true)}
+        onArchiveToggle={() => setShowArchived(prev => !prev)}
+        showArchived={showArchived}
+      />
 
-            <div className="flex items-center gap-3">
-              {/* Search */}
-              <div className="relative hidden md:block">
-                <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50" />
-                <input
-                  type="text"
-                  placeholder="Search cards..."
-                  value={searchQuery}
-                  onChange={handleSearchChange}
-                  className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 backdrop-blur-lg"
-                />
-              </div>
+      {/* Show Fields Panel */}
+      <ShowFieldsPanel
+        isOpen={showFieldsPanel}
+        onClose={() => setShowFieldsPanel(false)}
+      />
 
-              {/* Filters */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-colors backdrop-blur-lg border border-white/20"
-              >
-                <Filter size={18} />
-                Filters
-              </motion.button>
+      {/* Enterprise Filter Panel */}
+      <FilterPanel
+        isOpen={showFilterPanel}
+        onClose={() => setShowFilterPanel(false)}
+        lists={lists}
+        cardsByList={cardsByList}
+        boardLabels={boardLabels}
+        allCards={allCards}
+      />
 
-              {/* Archive View Toggle */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowArchived(!showArchived)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white transition-colors backdrop-blur-lg border ${
-                  showArchived
-                    ? 'bg-orange-600 border-orange-500 hover:bg-orange-700'
-                    : 'bg-white/10 hover:bg-white/20 border-white/20'
-                }`}
-                title={showArchived ? 'Show Active Tasks' : 'Show Archived Tasks'}
-              >
-                <Archive size={18} />
-                <span className="hidden lg:inline">{showArchived ? 'Archived' : 'View Archive'}</span>
-              </motion.button>
-
-              {/* Project Trash Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => navigate(`/workflow/${deptId}/${projectId}/trash`)}
-                className="flex items-center gap-2 px-4 py-2 bg-red-500/80 hover:bg-red-500 rounded-lg text-white transition-colors backdrop-blur-lg border border-red-400/50"
-                title="Project Trash (Media)"
-              >
-                <Trash2 size={18} />
-                <span className="hidden lg:inline">Trash</span>
-              </motion.button>
-
-              {/* View All Recurring Tasks Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowRecurringPage(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-500/80 hover:bg-orange-500 rounded-lg text-white transition-colors backdrop-blur-lg border border-orange-400/50"
-                title="View All Recurring Tasks"
-              >
-                <RefreshCw size={18} />
-                <span className="hidden lg:inline">Recurring Tasks</span>
-              </motion.button>
-
-              {/* Team Members */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg backdrop-blur-lg border border-white/20 transition-colors"
-                  >
-                    <Users size={18} className="text-white" />
-                    <span className="text-white font-medium">{board.members?.length || 0}</span>
-                  </motion.button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-64 bg-white/95 backdrop-blur-lg border border-white/20">
-                  {board.members && board.members.length > 0 ? (
-                    board.members.map((member) => {
-                      const getRoleIcon = (role) => {
-                        switch (role) {
-                          case 'admin':
-                            return <Crown size={14} className="text-yellow-500" />;
-                          case 'manager':
-                            return <Shield size={14} className="text-blue-500" />;
-                          default:
-                            return <User size={14} className="text-gray-500" />;
-                        }
-                      };
-
-                      const getRoleLabel = (role) => {
-                        switch (role) {
-                          case 'admin':
-                            return 'Admin';
-                          case 'manager':
-                            return 'Manager';
-                          default:
-                            return 'Member';
-                        }
-                      };
-
-                      return (
-                        <DropdownMenuItem key={member._id} className="flex items-center gap-3 px-3 py-3">
-                          <Avatar
-                            src={member.avatar}
-                            name={member.name}
-                            role={member.role}
-                            size="md"
-                            showBadge={true}
-                          />
-                          <div className="flex flex-col flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-900">{member.name || 'Unknown'}</span>
-                              {getRoleIcon(member.role)}
-                            </div>
-                            <span className="text-xs text-gray-500">{member.email || ''}</span>
-                            <span className="text-xs text-blue-600 font-medium">{getRoleLabel(member.role)}</span>
-                          </div>
-                        </DropdownMenuItem>
-                      );
-                    })
-                  ) : (
-                    <DropdownMenuItem disabled className="text-center text-gray-500">
-                      No members assigned
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {/* Add List Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  const title = prompt('Enter list name:');
-                  if (title) handleAddList(title);
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-white text-purple-900 rounded-lg font-semibold hover:bg-gray-100 transition-colors shadow-lg"
-              >
-                <Plus size={18} />
-                Add List
-              </motion.button>
-            </div>
-          </div>
-
-          {/* Filters Panel */}
-          <AnimatePresence>
-            {showFilters && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mt-4 flex gap-3"
-              >
-                <select
-                  value={statusFilter}
-                  onChange={handleStatusChange}
-                  className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white backdrop-blur-lg focus:outline-none focus:ring-2 focus:ring-white/30"
-                >
-                  <option className="bg-white text-gray-900" value="All">All Status</option>
-                  {lists && lists.length > 0 && Array.from(new Set(lists.map(l => l.title))).map((title) => (
-                    <option key={title} className="bg-white text-gray-900" value={title}>{title}</option>
-                  ))}
-                </select>
-                <select
-                  value={priorityFilter}
-                  onChange={handlePriorityChange}
-                  className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white backdrop-blur-lg focus:outline-none focus:ring-2 focus:ring-white/30"
-                >
-                  <option className="bg-white text-gray-900" value="All">All Priority</option>
-                  <option className="bg-white text-gray-900" value="Low">Low</option>
-                  <option className="bg-white text-gray-900" value="Medium">Medium</option>
-                  <option className="bg-white text-gray-900" value="High">High</option>
-                </select>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </header>
+      {/* Active Filter Chips */}
+      <FilterChipsBar assigneeMap={assigneeMap} labelMap={labelMap} />
 
       <main className="flex-1 overflow-hidden relative">
         {hasNoLists ? (
@@ -1058,6 +982,30 @@ useEffect(() => {
                   <Plus size={24} />
                   Create First List
                 </motion.button>
+              </div>
+            </motion.div>
+          </div>
+        ) : totalFilteredCount === 0 && (activeFilters.hasStoreFilters || activeFilters.search) ? (
+          <div className="flex items-center justify-center h-full">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center text-white max-w-sm mx-4"
+            >
+              <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-10 border border-white/20">
+                <div className="text-5xl mb-4">🔍</div>
+                <h3 className="text-xl font-bold mb-2">No tasks match</h3>
+                <p className="text-sm text-white/70 mb-6">
+                  {activeFilters.search
+                    ? `No results for "${debouncedSearch}"`
+                    : 'Try adjusting your filters to see more tasks.'}
+                </p>
+                <button
+                  onClick={() => { clearAllFilters(); setSearchQuery(''); }}
+                  className="px-5 py-2.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Clear all filters
+                </button>
               </div>
             </motion.div>
           </div>
