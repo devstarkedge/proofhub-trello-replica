@@ -67,7 +67,7 @@ const FilterPanel = memo(({ isOpen, onClose, onApply, lists, cardsByList, boardL
   const assignees = useMemo(() => {
     if (!cardsByList) return [];
     const map = new Map();
-    Object.values(cardsByList).forEach(cards => {
+    Object.values(cardsByList).filter(Boolean).forEach(cards => {
       cards.forEach(card => {
         (card.assignees || []).forEach(a => {
           const id = typeof a === 'object' ? a._id : a;
@@ -84,7 +84,7 @@ const FilterPanel = memo(({ isOpen, onClose, onApply, lists, cardsByList, boardL
     if (boardLabels && boardLabels.length > 0) return boardLabels;
     if (!cardsByList) return [];
     const map = new Map();
-    Object.values(cardsByList).forEach(cards => {
+    Object.values(cardsByList).filter(Boolean).forEach(cards => {
       cards.forEach(card => {
         (card.labels || []).forEach(l => {
           const id = typeof l === 'object' ? l._id : l;
