@@ -21,6 +21,88 @@ import {
 // Field label mapping — derived from single-source-of-truth config
 const fieldLabels = SALES_FIELD_LABELS;
 
+// ─── BidLink normalization ─────────────────────────────────────
+const URL_RE = /https?:\/\/\S+/i;
+
+/**
+ * Normalize any bidLink input (old string OR new object) into { type, url }.
+ * Returns { value: {...} } on success or { error: string } on failure.
+ */
+const normalizeBidLink = (raw, { strict = true } = {}) => {
+  // Already a valid object
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const t = String(raw.type || '').toLowerCase().trim();
+    const u = raw.url ? String(raw.url).trim() : null;
+
+    if (!['link', 'invite', 'direct'].includes(t)) {
+      return { error: `Invalid bid type "${raw.type}". Must be link, invite, or direct.` };
+    }
+    if (t === 'direct') {
+      return { value: { type: 'direct', url: null, isValid: true } };
+    }
+    if (t === 'link') {
+      if (!u) return { error: 'URL is required for link type' };
+      const finalUrl = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+      if (!/^https?:\/\/.+\..+/.test(finalUrl)) return { error: 'Invalid URL format' };
+      return { value: { type: 'link', url: finalUrl, isValid: true } };
+    }
+    // invite
+    if (!u) {
+      if (strict) return { error: 'Invite requires a valid link' };
+      // Flexible (import): allow invite without URL, mark incomplete
+      return { value: { type: 'invite', url: null, isValid: false } };
+    }
+    const finalUrl = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+    if (!/^https?:\/\/.+\..+/.test(finalUrl)) return { error: 'Invalid URL format' };
+    return { value: { type: 'invite', url: finalUrl, isValid: true } };
+  }
+
+  // Legacy string input (backward compatibility + import)
+  const str = String(raw ?? '').trim();
+
+  if (!str) {
+    return { error: 'Bid Link is required' };
+  }
+
+  const lower = str.toLowerCase();
+
+  // Full URL
+  if (/^https?:\/\//i.test(str)) {
+    return { value: { type: 'link', url: str, isValid: true } };
+  }
+
+  // "invite" keyword — may contain hidden URL
+  if (lower === 'invite' || lower.startsWith('invite')) {
+    const urlMatch = str.match(URL_RE);
+    if (urlMatch) {
+      return { value: { type: 'invite', url: urlMatch[0], isValid: true } };
+    }
+    if (strict) return { error: 'Invite requires a valid link' };
+    return { value: { type: 'invite', url: null, isValid: false } };
+  }
+
+  // "direct" keyword
+  if (lower === 'direct') {
+    return { value: { type: 'direct', url: null, isValid: true } };
+  }
+
+  // Text containing a URL somewhere
+  const embedded = str.match(URL_RE);
+  if (embedded) {
+    if (lower.includes('invite')) {
+      return { value: { type: 'invite', url: embedded[0], isValid: true } };
+    }
+    return { value: { type: 'link', url: embedded[0], isValid: true } };
+  }
+
+  // Unrecognized — try adding https:// if it looks like a domain
+  if (/^[\w-]+\.[\w.-]+/.test(str)) {
+    return { value: { type: 'link', url: `https://${str}`, isValid: true } };
+  }
+
+  return { error: `Cannot determine bid type from "${str}"` };
+};
+
 // Helper function to track changes between old and new values
 const trackChanges = (oldRow, newData) => {
   const changes = [];
@@ -28,6 +110,28 @@ const trackChanges = (oldRow, newData) => {
   
   fieldsToTrack.forEach(field => {
     if (newData[field] === undefined) return;
+
+    // Special handling for compound bidLink
+    if (field === 'bidLink') {
+      const oldBl = oldRow[field] || {};
+      const newBl = newData[field] || {};
+      if (typeof oldBl === 'object' && typeof newBl === 'object') {
+        if (oldBl.type !== newBl.type) {
+          changes.push({ field: 'bidLink.type', fieldLabel: 'Bid Type', oldValue: oldBl.type, newValue: newBl.type });
+        }
+        if ((oldBl.url || null) !== (newBl.url || null)) {
+          changes.push({ field: 'bidLink.url', fieldLabel: 'Bid URL', oldValue: oldBl.url, newValue: newBl.url });
+        }
+      } else {
+        // Mixed old string / new object comparison
+        const oldStr = typeof oldBl === 'string' ? oldBl : JSON.stringify(oldBl);
+        const newStr = typeof newBl === 'string' ? newBl : JSON.stringify(newBl);
+        if (oldStr !== newStr) {
+          changes.push({ field, fieldLabel: fieldLabels[field], oldValue: oldBl, newValue: newBl });
+        }
+      }
+      return;
+    }
 
     const oldVal = oldRow[field];
     const newVal = newData[field];
@@ -95,6 +199,14 @@ const validateRequiredFields = (data, overrides = {}) => {
   const missing = [];
   Object.entries(REQUIRED_FIELDS).forEach(([field, label]) => {
     if (overrides[field]) return; // Skip fields handled elsewhere
+    // Special handling for compound bidLink
+    if (field === 'bidLink') {
+      const bl = data[field];
+      if (!bl || (typeof bl === 'object' && !bl.type) || (typeof bl === 'string' && !bl.trim())) {
+        missing.push(label);
+      }
+      return;
+    }
     const val = data[field];
     if (val === undefined || val === null || (typeof val === 'string' && !val.trim())) {
       missing.push(label);
@@ -157,15 +269,19 @@ const buildSalesQuery = (params) => {
     profile,
     dateFrom,
     dateTo,
+    bidType,
+    hasUrl,
+    bidDomain,
     columnFilters // JSON string of per-column filters
   } = params;
 
   const query = { isDeleted: false };
 
-  // Search across multiple fields
+  // Search across multiple fields (bidLink.url for structured field)
   if (search) {
     query.$or = [
-      { bidLink: { $regex: search, $options: 'i' } },
+      { 'bidLink.url': { $regex: search, $options: 'i' } },
+      { 'bidLink.type': { $regex: search, $options: 'i' } },
       { comments: { $regex: search, $options: 'i' } },
       { platform: { $regex: search, $options: 'i' } },
       { profile: { $regex: search, $options: 'i' } },
@@ -185,6 +301,25 @@ const buildSalesQuery = (params) => {
   if (minHireRate) query.clientHireRate = { $gte: parseFloat(minHireRate) };
   if (budget) query.clientBudget = budget;
   if (profile) query.profile = profile;
+
+  // BidLink-specific filters
+  if (bidType && ['link', 'invite', 'direct'].includes(bidType)) {
+    query['bidLink.type'] = bidType;
+  }
+  if (hasUrl === 'true') {
+    query['bidLink.url'] = { $ne: null, $exists: true };
+  } else if (hasUrl === 'false') {
+    query['bidLink.url'] = null;
+  }
+  if (bidDomain) {
+    query['bidLink.url'] = { ...(query['bidLink.url'] || {}), $regex: bidDomain.replace('.', '\\.'), $options: 'i' };
+  }
+  // BidLink validity filter (for finding incomplete imported invites)
+  if (params.bidValid === 'true') {
+    query['bidLink.isValid'] = true;
+  } else if (params.bidValid === 'false') {
+    query['bidLink.isValid'] = { $ne: true };
+  }
 
   // Date range filter
   if (dateFrom || dateTo) {
@@ -346,6 +481,15 @@ export const createSalesRow = async (req, res) => {
     // Server-side enforcement: always set name to logged-in user's name on create
     standard.name = req.user.name;
 
+    // Normalize bidLink (accepts old string or new object)
+    if (standard.bidLink !== undefined) {
+      const blResult = normalizeBidLink(standard.bidLink);
+      if (blResult.error) {
+        return res.status(400).json({ success: false, message: blResult.error });
+      }
+      standard.bidLink = blResult.value;
+    }
+
     // Validate required fields before hitting Mongoose
     const validationErr = validateRequiredFields(standard, { name: true }); // name is server-set
     if (validationErr) {
@@ -447,6 +591,15 @@ export const updateSalesRow = async (req, res) => {
     // Non-admin users cannot change the name field
     if (req.user.role !== 'admin') {
       delete standard.name;
+    }
+
+    // Normalize bidLink if provided
+    if (standard.bidLink !== undefined) {
+      const blResult = normalizeBidLink(standard.bidLink);
+      if (blResult.error) {
+        return res.status(400).json({ success: false, message: blResult.error });
+      }
+      standard.bidLink = blResult.value;
     }
 
     // Validate: don't allow clearing required fields to empty
@@ -934,7 +1087,9 @@ export const exportRows = async (req, res) => {
         'Date': formatExportDate(row.date),
         'Month': row.monthName || '',
         'Name': row.name || '',
-        'Bid Link': row.bidLink || '',
+        'Bid Link': row.bidLink && typeof row.bidLink === 'object'
+          ? (row.bidLink.url || row.bidLink.type || '')
+          : (row.bidLink || ''),
         'Platform': row.platform || '',
         'Profile': row.profile || '',
         'Technology': row.technology || '',
@@ -1213,6 +1368,21 @@ export const importRows = async (req, res) => {
         // Ensure name is set — use imported value if present, otherwise default to importing user's name
         if (!standard.name) {
           standard.name = req.user.name;
+        }
+
+        // Normalize bidLink (accepts old string or new { type, url } object)
+        // Import uses flexible mode: invite without URL is allowed (flagged isValid=false)
+        if (standard.bidLink !== undefined) {
+          const blResult = normalizeBidLink(standard.bidLink, { strict: false });
+          if (blResult.error) {
+            results.failed.push({
+              index: i,
+              data: data[i],
+              error: blResult.error
+            });
+            continue;
+          }
+          standard.bidLink = blResult.value;
         }
 
         const row = new SalesRow({

@@ -20,10 +20,39 @@ const salesRowSchema = new mongoose.Schema({
     index: true
   },
   bidLink: {
-    type: String,
-    required: [true, 'Bid Link is required'],
-    trim: true,
-    default: '',
+    type: {
+      type: String,
+      enum: {
+        values: ['link', 'invite', 'direct'],
+        message: 'Bid type must be link, invite, or direct'
+      },
+      required: [true, 'Bid type is required']
+    },
+    url: {
+      type: String,
+      trim: true,
+      default: null,
+      validate: {
+        validator: function (v) {
+          const bidType = this?.bidLink?.type ?? this?.parent?.()?.bidLink?.type;
+          if (bidType === 'direct') return !v;
+          if (bidType === 'link') return v && /^https?:\/\/.+/.test(v);
+          // invite: URL is optional (null allowed for imported legacy data)
+          if (bidType === 'invite' && v) return /^https?:\/\/.+/.test(v);
+          return true;
+        },
+        message: function () {
+          const bidType = this?.bidLink?.type ?? this?.parent?.()?.bidLink?.type;
+          if (bidType === 'direct') return 'Direct bids must not have a URL';
+          if (bidType === 'link') return 'A valid URL is required for link bids';
+          return 'Invalid URL format';
+        }
+      }
+    },
+    isValid: {
+      type: Boolean,
+      default: true
+    }
   },
   platform: {
     type: String,
@@ -177,6 +206,8 @@ salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, date: -1 });
 salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, technology: 1, date: -1 });
 salesRowSchema.index({ name: 1, date: -1 });
 salesRowSchema.index({ isDeleted: 1, name: 1, date: -1 });
+salesRowSchema.index({ 'bidLink.type': 1, date: -1 });
+salesRowSchema.index({ 'bidLink.isValid': 1, date: -1 });
 
 // Pre-validate hook to auto-generate month name from date (must run before validation
 // so the required monthName field is set when date is present)

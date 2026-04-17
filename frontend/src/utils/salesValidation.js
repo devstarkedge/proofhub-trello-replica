@@ -31,15 +31,60 @@ export const getErrorSummary = (errors) => {
 };
 
 /**
- * Validation schema for sales row creation/update
+ * Strict validation schema for sales row creation/update
+ * Invite REQUIRES URL in create/update mode
  */
+const bidLinkSchema = z.object({
+  type: z.enum(['link', 'invite', 'direct'], {
+    required_error: 'Bid type is required',
+    invalid_type_error: 'Bid type must be link, invite, or direct'
+  }),
+  url: z.string().nullable().default(null),
+}).superRefine((val, ctx) => {
+  if (val.type === 'direct' && val.url) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Direct bids must not have a URL', path: ['url'] });
+  }
+  if (val.type === 'link' && !val.url) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'URL is required for link bids', path: ['url'] });
+  }
+  if (val.type === 'invite' && !val.url) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invite requires a valid link', path: ['url'] });
+  }
+  if (val.url && !/^https?:\/\/.+/.test(val.url)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'URL must start with http:// or https://', path: ['url'] });
+  }
+});
+
+/**
+ * Flexible validation schema for import — invite without URL is allowed
+ */
+const bidLinkImportSchema = z.object({
+  type: z.enum(['link', 'invite', 'direct'], {
+    required_error: 'Bid type is required',
+    invalid_type_error: 'Bid type must be link, invite, or direct'
+  }),
+  url: z.string().nullable().default(null),
+  isValid: z.boolean().optional(),
+}).superRefine((val, ctx) => {
+  if (val.type === 'direct' && val.url) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Direct bids must not have a URL', path: ['url'] });
+  }
+  if (val.type === 'link' && !val.url) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'URL is required for link bids', path: ['url'] });
+  }
+  // invite without URL is ALLOWED during import (flagged isValid=false on backend)
+  if (val.url && !/^https?:\/\/.+/.test(val.url)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'URL must start with http:// or https://', path: ['url'] });
+  }
+});
+
 export const salesRowSchema = z.object({
   date: z.date({
     required_error: 'Date is required',
     invalid_type_error: 'Please select a valid date'
   }),
   name: z.string().min(1, 'Name is required'),
-  bidLink: z.string().min(1, 'Bid Link is required'),
+  bidLink: bidLinkSchema,
   platform: z.string().min(1, 'Platform is required'),
   profile: z.string().min(1, 'Profile is required'),
   technology: z.string().min(1, 'Technology is required'),
@@ -115,8 +160,12 @@ export const importRowSchema = salesRowSchema
     name: z.string().optional(),
     // For import, monthName is auto-derived from date
     monthName: z.string().optional(),
-    // For import, bidLink may not always be present — accepts URLs or plain text (e.g. Invite, Direct)
-    bidLink: z.string().optional().or(z.literal('')),
+    // For import, bidLink may arrive as string (auto-detected on backend) or { type, url }
+    bidLink: z.union([
+      bidLinkImportSchema,
+      z.string().optional().or(z.literal('')),
+      z.object({ type: z.string(), url: z.string().nullable() }).passthrough(),
+    ]).optional(),
   })
   .partial({
     // Non-required fields stay optional during import
@@ -141,11 +190,36 @@ export const validateImportRows = (rows) => {
   rows.forEach((row, index) => {
     const missing = [];
     importRequired.forEach(key => {
+      if (key === 'bidLink') {
+        // bidLink can be a string (pre-normalization) or an object (post-normalization)
+        const bl = row[key];
+        if (!bl) {
+          missing.push(SALES_FIELD_LABELS[key] || key);
+        } else if (typeof bl === 'object' && !bl.type) {
+          missing.push(SALES_FIELD_LABELS[key] || key);
+        }
+        return;
+      }
       const val = row[key];
       if (val === undefined || val === null || (typeof val === 'string' && !String(val).trim())) {
         missing.push(SALES_FIELD_LABELS[key] || key);
       }
     });
+
+    // BidLink-specific validation (flexible for import)
+    const bidLinkErrors = [];
+    const bl = row.bidLink;
+    if (bl && typeof bl === 'object') {
+      // link type always requires URL
+      if (bl.type === 'link' && !bl.url) {
+        bidLinkErrors.push('URL required for link type');
+      }
+      // invite without URL is ALLOWED during import (incomplete, not invalid)
+      // Only validate URL format if present
+      if (bl.url && !/^https?:\/\/.+/.test(bl.url)) {
+        bidLinkErrors.push('Invalid URL format');
+      }
+    }
 
     // Validate URL fields if present (bidLink accepts plain text so skip URL check for it)
     const urlErrors = [];
@@ -170,6 +244,7 @@ export const validateImportRows = (rows) => {
 
     const allErrors = [
       ...missing.map(f => `${f} is required`),
+      ...bidLinkErrors,
       ...urlErrors,
       ...numericErrors,
     ];

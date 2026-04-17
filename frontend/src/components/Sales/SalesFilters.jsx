@@ -459,6 +459,23 @@ const SalesFilters = () => {
                     autoSelectOnTab={false}
                   />
                 </div>
+
+                {/* Bid Type */}
+                <div>
+                  <label className={labelClass}>Bid Type</label>
+                  <select
+                    value={filters.bidType || ''}
+                    onChange={(e) => handleFilterChange('bidType', e.target.value)}
+                    className={selectClass}
+                  >
+                    <option value="">All Types</option>
+                    <option value="link">🔗 Link</option>
+                    <option value="invite">📩 Invite</option>
+                    <option value="direct">⚡ Direct</option>
+                  </select>
+                </div>
+
+                {/* Removed: Has URL & BidLink Status filters */}
               </div>
             </div>
           </motion.div>

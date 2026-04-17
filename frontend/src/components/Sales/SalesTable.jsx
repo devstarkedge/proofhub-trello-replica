@@ -11,7 +11,8 @@ import { toast } from 'react-toastify';
 import useSalesStore from '../../store/salesStore';
 import AuthContext from '../../context/AuthContext';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { SALES_FIELD_LABELS } from '../../config/salesFieldConfig';
+import { SALES_FIELD_LABELS, detectPlatform } from '../../config/salesFieldConfig';
+import Avatar from '../Avatar';
 
 /* ═══════════════════════════════════════════════════════════
    COLUMN CONFIGURATION — Priority-Based Width System
@@ -27,7 +28,7 @@ const BASE_COLUMNS = [
   { key: 'name',               label: 'Name',                width: 130, minWidth: 90,  maxWidth: 220, priority: 'high',   type: 'name' },
   { key: 'platform',           label: 'Platform',            width: 130, minWidth: 90,  maxWidth: 220, priority: 'medium', type: 'dropdown' },
   { key: 'status',             label: 'Status',              width: 120, minWidth: 80,  maxWidth: 180, priority: 'high',   type: 'dropdown' },
-  { key: 'bidLink',            label: 'Bid Link',            width: 110, minWidth: 80,  maxWidth: 250, priority: 'low',    type: 'link' },
+  { key: 'bidLink',            label: 'Bid Link',            width: 130, minWidth: 90,  maxWidth: 260, priority: 'low',    type: 'bidLink' },
   { key: 'profile',            label: 'Profile',             width: 130, minWidth: 90,  maxWidth: 220, priority: 'medium', type: 'dropdown' },
   { key: 'technology',         label: 'Technology',          width: 140, minWidth: 100, maxWidth: 240, priority: 'medium', type: 'dropdown' },
   { key: 'clientRating',       label: 'Client Rating',       width: 125, minWidth: 100, maxWidth: 170, priority: 'medium', type: 'rating' },
@@ -206,16 +207,19 @@ const TableRow = memo(({
     /* ─── Data cells by type ─── */
     switch (column.type) {
       case 'name': {
-        if (!value) return <span className="text-gray-400 select-none">-</span>;
-        const nameStr = String(value);
+        // Prefer explicit avatar fields if present; fall back to generated initials
+        const nameStr = value ? String(value) : (row.createdBy?.name ? String(row.createdBy.name) : (row.user?.name ? String(row.user.name) : ''));
+        const avatarSrc = row.avatar || row.avatarUrl || row.createdBy?.avatar || row.user?.avatar || row.profileImage || row.profile?.image || null;
+        if (!nameStr && !avatarSrc) return <span className="text-gray-400 select-none">-</span>;
+
         return (
           <div className="flex items-center gap-2 min-w-0 w-full">
-            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold text-white shrink-0 ${getNameColor(nameStr)}`}>
-              {getInitials(nameStr)}
-            </span>
-            <CellTooltip text={nameStr}>
-              <span className="truncate font-medium text-gray-800 dark:text-gray-200">{nameStr}</span>
-            </CellTooltip>
+            <Avatar src={avatarSrc} name={nameStr} size="sm" className="shrink-0" />
+            <div className="min-w-0">
+              <CellTooltip text={nameStr}>
+                <span className="truncate font-medium text-gray-800 dark:text-gray-200">{nameStr}</span>
+              </CellTooltip>
+            </div>
           </div>
         );
       }
@@ -241,6 +245,49 @@ const TableRow = memo(({
           );
         }
         return <span className="text-gray-700 dark:text-gray-300 truncate">{value}</span>;
+      }
+
+      case 'bidLink': {
+        if (!value || typeof value !== 'object') return <span className="text-gray-400 select-none">-</span>;
+        const bidType = value.type || 'link';
+        const bidUrl = value.url;
+        const isIncomplete = bidType === 'invite' && !bidUrl;
+        const platform = bidUrl ? detectPlatform(bidUrl) : null;
+
+        const badgeColors = {
+          link: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+          invite: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+          inviteIncomplete: 'bg-indigo-50 text-indigo-400 dark:bg-indigo-900/20 dark:text-indigo-500 opacity-60',
+          direct: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
+        };
+        const badgeIcons = { link: '🔗', invite: '📩', direct: '⚡' };
+        const badgeKey = isIncomplete ? 'inviteIncomplete' : bidType;
+
+        return (
+          <div className="flex items-center gap-1 min-w-0 w-full">
+            <span
+              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${badgeColors[badgeKey] || badgeColors.link}`}
+              title={isIncomplete ? 'No link available' : undefined}
+            >
+              {badgeIcons[bidType] || '🔗'} {bidType.charAt(0).toUpperCase() + bidType.slice(1)}
+            </span>
+            {platform && <span className="text-[10px] text-gray-500 dark:text-gray-400 shrink-0">{platform}</span>}
+            {bidUrl && (
+              <>
+                <a href={bidUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 transition-colors shrink-0" title={bidUrl}>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                <button onClick={(e) => handleCopyLink(e, bidUrl)} className="p-0.5 text-gray-400 hover:text-blue-600 rounded transition-colors shrink-0" title="Copy link">
+                  <Copy className="w-3 h-3" />
+                </button>
+              </>
+            )}
+            {isIncomplete && (
+              <span className="text-[10px] text-indigo-400 dark:text-indigo-500 italic shrink-0">No link</span>
+            )}
+          </div>
+        );
       }
 
       case 'rating':
