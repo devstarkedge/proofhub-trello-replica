@@ -2,9 +2,9 @@ import React, { useState, useEffect, useContext, useMemo, lazy, Suspense, useRef
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Filter, Calendar, User, Tag, ChevronsUpDown, ArrowUpDown, ClipboardList, FolderKanban,
+  Calendar, User, Tag, ChevronsUpDown, ArrowUpDown, ClipboardList, FolderKanban,
   Users, AlertCircle, CheckCircle2, Clock, TrendingUp, Search, Download, RefreshCw, X,
-  Sparkles, Zap, Target, Activity, History, Lightbulb, Command, FileText, Globe
+  Sparkles, Zap, Target, Activity
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DepartmentContext from '../context/DepartmentContext';
@@ -15,8 +15,13 @@ import { Badge } from '../components/ui/badge';
 import { ListViewSkeleton } from '../components/LoadingSkeleton';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '../components/ui/dropdown-menu';
 import { Button } from '../components/ui/button';
-import { AdvancedSearch, debounce, highlightText } from '../utils/advancedSearch';
 import AvatarGroup from '../components/AvatarGroup';
+import SmartSearchBar from '../components/listview/SmartSearchBar';
+import StickyActiveFilterBar from '../components/listview/StickyActiveFilterBar';
+import PreviewFooter from '../components/listview/PreviewFooter';
+import HighlightedCell from '../components/listview/HighlightedCell';
+import useSmartSearch from '../hooks/useSmartSearch';
+import useSmartSearchStore from '../store/smartSearchStore';
 
 const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
 
@@ -32,28 +37,20 @@ const ListViewTasks = () => {
   const queryClient = useQueryClient();
   const projectCache = useRef(new Map());
   const taskCache = useRef(new Map());
-  const advancedSearch = useRef(new AdvancedSearch());
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filters, setFilters] = useState({
-    status: 'all',
-    priority: 'all',
-    search: '',
     dateFrom: '',
     dateTo: ''
   });
   const [sorting, setSorting] = useState({ key: 'dueDate', order: 'asc' });
   const [viewMode, setViewMode] = useState('comfortable');
-  const [searchSuggestions, setSearchSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [searchHighlights, setSearchHighlights] = useState(new Map());
-  const [searchMode, setSearchMode] = useState('standard');
-  const [searchScope, setSearchScope] = useState('all');
-  const [showSearchHelp, setShowSearchHelp] = useState(false);
-  const helpPanelRef = useRef(null);
-  const suggestionsRef = useRef(null);
-  const [historyUpdate, setHistoryUpdate] = useState(0);
+  const smartSearchChips = useSmartSearchStore(s => s.chips);
+  const smartSearchText = useSmartSearchStore(s => s.searchText);
+  const smartSearchActiveField = useSmartSearchStore(s => s.activeField);
+  const clearAllChips = useSmartSearchStore(s => s.clearAllChips);
+  const addChip = useSmartSearchStore(s => s.addChip);
 
   useEffect(() => {
     if (currentDepartment) {
@@ -102,38 +99,7 @@ const ListViewTasks = () => {
     }
   }, [departments, currentDepartment, setCurrentDepartment]);
 
-  useEffect(() => {
-    const handleGlobalKeyDown = (e) => {
-      if (e.key === '/' && e.ctrlKey) {
-        e.preventDefault();
-        const searchInput = document.querySelector('input[placeholder*="Search"]');
-        if (searchInput) searchInput.focus();
-      } else if (e.key === '?' && e.ctrlKey) {
-        e.preventDefault();
-        setShowSearchHelp(prev => !prev);
-      } else if (e.key === 'Escape') {
-        setShowSuggestions(false);
-        setShowSearchHelp(false);
-      }
-    };
-    document.addEventListener('keydown', handleGlobalKeyDown);
-    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (helpPanelRef.current && !helpPanelRef.current.contains(event.target)) {
-        setShowSearchHelp(false);
-      }
-      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target)) {
-        setShowSuggestions(false);
-      }
-    };
-    if (showSearchHelp || showSuggestions) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showSearchHelp, showSuggestions]);
 
   const loadCards = async () => {
     try {
@@ -204,70 +170,18 @@ const ListViewTasks = () => {
     });
   }, [cards, user]);
 
-  const updateSearchSuggestions = useCallback(
-    debounce((query) => {
-      if (query.length >= 2) {
-        const suggestions = advancedSearch.current.getSuggestions(query, baseCards);
-        setSearchSuggestions(suggestions);
-        setShowSuggestions(suggestions.length > 0);
-      } else {
-        setShowSuggestions(false);
-      }
-    }, 300),
-    [baseCards]
-  );
+  // Smart search integration — filtering, sorting, highlighting all handled by the hook
+  const { filteredCards, searchTerms } = useSmartSearch({
+    cards: baseCards,
+    departmentId: currentDepartment?._id || 'all',
+    legacyFilters: {
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+    },
+    sorting,
+  });
 
-  const filteredAndSortedCards = useMemo(() => {
-    let filtered = baseCards;
-    if (filters.status !== 'all') {
-      filtered = filtered.filter(card => card.list?.title?.toLowerCase().replace(' ', '-') === filters.status);
-    }
-    if (filters.priority !== 'all') {
-      filtered = filtered.filter(card => card.priority?.toLowerCase() === filters.priority);
-    }
-    if (filters.search) {
-      const searchResult = advancedSearch.current.search(filtered, filters.search, {
-        fuzzy: searchMode === 'fuzzy',
-        highlight: true,
-        scope: searchScope
-      });
-      if (searchResult.results) {
-        filtered = searchResult.results;
-        setSearchHighlights(searchResult.highlights || new Map());
-      } else {
-        filtered = searchResult;
-      }
-    } else {
-      setSearchHighlights(new Map());
-    }
-    if (filters.dateFrom || filters.dateTo) {
-      filtered = filtered.filter(card => {
-        if (!card.dueDate) return false;
-        const cardDate = new Date(card.dueDate);
-        const fromDate = filters.dateFrom ? new Date(filters.dateFrom) : null;
-        const toDate = filters.dateTo ? new Date(filters.dateTo) : null;
-        if (fromDate && toDate) return cardDate >= fromDate && cardDate <= toDate;
-        else if (fromDate) return cardDate >= fromDate;
-        else if (toDate) return cardDate <= toDate;
-        return true;
-      });
-    }
-    const sorted = [...filtered].sort((a, b) => {
-      let aValue, bValue;
-      if (sorting.key === 'board.name') { aValue = a.board?.name; bValue = b.board?.name; }
-      else if (sorting.key === 'assignees[0].name') { aValue = a.assignees?.[0]?.name; bValue = b.assignees?.[0]?.name; }
-      else if (sorting.key === 'list.title') { aValue = a.list?.title; bValue = b.list?.title; }
-      else { aValue = a[sorting.key]; bValue = b[sorting.key]; }
-      if (aValue === bValue) return 0;
-      let result = 0;
-      if (aValue === null || aValue === undefined) result = 1;
-      else if (bValue === null || bValue === undefined) result = -1;
-      else if (sorting.key === 'dueDate') result = new Date(aValue) - new Date(bValue);
-      else result = aValue.toString().localeCompare(bValue.toString());
-      return sorting.order === 'asc' ? result : -result;
-    });
-    return sorted;
-  }, [baseCards, filters, sorting, searchMode]);
+  const filteredAndSortedCards = filteredCards;
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -283,58 +197,32 @@ const ListViewTasks = () => {
   };
 
   const clearFilters = () => {
-    setFilters({ status: 'all', priority: 'all', search: '', dateFrom: '', dateTo: '' });
-    setSearchSuggestions([]);
-    setShowSuggestions(false);
-    setSearchHighlights(new Map());
+    setFilters({ dateFrom: '', dateTo: '' });
+    clearAllChips();
   };
 
-  const handleSearchChange = (value) => {
-    setFilters(prev => ({ ...prev, search: value }));
-    updateSearchSuggestions(value);
-  };
-
-  const handleSuggestionSelect = (suggestion) => {
-    setFilters(prev => ({ ...prev, search: suggestion }));
-    advancedSearch.current.addToHistory(suggestion);
-    setShowSuggestions(false);
-  };
-
-  const handleSearchKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      if (filters.search && filters.search.trim()) {
-        advancedSearch.current.addToHistory(filters.search.trim());
-        setShowSuggestions(false);
-      }
-    } else if (e.key === 'Escape') {
-      setShowSuggestions(false);
-      setShowSearchHelp(false);
-    }
-  };
-
-  const toggleSearchMode = () => {
-    setSearchMode(prev => {
-      if (prev === 'standard') return 'fuzzy';
-      if (prev === 'fuzzy') return 'advanced';
-      return 'standard';
-    });
-  };
 
   const getFilterPresets = () => ({
-    'My Tasks': { priority: 'all', status: 'all', search: user ? `assignees:"${user.name}"` : '', dateFrom: '', dateTo: '' },
-    'High Priority': { priority: 'high', status: 'all', search: '', dateFrom: '', dateTo: '' },
-    'Overdue Tasks': { priority: 'all', status: 'all', search: '', dateFrom: '', dateTo: new Date().toISOString().split('T')[0] },
-    'This Week': { priority: 'all', status: 'all', search: '', dateFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], dateTo: new Date().toISOString().split('T')[0] },
-    'In Progress': { priority: 'all', status: 'in-progress', search: '', dateFrom: '', dateTo: '' }
+    'My Tasks': { filters: { dateFrom: '', dateTo: '' }, chip: user ? { field: 'assignee', value: user.name, label: user.name } : null },
+    'High Priority': { filters: { dateFrom: '', dateTo: '' }, chip: { field: 'priority', value: 'high', label: 'High' } },
+    'Overdue Tasks': { filters: { dateFrom: '', dateTo: new Date().toISOString().split('T')[0] }, chip: null },
+    'This Week': { filters: { dateFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], dateTo: new Date().toISOString().split('T')[0] }, chip: null },
+    'In Progress': { filters: { dateFrom: '', dateTo: '' }, chip: { field: 'status', value: 'in progress', label: 'In Progress' } }
   });
 
   const applyFilterPreset = (presetName) => {
     const presets = getFilterPresets();
     const preset = presets[presetName];
-    if (preset) { setFilters(preset); setSearchMode('fuzzy'); }
+    if (preset) {
+      clearAllChips();
+      setFilters(preset.filters);
+      if (preset.chip) {
+        addChip(preset.chip.field, preset.chip.value, preset.chip.label);
+      }
+    }
   };
 
-  const hasActiveFilters = filters.status !== 'all' || filters.priority !== 'all' || filters.search !== '' || filters.dateFrom !== '' || filters.dateTo !== '';
+  const hasActiveFilters = filters.dateFrom !== '' || filters.dateTo !== '' || smartSearchChips.length > 0 || (smartSearchText && smartSearchActiveField === 'all');
 
   const stats = useMemo(() => {
     const total = baseCards.length;
@@ -495,35 +383,8 @@ const ListViewTasks = () => {
         <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 p-5 hover:shadow-2xl transition-all duration-300 relative z-[100]">
           <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
             <div className="flex flex-wrap items-center gap-3 flex-1">
-              {/* Search */}
-              <div className="relative flex-1 w-full min-w-[200px] sm:min-w-[280px] max-w-lg group z-[9999]">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
-                <input
-                  type="text"
-                  placeholder={searchMode === 'fuzzy' ? `Fuzzy search ${searchScope === 'all' ? 'tasks' : searchScope}...` : searchMode === 'advanced' ? "Advanced search..." : "Search tasks..."}
-                  value={filters.search}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  onFocus={() => filters.search && setShowSuggestions(true)}
-                  className="w-full pl-11 pr-20 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white/50 hover:bg-white hover:border-gray-300"
-                />
-                <div className="absolute right-2 top-1/2 transform scale-110 bg-gray-200 rounded-lg -translate-y-1/2 flex items-center gap-1">
-                  <button onClick={toggleSearchMode} className="p-1.5 rounded-lg transition-all duration-200 text-gray-400 hover:text-blue-500 hover:bg-blue-50" title={`Search mode: ${searchMode}`}>
-                    {searchMode === 'fuzzy' ? <Sparkles className="w-3.5 h-3.5" /> : searchMode === 'advanced' ? <Command className="w-3.5 h-3.5" /> : <Search className="w-3.5 h-3.5" />}
-                  </button>
-                  {filters.search && (
-                    <button onClick={() => handleSearchChange('')} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Filter Dropdowns */}
-              <FilterDropdown label="Status" icon={Target} options={[{ value: 'all', label: 'All' }, { value: 'to-do', label: 'To-Do' }, { value: 'in-progress', label: 'In Progress' }, { value: 'review', label: 'Review' }, { value: 'done', label: 'Done' }]} value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })} />
-              <FilterDropdown label="Priority" icon={Zap} options={[{ value: 'all', label: 'All' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} value={filters.priority} onValueChange={(value) => setFilters({ ...filters, priority: value })} />
-
-              {/* Filter Presets */}
+              {/* Smart Search Bar */}
+              <SmartSearchBar />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="flex items-center gap-2 hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 border-2 rounded-xl hover:border-purple-300 group">
@@ -582,6 +443,9 @@ const ListViewTasks = () => {
           </div>
         </div>
 
+        {/* Sticky Active Filter Chips Bar */}
+        <StickyActiveFilterBar />
+
         {/* Table */}
         <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/50 overflow-hidden z-[10]">
           <div className="overflow-x-auto">
@@ -604,13 +468,17 @@ const ListViewTasks = () => {
                       <TableCell className="font-semibold text-gray-900 group-hover:text-blue-600">
                         <div className="flex items-center gap-3">
                           <div className="w-1 h-10 bg-gradient-to-b from-blue-500 to-purple-500 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300"></div>
-                          <button onClick={(e) => { e.stopPropagation(); openCardModal(card); }} className="text-left font-semibold hover:text-blue-600 transition-colors cursor-pointer" dangerouslySetInnerHTML={{ __html: searchHighlights.has(card._id) ? highlightText(card.title || '', searchHighlights.get(card._id)) : card.title }} />
+                          <button onClick={(e) => { e.stopPropagation(); openCardModal(card); }} className="text-left font-semibold hover:text-blue-600 transition-colors cursor-pointer">
+                            <HighlightedCell text={card.title || ''} terms={searchTerms} />
+                          </button>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 text-gray-700">
                           <div className="p-1.5 bg-gray-100 rounded-lg group-hover:bg-blue-100"><FolderKanban className="w-4 h-4 text-gray-500 group-hover:text-blue-600" /></div>
-                          <button onClick={(e) => { e.stopPropagation(); if (card.board?._id) handleProjectClick(card.board._id, card.board.department); }} className="font-medium hover:text-blue-700 cursor-pointer">{card.board?.name || 'N/A'}</button>
+                          <button onClick={(e) => { e.stopPropagation(); if (card.board?._id) handleProjectClick(card.board._id, card.board.department); }} className="font-medium hover:text-blue-700 cursor-pointer">
+                            <HighlightedCell text={card.board?.name || 'N/A'} terms={searchTerms} />
+                          </button>
                         </div>
                       </TableCell>
                       <TableCell><AvatarGroup assignees={card.assignees || []} /></TableCell>
@@ -634,12 +502,24 @@ const ListViewTasks = () => {
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-20">
                       <div className="flex flex-col items-center gap-4">
-                        <div className="bg-gradient-to-br from-gray-100 to-gray-200 p-8 rounded-3xl shadow-inner"><Filter size={56} className="text-gray-400" /></div>
-                        <div>
-                          <h3 className="text-xl font-bold text-gray-900 mb-2">No tasks found</h3>
-                          <p className="text-sm text-gray-500">{hasActiveFilters ? 'Try adjusting your filters' : currentDepartment ? 'No tasks available' : 'Select a department'}</p>
+                        <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-8 rounded-3xl shadow-inner border border-blue-100">
+                          <Search size={48} className="text-blue-300" />
                         </div>
-                        {hasActiveFilters && <Button variant="outline" onClick={clearFilters} className="flex items-center gap-2 mt-2 border-2 rounded-xl"><X size={16} /> Clear Filters</Button>}
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900 mb-2">No matching tasks</h3>
+                          <p className="text-sm text-gray-500 max-w-sm">
+                            {hasActiveFilters
+                              ? 'No tasks match your current filters. Try removing some filters or adjusting your search.'
+                              : currentDepartment ? 'No tasks available in this department.' : 'Select a department to view tasks.'}
+                          </p>
+                        </div>
+                        {hasActiveFilters && (
+                          <div className="flex items-center gap-3 mt-2">
+                            <Button variant="outline" onClick={clearFilters} className="flex items-center gap-2 border-2 border-red-200 text-red-600 hover:bg-red-50 rounded-xl">
+                              <X size={16} /> Clear All Filters
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -648,6 +528,9 @@ const ListViewTasks = () => {
             </Table>
           </div>
         </div>
+
+        {/* Preview Footer */}
+        <PreviewFooter totalCount={baseCards.length} />
 
         {/* Pagination */}
         {!loading && filteredAndSortedCards.length > 0 && (
@@ -731,33 +614,6 @@ const StatCard = memo(({ title, value, icon: Icon, color, subtitle, delay, pulse
   );
 });
 StatCard.displayName = 'StatCard';
-
-const FilterDropdown = memo(({ label, icon: Icon, options, value, onValueChange }) => (
-  <DropdownMenu>
-    <DropdownMenuTrigger asChild>
-      <Button variant="outline" className="flex items-center gap-2 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 border-2 rounded-xl hover:border-blue-300 group">
-        {Icon && <Icon size={16} className="text-gray-500 group-hover:text-blue-600 transition-colors" />}
-        <span className="text-gray-700 font-medium">{label}:</span>
-        <span className="font-bold capitalize bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{options.find(o => o.value === value)?.label || 'All'}</span>
-        <ChevronsUpDown size={16} className="text-gray-400 group-hover:text-blue-500 transition-colors" />
-      </Button>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" className="w-52 bg-white/95 backdrop-blur-xl border-2 rounded-xl shadow-xl">
-      {options.map((option, index) => (
-        <React.Fragment key={option.value}>
-          <DropdownMenuItem onSelect={() => onValueChange(option.value)} className={`${value === option.value ? 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 font-bold' : 'hover:bg-gray-50'} cursor-pointer transition-all duration-200 rounded-lg mx-1 my-0.5`}>
-            <div className="flex items-center gap-2 w-full">
-              {value === option.value && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-              <span className={value === option.value ? '' : 'ml-6'}>{option.label}</span>
-            </div>
-          </DropdownMenuItem>
-          {index === 0 && <DropdownMenuSeparator className="my-1" />}
-        </React.Fragment>
-      ))}
-    </DropdownMenuContent>
-  </DropdownMenu>
-));
-FilterDropdown.displayName = 'FilterDropdown';
 
 const SortableHeader = memo(({ title, sortKey, sorting, onSort, icon: Icon }) => (
   <TableHead className="cursor-pointer select-none hover:bg-gradient-to-r hover:from-blue-100/50 hover:to-indigo-100/50 transition-all duration-200 group" onClick={() => onSort(sortKey)}>

@@ -1884,6 +1884,19 @@ class DatabaseService {
     return await res.json();
   }
 
+  async getSearchSuggestions(field, query, departmentId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const params = new URLSearchParams({ field, q: query });
+    if (departmentId) params.append('departmentId', departmentId);
+    const res = await fetch(`${baseURL}/api/search/suggestions?${params}`, { headers });
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    return await res.json();
+  }
+
   // Analytics operations
   async getDepartmentAnalytics(departmentId) {
     const token = localStorage.getItem('token');

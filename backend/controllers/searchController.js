@@ -1,6 +1,7 @@
 import Card from "../models/Card.js";
 import Board from "../models/Board.js";
 import User from "../models/User.js";
+import Department from "../models/Department.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 
 // @desc    Global search
@@ -121,5 +122,176 @@ export const searchCards = asyncHandler(async (req, res, next) => {
     success: true,
     count: cards.length,
     data: cards,
+  });
+});
+
+// @desc    Get search suggestions for smart search bar
+// @route   GET /api/search/suggestions
+// @access  Private
+export const getSuggestions = asyncHandler(async (req, res, next) => {
+  const { field, q, departmentId } = req.query;
+
+  if (!q || q.trim().length < 1) {
+    return res.status(200).json({ success: true, data: [] });
+  }
+
+  const query = q.trim();
+  const searchRegex = new RegExp(query, "i");
+  const limit = 8;
+
+  let suggestions = [];
+
+  // Build department filter for board lookup
+  const getDepartmentBoardIds = async () => {
+    if (!departmentId || departmentId === "all") return null;
+    const boards = await Board.find({ department: departmentId }).select("_id");
+    return boards.map((b) => b._id);
+  };
+
+  switch (field) {
+    case "task": {
+      const boardFilter = await getDepartmentBoardIds();
+      const matchStage = { isArchived: { $ne: true } };
+      if (boardFilter) matchStage.board = { $in: boardFilter };
+
+      const cards = await Card.find({
+        ...matchStage,
+        title: searchRegex,
+      })
+        .select("title")
+        .limit(limit)
+        .lean();
+
+      suggestions = cards.map((c) => ({
+        value: c.title,
+        label: c.title,
+        type: "task",
+      }));
+      break;
+    }
+
+    case "project": {
+      const boardMatch = { name: searchRegex };
+      if (departmentId && departmentId !== "all") {
+        boardMatch.department = departmentId;
+      }
+
+      const boards = await Board.find(boardMatch)
+        .select("name")
+        .limit(limit)
+        .lean();
+
+      suggestions = boards.map((b) => ({
+        value: b.name,
+        label: b.name,
+        type: "project",
+      }));
+      break;
+    }
+
+    case "assignee": {
+      let userFilter = { isActive: true, name: searchRegex };
+      if (departmentId && departmentId !== "all") {
+        userFilter.department = departmentId;
+      }
+
+      const users = await User.find(userFilter)
+        .select("name email avatar")
+        .limit(limit)
+        .lean();
+
+      suggestions = users.map((u) => ({
+        value: u.name,
+        label: u.name,
+        id: u._id,
+        avatar: u.avatar,
+        type: "assignee",
+      }));
+      break;
+    }
+
+    case "priority": {
+      const priorities = ["low", "medium", "high", "critical"];
+      suggestions = priorities
+        .filter((p) => p.includes(query.toLowerCase()))
+        .map((p) => ({
+          value: p,
+          label: p.charAt(0).toUpperCase() + p.slice(1),
+          type: "priority",
+        }));
+      break;
+    }
+
+    case "status": {
+      const statuses = ["to do", "in progress", "review", "done", "blocked"];
+      suggestions = statuses
+        .filter((s) => s.includes(query.toLowerCase()))
+        .map((s) => ({
+          value: s,
+          label: s
+            .split(" ")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" "),
+          type: "status",
+        }));
+      break;
+    }
+
+    case "all":
+    default: {
+      const boardFilter = await getDepartmentBoardIds();
+      const cardMatch = { isArchived: { $ne: true } };
+      if (boardFilter) cardMatch.board = { $in: boardFilter };
+
+      const [cards, boards, users] = await Promise.all([
+        Card.find({ ...cardMatch, title: searchRegex })
+          .select("title")
+          .limit(4)
+          .lean(),
+        Board.find(
+          departmentId && departmentId !== "all"
+            ? { name: searchRegex, department: departmentId }
+            : { name: searchRegex }
+        )
+          .select("name")
+          .limit(3)
+          .lean(),
+        User.find({
+          isActive: true,
+          name: searchRegex,
+          ...(departmentId && departmentId !== "all"
+            ? { department: departmentId }
+            : {}),
+        })
+          .select("name avatar")
+          .limit(3)
+          .lean(),
+      ]);
+
+      suggestions = [
+        ...cards.map((c) => ({
+          value: c.title,
+          label: c.title,
+          type: "task",
+        })),
+        ...boards.map((b) => ({
+          value: b.name,
+          label: b.name,
+          type: "project",
+        })),
+        ...users.map((u) => ({
+          value: u.name,
+          label: u.name,
+          avatar: u.avatar,
+          type: "assignee",
+        })),
+      ];
+      break;
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    data: suggestions,
   });
 });
