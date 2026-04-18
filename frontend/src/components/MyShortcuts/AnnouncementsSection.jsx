@@ -104,9 +104,32 @@ const AnnouncementsSection = ({ onAnnouncementClick }) => {
                   <h3 className="font-medium text-gray-900 truncate group-hover:text-amber-600 transition-colors">
                     {announcement.title}
                   </h3>
-                  <p className="text-sm text-gray-500 line-clamp-2 mt-1">
-                    {announcement.content?.replace(/<[^>]+>/g, '').slice(0, 100)}...
-                  </p>
+                 <div className="text-sm text-gray-500 mt-1 space-y-1">
+                    <p className="font-medium text-gray-700">
+                      {announcement.createdBy?.name} posted an announcement
+                    </p>
+
+                    <p>
+                      <span className="font-medium">Title:</span> {announcement.title}
+                    </p>
+
+                    <p className="line-clamp-1">
+                      <span className="font-medium">Description:</span>{' '}
+                      {announcement.description?.replace(/<[^>]+>/g, '').slice(0, 60)}
+                    </p>
+
+                    <p>
+                      <span className="font-medium">Category:</span> {announcement.category}
+                    </p>
+
+
+                    <p className="text-xs text-gray-400">
+                      {new Date(announcement.createdAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
                   <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
                     <Calendar size={12} />
                     <span>{formatDate(announcement.createdAt)}</span>
