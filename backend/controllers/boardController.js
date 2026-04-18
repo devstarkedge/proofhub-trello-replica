@@ -33,18 +33,69 @@ import {
 // @route   GET /api/boards
 // @access  Private
 export const getBoards = asyncHandler(async (req, res, next) => {
-  let query = {
-    isDeleted: { $ne: true },
-    $or: [{ owner: req.user.id }, { members: req.user.id }],
-  };
+  const userId = req.user.id;
+  const userRole = req.user.role;
+  const accessType = req.user.accessType || 'full_department';
 
-  // Include public projects for managers and admins
-  if (req.user.role === 'admin' || req.user.role === 'manager') {
-    query.$or.push({ visibility: 'public' });
+  // Support ?departmentIds=id1,id2 for HR Panel project-fetch (admin/manager/hr only)
+  // Must be checked FIRST, before the admin early-return, so admins also get dept-filtered results
+  if (req.query.departmentIds && (userRole === 'admin' || userRole === 'manager' || userRole === 'hr')) {
+    const deptIds = req.query.departmentIds.split(',').filter(Boolean);
+    const boards = await Board.find({
+      department: { $in: deptIds },
+      isDeleted: { $ne: true }
+    })
+      .populate("owner", "name email avatar")
+      .populate("team", "name")
+      .populate("department", "name")
+      .populate("members", "name email avatar")
+      .sort("-createdAt")
+      .lean();
+    return res.status(200).json({ success: true, count: boards.length, data: boards });
   }
 
-  if (req.user.team) {
-    query.$or.push({ team: req.user.team });
+  // Admin always has full access regardless of accessType
+  if (userRole === 'admin') {
+    const boards = await Board.find({ isDeleted: { $ne: true } })
+      .populate("owner", "name email avatar")
+      .populate("team", "name")
+      .populate("department", "name")
+      .populate("members", "name email avatar")
+      .sort("-createdAt")
+      .lean();
+    return res.status(200).json({ success: true, count: boards.length, data: boards });
+  }
+
+  let query;
+
+  if (accessType === 'selected_projects') {
+    // Whitelist-based: only explicitly allowed projects
+    const allowedProjects = req.user.allowedProjects || [];
+    query = {
+      _id: { $in: allowedProjects },
+      isDeleted: { $ne: true }
+    };
+  } else if (accessType === 'assigned_tasks') {
+    // Least-privilege: only boards where user is owner or explicit member
+    query = {
+      isDeleted: { $ne: true },
+      $or: [{ owner: userId }, { members: userId }]
+    };
+    if (req.user.team) {
+      query.$or.push({ team: req.user.team });
+    }
+  } else {
+    // full_department (default): existing behavior
+    query = {
+      isDeleted: { $ne: true },
+      $or: [{ owner: userId }, { members: userId }],
+    };
+    if (userRole === 'manager') {
+      query.$or.push({ visibility: 'public' });
+    }
+    if (req.user.team) {
+      query.$or.push({ team: req.user.team });
+    }
   }
 
   const boards = await Board.find(query)
@@ -121,6 +172,15 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
 
   if (!hasAccess) {
     return next(new ErrorResponse('Not authorized to access this board', 403));
+  }
+
+  // SaaS access type: enforce project whitelist for selected_projects users
+  const accessType = req.user.accessType || 'full_department';
+  if (req.user.role !== 'admin' && accessType === 'selected_projects') {
+    const allowed = (req.user.allowedProjects || []).map(p => p.toString());
+    if (!allowed.includes(board._id.toString())) {
+      return next(new ErrorResponse('Not authorized to access this board', 403));
+    }
   }
 
   // Fetch all cards for all lists in one query - ONLY ACTIVE (NON-ARCHIVED) CARDS
@@ -703,8 +763,24 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Board not found", 404));
   }
 
-  // Check ownership
-  if (board.owner.toString() !== req.user.id && req.user.role !== "admin") {
+  // Check ownership & permissions
+  let isAuthorized = false;
+  if (req.user.role === "admin" || board.owner.toString() === req.user.id) {
+    isAuthorized = true;
+  } else if (req.user.role === "manager") {
+    // Check if the board belongs to the manager's assigned department(s)
+    const boardDept = board.department ? board.department.toString() : null;
+    if (boardDept && req.user.department) {
+      const userDepts = Array.isArray(req.user.department) 
+        ? req.user.department.map(d => d.toString()) 
+        : [req.user.department.toString()];
+      if (userDepts.includes(boardDept)) {
+        isAuthorized = true;
+      }
+    }
+  }
+
+  if (!isAuthorized) {
     return next(new ErrorResponse("Not authorized to delete this board", 403));
   }
 
@@ -1011,13 +1087,27 @@ export const bulkDeleteBoards = asyncHandler(async (req, res, next) => {
 
   // Authorization check — admin and manager can delete any board
   const userRole = req.user.role.toLowerCase();
-  const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
+  
+  // Create array of user's departments for manager check
+  const userDepts = Array.isArray(req.user.department) 
+    ? req.user.department.map(d => d.toString()) 
+    : (req.user.department ? [req.user.department.toString()] : []);
 
-  if (!isAdminOrManager) {
-    return next(new ErrorResponse("Not authorized to perform bulk delete", 403));
+  const authorizedBoards = boards.filter(b => {
+    if (userRole === 'admin') return true;
+    if (b.owner && b.owner.toString() === req.user.id) return true;
+    if (userRole === 'manager') {
+      const boardDept = b.department ? b.department.toString() : null;
+      return boardDept && userDepts.includes(boardDept);
+    }
+    return false;
+  });
+
+  if (authorizedBoards.length === 0) {
+    return next(new ErrorResponse("Not authorized to perform bulk delete for selected projects", 403));
   }
 
-  const authorizedIds = boards.map(b => b._id);
+  const authorizedIds = authorizedBoards.map(b => b._id);
   const foundIds = new Set(boards.map(b => b._id.toString()));
   const notFoundIds = projectIds.filter(id => !foundIds.has(id));
 

@@ -1,5 +1,22 @@
 import { create } from 'zustand';
 
+let savedRecent = JSON.parse(localStorage.getItem('flowtask_smart_recent') || 'null');
+if (!savedRecent) {
+  savedRecent = { all: [], task: [], project: [], assignee: [], priority: [], status: [] };
+} else if (Array.isArray(savedRecent)) {
+  savedRecent = { all: savedRecent.slice(0, 8), task: [], project: [], assignee: [], priority: [], status: [] };
+} else {
+  // Ensure all keys exist
+  savedRecent = {
+    all: savedRecent.all || [],
+    task: savedRecent.task || [],
+    project: savedRecent.project || [],
+    assignee: savedRecent.assignee || [],
+    priority: savedRecent.priority || [],
+    status: savedRecent.status || [],
+  };
+}
+
 let chipIdCounter = 0;
 
 const useSmartSearchStore = create((set, get) => ({
@@ -13,7 +30,7 @@ const useSmartSearchStore = create((set, get) => ({
   chips: [],
 
   // Recent searches (persisted in localStorage)
-  recentSearches: JSON.parse(localStorage.getItem('flowtask_smart_recent') || '[]').slice(0, 10),
+  recentSearches: savedRecent,
 
   // Suggestion state
   suggestions: [],
@@ -36,7 +53,7 @@ const useSmartSearchStore = create((set, get) => ({
 
   setPreviewCount: (count) => set({ previewCount: count }),
 
-  addChip: (field, value, label) => {
+  addChip: (field, value, label, keepOpen = false) => {
     const { chips } = get();
     // Prevent duplicate chip with same field+value
     const exists = chips.some(c => c.field === field && c.value.toLowerCase() === value.toLowerCase());
@@ -46,7 +63,7 @@ const useSmartSearchStore = create((set, get) => ({
     set({
       chips: [...chips, { id: chipIdCounter, field, value, label: label || value }],
       searchText: '',
-      showSuggestions: false,
+      showSuggestions: keepOpen,
     });
   },
 
@@ -63,18 +80,28 @@ const useSmartSearchStore = create((set, get) => ({
 
   clearAllChips: () => set({ chips: [], searchText: '', showSuggestions: false, previewCount: null }),
 
-  addRecentSearch: (text) => {
+  addRecentSearch: (text, forceField = null) => {
     if (!text || !text.trim()) return;
     const trimmed = text.trim();
-    const { recentSearches } = get();
-    const updated = [trimmed, ...recentSearches.filter(s => s !== trimmed)].slice(0, 10);
-    localStorage.setItem('flowtask_smart_recent', JSON.stringify(updated));
-    set({ recentSearches: updated });
+    const { recentSearches, activeField } = get();
+    const field = forceField || activeField;
+
+    const currentList = recentSearches[field] || [];
+    let updated = [trimmed, ...currentList.filter(s => s !== trimmed)];
+    
+    // limit to 8 for all, 5 for specific fields
+    updated = updated.slice(0, field === 'all' ? 8 : 5);
+
+    const newRecent = { ...recentSearches, [field]: updated };
+    localStorage.setItem('flowtask_smart_recent', JSON.stringify(newRecent));
+    set({ recentSearches: newRecent });
   },
 
   clearRecentSearches: () => {
-    localStorage.removeItem('flowtask_smart_recent');
-    set({ recentSearches: [] });
+    // We clear all fields here and reset to empty structure
+    const emptyObject = { all: [], task: [], project: [], assignee: [], priority: [], status: [] };
+    localStorage.setItem('flowtask_smart_recent', JSON.stringify(emptyObject));
+    set({ recentSearches: emptyObject });
   },
 
   // Reset everything

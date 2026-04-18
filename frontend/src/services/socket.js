@@ -267,6 +267,12 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-user-role-changed', { detail: data }));
     });
 
+    // Access permission updated (SaaS access control)
+    this.socket.on('user:access-updated', (data) => {
+      console.log('User access permissions updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-user-access-updated', { detail: data }));
+    });
+
     // Department assignment events
     this.socket.on('user-assigned', (data) => {
       console.log('User assigned to department:', data);
