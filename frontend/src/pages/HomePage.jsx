@@ -14,6 +14,7 @@ import NeonSparkText from '../components/NeonSparkText';
 import { useDebounce } from '../hooks/useDebounce';
 import useProjectStore from '../store/projectStore';
 import useProjectSelection from '../hooks/useProjectSelection';
+import useScrollMemory from '../hooks/useScrollMemory';
 import Avatar from '../components/Avatar';
 import { lazy, Suspense } from 'react';
 import AddProjectModal from '../components/AddProjectModal';
@@ -410,6 +411,61 @@ const HomePage = () => {
     const t = setTimeout(() => triggerShake(5000), 300);
     return () => clearTimeout(t);
   }, [triggerShake]);
+
+  // Restore UI state (expanded departments, filters, search) and scroll when data has loaded
+  const { restore, get: getScrollPos, saveUIState, getUIState } = useScrollMemory();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!departments || departments.length === 0) return;
+
+    // Restore UI state first
+    try {
+      const saved = getUIState && getUIState();
+      if (saved) {
+        if (saved.expandedDepartments) setExpandedDepartments(saved.expandedDepartments);
+        if (saved.filterStatus) setFilterStatus(saved.filterStatus);
+        if (saved.searchQuery) setSearchQuery(saved.searchQuery);
+        if (saved.selectedMembers) setSelectedMembers(saved.selectedMembers);
+        if (saved.viewMode) setViewMode(saved.viewMode);
+      }
+    } catch (e) {
+      // ignore parse errors
+    }
+
+    // Restore scroll position on the main scroll container after layout settles
+    const container = document.querySelector('[data-main-scroll]');
+    if (!container) return;
+
+    let raf1 = requestAnimationFrame(() => {
+      let raf2 = requestAnimationFrame(() => {
+        try { restore && restore(container, { instant: true }); } catch (e) {}
+      });
+      // stash raf id for cleanup
+      container._home_restore_raf = raf2;
+    });
+
+    return () => {
+      if (raf1) cancelAnimationFrame(raf1);
+      if (container && container._home_restore_raf) {
+        cancelAnimationFrame(container._home_restore_raf);
+        delete container._home_restore_raf;
+      }
+    };
+  }, [loading, departments.length, restore, getUIState]);
+
+  // Persist UI state (expanded, filters, search) on change so it can be rehydrated on return
+  useEffect(() => {
+    try {
+      saveUIState && saveUIState({
+        expandedDepartments,
+        filterStatus,
+        searchQuery,
+        selectedMembers,
+        viewMode
+      });
+    } catch (e) {}
+  }, [expandedDepartments, filterStatus, searchQuery, selectedMembers, viewMode, saveUIState]);
 
   if (loading) {
     return <HomePageSkeleton />;

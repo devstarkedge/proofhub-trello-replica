@@ -1,11 +1,28 @@
-import React, { useContext } from 'react';
-import { Outlet } from 'react-router-dom';
+import React, { useContext, useRef, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import AuthContext from '../context/AuthContext';
+import useScrollMemory from '../hooks/useScrollMemory';
 
 const MainLayout = () => {
   const { loading } = useContext(AuthContext);
+  const location = useLocation();
+  const mainRef = useRef(null);
+  const prevPathRef = useRef(location.pathname);
+  const { save } = useScrollMemory();
+
+  useEffect(() => {
+    const prevPath = prevPathRef.current;
+    // When leaving the Home route, persist the scrollTop of the main content
+    if (prevPath === '/' && location.pathname !== '/') {
+      const el = mainRef.current || document.querySelector('[data-main-scroll]');
+      if (el && typeof save === 'function') {
+        try { save(el); } catch (e) { /* noop */ }
+      }
+    }
+    prevPathRef.current = location.pathname;
+  }, [location.pathname, save]);
 
   if (loading) {
     return (
@@ -26,7 +43,7 @@ const MainLayout = () => {
         <Header />
 
         {/* Page Content - Scrollable */}
-        <main className="flex-1 overflow-auto relative">
+        <main ref={mainRef} data-main-scroll className="flex-1 overflow-auto relative">
           <Outlet />
         </main>
       </div>

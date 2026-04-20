@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, memo, useContext, useMemo } from 'react';
 import useThemeStore from '../store/themeStore';
 import { useNavigate } from 'react-router-dom';
+import useScrollMemory from '../hooks/useScrollMemory';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar, Users, TrendingUp, Clock,
@@ -35,6 +36,7 @@ const ProjectCard = ({
 }) => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
+  const { save } = useScrollMemory();
   const { themeColor } = useThemeStore();
   const [showMenu, setShowMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -186,6 +188,10 @@ const ProjectCard = ({
     const departmentId = projectData.departmentId || deptId;
     const projectId = projectData.id;
     if (departmentId && projectId) {
+      try {
+        const el = document.querySelector('[data-main-scroll]');
+        if (el && typeof save === 'function') save(el);
+      } catch (e) {}
       navigate(`/workflow/${departmentId}/${projectId}`);
     }
   };
