@@ -4,6 +4,8 @@ import { ErrorResponse } from '../middleware/errorHandler.js';
 import { sendWelcomeEmail, sendVerificationEmail } from '../utils/email.js';
 import notificationService from '../utils/notificationService.js';
 import { chatHooks } from '../utils/chatHooks.js';
+import { invalidateAuthCache } from '../middleware/authMiddleware.js';
+import { emitToUser } from '../realtime/index.js';
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -453,7 +455,7 @@ export const declineUser = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/users/:id/assign
 // @access  Private/Admin
 export const assignUser = asyncHandler(async (req, res, next) => {
-  const { departments, team } = req.body; // Changed to departments (plural)
+  const { departments, team, accessType, allowedProjects } = req.body;
 
   const user = await User.findById(req.params.id);
 
@@ -490,9 +492,29 @@ export const assignUser = asyncHandler(async (req, res, next) => {
       }
     }
   }
+
   if (team !== undefined) user.team = team;
 
+  // SaaS access control fields
+  const validAccessTypes = ['full_department', 'selected_projects', 'assigned_tasks'];
+  if (accessType !== undefined && validAccessTypes.includes(accessType)) {
+    user.accessType = accessType;
+  }
+  if (allowedProjects !== undefined) {
+    user.allowedProjects = Array.isArray(allowedProjects) ? allowedProjects : [];
+  }
+
   await user.save();
+
+  // Invalidate the auth LRU cache so new access type takes effect immediately
+  invalidateAuthCache(req.params.id);
+
+  // Emit real-time event to the affected user so their UI refreshes without reload
+  emitToUser(req.params.id, 'user:access-updated', {
+    accessType: user.accessType,
+    allowedProjects: user.allowedProjects,
+    departments: user.department
+  });
 
   res.status(200).json({
     success: true,

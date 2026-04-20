@@ -16,6 +16,8 @@ const DEFAULT_FILTERS = {
   profile: '',
   dateFrom: null,
   dateTo: null,
+  bidType: '',
+  bidDomain: '',
 };
 
 const useSalesStore = create(
@@ -36,7 +38,9 @@ const useSalesStore = create(
         budget: '',
         profile: '',
         dateFrom: null,
-        dateTo: null
+        dateTo: null,
+        bidType: '',
+        bidDomain: '',
       },
       sortBy: 'date',
       sortOrder: 'desc',
@@ -313,8 +317,11 @@ const useSalesStore = create(
             minRating: null,
             minHireRate: null,
             budget: '',
+            profile: '',
             dateFrom: null,
-            dateTo: null
+            dateTo: null,
+            bidType: '',
+            bidDomain: '',
           },
           columnFilters: {},
           nameTab: 'All'

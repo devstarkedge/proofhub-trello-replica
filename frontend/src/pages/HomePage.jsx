@@ -102,6 +102,17 @@ const HomePage = () => {
     fetchDepartments();
   }, [fetchDepartments]);
 
+  // Real-time refresh when access permissions are updated by admin
+  useEffect(() => {
+    const handleAccessUpdated = () => {
+      fetchDepartments(true);
+    };
+    window.addEventListener('socket-user-access-updated', handleAccessUpdated);
+    return () => {
+      window.removeEventListener('socket-user-access-updated', handleAccessUpdated);
+    };
+  }, [fetchDepartments]);
+
   // Handle outside click to close dropdown - optimized with useCallback
   useEffect(() => {
     const handleClickOutside = (event) => {

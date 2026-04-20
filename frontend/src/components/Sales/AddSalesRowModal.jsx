@@ -21,7 +21,7 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
 const defaultValues = {
   date: '',
   name: '',
-  bidLink: '',
+  bidLink: { type: 'link', url: '' },
   platform: '',
   profile: '',
   technology: '',
@@ -46,6 +46,25 @@ function convertRowForForm(row) {
   const out = { ...row };
   if (out.date) out.date = new Date(out.date);
   if (out.followUpDate) out.followUpDate = new Date(out.followUpDate);
+  // Normalize bidLink from old string or new object format
+  if (out.bidLink) {
+    if (typeof out.bidLink === 'string') {
+      const lower = out.bidLink.trim().toLowerCase();
+      if (lower === 'direct') {
+        out.bidLink = { type: 'direct', url: null };
+      } else if (lower === 'invite' || lower.startsWith('invite')) {
+        out.bidLink = { type: 'invite', url: /^https?:\/\//i.test(out.bidLink) ? out.bidLink : '' };
+      } else {
+        out.bidLink = { type: 'link', url: out.bidLink };
+      }
+    } else if (typeof out.bidLink === 'object') {
+      // Preserve isValid flag from server for incomplete invite detection
+      out._bidLinkIncomplete = out.bidLink.isValid === false;
+      out.bidLink = { type: out.bidLink.type || 'link', url: out.bidLink.url || '' };
+    }
+  } else {
+    out.bidLink = { type: 'link', url: '' };
+  }
   return out;
 }
 
@@ -131,7 +150,7 @@ FormTextarea.displayName = 'FormTextarea';
 // ────────────────────────────────────────────────────────────
 // Memoized sections
 // ────────────────────────────────────────────────────────────
-const DealDetailsSection = React.memo(({ control, register, errors, watchedDate, derivedMonth, isAdmin, loadingUsers, filteredUsers, selectedNameValue, userDropdownOpen, setUserDropdownOpen, userSearch, setUserSearch, userDropdownRef, setValue, formatSalesDate, openDatePicker, suggestions }) => (
+const DealDetailsSection = React.memo(({ control, register, errors, watchedDate, derivedMonth, isAdmin, loadingUsers, filteredUsers, selectedNameValue, userDropdownOpen, setUserDropdownOpen, userSearch, setUserSearch, userDropdownRef, setValue, formatSalesDate, openDatePicker, suggestions, watchedBidType, bidLinkIncomplete }) => (
   <section>
     <SectionHeader title="Deal Details" icon={Briefcase} description="Core deal information" />
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
@@ -275,8 +294,60 @@ const DealDetailsSection = React.memo(({ control, register, errors, watchedDate,
       {/* Bid Link */}
       <FieldWrapper name="bidLink" className="col-span-1 lg:col-span-2">
         <label className={labelBase}>Bid Link<span className={labelRequired}>*</span></label>
-        <FormInput type="text" placeholder="https://... or Invite, Direct" {...register('bidLink')} aria-invalid={errors.bidLink ? 'true' : undefined} className={`${inputBase} ${errors.bidLink ? inputError : ''}`} />
-        {errors.bidLink && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.bidLink.message}</p>}
+        <div className="flex gap-2">
+          {/* Bid Type Dropdown */}
+          <Controller name="bidLink.type" control={control} render={({ field }) => (
+            <div className="relative shrink-0 w-[120px]">
+              <select
+                value={field.value || 'link'}
+                onChange={(e) => {
+                  const newType = e.target.value;
+                  const prevType = field.value;
+                  // Update the bid type first so validation runs against the new type
+                  field.onChange(newType);
+                  if (newType === 'direct' && prevType !== 'direct') {
+                    // Switching to direct — clear URL after type update
+                    setValue('bidLink.url', null, { shouldValidate: true });
+                  } else if (prevType === 'direct' && newType !== 'direct') {
+                    // Switching away from direct — ensure URL input is reset to empty string
+                    setValue('bidLink.url', '', { shouldValidate: false });
+                  }
+                }}
+                className={`${inputBase} appearance-none cursor-pointer pr-8 font-medium ${
+                  field.value === 'link' ? 'text-blue-600' :
+                  field.value === 'invite' ? 'text-indigo-600' :
+                  field.value === 'direct' ? 'text-orange-600' : ''
+                }`}
+              >
+                <option value="link">🔗 Link</option>
+                <option value="invite">📩 Invite</option>
+                <option value="direct">⚡ Direct</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+          )} />
+          {/* URL Input — visible for link & invite, hidden for direct */}
+          {watchedBidType !== 'direct' && (
+            <div className="flex-1 relative">
+              <FormInput
+                type="url"
+                placeholder={watchedBidType === 'invite' ? 'Hidden invite link (https://...)' : 'https://...'}
+                {...register('bidLink.url')}
+                aria-invalid={errors.bidLink?.url ? 'true' : undefined}
+                className={`${inputBase} ${errors.bidLink?.url ? inputError : ''}`}
+              />
+            </div>
+          )}
+        </div>
+        {errors.bidLink?.type && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.bidLink.type.message}</p>}
+        {errors.bidLink?.url && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.bidLink.url.message}</p>}
+        {errors.bidLink?.message && !errors.bidLink?.type && !errors.bidLink?.url && <p className={errorText}><AlertCircle className="w-3 h-3" />{errors.bidLink.message}</p>}
+        {bidLinkIncomplete && watchedBidType === 'invite' && (
+          <p className="flex items-center gap-1.5 mt-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-2.5 py-1.5">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            This invite has no link. Please add one before saving.
+          </p>
+        )}
       </FieldWrapper>
     </div>
   </section>
@@ -571,6 +642,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
   // Watch fields
   const watchedDate = watch('date');
   const watchedFollowUpDate = watch('followUpDate');
+  const watchedBidType = watch('bidLink.type');
   const allValues = watch();
 
   // Derive month from date — auto-sync
@@ -685,6 +757,17 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
     try {
       if (typeof data.date === 'string') data.date = new Date(data.date);
       if (data.followUpDate && typeof data.followUpDate === 'string') data.followUpDate = new Date(data.followUpDate);
+      // Normalize bidLink before send
+      if (data.bidLink) {
+        if (data.bidLink.type === 'direct') {
+          data.bidLink = { type: 'direct', url: null };
+        } else {
+          // Ensure https prefix
+          let url = (data.bidLink.url || '').trim();
+          if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+          data.bidLink = { type: data.bidLink.type, url: url || null };
+        }
+      }
       if (customColumns) {
         customColumns.forEach(col => {
           if (col.type === 'date' && data[col.key] && typeof data[col.key] === 'string') {
@@ -785,6 +868,8 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
               formatSalesDate={formatSalesDate}
               openDatePicker={openDatePicker}
               suggestions={suggestions}
+              watchedBidType={watchedBidType}
+              bidLinkIncomplete={isEdit && editingRow?.bidLink?.isValid === false}
             />
 
             <ClientInfoSection control={control} register={register} errors={errors} suggestions={suggestions} />

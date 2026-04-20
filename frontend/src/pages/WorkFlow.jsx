@@ -13,6 +13,7 @@ import useWorkflowStore from '../store/workflowStore';
 import useModalHierarchyStore from '../store/modalHierarchyStore';
 import useFieldVisibilityStore from '../store/fieldVisibilityStore';
 import useWorkflowFilterStore from '../store/workflowFilterStore';
+import useProjectStore from '../store/projectStore';
 
 import HierarchyModalStack from '../components/hierarchy/HierarchyModalStack';
 import { WorkflowSkeleton } from '../components/LoadingSkeleton';
@@ -34,6 +35,20 @@ const WorkFlow = memo(() => {
   
   // Track previous projectId to detect changes
   const prevProjectIdRef = useRef(projectId);
+
+  const { departments, fetchDepartments } = useProjectStore();
+
+  useEffect(() => {
+    if (departments.length === 0) {
+      fetchDepartments();
+    }
+  }, [departments.length, fetchDepartments]);
+
+  const departmentManagers = useMemo(() => {
+    if (!deptId) return [];
+    const dept = departments.find(d => d._id === deptId);
+    return dept?.managers || [];
+  }, [deptId, departments]);
 
   // Use workflow store
   const {
@@ -1046,6 +1061,7 @@ useEffect(() => {
             onClose={() => setEditModalOpen(false)}
             project={selectedProject}
             onProjectUpdated={handleProjectUpdated}
+            departmentManagers={departmentManagers}
           />
         </Suspense>
       )}

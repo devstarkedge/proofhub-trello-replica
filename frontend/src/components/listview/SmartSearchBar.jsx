@@ -2,7 +2,6 @@ import React, { memo, useRef, useEffect, useCallback, useState } from 'react';
 import { Search, X, Command } from 'lucide-react';
 import useSmartSearchStore from '../../store/smartSearchStore';
 import SearchFieldDropdown from './SearchFieldDropdown';
-import InlineFilterChips from './InlineFilterChips';
 import SearchSuggestionDropdown from './SearchSuggestionDropdown';
 
 const PLACEHOLDER_MAP = {
@@ -38,8 +37,9 @@ const SmartSearchBar = () => {
   const isMac = typeof navigator !== 'undefined' && /(Mac|iPhone|iPad|iPod)/i.test(navigator.platform);
 
   // Total items for keyboard nav
-  const showRecent = !searchText && recentSearches.length > 0 && isDropdownOpen;
-  const navItems = showSuggestions ? suggestions : (showRecent ? recentSearches : []);
+  const currentRecent = recentSearches[activeField] || [];
+  const showRecent = !searchText && currentRecent.length > 0 && isDropdownOpen;
+  const navItems = showSuggestions ? suggestions : (showRecent ? currentRecent : []);
   const navCount = navItems.length;
 
   // Close suggestions on outside click
@@ -72,20 +72,27 @@ const SmartSearchBar = () => {
 
   const handleSuggestionSelect = useCallback((item) => {
     if (activeField === 'all') {
-      // For 'all' mode: add a chip with the suggestion's type
-      addChip(item.type, item.value, item.label);
+      // In 'all' mode: map to text for global search, keep no chip
+      setSearchText(item.label);
+      addRecentSearch(item.label, 'all');
+      setShowSuggestions(false);
     } else {
-      addChip(activeField, item.value, item.label);
+      // In specific field mode: creates chip and keeps dropdown open
+      addChip(activeField, item.value, item.label, true);
+      addRecentSearch(item.label, activeField);
     }
-    addRecentSearch(item.value);
     inputRef.current?.focus();
-  }, [activeField, addChip, addRecentSearch]);
+  }, [activeField, addChip, addRecentSearch, setSearchText, setShowSuggestions]);
 
   const handleRecentSelect = useCallback((text) => {
-    setSearchText(text);
-    setShowSuggestions(false);
+    if (activeField === 'all') {
+      setSearchText(text);
+      setShowSuggestions(false);
+    } else {
+      addChip(activeField, text, text, true);
+    }
     inputRef.current?.focus();
-  }, [setSearchText, setShowSuggestions]);
+  }, [activeField, addChip, setSearchText, setShowSuggestions]);
 
   const handleInputChange = (e) => {
     setSearchText(e.target.value);
@@ -117,7 +124,7 @@ const SmartSearchBar = () => {
         e.preventDefault();
         if (dropdownVisible && highlightedSuggestionIndex >= 0 && highlightedSuggestionIndex < navCount) {
           if (showRecent && !showSuggestions) {
-            handleRecentSelect(recentSearches[highlightedSuggestionIndex]);
+            handleRecentSelect(currentRecent[highlightedSuggestionIndex]);
           } else if (suggestions[highlightedSuggestionIndex]) {
             handleSuggestionSelect(suggestions[highlightedSuggestionIndex]);
           }
@@ -149,7 +156,7 @@ const SmartSearchBar = () => {
         if (dropdownVisible && highlightedSuggestionIndex >= 0) {
           e.preventDefault();
           if (showRecent && !showSuggestions) {
-            handleRecentSelect(recentSearches[highlightedSuggestionIndex]);
+            handleRecentSelect(currentRecent[highlightedSuggestionIndex]);
           } else if (suggestions[highlightedSuggestionIndex]) {
             handleSuggestionSelect(suggestions[highlightedSuggestionIndex]);
           }
@@ -197,36 +204,32 @@ const SmartSearchBar = () => {
         {/* Divider between dropdown and input */}
         <div className="w-px h-6 bg-gray-200 my-auto" />
 
-        {/* Chips + Input area (right, attached) */}
-        <div className="flex-1 flex flex-wrap items-center gap-1 py-1.5 pr-1 pl-2 min-h-[42px]">
-          <InlineFilterChips />
-
-          <div className="flex items-center gap-2 flex-1 min-w-[120px]">
-            <Search className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${isFocused ? 'text-blue-500' : 'text-gray-400'}`} />
-            <input
-              ref={inputRef}
-              type="text"
-              value={searchText}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              onFocus={handleFocus}
-              onBlur={handleBlur}
-              placeholder={chips.length > 0 ? 'Add more filters...' : PLACEHOLDER_MAP[activeField]}
-              className="flex-1 bg-transparent border-none outline-none text-sm text-gray-900 placeholder:text-gray-400 min-w-[100px]"
-              role="combobox"
-              aria-expanded={showSuggestions}
-              aria-controls="smart-search-suggestions"
-              aria-activedescendant={highlightedSuggestionIndex >= 0 ? `suggestion-${highlightedSuggestionIndex}` : undefined}
-              aria-label="Search tasks"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
+        {/* Input area (right, attached) */}
+        <div className="flex-1 flex items-center gap-2 py-1.5 pr-1 pl-2 min-h-[42px]">
+          <Search className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${isFocused ? 'text-blue-500' : 'text-gray-400'}`} />
+          <input
+            ref={inputRef}
+            type="text"
+            value={searchText}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            placeholder={PLACEHOLDER_MAP[activeField]}
+            className="flex-1 bg-transparent border-none outline-none text-sm text-gray-900 placeholder:text-gray-400 min-w-[100px]"
+            role="combobox"
+            aria-expanded={showSuggestions}
+            aria-controls="smart-search-suggestions"
+            aria-activedescendant={highlightedSuggestionIndex >= 0 ? `suggestion-${highlightedSuggestionIndex}` : undefined}
+            aria-label="Search tasks"
+            autoComplete="off"
+            spellCheck={false}
+          />
         </div>
 
         {/* Right actions: clear + keyboard hint */}
         <div className="flex items-center gap-1 pr-2 flex-shrink-0">
-          {(searchText || chips.length > 0) && (
+          {searchText && (
             <button
               onClick={handleClear}
               className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-150"

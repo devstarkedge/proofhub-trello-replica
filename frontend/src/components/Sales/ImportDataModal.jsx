@@ -3,6 +3,7 @@ import React, { useState, useCallback, useEffect, useMemo, useContext } from 're
 import { X, Upload, AlertCircle, Plus, Check } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
 import useSalesStore from '../../store/salesStore';
 import * as salesApi from '../../services/salesApi';
 import { toast } from 'react-toastify';
@@ -32,6 +33,9 @@ const ImportDataModal = ({ isOpen, onClose }) => {
   const [totalCount, setTotalCount] = useState(0);
   const [importStats, setImportStats] = useState({ success: 0, failed: 0, newColumns: 0, newOptions: 0 });
 
+  // Hyperlink metadata extracted from Excel cells (keyed by "rowIdx-colIdx")
+  const [cellHyperlinks, setCellHyperlinks] = useState({});
+
   // New columns to auto-create during import
   const [newColumnsToCreate, setNewColumnsToCreate] = useState([]);
 
@@ -49,11 +53,196 @@ const ImportDataModal = ({ isOpen, onClose }) => {
     const file = acceptedFiles[0];
     setFileName(file.name);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
+
+      // =============================================
+      // HYPERLINK EXTRACTION
+      // .xlsx files are ZIP archives where hyperlinks live in XML
+      // relationship files that SheetJS community edition DOES NOT parse.
+      // We use JSZip to extract them directly from the OOXML structure.
+      // =============================================
+      const hyperlinkMap = {};
+
+      // Detect file type: ZIP (.xlsx) starts with "PK" (0x50, 0x4B)
+      const isXlsx = data.length >= 2 && data[0] === 0x50 && data[1] === 0x4B;
+      console.log(`[Import] File type: ${isXlsx ? '.xlsx (ZIP)' : 'CSV/other (not ZIP)'}, size: ${data.length} bytes`);
+
+      if (isXlsx) {
+        // ---- Direct OOXML ZIP parsing (the ONLY reliable method) ----
+        try {
+          const zip = await JSZip.loadAsync(data);
+          const zipFiles = Object.keys(zip.files);
+          console.log('[Import] ZIP contents:', zipFiles.filter(f => f.includes('sheet') || f.includes('rels')));
+
+          // Find sheet XML path
+          let sheetXmlPath = null;
+          const wbRelsFile = zip.file('xl/_rels/workbook.xml.rels');
+          if (wbRelsFile) {
+            const wbRelsXml = await wbRelsFile.async('text');
+            const wbRelsDoc = new DOMParser().parseFromString(wbRelsXml, 'application/xml');
+            const wsRel = Array.from(wbRelsDoc.querySelectorAll('Relationship')).find(r =>
+              (r.getAttribute('Type') || '').includes('/worksheet')
+            );
+            if (wsRel) {
+              const target = wsRel.getAttribute('Target');
+              sheetXmlPath = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+            }
+          }
+          if (!sheetXmlPath) {
+            // Fallback: scan ZIP for any sheet XML
+            const sheetFiles = zipFiles.filter(f => /^xl\/worksheets\/sheet\d*\.xml$/i.test(f));
+            if (sheetFiles.length > 0) sheetXmlPath = sheetFiles[0];
+          }
+          console.log('[Import] Sheet XML path:', sheetXmlPath);
+
+          if (sheetXmlPath) {
+            const sheetXml = await zip.file(sheetXmlPath)?.async('text');
+            const sheetFileName = sheetXmlPath.split('/').pop();
+            const sheetDir = sheetXmlPath.substring(0, sheetXmlPath.lastIndexOf('/'));
+            const relsPath = `${sheetDir}/_rels/${sheetFileName}.rels`;
+            const relsFile = zip.file(relsPath);
+            console.log('[Import] Rels path:', relsPath, 'exists:', !!relsFile);
+
+            if (sheetXml && relsFile) {
+              const relsXml = await relsFile.async('text');
+              const parser = new DOMParser();
+
+              // Parse .rels → rId → URL map
+              const relsDoc = parser.parseFromString(relsXml, 'application/xml');
+              const relMap = {};
+              relsDoc.querySelectorAll('Relationship').forEach(rel => {
+                const id = rel.getAttribute('Id');
+                const target = rel.getAttribute('Target');
+                const type = rel.getAttribute('Type') || '';
+                if (id && target) relMap[id] = target;
+              });
+              console.log('[Import] Relationship map:', relMap);
+
+              // Parse sheet XML → <hyperlink> elements
+              const sheetDoc = parser.parseFromString(sheetXml, 'application/xml');
+
+              // Collect hyperlinks using multiple selector strategies
+              let hyperlinks = [];
+              // Strategy 1: Namespaced
+              hyperlinks = Array.from(sheetDoc.getElementsByTagNameNS(
+                'http://schemas.openxmlformats.org/spreadsheetml/2006/main', 'hyperlink'
+              ));
+              // Strategy 2: Non-namespaced fallback
+              if (hyperlinks.length === 0) {
+                hyperlinks = Array.from(sheetDoc.querySelectorAll('hyperlink'));
+              }
+              // Strategy 3: Regex parse the raw XML (most reliable across all browsers)
+              if (hyperlinks.length === 0) {
+                const hlRegex = /<hyperlink[^>]+ref="([^"]+)"[^>]*r:id="([^"]+)"[^>]*\/?>/gi;
+                let match;
+                while ((match = hlRegex.exec(sheetXml)) !== null) {
+                  const ref = match[1];
+                  const rId = match[2];
+                  if (relMap[rId]) {
+                    hyperlinkMap[ref] = relMap[rId];
+                  }
+                }
+                // Also try id without r: prefix
+                const hlRegex2 = /<hyperlink[^>]+ref="([^"]+)"[^>]*\s+id="([^"]+)"[^>]*\/?>/gi;
+                while ((match = hlRegex2.exec(sheetXml)) !== null) {
+                  const ref = match[1];
+                  const rId = match[2];
+                  if (relMap[rId] && !hyperlinkMap[ref]) {
+                    hyperlinkMap[ref] = relMap[rId];
+                  }
+                }
+              }
+
+              console.log(`[Import] Found ${hyperlinks.length} hyperlink elements via DOM`);
+
+              // Process DOM-found hyperlinks
+              hyperlinks.forEach(hl => {
+                const ref = hl.getAttribute('ref');
+                if (!ref || hyperlinkMap[ref]) return;
+                // Try all possible attribute names for the relationship ID
+                const rId = hl.getAttribute('r:id')
+                  || hl.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')
+                  || hl.getAttribute('id');
+                if (rId && relMap[rId]) {
+                  hyperlinkMap[ref] = relMap[rId];
+                }
+                // Some hyperlinks have inline location (no relationship)
+                const location = hl.getAttribute('location');
+                if (!hyperlinkMap[ref] && location) {
+                  hyperlinkMap[ref] = location;
+                }
+              });
+
+              const ooxmlCount = Object.keys(hyperlinkMap).length;
+              console.log(`[Import] OOXML result: ${ooxmlCount} hyperlinks extracted`);
+              if (ooxmlCount > 0) {
+                console.log('[Import] ✅ Hyperlinks:', hyperlinkMap);
+              } else {
+                // Log a snippet of sheet XML around "hyperlink" for debugging
+                const hlIdx = sheetXml.toLowerCase().indexOf('hyperlink');
+                if (hlIdx >= 0) {
+                  console.warn('[Import] "hyperlink" found in XML but not parsed. Context:', sheetXml.substring(Math.max(0, hlIdx - 100), hlIdx + 200));
+                } else {
+                  console.warn('[Import] No "hyperlink" text found in sheet XML. The file may not contain hyperlinks.');
+                }
+              }
+            } else {
+              console.warn('[Import] Sheet XML or .rels missing.', { hasSheetXml: !!sheetXml, relsPath });
+              // If no .rels file, the sheet might not have any hyperlinks
+            }
+          } else {
+            console.warn('[Import] Could not find sheet XML path in ZIP.');
+          }
+        } catch (zipErr) {
+          console.error('[Import] OOXML extraction error:', zipErr);
+        }
+      }
+
+      // ---- Fallback: SheetJS cell-level extraction (for CSV, or XLSX edge cases) ----
+      const extractHyperlinkFormula = (formula) => {
+        if (!formula) return null;
+        const m = formula.match(/^HYPERLINK\s*\(\s*["']([^"']+)["']/i);
+        return m ? m[1] : null;
+      };
+
+      Object.keys(worksheet).forEach(addr => {
+        if (addr[0] === '!' || hyperlinkMap[addr]) return;
+        const cell = worksheet[addr];
+        if (!cell) return;
+        if (cell.l && typeof cell.l === 'object' && (cell.l.Target || cell.l.target)) {
+          hyperlinkMap[addr] = cell.l.Target || cell.l.target; return;
+        }
+        if (cell.l && typeof cell.l === 'string') { hyperlinkMap[addr] = cell.l; return; }
+        if (cell.f) {
+          const url = extractHyperlinkFormula(cell.f);
+          if (url) { hyperlinkMap[addr] = url; return; }
+        }
+        if (cell.v && typeof cell.v === 'string' && cell.w && cell.w !== cell.v) {
+          if (/^https?:\/\//i.test(cell.v) && !/^https?:\/\//i.test(cell.w)) {
+            hyperlinkMap[addr] = cell.v;
+          }
+        }
+      });
+
+      if (Array.isArray(worksheet['!hyperlinks'])) {
+        worksheet['!hyperlinks'].forEach(hl => {
+          if (hl.ref && hl.Target && !hyperlinkMap[hl.ref]) {
+            hyperlinkMap[hl.ref] = hl.Target;
+          }
+        });
+      }
+
+      // Final summary
+      const hlCount = Object.keys(hyperlinkMap).length;
+      if (hlCount > 0) {
+        console.log(`[Import] ✅ Total hyperlinks: ${hlCount}`, hyperlinkMap);
+      } else {
+        console.warn(`[Import] ⚠️ No hyperlinks found. File type: ${isXlsx ? 'xlsx' : 'CSV'}. If your spreadsheet has hyperlinks, make sure to download as .xlsx (not CSV).`);
+      }
 
       // =============================================
       // FIX: Force all cells to their text representation.
@@ -87,6 +276,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       const seen = new Set();
       const filteredHeader = [];
       const filteredBody = body.map(() => []);
+      const hyperlinkData = {};
 
       header.forEach((h, idx) => {
         const norm = normalizeHeader(h);
@@ -94,14 +284,29 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           return;
         }
         if (norm) seen.add(norm);
+        const filteredColIdx = filteredHeader.length;
         filteredHeader.push(h);
         filteredBody.forEach((row, rIdx) => {
           row.push(body[rIdx]?.[idx]);
+          // Translate hyperlink from cell address to filtered row/col index
+          const cellAddr = XLSX.utils.encode_cell({ r: rIdx + 1, c: idx }); // +1 for header row
+          if (hyperlinkMap[cellAddr]) {
+            hyperlinkData[`${rIdx}-${filteredColIdx}`] = hyperlinkMap[cellAddr];
+          }
         });
       });
 
       setColumns(filteredHeader);
       setRows(filteredBody);
+      setCellHyperlinks(hyperlinkData);
+
+      // Log hyperlink mapping results
+      const mappedHlCount = Object.keys(hyperlinkData).length;
+      if (mappedHlCount > 0) {
+        console.log(`[Import] ✅ ${mappedHlCount} hyperlinks mapped to row-col indices:`, hyperlinkData);
+      } else if (hlCount > 0) {
+        console.warn('[Import] ⚠️ Hyperlinks found but none mapped to data cells. Check column filtering.');
+      }
       
       // Auto-map columns after a small delay to ensure salesFields is populated
       setTimeout(() => {
@@ -221,11 +426,17 @@ const ImportDataModal = ({ isOpen, onClose }) => {
     });
 
     // Map columns to sales fields
-    const mapped = rows.map((row) => {
+    const mapped = rows.map((row, rowIdx) => {
       const obj = {};
       columns.forEach((col, idx) => {
         const field = extendedMap[col];
-        if (field) obj[field] = row[idx];
+        if (field) {
+          obj[field] = row[idx];
+          // Attach hyperlink for bidLink column
+          if (field === 'bidLink' && cellHyperlinks[`${rowIdx}-${idx}`]) {
+            obj._bidLinkHyperlink = cellHyperlinks[`${rowIdx}-${idx}`];
+          }
+        }
       });
       // Attach imported month name for date validation
       if (monthColIdx >= 0 && row[monthColIdx]) {
@@ -277,7 +488,13 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         const obj = { _originalIndex: originalIndex };
         columns.forEach((col, idx) => {
           const field = extendedMap[col];
-          if (field) obj[field] = row[idx];
+          if (field) {
+            obj[field] = row[idx];
+            // Attach hyperlink for bidLink column
+            if (field === 'bidLink' && cellHyperlinks[`${originalIndex}-${idx}`]) {
+              obj._bidLinkHyperlink = cellHyperlinks[`${originalIndex}-${idx}`];
+            }
+          }
         });
         // Attach imported month name for date validation
         if (monthColIdx >= 0 && row[monthColIdx]) {
@@ -371,14 +588,45 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         }
         
         // =========================================
-        // NORMALIZE BIDLINK — accepts URLs and plain text (Invite, Direct, etc.)
+        // NORMALIZE BIDLINK — smart detection: URL→link, invite→invite, direct/empty→direct
+        // Also uses hyperlink metadata extracted from Excel cells (if available)
         // =========================================
+        const bidLinkHyperlink = out._bidLinkHyperlink || null;
+        delete out._bidLinkHyperlink;
+
         if (out.bidLink !== undefined) {
-          const bidLinkVal = String(out.bidLink || '').trim();
-          if (!bidLinkVal) {
-            delete out.bidLink;
+          const raw = String(out.bidLink || '').trim();
+          if (!raw && !bidLinkHyperlink) {
+            out.bidLink = { type: 'direct', url: null };
           } else {
-            out.bidLink = bidLinkVal;
+            const lower = raw.toLowerCase();
+            const urlMatch = raw.match(/https?:\/\/[^\s]+/i);
+            if (lower === 'direct') {
+              out.bidLink = { type: 'direct', url: null };
+            } else if (lower === 'invite' || lower.startsWith('invite')) {
+              // Prefer hidden hyperlink over text-embedded URL
+              out.bidLink = { type: 'invite', url: bidLinkHyperlink || (urlMatch ? urlMatch[0] : null) };
+            } else if (/^https?:\/\//i.test(raw)) {
+              out.bidLink = { type: 'link', url: raw };
+            } else if (/^[\w.-]+\.\w{2,}/.test(raw)) {
+              // Domain-like string
+              out.bidLink = { type: 'link', url: 'https://' + raw };
+            } else if (urlMatch) {
+              // Text with embedded URL
+              out.bidLink = { type: 'link', url: urlMatch[0] };
+            } else if (bidLinkHyperlink) {
+              // Cell text is not a URL/invite/direct but has a hidden hyperlink
+              out.bidLink = { type: 'link', url: bidLinkHyperlink };
+            } else {
+              out.bidLink = { type: 'link', url: raw };
+            }
+          }
+
+          // Debug log for bidLink processing (remove after verification)
+          if (bidLinkHyperlink) {
+            console.log('[Import BidLink] ✅ Hyperlink found:', { text: raw, hyperlink: bidLinkHyperlink, result: out.bidLink });
+          } else if (raw && (raw.toLowerCase().includes('invite'))) {
+            console.warn('[Import BidLink] ⚠️ Invite without hyperlink:', { text: raw, hyperlink: null, result: out.bidLink });
           }
         }
         

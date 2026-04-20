@@ -20,7 +20,7 @@
  * @typedef {Object} SalesFieldDef
  * @property {string} key         – DB / form field key (camelCase)
  * @property {string} label       – Human-readable label for UI & error messages
- * @property {'text'|'date'|'number'|'link'|'dropdown'|'rating'|'percent'|'currency'|'name'|'color'} type
+ * @property {'text'|'date'|'number'|'link'|'bidLink'|'dropdown'|'rating'|'percent'|'currency'|'name'|'color'} type
  * @property {boolean} required   – Whether the field is required for create/update
  * @property {boolean} [readOnly] – If true the field is system-derived (e.g. monthName)
  * @property {string}  [section]  – UI grouping hint
@@ -34,7 +34,7 @@ export const SALES_FIELDS = [
   { key: 'platform',           label: 'Platform',            type: 'dropdown', required: true,  section: 'deal' },
   { key: 'technology',         label: 'Technology',          type: 'dropdown', required: true,  section: 'deal' },
   { key: 'profile',            label: 'Profile',             type: 'dropdown', required: true,  section: 'deal' },
-  { key: 'bidLink',            label: 'Bid Link',            type: 'link',     required: true,  section: 'deal' },
+  { key: 'bidLink',            label: 'Bid Link',            type: 'bidLink',  required: true,  section: 'deal' },
 
   // ─── Client Information ─────────────────────────────────────
   { key: 'clientRating',       label: 'Client Rating',       type: 'rating',   required: false, section: 'client' },
@@ -105,6 +105,16 @@ export const validateSalesRequired = (data, skip = {}) => {
   for (const { key, label } of SALES_FIELDS) {
     if (!SALES_REQUIRED_FIELDS.includes(key)) continue;
     if (skip[key]) continue;
+
+    // Special handling for compound bidLink field
+    if (key === 'bidLink') {
+      const bl = data[key];
+      if (!bl || (typeof bl === 'object' && !bl.type) || (typeof bl === 'string' && !bl.trim())) {
+        missing.push(label);
+      }
+      continue;
+    }
+
     const val = data[key];
     if (val === undefined || val === null || (typeof val === 'string' && !val.trim())) {
       missing.push(label);
@@ -116,4 +126,40 @@ export const validateSalesRequired = (data, skip = {}) => {
     message: `Missing required fields: ${missing.join(', ')}`,
     fields: missing,
   };
+};
+
+// ─── BidLink helpers ──────────────────────────────────────────
+
+/** Bid type options for dropdowns and filters */
+export const BID_TYPES = [
+  { value: 'link', label: 'Link' },
+  { value: 'invite', label: 'Invite' },
+  { value: 'direct', label: 'Direct' },
+];
+
+/** Known platform domains → display labels */
+export const PLATFORM_DOMAINS = {
+  'upwork.com': 'Upwork',
+  'contra.com': 'Contra',
+  'fiverr.com': 'Fiverr',
+  'linkedin.com': 'LinkedIn',
+  'freelancer.com': 'Freelancer',
+  'toptal.com': 'Toptal',
+  'guru.com': 'Guru',
+  'peopleperhour.com': 'PPH',
+};
+
+/**
+ * Extract platform label from a URL.
+ * Returns the platform name (e.g. "Upwork") or null.
+ */
+export const detectPlatform = (url) => {
+  if (!url) return null;
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, '');
+    for (const [domain, label] of Object.entries(PLATFORM_DOMAINS)) {
+      if (hostname === domain || hostname.endsWith('.' + domain)) return label;
+    }
+  } catch { /* invalid URL */ }
+  return null;
 };

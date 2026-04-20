@@ -170,6 +170,21 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
     // Admin users see all departments (no additional filter)
   }
 
+  // Build project match filter based on user's access type (SaaS access control)
+  const userAccessType = (user.role === 'admin') ? 'full_department' : (user.accessType || 'full_department');
+  const projectMatchFilter = {
+    $expr: { $eq: ['$department', '$$deptId'] },
+    isArchived: false,
+    isDeleted: { $ne: true }
+  };
+  if (userAccessType === 'selected_projects' && user.allowedProjects?.length > 0) {
+    const allowedIds = user.allowedProjects.map(id => new mongoose.Types.ObjectId(id.toString()));
+    projectMatchFilter._id = { $in: allowedIds };
+  } else if (userAccessType === 'assigned_tasks') {
+    const uid = new mongoose.Types.ObjectId(user.id);
+    projectMatchFilter.$or = [{ owner: uid }, { members: uid }];
+  }
+
   // OPTIMIZED: Single aggregation pipeline instead of N+1 queries
   const departments = await Department.aggregate([
     { $match: matchQuery },
@@ -193,25 +208,31 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         as: 'members'
       }
     },
-    // Lookup projects (boards)
+    // Lookup projects (boards) — filtered by user's accessType
     {
       $lookup: {
         from: 'boards',
         let: { deptId: '$_id' },
         pipeline: [
-          { $match: { $expr: { $eq: ['$department', '$$deptId'] }, isArchived: false } },
+          { $match: projectMatchFilter },
           { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1, dueDate: 1 } }
         ],
         as: 'projects'
       }
     },
     // Lookup all cards for this department's projects (include status and isArchived for progress calculation)
+    // For 'assigned_tasks' users: restrict to cards assigned to them so progress reflects their own tasks
     {
       $lookup: {
         from: 'cards',
         let: { projectIds: '$projects._id' },
         pipeline: [
-          { $match: { $expr: { $in: ['$board', '$$projectIds'] } } },
+          { $match: { $expr: { $and: [
+            { $in: ['$board', '$$projectIds'] },
+            ...(userAccessType === 'assigned_tasks'
+              ? [{ $in: [new mongoose.Types.ObjectId(user.id), '$assignees'] }]
+              : [])
+          ] } } },
           { $project: { board: 1, assignees: 1, members: 1, status: 1, isArchived: 1 } }
         ],
         as: 'allCards'

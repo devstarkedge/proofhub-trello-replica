@@ -120,6 +120,16 @@ const userSchema = new mongoose.Schema({
     type: Date,
     select: false
   },
+  // SaaS project-level access control
+  accessType: {
+    type: String,
+    enum: ['full_department', 'selected_projects', 'assigned_tasks'],
+    default: 'full_department'
+  },
+  allowedProjects: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Board'
+  }],
   recentCopyMoveDestinations: [{
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
     departmentName: String,

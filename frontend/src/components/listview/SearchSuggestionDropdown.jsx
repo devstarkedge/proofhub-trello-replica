@@ -27,6 +27,22 @@ const TYPE_LABELS = {
   status: 'Status',
 };
 
+const HighlightMatch = ({ text, query }) => {
+  if (!query || typeof text !== 'string') return <>{text}</>;
+  const parts = text.split(new RegExp(`(${query})`, 'gi'));
+  return (
+    <>
+      {parts.map((part, i) => 
+        part.toLowerCase() === query.toLowerCase() ? (
+          <span key={i} className="font-bold text-blue-600">{part}</span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+};
+
 const SearchSuggestionDropdown = ({ onSelect, onSelectRecent, inputRef, isDropdownOpen }) => {
   const {
     suggestions,
@@ -44,7 +60,8 @@ const SearchSuggestionDropdown = ({ onSelect, onSelectRecent, inputRef, isDropdo
   const itemRefs = useRef([]);
 
   // Show recent searches only when input is focused (isDropdownOpen) and text is empty
-  const showRecent = !searchText && recentSearches.length > 0 && isDropdownOpen;
+  const currentRecent = recentSearches[activeField] || [];
+  const showRecent = !searchText && currentRecent.length > 0 && isDropdownOpen;
   const isVisible = showSuggestions || showRecent;
 
   // Keep highlighted item scrolled into view
@@ -57,7 +74,7 @@ const SearchSuggestionDropdown = ({ onSelect, onSelectRecent, inputRef, isDropdo
   if (!isVisible && !suggestionsLoading) return null;
 
   const items = showRecent
-    ? recentSearches.map((s, i) => ({ value: s, label: s, type: 'recent', _index: i }))
+    ? currentRecent.map((s, i) => ({ value: s, label: s, type: 'recent', _index: i }))
     : suggestions;
 
   // Show empty state when searching but no results
@@ -109,10 +126,24 @@ const SearchSuggestionDropdown = ({ onSelect, onSelectRecent, inputRef, isDropdo
 
         {/* Empty state */}
         {showEmptyState && (
-          <div className="flex flex-col items-center gap-2 py-6 px-4">
+          <div className="flex flex-col items-center gap-3 py-6 px-4">
             <SearchX className="w-8 h-8 text-gray-300" />
-            <span className="text-sm text-gray-500 font-medium">No results for &ldquo;{searchText}&rdquo;</span>
-            <span className="text-xs text-gray-400">Try a different search term or field</span>
+            <div className="text-center">
+              <span className="block text-sm text-gray-500 font-medium">No results for &ldquo;{searchText}&rdquo;</span>
+              <span className="block text-xs text-gray-400 mt-1">Try a different search term or field</span>
+            </div>
+            {activeField !== 'all' && (
+              <button
+                onClick={() => {
+                  useSmartSearchStore.getState().setActiveField('all');
+                  inputRef.current?.focus();
+                }}
+                className="mt-2 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                Search in all fields
+              </button>
+            )}
           </div>
         )}
 
@@ -150,7 +181,7 @@ const SearchSuggestionDropdown = ({ onSelect, onSelectRecent, inputRef, isDropdo
                       id={`suggestion-${idx}`}
                     >
                       <TypeIcon className={`w-4 h-4 ${isHighlighted ? 'text-blue-500' : TYPE_COLORS[type] || 'text-gray-400'}`} />
-                      <span className="flex-1 text-left truncate">{item.label}</span>
+                      <span className="flex-1 text-left truncate"><HighlightMatch text={item.label} query={searchText} /></span>
                     </button>
                   );
                 })}
@@ -178,7 +209,7 @@ const SearchSuggestionDropdown = ({ onSelect, onSelectRecent, inputRef, isDropdo
               id={`suggestion-${index}`}
             >
               <TypeIcon className={`w-4 h-4 ${isHighlighted ? 'text-blue-500' : color}`} />
-              <span className="flex-1 text-left truncate">{item.label}</span>
+              <span className="flex-1 text-left truncate"><HighlightMatch text={item.label} query={searchText} /></span>
               {item.type && item.type !== 'recent' && activeField === 'all' && (
                 <span className={`text-xs ${TYPE_COLORS[item.type] || 'text-gray-400'} opacity-70`}>
                   {TYPE_LABELS[item.type]}
