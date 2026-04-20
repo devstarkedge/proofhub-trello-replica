@@ -107,11 +107,22 @@ const HomePage = () => {
     const handleAccessUpdated = () => {
       fetchDepartments(true);
     };
+    
+    // Real-time refresh when a board/project is updated
+    const handleBoardUpdated = (e) => {
+      if (e.detail && e.detail.boardId && e.detail.updates) {
+        projectUpdated({ _id: e.detail.boardId, ...e.detail.updates });
+      }
+    };
+
     window.addEventListener('socket-user-access-updated', handleAccessUpdated);
+    window.addEventListener('socket-board-updated', handleBoardUpdated);
+    
     return () => {
       window.removeEventListener('socket-user-access-updated', handleAccessUpdated);
+      window.removeEventListener('socket-board-updated', handleBoardUpdated);
     };
-  }, [fetchDepartments]);
+  }, [fetchDepartments, projectUpdated]);
 
   // Handle outside click to close dropdown - optimized with useCallback
   useEffect(() => {

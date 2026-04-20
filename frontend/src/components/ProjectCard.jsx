@@ -503,20 +503,27 @@ const ProjectCard = ({
           style={{ maskImage: 'linear-gradient(to top, black, transparent)', WebkitMaskImage: 'linear-gradient(to top, black, transparent)' }}
         />
 
-        {/* Status Badge */}
-        {projectData.status && (
-          <motion.div
-            initial={{ x: 20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="absolute bottom-3 right-3 z-10"
-          >
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border backdrop-blur-md ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border} shadow-lg`}>
+        {/* Bottom Right Badges: Category & Status */}
+        <motion.div
+          initial={{ x: 20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="absolute bottom-3 right-3 left-3 z-10 flex justify-end gap-2 overflow-hidden pointer-events-none"
+        >
+          {/* Category Badge */}
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border backdrop-blur-md shadow-lg pointer-events-auto shrink min-w-0 ${projectData.projectCategory ? 'bg-gradient-to-r from-purple-50 to-fuchsia-50 text-purple-700 border-purple-200' : 'bg-gradient-to-r from-gray-50 to-slate-50 text-gray-600 border-gray-200'}`}>
+            <Layers size={14} className={`shrink-0 ${projectData.projectCategory ? 'text-purple-600' : 'text-gray-500'}`} />
+            <span className="truncate max-w-[120px]">{projectData.projectCategory || 'Uncategorized'}</span>
+          </div>
+
+          {/* Status Badge */}
+          {projectData.status && (
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border backdrop-blur-md ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border} shadow-lg pointer-events-auto shrink-0`}>
               {statusConfig.icon}
-              <span>{statusConfig.label}</span>
+              <span className="shrink-0">{statusConfig.label}</span>
             </div>
-          </motion.div>
-        )}
+          )}
+        </motion.div>
 
         {/* Priority Badge */}
         {priorityConfig && (
