@@ -184,8 +184,13 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
   }
 
   // Fetch all cards for all lists in one query - ONLY ACTIVE (NON-ARCHIVED) CARDS
+  // For 'assigned_tasks' users: restrict to cards where the user is an assignee
   const listIds = lists.map(l => l._id);
-  const cards = await Card.find({ list: { $in: listIds }, isArchived: false })
+  const cardFilter = { list: { $in: listIds }, isArchived: false };
+  if (req.user.role !== 'admin' && accessType === 'assigned_tasks') {
+    cardFilter.assignees = req.user.id;
+  }
+  const cards = await Card.find(cardFilter)
     .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime')
     .populate('assignees', 'name email avatar role')
     .populate('members', 'name email avatar')

@@ -221,12 +221,18 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
       }
     },
     // Lookup all cards for this department's projects (include status and isArchived for progress calculation)
+    // For 'assigned_tasks' users: restrict to cards assigned to them so progress reflects their own tasks
     {
       $lookup: {
         from: 'cards',
         let: { projectIds: '$projects._id' },
         pipeline: [
-          { $match: { $expr: { $in: ['$board', '$$projectIds'] } } },
+          { $match: { $expr: { $and: [
+            { $in: ['$board', '$$projectIds'] },
+            ...(userAccessType === 'assigned_tasks'
+              ? [{ $in: [new mongoose.Types.ObjectId(user.id), '$assignees'] }]
+              : [])
+          ] } } },
           { $project: { board: 1, assignees: 1, members: 1, status: 1, isArchived: 1 } }
         ],
         as: 'allCards'
