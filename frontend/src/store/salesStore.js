@@ -18,6 +18,8 @@ const DEFAULT_FILTERS = {
   dateTo: null,
   bidType: '',
   bidDomain: '',
+  replyFromClient: '',
+  followUps: '',
 };
 
 const useSalesStore = create(
@@ -41,6 +43,8 @@ const useSalesStore = create(
         dateTo: null,
         bidType: '',
         bidDomain: '',
+        replyFromClient: '',
+        followUps: '',
       },
       sortBy: 'date',
       sortOrder: 'desc',
@@ -322,6 +326,8 @@ const useSalesStore = create(
             dateTo: null,
             bidType: '',
             bidDomain: '',
+            replyFromClient: '',
+            followUps: '',
           },
           columnFilters: {},
           nameTab: 'All'
@@ -882,6 +888,10 @@ const useSalesStore = create(
             minHireRate: tab.filters.minHireRate ?? null,
             budget: tab.filters.budget || '',
             profile: tab.filters.profile || '',
+            replyFromClient: tab.filters.replyFromClient || '',
+            followUps: tab.filters.followUps || '',
+            bidType: tab.filters.bidType || '',
+            bidDomain: tab.filters.bidDomain || '',
             dateFrom: tab.filters.dateFrom || null,
             dateTo: tab.filters.dateTo || null,
           };

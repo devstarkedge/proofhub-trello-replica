@@ -18,6 +18,10 @@ const AddTabButton = ({ onClick }) => {
     if (filters.minHireRate != null) count++;
     if (filters.budget) count++;
     if (filters.profile) count++;
+    if (filters.replyFromClient) count++;
+    if (filters.followUps) count++;
+    if (filters.bidType) count++;
+    if (filters.bidDomain) count++;
     if (filters.dateFrom) count++;
     if (filters.dateTo) count++;
     if (columnFilters) count += Object.keys(columnFilters).filter((k) => columnFilters[k]).length;

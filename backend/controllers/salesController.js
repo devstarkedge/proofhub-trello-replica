@@ -272,6 +272,8 @@ const buildSalesQuery = (params) => {
     bidType,
     hasUrl,
     bidDomain,
+    replyFromClient,
+    followUps,
     columnFilters // JSON string of per-column filters
   } = params;
 
@@ -301,6 +303,8 @@ const buildSalesQuery = (params) => {
   if (minHireRate) query.clientHireRate = { $gte: parseFloat(minHireRate) };
   if (budget) query.clientBudget = budget;
   if (profile) query.profile = profile;
+  if (replyFromClient) query.replyFromClient = replyFromClient;
+  if (followUps) query.followUps = followUps;
 
   // BidLink-specific filters
   if (bidType && ['link', 'invite', 'direct'].includes(bidType)) {
