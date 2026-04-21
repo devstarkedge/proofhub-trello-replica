@@ -215,7 +215,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         let: { deptId: '$_id' },
         pipeline: [
           { $match: projectMatchFilter },
-          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1, dueDate: 1 } }
+          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1, dueDate: 1, projectCategory: 1, projectType: 1, priority: 1 } }
         ],
         as: 'projects'
       }

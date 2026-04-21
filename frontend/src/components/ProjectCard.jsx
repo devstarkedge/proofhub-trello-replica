@@ -510,11 +510,13 @@ const ProjectCard = ({
           transition={{ delay: 0.2 }}
           className="absolute bottom-3 right-3 left-3 z-10 flex justify-end gap-2 overflow-hidden pointer-events-none"
         >
-          {/* Category Badge */}
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border backdrop-blur-md shadow-lg pointer-events-auto shrink min-w-0 ${projectData.projectCategory ? 'bg-gradient-to-r from-purple-50 to-fuchsia-50 text-purple-700 border-purple-200' : 'bg-gradient-to-r from-gray-50 to-slate-50 text-gray-600 border-gray-200'}`}>
-            <Layers size={14} className={`shrink-0 ${projectData.projectCategory ? 'text-purple-600' : 'text-gray-500'}`} />
-            <span className="truncate max-w-[120px]">{projectData.projectCategory || 'Uncategorized'}</span>
-          </div>
+          {/* Category Badge: render only when a category exists */}
+            {projectData.projectCategory && String(projectData.projectCategory).trim() !== '' && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border backdrop-blur-md shadow-lg pointer-events-auto shrink min-w-0 bg-gradient-to-r from-purple-50 to-fuchsia-50 text-purple-700 border-purple-200">
+                <Layers size={14} className="shrink-0 text-purple-600" />
+                <span className="truncate max-w-[120px]" title={projectData.projectCategory}>{projectData.projectCategory}</span>
+              </div>
+            )}
 
           {/* Status Badge */}
           {projectData.status && (

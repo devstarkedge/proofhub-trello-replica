@@ -199,18 +199,85 @@ const ListViewTasks = () => {
   const clearFilters = () => {
     setFilters({ dateFrom: '', dateTo: '' });
     clearAllChips();
+    setActivePreset(null);
+    if (user && user._id) {
+      localStorage.removeItem(`taskPreset_${user._id}`);
+    }
   };
 
 
-  const getFilterPresets = () => ({
+  const [activePreset, setActivePreset] = useState(null);
+  const [isPresetLoaded, setIsPresetLoaded] = useState(false);
+  const applyingPresetRef = useRef(false);
+
+  const getFilterPresets = useCallback(() => ({
     'My Tasks': { filters: { dateFrom: '', dateTo: '' }, chip: user ? { field: 'assignee', value: user.name, label: user.name } : null },
     'High Priority': { filters: { dateFrom: '', dateTo: '' }, chip: { field: 'priority', value: 'high', label: 'High' } },
     'Overdue Tasks': { filters: { dateFrom: '', dateTo: new Date().toISOString().split('T')[0] }, chip: null },
     'This Week': { filters: { dateFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], dateTo: new Date().toISOString().split('T')[0] }, chip: null },
     'In Progress': { filters: { dateFrom: '', dateTo: '' }, chip: { field: 'status', value: 'in progress', label: 'In Progress' } }
-  });
+  }), [user]);
+
+  useEffect(() => {
+    if (user && user._id && !isPresetLoaded) {
+      const savedPreset = localStorage.getItem(`taskPreset_${user._id}`);
+      if (savedPreset) {
+        const presets = getFilterPresets();
+        if (presets[savedPreset]) {
+          applyingPresetRef.current = true;
+          setActivePreset(savedPreset);
+          const preset = presets[savedPreset];
+          
+          setFilters(preset.filters);
+          clearAllChips();
+          if (preset.chip) {
+            addChip(preset.chip.field, preset.chip.value, preset.chip.label);
+          }
+          setTimeout(() => {
+            applyingPresetRef.current = false;
+          }, 100);
+        } else {
+          localStorage.removeItem(`taskPreset_${user._id}`);
+          setActivePreset(null);
+        }
+      }
+      setIsPresetLoaded(true);
+    }
+  }, [user, isPresetLoaded, getFilterPresets, clearAllChips, addChip]);
+
+  const isPresetActive = useCallback(() => {
+    if (!activePreset) return false;
+    const presets = getFilterPresets();
+    const preset = presets[activePreset];
+    if (!preset) return false;
+    
+    if (filters.dateFrom !== preset.filters.dateFrom || filters.dateTo !== preset.filters.dateTo) {
+      return false;
+    }
+    
+    if (preset.chip) {
+      const hasChip = smartSearchChips.some(c => c.field === preset.chip.field && c.value === preset.chip.value);
+      if (!hasChip) return false;
+      if (smartSearchChips.length > 1) return false;
+    } else {
+      if (smartSearchChips.length > 0) return false;
+    }
+    return true;
+  }, [activePreset, filters, smartSearchChips, getFilterPresets]);
+
+  useEffect(() => {
+    if (activePreset && isPresetLoaded && !applyingPresetRef.current) {
+      if (!isPresetActive()) {
+        setActivePreset(null);
+        if (user && user._id) {
+          localStorage.removeItem(`taskPreset_${user._id}`);
+        }
+      }
+    }
+  }, [filters, smartSearchChips, activePreset, isPresetLoaded, isPresetActive, user]);
 
   const applyFilterPreset = (presetName) => {
+    applyingPresetRef.current = true;
     const presets = getFilterPresets();
     const preset = presets[presetName];
     if (preset) {
@@ -219,7 +286,14 @@ const ListViewTasks = () => {
       if (preset.chip) {
         addChip(preset.chip.field, preset.chip.value, preset.chip.label);
       }
+      setActivePreset(presetName);
+      if (user && user._id) {
+        localStorage.setItem(`taskPreset_${user._id}`, presetName);
+      }
     }
+    setTimeout(() => {
+      applyingPresetRef.current = false;
+    }, 100);
   };
 
   const hasActiveFilters = filters.dateFrom !== '' || filters.dateTo !== '' || smartSearchChips.length > 0 || (smartSearchText && smartSearchActiveField === 'all');
@@ -387,10 +461,16 @@ const ListViewTasks = () => {
               <SmartSearchBar />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-2 hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 border-2 rounded-xl hover:border-purple-300 group">
-                    <Sparkles size={16} className="text-gray-500 group-hover:text-purple-600 transition-colors" />
-                    <span className="text-gray-700 font-medium">Presets</span>
-                    <ChevronsUpDown size={16} className="text-gray-400 group-hover:text-purple-500 transition-colors" />
+                  <Button variant="outline" className={`flex items-center gap-2 transition-all duration-200 border-2 rounded-xl group ${
+                    activePreset 
+                      ? "bg-emerald-50 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400" 
+                      : "hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 hover:border-purple-300"
+                  }`}>
+                    <Sparkles size={16} className={`transition-colors ${activePreset ? "text-emerald-500" : "text-gray-500 group-hover:text-purple-600"}`} />
+                    <span className={`font-medium ${activePreset ? "text-emerald-700" : "text-gray-700"}`}>
+                      {activePreset ? `Preset → ${activePreset}` : "Presets"}
+                    </span>
+                    <ChevronsUpDown size={16} className={`transition-colors ${activePreset ? "text-emerald-400" : "text-gray-400 group-hover:text-purple-500"}`} />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52 bg-white/95 backdrop-blur-xl border-2 rounded-xl shadow-xl">
@@ -398,12 +478,15 @@ const ListViewTasks = () => {
                     <React.Fragment key={presetName}>
                       <DropdownMenuItem
                         onSelect={() => applyFilterPreset(presetName)}
-                        className="cursor-pointer hover:bg-purple-50 transition-colors rounded-lg mx-1 my-0.5"
+                        className={`cursor-pointer transition-colors rounded-lg mx-1 my-0.5 flex items-center justify-between ${
+                          activePreset === presetName ? "bg-emerald-50 text-emerald-700 font-semibold" : "hover:bg-purple-50"
+                        }`}
                       >
                         <div className="flex items-center gap-2 w-full">
-                          <Sparkles className="w-4 h-4 text-purple-500" />
+                          <Sparkles className={`w-4 h-4 ${activePreset === presetName ? "text-emerald-500" : "text-purple-500"}`} />
                           <span>{presetName}</span>
                         </div>
+                        {activePreset === presetName && <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-2" />}
                       </DropdownMenuItem>
                       {index === 0 && <DropdownMenuSeparator className="my-1" />}
                     </React.Fragment>
