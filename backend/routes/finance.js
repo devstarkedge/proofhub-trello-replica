@@ -20,18 +20,19 @@ import {
   reorderFinancePages
 } from '../controllers/financePageController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
+import { checkFinanceAccess } from '../middleware/financePermissionMiddleware.js';
 
 
 const router = express.Router();
 
 /**
  * Finance Routes
- * All routes require authentication and Admin/Manager role
+ * All routes require authentication and Finance page access
  */
 
-// Apply authentication and role-based access to all routes
+// Apply authentication and granular finance access to all routes
 router.use(protect);
-router.use(authorize('admin', 'manager'));
+router.use(checkFinanceAccess);
 
 // ============================================
 // CORE FINANCE DATA ROUTES
@@ -75,18 +76,18 @@ router.get('/pages/pending', authorize('admin'), getPendingPages);
 router.get('/pages/:id', getFinancePageById);
 
 // Create new page
-router.post('/pages', createFinancePage);
+router.post('/pages', authorize('admin', 'manager'), createFinancePage);
+
+// Reorder pages
+router.put('/pages/reorder', authorize('admin', 'manager'), reorderFinancePages);
 
 // Update page
-router.put('/pages/:id', updateFinancePage);
+router.put('/pages/:id', authorize('admin', 'manager'), updateFinancePage);
 
 // Approve/Reject page (Admin only)
 router.put('/pages/:id/approve', authorize('admin'), approveFinancePage);
 
-// Reorder pages
-router.put('/pages/reorder', reorderFinancePages);
-
 // Delete (archive) page
-router.delete('/pages/:id', deleteFinancePage);
+router.delete('/pages/:id', authorize('admin', 'manager'), deleteFinancePage);
 
 export default router;

@@ -333,6 +333,12 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-finance-refresh', { detail: data }));
     });
 
+    // Finance permissions update (admin changed access for a user)
+    this.socket.on('finance:permissions:updated', (data) => {
+      console.log('Finance permissions updated via socket:', data);
+      window.dispatchEvent(new CustomEvent('socket-finance-permissions-updated', { detail: data }));
+    });
+
     // My Shortcuts real-time events
     this.socket.on('my-shortcuts:summary-updated', (data) => {
       console.log('My Shortcuts summary updated:', data);

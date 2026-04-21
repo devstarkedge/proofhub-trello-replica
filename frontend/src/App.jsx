@@ -37,6 +37,7 @@ import Announcements from "./pages/Announcements";
 import RemindersPage from "./pages/RemindersPage";
 import ClientReminderCalendarPage from "./pages/ClientReminderCalendarPage";
 import PrivateRoute from "./components/PrivateRoute";
+import FinanceRouteGuard from "./components/FinanceRouteGuard";
 import ProjectTrash from "./pages/ProjectTrash";
 
 // PM Sheet Pages
@@ -178,9 +179,9 @@ function App() {
                 <Route
                   path="/finance"
                   element={
-                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                    <FinanceRouteGuard>
                       <FinanceLayout />
-                    </PrivateRoute>
+                    </FinanceRouteGuard>
                   }
                 >
                   <Route index element={<FinanceDashboard />} />

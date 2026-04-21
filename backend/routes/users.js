@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser, getVerifiedUsers, getUsersByDepartments, getManagerUsers, changeUserRole } from '../controllers/userController.js';
+import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser, getVerifiedUsers, getUsersByDepartments, getManagerUsers, changeUserRole, getUserPagePermissions, patchUserPagePermissions } from '../controllers/userController.js';
 import { uploadAvatar, uploadAvatarFromGoogleDrive, removeAvatar } from '../controllers/avatarController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
@@ -79,6 +79,10 @@ router.get('/managers', protect, hrOrAdmin, getManagerUsers);
 
 // Admin and HR can view all users, Manager can view users in their department/team
 router.get('/', protect, hrOrAdmin, getUsers);
+
+// Page/module permissions (self can read; only admin can update)
+router.get('/:id/permissions', protect, getUserPagePermissions);
+router.patch('/:id/permissions', protect, authorize('admin'), patchUserPagePermissions);
 
 // All authenticated users can view individual user profiles
 router.get('/:id', protect, getUser);
