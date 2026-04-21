@@ -29,11 +29,17 @@ function resolveWorkspaceIdFromRequest(req) {
 export const getStatus = asyncHandler(async (req, res) => {
   const isConnected = webhookDispatcher.isEnabled();
 
+  // Prefer an explicitly configured Chat frontend URL for display (CHATAPP_URL).
+  // Fallback to the origin of the webhookUrl (stripping /api/*) if frontend URL isn't set.
+  const displayChatUrl = isConnected
+    ? (config.chat.chatAppUrl?.replace(/\/+$/, '') || config.chat.webhookUrl?.replace(/\/api\/.*$/, ''))
+    : null;
+
   res.json({
     success: true,
     data: {
       connected: isConnected,
-      chatUrl: isConnected ? config.chat.webhookUrl?.replace(/\/api\/.*$/, '') : null,
+      chatUrl: displayChatUrl,
       lastSyncAt: null, // Could be stored in DB if tracking
     },
   });
@@ -47,7 +53,7 @@ export const getStatus = asyncHandler(async (req, res) => {
  * @access  Private (Admin)
  */
 export const connect = asyncHandler(async (req, res, next) => {
-  const { chatAppUrl } = req.body;
+  const { chatAppUrl, chatFrontendUrl } = req.body;
 
   if (!chatAppUrl) {
     return next(new ErrorResponse('chatAppUrl is required', 400));
@@ -75,6 +81,16 @@ export const connect = asyncHandler(async (req, res, next) => {
   config.chat.webhookUrl = webhookUrl;
   config.chat.webhookSecret = webhookSecret;
 
+  // If admin provided an explicit frontend URL for ChatApp, use it for redirects/display.
+  if (chatFrontendUrl) {
+    try {
+      const parsedFrontend = new URL(chatFrontendUrl);
+      config.chat.chatAppUrl = parsedFrontend.origin.replace(/\/+$/, '');
+    } catch (e) {
+      // ignore invalid frontend URL — we still have the webhookUrl configured
+    }
+  }
+
   // Note: In production, these should be persisted to a settings collection
   // or written to env management. For now, we set them at runtime and
   // the admin must also update the .env for persistence across restarts.
@@ -85,6 +101,8 @@ export const connect = asyncHandler(async (req, res, next) => {
       connected: true,
       webhookUrl,
       webhookSecret,
+      // Provide a display chat URL to the client (prefer configured frontend URL)
+      chatUrl: config.chat.chatAppUrl?.replace(/\/+$/, '') || parsedUrl.origin,
       message: 'Chat integration connected. Save the webhookSecret — configure it in ChatApp as FLOWTASK_WEBHOOK_SECRET.',
     },
   });

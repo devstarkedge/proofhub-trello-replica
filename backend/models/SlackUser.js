@@ -145,6 +145,9 @@ const slackUserSchema = new mongoose.Schema({
     message: String,
     entityId: mongoose.Schema.Types.ObjectId,
     entityType: String,
+    boardId: mongoose.Schema.Types.ObjectId,
+    boardName: String,
+    senderName: String,
     priority: String,
     createdAt: { type: Date, default: Date.now }
   }],
@@ -239,6 +242,7 @@ slackUserSchema.methods.shouldReceiveNotification = function(type, priority) {
     'project_created': this.preferences.projectUpdates,
     'project_updated': this.preferences.projectUpdates,
     'project_update': this.preferences.projectUpdates,
+    'project_updates': this.preferences.projectUpdates,
     'board_updated': this.preferences.projectUpdates,
     
     // Team notifications
@@ -314,6 +318,9 @@ slackUserSchema.methods.addToBatch = function(notification) {
     message: notification.message,
     entityId: notification.entityId,
     entityType: notification.entityType,
+    boardId: notification.boardId,
+    boardName: notification.boardName,
+    senderName: notification.senderName,
     priority: notification.priority,
     createdAt: new Date()
   });

@@ -379,6 +379,51 @@ class SlackBlockKitBuilder {
   }
 
   /**
+   * Build a project-level notification.
+   */
+  buildProjectNotification(data) {
+    const {
+      type = 'project_update',
+      board,
+      triggeredBy,
+      changes,
+      customMessage
+    } = data;
+
+    const projectName = board?.name || 'Project';
+    const boardId = board?._id || board?.id;
+    const departmentId = board?.department?._id ||
+      (board?.department && typeof board.department !== 'object' ? board.department : null);
+    const projectUrl = boardId && departmentId ? this.boardUrl(boardId, departmentId) : null;
+    const title = type === 'project_created' ? 'Project Created' : 'Project Updated';
+    const summary = customMessage || this.formatChangesSummary(changes) || 'Project details were updated';
+    const projectText = projectUrl ? `*${this.link(projectName, projectUrl)}*` : `*${projectName}*`;
+
+    const blocks = [
+      this.header(title),
+      this.section(`${projectText}\n${summary}`)
+    ];
+
+    const context = [];
+    if (triggeredBy?.name) context.push(`Updated by ${triggeredBy.name}`);
+    if (board?.status) context.push(`Status: ${board.status}`);
+    if (board?.priority) context.push(`Priority: ${board.priority}`);
+    if (context.length > 0) blocks.push(this.context(context));
+
+    if (projectUrl) {
+      blocks.push(this.divider());
+      blocks.push(this.actions(`project_actions_${boardId}`, [
+        this.linkButton('Open Project', projectUrl, 'open_project')
+      ]));
+    }
+
+    return {
+      blocks,
+      text: `${title}: ${projectName}`
+    };
+  }
+
+  /**
    * Build task completion celebration message
    */
   buildTaskCompletionCelebration(data) {
@@ -731,16 +776,18 @@ class SlackBlockKitBuilder {
    */
   buildBatchNotification(data) {
     const { notifications, groupedBy, timeRange } = data;
+    const batchItems = Array.isArray(notifications) ? notifications : [];
     
     const blocks = [
-      this.header(`📬 ${notifications.length} Updates`),
+      this.header(`📬 ${batchItems.length} Updates`),
       this.context([`Grouped notifications from the last ${timeRange}`])
     ];
 
     // Group by type or project
     const groups = {};
-    notifications.forEach(n => {
-      const key = groupedBy === 'project' ? (n.board?.name || 'Other') : n.type;
+    batchItems.forEach(n => {
+      const notificationType = n.type || n.notificationType || 'updates';
+      const key = groupedBy === 'project' ? (n.board?.name || n.boardName || 'Other') : notificationType;
       if (!groups[key]) groups[key] = [];
       groups[key].push(n);
     });
@@ -751,8 +798,12 @@ class SlackBlockKitBuilder {
       blocks.push(this.section(`*${emoji} ${this.formatGroupName(groupName)}* (${items.length})`));
       
       items.slice(0, 3).forEach(item => {
+        const notificationType = item.type || item.notificationType || 'update';
+        const title = item.title || this.formatGroupName(notificationType);
+        const rawMessage = item.message && item.message !== title ? item.message : '';
+        const message = rawMessage.length > 80 ? `${rawMessage.substring(0, 77)}...` : rawMessage;
         blocks.push(this.context([
-          `• ${item.title} - ${item.message?.substring(0, 50) || ''}...`
+          `- ${title}${message ? ` - ${message}` : ''}`
         ]));
       });
       
@@ -769,7 +820,7 @@ class SlackBlockKitBuilder {
 
     return {
       blocks,
-      text: `📬 You have ${notifications.length} new updates`
+      text: `📬 You have ${batchItems.length} new updates`
     };
   }
 
@@ -1564,8 +1615,32 @@ class SlackBlockKitBuilder {
     return buttons.slice(0, 5); // Slack limit is 5 buttons per action block
   }
 
-  formatGroupName(name) {
-    return name
+  formatChangesSummary(changes) {
+    if (!changes) return '';
+    if (typeof changes === 'string') return changes;
+    if (Array.isArray(changes)) {
+      return changes.filter(Boolean).slice(0, 3).join(', ');
+    }
+    if (typeof changes !== 'object') return String(changes);
+
+    return Object.entries(changes)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .slice(0, 3)
+      .map(([field, value]) => `${this.formatGroupName(field)} changed to ${this.formatChangeValue(value)}`)
+      .join(', ');
+  }
+
+  formatChangeValue(value) {
+    if (value instanceof Date) return value.toLocaleDateString();
+    if (Array.isArray(value)) return `${value.length} item(s)`;
+    if (typeof value === 'object' && value !== null) {
+      return value.name || value.title || JSON.stringify(value);
+    }
+    return String(value);
+  }
+
+  formatGroupName(name = 'Updates') {
+    return String(name || 'Updates')
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
