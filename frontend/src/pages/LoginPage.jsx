@@ -20,8 +20,20 @@ const LoginPage = () => {
   const { email, password } = formData;
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    let { name, value } = e.target;
+
+    if (name === 'email') {
+      value = value
+        .replace(/\s/g, '')     // remove ALL spaces
+        .toLowerCase();         // normalize
+    }
+
+      
+    if (name === 'password') {
+      value = value.replace(/\s/g, '');
+    }
+
+    setFormData(prev => ({ ...prev, [name]: value }));
 
     // Real-time validation
     if (touched[name]) {
@@ -169,6 +181,11 @@ const LoginPage = () => {
                   value={email}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('email')}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ') {
+                      e.preventDefault(); //  block space
+                    }
+                  }}
                   onFocus={(e) => {
                     e.target.readOnly = false;
                   }}
@@ -211,6 +228,11 @@ const LoginPage = () => {
                   value={password}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('password')}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ') {
+                      e.preventDefault(); //  block space
+                    }
+                  }}
                   onFocus={(e) => {
                     e.target.readOnly = false;
                   }}
