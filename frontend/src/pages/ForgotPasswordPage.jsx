@@ -26,7 +26,11 @@ const ForgotPasswordPage = () => {
   }, [resendTimer]);
 
   const handleInputChange = (e) => {
-    const value = e.target.value;
+    let value = e.target.value;
+    
+    if(name === 'email'){
+      value = value.replace(/\s/g, '').toLowerCase();
+    }
     setEmail(value);
     if (touched) {
       setError(validateField('email', value));
@@ -133,6 +137,11 @@ const ForgotPasswordPage = () => {
                     value={email}
                     onChange={handleInputChange}
                     onBlur={handleBlur}
+                    onKeyDown={(e) => {
+                    if (e.key === ' ') {
+                      e.preventDefault(); //  block space
+                    }
+                  }}
                     autoComplete="email"
                     className={`w-full pl-12 pr-4 py-4 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent backdrop-blur-sm transition-all ${
                       error ? 'border-red-400 bg-red-500/10' : 'border-white/20'
