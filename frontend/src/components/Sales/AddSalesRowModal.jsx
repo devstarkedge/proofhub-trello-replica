@@ -379,7 +379,7 @@ const ClientInfoSection = React.memo(({ control, register, errors, suggestions }
 
       <FieldWrapper name="clientBudget">
         <label className={labelBase}>Budget</label>
-        <FormInput type="text" {...register('clientBudget')} maxLength={100} className={inputBase} placeholder="e.g. $500, 1000-1500" />
+        <FormInput type="text" {...register('clientBudget')} maxLength={100} className={inputBase} placeholder="e.g. fixed, hourly $500, 1000-1500" />
       </FieldWrapper>
 
       <FieldWrapper name="clientSpending">
