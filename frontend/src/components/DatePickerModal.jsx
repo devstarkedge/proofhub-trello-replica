@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, X, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, X, XCircle } from 'lucide-react';
 
 const DatePickerModal = ({ 
   isOpen, 
@@ -15,6 +15,35 @@ const DatePickerModal = ({
     selectedDate ? new Date(selectedDate) : new Date()
   );
   const modalRef = useRef(null);
+  const monthDropdownRef = useRef(null);
+  const yearDropdownRef = useRef(null);
+
+  const [showMonthDropdown, setShowMonthDropdown] = useState(false);
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
+
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  // Generate 100 years (-50 to +50 from current year) for smooth scrolling
+  const baseYear = new Date().getFullYear();
+  const years = Array.from({ length: 101 }, (_, i) => baseYear - 50 + i);
+
+  useEffect(() => {
+    const handleClickOutsideDropdowns = (e) => {
+      if (monthDropdownRef.current && !monthDropdownRef.current.contains(e.target)) {
+        setShowMonthDropdown(false);
+      }
+      if (yearDropdownRef.current && !yearDropdownRef.current.contains(e.target)) {
+        setShowYearDropdown(false);
+      }
+    };
+    if (showMonthDropdown || showYearDropdown) {
+      document.addEventListener('mousedown', handleClickOutsideDropdowns);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutsideDropdowns);
+  }, [showMonthDropdown, showYearDropdown]);
 
   // Reset current month when selectedDate changes or modal opens
   useEffect(() => {
@@ -121,7 +150,6 @@ const DatePickerModal = ({
     return quickDate < minDateObj;
   };
 
-  const monthYear = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   if (!isOpen) return null;
@@ -165,9 +193,94 @@ const DatePickerModal = ({
               >
                 <ChevronLeft size={20} className="text-gray-600 dark:text-gray-300" />
               </button>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white text-center flex-1">
-                {monthYear}
-              </h3>
+              
+              <div className="flex gap-2 flex-1 justify-center items-center">
+                {/* Month Dropdown */}
+                <div className="relative" ref={monthDropdownRef}>
+                  <button
+                    onClick={() => setShowMonthDropdown(!showMonthDropdown)}
+                    className="flex items-center gap-1 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-lg font-semibold text-gray-900 dark:text-white"
+                  >
+                    {months[currentMonth.getMonth()]}
+                    <ChevronDown size={16} className="text-gray-500" />
+                  </button>
+                  
+                  <AnimatePresence>
+                    {showMonthDropdown && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute top-full mt-1 left-1/2 -translate-x-1/2 w-32 max-h-60 overflow-y-auto bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 z-50 py-2 custom-scrollbar"
+                      >
+                        {months.map((month, idx) => (
+                          <button
+                            key={month}
+                            onClick={() => {
+                              setCurrentMonth(new Date(currentMonth.getFullYear(), idx, 1));
+                              setShowMonthDropdown(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors
+                              ${currentMonth.getMonth() === idx ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-700 dark:text-gray-300'}
+                            `}
+                          >
+                            {month}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Year Dropdown */}
+                <div className="relative" ref={yearDropdownRef}>
+                  <button
+                    onClick={() => setShowYearDropdown(!showYearDropdown)}
+                    className="flex items-center gap-1 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-lg font-semibold text-gray-900 dark:text-white"
+                  >
+                    {currentMonth.getFullYear()}
+                    <ChevronDown size={16} className="text-gray-500" />
+                  </button>
+                  
+                  <AnimatePresence>
+                    {showYearDropdown && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute top-full mt-1 left-1/2 -translate-x-1/2 w-24 max-h-60 overflow-y-auto bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 z-50 py-2 custom-scrollbar"
+                      >
+                        {years.map((year) => (
+                          <button
+                            key={year}
+                            onClick={() => {
+                              setCurrentMonth(new Date(year, currentMonth.getMonth(), 1));
+                              setShowYearDropdown(false);
+                            }}
+                            className={`w-full text-center px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors
+                              ${currentMonth.getFullYear() === year ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-700 dark:text-gray-300'}
+                            `}
+                            ref={(el) => {
+                              // Scroll selected year into view when opened
+                              if (el && currentMonth.getFullYear() === year) {
+                                // Use a small timeout to ensure it runs after render
+                                setTimeout(() => {
+                                  el.scrollIntoView({ block: 'center' });
+                                }, 10);
+                              }
+                            }}
+                          >
+                            {year}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
               <button
                 onClick={handleNextMonth}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
