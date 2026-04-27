@@ -569,8 +569,14 @@ const FinanceDashboard = () => {
                       <p className="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>
                         {project.projectName}
                       </p>
-                      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      <p 
+                        className="text-xs cursor-help" 
+                        style={{ color: 'var(--color-text-muted)' }}
+                        title={project.billedTime ? `Billed: ${formatTime(project.billedTime)} | Logged: ${formatTime(project.loggedTime)}` : ''}
+                      >
                         {project.department} • {project.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
+                        {project.billingCycle === 'hr' && project.billedTime ? ` • ${formatTime(project.billedTime)} billed` : ''}
+                        {project.billingCycle === 'fixed' && project.billedTime && project.billedTime.totalMinutes > 0 ? ` • ${formatTime(project.billedTime)} billed` : ''}
                       </p>
                     </div>
                   </div>
