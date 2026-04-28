@@ -42,7 +42,7 @@ const SalesFilters = () => {
 
   // Fetch dropdown options on mount
   useEffect(() => {
-    const dropdownColumns = ['platform', 'technology', 'status', 'clientLocation', 'clientBudget', 'profile'];
+    const dropdownColumns = ['platform', 'technology', 'status', 'clientLocation', 'clientBudget', 'profile', 'replyFromClient', 'followUps'];
     dropdownColumns.forEach(col => fetchDropdownOptions(col));
   }, [fetchDropdownOptions]);
 
@@ -171,6 +171,8 @@ const SalesFilters = () => {
     );
   }, [dropdownOptions.clientBudget, rows]);
   const profileOptions = useMemo(() => getDropdownOptionsList('profile'), [getDropdownOptionsList]);
+  const replyFromClientOptions = useMemo(() => getDropdownOptionsList('replyFromClient'), [getDropdownOptionsList]);
+  const followUpsOptions = useMemo(() => getDropdownOptionsList('followUps'), [getDropdownOptionsList]);
 
   const selectClass = "w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 shadow-sm font-medium";
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-sm font-medium";
@@ -462,6 +464,36 @@ const SalesFilters = () => {
                     onChange={(val) => handleFilterChange('profile', val)}
                     options={profileOptions}
                     placeholder="All Profiles"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
+                </div>
+
+                {/* Reply from Client */}
+                <div>
+                  <label className={labelClass}>Reply from Client</label>
+                  <SearchableSelect
+                    value={filters.replyFromClient || ''}
+                    onChange={(val) => handleFilterChange('replyFromClient', val)}
+                    options={replyFromClientOptions}
+                    placeholder="All Replies"
+                    searchable
+                    clearable
+                    autoOpenOnFocus={false}
+                    autoSelectOnTab={false}
+                  />
+                </div>
+
+                {/* Follow Ups */}
+                <div>
+                  <label className={labelClass}>Follow Ups</label>
+                  <SearchableSelect
+                    value={filters.followUps || ''}
+                    onChange={(val) => handleFilterChange('followUps', val)}
+                    options={followUpsOptions}
+                    placeholder="All Follow Ups"
                     searchable
                     clearable
                     autoOpenOnFocus={false}

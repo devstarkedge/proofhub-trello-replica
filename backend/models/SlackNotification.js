@@ -31,7 +31,7 @@ const slackNotificationSchema = new mongoose.Schema({
       'task_created', 'task_deleted', 'task_moved', 'task_completed',
       'task_status_changed', 'task_priority_changed',
       'subtask_created', 'subtask_completed', 'subtask_updated',
-      'project_created', 'project_updated', 'project_deleted',
+      'project_created', 'project_updated', 'project_update', 'project_updates', 'project_deleted', 'board_updated',
       'comment_added', 'comment_mention', 'comment_reply',
       'team_invite', 'team_update',
       'user_registered', 'user_assigned', 'user_unassigned',

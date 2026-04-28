@@ -3,8 +3,12 @@ import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileS
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
-import { getUserPermissions } from '../services/salesApi';
+import { getUserPermissions as getSalesPermissions } from '../services/salesApi';
+import { getUserPagePermissions } from '../services/userPermissionsApi';
 import useThemeStore from '../store/themeStore';
+
+const MotionDiv = motion.div;
+const MotionAside = motion.aside;
 
 // Icon color configuration for each nav item
 const iconColors = {
@@ -28,6 +32,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   const location = useLocation();
 
   const [salesVisible, setSalesVisible] = useState(false);
+  const [financeVisible, setFinanceVisible] = useState(false);
 
   // Check if current path is under PM Sheet
   const isPMSheetActive = location.pathname.startsWith('/pm-sheet');
@@ -58,11 +63,11 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     const fetchVisibility = async () => {
       if (!user || !user._id) return;
       try {
-        const res = await getUserPermissions(user._id);
+        const res = await getSalesPermissions(user._id);
         if (!mounted) return;
         const perms = res.data || res;
         setSalesVisible(Boolean(perms?.moduleVisible));
-      } catch (err) {
+      } catch {
         setSalesVisible(false);
       }
     };
@@ -76,7 +81,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
         if (userId === user._id) {
           setSalesVisible(Boolean(permissions?.moduleVisible));
         }
-      } catch (err) {
+      } catch {
         // ignore
       }
     };
@@ -88,6 +93,55 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       mounted = false;
       window.removeEventListener('sales-permissions-updated', onUpdate);
       window.removeEventListener('socket-sales-permissions-updated', onUpdate);
+    };
+  }, [user]);
+
+  // Fetch current user's Finance visibility and listen for permission updates
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchVisibility = async () => {
+      if (!user || !user._id) {
+        setFinanceVisible(false);
+        return;
+      }
+
+      const userRole = (user.role || '').toLowerCase();
+      if (userRole === 'admin') {
+        setFinanceVisible(true);
+        return;
+      }
+
+      try {
+        const data = await getUserPagePermissions(user._id);
+        if (!mounted) return;
+        setFinanceVisible(Boolean(data?.permissions?.hasAccess));
+      } catch {
+        if (mounted) setFinanceVisible(false);
+      }
+    };
+
+    fetchVisibility();
+
+    const onUpdate = (e) => {
+      try {
+        const { userId, permissions } = e.detail || {};
+        if (!user) return;
+        if (userId?.toString() === user._id?.toString()) {
+          setFinanceVisible((user.role || '').toLowerCase() === 'admin' || Boolean(permissions?.hasAccess));
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener('finance-permissions-updated', onUpdate);
+    window.addEventListener('socket-finance-permissions-updated', onUpdate);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('finance-permissions-updated', onUpdate);
+      window.removeEventListener('socket-finance-permissions-updated', onUpdate);
     };
   }, [user]);
 
@@ -115,8 +169,8 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     // Start with base and conditionally add other items
     const items = [...baseItems];
 
-    // PM Sheet - Admin and Manager only
-    if (userRole === 'admin' || userRole === 'manager') {
+    // Finance - Admin always, other users only when explicitly granted
+    if (userRole === 'admin' || financeVisible) {
       // items.push({ path: '/pm-sheet', icon: FileSpreadsheet, label: 'PM Sheet', hasChildren: true });
       items.push({ path: '/finance', icon: DollarSign, label: 'Finance' });
     }
@@ -392,7 +446,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       {/* Mobile drawer sidebar (visible only when isMobile=true) */}
       {isMobile && (
         <div className="lg:hidden" aria-modal="true" role="dialog">
-          <motion.div 
+          <MotionDiv
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -403,7 +457,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
             aria-hidden="true"
           />
 
-          <motion.aside 
+          <MotionAside
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
@@ -447,7 +501,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
                 <a href="https://www.starkedge.com/" target="_blank" rel="noopener noreferrer" className="font-semibold text-primary-600 dark:text-primary-400">StarkEdge</a>
               </div>
             </div>
-          </motion.aside>
+          </MotionAside>
         </div>
       )}
     </>

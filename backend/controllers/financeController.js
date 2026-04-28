@@ -37,9 +37,22 @@ const calculatePayment = (project, totalBilledMinutes) => {
 const isWithinDateRange = (entryDate, filterStartDate, filterEndDate) => {
   if (!filterStartDate && !filterEndDate) return true;
   if (!entryDate) return false;
-  const date = new Date(entryDate);
-  if (filterStartDate && date < filterStartDate) return false;
-  if (filterEndDate && date > filterEndDate) return false;
+  
+  // Normalize dates to start-of-day in local time for consistent comparison
+  // This prevents timezone shifts from accidentally hiding early-day entries
+  const dateObj = new Date(entryDate);
+  const d = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+  
+  if (filterStartDate) {
+    const s = new Date(filterStartDate.getFullYear(), filterStartDate.getMonth(), filterStartDate.getDate());
+    if (d < s) return false;
+  }
+  
+  if (filterEndDate) {
+    const e = new Date(filterEndDate.getFullYear(), filterEndDate.getMonth(), filterEndDate.getDate());
+    if (d > e) return false;
+  }
+  
   return true;
 };
 
@@ -173,7 +186,7 @@ export const getFinanceSummary = async (req, res) => {
         .populate('department', 'name')
         .populate('members', 'name email')
         .lean(),
-      Card.find({ isArchived: false }).select('board billedTime loggedTime').lean(),
+      Card.find({}).select('board billedTime loggedTime').lean(),
       Subtask.find({}).select('task billedTime loggedTime').lean(),
       SubtaskNano.find({}).select('subtask billedTime loggedTime').lean()
     ]);
@@ -333,7 +346,7 @@ export const getUserFinanceData = async (req, res) => {
       Board.find(projectFilter)
         .populate('department', 'name')
         .lean(),
-      Card.find({ isArchived: false }).select('board billedTime loggedTime').lean(),
+      Card.find({}).select('board billedTime loggedTime').lean(),
       Subtask.find({}).select('task billedTime loggedTime').lean(),
       SubtaskNano.find({}).select('subtask billedTime loggedTime').lean()
     ]);
@@ -528,7 +541,7 @@ export const getProjectFinanceData = async (req, res) => {
         .populate('members', 'name email avatar')
         .populate('owner', 'name email avatar')
         .lean(),
-      Card.find({ isArchived: false }).select('board billedTime loggedTime title updatedAt').lean(),
+      Card.find({}).select('board billedTime loggedTime title updatedAt').lean(),
       Subtask.find({}).select('task billedTime loggedTime title updatedAt').lean(),
       SubtaskNano.find({}).select('subtask billedTime loggedTime title updatedAt').lean()
     ]);
@@ -744,7 +757,7 @@ export const getWeeklyReportData = async (req, res) => {
         .populate('department', 'name')
         .populate('members', 'name email avatar')
         .lean(),
-      Card.find({ isArchived: false }).select('board billedTime loggedTime').lean(),
+      Card.find({}).select('board billedTime loggedTime').lean(),
       Subtask.find({}).select('task billedTime loggedTime').lean(),
       SubtaskNano.find({}).select('subtask billedTime loggedTime').lean()
     ]);

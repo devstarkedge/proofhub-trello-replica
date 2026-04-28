@@ -116,6 +116,10 @@ const SaveTabModal = ({ isOpen, onClose, editingTab = null }) => {
     if (f.profile) count++;
     if (f.dateFrom) count++;
     if (f.dateTo) count++;
+    if (f.replyFromClient) count++;
+    if (f.followUps) count++;
+    if (f.bidType) count++;
+    if (f.bidDomain) count++;
     if (f.columnFilters) count += Object.keys(f.columnFilters).filter((k) => f.columnFilters[k]).length;
     return count;
   }, [tabFilters]);

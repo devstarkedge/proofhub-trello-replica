@@ -422,7 +422,7 @@ class SlackNotificationService {
    * Build notification payload based on type
    */
   async buildNotificationPayload(data) {
-    const { type, task, board, triggeredBy, comment, customMessage, assignees, oldStatus, newStatus, subtask, announcement, team, reminder, attachment } = data;
+    const { type, task, board, triggeredBy, comment, customMessage, assignees, oldStatus, newStatus, subtask, announcement, team, reminder, attachment, changes } = data;
 
     switch (type) {
       case 'task_assigned':
@@ -501,14 +501,15 @@ class SlackNotificationService {
 
       case 'project_update':
       case 'project_updated':
+      case 'project_updates':
       case 'project_created':
       case 'board_updated':
-        return blockBuilder.buildTaskNotification({
-          type: 'project_update',
-          task: null,
+        return blockBuilder.buildProjectNotification({
+          type,
           triggeredBy,
           board,
-          customMessage: customMessage || `Project "${board?.name}" has been updated`
+          changes,
+          customMessage
         });
 
       case 'team_member_added':
@@ -618,16 +619,8 @@ class SlackNotificationService {
    * Add notification to batch
    */
   async addToBatch(slackUser, notificationData) {
-    const { type, task, customMessage, priority } = notificationData;
-
-    slackUser.addToBatch({
-      type,
-      title: task?.title || customMessage || type,
-      message: customMessage,
-      entityId: task?._id,
-      entityType: 'Card',
-      priority
-    });
+    const batchItem = this.createBatchItem(notificationData);
+    slackUser.addToBatch(batchItem);
 
     await slackUser.save();
 
@@ -642,6 +635,90 @@ class SlackNotificationService {
     }
 
     return { status: 'batched' };
+  }
+
+  createBatchItem(notificationData) {
+    const {
+      type,
+      task,
+      board,
+      comment,
+      announcement,
+      reminder,
+      triggeredBy,
+      customMessage,
+      priority,
+      changes
+    } = notificationData;
+
+    let title = task?.title || announcement?.title || customMessage || this.formatNotificationType(type);
+    let message = customMessage || this.formatChangesForBatch(changes);
+    let entityId = task?._id || comment?._id || announcement?._id || reminder?._id;
+    let entityType = task ? 'Card' : comment ? 'Comment' : announcement ? 'Announcement' : reminder ? 'Reminder' : undefined;
+
+    if (this.isProjectNotification(type)) {
+      const projectName = board?.name || 'Project';
+      const projectAction = type === 'project_created' ? 'Created' : 'Updated';
+      title = `Project ${projectAction}: ${projectName}`;
+      message = customMessage || this.formatChangesForBatch(changes) || `Project details were ${projectAction.toLowerCase()}`;
+      entityId = board?._id || board?.id;
+      entityType = 'Board';
+    } else if (!message && task && type === 'task_updated') {
+      message = 'Task details were updated';
+    }
+
+    return {
+      type,
+      title,
+      message,
+      entityId,
+      entityType,
+      priority,
+      boardId: board?._id || board?.id,
+      boardName: board?.name,
+      senderName: triggeredBy?.name
+    };
+  }
+
+  isProjectNotification(type) {
+    return [
+      'project_update',
+      'project_updated',
+      'project_updates',
+      'project_created',
+      'board_updated'
+    ].includes(type);
+  }
+
+  formatChangesForBatch(changes) {
+    if (!changes) return '';
+    if (typeof changes === 'string') return changes;
+    if (Array.isArray(changes)) {
+      return changes.filter(Boolean).slice(0, 3).join(', ');
+    }
+    if (typeof changes !== 'object') return String(changes);
+
+    return Object.entries(changes)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .slice(0, 3)
+      .map(([field, value]) => `${this.formatNotificationType(field)} changed to ${this.formatBatchValue(value)}`)
+      .join(', ');
+  }
+
+  formatBatchValue(value) {
+    if (value instanceof Date) return value.toLocaleDateString();
+    if (Array.isArray(value)) return `${value.length} item(s)`;
+    if (typeof value === 'object' && value !== null) {
+      return value.name || value.title || JSON.stringify(value);
+    }
+    return String(value);
+  }
+
+  formatNotificationType(type = 'update') {
+    return String(type || 'update')
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   }
 
   /**

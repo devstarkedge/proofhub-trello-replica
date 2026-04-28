@@ -132,7 +132,7 @@ const WelcomeHeader = ({ user }) => {
             {greeting},{' '}
             <div className="inline-block">
               <NeonSparkText 
-                text={user?.name?.split(' ')[0] || 'User'} 
+                text={user?.name || 'User'} 
                 className={isDarkMode ? 'text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-purple-300 to-indigo-300' : 'text-yellow-200'}
               />
             </div>

@@ -7,7 +7,6 @@ import {
   TrendingUp,
   Calendar,
   Tag,
-  Trash2,
   X,
   Plus,
   ChevronDown,
@@ -75,17 +74,7 @@ const CardSidebar = ({
 
   return (
     <div className="lg:col-span-1 space-y-4 lg:space-y-6">
-      {/* Save Button */}
-      <motion.button
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        onClick={onSave}
-        disabled={saving}
-        className="flex items-center justify-center gap-2 w-full p-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg disabled:opacity-50 font-medium"
-      >
-        <Save size={18} />
-        {saving ? "Saving..." : "Save Changes"}
-      </motion.button>
+      {/* (Save button moved to bottom action area) */}
 
       {/* Add to card section */}
       <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
@@ -456,16 +445,17 @@ const CardSidebar = ({
         </div>
       </div>
 
-      {/* Actions section */}
-      <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+      {/* Bottom action area: Save Changes */}
+      <div className="pt-4 border-t border-gray-200">
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          onClick={onDeleteCard}
-          className="flex items-center justify-center gap-2 w-full p-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium shadow-sm"
+          onClick={onSave}
+          disabled={saving}
+          className="flex items-center justify-center gap-2 w-full p-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg disabled:opacity-50 font-medium"
         >
-          <Trash2 size={16} />
-          Delete Task
+          <Save size={18} />
+          {saving ? "Saving..." : "Save Changes"}
         </motion.button>
       </div>
 

@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import AuthContext from '../../context/AuthContext';
 import socketService from '../../services/socket';
+import FinanceAccessControl from '../../components/Finance/FinanceAccessControl';
 
 /**
  * FinanceDashboard - Single Source of Truth Dashboard
@@ -31,7 +32,6 @@ const FinanceDashboard = () => {
   const [summary, setSummary] = useState(null);
   const [usersData, setUsersData] = useState([]);
   const [projectsData, setProjectsData] = useState([]);
-  const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
@@ -74,17 +74,15 @@ const FinanceDashboard = () => {
       });
 
       // Fetch all data in parallel
-      const [summaryRes, usersRes, projectsRes, deptsRes] = await Promise.all([
+      const [summaryRes, usersRes, projectsRes] = await Promise.all([
         api.get(`/api/finance/summary?${params.toString()}`),
         api.get(`/api/finance/users?${params.toString()}`),
-        api.get(`/api/finance/projects?${params.toString()}`),
-        api.get('/api/finance/departments')
+        api.get(`/api/finance/projects?${params.toString()}`)
       ]);
 
       if (summaryRes.data.success) setSummary(summaryRes.data.data);
       if (usersRes.data.success) setUsersData(usersRes.data.data || []);
       if (projectsRes.data.success) setProjectsData(projectsRes.data.data || []);
-      if (deptsRes.data.success) setDepartments(deptsRes.data.data || []);
 
     } catch (err) {
       console.error('Dashboard data fetch error:', err);
@@ -571,8 +569,14 @@ const FinanceDashboard = () => {
                       <p className="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>
                         {project.projectName}
                       </p>
-                      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      <p 
+                        className="text-xs cursor-help" 
+                        style={{ color: 'var(--color-text-muted)' }}
+                        title={project.billedTime ? `Billed: ${formatTime(project.billedTime)} | Logged: ${formatTime(project.loggedTime)}` : ''}
+                      >
                         {project.department} • {project.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
+                        {project.billingCycle === 'hr' && project.billedTime ? ` • ${formatTime(project.billedTime)} billed` : ''}
+                        {project.billingCycle === 'fixed' && project.billedTime && project.billedTime.totalMinutes > 0 ? ` • ${formatTime(project.billedTime)} billed` : ''}
                       </p>
                     </div>
                   </div>
@@ -721,6 +725,10 @@ const FinanceDashboard = () => {
           </button>
         </div>
       </div>
+
+      {user?.role?.toLowerCase() === 'admin' && (
+        <FinanceAccessControl />
+      )}
     </div>
   );
 };

@@ -45,8 +45,9 @@ const ChatIntegrationSettings = ({ userRole }) => {
 
     try {
       setConnecting(true);
-      await chatIntegrationService.connect(chatAppUrl.trim());
-      setStatus({ connected: true, chatUrl: chatAppUrl.trim() });
+      const resp = await chatIntegrationService.connect(chatAppUrl.trim());
+      const returnedChatUrl = resp?.data?.chatUrl || chatAppUrl.trim();
+      setStatus({ connected: true, chatUrl: returnedChatUrl });
       setChatAppUrl('');
       toast.success('Chat integration connected!');
     } catch (error) {

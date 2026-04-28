@@ -50,7 +50,15 @@ export const AuthProvider = ({ children }) => {
     // Only remove token from localStorage
     localStorage.removeItem("token");
     setToken(null);
-    setUser(null);
+    
+    setUser((prevUser) => {
+      // Remove user's task preset if they have one
+      if (prevUser && prevUser._id) {
+        localStorage.removeItem(`taskPreset_${prevUser._id}`);
+      }
+      return null;
+    });
+    
     setIsAuthenticated(false);
 
     // Disconnect socket on logout

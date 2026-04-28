@@ -1,11 +1,36 @@
 import User from '../models/User.js';
+import Role from '../models/Role.js';
+import UserPermission, {
+  FINANCE_PAGE_KEY,
+  FULL_FINANCE_PERMISSIONS,
+  normalizePermissionRole,
+  serializePagePermission
+} from '../models/UserPermission.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { sendWelcomeEmail, sendVerificationEmail } from '../utils/email.js';
+import { sendVerificationEmail } from '../utils/email.js';
 import notificationService from '../utils/notificationService.js';
 import { chatHooks } from '../utils/chatHooks.js';
 import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import { emitToUser } from '../realtime/index.js';
+
+const ROLE_OPTIONS_FOR_FINANCE_ACCESS = ['admin', 'manager', 'employee', 'hr'];
+
+const normalizePageKey = (pageKey) => String(pageKey || FINANCE_PAGE_KEY).toLowerCase().trim();
+
+const isSameUserId = (left, right) => {
+  if (!left || !right) return false;
+  return left.toString() === right.toString();
+};
+
+const buildPermissionUserPayload = (user) => ({
+  _id: user._id,
+  id: user._id,
+  name: user.name,
+  email: user.email,
+  role: user.role,
+  avatar: user.avatar
+});
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -54,6 +79,140 @@ export const getUser = asyncHandler(async (req, res, next) => {
     success: true,
     data: user
   });
+});
+
+// @desc    Get page permissions for a user
+// @route   GET /api/users/:id/permissions
+// @access  Private/Self or Admin
+export const getUserPagePermissions = asyncHandler(async (req, res, next) => {
+  const pageKey = normalizePageKey(req.query.pageKey);
+  const requesterRole = normalizePermissionRole(req.user.role);
+  const requesterId = req.user._id || req.user.id;
+
+  if (pageKey !== FINANCE_PAGE_KEY) {
+    return next(new ErrorResponse('Unsupported permission page key', 400));
+  }
+
+  if (requesterRole !== 'admin' && !isSameUserId(requesterId, req.params.id)) {
+    return next(new ErrorResponse('Not authorized to view these permissions', 403));
+  }
+
+  const user = await User.findById(req.params.id).select('name email role avatar');
+
+  if (!user) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  const permission = await UserPermission.findOne({ user: user._id, pageKey }).lean();
+  const permissions = serializePagePermission(permission, user.role, pageKey);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      user: buildPermissionUserPayload(user),
+      permissions
+    }
+  });
+});
+
+// @desc    Update page permissions for a user
+// @route   PATCH /api/users/:id/permissions
+// @access  Private/Admin
+export const patchUserPagePermissions = asyncHandler(async (req, res, next) => {
+  const pageKey = normalizePageKey(req.body.pageKey || req.query.pageKey);
+  const requesterRole = normalizePermissionRole(req.user.role);
+  const requesterId = req.user._id || req.user.id;
+
+  if (pageKey !== FINANCE_PAGE_KEY) {
+    return next(new ErrorResponse('Unsupported permission page key', 400));
+  }
+
+  if (requesterRole !== 'admin') {
+    return next(new ErrorResponse('Only admins can update user permissions', 403));
+  }
+
+  const user = await User.findById(req.params.id);
+
+  if (!user) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  const currentRole = normalizePermissionRole(user.role);
+  const requestedRole = req.body.role !== undefined
+    ? normalizePermissionRole(req.body.role)
+    : currentRole;
+
+  if (!ROLE_OPTIONS_FOR_FINANCE_ACCESS.includes(requestedRole)) {
+    return next(new ErrorResponse('Invalid role for finance access control', 400));
+  }
+
+  const roleChanged = requestedRole !== currentRole;
+
+  if (roleChanged) {
+    if (isSameUserId(requesterId, user._id)) {
+      return next(new ErrorResponse('You cannot change your own role from the finance access modal', 403));
+    }
+
+    const roleDoc = await Role.findOne({ slug: requestedRole, isActive: true });
+    user.role = requestedRole;
+    user.roleId = roleDoc?._id || null;
+    await user.save();
+    invalidateAuthCache(user._id);
+  }
+
+  const permissionPayload = requestedRole === 'admin'
+    ? { ...FULL_FINANCE_PERMISSIONS }
+    : {
+        pageKey,
+        hasAccess: req.body.hasAccess === true,
+        revenueAnalytics: req.body.revenueAnalytics === true,
+        billingDetails: req.body.billingDetails === true
+      };
+
+  const permission = await UserPermission.findOneAndUpdate(
+    { user: user._id, pageKey },
+    {
+      ...permissionPayload,
+      user: user._id,
+      grantedBy: requesterId
+    },
+    {
+      new: true,
+      upsert: true,
+      runValidators: true,
+      setDefaultsOnInsert: true
+    }
+  ).lean();
+
+  const permissions = serializePagePermission(permission, requestedRole, pageKey);
+  const responseUser = buildPermissionUserPayload(user);
+
+  res.status(200).json({
+    success: true,
+    message: 'Permissions updated successfully',
+    data: {
+      user: responseUser,
+      permissions
+    }
+  });
+
+  try {
+    emitToUser(user._id.toString(), 'finance:permissions:updated', {
+      userId: user._id,
+      permissions
+    });
+
+    if (roleChanged) {
+      emitToUser(user._id.toString(), 'user-role-changed', {
+        userId: user._id,
+        previousRole: currentRole,
+        newRole: requestedRole,
+        roleId: user.roleId
+      });
+    }
+  } catch (emitErr) {
+    console.error('Error emitting finance permission update:', emitErr);
+  }
 });
 
 // @desc    Update user
@@ -154,6 +313,9 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
 
   // Delete notifications involving the user
   await Notification.deleteMany({ $or: [{ user: req.params.id }, { sender: req.params.id }] });
+
+  // Delete page/module permissions owned by the user
+  await UserPermission.deleteMany({ user: req.params.id });
 
   // Delete activities by the user
   await Activity.deleteMany({ user: req.params.id });
