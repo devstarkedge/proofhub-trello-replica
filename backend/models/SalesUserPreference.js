@@ -91,7 +91,7 @@ salesUserPreferenceSchema.statics.recordSelection = async function (userId, fiel
   await this.findOneAndUpdate(
     { user: userId },
     { $set: update, $inc: inc },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   );
 };
 

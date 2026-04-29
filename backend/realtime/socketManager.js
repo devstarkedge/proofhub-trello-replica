@@ -109,9 +109,62 @@ function init(httpServer) {
     logger.debug('User connected', { userId });
 
     // ── Card rooms ──
-    socket.on('join-card', (cardId) => {
-      socket.join(ROOM.card(cardId));
-      if (config.isDev) logger.debug(`User ${userId} joined card room: card-${cardId}`);
+    socket.on('join-card', async (cardId) => {
+      try {
+        const Card = (await import('../models/Card.js')).default;
+        const card = await Card.findById(cardId).lean();
+        if (!card) {
+          if (config.isDev) logger.debug(`join-card: card not found ${cardId}`);
+          return;
+        }
+
+        // Allow if admin
+        if (decodedUser.role === 'admin') {
+          socket.join(ROOM.card(cardId));
+          if (config.isDev) logger.debug(`User ${userId} joined card room (admin): card-${cardId}`);
+          return;
+        }
+
+        // Direct card membership or assignee
+        const userIdStr = userId.toString();
+        if (Array.isArray(card.members) && card.members.map(m => m.toString()).includes(userIdStr)) {
+          socket.join(ROOM.card(cardId));
+          if (config.isDev) logger.debug(`User ${userId} joined card room (member): card-${cardId}`);
+          return;
+        }
+        if (Array.isArray(card.assignees) && card.assignees.map(a => a.toString()).includes(userIdStr)) {
+          socket.join(ROOM.card(cardId));
+          if (config.isDev) logger.debug(`User ${userId} joined card room (assignee): card-${cardId}`);
+          return;
+        }
+
+        // Fallback: check board membership/visibility
+        if (card.board) {
+          const Board = (await import('../models/Board.js')).default;
+          const board = await Board.findById(card.board).lean();
+          if (board) {
+            if (board.visibility === 'public') {
+              socket.join(ROOM.card(cardId));
+              if (config.isDev) logger.debug(`User ${userId} joined card room (public board): card-${cardId}`);
+              return;
+            }
+            if (board.owner?.toString() === userIdStr) {
+              socket.join(ROOM.card(cardId));
+              if (config.isDev) logger.debug(`User ${userId} joined card room (board owner): card-${cardId}`);
+              return;
+            }
+            if (Array.isArray(board.members) && board.members.map(m => m.toString()).includes(userIdStr)) {
+              socket.join(ROOM.card(cardId));
+              if (config.isDev) logger.debug(`User ${userId} joined card room (board member): card-${cardId}`);
+              return;
+            }
+          }
+        }
+
+        if (config.isDev) logger.debug(`join-card: user ${userId} unauthorized for card ${cardId}`);
+      } catch (error) {
+        if (config.isDev) logger.error('join-card error', { error: error.message });
+      }
     });
     socket.on('leave-card', (cardId) => {
       socket.leave(ROOM.card(cardId));
@@ -119,9 +172,33 @@ function init(httpServer) {
     });
 
     // ── Team rooms ──
-    socket.on('join-team', (teamId) => {
-      socket.join(ROOM.team(teamId));
-      if (config.isDev) logger.debug(`User ${userId} joined team ${teamId}`);
+    socket.on('join-team', async (teamId) => {
+      try {
+        const Team = (await import('../models/Team.js')).default;
+        const team = await Team.findById(teamId).lean();
+        if (!team) {
+          if (config.isDev) logger.debug(`join-team: team not found ${teamId}`);
+          return;
+        }
+
+        // Admins or managers can join
+        if (decodedUser.role === 'admin' || decodedUser.role === 'manager') {
+          socket.join(ROOM.team(teamId));
+          if (config.isDev) logger.debug(`User ${userId} joined team ${teamId} (privileged)`);
+          return;
+        }
+
+        const userIdStr = userId.toString();
+        if (Array.isArray(team.members) && team.members.map(m => m.toString()).includes(userIdStr)) {
+          socket.join(ROOM.team(teamId));
+          if (config.isDev) logger.debug(`User ${userId} joined team ${teamId}`);
+          return;
+        }
+
+        if (config.isDev) logger.debug(`join-team: user ${userId} unauthorized for team ${teamId}`);
+      } catch (error) {
+        if (config.isDev) logger.error('join-team error', { error: error.message });
+      }
     });
     socket.on('leave-team', (teamId) => {
       socket.leave(ROOM.team(teamId));
@@ -129,9 +206,43 @@ function init(httpServer) {
     });
 
     // ── Board rooms ──
-    socket.on('join-board', (boardId) => {
-      socket.join(ROOM.board(boardId));
-      if (config.isDev) logger.debug(`User ${userId} joined board ${boardId}`);
+    socket.on('join-board', async (boardId) => {
+      try {
+        const Board = (await import('../models/Board.js')).default;
+        const board = await Board.findById(boardId).lean();
+        if (!board) {
+          if (config.isDev) logger.debug(`join-board: board not found ${boardId}`);
+          return;
+        }
+
+        // Admins always allowed
+        if (decodedUser.role === 'admin') {
+          socket.join(ROOM.board(boardId));
+          if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (admin)`);
+          return;
+        }
+
+        const userIdStr = userId.toString();
+        if (board.visibility === 'public') {
+          socket.join(ROOM.board(boardId));
+          if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (public)`);
+          return;
+        }
+        if (board.owner?.toString() === userIdStr) {
+          socket.join(ROOM.board(boardId));
+          if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (owner)`);
+          return;
+        }
+        if (Array.isArray(board.members) && board.members.map(m => m.toString()).includes(userIdStr)) {
+          socket.join(ROOM.board(boardId));
+          if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (member)`);
+          return;
+        }
+
+        if (config.isDev) logger.debug(`join-board: user ${userId} unauthorized for board ${boardId}`);
+      } catch (error) {
+        if (config.isDev) logger.error('join-board error', { error: error.message });
+      }
     });
     socket.on('leave-board', (boardId) => {
       socket.leave(ROOM.board(boardId));

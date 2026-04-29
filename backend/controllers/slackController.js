@@ -169,7 +169,7 @@ export const updatePreferences = asyncHandler(async (req, res) => {
   const updatedUser = await SlackUser.findByIdAndUpdate(
     slackUser._id, 
     { $set: updates },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   res.json({

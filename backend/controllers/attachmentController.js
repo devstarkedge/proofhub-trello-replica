@@ -279,12 +279,28 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
 
   // Chat webhook for attachment added (card-level only)
   if (parentType === 'card' && cardId && resolvedBoardId) {
-    chatHooks.onAttachmentAdded(
-      { fileName: req.file.originalname, mimeType: req.file.mimetype, fileSize: req.file.size },
-      { _id: cardId },
-      { _id: resolvedBoardId },
-      req.user
-    ).catch(console.error);
+    try {
+      const parentCard = await Card.findById(cardId).select('title board').lean();
+      const boardDoc = await Board.findById(resolvedBoardId).select('name department').lean();
+
+      const cardPayload = parentCard ? { _id: parentCard._id, title: parentCard.title } : { _id: cardId };
+      const boardPayload = boardDoc || { _id: resolvedBoardId };
+
+      chatHooks.onAttachmentAdded(
+        { fileName: req.file.originalname, mimeType: req.file.mimetype, fileSize: req.file.size },
+        cardPayload,
+        boardPayload,
+        req.user
+      ).catch(console.error);
+    } catch (err) {
+      console.error('Failed to dispatch attachment webhook', err);
+      chatHooks.onAttachmentAdded(
+        { fileName: req.file.originalname, mimeType: req.file.mimetype, fileSize: req.file.size },
+        { _id: cardId },
+        { _id: resolvedBoardId },
+        req.user
+      ).catch(console.error);
+    }
   }
 
   res.status(201).json({

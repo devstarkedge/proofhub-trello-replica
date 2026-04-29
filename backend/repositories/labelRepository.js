@@ -46,7 +46,7 @@ class LabelRepository extends BaseRepository {
     return Card.findByIdAndUpdate(
       cardId,
       { $addToSet: { labels: { $each: labelIds } } },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('labels');
   }
 
@@ -54,7 +54,7 @@ class LabelRepository extends BaseRepository {
     return Card.findByIdAndUpdate(
       cardId,
       { $pull: { labels: { $in: labelIds } } },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('labels');
   }
 
@@ -62,7 +62,7 @@ class LabelRepository extends BaseRepository {
     return Card.findByIdAndUpdate(
       cardId,
       { labels: labelIds },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('labels');
   }
 
@@ -72,7 +72,7 @@ class LabelRepository extends BaseRepository {
     return Subtask.findByIdAndUpdate(
       subtaskId,
       { $addToSet: { tags: { $each: labelIds } } },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('tags');
   }
 
@@ -80,7 +80,7 @@ class LabelRepository extends BaseRepository {
     return Subtask.findByIdAndUpdate(
       subtaskId,
       { $pull: { tags: { $in: labelIds } } },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('tags');
   }
 
@@ -88,7 +88,7 @@ class LabelRepository extends BaseRepository {
     return Subtask.findByIdAndUpdate(
       subtaskId,
       { tags: labelIds },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('tags');
   }
 
@@ -98,7 +98,7 @@ class LabelRepository extends BaseRepository {
     return SubtaskNano.findByIdAndUpdate(
       nanoId,
       { $addToSet: { tags: { $each: labelIds } } },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('tags');
   }
 
@@ -106,7 +106,7 @@ class LabelRepository extends BaseRepository {
     return SubtaskNano.findByIdAndUpdate(
       nanoId,
       { $pull: { tags: { $in: labelIds } } },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('tags');
   }
 
@@ -114,7 +114,7 @@ class LabelRepository extends BaseRepository {
     return SubtaskNano.findByIdAndUpdate(
       nanoId,
       { tags: labelIds },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('tags');
   }
 }

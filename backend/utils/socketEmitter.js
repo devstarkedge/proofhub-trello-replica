@@ -1,4 +1,5 @@
 import { io } from '../server.js';
+import logger from '../utils/logger.js';
 
 export const emitCardUpdate = (boardId, cardId, updates, userId, userName) => {
   io.to(`board-${boardId}`).emit('card-updated', {
@@ -41,15 +42,27 @@ export const emitEstimationUpdated = (boardId, cardId, estimationEntry) => {
 };
 
 export const emitUserAssigned = (userId, departmentId) => {
-  io.emit('user-assigned', { userId, departmentId });
+  if (!departmentId) {
+    logger.warn('emitUserAssigned called without departmentId — blocking global emit');
+    return;
+  }
+  io.to(`department-${departmentId}`).emit('user-assigned', { userId, departmentId });
 };
 
 export const emitUserUnassigned = (userId, departmentId) => {
-  io.emit('user-unassigned', { userId, departmentId });
+  if (!departmentId) {
+    logger.warn('emitUserUnassigned called without departmentId — blocking global emit');
+    return;
+  }
+  io.to(`department-${departmentId}`).emit('user-unassigned', { userId, departmentId });
 };
 
 export const emitBulkUsersAssigned = (userIds, departmentId) => {
-  io.emit('department-bulk-assigned', {
+  if (!departmentId) {
+    logger.warn('emitBulkUsersAssigned called without departmentId — blocking global emit');
+    return;
+  }
+  io.to(`department-${departmentId}`).emit('department-bulk-assigned', {
     userIds,
     departmentId,
     members: userIds,
@@ -58,7 +71,11 @@ export const emitBulkUsersAssigned = (userIds, departmentId) => {
 };
 
 export const emitBulkUsersUnassigned = (userIds, departmentId) => {
-  io.emit('department-bulk-unassigned', {
+  if (!departmentId) {
+    logger.warn('emitBulkUsersUnassigned called without departmentId — blocking global emit');
+    return;
+  }
+  io.to(`department-${departmentId}`).emit('department-bulk-unassigned', {
     userIds,
     departmentId,
     members: userIds,

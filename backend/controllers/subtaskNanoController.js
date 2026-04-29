@@ -235,7 +235,7 @@ export const updateNano = asyncHandler(async (req, res, next) => {
   nano = await SubtaskNano.findByIdAndUpdate(
     req.params.id,
     updates,
-    { new: true }
+    { returnDocument: 'after' }
   ).populate(populateConfig);
 
   // Send response immediately for better UX

@@ -9,6 +9,7 @@
  */
 
 import webhookDispatcher from '../services/chat/webhookDispatcher.js';
+import Board from '../models/Board.js';
 import {
   buildProjectCreatedPayload,
   buildProjectUpdatedPayload,
@@ -53,7 +54,9 @@ const EVENTS = {
   USER_DEACTIVATED: 'USER_DEACTIVATED',
   ANNOUNCEMENT_CREATED: 'ANNOUNCEMENT_CREATED',
   ANNOUNCEMENT_DELETED: 'ANNOUNCEMENT_DELETED',
+  ANNOUNCEMENT_UPDATED: 'ANNOUNCEMENT_UPDATED',
   SUBTASK_CREATED: 'SUBTASK_CREATED',
+  SUBTASK_UPDATED: 'SUBTASK_UPDATED',
   SUBTASK_COMPLETED: 'SUBTASK_COMPLETED',
   SUBTASK_DELETED: 'SUBTASK_DELETED',
   NANO_CREATED: 'NANO_CREATED',
@@ -341,14 +344,50 @@ export const chatHooks = {
 
   async onSubtaskCreated(subtask, card, board, actor) {
     if (!webhookDispatcher.isEnabled()) return;
+    // Ensure board object includes department when possible
+    try {
+      if (!board || board.department === undefined) {
+        const boardId = (board && (board._id || board.id)) || (card && (card.board || card._id));
+        if (boardId) {
+          const b = await Board.findById(boardId).select('name department').lean();
+          if (b) board = b;
+        }
+      }
+    } catch (e) {
+      // ignore enrichment errors
+    }
     const payload = buildSubtaskEventPayload(subtask, card, board, actor, 'SUBTASK_CREATED');
     await webhookDispatcher.dispatch(EVENTS.SUBTASK_CREATED, payload);
   },
 
   async onSubtaskCompleted(subtask, card, board, actor) {
     if (!webhookDispatcher.isEnabled()) return;
+    try {
+      if (!board || board.department === undefined) {
+        const boardId = (board && (board._id || board.id)) || (card && (card.board || card._id));
+        if (boardId) {
+          const b = await Board.findById(boardId).select('name department').lean();
+          if (b) board = b;
+        }
+      }
+    } catch (e) {}
     const payload = buildSubtaskEventPayload(subtask, card, board, actor, 'SUBTASK_COMPLETED');
     await webhookDispatcher.dispatch(EVENTS.SUBTASK_COMPLETED, payload);
+  },
+
+  async onSubtaskUpdated(subtask, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    try {
+      if (!board || board.department === undefined) {
+        const boardId = (board && (board._id || board.id)) || (card && (card.board || card._id));
+        if (boardId) {
+          const b = await Board.findById(boardId).select('name department').lean();
+          if (b) board = b;
+        }
+      }
+    } catch (e) {}
+    const payload = buildSubtaskEventPayload(subtask, card, board, actor, 'SUBTASK_UPDATED');
+    await webhookDispatcher.dispatch(EVENTS.SUBTASK_UPDATED, payload);
   },
 
   async onSubtaskDeleted(subtask, card, board, actor) {
@@ -381,6 +420,15 @@ export const chatHooks = {
 
   async onAttachmentAdded(attachment, card, board, actor) {
     if (!webhookDispatcher.isEnabled()) return;
+    try {
+      if (!board || board.department === undefined) {
+        const boardId = (board && (board._id || board.id)) || (card && (card.board || card._id));
+        if (boardId) {
+          const b = await Board.findById(boardId).select('name department').lean();
+          if (b) board = b;
+        }
+      }
+    } catch (e) {}
     const payload = buildAttachmentEventPayload(attachment, card, board, actor);
     await webhookDispatcher.dispatch(EVENTS.ATTACHMENT_ADDED, payload);
   },
