@@ -146,7 +146,7 @@ export const addLabelsToCard = asyncHandler(async (req, res) => {
   const card = await Card.findByIdAndUpdate(
     cardId,
     { $addToSet: { labels: { $each: labelIds } } },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('labels');
 
   if (!card) {
@@ -175,7 +175,7 @@ export const removeLabelsFromCard = asyncHandler(async (req, res) => {
   const card = await Card.findByIdAndUpdate(
     cardId,
     { $pull: { labels: { $in: labelIds } } },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('labels');
 
   if (!card) {
@@ -204,7 +204,7 @@ export const addLabelsToSubtask = asyncHandler(async (req, res) => {
   const subtask = await Subtask.findByIdAndUpdate(
     subtaskId,
     { $addToSet: { tags: { $each: labelIds } } },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('tags');
 
   if (!subtask) {
@@ -233,7 +233,7 @@ export const removeLabelsFromSubtask = asyncHandler(async (req, res) => {
   const subtask = await Subtask.findByIdAndUpdate(
     subtaskId,
     { $pull: { tags: { $in: labelIds } } },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('tags');
 
   if (!subtask) {
@@ -262,7 +262,7 @@ export const addLabelsToNano = asyncHandler(async (req, res) => {
   const nano = await SubtaskNano.findByIdAndUpdate(
     nanoId,
     { $addToSet: { tags: { $each: labelIds } } },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('tags');
 
   if (!nano) {
@@ -291,7 +291,7 @@ export const removeLabelsFromNano = asyncHandler(async (req, res) => {
   const nano = await SubtaskNano.findByIdAndUpdate(
     nanoId,
     { $pull: { tags: { $in: labelIds } } },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('tags');
 
   if (!nano) {
@@ -324,21 +324,21 @@ export const syncLabels = asyncHandler(async (req, res) => {
       entity = await Card.findByIdAndUpdate(
         entityId,
         { labels: labelIds },
-        { new: true }
+        { returnDocument: 'after' }
       ).populate('labels');
       break;
     case 'subtask':
       entity = await Subtask.findByIdAndUpdate(
         entityId,
         { tags: labelIds },
-        { new: true }
+        { returnDocument: 'after' }
       ).populate('tags');
       break;
     case 'nano':
       entity = await SubtaskNano.findByIdAndUpdate(
         entityId,
         { tags: labelIds },
-        { new: true }
+        { returnDocument: 'after' }
       ).populate('tags');
       break;
     default:

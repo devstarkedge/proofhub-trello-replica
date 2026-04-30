@@ -193,7 +193,7 @@ export async function incrementUnread(tabId, count = 1) {
   return SalesTab.findByIdAndUpdate(
     tabId,
     { $inc: { unreadMatches: count }, lastAlertAt: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean();
 }
 

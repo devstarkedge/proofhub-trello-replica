@@ -338,7 +338,7 @@ export const updateTaskDates = asyncHandler(async (req, res) => {
   const updatedCard = await Card.findByIdAndUpdate(
     id,
     { $set: updates },
-    { new: true }
+    { returnDocument: 'after' }
   )
     .populate('assignees', 'name email avatar')
     .populate('labels', 'name color')

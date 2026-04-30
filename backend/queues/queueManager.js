@@ -19,6 +19,7 @@ import { startAnnouncementWorker, getAnnouncementWorker } from '../workers/annou
 import { startCleanupWorker, getCleanupWorker } from '../workers/cleanupWorker.js';
 import { startRecurringTaskWorker, getRecurringTaskWorker } from '../workers/recurringTaskWorker.js';
 import { startSalesAlertWorker, getSalesAlertWorker } from '../workers/salesAlertWorker.js';
+import { startChatWebhookWorker, getChatWebhookWorker } from '../workers/chatWebhookWorker.js';
 import { registerMaintenanceJobs } from '../schedulers/maintenanceScheduler.js';
 import { recoverAnnouncementSchedules } from '../schedulers/announcementScheduler.js';
 import { recoverRecurringSchedules } from '../schedulers/recurringTaskScheduler.js';
@@ -119,6 +120,13 @@ export async function initQueues() {
   startAnnouncementWorker();
   startCleanupWorker();
   startRecurringTaskWorker();
+  // Chat webhook worker handles delivery of events to ChatApp
+  try {
+    startChatWebhookWorker();
+    logger.info('QueueManager: chatWebhookWorker started');
+  } catch (err) {
+    logger.warn('QueueManager: chatWebhookWorker could not start', { error: err.message });
+  }
 
   // SalesAlert worker uses concurrency 1 to minimise Redis connections.
   // Start it with a small delay so core workers connect first.
@@ -174,6 +182,7 @@ export async function shutdownQueues() {
     getCleanupWorker(),
     getRecurringTaskWorker(),
     getSalesAlertWorker(),
+    getChatWebhookWorker(),
   ].filter(Boolean);
 
   // Close workers (stop processing new jobs, wait for current)

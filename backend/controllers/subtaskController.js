@@ -44,7 +44,7 @@ const getOrderedSubtasks = async (taskId) => {
 
 export const getSubtasksForTask = asyncHandler(async (req, res, next) => {
   const { taskId } = req.params;
-  const card = await Card.findById(taskId).populate('board', 'name');
+  const card = await Card.findById(taskId).populate('board', 'name department');
   if (!card) {
     return next(new ErrorResponse('Task not found', 404));
   }
@@ -77,7 +77,7 @@ export const getSubtaskById = asyncHandler(async (req, res, next) => {
 
 export const createSubtask = asyncHandler(async (req, res, next) => {
   const { taskId } = req.params;
-  const card = await Card.findById(taskId).populate('board', 'name');
+  const card = await Card.findById(taskId).populate('board', 'name department');
   if (!card) {
     return next(new ErrorResponse('Task not found', 404));
   }
@@ -247,7 +247,7 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
   subtask = await Subtask.findByIdAndUpdate(
     req.params.id,
     updates,
-    { new: true }
+    { returnDocument: 'after' }
   ).populate(basePopulate);
 
   // Send response immediately for better UX
@@ -285,16 +285,16 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
         // Handle recurring task completion triggers
         if (subtask.status === 'done' || subtask.status === 'closed') {
           await handleTaskCompletion(subtask._id, subtask.status);
-          
-          // Send Slack notification for subtask completion
-          const parentTask = await Card.findById(taskId).populate('board', 'name');
+
+          // Send Slack/Chat notification for subtask completion — ensure board has department
+          const parentTask = await Card.findById(taskId).populate('board', 'name department');
           if (parentTask) {
             slackHooks.onSubtaskCompleted(subtask, parentTask, parentTask.board, req.user).catch(console.error);
             chatHooks.onSubtaskCompleted(subtask, parentTask, parentTask.board, req.user).catch(console.error);
-            
+
             // Check if all subtasks are completed
-            const remainingSubtasks = await Subtask.countDocuments({ 
-              task: taskId, 
+            const remainingSubtasks = await Subtask.countDocuments({
+              task: taskId,
               status: { $nin: ['done', 'closed'] }
             });
             if (remainingSubtasks === 0) {
@@ -367,6 +367,18 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
         });
       }
     }
+    ,
+    // Chat webhook for subtask updates
+      async () => {
+        try {
+          const parentTask = await Card.findById(taskId).populate('board', 'name department');
+          if (parentTask) {
+            chatHooks.onSubtaskUpdated(subtask, parentTask, parentTask.board, req.user).catch(console.error);
+          }
+        } catch (err) {
+          console.error('Failed to dispatch subtask.updated webhook', err);
+        }
+      }
   ]);
 });
 
@@ -410,12 +422,32 @@ export const deleteSubtask = asyncHandler(async (req, res, next) => {
   });
 
   // Chat webhook for subtask deletion
-  chatHooks.onSubtaskDeleted(
-    { _id: subtask._id, title: subtaskTitle },
-    { _id: taskId },
-    { _id: boardId },
-    req.user
-  ).catch(console.error);
+  try {
+    const parentTask = await Card.findById(taskId).populate('board', 'name department');
+    if (parentTask) {
+      chatHooks.onSubtaskDeleted(
+        { _id: subtask._id, title: subtaskTitle },
+        parentTask,
+        parentTask.board,
+        req.user
+      ).catch(console.error);
+    } else {
+      chatHooks.onSubtaskDeleted(
+        { _id: subtask._id, title: subtaskTitle },
+        { _id: taskId },
+        { _id: boardId },
+        req.user
+      ).catch(console.error);
+    }
+  } catch (err) {
+    console.error('Failed to dispatch subtask.deleted webhook', err);
+    chatHooks.onSubtaskDeleted(
+      { _id: subtask._id, title: subtaskTitle },
+      { _id: taskId },
+      { _id: boardId },
+      req.user
+    ).catch(console.error);
+  }
 
   res.status(200).json({
     success: true,
@@ -708,7 +740,7 @@ const remapLabels = async (labelIds, sourceBoardId, destBoardId) => {
     const dl = await Label.findOneAndUpdate(
       { board: destBoardId, name: sl.name, color: sl.color },
       { $setOnInsert: { board: destBoardId, name: sl.name, color: sl.color, createdBy: sl.createdBy } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     newLabelIds.push(dl._id);
   }

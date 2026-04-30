@@ -84,7 +84,7 @@ class CardRepository extends BaseRepository {
 
   async updateCardById(cardId, update, populateOpts = CARD_POPULATE_FULL) {
     return Card.findByIdAndUpdate(cardId, update, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     }).populate(populateOpts);
   }
@@ -113,7 +113,7 @@ class CardRepository extends BaseRepository {
     return Card.findByIdAndUpdate(
       cardId,
       { isArchived: true, autoDeleteAt },
-      { new: true }
+      { returnDocument: 'after' }
     );
   }
 
@@ -121,7 +121,7 @@ class CardRepository extends BaseRepository {
     return Card.findByIdAndUpdate(
       cardId,
       { isArchived: false, $unset: { autoDeleteAt: '' } },
-      { new: true }
+      { returnDocument: 'after' }
     );
   }
 
@@ -132,7 +132,7 @@ class CardRepository extends BaseRepository {
   }
 
   async upsertLabel(filter, update) {
-    return Label.findOneAndUpdate(filter, update, { upsert: true, new: true });
+    return Label.findOneAndUpdate(filter, update, { upsert: true, returnDocument: 'after' });
   }
 
   async findCommentsByCard(cardId) {

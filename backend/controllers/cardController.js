@@ -2044,7 +2044,7 @@ const remapLabels = async (labelIds, sourceBoardId, destBoardId) => {
     const destLabel = await Label.findOneAndUpdate(
       { board: destBoardId, name: sourceLabel.name, color: sourceLabel.color },
       { $setOnInsert: { board: destBoardId, name: sourceLabel.name, color: sourceLabel.color, createdBy: sourceLabel.createdBy } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     newLabelIds.push(destLabel._id);
   }

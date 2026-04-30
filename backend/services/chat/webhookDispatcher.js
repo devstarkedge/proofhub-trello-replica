@@ -14,6 +14,7 @@
 import crypto from 'crypto';
 import axios from 'axios';
 import logger from '../../utils/logger.js';
+import chatWebhookQueue from '../../queues/chatWebhookQueue.js';
 
 const CHAT_ENABLED = process.env.CHAT_ENABLED === 'true';
 const CHAT_WEBHOOK_URL = process.env.CHAT_WEBHOOK_URL;
@@ -79,6 +80,23 @@ async function dispatch(eventName, payload) {
     ...(workspaceId ? { 'X-FlowTask-Workspace': workspaceId.toString() } : {}),
   };
 
+  // Prefer enqueuing webhook dispatch to a Redis-backed queue for reliability
+  try {
+    if (chatWebhookQueue) {
+      await chatWebhookQueue.add('dispatch', { eventName, payload }, {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: true,
+      });
+      logger.debug('ChatWebhook: enqueued dispatch job', { eventName, deliveryId, workspaceId });
+      return;
+    }
+  } catch (err) {
+    logger.warn('ChatWebhook: enqueue failed, falling back to direct dispatch', { error: err.message });
+    // fallthrough to direct dispatch below
+  }
+
+  // Fallback: inline HTTP dispatch (legacy behavior)
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await axios.post(CHAT_WEBHOOK_URL, body, {
@@ -88,7 +106,7 @@ async function dispatch(eventName, payload) {
         transformRequest: [(data) => data],
       });
 
-      logger.info('ChatWebhook: dispatched', {
+      logger.info('ChatWebhook: dispatched (inline)', {
         eventName,
         deliveryId,
         workspaceId,
@@ -114,7 +132,7 @@ async function dispatch(eventName, payload) {
 
       if (attempt < MAX_RETRIES) {
         const delay = RETRY_DELAYS[attempt];
-        logger.warn('ChatWebhook: retrying', {
+        logger.warn('ChatWebhook: retrying (inline)', {
           eventName,
           deliveryId,
           workspaceId,
@@ -124,7 +142,7 @@ async function dispatch(eventName, payload) {
         });
         await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
-        logger.error('ChatWebhook: failed after retries', {
+        logger.error('ChatWebhook: failed after retries (inline)', {
           eventName,
           deliveryId,
           workspaceId,
