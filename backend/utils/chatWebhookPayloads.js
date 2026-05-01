@@ -115,11 +115,15 @@ export function buildProjectDeletedPayload(board, actor) {
 export function buildProjectMemberPayload(board, memberId, role, actor) {
   const workspaceId = resolveWorkspaceId();
   const memberUserId = (memberId?._id || memberId)?.toString();
+  const currentMemberIds = (board.members || []).map((m) => (m._id || m).toString());
+  const ownerId = board.owner?._id?.toString?.() || board.owner?.toString?.() || null;
   return {
     workspaceId,
     project: {
       id: board._id?.toString(),
       name: board.name,
+      owner: ownerId,
+      members: currentMemberIds,
     },
     member: {
       userId: memberUserId,
@@ -129,7 +133,9 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
     },
     // ChatApp-compatible aliases
     boardId: board._id?.toString(),
+    ownerId,
     memberId: memberUserId,
+    memberIds: currentMemberIds,
     role: role || 'member',
     userId: actor ? (actor._id || actor.id)?.toString() : null,
     actor: buildActor(actor),

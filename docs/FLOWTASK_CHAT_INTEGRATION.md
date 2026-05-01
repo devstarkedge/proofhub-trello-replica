@@ -283,16 +283,16 @@ Each event below documents: the event name, trigger condition, payload schema, a
 | `deliveryId` | `string (UUID)` | Unique delivery identifier |
 | `data.projectId` | `ObjectId (string)` | Board `_id` |
 | `data.projectName` | `string` | Board name |
-| `data.memberIds` | `ObjectId[] (string[])` | Newly assigned User IDs |
+| `data.memberIds` | `ObjectId[] (string[])` | Full active project member set after the assignment change |
 | `data.assignedBy` | `ObjectId (string)` | User who assigned |
 | `data.assignedByName` | `string` | Assigner display name |
 | `data.departmentId` | `ObjectId (string)` | Board's department |
 
 **Chat App Consuming Behavior:**
 
-1. Add each user in `data.memberIds` to the mapped chat channel.  
-2. Post a system message: *"{assignedByName} added {count} member(s) to the project"*.  
-3. Send a personal welcome message to each new member in the channel.
+1. Reconcile the mapped chat channel so its persisted members exactly match `data.memberIds` plus the project owner.  
+2. Post a system message describing the assignment change.  
+3. Send a personal welcome message to any newly added chat members.
 
 ---
 
@@ -309,15 +309,15 @@ Each event below documents: the event name, trigger condition, payload schema, a
 | `deliveryId` | `string (UUID)` | Unique delivery identifier |
 | `data.projectId` | `ObjectId (string)` | Board `_id` |
 | `data.projectName` | `string` | Board name |
-| `data.memberIds` | `ObjectId[] (string[])` | Removed User IDs |
+| `data.memberIds` | `ObjectId[] (string[])` | Full active project member set after the removal change |
 | `data.removedBy` | `ObjectId (string)` | User who removed |
 | `data.removedByName` | `string` | Remover display name |
 
 **Chat App Consuming Behavior:**
 
-1. Remove each user in `data.memberIds` from the mapped chat channel.  
-2. Post a system message: *"{removedByName} removed {count} member(s) from the project"*.  
-3. **Do not** delete the user's message history — it remains in the channel archive.
+1. Reconcile the mapped chat channel so its persisted members exactly match `data.memberIds` plus the project owner.  
+2. Post a system message describing the removal change.  
+3. **Do not** delete any removed user's message history — it remains in the channel archive.
 
 ---
 
@@ -703,17 +703,14 @@ Channel membership is kept in sync with FlowTask project membership through even
 ```
 Channel Members = Board.owner
                ∪ Board.members[]
-               ∪ Card.assignees[] (across all cards in the board)
-               ∪ Subtask.assignees[] (across all subtasks)
-               ∪ SubtaskNano.assignees[] (across all nano-subtasks)
 ```
 
 **Sync Rules:**
 
 1. On `PROJECT_CREATED` → add `owner` + `members[]` to channel.  
-2. On `PROJECT_MEMBER_ASSIGNED` → add new members to channel.  
-3. On `PROJECT_MEMBER_REMOVED` → remove members, **unless** they are still assigned to tasks within the project.  
-4. On `TASK_CREATED` / `TASK_UPDATED` with assignee changes → add new assignees to channel (additive only — never remove based on task unassignment alone).  
+2. On `PROJECT_MEMBER_ASSIGNED` → reconcile the channel to the latest project member set.  
+3. On `PROJECT_MEMBER_REMOVED` → reconcile the channel to the latest project member set.  
+4. Task, subtask, and nano-task assignee changes do **not** change project-channel membership.  
 5. Full sync reconciliation runs in the background **once daily** to correct any drift.
 
 ### 4.4 Real-Time Consistency Guarantees
