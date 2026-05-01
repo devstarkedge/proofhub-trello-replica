@@ -22,84 +22,84 @@ const formatRelativeTime = (date) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-// Activity type configurations
+// Activity type configurations (include dark-mode-aware Tailwind variants)
 const ACTIVITY_CONFIG = {
   board_created: {
     icon: CheckCircle2,
-    color: 'bg-green-100 text-green-600',
-    borderColor: 'border-green-300',
+    color: 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300',
+    borderColor: 'border-green-300 dark:border-green-700',
     label: 'Project Created'
   },
   project_updated: {
     icon: Edit3,
-    color: 'bg-blue-100 text-blue-600',
-    borderColor: 'border-blue-300',
+    color: 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
+    borderColor: 'border-blue-300 dark:border-blue-700',
     label: 'Project Updated'
   },
   project_status_changed: {
     icon: TrendingUp,
-    color: 'bg-purple-100 text-purple-600',
-    borderColor: 'border-purple-300',
+    color: 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300',
+    borderColor: 'border-purple-300 dark:border-purple-700',
     label: 'Status Changed'
   },
   project_priority_changed: {
     icon: AlertCircle,
-    color: 'bg-orange-100 text-orange-600',
-    borderColor: 'border-orange-300',
+    color: 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300',
+    borderColor: 'border-orange-300 dark:border-orange-700',
     label: 'Priority Changed'
   },
   project_member_added: {
     icon: Users,
-    color: 'bg-indigo-100 text-indigo-600',
-    borderColor: 'border-indigo-300',
+    color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900 dark:text-indigo-300',
+    borderColor: 'border-indigo-300 dark:border-indigo-700',
     label: 'Member Added'
   },
   project_member_removed: {
     icon: Users,
-    color: 'bg-red-100 text-red-600',
-    borderColor: 'border-red-300',
+    color: 'bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-300',
+    borderColor: 'border-red-300 dark:border-red-700',
     label: 'Member Removed'
   },
   file_uploaded: {
     icon: FileUp,
-    color: 'bg-cyan-100 text-cyan-600',
-    borderColor: 'border-cyan-300',
+    color: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-900 dark:text-cyan-300',
+    borderColor: 'border-cyan-300 dark:border-cyan-700',
     label: 'File Uploaded'
   },
   attachment_uploaded: {
     icon: Paperclip,
-    color: 'bg-teal-100 text-teal-600',
-    borderColor: 'border-teal-300',
+    color: 'bg-teal-100 text-teal-600 dark:bg-teal-900 dark:text-teal-300',
+    borderColor: 'border-teal-300 dark:border-teal-700',
     label: 'Attachment Added'
   },
   attachment_deleted: {
     icon: Paperclip,
-    color: 'bg-gray-100 text-gray-600',
-    borderColor: 'border-gray-300',
+    color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
+    borderColor: 'border-gray-300 dark:border-gray-700',
     label: 'Attachment Removed'
   },
   comment_added: {
     icon: MessageSquare,
-    color: 'bg-yellow-100 text-yellow-600',
-    borderColor: 'border-yellow-300',
+    color: 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-300',
+    borderColor: 'border-yellow-300 dark:border-yellow-700',
     label: 'Comment Added'
   },
   due_date_changed: {
     icon: Calendar,
-    color: 'bg-pink-100 text-pink-600',
-    borderColor: 'border-pink-300',
+    color: 'bg-pink-100 text-pink-600 dark:bg-pink-900 dark:text-pink-300',
+    borderColor: 'border-pink-300 dark:border-pink-700',
     label: 'Due Date Changed'
   },
   label_added: {
     icon: Tag,
-    color: 'bg-emerald-100 text-emerald-600',
-    borderColor: 'border-emerald-300',
+    color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900 dark:text-emerald-300',
+    borderColor: 'border-emerald-300 dark:border-emerald-700',
     label: 'Label Added'
   },
   default: {
     icon: History,
-    color: 'bg-gray-100 text-gray-600',
-    borderColor: 'border-gray-300',
+    color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
+    borderColor: 'border-gray-300 dark:border-gray-700',
     label: 'Activity'
   }
 };
@@ -120,7 +120,7 @@ const ActivityItem = ({ activity, index, isLast }) => {
     >
       {/* Timeline connector */}
       {!isLast && (
-        <div className="absolute left-5 top-12 w-0.5 h-[calc(100%-1rem)] bg-gradient-to-b from-gray-200 to-transparent" />
+        <div className="absolute left-5 top-12 w-0.5 h-[calc(100%-1rem)] bg-gradient-to-b from-gray-200 to-transparent dark:from-gray-700" />
       )}
 
       {/* Icon */}
@@ -132,7 +132,7 @@ const ActivityItem = ({ activity, index, isLast }) => {
       <div className="flex-1 pb-6">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-sm font-medium text-gray-900">{activity.description}</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{activity.description}</p>
             <div className="flex items-center gap-2 mt-1">
               {userAvatar ? (
                 <img
@@ -145,9 +145,9 @@ const ActivityItem = ({ activity, index, isLast }) => {
                   {userName.charAt(0).toUpperCase()}
                 </div>
               )}
-              <span className="text-xs text-gray-500">{userName}</span>
-              <span className="text-gray-300">•</span>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-gray-500 dark:text-gray-400">{userName}</span>
+              <span className="text-gray-300 dark:text-gray-500">•</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">
                 {formatRelativeTime(activity.createdAt)}
               </span>
             </div>
@@ -159,7 +159,7 @@ const ActivityItem = ({ activity, index, isLast }) => {
 
         {/* Metadata display */}
         {activity.metadata && (
-          <div className="mt-2 p-2 bg-gray-50 rounded-lg text-xs text-gray-600">
+          <div className="mt-2 p-2 bg-gray-50 rounded-lg text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
             {activity.metadata.from && activity.metadata.to && (
               <p>
                 Changed from <span className="font-medium">{activity.metadata.from}</span> to{' '}
@@ -219,12 +219,12 @@ const ActivityTimeline = ({
     <div className={`${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-          <History size={16} className="text-indigo-600" />
+        <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+          <History size={16} className="text-indigo-600 dark:text-indigo-400" />
           Activity Timeline
         </h4>
         {enhancedActivities.length > 0 && (
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
             {enhancedActivities.length} {enhancedActivities.length === 1 ? 'event' : 'events'}
           </span>
         )}
@@ -236,21 +236,21 @@ const ActivityTimeline = ({
           <div className="flex flex-col gap-4">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex gap-4 animate-pulse">
-                <div className="w-10 h-10 rounded-xl bg-gray-200" />
+                <div className="w-10 h-10 rounded-xl bg-gray-200 dark:bg-gray-700" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-gray-200 rounded w-3/4" />
-                  <div className="h-3 bg-gray-200 rounded w-1/2" />
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
                 </div>
               </div>
             ))}
           </div>
         ) : enhancedActivities.length === 0 ? (
           <div className="text-center py-8">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gray-100 flex items-center justify-center">
-              <History size={24} className="text-gray-400" />
+            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+              <History size={24} className="text-gray-400 dark:text-gray-500" />
             </div>
-            <p className="text-sm text-gray-500">No activity recorded yet</p>
-            <p className="text-xs text-gray-400 mt-1">Activity will appear here as the project is updated</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No activity recorded yet</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Activity will appear here as the project is updated</p>
           </div>
         ) : (
           <AnimatePresence mode="popLayout">
@@ -268,8 +268,8 @@ const ActivityTimeline = ({
 
       {/* Last Updated Info */}
       {projectUpdatedAt && (
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <p className="text-xs text-gray-400 flex items-center gap-2">
+        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+          <p className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-2">
             <Clock size={12} />
             Last updated {formatRelativeTime(projectUpdatedAt)}
           </p>
