@@ -1276,7 +1276,9 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   }
   
   // Check status change (special handling for 'done')
+  let statusChanged = false;
   if (req.body.status !== undefined && req.body.status !== oldStatus) {
+    statusChanged = true;
     if (req.body.status === 'done') {
       changedFields.push({ field: 'status', message: `"${card.title}" has been marked as complete`, special: 'done' });
     } else {
@@ -1323,13 +1325,16 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // Dispatch chat webhook for general task update (always, regardless of assignees)
-  if (changedFields.length > 0) {
+  // Dispatch chat webhook for general task update
+  // CRITICAL FIX: Only send TASK_UPDATED if changes OTHER than status occurred
+  // If ONLY status changed, we already sent TASK_STATUS_CHANGED above
+  const nonStatusChanges = changedFields.filter(c => c.field !== 'status');
+  
+  if (nonStatusChanges.length > 0) {
     // Build changes object with old/new diffs so ChatApp can display field-level details
     const chatChanges = {};
-    for (const c of changedFields) {
-      if (c.field === 'status') chatChanges.status = { old: oldStatus, new: req.body.status };
-      else if (c.field === 'priority') chatChanges.priority = { old: oldPriority || 'None', new: req.body.priority || 'None' };
+    for (const c of nonStatusChanges) {
+      if (c.field === 'priority') chatChanges.priority = { old: oldPriority || 'None', new: req.body.priority || 'None' };
       else if (c.field === 'title') chatChanges.title = { old: oldTitle, new: req.body.title };
       else if (c.field === 'dueDate') chatChanges.dueDate = { old: oldDueDate ? new Date(oldDueDate).toLocaleDateString() : 'None', new: req.body.dueDate ? new Date(req.body.dueDate).toLocaleDateString() : 'Removed' };
       else if (c.field === 'startDate') chatChanges.startDate = { old: oldStartDate ? new Date(oldStartDate).toLocaleDateString() : 'None', new: req.body.startDate ? new Date(req.body.startDate).toLocaleDateString() : 'Removed' };
