@@ -10,6 +10,9 @@
 
 import webhookDispatcher from '../services/chat/webhookDispatcher.js';
 import Board from '../models/Board.js';
+import Card from '../models/Card.js';
+import Subtask from '../models/Subtask.js';
+import SubtaskNano from '../models/SubtaskNano.js';
 import {
   buildProjectCreatedPayload,
   buildProjectUpdatedPayload,
@@ -19,6 +22,7 @@ import {
   buildTaskUpdatedPayload,
   buildTaskDeletedPayload,
   buildTaskAssignedPayload,
+  buildTaskUnassignedPayload,
   buildTaskStatusChangedPayload,
   buildTaskDueDateChangedPayload,
   buildCommentAddedPayload,
@@ -43,6 +47,7 @@ const EVENTS = {
   TASK_UPDATED: 'TASK_UPDATED',
   TASK_DELETED: 'TASK_DELETED',
   TASK_ASSIGNED: 'TASK_ASSIGNED',
+  TASK_UNASSIGNED: 'TASK_UNASSIGNED',
   TASK_STATUS_CHANGED: 'TASK_STATUS_CHANGED',
   TASK_DUE_DATE_CHANGED: 'TASK_DUE_DATE_CHANGED',
   TASK_COMMENT_ADDED: 'TASK_COMMENTED',
@@ -122,7 +127,28 @@ export const chatHooks = {
    */
   async onProjectMemberRemoved(board, member, actor) {
     if (!webhookDispatcher.isEnabled()) return;
+
+    const memberId = (member?._id || member)?.toString();
+    const boardId = (board?._id || board?.id)?.toString();
+
+    // Check if removed member still has active task/subtask/nano assignments
+    let hasActiveTasks = false;
+    if (memberId && boardId) {
+      try {
+        const [cardCount, subtaskCount, nanoCount] = await Promise.all([
+          Card.countDocuments({ board: boardId, assignees: memberId, isArchived: { $ne: true } }),
+          Subtask.countDocuments({ board: boardId, assignees: memberId, status: { $nin: ['done', 'closed'] } }),
+          SubtaskNano.countDocuments({ board: boardId, assignees: memberId, status: { $nin: ['done', 'closed'] } }),
+        ]);
+        hasActiveTasks = (cardCount + subtaskCount + nanoCount) > 0;
+      } catch (err) {
+        // If check fails, default to keeping the user (safe fallback)
+        hasActiveTasks = true;
+      }
+    }
+
     const payload = buildProjectMemberPayload(board, member, 'removed', actor);
+    payload.hasActiveTasks = hasActiveTasks;
     await webhookDispatcher.dispatch(EVENTS.PROJECT_MEMBER_REMOVED, payload);
   },
 
@@ -189,6 +215,49 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildTaskAssignedPayload(card, assignees, board, actor);
     await webhookDispatcher.dispatch(EVENTS.TASK_ASSIGNED, payload);
+  },
+
+  /**
+   * Trigger when users are unassigned from a task.
+   * Checks if each removed user still has other active tasks in the board.
+   * @param {object} card - Card document
+   * @param {Array} removedUserIds - Array of user IDs that were unassigned
+   * @param {object} board - Board context
+   * @param {object} actor - req.user
+   */
+  async onTaskUnassigned(card, removedUserIds, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+
+    const boardId = (board?._id || board?.id || card.board)?.toString();
+    const activeTaskFlags = {};
+
+    // For each removed user, check if they still have other assignments in this board
+    for (const userId of removedUserIds) {
+      const uid = (userId._id || userId).toString();
+      try {
+        // Check other cards (exclude current card), subtasks, and nanos
+        const [otherCardCount, subtaskCount, nanoCount] = await Promise.all([
+          Card.countDocuments({ board: boardId, assignees: uid, _id: { $ne: card._id }, isArchived: { $ne: true } }),
+          Subtask.countDocuments({ board: boardId, assignees: uid, status: { $nin: ['done', 'closed'] } }),
+          SubtaskNano.countDocuments({ board: boardId, assignees: uid, status: { $nin: ['done', 'closed'] } }),
+        ]);
+
+        // Also check if user is a direct board member (owner/member)
+        const boardDoc = await Board.findById(boardId).select('owner members').lean();
+        const isBoardMember = boardDoc && (
+          boardDoc.owner?.toString() === uid ||
+          (boardDoc.members || []).some((m) => (m._id || m).toString() === uid)
+        );
+
+        activeTaskFlags[uid] = isBoardMember || (otherCardCount + subtaskCount + nanoCount) > 0;
+      } catch (err) {
+        // If check fails, default to keeping the user (safe fallback)
+        activeTaskFlags[uid] = true;
+      }
+    }
+
+    const payload = buildTaskUnassignedPayload(card, removedUserIds, board, actor, activeTaskFlags);
+    await webhookDispatcher.dispatch(EVENTS.TASK_UNASSIGNED, payload);
   },
 
   /**

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Chat Webhook Payload Builders
  *
  * Transforms FlowTask Mongoose documents into the JSON payload schemas
@@ -115,11 +115,15 @@ export function buildProjectDeletedPayload(board, actor) {
 export function buildProjectMemberPayload(board, memberId, role, actor) {
   const workspaceId = resolveWorkspaceId();
   const memberUserId = (memberId?._id || memberId)?.toString();
+  const currentMemberIds = (board.members || []).map((m) => (m._id || m).toString());
+  const ownerId = board.owner?._id?.toString?.() || board.owner?.toString?.() || null;
   return {
     workspaceId,
     project: {
       id: board._id?.toString(),
       name: board.name,
+      owner: ownerId,
+      members: currentMemberIds,
     },
     member: {
       userId: memberUserId,
@@ -129,7 +133,9 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
     },
     // ChatApp-compatible aliases
     boardId: board._id?.toString(),
+    ownerId,
     memberId: memberUserId,
+    memberIds: currentMemberIds,
     role: role || 'member',
     userId: actor ? (actor._id || actor.id)?.toString() : null,
     actor: buildActor(actor),
@@ -231,6 +237,32 @@ export function buildTaskAssignedPayload(card, assignees, board, actor) {
     assignees: assigneeList,
     assigneeId: assigneeList[0]?.userId || null,
     assignerId: actor ? (actor._id || actor.id)?.toString() : null,
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    actor: buildActor(actor),
+  };
+}
+
+export function buildTaskUnassignedPayload(card, removedUserIds, board, actor, activeTaskFlags) {
+  const workspaceId = resolveWorkspaceId();
+  const boardId = (card.board || board?._id)?.toString();
+  return {
+    workspaceId,
+    eventType: 'TASK_UNASSIGNED',
+    task: {
+      id: card._id?.toString(),
+      title: card.title,
+      boardId,
+    },
+    card: { _id: card._id?.toString(), title: card.title },
+    boardId,
+    removedUserIds: (removedUserIds || []).map((id) => (id._id || id).toString()),
+    // Per-user flag: { [userId]: true/false } — whether they still have other tasks
+    activeTaskFlags: activeTaskFlags || {},
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),
       name: board?.name || '',
@@ -409,6 +441,7 @@ export function buildSubtaskEventPayload(subtask, card, board, actor, eventType)
       id: (subtask._id || subtask.id)?.toString(),
       title: subtask.title || '',
       isCompleted: subtask.isCompleted || false,
+      assignees: (subtask.assignees || []).map((a) => (a._id || a).toString()),
     },
     task: {
       id: card._id?.toString(),
@@ -437,6 +470,7 @@ export function buildNanoEventPayload(nano, subtask, card, board, actor, eventTy
       id: (nano._id || nano.id)?.toString(),
       title: nano.title || '',
       isCompleted: nano.isCompleted || false,
+      assignees: (nano.assignees || []).map((a) => (a._id || a).toString()),
     },
     subtask: {
       id: (subtask._id || subtask.id)?.toString(),

@@ -557,6 +557,9 @@ class CardService {
           description: 'removed members from the card',
           metadata: { memberName: removedUsers.map((u) => u.name).join(', '), memberIds: removed },
         });
+        // Dispatch chat webhook for unassigned members
+        const boardData = await Board.findById(card.board).select('name department').lean();
+        chatHooks.onTaskUnassigned(card, removed, boardData, user).catch(() => {});
       }
     }
 
