@@ -203,12 +203,15 @@ const CardDetailModal = React.memo(({
   const [editEstimationHours, setEditEstimationHours] = useState("");
   const [editEstimationMinutes, setEditEstimationMinutes] = useState("");
   const [editEstimationReason, setEditEstimationReason] = useState("");
+  const [editEstimationDate, setEditEstimationDate] = useState("");
   const [editLoggedHours, setEditLoggedHours] = useState("");
   const [editLoggedMinutes, setEditLoggedMinutes] = useState("");
   const [editLoggedDescription, setEditLoggedDescription] = useState("");
+  const [editLoggedDate, setEditLoggedDate] = useState("");
   const [editBilledHours, setEditBilledHours] = useState("");
   const [editBilledMinutes, setEditBilledMinutes] = useState("");
   const [editBilledDescription, setEditBilledDescription] = useState("");
+  const [editBilledDate, setEditBilledDate] = useState("");
 
   // Helper to get today's date in YYYY-MM-DD format
   const getTodayDate = () => new Date().toISOString().split('T')[0];
@@ -893,6 +896,9 @@ const CardDetailModal = React.memo(({
     setEditEstimationHours(entry.hours.toString());
     setEditEstimationMinutes(entry.minutes.toString());
     setEditEstimationReason(entry.reason);
+    // Set date in YYYY-MM-DD format
+    const entryDate = entry.date ? new Date(entry.date).toISOString().split('T')[0] : getTodayDate();
+    setEditEstimationDate(entryDate);
   }, [userOwnsTimeEntry]);
 
   const startEditingLogged = useCallback((entry) => {
@@ -905,6 +911,9 @@ const CardDetailModal = React.memo(({
     setEditLoggedHours(entry.hours.toString());
     setEditLoggedMinutes(entry.minutes.toString());
     setEditLoggedDescription(entry.description);
+    // Set date in YYYY-MM-DD format
+    const entryDate = entry.date ? new Date(entry.date).toISOString().split('T')[0] : getTodayDate();
+    setEditLoggedDate(entryDate);
   }, [userOwnsTimeEntry]);
 
   const saveEstimationEdit = useCallback(async (id) => {
@@ -925,10 +934,15 @@ const CardDetailModal = React.memo(({
       if (!entry) throw new Error("Entry not found");
       const entryId = entry._id || entry.id;
 
+      // Prepare date for backend
+      const selectedDate = editEstimationDate || getTodayDate();
+      const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
+
       await Database.updateCardTimeEntry(cardId, entryId, 'estimation', {
         hours: normalized.hours,
         minutes: normalized.minutes,
-        reason: editEstimationReason
+        reason: editEstimationReason,
+        date: dateObj.toISOString()
       });
 
       setEstimationEntries(prev =>
@@ -939,6 +953,7 @@ const CardDetailModal = React.memo(({
                 hours: normalized.hours,
                 minutes: normalized.minutes,
                 reason: editEstimationReason,
+                date: dateObj.toISOString()
               }
             : entry
         )
@@ -947,12 +962,13 @@ const CardDetailModal = React.memo(({
       setEditEstimationHours("");
       setEditEstimationMinutes("");
       setEditEstimationReason("");
+      setEditEstimationDate("");
       toast.success("Estimation updated successfully!");
     } catch (error) {
       console.error("Error updating estimation:", error);
       toast.error("Failed to update: " + error.message);
     }
-  }, [editEstimationHours, editEstimationMinutes, editEstimationReason, card, estimationEntries]);
+  }, [editEstimationHours, editEstimationMinutes, editEstimationReason, editEstimationDate, card, estimationEntries]);
 
   const saveLoggedEdit = useCallback(async (id) => {
     const hours = parseInt(editLoggedHours || 0);
@@ -971,10 +987,15 @@ const CardDetailModal = React.memo(({
        if (!entry) throw new Error("Entry not found");
        const entryId = entry._id || entry.id;
 
+       // Prepare date for backend
+       const selectedDate = editLoggedDate || getTodayDate();
+       const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
+
        await Database.updateCardTimeEntry(cardId, entryId, 'logged', {
          hours: normalized.hours,
          minutes: normalized.minutes,
-         description: editLoggedDescription
+         description: editLoggedDescription,
+         date: dateObj.toISOString()
        });
 
         setLoggedTime(prev =>
@@ -985,6 +1006,7 @@ const CardDetailModal = React.memo(({
                   hours: normalized.hours,
                   minutes: normalized.minutes,
                   description: editLoggedDescription,
+                  date: dateObj.toISOString()
                 }
               : entry
           )
@@ -993,18 +1015,20 @@ const CardDetailModal = React.memo(({
         setEditLoggedHours("");
         setEditLoggedMinutes("");
         setEditLoggedDescription("");
+        setEditLoggedDate("");
         toast.success("Logged time updated successfully!");
     } catch (error) {
        console.error("Error updating logged time:", error);
        toast.error("Failed to update: " + error.message);
     }
-  }, [editLoggedHours, editLoggedMinutes, editLoggedDescription, card, loggedTime]);
+  }, [editLoggedHours, editLoggedMinutes, editLoggedDescription, editLoggedDate, card, loggedTime]);
 
   const cancelEstimationEdit = useCallback(() => {
     setEditingEstimation(null);
     setEditEstimationHours("");
     setEditEstimationMinutes("");
     setEditEstimationReason("");
+    setEditEstimationDate("");
   }, []);
 
   const cancelLoggedEdit = useCallback(() => {
@@ -1012,6 +1036,7 @@ const CardDetailModal = React.memo(({
     setEditLoggedHours("");
     setEditLoggedMinutes("");
     setEditLoggedDescription("");
+    setEditLoggedDate("");
   }, []);
 
   const startEditingBilled = useCallback((entry) => {
@@ -1024,6 +1049,9 @@ const CardDetailModal = React.memo(({
     setEditBilledHours(entry.hours.toString());
     setEditBilledMinutes(entry.minutes.toString());
     setEditBilledDescription(entry.description);
+    // Set date in YYYY-MM-DD format
+    const entryDate = entry.date ? new Date(entry.date).toISOString().split('T')[0] : getTodayDate();
+    setEditBilledDate(entryDate);
   }, [userOwnsTimeEntry]);
 
   const saveBilledEdit = useCallback(async (id) => {
@@ -1043,10 +1071,15 @@ const CardDetailModal = React.memo(({
        if (!entry) throw new Error("Entry not found");
        const entryId = entry._id || entry.id;
 
+       // Prepare date for backend
+       const selectedDate = editBilledDate || getTodayDate();
+       const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
+
        await Database.updateCardTimeEntry(cardId, entryId, 'billed', {
          hours: normalized.hours,
          minutes: normalized.minutes,
-         description: editBilledDescription
+         description: editBilledDescription,
+         date: dateObj.toISOString()
        });
 
         setBilledTime(prev =>
@@ -1057,6 +1090,7 @@ const CardDetailModal = React.memo(({
                   hours: normalized.hours,
                   minutes: normalized.minutes,
                   description: editBilledDescription,
+                  date: dateObj.toISOString()
                 }
               : entry
           )
@@ -1065,12 +1099,13 @@ const CardDetailModal = React.memo(({
         setEditBilledHours("");
         setEditBilledMinutes("");
         setEditBilledDescription("");
+        setEditBilledDate("");
         toast.success("Billed time updated successfully!");
     } catch (error) {
        console.error("Error updating billed time:", error);
        toast.error("Failed to update: " + error.message);
     }
-  }, [editBilledHours, editBilledMinutes, editBilledDescription, card, billedTime]);
+  }, [editBilledHours, editBilledMinutes, editBilledDescription, editBilledDate, card, billedTime]);
 
   const cancelBilledEdit = useCallback(() => {
     setEditingBilled(null);
@@ -1871,12 +1906,15 @@ const CardDetailModal = React.memo(({
                   editEstimationHours={editEstimationHours}
                   editEstimationMinutes={editEstimationMinutes}
                   editEstimationReason={editEstimationReason}
+                  editEstimationDate={editEstimationDate}
                   editLoggedHours={editLoggedHours}
                   editLoggedMinutes={editLoggedMinutes}
                   editLoggedDescription={editLoggedDescription}
+                  editLoggedDate={editLoggedDate}
                   editBilledHours={editBilledHours}
                   editBilledMinutes={editBilledMinutes}
                   editBilledDescription={editBilledDescription}
+                  editBilledDate={editBilledDate}
                   onEstimationHoursChange={setNewEstimationHours}
                   onEstimationMinutesChange={setNewEstimationMinutes}
                   onEstimationReasonChange={setNewEstimationReason}
@@ -1892,12 +1930,15 @@ const CardDetailModal = React.memo(({
                   onEditEstimationHoursChange={setEditEstimationHours}
                   onEditEstimationMinutesChange={setEditEstimationMinutes}
                   onEditEstimationReasonChange={setEditEstimationReason}
+                  onEditEstimationDateChange={setEditEstimationDate}
                   onEditLoggedHoursChange={setEditLoggedHours}
                   onEditLoggedMinutesChange={setEditLoggedMinutes}
                   onEditLoggedDescriptionChange={setEditLoggedDescription}
+                  onEditLoggedDateChange={setEditLoggedDate}
                   onEditBilledHoursChange={setEditBilledHours}
                   onEditBilledMinutesChange={setEditBilledMinutes}
                   onEditBilledDescriptionChange={setEditBilledDescription}
+                  onEditBilledDateChange={setEditBilledDate}
                   onAddEstimation={handleAddEstimation}
                   onAddLoggedTime={handleAddLoggedTime}
                   onAddBilledTime={handleAddBilledTime}

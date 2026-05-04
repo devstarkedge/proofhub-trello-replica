@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, startTransition } from 'react';
+import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, startTransition, useLayoutEffect } from 'react';
+import { useNavigationType } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Eye, EyeOff, Building2, FolderKanban,
@@ -52,6 +53,7 @@ const HomePage = () => {
   } = useProjectStore(); // Using the new store
 
   const { user } = useContext(AuthContext);
+  const navType = useNavigationType();
   // Removed local useState for departments, loading, error, members assignments
 
   // Selection hook for multi-delete
@@ -66,6 +68,24 @@ const HomePage = () => {
     isSelected
   } = useProjectSelection();
   
+  // Scroll Restoration Logic
+  useLayoutEffect(() => {
+    if (!loading) {
+      const prevRoute = sessionStorage.getItem('prev_route');
+      const scrollY = sessionStorage.getItem('home_scroll_y');
+      const scrollContainer = document.getElementById('main-scroll-container');
+
+      if (scrollContainer) {
+        if (navType === "POP" && prevRoute && prevRoute.startsWith('/workflow/') && scrollY) {
+          scrollContainer.scrollTo({ top: Number(scrollY), behavior: "auto" });
+          sessionStorage.removeItem('home_scroll_y');
+        } else if (navType !== "POP") {
+          scrollContainer.scrollTo({ top: 0, behavior: "auto" });
+        }
+      }
+    }
+  }, [loading, departments.length, navType]);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);

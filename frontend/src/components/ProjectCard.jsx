@@ -186,6 +186,10 @@ const ProjectCard = ({
     const departmentId = projectData.departmentId || deptId;
     const projectId = projectData.id;
     if (departmentId && projectId) {
+      const scrollContainer = document.getElementById('main-scroll-container');
+      if (scrollContainer) {
+        sessionStorage.setItem("home_scroll_y", scrollContainer.scrollTop.toString());
+      }
       navigate(`/workflow/${departmentId}/${projectId}`);
     }
   };
