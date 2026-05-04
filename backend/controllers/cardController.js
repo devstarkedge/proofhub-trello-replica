@@ -1228,6 +1228,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
           memberIds: removedAssignees
         }
       });
+
+      // Dispatch chat webhook for unassigned members
+      const boardForUnassign = await Board.findById(card.board).select('name department').lean();
+      chatHooks.onTaskUnassigned(card, removedAssignees, boardForUnassign, req.user).catch(console.error);
     }
   }
 
