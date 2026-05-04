@@ -59,18 +59,6 @@ import ViewFinancePage from "./pages/Finance/ViewFinancePage";
 import MyShortcutsPage from "./pages/MyShortcutsPage";
 import SalesPage from "./pages/SalesPage";
 
-function RouteTracker() {
-  const location = useLocation();
-  React.useEffect(() => {
-    const current = sessionStorage.getItem('current_route');
-    if (current && current !== location.pathname) {
-      sessionStorage.setItem('prev_route', current);
-    }
-    sessionStorage.setItem('current_route', location.pathname);
-  }, [location.pathname]);
-  return null;
-}
-
 function App() {
   return (
     <AuthProvider>
@@ -78,7 +66,6 @@ function App() {
         <TeamProvider>
           <NotificationProvider>
             <ClientInfoProvider>
-              <RouteTracker />
               <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />

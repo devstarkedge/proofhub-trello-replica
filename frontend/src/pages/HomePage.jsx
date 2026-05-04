@@ -71,16 +71,16 @@ const HomePage = () => {
   // Scroll Restoration Logic
   useLayoutEffect(() => {
     if (!loading) {
-      const prevRoute = sessionStorage.getItem('prev_route');
       const scrollY = sessionStorage.getItem('home_scroll_y');
       const scrollContainer = document.getElementById('main-scroll-container');
 
       if (scrollContainer) {
-        if (navType === "POP" && prevRoute && prevRoute.startsWith('/workflow/') && scrollY) {
+        if (navType === "POP" && scrollY) {
           scrollContainer.scrollTo({ top: Number(scrollY), behavior: "auto" });
           sessionStorage.removeItem('home_scroll_y');
         } else if (navType !== "POP") {
           scrollContainer.scrollTo({ top: 0, behavior: "auto" });
+          sessionStorage.removeItem('home_scroll_y');
         }
       }
     }
