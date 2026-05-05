@@ -31,6 +31,7 @@ import DataIntegrityWarnings from '../../components/Finance/DataIntegrityWarning
 import ColumnTooltip, { COLUMN_EXPLANATIONS } from '../../components/Finance/ColumnTooltip';
 import { PaymentBreakdownCell } from '../../components/Finance/PaymentBreakdown';
 import EmptyState from '../../components/Finance/EmptyState';
+import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 import { WeekWiseHeaders, WeekWiseCells, formatWeekValue } from '../../components/Finance/WeekWiseColumns';
 
 /**
@@ -794,12 +795,14 @@ const ProjectsTab = () => {
                                 style={{ backgroundColor: 'var(--color-bg-secondary)' }}
                               >
                                 <div>
-                                  <p 
+                                  <ProjectWorkflowLink
+                                    departmentId={project.departmentId}
+                                    projectId={project.projectId}
                                     className="font-medium text-sm"
-                                    style={{ color: 'var(--color-text-primary)' }}
+                                    title={project.projectName}
                                   >
                                     {project.projectName}
-                                  </p>
+                                  </ProjectWorkflowLink>
                                   {project.projectCategory && (
                                     <span 
                                       className="text-xs"

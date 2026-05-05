@@ -11,6 +11,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import api from '../../services/api';
+import ProjectWorkflowLink from './ProjectWorkflowLink';
 
 /**
  * SummaryCards - Reactive summary cards for Finance Dashboard
@@ -130,8 +131,8 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
       icon: FolderKanban,
       color: '#06b6d4',
       bg: 'rgba(6, 182, 212, 0.12)',
-      filterAction: 'project',
-      filterValue: summary?.topRevenueProject?.projectId
+      departmentId: summary?.topRevenueProject?.departmentId,
+      projectId: summary?.topRevenueProject?.projectId
     }
   ];
 
@@ -199,16 +200,93 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
       {cards.map((card) => {
         const Icon = card.icon;
+        const isProjectCard = card.id === 'topProject';
+        const shellClassName = `p-5 rounded-xl border transition-all duration-200 text-left group ${isProjectCard ? '' : 'hover:scale-[1.02]'}`.trim();
+        const shellStyle = {
+          backgroundColor: 'var(--color-bg-secondary)',
+          borderColor: 'var(--color-border-subtle)'
+        };
+        const shellContent = (
+          <>
+            <div className="flex items-start justify-between">
+              <div className="flex-1 min-w-0">
+                <p
+                  className="text-xs font-medium mb-1 truncate"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  {card.title}
+                </p>
+                {isProjectCard ? (
+                  <ProjectWorkflowLink
+                    departmentId={card.departmentId}
+                    projectId={card.projectId}
+                    className="text-xl font-bold truncate"
+                    title={card.value}
+                  >
+                    {card.value}
+                  </ProjectWorkflowLink>
+                ) : (
+                  <p
+                    className="text-xl font-bold truncate"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    {card.value}
+                  </p>
+                )}
+                {card.subtitle && (
+                  <p
+                    className="text-xs mt-1 truncate"
+                    style={{ color: card.color }}
+                  >
+                    {card.subtitle}
+                  </p>
+                )}
+              </div>
+              <div
+                className="p-2.5 rounded-lg flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
+                style={{ backgroundColor: card.bg }}
+              >
+                <Icon
+                  className="w-5 h-5"
+                  style={{ color: card.color }}
+                />
+              </div>
+            </div>
+
+            <div
+              className="flex items-center gap-1 mt-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+              style={{ color: card.color }}
+            >
+            </div>
+          </>
+        );
         
+        if (isProjectCard) {
+          return (
+            <div
+              key={card.id}
+              className={shellClassName}
+              style={shellStyle}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = card.color;
+                e.currentTarget.style.boxShadow = `0 4px 12px ${card.bg}`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--color-border-subtle)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              {shellContent}
+            </div>
+          );
+        }
+
         return (
           <button
             key={card.id}
             onClick={() => onCardClick?.(card.filterAction, card.filterValue)}
-            className="p-5 rounded-xl border transition-all duration-200 text-left group hover:scale-[1.02]"
-            style={{ 
-              backgroundColor: 'var(--color-bg-secondary)',
-              borderColor: 'var(--color-border-subtle)'
-            }}
+            className={shellClassName}
+            style={shellStyle}
             onMouseEnter={(e) => {
               e.currentTarget.style.borderColor = card.color;
               e.currentTarget.style.boxShadow = `0 4px 12px ${card.bg}`;
@@ -218,46 +296,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
               e.currentTarget.style.boxShadow = 'none';
             }}
           >
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <p 
-                  className="text-xs font-medium mb-1 truncate"
-                  style={{ color: 'var(--color-text-secondary)' }}
-                >
-                  {card.title}
-                </p>
-                <p 
-                  className="text-xl font-bold truncate"
-                  style={{ color: 'var(--color-text-primary)' }}
-                >
-                  {card.value}
-                </p>
-                {card.subtitle && (
-                  <p 
-                    className="text-xs mt-1 truncate"
-                    style={{ color: card.color }}
-                  >
-                    {card.subtitle}
-                  </p>
-                )}
-              </div>
-              <div 
-                className="p-2.5 rounded-lg flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
-                style={{ backgroundColor: card.bg }}
-              >
-                <Icon 
-                  className="w-5 h-5" 
-                  style={{ color: card.color }}
-                />
-              </div>
-            </div>
-            
-            {/* Hover indicator */}
-            <div 
-              className="flex items-center gap-1 mt-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-              style={{ color: card.color }}
-            >
-            </div>
+            {shellContent}
           </button>
         );
       })}

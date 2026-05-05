@@ -12,6 +12,7 @@ import {
   Building2
 } from 'lucide-react';
 import api from '../../services/api';
+import ProjectWorkflowLink from './ProjectWorkflowLink';
 
 /**
  * WeeklyReport - Week-wise finance report view
@@ -347,12 +348,23 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                             )}
                           </div>
                           <div>
-                            <p 
-                              className="font-medium text-sm"
-                              style={{ color: 'var(--color-text-primary)' }}
-                            >
-                              {currentViewType === 'users' ? item.userName : item.projectName}
-                            </p>
+                            {currentViewType === 'users' ? (
+                              <p 
+                                className="font-medium text-sm"
+                                style={{ color: 'var(--color-text-primary)' }}
+                              >
+                                {item.userName}
+                              </p>
+                            ) : (
+                              <ProjectWorkflowLink
+                                departmentId={item.departmentId}
+                                projectId={item.projectId}
+                                className="font-medium text-sm"
+                                title={item.projectName}
+                              >
+                                {item.projectName}
+                              </ProjectWorkflowLink>
+                            )}
                             <p 
                               className="text-xs"
                               style={{ color: 'var(--color-text-muted)' }}

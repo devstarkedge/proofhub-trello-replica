@@ -19,6 +19,7 @@ import api from '../../services/api';
 import { toast } from 'react-toastify';
 import DateFilters from '../../components/Finance/DateFilters';
 import DepartmentFilter from '../../components/Finance/DepartmentFilter';
+import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 import { WeekWiseHeaders, WeekWiseCells, formatWeekValue } from '../../components/Finance/WeekWiseColumns';
 
 /**
@@ -380,8 +381,55 @@ const ViewFinancePage = () => {
     switch (columnKey) {
       case 'userName':
         return <span className="font-medium">{item.userName || item.project?.userName || 'Unknown'}</span>;
-      case 'projectName':
-        return <span className="font-medium">{item.projectName || item.project?.projectName || 'Unknown'}</span>;
+      case 'projectName': {
+        if (page?.pageType === 'users' && Array.isArray(item.projects) && item.projects.length > 0) {
+          const uniqueProjects = Array.from(
+            new Map(
+              item.projects
+                .filter(Boolean)
+                .map((project, index) => [
+                  project.projectId || project._id || `${project.projectName || 'Unknown'}-${index}`,
+                  project
+                ])
+            ).values()
+          );
+
+          return (
+            <div className="flex flex-wrap items-center gap-y-1">
+              {uniqueProjects.map((project, index) => (
+                <React.Fragment key={project.projectId || project._id || `${project.projectName}-${index}`}>
+                  <ProjectWorkflowLink
+                    departmentId={project.departmentId}
+                    projectId={project.projectId || project._id}
+                    className="font-medium text-sm"
+                    title={project.projectName || 'Unknown'}
+                  >
+                    {project.projectName || 'Unknown'}
+                  </ProjectWorkflowLink>
+                  {index < uniqueProjects.length - 1 && (
+                    <span className="mr-1" style={{ color: 'var(--color-text-muted)' }}>,</span>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          );
+        }
+
+        const projectName = item.projectName || item.project?.projectName || 'Unknown';
+        const projectId = item.projectId || item.project?.projectId || item.project?._id;
+        const departmentId = item.departmentId || item.project?.departmentId;
+
+        return (
+          <ProjectWorkflowLink
+            departmentId={departmentId}
+            projectId={projectId}
+            className="font-medium"
+            title={projectName}
+          >
+            {projectName}
+          </ProjectWorkflowLink>
+        );
+      }
       case 'department':
         return item.department || item.project?.department || 'Unassigned';
       case 'projects':

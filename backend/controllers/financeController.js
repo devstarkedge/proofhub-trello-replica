@@ -271,6 +271,7 @@ export const getFinanceSummary = async (req, res) => {
       projectRevenue[projectId] = {
         name: project.name,
         department: project.department?.name || 'Unassigned',
+        departmentId: project.department?._id?.toString() || null,
         payment: projectPayment,
         billedMinutes: projectBilledMinutes,
         loggedMinutes: projectLoggedMinutes
@@ -398,6 +399,7 @@ export const getUserFinanceData = async (req, res) => {
               projectId: projectId,
               projectName: project.name,
               department: project.department?.name || 'Unassigned',
+              departmentId: project.department?._id?.toString() || null,
               billingCycle: project.billingCycle,
               hourlyPrice: project.hourlyPrice,
               fixedPrice: project.fixedPrice,
@@ -1003,6 +1005,7 @@ export const getWeeklyReportData = async (req, res) => {
               projectId: project._id,
               projectName: project.name,
               department: project.department?.name || 'Unassigned',
+              departmentId: project.department?._id?.toString() || null,
               billingCycle: project.billingCycle,
               billedMinutes: projectBilledMinutes,
               loggedMinutes: projectLoggedMinutes,
@@ -1360,6 +1363,7 @@ export const getYearWideWeeklyData = async (req, res) => {
                 userData[uId].projects[projectId] = {
                   projectId: projectId,
                   projectName: project.name,
+                  departmentId: project.department?._id?.toString() || null,
                   billingCycle: project.billingCycle,
                   hourlyPrice: project.hourlyPrice,
                   weeks: {}
@@ -1468,6 +1472,7 @@ export const getYearWideWeeklyData = async (req, res) => {
               return {
                 projectId: proj.projectId,
                 projectName: proj.projectName,
+                departmentId: proj.departmentId || null,
                 billingCycle: proj.billingCycle,
                 hourlyPrice: proj.hourlyPrice,
                 weeks: projWeekData,
@@ -1572,6 +1577,7 @@ export const getYearWideWeeklyData = async (req, res) => {
                 projectId: project._id,
                 projectName: project.name,
                 department: project.department?.name || 'Unassigned',
+                departmentId: project.department?._id?.toString() || null,
                 billingCycle: project.billingCycle,
                 weeks: weekData,
                 totalPayment: projectTotalPayment

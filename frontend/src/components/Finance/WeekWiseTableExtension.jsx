@@ -11,6 +11,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import api from '../../services/api';
+import ProjectWorkflowLink from './ProjectWorkflowLink';
 
 /**
  * WeekWiseTableExtension - Renders week-wise payment breakdown table
@@ -317,9 +318,21 @@ const WeekWiseTableExtension = ({
                             ) : (
                               <FolderKanban className="w-3.5 h-3.5" style={{ color: '#8b5cf6' }} />
                             )}
-                            <span className="truncate max-w-32">
-                              {type === 'users' ? item.userName : item.projectName}
-                            </span>
+                            {type === 'users' ? (
+                              <span className="truncate max-w-32">
+                                {item.userName}
+                              </span>
+                            ) : (
+                              <ProjectWorkflowLink
+                                departmentId={item.departmentId}
+                                projectId={item.projectId}
+                                className="truncate max-w-32"
+                                defaultColor="var(--color-text-secondary)"
+                                title={item.projectName}
+                              >
+                                {item.projectName}
+                              </ProjectWorkflowLink>
+                            )}
                           </div>
                         </td>
                         {item.weeks.map((weekPayment, weekIdx) => (

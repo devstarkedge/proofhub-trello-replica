@@ -25,6 +25,7 @@ import ExportButton from '../../components/Finance/ExportButton';
 import DataIntegrityWarnings from '../../components/Finance/DataIntegrityWarnings';
 import ColumnTooltip, { COLUMN_EXPLANATIONS } from '../../components/Finance/ColumnTooltip';
 import EmptyState from '../../components/Finance/EmptyState';
+import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 import { WeekWiseHeaders, WeekWiseCells, formatWeekValue } from '../../components/Finance/WeekWiseColumns';
 
 /**
@@ -824,7 +825,15 @@ const UsersTab = () => {
                                   >
                                     {project.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
                                   </span>
-                                  {project.projectName}
+                                  <ProjectWorkflowLink
+                                    departmentId={project.departmentId}
+                                    projectId={project.projectId}
+                                    className="text-sm"
+                                    defaultColor="var(--color-text-secondary)"
+                                    title={project.projectName}
+                                  >
+                                    {project.projectName}
+                                  </ProjectWorkflowLink>
                                   {project.billingCycle === 'hr' && project.hourlyPrice && (
                                     <span 
                                       className="text-xs"

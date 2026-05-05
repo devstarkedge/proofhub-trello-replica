@@ -8,8 +8,10 @@ import {
   DollarSign,
   Clock,
   FileQuestion,
+  ExternalLink,
   X
 } from 'lucide-react';
+import ProjectWorkflowLink from './ProjectWorkflowLink';
 
 /**
  * DataIntegrityWarnings - Non-blocking warnings for finance data issues
@@ -33,6 +35,8 @@ const DataIntegrityWarnings = ({
     if (type === 'projects') {
       data.forEach(project => {
         const projectName = project.projectName || project.boardName || project.name || project.title || 'Unknown Project';
+        const projectId = project.projectId || project.boardId || project._id;
+        const departmentId = project.departmentId || null;
         const totalLoggedMinutes = (project.loggedTime?.hours || 0) * 60 + (project.loggedTime?.minutes || 0);
         const totalBilledMinutes = (project.billedTime?.hours || 0) * 60 + (project.billedTime?.minutes || 0);
 
@@ -40,24 +44,28 @@ const DataIntegrityWarnings = ({
         const billingType = project.billingType || project.billingCycle;
         if (totalLoggedMinutes > 0 && !billingType) {
           issues.push({
-            id: `${project.projectId || project.boardId || project._id}-no-billing`,
+            id: `${projectId}-no-billing`,
             type: 'warning',
             icon: FileQuestion,
-            message: `"${projectName}"Project has ${Math.floor(totalLoggedMinutes / 60)}h ${totalLoggedMinutes % 60}m logged but no billing type set`,
+            projectName,
+            detail: `has ${Math.floor(totalLoggedMinutes / 60)}h ${totalLoggedMinutes % 60}m logged but no billing type set`,
             suggestion: 'Set billing type in project settings',
-            projectId: project.projectId || project.boardId || project._id
+            projectId,
+            departmentId
           });
         }
 
         // Warning: Hourly project without rate
         if ((billingType === 'hourly' || billingType === 'hr') && (!project.hourlyRate && !project.hourlyPrice || (project.hourlyRate || project.hourlyPrice) <= 0)) {
           issues.push({
-            id: `${project.projectId || project.boardId || project._id}-no-rate`,
+            id: `${projectId}-no-rate`,
             type: 'warning',
             icon: DollarSign,
-            message: `"${projectName}"Project is hourly billing but missing hourly rate`,
+            projectName,
+            detail: 'is hourly billing but missing hourly rate',
             suggestion: 'Set hourly rate in project settings',
-            projectId: project.projectId || project.boardId || project._id
+            projectId,
+            departmentId
           });
         }
 
@@ -67,12 +75,14 @@ const DataIntegrityWarnings = ({
           if (totalLoggedMinutes > fixedMinutes) {
             const excessMinutes = totalLoggedMinutes - fixedMinutes;
             issues.push({
-              id: `${project.projectId || project.boardId || project._id}-exceeded`,
+              id: `${projectId}-exceeded`,
               type: 'critical',
               icon: AlertCircle,
-              message: `"${projectName}"Project exceeded fixed hours limit by ${Math.floor(excessMinutes / 60)}h ${excessMinutes % 60}m`,
+              projectName,
+              detail: `exceeded fixed hours limit by ${Math.floor(excessMinutes / 60)}h ${excessMinutes % 60}m`,
               suggestion: 'Review and adjust time entries or update fixed hours limit',
-              projectId: project.projectId || project.boardId || project._id
+              projectId,
+              departmentId
             });
           }
         }
@@ -83,12 +93,14 @@ const DataIntegrityWarnings = ({
           const percentage = (difference / totalLoggedMinutes) * 100;
           if (percentage > 30 && difference > 60) { // More than 30% difference and over 1 hour
             issues.push({
-              id: `${project.projectId || project.boardId || project._id}-discrepancy`,
+              id: `${projectId}-discrepancy`,
               type: 'info',
               icon: Clock,
-              message: `"${projectName}"Project has ${Math.round(percentage)}% discrepancy between logged and billed time`,
+              projectName,
+              detail: `has ${Math.round(percentage)}% discrepancy between logged and billed time`,
               suggestion: 'Review time entries for accuracy',
-              projectId: project.projectId || project.boardId || project._id
+              projectId,
+              departmentId
             });
           }
         }
@@ -230,9 +242,34 @@ const DataIntegrityWarnings = ({
               >
                 <IconComponent className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: styles.text }} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                    {warning.message}
-                  </p>
+                  {warning.projectName ? (
+                    <div 
+                      className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm font-medium"
+                      style={{ color: 'var(--color-text-primary)' }}
+                    >
+                      <span className="break-all">{warning.projectName}</span>
+                      {warning.projectId && warning.departmentId && (
+                        <ProjectWorkflowLink
+                          departmentId={warning.departmentId}
+                          projectId={warning.projectId}
+                          ariaLabel="Open project"
+                          title={`Open ${warning.projectName}`}
+                          underlineOnHover={false}
+                          defaultColor="var(--color-text-muted)"
+                          hoverColor={styles.text}
+                          className="inline-flex items-center justify-center opacity-70 hover:opacity-100 focus-visible:opacity-100 hover:scale-110 focus-visible:scale-110"
+                          style={{ lineHeight: 0 }}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </ProjectWorkflowLink>
+                      )}
+                      <span>{warning.detail}</span>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      {warning.message}
+                    </p>
+                  )}
                   <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                     💡 {warning.suggestion}
                   </p>

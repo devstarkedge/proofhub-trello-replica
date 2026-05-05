@@ -20,6 +20,7 @@ import api from '../../services/api';
 import AuthContext from '../../context/AuthContext';
 import socketService from '../../services/socket';
 import FinanceAccessControl from '../../components/Finance/FinanceAccessControl';
+import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 
 /**
  * FinanceDashboard - Single Source of Truth Dashboard
@@ -566,9 +567,14 @@ const FinanceDashboard = () => {
                       />
                     </div>
                     <div>
-                      <p className="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                      <ProjectWorkflowLink
+                        departmentId={project.departmentId}
+                        projectId={project.projectId}
+                        className="font-medium text-sm"
+                        title={project.projectName}
+                      >
                         {project.projectName}
-                      </p>
+                      </ProjectWorkflowLink>
                       <p 
                         className="text-xs cursor-help" 
                         style={{ color: 'var(--color-text-muted)' }}
