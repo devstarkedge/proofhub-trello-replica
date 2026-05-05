@@ -39,12 +39,15 @@ const TimeTrackingSection = ({
   editEstimationHours,
   editEstimationMinutes,
   editEstimationReason,
+  editEstimationDate,
   editLoggedHours,
   editLoggedMinutes,
   editLoggedDescription,
+  editLoggedDate,
   editBilledHours,
   editBilledMinutes,
   editBilledDescription,
+  editBilledDate,
   onEstimationHoursChange,
   onEstimationMinutesChange,
   onEstimationReasonChange,
@@ -60,12 +63,15 @@ const TimeTrackingSection = ({
   onEditEstimationHoursChange,
   onEditEstimationMinutesChange,
   onEditEstimationReasonChange,
+  onEditEstimationDateChange,
   onEditLoggedHoursChange,
   onEditLoggedMinutesChange,
   onEditLoggedDescriptionChange,
+  onEditLoggedDateChange,
   onEditBilledHoursChange,
   onEditBilledMinutesChange,
   onEditBilledDescriptionChange,
+  onEditBilledDateChange,
   onAddEstimation,
   onAddLoggedTime,
   onAddBilledTime,
@@ -457,6 +463,19 @@ const TimeTrackingSection = ({
                                         </span>
                                       </div>
                                     </div>
+                                    {/* Date Picker for Edit Estimation */}
+                                    <div className="relative">
+                                      <div className="flex items-center gap-2">
+                                        <Calendar size={12} className="text-indigo-500" />
+                                        <input
+                                          type="date"
+                                          value={editEstimationDate || todayDate}
+                                          onChange={(e) => onEditEstimationDateChange(e.target.value)}
+                                          max={todayDate}
+                                          className="flex-1 p-1 border border-indigo-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                        />
+                                      </div>
+                                    </div>
                                     <textarea
                                       value={editEstimationReason}
                                       onChange={(e) =>
@@ -719,6 +738,19 @@ const TimeTrackingSection = ({
                                         <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                                           m
                                         </span>
+                                      </div>
+                                    </div>
+                                    {/* Date Picker for Edit Logged Time */}
+                                    <div className="relative">
+                                      <div className="flex items-center gap-2">
+                                        <Calendar size={12} className="text-green-500" />
+                                        <input
+                                          type="date"
+                                          value={editLoggedDate || todayDate}
+                                          onChange={(e) => onEditLoggedDateChange(e.target.value)}
+                                          max={todayDate}
+                                          className="flex-1 p-1 border border-green-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
+                                        />
                                       </div>
                                     </div>
                                     <textarea
@@ -1008,6 +1040,19 @@ const TimeTrackingSection = ({
                                             <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                                               m
                                             </span>
+                                          </div>
+                                        </div>
+                                        {/* Date Picker for Edit Billed Time */}
+                                        <div className="relative">
+                                          <div className="flex items-center gap-2">
+                                            <Calendar size={12} className="text-yellow-500" />
+                                            <input
+                                              type="date"
+                                              value={editBilledDate || todayDate}
+                                              onChange={(e) => onEditBilledDateChange(e.target.value)}
+                                              max={todayDate}
+                                              className="flex-1 p-1 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
+                                            />
                                           </div>
                                         </div>
                                         <textarea

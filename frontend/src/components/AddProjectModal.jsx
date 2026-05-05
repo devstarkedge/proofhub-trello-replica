@@ -1050,6 +1050,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                             type="text"
                             name="estimatedTime"
                             value={formData.estimatedTime}
+                            autoComplete="off"
                             onChange={handleInputChange}
                             className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
                             placeholder="e.g., 3 days, 40h"
@@ -1062,6 +1063,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                             name="projectUrl"
                             value={formData.projectUrl}
                             onChange={handleInputChange}
+                            autoComplete="off"
                             className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                               errors.projectUrl ? 'border-red-500 bg-red-50' : projectUrlValid && formData.projectUrl ? 'border-green-500 bg-green-50' : 'border-gray-300 hover:border-blue-300'
                             }`}
@@ -1195,6 +1197,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                           <input
                             type="text"
                             name="clientName"
+                            autoComplete="off"
                             value={formData.clientName}
                             onChange={handleInputChange}
                             className="w-full px-4 py-3 border border-gray-300 bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
@@ -1207,6 +1210,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                             <input
                               type="email"
                               name="clientEmail"
+                              autoComplete="off"
                               value={formData.clientEmail}
                               onChange={handleInputChange}
                               onBlur={() => handleBlur('clientEmail')}

@@ -26,7 +26,7 @@ const MainLayout = () => {
         <Header />
 
         {/* Page Content - Scrollable */}
-        <main className="flex-1 overflow-auto relative">
+        <main id="main-scroll-container" className="flex-1 overflow-auto relative">
           <Outlet />
         </main>
       </div>
