@@ -31,42 +31,59 @@ const RegisterPage = () => {
   const { name, email, password, confirmPassword, department } = formData;
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+  let { name, value } = e.target;
 
-    // Real-time validation for non-email fields
-    if (touched[name] && name !== 'email') {
-      const error = validateField(name, value);
-      setErrors(prev => ({ ...prev, [name]: error }));
-    }
+  if (name === 'name') {
+    value = value
+      .replace(/^\s+/, '')     // remove starting spaces
+      .replace(/\s{2,}/g, ' '); // replace multiple spaces with single
+  }  
 
-    // Special handling for email
-    if (name === 'email') {
-      setEmailAvailable(null);
-      if (touched.email) {
-        const emailError = validateField('email', value);
-        setErrors(prev => ({ ...prev, email: emailError }));
+  if (name === 'email') {
+    value = value.replace(/\s/g, '').toLowerCase();
+  }
 
-        // Check email uniqueness if format is valid
-        if (!emailError && value) {
-          setCheckingEmail(true);
-          debouncedEmailCheck(value, null, (available) => {
-            setEmailAvailable(available);
-            setCheckingEmail(false);
-            if (!available) {
-              setErrors(prev => ({ ...prev, email: 'This email address is already registered' }));
-            }
-          });
-        }
+  if (name === 'password' || name === 'confirmPassword') {
+    value = value.replace(/\s/g, '');
+  }
+
+  setFormData({ ...formData, [name]: value });
+
+  // Real-time validation for non-email fields
+  if (touched[name] && name !== 'email') {
+    const error = validateField(name, value);
+    setErrors(prev => ({ ...prev, [name]: error }));
+  }
+
+  // Special handling for email
+  if (name === 'email') {
+    setEmailAvailable(null);
+    if (touched.email) {
+      const emailError = validateField('email', value);
+      setErrors(prev => ({ ...prev, email: emailError }));
+
+      if (!emailError && value) {
+        setCheckingEmail(true);
+        debouncedEmailCheck(value, null, (available) => {
+          setEmailAvailable(available);
+          setCheckingEmail(false);
+          if (!available) {
+            setErrors(prev => ({
+              ...prev,
+              email: 'This email address is already registered'
+            }));
+          }
+        });
       }
     }
+  }
 
-    // Password confirmation validation
-    if (name === 'confirmPassword' && touched.confirmPassword) {
-      const matchError = validatePasswordMatch(formData.password, value);
-      setErrors(prev => ({ ...prev, confirmPassword: matchError }));
-    }
-  };
+  // Password confirmation validation
+  if (name === 'confirmPassword' && touched.confirmPassword) {
+    const matchError = validatePasswordMatch(formData.password, value);
+    setErrors(prev => ({ ...prev, confirmPassword: matchError }));
+  }
+};
 
   const handleBlur = (field) => {
     setTouched(prev => ({ ...prev, [field]: true }));
@@ -266,6 +283,11 @@ const RegisterPage = () => {
                   value={email}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('email')}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ') {
+                      e.preventDefault(); //  block space
+                    }
+                  }}
                   onFocus={(e) => {
                     e.target.readOnly = false;
                   }}
@@ -317,6 +339,11 @@ const RegisterPage = () => {
                   value={password}
                   onChange={handleInputChange}
                   onBlur={() => handleBlur('password')}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ') {
+                      e.preventDefault(); //  block space
+                    }
+                  }}
                   onFocus={(e) => {
                     e.target.readOnly = false;
                   }}

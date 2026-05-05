@@ -192,7 +192,14 @@ const GlobalFallback = ({
                   placeholder="Enter your email to get notified" 
                   className="flex-1 px-4 py-2 bg-transparent border-none outline-none text-slate-700 placeholder:text-slate-400"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    let value = e.target.value;
+                    value = value.replace(/\s/g, "").toLowerCase();
+                    setEmail(value);
+                  }}
+                  onKeyDown={(e) => {
+                    if( e.key === " " ) e.preventDefault();
+                  }}
                   required
                 />
                 <button 
