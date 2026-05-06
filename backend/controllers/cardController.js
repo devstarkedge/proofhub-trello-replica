@@ -19,6 +19,7 @@ import { emitToBoard, emitNotification, emitToDepartment } from "../realtime/ind
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
+import { emitTimeEntryDiffs, emitTimeEntryWebhook } from "../utils/chatTimeTracking.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
 import { emitFinanceDataRefresh } from "../realtime/index.js";
 
@@ -63,6 +64,32 @@ const dispatchTaskStatusChange = async ({ card, oldStatus, newStatus, actor, boa
   chatHooks.onTaskStatusChanged(card, oldStatus, newStatus, boardData, actor).catch(console.error);
 
   return change;
+};
+
+const CHAT_TRACKED_TIME_TYPES = new Set(["logged", "estimation", "billed"]);
+
+const snapshotTimeEntries = (entries = []) => entries.map((entry) => (
+  typeof entry?.toObject === 'function' ? entry.toObject() : entry
+));
+
+const emitCardTimeTrackingWebhook = async ({ operation, entryType, card, actor, previousEntry = null, currentEntry = null }) => {
+  if (!CHAT_TRACKED_TIME_TYPES.has(entryType)) {
+    return;
+  }
+
+  const boardData = await getTaskStatusBoardContext(card.board);
+
+  await emitTimeEntryWebhook({
+    operation,
+    entryType,
+    entityType: "task",
+    entity: card,
+    task: card,
+    board: boardData,
+    actor,
+    previousEntry,
+    currentEntry,
+  });
 };
 
 // @desc    Get all cards for a list
@@ -908,6 +935,8 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   const oldPriority = card.priority || '';
   const oldTitle = card.title || '';
   const oldStartDate = card.startDate;
+  const oldEstimationTime = snapshotTimeEntries(card.estimationTime);
+  const oldLoggedTime = snapshotTimeEntries(card.loggedTime);
 
   /**
    * Process time tracking updates with strict ownership preservation
@@ -1097,9 +1126,13 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     });
   }
 
-  if (req.body.estimationTime) {
+  const boardForTrackedTime = (req.body.loggedTime !== undefined || req.body.estimationTime !== undefined)
+    ? await getTaskStatusBoardContext(card.board)
+    : null;
+
+  if (req.body.estimationTime !== undefined) {
     const newEstimations = req.body.estimationTime || [];
-    const oldEstimations = card.estimationTime || [];
+    const oldEstimations = oldEstimationTime || [];
     
     // Check for new estimations
     if (newEstimations.length > oldEstimations.length) {
@@ -1120,11 +1153,22 @@ export const updateCard = asyncHandler(async (req, res, next) => {
         });
       }
     }
+
+    await emitTimeEntryDiffs({
+      previousEntries: oldEstimationTime,
+      currentEntries: card.estimationTime,
+      entryType: 'estimation',
+      entityType: 'task',
+      entity: card,
+      task: card,
+      board: boardForTrackedTime || { _id: card.board, name: '', department: null },
+      actor: req.user,
+    });
   }
 
-  if (req.body.loggedTime) {
+  if (req.body.loggedTime !== undefined) {
     const newLogged = req.body.loggedTime || [];
-    const oldLogged = card.loggedTime || [];
+    const oldLogged = oldLoggedTime || [];
     
     // Check for new logged time
     if (newLogged.length > oldLogged.length) {
@@ -1143,12 +1187,19 @@ export const updateCard = asyncHandler(async (req, res, next) => {
             description: lastEntry.description
           }
         });
-
-        // Dispatch chat webhook for time entry
-        const boardForTime = await Board.findById(card.board).select('name department').lean();
-        chatHooks.onTimeEntryAdded(card, lastEntry, boardForTime, req.user).catch(console.error);
       }
     }
+
+    await emitTimeEntryDiffs({
+      previousEntries: oldLoggedTime,
+      currentEntries: card.loggedTime,
+      entryType: 'logged',
+      entityType: 'task',
+      entity: card,
+      task: card,
+      board: boardForTrackedTime || { _id: card.board, name: '', department: null },
+      actor: req.user,
+    });
     
     // Emit finance data refresh for logged time changes
     emitFinanceDataRefresh({
@@ -1930,6 +1981,16 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
     });
   }
 
+  await emitCardTimeTrackingWebhook({
+    operation: 'added',
+    entryType: type,
+    card,
+    actor: req.user,
+    currentEntry: addedEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch card time-entry webhook:', error);
+  });
+
   res.status(200).json({
     success: true,
     data: addedEntry
@@ -1960,6 +2021,7 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
   }
 
   const entry = card[fieldName][entryIndex];
+    const previousEntry = entry.toObject();
 
   // check ownership
   if (entry.user.toString() !== req.user.id.toString()) {
@@ -2003,6 +2065,17 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
     });
   }
 
+  await emitCardTimeTrackingWebhook({
+    operation: 'updated',
+    entryType: type,
+    card,
+    actor: req.user,
+    previousEntry,
+    currentEntry: updatedEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch card time-entry webhook:', error);
+  });
+
   res.status(200).json({
     success: true,
     data: updatedEntry
@@ -2033,6 +2106,7 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
   }
 
   const entry = card[fieldName][entryIndex];
+    const previousEntry = entry.toObject();
 
   // check ownership
   if (entry.user.toString() !== req.user.id.toString()) {
@@ -2068,6 +2142,16 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
       boardId: card.board.toString()
     });
   }
+
+  await emitCardTimeTrackingWebhook({
+    operation: 'deleted',
+    entryType: type,
+    card,
+    actor: req.user,
+    previousEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch card time-entry webhook:', error);
+  });
 
   res.status(200).json({
     success: true,

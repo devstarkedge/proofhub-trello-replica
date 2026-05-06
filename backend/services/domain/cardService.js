@@ -20,7 +20,12 @@ import { emitToBoard, emitFinanceDataRefresh } from '../../realtime/index.js';
 import notificationService from '../../utils/notificationService.js';
 import { slackHooks } from '../../utils/slackHooks.js';
 import { chatHooks } from '../../utils/chatHooks.js';
+import { emitTimeEntryDiffs } from '../../utils/chatTimeTracking.js';
 import { processTimeEntriesWithOwnership } from '../../utils/timeEntryUtils.js';
+
+const snapshotTimeEntries = (entries = []) => entries.map((entry) => (
+  typeof entry?.toObject === 'function' ? entry.toObject() : entry
+));
 
 class CardService {
   /* ── Create ────────────────────────────────────── */
@@ -109,6 +114,9 @@ class CardService {
       startDate: card.startDate,
       assignees: card.assignees?.map((a) => a.toString()) || [],
       labels: card.labels?.map((l) => l.toString()) || [],
+      estimationTime: snapshotTimeEntries(card.estimationTime),
+      loggedTime: snapshotTimeEntries(card.loggedTime),
+      billedTime: snapshotTimeEntries(card.billedTime),
     };
 
     // Process time tracking with strict ownership
@@ -564,9 +572,13 @@ class CardService {
     }
 
     // ── Time tracking changes
-    if (updates.loggedTime) {
+    const boardForTrackedTime = (updates.loggedTime !== undefined || updates.estimationTime !== undefined)
+      ? await Board.findById(card.board).select('name department').lean()
+      : null;
+
+    if (updates.loggedTime !== undefined) {
       const newLen = updates.loggedTime.length;
-      const oldLen = card.loggedTime?.length || 0;
+      const oldLen = old.loggedTime?.length || 0;
       if (newLen > oldLen) {
         const lastEntry = updates.loggedTime[newLen - 1];
         if (!lastEntry._id) {
@@ -575,16 +587,26 @@ class CardService {
             description: `Logged ${lastEntry.hours}h ${lastEntry.minutes}m of work`,
             metadata: { hours: lastEntry.hours, minutes: lastEntry.minutes, description: lastEntry.description },
           });
-          const boardForTime = await Board.findById(card.board).select('name department').lean();
-          chatHooks.onTimeEntryAdded(card, lastEntry, boardForTime, user).catch(() => {});
         }
       }
+
+      await emitTimeEntryDiffs({
+        previousEntries: old.loggedTime,
+        currentEntries: card.loggedTime,
+        entryType: 'logged',
+        entityType: 'task',
+        entity: card,
+        task: card,
+        board: boardForTrackedTime || { _id: card.board, name: '', department: null },
+        actor: user,
+      });
+
       emitFinanceDataRefresh({ changeType: 'logged_time', cardId: card._id.toString(), boardId: card.board.toString() });
     }
 
-    if (updates.estimationTime) {
+    if (updates.estimationTime !== undefined) {
       const newLen = updates.estimationTime.length;
-      const oldLen = card.estimationTime?.length || 0;
+      const oldLen = old.estimationTime?.length || 0;
       if (newLen > oldLen) {
         const lastEntry = updates.estimationTime[newLen - 1];
         if (!lastEntry._id) {
@@ -595,6 +617,17 @@ class CardService {
           });
         }
       }
+
+      await emitTimeEntryDiffs({
+        previousEntries: old.estimationTime,
+        currentEntries: card.estimationTime,
+        entryType: 'estimation',
+        entityType: 'task',
+        entity: card,
+        task: card,
+        board: boardForTrackedTime || { _id: card.board, name: '', department: null },
+        actor: user,
+      });
     }
 
     if (updates.billedTime) {

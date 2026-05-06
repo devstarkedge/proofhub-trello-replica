@@ -52,6 +52,15 @@ const EVENTS = {
   TASK_DUE_DATE_CHANGED: 'TASK_DUE_DATE_CHANGED',
   TASK_COMMENT_ADDED: 'TASK_COMMENTED',
   TIME_ENTRY_ADDED: 'TIME_ENTRY_ADDED',
+  TIME_ENTRY_UPDATED: 'TIME_ENTRY_UPDATED',
+  TIME_ENTRY_DELETED: 'TIME_ENTRY_DELETED',
+  // Type-specific time entry events
+  LOGGED_TIME_ADDED: 'LOGGED_TIME_ADDED',
+  LOGGED_TIME_UPDATED: 'LOGGED_TIME_UPDATED',
+  LOGGED_TIME_DELETED: 'LOGGED_TIME_DELETED',
+  ESTIMATED_TIME_ADDED: 'ESTIMATED_TIME_ADDED',
+  ESTIMATED_TIME_UPDATED: 'ESTIMATED_TIME_UPDATED',
+  ESTIMATED_TIME_DELETED: 'ESTIMATED_TIME_DELETED',
   USER_REGISTERED: 'USER_REGISTERED',
   USER_VERIFIED: 'USER_VERIFIED',
   USER_CREATED: 'USER_CREATED',
@@ -306,16 +315,69 @@ export const chatHooks = {
   // ─── Time Entry Hooks ──────────────────────────────────────────────────
 
   /**
-   * Trigger when time is logged on a task.
-   * @param {object} card - Card document
-   * @param {object} entry - Time entry { hours, minutes, description }
-   * @param {object} board - Board context
-   * @param {object} actor - req.user
+   * Resolve the type-specific event name for a time entry operation.
+   * Falls back to the legacy TIME_ENTRY_* event if entryType is unknown.
    */
-  async onTimeEntryAdded(card, entry, board, actor) {
+  _resolveTimeEventName(entryType, operation) {
+    const typeKey = entryType === 'logged'
+      ? 'LOGGED_TIME'
+      : entryType === 'estimation'
+        ? 'ESTIMATED_TIME'
+          : null;
+
+    if (!typeKey) {
+      // Fallback to legacy generic event
+      const legacyKey = `TIME_ENTRY_${operation.toUpperCase()}`;
+      return EVENTS[legacyKey] || EVENTS.TIME_ENTRY_ADDED;
+    }
+
+    const opKey = operation === 'updated' ? 'UPDATED' : operation === 'deleted' ? 'DELETED' : 'ADDED';
+    return EVENTS[`${typeKey}_${opKey}`];
+  },
+
+  /**
+   * Trigger when a time entry is added.
+   * Accepts the legacy (card, entry, board, actor) signature for task logged time
+   * and the newer structured payload used for task/subtask/nano time events.
+   * Dispatches both a type-specific event (LOGGED_TIME_ADDED etc.) and the
+   * legacy TIME_ENTRY_ADDED event for backward compatibility.
+   */
+  async onTimeEntryAdded(contextOrCard, entry, board, actor) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildTimeEntryPayload(card, entry, board, actor);
-    await webhookDispatcher.dispatch(EVENTS.TIME_ENTRY_ADDED, payload);
+    const payload = buildTimeEntryPayload(contextOrCard, entry, board, actor);
+    const typedEvent = this._resolveTimeEventName(payload.entryType, 'added');
+    await Promise.all([
+      webhookDispatcher.dispatch(typedEvent, payload),
+      webhookDispatcher.dispatch(EVENTS.TIME_ENTRY_ADDED, payload),
+    ]);
+  },
+
+  /**
+   * Trigger when a time entry is updated.
+   * @param {object} context - Structured time-event context
+   */
+  async onTimeEntryUpdated(context) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildTimeEntryPayload({ ...(context || {}), operation: 'updated' });
+    const typedEvent = this._resolveTimeEventName(payload.entryType, 'updated');
+    await Promise.all([
+      webhookDispatcher.dispatch(typedEvent, payload),
+      webhookDispatcher.dispatch(EVENTS.TIME_ENTRY_UPDATED, payload),
+    ]);
+  },
+
+  /**
+   * Trigger when a time entry is deleted.
+   * @param {object} context - Structured time-event context
+   */
+  async onTimeEntryDeleted(context) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildTimeEntryPayload({ ...(context || {}), operation: 'deleted' });
+    const typedEvent = this._resolveTimeEventName(payload.entryType, 'deleted');
+    await Promise.all([
+      webhookDispatcher.dispatch(typedEvent, payload),
+      webhookDispatcher.dispatch(EVENTS.TIME_ENTRY_DELETED, payload),
+    ]);
   },
 
   // ─── User Hooks ────────────────────────────────────────────────────────

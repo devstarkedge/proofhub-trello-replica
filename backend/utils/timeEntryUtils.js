@@ -155,6 +155,48 @@ export const validateNotFutureDate = (dateString) => {
 };
 
 /**
+ * Calculate total minutes from a collection of time entries.
+ * @param {Array} entries - Array of time entry objects
+ * @returns {number} Total minutes across all entries
+ */
+export const calculateTotalMinutes = (entries = []) => {
+  return (entries || []).reduce((total, entry) => {
+    const hours = parseInt(entry?.hours || 0, 10);
+    const minutes = parseInt(entry?.minutes || 0, 10);
+    return total + (hours * 60) + minutes;
+  }, 0);
+};
+
+/**
+ * Convert a total-minute value into hour/minute parts.
+ * @param {number} totalMinutes - Total minutes
+ * @returns {{ hours: number, minutes: number, totalMinutes: number }}
+ */
+export const buildDurationParts = (totalMinutes = 0) => {
+  const normalizedMinutes = parseInt(totalMinutes || 0, 10);
+  return {
+    hours: Math.floor(normalizedMinutes / 60),
+    minutes: normalizedMinutes % 60,
+    totalMinutes: normalizedMinutes,
+  };
+};
+
+/**
+ * Build logged/estimation total summaries for an entity.
+ * @param {Object} entity - Task, subtask, or nano with time entry arrays
+ * @returns {{ logged: { hours: number, minutes: number, totalMinutes: number }, estimation: { hours: number, minutes: number, totalMinutes: number } }}
+ */
+export const buildEntityTimeTotals = (entity = {}) => {
+  const loggedMinutes = calculateTotalMinutes(entity?.loggedTime || []);
+  const estimationMinutes = calculateTotalMinutes(entity?.estimationTime || []);
+
+  return {
+    logged: buildDurationParts(loggedMinutes),
+    estimation: buildDurationParts(estimationMinutes),
+  };
+};
+
+/**
  * Process time tracking entries with strict ownership preservation
  * 
  * CRITICAL RULES:
@@ -472,6 +514,8 @@ export default {
   extractUserId,
   userOwnsEntry,
   calculateUserTimeForDate,
+  calculateTotalMinutes,
+  buildDurationParts,
   validateTimeLimit,
   validateNotFutureDate,
   processTimeEntriesWithOwnership,

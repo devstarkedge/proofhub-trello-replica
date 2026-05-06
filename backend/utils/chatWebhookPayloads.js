@@ -7,11 +7,44 @@
  * Each builder produces a plain object safe for JSON serialization.
  */
 
+import { buildEntityTimeTotals } from './timeEntryUtils.js';
+
 function toId(value) {
   if (!value) return null;
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) return toId(value[0]);
   return (value._id || value.id)?.toString() || null;
+}
+
+function toInteger(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toIsoTimestamp(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function buildTimeEntryValue(entry, entryType) {
+  if (!entry) return null;
+
+  const hours = toInteger(entry.hours);
+  const minutes = toInteger(entry.minutes);
+  const description = entryType === 'logged' ? entry.description || '' : '';
+  const reason = entryType === 'estimation' ? entry.reason || '' : '';
+
+  return {
+    id: toId(entry),
+    hours,
+    minutes,
+    totalMinutes: (hours * 60) + minutes,
+    description,
+    reason,
+    note: entryType === 'estimation' ? reason : description,
+    date: toIsoTimestamp(entry.date) || new Date().toISOString(),
+  };
 }
 
 /**
@@ -351,29 +384,114 @@ export function buildCommentAddedPayload(comment, card, board, actor) {
 
 // â”€â”€â”€ Time Entry Payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export function buildTimeEntryPayload(card, entry, board, actor) {
+export function buildTimeEntryPayload(arg1, arg2, arg3, arg4) {
+  const legacyArgsProvided = arg2 !== undefined || arg3 !== undefined || arg4 !== undefined;
+  const context = legacyArgsProvided
+    ? {
+        entityType: 'task',
+        entity: arg1,
+        task: arg1,
+        board: arg3,
+        actor: arg4,
+        entryType: 'logged',
+        operation: 'added',
+        currentEntry: arg2,
+      }
+    : (arg1 || {});
+  const defaultEntryType = legacyArgsProvided ? 'logged' : null;
+
+  const {
+    entityType = 'task',
+    entity = context.task,
+    task = context.task || entity,
+    subtask = null,
+    nano = null,
+    board,
+    actor,
+    entryType = defaultEntryType,
+    operation = 'added',
+    previousEntry = null,
+    currentEntry = null,
+    timestamp = new Date().toISOString(),
+  } = context;
+
   const workspaceId = resolveWorkspaceId();
-  const boardId = (card.board || board?._id)?.toString();
+  const taskDoc = task || entity;
+  const boardId = toId(taskDoc?.board || board);
+  const eventTimestamp = toIsoTimestamp(timestamp) || new Date().toISOString();
+  const currentValue = buildTimeEntryValue(currentEntry, entryType);
+  const previousValue = buildTimeEntryValue(previousEntry, entryType);
+  const activeValue = currentValue || previousValue;
+  const entityId = toId(entity);
+  const entityTitle = entity?.title || taskDoc?.title || '';
+  const taskId = toId(taskDoc);
+  const taskTitle = taskDoc?.title || entityTitle;
+  const timeTotals = buildEntityTimeTotals(entity || {});
+  const affectedTotal = entryType === 'estimation'
+    ? timeTotals.estimation
+    : entryType === 'logged'
+      ? timeTotals.logged
+        : null;
+
   return {
     workspaceId,
+    timestamp: eventTimestamp,
+    entryType,
+    operation,
+    entityType,
+    entity: {
+      type: entityType,
+      id: entityId,
+      title: entityTitle,
+    },
     timeEntry: {
-      hours: entry.hours || 0,
-      minutes: entry.minutes || 0,
-      description: entry.description || entry.reason || '',
-      date: entry.date || new Date().toISOString(),
+      id: activeValue?.id || null,
+      type: entryType,
+      operation,
+      previous: previousValue,
+      current: currentValue,
+      hours: activeValue?.hours ?? 0,
+      minutes: activeValue?.minutes ?? 0,
+      totalMinutes: activeValue?.totalMinutes ?? 0,
+      duration: activeValue?.totalMinutes ?? 0,
+      description: activeValue?.description || '',
+      reason: activeValue?.reason || '',
+      note: activeValue?.note || '',
+      date: activeValue?.date || eventTimestamp,
+    },
+    timeTotals: {
+      logged: timeTotals.logged,
+      estimation: timeTotals.estimation,
+      affectedType: entryType,
+      affectedTotal,
     },
     task: {
-      id: card._id?.toString(),
-      title: card.title,
+      id: taskId,
+      title: taskTitle,
       boardId,
     },
-    card: { _id: card._id?.toString(), title: card.title },
+    card: {
+      _id: taskId,
+      title: taskTitle,
+    },
+    ...(subtask ? {
+      subtask: {
+        id: toId(subtask),
+        title: subtask.title || '',
+      },
+    } : {}),
+    ...(nano ? {
+      nano: {
+        id: toId(nano),
+        title: nano.title || '',
+      },
+    } : {}),
     boardId,
     userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
-      id: board?._id?.toString(),
-      name: board?.name || '',
-      departmentId: board?.department?.toString() || null,
+      id: toId(board),
+      name: board?.name || board?.title || '',
+      departmentId: toId(board?.department),
     },
     actor: buildActor(actor),
   };

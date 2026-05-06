@@ -8,6 +8,7 @@ import Activity from '../models/Activity.js';
 import { emitToBoard } from '../realtime/index.js';
 import { refreshCardHierarchyStats, refreshSubtaskNanoStats } from '../utils/hierarchyStats.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
+import { emitTimeEntryDiffs, emitTimeEntryWebhook } from '../utils/chatTimeTracking.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../realtime/index.js';
 import { chatHooks } from '../utils/chatHooks.js';
@@ -25,6 +26,33 @@ const getOrderedNanos = (subtaskId) => {
   return SubtaskNano.find({ subtask: subtaskId })
     .sort({ order: 1, createdAt: 1 })
     .populate(populateConfig);
+};
+
+const CHAT_TRACKED_TIME_TYPES = new Set(['logged', 'estimation']);
+
+const emitNanoTimeTrackingWebhook = async ({ operation, entryType, nano, actor, previousEntry = null, currentEntry = null }) => {
+  if (!CHAT_TRACKED_TIME_TYPES.has(entryType)) {
+    return;
+  }
+
+  const [parentSubtask, parentTask] = await Promise.all([
+    Subtask.findById(nano.subtask).select('title').lean(),
+    Card.findById(nano.task).populate('board', 'name department').select('title board').lean(),
+  ]);
+
+  await emitTimeEntryWebhook({
+    operation,
+    entryType,
+    entityType: 'nano',
+    entity: nano,
+    task: parentTask || { _id: nano.task, title: '', board: nano.board },
+    subtask: parentSubtask || { _id: nano.subtask, title: '' },
+    nano,
+    board: parentTask?.board || { _id: nano.board, name: '', department: null },
+    actor,
+    previousEntry,
+    currentEntry,
+  });
 };
 
 export const getNanosForSubtask = asyncHandler(async (req, res, next) => {
@@ -232,6 +260,8 @@ export const updateNano = asyncHandler(async (req, res, next) => {
     updates.order = req.body.order;
   }
 
+  const hasTrackedTimeUpdates = req.body.loggedTime !== undefined || req.body.estimationTime !== undefined;
+
   nano = await SubtaskNano.findByIdAndUpdate(
     req.params.id,
     updates,
@@ -349,6 +379,56 @@ export const updateNano = asyncHandler(async (req, res, next) => {
           cardId: taskId.toString(),
           boardId: boardId.toString()
         });
+      }
+    },
+
+    // Chat webhooks for tracked nano time diffs
+    async () => {
+      if (!hasTrackedTimeUpdates) {
+        return;
+      }
+
+      try {
+        const [parentSubtask, parentTask] = await Promise.all([
+          Subtask.findById(subtaskId).select('title').lean(),
+          Card.findById(taskId).populate('board', 'name department').select('title board'),
+        ]);
+
+        const taskData = parentTask || { _id: taskId, title: '', board: boardId };
+        const subtaskData = parentSubtask || { _id: subtaskId, title: '' };
+        const boardData = parentTask?.board || { _id: boardId, name: '', department: null };
+
+        if (req.body.loggedTime !== undefined) {
+          await emitTimeEntryDiffs({
+            previousEntries: oldNano.loggedTime,
+            currentEntries: nano.loggedTime,
+            entryType: 'logged',
+            entityType: 'nano',
+            entity: nano,
+            task: taskData,
+            subtask: subtaskData,
+            nano,
+            board: boardData,
+            actor: req.user,
+          });
+        }
+
+        if (req.body.estimationTime !== undefined) {
+          await emitTimeEntryDiffs({
+            previousEntries: oldNano.estimationTime,
+            currentEntries: nano.estimationTime,
+            entryType: 'estimation',
+            entityType: 'nano',
+            entity: nano,
+            task: taskData,
+            subtask: subtaskData,
+            nano,
+            board: boardData,
+            actor: req.user,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to dispatch nano time-tracking webhooks', err);
       }
     }
   ]);
@@ -548,6 +628,16 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
     });
   }
 
+  await emitNanoTimeTrackingWebhook({
+    operation: 'added',
+    entryType: type,
+    nano,
+    actor: req.user,
+    currentEntry: addedEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch nano time-entry webhook:', error);
+  });
+
   res.status(200).json({
     success: true,
     data: addedEntry
@@ -578,6 +668,7 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
   }
 
   const entry = nano[fieldName][entryIndex];
+    const previousEntry = entry.toObject();
 
   if (entry.user.toString() !== req.user.id.toString()) {
      return next(new ErrorResponse('Not authorized to update this time entry', 403));
@@ -627,6 +718,17 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
     });
   }
 
+  await emitNanoTimeTrackingWebhook({
+    operation: 'updated',
+    entryType: type,
+    nano,
+    actor: req.user,
+    previousEntry,
+    currentEntry: updatedEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch nano time-entry webhook:', error);
+  });
+
   res.status(200).json({
     success: true,
     data: updatedEntry
@@ -657,6 +759,7 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
   }
 
   const entry = nano[fieldName][entryIndex];
+    const previousEntry = entry.toObject();
 
   if (entry.user.toString() !== req.user.id.toString()) {
      return next(new ErrorResponse('Not authorized to delete this time entry', 403));
@@ -698,6 +801,16 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
       boardId: nano.board.toString()
     });
   }
+
+  await emitNanoTimeTrackingWebhook({
+    operation: 'deleted',
+    entryType: type,
+    nano,
+    actor: req.user,
+    previousEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch nano time-entry webhook:', error);
+  });
 
   res.status(200).json({
     success: true,

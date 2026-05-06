@@ -18,6 +18,7 @@ import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { slackHooks } from '../utils/slackHooks.js';
 import { chatHooks } from '../utils/chatHooks.js';
+import { emitTimeEntryDiffs, emitTimeEntryWebhook } from '../utils/chatTimeTracking.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../realtime/index.js';
 
@@ -40,6 +41,41 @@ const getOrderedSubtasks = async (taskId) => {
   return Subtask.find({ task: taskId })
     .sort({ order: 1, createdAt: 1 })
     .populate(basePopulate);
+};
+
+const CHAT_TRACKED_TIME_TYPES = new Set(['logged', 'estimation', 'billed']);
+const CHAT_TRACKED_TIME_FIELDS = new Set(['loggedTime', 'estimationTime']);
+
+const hasEffectiveFieldChanges = (requestBody, oldEntity, updates, predicate) => Object.keys(requestBody).some((field) => {
+  if (!predicate(field)) {
+    return false;
+  }
+
+  return JSON.stringify(oldEntity[field] ?? null) !== JSON.stringify(updates[field] ?? null);
+});
+
+const emitSubtaskTimeTrackingWebhook = async ({ operation, entryType, subtask, actor, previousEntry = null, currentEntry = null }) => {
+  if (!CHAT_TRACKED_TIME_TYPES.has(entryType)) {
+    return;
+  }
+
+  const [parentTask, boardData] = await Promise.all([
+    Card.findById(subtask.task).select('title board').lean(),
+    Board.findById(subtask.board).select('name department').lean(),
+  ]);
+
+  await emitTimeEntryWebhook({
+    operation,
+    entryType,
+    entityType: 'subtask',
+    entity: subtask,
+    task: parentTask || { _id: subtask.task, title: '', board: subtask.board },
+    subtask,
+    board: boardData || { _id: subtask.board, name: '', department: null },
+    actor,
+    previousEntry,
+    currentEntry,
+  });
 };
 
 export const getSubtasksForTask = asyncHandler(async (req, res, next) => {
@@ -244,6 +280,13 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
     updates.order = req.body.order;
   }
 
+  const hasNonTrackedTimeChanges = hasEffectiveFieldChanges(
+    req.body,
+    oldSubtask,
+    updates,
+    (field) => !CHAT_TRACKED_TIME_FIELDS.has(field)
+  );
+
   subtask = await Subtask.findByIdAndUpdate(
     req.params.id,
     updates,
@@ -368,17 +411,52 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
       }
     }
     ,
-    // Chat webhook for subtask updates
-      async () => {
-        try {
-          const parentTask = await Card.findById(taskId).populate('board', 'name department');
-          if (parentTask) {
-            chatHooks.onSubtaskUpdated(subtask, parentTask, parentTask.board, req.user).catch(console.error);
-          }
-        } catch (err) {
-          console.error('Failed to dispatch subtask.updated webhook', err);
-        }
+    // Chat webhooks for subtask updates and tracked time diffs
+    async () => {
+      if (!hasNonTrackedTimeChanges && req.body.loggedTime === undefined && req.body.estimationTime === undefined) {
+        return;
       }
+
+      try {
+        const parentTask = await Card.findById(taskId).populate('board', 'name department');
+        const taskData = parentTask || { _id: taskId, title: oldSubtask.task?.title || '', board: boardId };
+        const boardData = parentTask?.board || oldSubtask.board || { _id: boardId, name: '', department: null };
+
+        if (req.body.loggedTime !== undefined) {
+          await emitTimeEntryDiffs({
+            previousEntries: oldSubtask.loggedTime,
+            currentEntries: subtask.loggedTime,
+            entryType: 'logged',
+            entityType: 'subtask',
+            entity: subtask,
+            task: taskData,
+            subtask,
+            board: boardData,
+            actor: req.user,
+          });
+        }
+
+        if (req.body.estimationTime !== undefined) {
+          await emitTimeEntryDiffs({
+            previousEntries: oldSubtask.estimationTime,
+            currentEntries: subtask.estimationTime,
+            entryType: 'estimation',
+            entityType: 'subtask',
+            entity: subtask,
+            task: taskData,
+            subtask,
+            board: boardData,
+            actor: req.user,
+          });
+        }
+
+        if (hasNonTrackedTimeChanges && parentTask) {
+          chatHooks.onSubtaskUpdated(subtask, parentTask, boardData, req.user).catch(console.error);
+        }
+      } catch (err) {
+        console.error('Failed to dispatch subtask time-tracking webhooks', err);
+      }
+    }
   ]);
 });
 
@@ -587,6 +665,16 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
     });
   }
 
+  await emitSubtaskTimeTrackingWebhook({
+    operation: 'added',
+    entryType: type,
+    subtask,
+    actor: req.user,
+    currentEntry: addedEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch subtask time-entry webhook:', error);
+  });
+
   res.status(200).json({
     success: true,
     data: addedEntry
@@ -617,6 +705,7 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
   }
 
   const entry = subtask[fieldName][entryIndex];
+    const previousEntry = entry.toObject();
 
   if (entry.user.toString() !== req.user.id.toString()) {
      return next(new ErrorResponse('Not authorized to update this time entry', 403));
@@ -659,6 +748,17 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
     });
   }
 
+  await emitSubtaskTimeTrackingWebhook({
+    operation: 'updated',
+    entryType: type,
+    subtask,
+    actor: req.user,
+    previousEntry,
+    currentEntry: updatedEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch subtask time-entry webhook:', error);
+  });
+
   res.status(200).json({
     success: true,
     data: updatedEntry
@@ -689,6 +789,7 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
   }
 
   const entry = subtask[fieldName][entryIndex];
+    const previousEntry = entry.toObject();
 
   if (entry.user.toString() !== req.user.id.toString()) {
      return next(new ErrorResponse('Not authorized to delete this time entry', 403));
@@ -723,6 +824,16 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
       boardId: subtask.board.toString()
     });
   }
+
+  await emitSubtaskTimeTrackingWebhook({
+    operation: 'deleted',
+    entryType: type,
+    subtask,
+    actor: req.user,
+    previousEntry,
+  }).catch((error) => {
+    console.error('Failed to dispatch subtask time-entry webhook:', error);
+  });
 
   res.status(200).json({
     success: true,
