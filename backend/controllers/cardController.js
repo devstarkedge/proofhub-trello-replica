@@ -25,6 +25,46 @@ import { emitFinanceDataRefresh } from "../realtime/index.js";
 // In-memory store for undo tokens (move operations) — entries auto-expire after 10 seconds
 const undoTokenStore = new Map();
 
+const normalizeStatusFromListTitle = (title = "") => title.toLowerCase().replace(/\s+/g, '-');
+
+const resolveBoardId = (boardRef) => boardRef?._id || boardRef?.id || boardRef;
+
+const getTaskStatusBoardContext = async (boardRef) => {
+  const boardId = resolveBoardId(boardRef);
+
+  if (boardRef && typeof boardRef === 'object' && boardRef.name !== undefined) {
+    return {
+      _id: boardId,
+      name: boardRef.name || '',
+      department: boardRef.department || null,
+    };
+  }
+
+  const board = await Board.findById(boardId).select('name department').lean();
+  return board || { _id: boardId, name: '', department: null };
+};
+
+const dispatchTaskStatusChange = async ({ card, oldStatus, newStatus, actor, board }) => {
+  if (newStatus === undefined || newStatus === oldStatus) {
+    return null;
+  }
+
+  const boardData = await getTaskStatusBoardContext(board || card.board);
+  const change = newStatus === 'done'
+    ? { field: 'status', message: `"${card.title}" has been marked as complete`, special: 'done' }
+    : { field: 'status', message: `Status changed to "${newStatus}" for "${card.title}"` };
+
+  if (newStatus === 'done') {
+    slackHooks.onTaskCompleted(card, boardData, actor).catch(console.error);
+  } else {
+    slackHooks.onTaskStatusChanged(card, boardData, oldStatus, newStatus, actor).catch(console.error);
+  }
+
+  chatHooks.onTaskStatusChanged(card, oldStatus, newStatus, boardData, actor).catch(console.error);
+
+  return change;
+};
+
 // @desc    Get all cards for a list
 // @route   GET /api/cards/list/:listId
 // @access  Private
@@ -1280,25 +1320,15 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   }
   
   // Check status change (special handling for 'done')
-  let statusChanged = false;
-  if (req.body.status !== undefined && req.body.status !== oldStatus) {
-    statusChanged = true;
-    if (req.body.status === 'done') {
-      changedFields.push({ field: 'status', message: `"${card.title}" has been marked as complete`, special: 'done' });
-    } else {
-      changedFields.push({ field: 'status', message: `Status changed to "${req.body.status}" for "${card.title}"` });
-    }
-    
-    // Send Slack notification for status change
-    const boardData = await Board.findById(card.board).select('name department').lean();
-    if (req.body.status === 'done') {
-      slackHooks.onTaskCompleted(card, boardData, req.user).catch(console.error);
-    } else {
-      slackHooks.onTaskStatusChanged(card, boardData, oldStatus, req.body.status, req.user).catch(console.error);
-    }
+  const statusChange = await dispatchTaskStatusChange({
+    card,
+    oldStatus,
+    newStatus: req.body.status,
+    actor: req.user,
+  });
 
-    // Dispatch chat webhook for status change
-    chatHooks.onTaskStatusChanged(card, oldStatus, req.body.status, boardData, req.user).catch(console.error);
+  if (statusChange) {
+    changedFields.push(statusChange);
   }
   
   // Send notifications based on changes (only if card has assignees to notify)
@@ -1430,12 +1460,19 @@ export const moveCard = asyncHandler(async (req, res, next) => {
     card.list = destinationListId;
     card.position = newPosition;
 
-    // Update status based on list title - use exact normalized title
-    const destList = await List.findById(destinationListId);
-    card.status = destList.title.toLowerCase().replace(/\s+/g, '-');
+    // Update status based on destination list title.
+    card.status = normalizeStatusFromListTitle(destinationList.title);
   }
 
   await card.save();
+
+  const statusChange = await dispatchTaskStatusChange({
+    card,
+    oldStatus,
+    newStatus: card.status,
+    actor: req.user,
+    board: card.board,
+  });
 
   // OPTIMIZATION: Send response immediately to make UI feel instant
   // Run side effects (Activity, Notifications, Sockets, Cache) in background
@@ -1495,7 +1532,8 @@ export const moveCard = asyncHandler(async (req, res, next) => {
         await notificationService.notifyTaskUpdated(card, req.user.id, {
           moved: true,
           fromList: sourceListTitle,
-          toList: destinationList.title
+          toList: destinationList.title,
+          ...(statusChange ? { status: true, message: statusChange.message } : {})
         });
       }
 
@@ -2425,9 +2463,17 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
   card.board = destinationBoardId;
   card.list = destinationListId;
   card.position = destPosition;
-  card.status = destList.title.toLowerCase().replace(/\s+/g, '-');
+  card.status = normalizeStatusFromListTitle(destList.title);
   card.labels = newLabels;
   await card.save();
+
+  const statusChange = await dispatchTaskStatusChange({
+    card,
+    oldStatus: originalState.sourceStatus,
+    newStatus: card.status,
+    actor: req.user,
+    board: destBoard,
+  });
 
   // Update child entities if cross-board
   if (isCrossBoard) {
@@ -2515,7 +2561,8 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
         toList: destList.title,
         crossBoard: isCrossBoard,
         fromBoard: sourceBoardName,
-        toBoard: destBoard.name
+        toBoard: destBoard.name,
+        ...(statusChange ? { status: true, message: statusChange.message } : {})
       });
 
     } catch (bgError) {
