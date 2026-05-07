@@ -536,6 +536,9 @@ export const updateAnnouncement = asyncHandler(async (req, res, next) => {
     scheduleAnnouncementBroadcast(announcement).catch(console.error);
   }
 
+  // Sync update to ChatApp
+  chatHooks.onAnnouncementUpdated(announcement.toObject(), req.user).catch(console.error);
+
   res.status(200).json({
     success: true,
     message: 'Announcement updated successfully',

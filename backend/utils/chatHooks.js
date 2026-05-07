@@ -450,9 +450,13 @@ export const chatHooks = {
   async onAnnouncementDeleted(announcement, actor) {
     if (!webhookDispatcher.isEnabled()) return;
 
-    const payload = buildAnnouncementPayload(announcement, actor);
-
-    console.log(" SENDING DELETE WEBHOOK", payload);
+    const base = buildAnnouncementPayload(announcement, actor);
+    const payload = {
+      ...base,
+      deletedBy: (actor?._id || actor?.id)?.toString() || null,
+      deletedAt: new Date().toISOString(),
+      syncVersion: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    };
 
     await webhookDispatcher.dispatch(
       EVENTS.ANNOUNCEMENT_DELETED,
@@ -460,7 +464,7 @@ export const chatHooks = {
     );
   },
 
-    async onAnnouncementUpdated(announcement, actor) {
+  async onAnnouncementUpdated(announcement, actor) {
     if (!webhookDispatcher.isEnabled()) return;
 
     const payload = buildAnnouncementPayload(announcement, actor);
