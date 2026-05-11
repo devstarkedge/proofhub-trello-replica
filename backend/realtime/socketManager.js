@@ -308,8 +308,8 @@ function init(httpServer) {
     // ── Push notification subscription ──
     socket.on('subscribe-push', async (subscription) => {
       try {
-        const User = (await import('../models/User.js')).default;
-        await User.findByIdAndUpdate(userId, { pushSubscription: subscription });
+        const { saveUserPushSubscription } = await import('../utils/pushNotification.js');
+        await saveUserPushSubscription(userId, subscription || {});
         if (config.isDev) logger.debug(`User ${userId} subscribed to push notifications`);
       } catch (error) {
         if (config.isDev) logger.error('Error saving push subscription', { error: error.message });
@@ -318,8 +318,8 @@ function init(httpServer) {
 
     socket.on('unsubscribe-push', async () => {
       try {
-        const User = (await import('../models/User.js')).default;
-        await User.findByIdAndUpdate(userId, { $unset: { pushSubscription: 1 } });
+        const { removeUserPushSubscription } = await import('../utils/pushNotification.js');
+        await removeUserPushSubscription(userId, {});
         if (config.isDev) logger.debug(`User ${userId} unsubscribed from push notifications`);
       } catch (error) {
         if (config.isDev) logger.error('Error removing push subscription', { error: error.message });

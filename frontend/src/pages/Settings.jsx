@@ -331,7 +331,23 @@ const Settings = () => {
               <div className="space-y-4">
                 {[
                   { key: 'email', label: 'Email Notifications', desc: 'Receive notifications via email' },
-                  { key: 'push', label: 'Push Notifications', desc: pushSupported ? (pushEnabled ? 'Push notifications are enabled' : 'Click to enable push notifications') : 'Push notifications not supported in this browser', action: pushSupported ? (pushEnabled ? disablePushNotifications : enablePushNotifications) : null, state: pushEnabled },
+                  { 
+                    key: 'push', 
+                    label: 'Push Notifications', 
+                    desc: pushSupported ? (pushEnabled ? 'Push notifications are enabled' : 'Click to enable push notifications') : 'Push notifications not supported in this browser', 
+                    action: pushSupported ? async () => {
+                      if (pushEnabled) {
+                        await disablePushNotifications();
+                        handleSettingChange('notifications', 'push', false);
+                      } else {
+                        const result = await enablePushNotifications();
+                        if (result?.success) {
+                          handleSettingChange('notifications', 'push', true);
+                        }
+                      }
+                    } : null, 
+                    state: pushEnabled && settingsData.notifications.push
+                  },
                   { key: 'taskAssigned', label: 'Task Assignments', desc: 'When tasks are assigned to you' },
                   { key: 'taskUpdated', label: 'Task Updates', desc: 'When assigned tasks are updated' },
                   { key: 'taskDeleted', label: 'Task Deletions', desc: 'When tasks are deleted' },

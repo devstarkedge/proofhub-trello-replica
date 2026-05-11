@@ -4,7 +4,7 @@ import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, upda
 import { uploadAvatar, uploadAvatarFromGoogleDrive, removeAvatar } from '../controllers/avatarController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
-import { getVapidKeys } from '../utils/pushNotification.js';
+import { getPushStatusForDevice, getVapidKeys, removeUserPushSubscription, saveUserPushSubscription } from '../utils/pushNotification.js';
 
 const router = express.Router();
 
@@ -47,25 +47,52 @@ router.get('/push-key', protect, (req, res) => {
 
 router.post('/push-subscription', protect, async (req, res) => {
   try {
-    const { subscription } = req.body;
-    const User = (await import('../models/User.js')).default;
-    await User.findByIdAndUpdate(req.user.id, {
-      pushSubscription: subscription
+    const user = await saveUserPushSubscription(req.user.id, req.body || {});
+    res.json({
+      message: 'Push subscription saved',
+      data: {
+        subscriptions: user?.pushSubscriptions || []
+      }
     });
-    res.json({ message: 'Push subscription saved' });
   } catch (error) {
     console.error('Error saving push subscription:', error);
     res.status(500).json({ message: 'Failed to save push subscription' });
   }
 });
 
-router.delete('/push-subscription', protect, async (req, res) => {
+router.get('/push-subscription/status', protect, async (req, res) => {
   try {
     const User = (await import('../models/User.js')).default;
-    await User.findByIdAndUpdate(req.user.id, {
-      $unset: { pushSubscription: 1 }
+    const user = await User.findById(req.user.id).select('settings.notifications pushSubscriptions pushSubscription');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const status = getPushStatusForDevice(user, {
+      endpoint: req.query.endpoint?.toString() || null,
+      deviceId: req.query.deviceId?.toString() || null,
     });
-    res.json({ message: 'Push subscription removed' });
+
+    res.json({ success: true, data: status });
+  } catch (error) {
+    console.error('Error loading push subscription status:', error);
+    res.status(500).json({ message: 'Failed to load push subscription status' });
+  }
+});
+
+router.delete('/push-subscription', protect, async (req, res) => {
+  try {
+    const user = await removeUserPushSubscription(req.user.id, {
+      endpoint: req.body?.endpoint || req.query?.endpoint || null,
+      deviceId: req.body?.deviceId || req.query?.deviceId || null,
+    });
+    res.json({
+      message: 'Push subscription removed',
+      data: {
+        subscriptions: user?.pushSubscriptions || []
+      }
+    });
   } catch (error) {
     console.error('Error removing push subscription:', error);
     res.status(500).json({ message: 'Failed to remove push subscription' });

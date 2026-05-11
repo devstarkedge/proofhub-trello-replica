@@ -4,7 +4,7 @@ import Department from '../models/Department.js';
 import Board from '../models/Board.js';
 import { emitNotification } from '../realtime/index.js';
 import { sendEmail } from './email.js';
-import { sendPushNotification } from './pushNotification.js';
+import { getUserPushSubscriptions, sendPushNotification } from './pushNotification.js';
 
 class NotificationService {
   constructor() {
@@ -50,7 +50,7 @@ class NotificationService {
       } = notificationData;
 
       // Check user settings before creating notification
-      const userDoc = await User.findById(user).select('settings role department team pushSubscription email name');
+      const userDoc = await User.findById(user).select('settings role department team pushSubscription pushSubscriptions email name');
       if (!userDoc) return null;
 
       // Check if user has enabled this notification type
@@ -99,8 +99,9 @@ class NotificationService {
       }
 
       // Send push notification if enabled and subscription exists (in background)
-      console.log(`[Push] Checking push for user ${userDoc.name}: enabled=${userDoc.settings?.notifications?.push}, hasSubscription=${!!userDoc.pushSubscription}`);
-      if (userDoc.settings?.notifications?.push && userDoc.pushSubscription) {
+      const userPushSubscriptions = getUserPushSubscriptions(userDoc);
+      console.log(`[Push] Checking push for user ${userDoc.name}: enabled=${userDoc.settings?.notifications?.push}, subscriptions=${userPushSubscriptions.length}`);
+      if (userDoc.settings?.notifications?.push && userPushSubscriptions.length > 0) {
         console.log(`[Push] Sending push notification to ${userDoc.name}`);
         this.sendPushNotification(notification, userDoc).catch(err => 
           console.error('Background push notification error:', err)
@@ -165,8 +166,9 @@ class NotificationService {
   // Send push notification
   async sendPushNotification(notification, user) {
     try {
-      if (user.pushSubscription && user.pushSubscription.endpoint) {
-        await sendPushNotification(notification, user.pushSubscription);
+      const subscriptions = getUserPushSubscriptions(user);
+      if (subscriptions.length > 0) {
+        await sendPushNotification(notification, subscriptions);
       } else {
         if (process.env.NODE_ENV !== 'production') console.log('No valid push subscription found for user, skipping push notification');
       }

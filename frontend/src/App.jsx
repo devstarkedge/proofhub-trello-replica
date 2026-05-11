@@ -9,6 +9,7 @@ import { ClientInfoProvider } from "./context/ClientInfoContext";
 import NetworkStatusToast from "./components/NetworkStatusToast";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalFallback from "./components/GlobalFallback";
+import GlobalPushPrompt from "./components/GlobalPushPrompt";
 import useThemeStore from "./store/themeStore";
 import "./App.css";
 
@@ -210,6 +211,7 @@ function App() {
               theme={useThemeStore.getState().effectiveMode === 'dark' ? 'dark' : 'light'}
             />
             <NetworkStatusToast />
+            <GlobalPushPrompt />
           </NotificationProvider>
         </TeamProvider>
       </MeProvider>

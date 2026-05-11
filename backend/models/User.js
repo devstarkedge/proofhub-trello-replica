@@ -97,6 +97,36 @@ const userSchema = new mongoose.Schema({
       auth: { type: String }
     }
   },
+  pushSubscriptions: [{
+    endpoint: { type: String },
+    keys: {
+      p256dh: { type: String },
+      auth: { type: String }
+    },
+    deviceId: { type: String, default: null },
+    browser: { type: String, default: null },
+    platform: { type: String, default: 'web' },
+    userAgent: { type: String, default: null },
+    permissionState: {
+      type: String,
+      enum: ['default', 'granted', 'denied'],
+      default: 'default'
+    },
+    subscriptionStatus: {
+      type: String,
+      enum: ['active', 'missing', 'invalid'],
+      default: 'active'
+    },
+    lastPromptedAt: { type: Date, default: null },
+    lastDismissedAt: { type: Date, default: null },
+    cooldownUntil: { type: Date, default: null },
+    dismissCount: { type: Number, default: 0 },
+    dontAskAgain: { type: Boolean, default: false },
+    lastValidatedAt: { type: Date, default: null },
+    lastSeenAt: { type: Date, default: null },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
+  }],
   isVerified: {
     type: Boolean,
     default: false

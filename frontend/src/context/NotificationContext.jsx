@@ -33,6 +33,7 @@ export const NotificationProvider = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushPrompt, setPushPrompt] = useState({ isOpen: false, mode: 'default', isBusy: false });
   
   // Pagination state
   const skipRef = useRef(0);
@@ -51,6 +52,9 @@ export const NotificationProvider = ({ children }) => {
       loadNotifications(true);
       checkPushSupport();
       startBackgroundRefresh();
+      
+      // Auto prompt logic
+      setTimeout(() => checkAndPromptPush(), 1500);
     }
 
     return () => {
@@ -184,6 +188,21 @@ export const NotificationProvider = ({ children }) => {
       window.removeEventListener('socket-connected', handleReconnect);
     };
   }, [user, handleNewNotification, handleTaskAssigned, handleReconnect]);
+
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const bc = new BroadcastChannel('push_notification_sync');
+      bc.onmessage = async (event) => {
+        if (event.data?.type === 'SYNC_PUSH') {
+          checkPushSupport();
+        }
+      };
+      return () => bc.close();
+    } catch (e) {
+      console.error('BroadcastChannel error:', e);
+    }
+  }, [user]);
 
   // Process queued actions when back online
   const processPendingActions = async () => {
@@ -579,14 +598,45 @@ export const NotificationProvider = ({ children }) => {
       setPushSupported(true);
       navigator.serviceWorker.ready.then(registration => {
         registration.pushManager.getSubscription().then(subscription => {
-          setPushEnabled(!!subscription);
+          setPushEnabled(!!subscription && Notification.permission === 'granted');
         });
       });
     }
   };
 
-  const enablePushNotifications = async () => {
+  const checkAndPromptPush = async () => {
+    if (!('Notification' in window)) return;
+    const dismissedThisSession = sessionStorage.getItem('push_modal_dismissed') === 'true';
+    if (dismissedThisSession) return;
+    
+    // In FlowTask, we don't have the user object's raw push preference easily at this level if it's deeply nested,
+    // but we can rely on Notification.permission and our pushEnabled state.
+    const permission = Notification.permission;
+    if (permission !== 'granted') {
+      setPushPrompt({ isOpen: true, mode: permission === 'denied' ? 'blocked' : 'default', isBusy: false });
+    }
+  };
+
+  const handlePushLater = () => {
+    sessionStorage.setItem('push_modal_dismissed', 'true');
+    setPushPrompt(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const enablePushNotifications = async (silent = false) => {
     try {
+      if (Notification.permission === 'denied') {
+        setPushPrompt({ isOpen: true, mode: 'blocked', isBusy: false });
+        return { success: false };
+      }
+
+      setPushPrompt(prev => ({ ...prev, isBusy: true }));
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        if (permission === 'denied') setPushPrompt({ isOpen: true, mode: 'blocked', isBusy: false });
+        else setPushPrompt(prev => ({ ...prev, isOpen: false, isBusy: false }));
+        return { success: false };
+      }
+
       const registration = await navigator.serviceWorker.ready;
       const response = await api.get('/api/users/push-key');
       const vapidKey = response.data.vapidPublicKey;
@@ -598,10 +648,24 @@ export const NotificationProvider = ({ children }) => {
 
       await api.post('/api/users/push-subscription', { subscription });
       setPushEnabled(true);
-      toast.success('Push notifications enabled');
+      
+      if (!silent) toast.success('Push notifications enabled');
+      setPushPrompt({ isOpen: false, mode: 'default', isBusy: false });
+      sessionStorage.removeItem('push_modal_dismissed');
+
+      try {
+        const bc = new BroadcastChannel('push_notification_sync');
+        bc.postMessage({ type: 'SYNC_PUSH' });
+        bc.close();
+      } catch (e) {
+        // ignore
+      }
+      return { success: true };
     } catch (error) {
       console.error('Error enabling push notifications:', error);
-      toast.error('Failed to enable push notifications');
+      if (!silent) toast.error('Failed to enable push notifications');
+      setPushPrompt(prev => ({ ...prev, isBusy: false }));
+      return { success: false };
     }
   };
 
@@ -669,6 +733,11 @@ export const NotificationProvider = ({ children }) => {
         pushEnabled,
         enablePushNotifications,
         disablePushNotifications,
+        pushPrompt: {
+          ...pushPrompt,
+          onEnable: () => enablePushNotifications(false),
+          onLater: handlePushLater
+        },
       }}
     >
       {children}
