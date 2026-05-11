@@ -45,6 +45,16 @@ const Settings = () => {
     fetchSettings();
   }, []);
 
+  // Keep settingsData in sync if user context changes from outside (e.g., global push modal)
+  useEffect(() => {
+    if (user?.settings?.notifications) {
+      setSettingsData(prev => ({
+        ...prev,
+        notifications: { ...prev.notifications, ...user.settings.notifications }
+      }));
+    }
+  }, [user?.settings?.notifications]);
+
   const fetchSettings = async () => {
     try {
       const response = await api.get('/api/users/profile');
@@ -339,10 +349,14 @@ const Settings = () => {
                       if (pushEnabled) {
                         await disablePushNotifications();
                         handleSettingChange('notifications', 'push', false);
+                        const updated = { ...settingsData.notifications, push: false };
+                        await api.put('/api/users/settings', { notifications: updated });
+                        setUser && setUser(prev => ({ ...prev, settings: { ...prev.settings, notifications: updated } }));
                       } else {
                         const result = await enablePushNotifications();
                         if (result?.success) {
                           handleSettingChange('notifications', 'push', true);
+                          // DB update is now handled inside enablePushNotifications
                         }
                       }
                     } : null, 

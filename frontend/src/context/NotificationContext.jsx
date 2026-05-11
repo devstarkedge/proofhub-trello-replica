@@ -11,7 +11,7 @@ import { resolveNotificationRoute } from '../utils/notificationRouteResolver';
 const NotificationContext = createContext();
 
 export const NotificationProvider = ({ children }) => {
-  const { user } = useContext(AuthContext);
+  const { user, setUser } = useContext(AuthContext);
   const navigate = useNavigate();
   
   // Core state
@@ -609,10 +609,28 @@ export const NotificationProvider = ({ children }) => {
     const dismissedThisSession = sessionStorage.getItem('push_modal_dismissed') === 'true';
     if (dismissedThisSession) return;
     
-    // In FlowTask, we don't have the user object's raw push preference easily at this level if it's deeply nested,
-    // but we can rely on Notification.permission and our pushEnabled state.
     const permission = Notification.permission;
-    if (permission !== 'granted') {
+    
+    // Dynamically check subscription to avoid stale state closures
+    let hasSubscription = false;
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration) {
+          const subscription = await registration.pushManager.getSubscription();
+          hasSubscription = !!subscription;
+        }
+      } catch (e) {
+        console.error('Failed to check push subscription:', e);
+      }
+    }
+
+    // In FlowTask, login payload might not deeply populate user.settings.
+    // If we have a local subscription AND permission is granted, assume they are enabled to avoid annoying them.
+    const userPushEnabled = user?.settings?.notifications?.push;
+    const isEffectivelyEnabled = (userPushEnabled !== false) && (hasSubscription && permission === 'granted');
+
+    if (permission !== 'granted' || !isEffectivelyEnabled) {
       setPushPrompt({ isOpen: true, mode: permission === 'denied' ? 'blocked' : 'default', isBusy: false });
     }
   };
@@ -647,6 +665,13 @@ export const NotificationProvider = ({ children }) => {
       });
 
       await api.post('/api/users/push-subscription', { subscription });
+
+      if (user) {
+        const updatedNotifications = { ...(user.settings?.notifications || {}), push: true };
+        await api.put('/api/users/settings', { notifications: updatedNotifications });
+        setUser(prev => ({ ...prev, settings: { ...prev.settings, notifications: updatedNotifications } }));
+      }
+
       setPushEnabled(true);
       
       if (!silent) toast.success('Push notifications enabled');

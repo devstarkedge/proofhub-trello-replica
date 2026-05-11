@@ -49,6 +49,7 @@ export const AuthProvider = ({ children }) => {
   const logoutUser = useCallback(() => {
     // Only remove token from localStorage
     localStorage.removeItem("token");
+    sessionStorage.removeItem("push_modal_dismissed");
     setToken(null);
     
     setUser((prevUser) => {
