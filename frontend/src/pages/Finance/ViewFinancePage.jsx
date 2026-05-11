@@ -46,6 +46,7 @@ const ViewFinancePage = () => {
   // Week-wise reporting mode state
   const [weekWiseMode, setWeekWiseMode] = useState(false);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [weeklyData, setWeeklyData] = useState(null);
   const [weeklyDataLoading, setWeeklyDataLoading] = useState(false);
 
@@ -137,6 +138,7 @@ const ViewFinancePage = () => {
         setWeeklyDataLoading(true);
         const params = new URLSearchParams({
           year: selectedYear.toString(),
+          month: selectedMonth.toString(),
           viewType: page.pageType
         });
         if (filters.departmentId) {
@@ -155,7 +157,7 @@ const ViewFinancePage = () => {
     };
     
     fetchWeeklyData();
-  }, [weekWiseMode, selectedYear, filters.departmentId, page]);
+  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, page]);
 
   // Format helpers
   const formatCurrency = (amount) => {
@@ -207,9 +209,8 @@ const ViewFinancePage = () => {
     
     const map = {};
     
-    // Find the first month with payment data in weeklyData.months
-    // This will be used to display the correct month name instead of current system month
-    const monthData = weeklyData.months?.[0];
+    // Find data for the selected month (fall back to first available month)
+    const monthData = weeklyData.months?.find(m => m.month === selectedMonth) || weeklyData.months?.[0];
     const activeMonth = monthData?.month ?? 0;
     
     if (monthData?.items) {
@@ -222,16 +223,17 @@ const ViewFinancePage = () => {
     }
     
     return { payments: map, activeMonth };
-  }, [weeklyData]);
+  }, [weeklyData, selectedMonth]);
 
   // Get the active month name for the week-wise report (data-driven, not current date)
   const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const activeMonthName = useMemo(() => {
-    if (weeklyData?.months?.[0]?.monthName) {
-      return weeklyData.months[0].monthName;
+    const monthData = weeklyData?.months?.find(m => m.month === selectedMonth) || weeklyData?.months?.[0];
+    if (monthData?.monthName) {
+      return monthData.monthName;
     }
     return MONTH_NAMES[weeklyPaymentsMap.activeMonth] || 'Jan';
-  }, [weeklyData, weeklyPaymentsMap.activeMonth]);
+  }, [weeklyData, selectedMonth, weeklyPaymentsMap.activeMonth]);
 
   // Check if weeklyData has any actual payment data for the selected year
   // This prevents showing stale data from other years when week-wise mode is enabled
@@ -656,6 +658,8 @@ const ViewFinancePage = () => {
             onWeekWiseModeChange={setWeekWiseMode}
             selectedYear={selectedYear}
             onYearChange={setSelectedYear}
+            selectedMonth={selectedMonth}
+            onMonthChange={setSelectedMonth}
           />
         </div>
       </div>
@@ -669,7 +673,7 @@ const ViewFinancePage = () => {
           <div className="flex items-center gap-2">
             <Calendar className="w-5 h-5" style={{ color: '#10b981' }} />
             <span className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-              Week-Wise Report - {selectedYear}
+              Week-Wise Report - {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][selectedMonth]} {selectedYear}
             </span>
           </div>
           {weeklyData && (

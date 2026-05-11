@@ -29,7 +29,9 @@ const DateFilters = ({
   weekWiseMode = false,
   onWeekWiseModeChange,
   selectedYear,
-  onYearChange
+  onYearChange,
+  selectedMonth,
+  onMonthChange
 }) => {
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -66,6 +68,14 @@ const DateFilters = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Format date as YYYY-MM-DD (local time, no UTC shift)
+  const formatDateForAPI = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
   // Get date helpers
   const getToday = () => {
     const today = new Date();
@@ -81,23 +91,21 @@ const DateFilters = ({
   };
 
   const getStartOfWeek = () => {
-    const today = getToday();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const day = today.getDay();
     const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(today.setDate(diff));
+    return new Date(today.getFullYear(), today.getMonth(), diff);
   };
 
   const getStartOfLastWeek = () => {
     const startOfThisWeek = getStartOfWeek();
-    return new Date(startOfThisWeek.setDate(startOfThisWeek.getDate() - 7));
+    return new Date(startOfThisWeek.getFullYear(), startOfThisWeek.getMonth(), startOfThisWeek.getDate() - 7);
   };
 
   const getEndOfLastWeek = () => {
     const startOfThisWeek = getStartOfWeek();
-    const end = new Date(startOfThisWeek);
-    end.setDate(end.getDate() - 1);
-    end.setHours(23, 59, 59, 999);
-    return end;
+    return new Date(startOfThisWeek.getFullYear(), startOfThisWeek.getMonth(), startOfThisWeek.getDate() - 1);
   };
 
   const getStartOfMonth = () => {
@@ -112,20 +120,12 @@ const DateFilters = ({
 
   const getEndOfLastMonth = () => {
     const today = getToday();
-    const end = new Date(today.getFullYear(), today.getMonth(), 0);
-    end.setHours(23, 59, 59, 999);
-    return end;
+    return new Date(today.getFullYear(), today.getMonth(), 0);
   };
 
   const getStartOfYear = () => {
     const today = getToday();
     return new Date(today.getFullYear(), 0, 1);
-  };
-
-  const getEndOfDay = (date) => {
-    const end = new Date(date);
-    end.setHours(23, 59, 59, 999);
-    return end;
   };
 
   const getStartOfLastYear = () => {
@@ -135,75 +135,73 @@ const DateFilters = ({
 
   const getEndOfLastYear = () => {
     const today = getToday();
-    const end = new Date(today.getFullYear() - 1, 11, 31);
-    end.setHours(23, 59, 59, 999);
-    return end;
+    return new Date(today.getFullYear() - 1, 11, 31);
   };
 
-  // Date presets
+  // Date presets — all ranges use YYYY-MM-DD format (no timezone shift)
   const presets = [
     {
       id: 'today',
       label: 'Today',
       getRange: () => ({
-        startDate: getToday().toISOString(),
-        endDate: getEndOfDay(getToday()).toISOString()
+        startDate: formatDateForAPI(getToday()),
+        endDate: formatDateForAPI(getToday())
       })
     },
     {
       id: 'yesterday',
       label: 'Yesterday',
       getRange: () => ({
-        startDate: getYesterday().toISOString(),
-        endDate: getEndOfDay(getYesterday()).toISOString()
+        startDate: formatDateForAPI(getYesterday()),
+        endDate: formatDateForAPI(getYesterday())
       })
     },
     {
       id: 'thisWeek',
       label: 'This Week',
       getRange: () => ({
-        startDate: getStartOfWeek().toISOString(),
-        endDate: getEndOfDay(new Date()).toISOString()
+        startDate: formatDateForAPI(getStartOfWeek()),
+        endDate: formatDateForAPI(new Date())
       })
     },
     {
       id: 'lastWeek',
       label: 'Last Week',
       getRange: () => ({
-        startDate: getStartOfLastWeek().toISOString(),
-        endDate: getEndOfLastWeek().toISOString()
+        startDate: formatDateForAPI(getStartOfLastWeek()),
+        endDate: formatDateForAPI(getEndOfLastWeek())
       })
     },
     {
       id: 'thisMonth',
       label: 'This Month',
       getRange: () => ({
-        startDate: getStartOfMonth().toISOString(),
-        endDate: getEndOfDay(new Date()).toISOString()
+        startDate: formatDateForAPI(getStartOfMonth()),
+        endDate: formatDateForAPI(new Date())
       })
     },
     {
       id: 'lastMonth',
       label: 'Last Month',
       getRange: () => ({
-        startDate: getStartOfLastMonth().toISOString(),
-        endDate: getEndOfLastMonth().toISOString()
+        startDate: formatDateForAPI(getStartOfLastMonth()),
+        endDate: formatDateForAPI(getEndOfLastMonth())
       })
     },
     {
       id: 'thisYear',
       label: 'This Year',
       getRange: () => ({
-        startDate: getStartOfYear().toISOString(),
-        endDate: getEndOfDay(new Date()).toISOString()
+        startDate: formatDateForAPI(getStartOfYear()),
+        endDate: formatDateForAPI(new Date())
       })
     },
     {
       id: 'lastYear',
       label: 'Last Year',
       getRange: () => ({
-        startDate: getStartOfLastYear().toISOString(),
-        endDate: getEndOfLastYear().toISOString()
+        startDate: formatDateForAPI(getStartOfLastYear()),
+        endDate: formatDateForAPI(getEndOfLastYear())
       })
     }
   ];
@@ -256,12 +254,12 @@ const DateFilters = ({
     localStorage.setItem('financeFilterPresets', JSON.stringify(updated));
   };
 
-  // Apply custom range
+  // Apply custom range — use YYYY-MM-DD format
   const applyCustomRange = (startDate, endDate) => {
     setFilters(prev => ({
       ...prev,
-      startDate: new Date(startDate).toISOString(),
-      endDate: getEndOfDay(new Date(endDate)).toISOString()
+      startDate: startDate,
+      endDate: endDate
     }));
     setActivePreset('custom');
     setShowCustomPicker(false);
@@ -281,7 +279,9 @@ const DateFilters = ({
   // Format date for display
   const formatDisplayDate = (dateStr) => {
     if (!dateStr) return '';
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    // Handle YYYY-MM-DD strings by adding time component for parsing
+    const d = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric'
     });
@@ -300,6 +300,11 @@ const DateFilters = ({
   for (let y = currentYear - 4; y <= currentYear; y++) {
     years.push(y);
   }
+
+  // Month names for dropdown
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const currentMonth = new Date().getMonth();
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -341,6 +346,24 @@ const DateFilters = ({
             >
               {years.map(year => (
                 <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          )}
+
+          {/* Month Selector - Only visible when week-wise mode is enabled */}
+          {weekWiseMode && (
+            <select
+              value={selectedMonth !== undefined && selectedMonth !== null ? selectedMonth : currentMonth}
+              onChange={(e) => onMonthChange?.(parseInt(e.target.value))}
+              className="px-3 py-1.5 rounded-lg border text-xs font-medium"
+              style={{
+                backgroundColor: 'var(--color-bg-primary)',
+                borderColor: '#10b981',
+                color: 'var(--color-text-primary)'
+              }}
+            >
+              {monthNames.map((name, idx) => (
+                <option key={idx} value={idx}>{name}</option>
               ))}
             </select>
           )}
@@ -481,7 +504,7 @@ const DateFilters = ({
                       borderColor: 'var(--color-border-subtle)',
                       color: 'var(--color-text-primary)'
                     }}
-                    defaultValue={filters.startDate ? new Date(filters.startDate).toISOString().split('T')[0] : ''}
+                    defaultValue={filters.startDate ? (filters.startDate.includes('T') ? new Date(filters.startDate).toISOString().split('T')[0] : filters.startDate) : ''}
                   />
                 </div>
                 <div>
@@ -500,7 +523,7 @@ const DateFilters = ({
                       borderColor: 'var(--color-border-subtle)',
                       color: 'var(--color-text-primary)'
                     }}
-                    defaultValue={filters.endDate ? new Date(filters.endDate).toISOString().split('T')[0] : ''}
+                    defaultValue={filters.endDate ? (filters.endDate.includes('T') ? new Date(filters.endDate).toISOString().split('T')[0] : filters.endDate) : ''}
                   />
                 </div>
                 <div className="flex gap-2">

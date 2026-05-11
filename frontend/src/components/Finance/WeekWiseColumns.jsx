@@ -23,13 +23,19 @@ export const getWeeksOfMonth = (year, month) => {
   let weekStart = new Date(firstDay);
   let weekNum = 1;
   
+  // Align to the Monday on or before the 1st of the month (matches backend)
+  const dayOfWeek = weekStart.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+  if (dayOfWeek !== 1) {
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    weekStart.setDate(weekStart.getDate() + diff);
+  }
+  
   while (weekStart <= lastDay && weekNum <= 5) {
-    // Find the end of the week (Saturday) or end of month
+    // Each week runs Mon–Sun (6 days after start)
     let weekEnd = new Date(weekStart);
-    const daysUntilSaturday = 6 - weekStart.getDay();
-    weekEnd.setDate(weekStart.getDate() + daysUntilSaturday);
+    weekEnd.setDate(weekEnd.getDate() + 6);
     
-    // If week end goes beyond month, cap it at last day of month
+    // Cap at end of month
     if (weekEnd > lastDay) {
       weekEnd = new Date(lastDay);
     }
@@ -41,9 +47,8 @@ export const getWeeksOfMonth = (year, month) => {
       label: `Week ${weekNum}`
     });
     
-    // Move to next week (Sunday)
-    weekStart = new Date(weekEnd);
-    weekStart.setDate(weekEnd.getDate() + 1);
+    // Advance to next Monday
+    weekStart.setDate(weekStart.getDate() + 7);
     weekNum++;
   }
   

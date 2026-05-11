@@ -43,35 +43,48 @@ const FinanceDashboard = () => {
       setLoading(true);
       setError(null);
 
+      // Format date as YYYY-MM-DD (local time, no UTC shift)
+      const formatDate = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
       // Build date range based on selected period
       const now = new Date();
       let startDate, endDate;
       
       switch (selectedPeriod) {
         case 'today':
-          startDate = new Date(now.setHours(0, 0, 0, 0));
-          endDate = new Date();
+          startDate = formatDate(now);
+          endDate = formatDate(now);
           break;
-        case 'week':
-          startDate = new Date(now.setDate(now.getDate() - 7));
-          endDate = new Date();
+        case 'week': {
+          // Monday of current ISO week
+          const day = now.getDay();
+          const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+          const monday = new Date(now.getFullYear(), now.getMonth(), diff);
+          startDate = formatDate(monday);
+          endDate = formatDate(now);
           break;
+        }
         case 'month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          endDate = new Date();
+          startDate = formatDate(new Date(now.getFullYear(), now.getMonth(), 1));
+          endDate = formatDate(now);
           break;
         case 'year':
-          startDate = new Date(now.getFullYear(), 0, 1);
-          endDate = new Date();
+          startDate = formatDate(new Date(now.getFullYear(), 0, 1));
+          endDate = formatDate(now);
           break;
         default:
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          endDate = new Date();
+          startDate = formatDate(new Date(now.getFullYear(), now.getMonth(), 1));
+          endDate = formatDate(now);
       }
 
       const params = new URLSearchParams({
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString()
+        startDate: startDate,
+        endDate: endDate
       });
 
       // Fetch all data in parallel

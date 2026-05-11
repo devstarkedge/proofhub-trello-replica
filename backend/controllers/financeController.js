@@ -23,7 +23,8 @@ const calculatePayment = (project, totalBilledMinutes) => {
   const billedHours = totalBilledMinutes / 60;
   
   if (project.billingCycle === 'fixed') {
-    return project.fixedPrice || 0;
+    // Only count fixed payment when there is actual billed activity in the filtered period
+    return totalBilledMinutes > 0 ? (project.fixedPrice || 0) : 0;
   } else if (project.billingCycle === 'hr') {
     return billedHours * (project.hourlyPrice || 0);
   }
@@ -32,26 +33,34 @@ const calculatePayment = (project, totalBilledMinutes) => {
 };
 
 // ============================================
-// HELPER: Check if date is within range
+// HELPER: Extract YYYY-MM-DD string from a Date (local time)
+// Uses local-time getters to match the YYYY-MM-DD filter strings
+// produced by the frontend (which also uses local-time getters).
 // ============================================
-const isWithinDateRange = (entryDate, filterStartDate, filterEndDate) => {
-  if (!filterStartDate && !filterEndDate) return true;
+const toDateString = (date) => {
+  if (!date) return null;
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+// ============================================
+// HELPER: Check if date is within range
+// Uses YYYY-MM-DD string comparison to avoid timezone issues.
+// filterStart and filterEnd should be YYYY-MM-DD strings.
+// ============================================
+const isWithinDateRange = (entryDate, filterStart, filterEnd) => {
+  if (!filterStart && !filterEnd) return true;
   if (!entryDate) return false;
   
-  // Normalize dates to start-of-day in local time for consistent comparison
-  // This prevents timezone shifts from accidentally hiding early-day entries
-  const dateObj = new Date(entryDate);
-  const d = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+  // Extract YYYY-MM-DD from the entry date (using UTC to match MongoDB storage)
+  const entryDateStr = toDateString(entryDate);
+  if (!entryDateStr) return false;
   
-  if (filterStartDate) {
-    const s = new Date(filterStartDate.getFullYear(), filterStartDate.getMonth(), filterStartDate.getDate());
-    if (d < s) return false;
-  }
-  
-  if (filterEndDate) {
-    const e = new Date(filterEndDate.getFullYear(), filterEndDate.getMonth(), filterEndDate.getDate());
-    if (d > e) return false;
-  }
+  if (filterStart && entryDateStr < filterStart) return false;
+  if (filterEnd && entryDateStr > filterEnd) return false;
   
   return true;
 };
@@ -172,9 +181,9 @@ export const getFinanceSummary = async (req, res) => {
   try {
     const { startDate, endDate, departmentId } = req.query;
     
-    // Parse date filters
-    const filterStartDate = startDate ? new Date(startDate) : null;
-    const filterEndDate = endDate ? new Date(endDate) : null;
+    // Date filters are YYYY-MM-DD strings (timezone-agnostic)
+    const filterStartDate = startDate || null;
+    const filterEndDate = endDate || null;
     
     // Build project filter
     const projectFilter = { isArchived: false };
@@ -334,9 +343,9 @@ export const getUserFinanceData = async (req, res) => {
   try {
     const { startDate, endDate, departmentId, userId } = req.query;
     
-    // Parse date filters
-    const filterStartDate = startDate ? new Date(startDate) : null;
-    const filterEndDate = endDate ? new Date(endDate) : null;
+    // Date filters are YYYY-MM-DD strings (timezone-agnostic)
+    const filterStartDate = startDate || null;
+    const filterEndDate = endDate || null;
     
     // Build project filter
     const projectFilter = { isArchived: false };
@@ -527,9 +536,9 @@ export const getProjectFinanceData = async (req, res) => {
   try {
     const { startDate, endDate, departmentId, projectId } = req.query;
     
-    // Parse date filters
-    const filterStartDate = startDate ? new Date(startDate) : null;
-    const filterEndDate = endDate ? new Date(endDate) : null;
+    // Date filters are YYYY-MM-DD strings (timezone-agnostic)
+    const filterStartDate = startDate || null;
+    const filterEndDate = endDate || null;
     
     // Build project filter
     const projectFilter = { isArchived: false };
@@ -744,7 +753,10 @@ export const getWeeklyReportData = async (req, res) => {
     const { year, month, departmentId, viewType = 'users' } = req.query;
     
     const targetYear = parseInt(year) || new Date().getFullYear();
-    const targetMonth = parseInt(month) ?? new Date().getMonth();
+    // Support explicit month parameter (0-11); fall back to current month
+    const targetMonth = month !== undefined && month !== null && month !== '' 
+      ? parseInt(month) 
+      : new Date().getMonth();
     
     // Calculate weeks of the month
     const weeks = getWeeksOfMonth(targetYear, targetMonth);
@@ -806,8 +818,10 @@ export const getWeeklyReportData = async (req, res) => {
             // Process billed time entries within week range
             if (card.billedTime) {
               for (const entry of card.billedTime) {
-                const entryDate = new Date(entry.date);
-                if (entryDate >= week.start && entryDate <= week.end) {
+                const entryDateStr = toDateString(entry.date);
+                const weekStartStr = toDateString(week.start);
+                const weekEndStr = toDateString(week.end);
+                if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                   const uId = entry.user?.toString();
                   if (!uId) continue;
                   
@@ -817,13 +831,15 @@ export const getWeeklyReportData = async (req, res) => {
                       userName: resolveUserName(entry, usersById),
                       billedMinutes: 0,
                       loggedMinutes: 0,
-                      projects: new Set()
+                      projects: new Set(),
+                      projectMinutes: {}
                     };
                   }
                   
                   const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
                   userData[uId].billedMinutes += mins;
                   userData[uId].projects.add(projectId);
+                  userData[uId].projectMinutes[projectId] = (userData[uId].projectMinutes[projectId] || 0) + mins;
                   weekResult.totalBilledMinutes += mins;
                 }
               }
@@ -832,8 +848,10 @@ export const getWeeklyReportData = async (req, res) => {
             // Process logged time entries within week range
             if (card.loggedTime) {
               for (const entry of card.loggedTime) {
-                const entryDate = new Date(entry.date);
-                if (entryDate >= week.start && entryDate <= week.end) {
+                const entryDateStr = toDateString(entry.date);
+                const weekStartStr = toDateString(week.start);
+                const weekEndStr = toDateString(week.end);
+                if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                   const uId = entry.user?.toString();
                   if (!uId) continue;
                   
@@ -861,8 +879,10 @@ export const getWeeklyReportData = async (req, res) => {
               
               if (subtask.billedTime) {
                 for (const entry of subtask.billedTime) {
-                  const entryDate = new Date(entry.date);
-                  if (entryDate >= week.start && entryDate <= week.end) {
+                  const entryDateStr = toDateString(entry.date);
+                  const weekStartStr = toDateString(week.start);
+                  const weekEndStr = toDateString(week.end);
+                  if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                     const uId = entry.user?.toString();
                     if (!uId) continue;
                     
@@ -872,13 +892,15 @@ export const getWeeklyReportData = async (req, res) => {
                         userName: resolveUserName(entry, usersById),
                         billedMinutes: 0,
                         loggedMinutes: 0,
-                        projects: new Set()
+                        projects: new Set(),
+                        projectMinutes: {}
                       };
                     }
                     
                     const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
                     userData[uId].billedMinutes += mins;
                     userData[uId].projects.add(projectId);
+                    userData[uId].projectMinutes[projectId] = (userData[uId].projectMinutes[projectId] || 0) + mins;
                     weekResult.totalBilledMinutes += mins;
                   }
                 }
@@ -889,8 +911,10 @@ export const getWeeklyReportData = async (req, res) => {
               for (const nano of nanos) {
                 if (nano.billedTime) {
                   for (const entry of nano.billedTime) {
-                    const entryDate = new Date(entry.date);
-                    if (entryDate >= week.start && entryDate <= week.end) {
+                    const entryDateStr = toDateString(entry.date);
+                    const weekStartStr = toDateString(week.start);
+                    const weekEndStr = toDateString(week.end);
+                    if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                       const uId = entry.user?.toString();
                       if (!uId) continue;
                       
@@ -900,13 +924,15 @@ export const getWeeklyReportData = async (req, res) => {
                           userName: resolveUserName(entry, usersById),
                           billedMinutes: 0,
                           loggedMinutes: 0,
-                          projects: new Set()
+                          projects: new Set(),
+                          projectMinutes: {}
                         };
                       }
                       
                       const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
                       userData[uId].billedMinutes += mins;
                       userData[uId].projects.add(projectId);
+                      userData[uId].projectMinutes[projectId] = (userData[uId].projectMinutes[projectId] || 0) + mins;
                       weekResult.totalBilledMinutes += mins;
                     }
                   }
@@ -916,11 +942,19 @@ export const getWeeklyReportData = async (req, res) => {
           }
         }
         
-        // Calculate payments for users
+        // Calculate payments for users using actual per-project rates
         weekResult.items = Object.values(userData).map(u => {
-          // Calculate average hourly rate across projects (simplified)
-          const avgRate = 25; // Default rate, should be calculated from actual project rates
-          const payment = (u.billedMinutes / 60) * avgRate;
+          const payment = Object.entries(u.projectMinutes || {}).reduce((sum, [projId, mins]) => {
+            const proj = projectMap.get(projId);
+            if (!proj) return sum;
+            if (proj.billingCycle === 'hr') {
+              return sum + (mins / 60) * (proj.hourlyPrice || 0);
+            }
+            if (proj.billingCycle === 'fixed' && mins > 0) {
+              return sum + (proj.fixedPrice || 0);
+            }
+            return sum;
+          }, 0);
           weekResult.totalPayment += payment;
           
           return {
@@ -948,8 +982,10 @@ export const getWeeklyReportData = async (req, res) => {
             // Process billed time entries within week range
             if (card.billedTime) {
               for (const entry of card.billedTime) {
-                const entryDate = new Date(entry.date);
-                if (entryDate >= week.start && entryDate <= week.end) {
+                const entryDateStr = toDateString(entry.date);
+                const weekStartStr = toDateString(week.start);
+                const weekEndStr = toDateString(week.end);
+                if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                   const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
                   projectBilledMinutes += mins;
                 }
@@ -958,8 +994,10 @@ export const getWeeklyReportData = async (req, res) => {
             
             if (card.loggedTime) {
               for (const entry of card.loggedTime) {
-                const entryDate = new Date(entry.date);
-                if (entryDate >= week.start && entryDate <= week.end) {
+                const entryDateStr = toDateString(entry.date);
+                const weekStartStr = toDateString(week.start);
+                const weekEndStr = toDateString(week.end);
+                if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                   const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
                   projectLoggedMinutes += mins;
                 }
@@ -973,8 +1011,10 @@ export const getWeeklyReportData = async (req, res) => {
               
               if (subtask.billedTime) {
                 for (const entry of subtask.billedTime) {
-                  const entryDate = new Date(entry.date);
-                  if (entryDate >= week.start && entryDate <= week.end) {
+                  const entryDateStr = toDateString(entry.date);
+                  const weekStartStr = toDateString(week.start);
+                  const weekEndStr = toDateString(week.end);
+                  if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                     const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
                     projectBilledMinutes += mins;
                   }
@@ -986,8 +1026,10 @@ export const getWeeklyReportData = async (req, res) => {
               for (const nano of nanos) {
                 if (nano.billedTime) {
                   for (const entry of nano.billedTime) {
-                    const entryDate = new Date(entry.date);
-                    if (entryDate >= week.start && entryDate <= week.end) {
+                    const entryDateStr = toDateString(entry.date);
+                    const weekStartStr = toDateString(week.start);
+                    const weekEndStr = toDateString(week.end);
+                    if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                       const mins = ((entry.hours || 0) * 60) + (entry.minutes || 0);
                       projectBilledMinutes += mins;
                     }
@@ -1328,6 +1370,8 @@ export const getYearWideWeeklyData = async (req, res) => {
             
             // Process billed time entries
             const processTimeEntry = (entry, isCard = true) => {
+              const entryDateStr = toDateString(entry.date);
+              if (!entryDateStr) return;
               const entryDate = new Date(entry.date);
               if (entryDate.getFullYear() !== targetYear) return;
               if (entryDate.getMonth() !== month) return;
@@ -1338,7 +1382,9 @@ export const getYearWideWeeklyData = async (req, res) => {
               // Find which week this entry belongs to
               let weekNum = null;
               for (const w of weeks) {
-                if (entryDate >= w.start && entryDate <= w.end) {
+                const weekStartStr = toDateString(w.start);
+                const weekEndStr = toDateString(w.end);
+                if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                   weekNum = w.week;
                   break;
                 }
@@ -1502,6 +1548,8 @@ export const getYearWideWeeklyData = async (req, res) => {
             const cardId = card._id.toString();
             
             const processTimeEntry = (entry) => {
+              const entryDateStr = toDateString(entry.date);
+              if (!entryDateStr) return;
               const entryDate = new Date(entry.date);
               if (entryDate.getFullYear() !== targetYear) return;
               if (entryDate.getMonth() !== month) return;
@@ -1509,7 +1557,9 @@ export const getYearWideWeeklyData = async (req, res) => {
               // Find which week this entry belongs to
               let weekNum = null;
               for (const w of weeks) {
-                if (entryDate >= w.start && entryDate <= w.end) {
+                const weekStartStr = toDateString(w.start);
+                const weekEndStr = toDateString(w.end);
+                if (entryDateStr >= weekStartStr && entryDateStr <= weekEndStr) {
                   weekNum = w.week;
                   break;
                 }
