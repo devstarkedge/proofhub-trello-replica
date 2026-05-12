@@ -119,3 +119,17 @@ export const getAssignmentBasedBoardIds = async (userId) => {
 
   return merged;
 };
+
+/**
+ * Return a deduplicated array of Department ObjectIds the user has access to
+ * through task/subtask/nano-subtask assignments — covers cross-department access.
+ *
+ * Chain: user assignments → board IDs → Board.department → department IDs
+ */
+export const getAssignmentBasedDepartmentIds = async (userId) => {
+  const boardIds = await getAssignmentBasedBoardIds(userId);
+  if (boardIds.length === 0) return [];
+
+  const { default: Board } = await import('../models/Board.js');
+  return Board.distinct('department', { _id: { $in: boardIds }, department: { $ne: null } });
+};

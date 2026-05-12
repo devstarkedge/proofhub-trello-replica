@@ -9,7 +9,7 @@ import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUs
 import { invalidateAuthCache } from "../middleware/authMiddleware.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
-import { getAssignmentBasedBoardIds, userHasCapability, CAPABILITIES } from '../services/permissionService.js';
+import { getAssignmentBasedBoardIds, getAssignmentBasedDepartmentIds, userHasCapability, CAPABILITIES } from '../services/permissionService.js';
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -159,24 +159,40 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
 
   // Build match query based on user role (for Dashboard/Home - shows only assigned)
   let matchQuery = { isActive: true };
-  
-  if (user) {
-    // Only Admin sees all departments
-    // Non-admin users (including managers) see only departments they're assigned to
-    if (user.role !== 'admin') {
-      // Get departments from user's assigned department array
-      const userDeptIds = Array.isArray(user.department) ? user.department : [];
-      matchQuery._id = { $in: userDeptIds };
-    }
-    // Admin users see all departments (no additional filter)
-  }
 
-  // Build project match filter based on user's access type (SaaS access control)
-  // Employees are ALWAYS forced to assignment-based scope regardless of stored accessType
+  // Determine access type first — needed for both dept and project match queries
   const isEmployee = userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
   const userAccessType = (user.role === 'admin') ? 'full_department'
     : isEmployee ? 'assigned_tasks'
     : (user.accessType || 'full_department');
+
+  if (user) {
+    if (user.role !== 'admin') {
+      // Static: departments the user is formally a member of
+      const userDeptIds = Array.isArray(user.department) ? user.department : [];
+
+      // Dynamic: departments the user has cross-dept access to via task/subtask/nano assignment
+      // Example: user is in "Shopify" dept but assigned a task in a "Frontend" dept project
+      let dynamicDeptIds = [];
+      if (userAccessType === 'assigned_tasks') {
+        dynamicDeptIds = await getAssignmentBasedDepartmentIds(user.id);
+      }
+
+      // Union of static + dynamic, deduplicated
+      const seen = new Set();
+      const allDeptIds = [];
+      for (const id of [...userDeptIds, ...dynamicDeptIds]) {
+        const key = id.toString();
+        if (!seen.has(key)) {
+          seen.add(key);
+          allDeptIds.push(new mongoose.Types.ObjectId(key));
+        }
+      }
+
+      matchQuery._id = { $in: allDeptIds };
+    }
+    // Admin users see all departments (no additional filter)
+  }
 
   const projectMatchFilter = {
     $expr: { $eq: ['$department', '$$deptId'] },

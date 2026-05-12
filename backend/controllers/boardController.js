@@ -181,19 +181,29 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Board not found', 404));
   }
 
-  // Check access
-  const hasAccess =
+  // Employees are always forced to assignment-based scope regardless of stored accessType
+  const isEmployee = userHasCapability(req.user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
+  const accessType = isEmployee ? 'assigned_tasks' : (req.user.accessType || 'full_department');
+
+  // ── Level 1: Project Visibility ──────────────────────────────────────────
+  // Can this user access this board at all?
+  let hasAccess =
     board.owner?._id?.toString() === req.user.id ||
     board.members?.some((m) => m?._id?.toString() === req.user.id) ||
     board.visibility === 'public' ||
     req.user.role === 'admin';
 
+  // For employees: also grant access when assigned to any task/subtask/nano in this board
+  if (!hasAccess && accessType === 'assigned_tasks') {
+    const assignedBoardIds = await getAssignmentBasedBoardIds(req.user.id);
+    hasAccess = assignedBoardIds.some(id => id.toString() === board._id.toString());
+  }
+
   if (!hasAccess) {
     return next(new ErrorResponse('Not authorized to access this board', 403));
   }
 
-  // SaaS access type: enforce project whitelist for selected_projects users
-  const accessType = req.user.accessType || 'full_department';
+  // For selected_projects users: enforce the allowed-project whitelist
   if (req.user.role !== 'admin' && accessType === 'selected_projects') {
     const allowed = (req.user.allowedProjects || []).map(p => p.toString());
     if (!allowed.includes(board._id.toString())) {
@@ -201,13 +211,12 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // Fetch all cards for all lists in one query - ONLY ACTIVE (NON-ARCHIVED) CARDS
-  // For 'assigned_tasks' users: restrict to cards where the user is an assignee
+  // ── Level 2: Workflow Visibility ─────────────────────────────────────────
+  // Once project access is granted, the employee sees the FULL workflow board.
+  // No card-level assignee filtering — that would hide other members' cards and
+  // break collaborative visibility.
   const listIds = lists.map(l => l._id);
   const cardFilter = { list: { $in: listIds }, isArchived: false };
-  if (req.user.role !== 'admin' && accessType === 'assigned_tasks') {
-    cardFilter.assignees = req.user.id;
-  }
   const cards = await Card.find(cardFilter)
     .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime')
     .populate('assignees', 'name email avatar role')
