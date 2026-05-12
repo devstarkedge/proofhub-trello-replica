@@ -273,6 +273,11 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-user-access-updated', { detail: data }));
     });
 
+    // Project-level access changed via task/subtask/nano-subtask assignment
+    this.socket.on('user:project-access-changed', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-user-project-access-changed', { detail: data }));
+    });
+
     // Department assignment events
     this.socket.on('user-assigned', (data) => {
       console.log('User assigned to department:', data);

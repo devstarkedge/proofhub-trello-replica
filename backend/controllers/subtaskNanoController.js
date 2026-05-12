@@ -5,7 +5,7 @@ import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
-import { emitToBoard } from '../realtime/index.js';
+import { emitToBoard, emitToUser } from '../realtime/index.js';
 import { refreshCardHierarchyStats, refreshSubtaskNanoStats } from '../utils/hierarchyStats.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { emitTimeEntryDiffs, emitTimeEntryWebhook } from '../utils/chatTimeTracking.js';
@@ -339,6 +339,17 @@ export const updateNano = asyncHandler(async (req, res, next) => {
           type: 'member_added',
           description: 'Updated assignees'
         });
+
+        // Emit real-time project-access-changed for newly added/removed assignees
+        const oldIds = (oldNano.assignees || []).map(a => a.toString());
+        const newIds = (nano.assignees || []).map(a => a?._id?.toString() ?? a.toString());
+        const boardIdStr = boardId.toString();
+        for (const id of newIds.filter(id => !oldIds.includes(id))) {
+          emitToUser(id, 'user:project-access-changed', { action: 'added', boardId: boardIdStr, source: 'nano' });
+        }
+        for (const id of oldIds.filter(id => !newIds.includes(id))) {
+          emitToUser(id, 'user:project-access-changed', { action: 'removed', boardId: boardIdStr, source: 'nano' });
+        }
       }
       if (JSON.stringify(oldNano.loggedTime) !== JSON.stringify(nano.loggedTime)) {
         activities.push({

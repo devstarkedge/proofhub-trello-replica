@@ -12,7 +12,7 @@ import Department from '../models/Department.js';
 import User from '../models/User.js';
 import Comment from '../models/Comment.js';
 import Attachment from '../models/Attachment.js';
-import { emitToBoard } from '../realtime/index.js';
+import { emitToBoard, emitToUser } from '../realtime/index.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
@@ -373,6 +373,17 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
           type: 'member_added',
           description: 'Updated assignees'
         });
+
+        // Emit real-time project-access-changed for newly added/removed assignees
+        const oldIds = (oldSubtask.assignees || []).map(a => a.toString());
+        const newIds = (subtask.assignees || []).map(a => a?._id?.toString() ?? a.toString());
+        const boardIdStr = boardId.toString();
+        for (const id of newIds.filter(id => !oldIds.includes(id))) {
+          emitToUser(id, 'user:project-access-changed', { action: 'added', boardId: boardIdStr, source: 'subtask' });
+        }
+        for (const id of oldIds.filter(id => !newIds.includes(id))) {
+          emitToUser(id, 'user:project-access-changed', { action: 'removed', boardId: boardIdStr, source: 'subtask' });
+        }
       }
       if (JSON.stringify(oldSubtask.loggedTime) !== JSON.stringify(subtask.loggedTime)) {
         activities.push({

@@ -14,6 +14,7 @@ import {
   Briefcase,
   User,
   ChevronDown,
+  ChevronRight,
   Loader2,
   Trash2,
   FolderOpen,
@@ -152,6 +153,8 @@ const HRPanel = () => {
   const [departmentProjects, setDepartmentProjects] = useState([]);
   const [projectSearch, setProjectSearch] = useState('');
   const [projectsLoading, setProjectsLoading] = useState(false);
+  // Accordion open/close state for department groups in project picker
+  const [expandedDepts, setExpandedDepts] = useState({});
   const [filters, setFilters] = useState({
     role: '',
     department: '',
@@ -386,6 +389,28 @@ const HRPanel = () => {
   const getSelectedDepartmentObjects = useCallback(() => {
     return departmentStore.departments.filter(dept => selectedDepartments.includes(dept._id));
   }, [departmentStore.departments, selectedDepartments]);
+
+  // Auto-enforce assignment scope for employees — they cannot have dept-wide access
+  useEffect(() => {
+    if (selectedRole === 'employee') {
+      setAccessType('assigned_tasks');
+      setAllowedProjects([]);
+    }
+  }, [selectedRole]);
+
+  // Group departmentProjects by department for the accordion picker
+  const groupedProjects = useMemo(() => {
+    const map = {};
+    for (const project of departmentProjects) {
+      const deptId = project.department?._id || project.department || 'unknown';
+      const deptName = project.department?.name || 'Unknown Department';
+      if (!map[deptId]) {
+        map[deptId] = { deptId, deptName, projects: [] };
+      }
+      map[deptId].projects.push(project);
+    }
+    return Object.values(map);
+  }, [departmentProjects]);
 
   // OPTIMIZED: Memoize filtered users to prevent recalculation on every render
   // Uses debouncedFilters to prevent filtering on every keystroke
@@ -769,44 +794,55 @@ const HRPanel = () => {
                         <Lock className="w-4 h-4 text-gray-500" />
                         Access Scope
                       </label>
+
+                      {selectedRole === 'employee' && (
+                        <div className="flex items-start gap-2 p-3 mb-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                          <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                          <span>Employees automatically use <strong>assignment-based scope</strong> — they only see projects where they're assigned to tasks, subtasks, or nano-subtasks.</span>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-3 gap-2">
                         {/* Full Department */}
                         <button
                           type="button"
-                          onClick={() => setAccessType('full_department')}
+                          disabled={selectedRole === 'employee'}
+                          onClick={() => selectedRole !== 'employee' && setAccessType('full_department')}
                           className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-center transition-all duration-200 ${
-                            accessType === 'full_department'
-                              ? 'border-blue-500 bg-blue-50 shadow-sm'
-                              : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40'
+                            selectedRole === 'employee'
+                              ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
+                              : accessType === 'full_department'
+                                ? 'border-blue-500 bg-blue-50 shadow-sm'
+                                : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40'
                           }`}
                         >
-                          <div className={`p-2 rounded-lg ${accessType === 'full_department' ? 'bg-blue-100' : 'bg-gray-100'}`}>
-                            <Building2 className={`w-5 h-5 ${accessType === 'full_department' ? 'text-blue-600' : 'text-gray-500'}`} />
+                          <div className={`p-2 rounded-lg ${accessType === 'full_department' && selectedRole !== 'employee' ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                            <Building2 className={`w-5 h-5 ${accessType === 'full_department' && selectedRole !== 'employee' ? 'text-blue-600' : 'text-gray-500'}`} />
                           </div>
                           <div>
-                            <p className={`text-xs font-semibold leading-tight ${accessType === 'full_department' ? 'text-blue-700' : 'text-gray-700'}`}>Full Dept</p>
+                            <p className={`text-xs font-semibold leading-tight ${accessType === 'full_department' && selectedRole !== 'employee' ? 'text-blue-700' : 'text-gray-700'}`}>Full Dept</p>
                             <p className="text-[10px] text-gray-400 leading-tight mt-0.5">All projects</p>
                           </div>
-                          {accessType === 'full_department' && (
-                            <span className="w-2 h-2 rounded-full bg-blue-500 absolute top-2 right-2" />
-                          )}
                         </button>
 
                         {/* Selected Projects */}
                         <button
                           type="button"
-                          onClick={() => setAccessType('selected_projects')}
+                          disabled={selectedRole === 'employee'}
+                          onClick={() => selectedRole !== 'employee' && setAccessType('selected_projects')}
                           className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-center transition-all duration-200 ${
-                            accessType === 'selected_projects'
-                              ? 'border-purple-500 bg-purple-50 shadow-sm'
-                              : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-purple-50/40'
+                            selectedRole === 'employee'
+                              ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
+                              : accessType === 'selected_projects'
+                                ? 'border-purple-500 bg-purple-50 shadow-sm'
+                                : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-purple-50/40'
                           }`}
                         >
-                          <div className={`p-2 rounded-lg ${accessType === 'selected_projects' ? 'bg-purple-100' : 'bg-gray-100'}`}>
-                            <FolderOpen className={`w-5 h-5 ${accessType === 'selected_projects' ? 'text-purple-600' : 'text-gray-500'}`} />
+                          <div className={`p-2 rounded-lg ${accessType === 'selected_projects' && selectedRole !== 'employee' ? 'bg-purple-100' : 'bg-gray-100'}`}>
+                            <FolderOpen className={`w-5 h-5 ${accessType === 'selected_projects' && selectedRole !== 'employee' ? 'text-purple-600' : 'text-gray-500'}`} />
                           </div>
                           <div>
-                            <p className={`text-xs font-semibold leading-tight ${accessType === 'selected_projects' ? 'text-purple-700' : 'text-gray-700'}`}>Selected</p>
+                            <p className={`text-xs font-semibold leading-tight ${accessType === 'selected_projects' && selectedRole !== 'employee' ? 'text-purple-700' : 'text-gray-700'}`}>Selected</p>
                             <p className="text-[10px] text-gray-400 leading-tight mt-0.5">Pick projects</p>
                           </div>
                         </button>
@@ -835,7 +871,7 @@ const HRPanel = () => {
                       <p className="text-xs text-gray-500 mt-2 px-1">
                         {accessType === 'full_department' && 'User can access all projects within their assigned department(s).'}
                         {accessType === 'selected_projects' && 'User can only access the specific projects you select below.'}
-                        {accessType === 'assigned_tasks' && 'User can only see boards where they are an owner or direct member.'}
+                        {accessType === 'assigned_tasks' && 'User only sees projects where they are directly assigned to tasks, subtasks, or nano-subtasks.'}
                       </p>
                     </div>
 
@@ -864,8 +900,8 @@ const HRPanel = () => {
                           </div>
                         ) : (
                           <>
-                            {/* Search */}
-                            <div className="relative mb-2">
+                            {/* Global search across all departments */}
+                            <div className="relative mb-3">
                               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                               <input
                                 type="text"
@@ -876,73 +912,114 @@ const HRPanel = () => {
                               />
                             </div>
 
-                            {/* Project list */}
-                            <div className="border border-gray-200 rounded-lg overflow-hidden">
-                              {departmentProjects.filter(p =>
-                                p.name?.toLowerCase().includes(projectSearch.toLowerCase())
-                              ).length === 0 ? (
-                                <div className="p-4 text-center text-sm text-gray-500">
-                                  No projects found.
-                                </div>
+                            {/* Department-wise accordion groups */}
+                            <div className="border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-100">
+                              {groupedProjects.length === 0 ? (
+                                <div className="p-4 text-center text-sm text-gray-500">No projects found.</div>
                               ) : (
-                                <div className="max-h-48 overflow-y-auto divide-y divide-gray-100">
-                                  {departmentProjects
-                                    .filter(p => p.name?.toLowerCase().includes(projectSearch.toLowerCase()))
-                                    .map(project => {
-                                      const isSelected = allowedProjects.includes(project._id);
-                                      return (
-                                        <label
-                                          key={project._id}
-                                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors duration-150 ${
-                                            isSelected ? 'bg-purple-50' : 'hover:bg-gray-50'
-                                          }`}
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={isSelected}
-                                            onChange={() => {
-                                              setAllowedProjects(prev =>
-                                                isSelected
-                                                  ? prev.filter(id => id !== project._id)
-                                                  : [...prev, project._id]
-                                              );
-                                            }}
-                                            className="w-4 h-4 rounded text-purple-600 border-gray-300 focus:ring-purple-400"
-                                          />
-                                          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-                                            <span className="text-white text-xs font-bold">
-                                              {project.name?.charAt(0).toUpperCase()}
-                                            </span>
-                                          </div>
-                                          <span className={`text-sm font-medium truncate ${isSelected ? 'text-purple-700' : 'text-gray-700'}`}>
-                                            {project.name}
+                                groupedProjects.map(({ deptId, deptName, projects }) => {
+                                  const filtered = projects.filter(p =>
+                                    p.name?.toLowerCase().includes(projectSearch.toLowerCase())
+                                  );
+                                  if (projectSearch && filtered.length === 0) return null;
+
+                                  const isExpanded = expandedDepts[deptId] !== false; // default open
+                                  const selectedInDept = filtered.filter(p => allowedProjects.includes(p._id)).length;
+
+                                  return (
+                                    <div key={deptId}>
+                                      {/* Department header — acts as accordion toggle */}
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedDepts(prev => ({ ...prev, [deptId]: !isExpanded }))}
+                                        className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors duration-150"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          {isExpanded
+                                            ? <ChevronDown className="w-4 h-4 text-gray-500" />
+                                            : <ChevronRight className="w-4 h-4 text-gray-500" />
+                                          }
+                                          <Building2 className="w-4 h-4 text-blue-500" />
+                                          <span className="text-sm font-semibold text-gray-700">{deptName}</span>
+                                          <span className="text-xs text-gray-400 bg-white border border-gray-200 px-1.5 py-0.5 rounded-full">
+                                            {filtered.length}
                                           </span>
-                                        </label>
-                                      );
-                                    })}
-                                </div>
+                                        </div>
+                                        {selectedInDept > 0 && (
+                                          <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">
+                                            {selectedInDept} selected
+                                          </span>
+                                        )}
+                                      </button>
+
+                                      {/* Projects within this department */}
+                                      {isExpanded && (
+                                        <div className="divide-y divide-gray-50">
+                                          {filtered.map(project => {
+                                            const isSelected = allowedProjects.includes(project._id);
+                                            return (
+                                              <label
+                                                key={project._id}
+                                                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors duration-150 ${
+                                                  isSelected ? 'bg-purple-50' : 'hover:bg-gray-50'
+                                                }`}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isSelected}
+                                                  onChange={() => {
+                                                    setAllowedProjects(prev =>
+                                                      isSelected
+                                                        ? prev.filter(id => id !== project._id)
+                                                        : [...prev, project._id]
+                                                    );
+                                                  }}
+                                                  className="w-4 h-4 rounded text-purple-600 border-gray-300 focus:ring-purple-400"
+                                                />
+                                                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+                                                  <span className="text-white text-xs font-bold">
+                                                    {project.name?.charAt(0).toUpperCase()}
+                                                  </span>
+                                                </div>
+                                                <span className={`text-sm font-medium truncate ${isSelected ? 'text-purple-700' : 'text-gray-700'}`}>
+                                                  {project.name}
+                                                </span>
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })
                               )}
                             </div>
 
-                            {/* Selected project chips */}
+                            {/* Sticky selected project chips summary */}
                             {allowedProjects.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {departmentProjects
-                                  .filter(p => allowedProjects.includes(p._id))
-                                  .map(project => (
-                                    <span
-                                      key={project._id}
-                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium"
-                                    >
-                                      {project.name}
-                                      <button
-                                        onClick={() => setAllowedProjects(prev => prev.filter(id => id !== project._id))}
-                                        className="hover:text-purple-900"
+                              <div className="mt-3 p-3 bg-purple-50 border border-purple-100 rounded-lg">
+                                <p className="text-xs font-semibold text-purple-700 mb-2">
+                                  {allowedProjects.length} project{allowedProjects.length !== 1 ? 's' : ''} selected:
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {departmentProjects
+                                    .filter(p => allowedProjects.includes(p._id))
+                                    .map(project => (
+                                      <span
+                                        key={project._id}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium"
                                       >
-                                        <X className="w-3 h-3" />
-                                      </button>
-                                    </span>
-                                  ))}
+                                        {project.name}
+                                        <button
+                                          type="button"
+                                          onClick={() => setAllowedProjects(prev => prev.filter(id => id !== project._id))}
+                                          className="hover:text-purple-900"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </span>
+                                    ))}
+                                </div>
                               </div>
                             )}
                           </>

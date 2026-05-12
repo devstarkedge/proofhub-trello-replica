@@ -135,12 +135,20 @@ const HomePage = () => {
       }
     };
 
+    // Real-time refresh when a task/subtask/nano-subtask assignee changes
+    // (employee gains or loses project access via assignment)
+    const handleProjectAccessChanged = () => {
+      fetchDepartments(true);
+    };
+
     window.addEventListener('socket-user-access-updated', handleAccessUpdated);
     window.addEventListener('socket-board-updated', handleBoardUpdated);
+    window.addEventListener('socket-user-project-access-changed', handleProjectAccessChanged);
     
     return () => {
       window.removeEventListener('socket-user-access-updated', handleAccessUpdated);
       window.removeEventListener('socket-board-updated', handleBoardUpdated);
+      window.removeEventListener('socket-user-project-access-changed', handleProjectAccessChanged);
     };
   }, [fetchDepartments, projectUpdated]);
 

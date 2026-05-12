@@ -15,7 +15,7 @@ import Attachment from "../models/Attachment.js";
 import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { emitToBoard, emitNotification, emitToDepartment } from "../realtime/index.js";
+import { emitToBoard, emitNotification, emitToDepartment, emitToUser } from "../realtime/index.js";
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
@@ -1300,6 +1300,16 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
       // Dispatch chat webhook for assignee changes
       chatHooks.onTaskAssigned(card, addedAssignees, boardData, req.user).catch(console.error);
+
+      // Notify each newly-assigned employee that they now have project access
+      const boardIdStr = card.board.toString();
+      for (const assigneeId of addedAssignees) {
+        emitToUser(assigneeId.toString(), 'user:project-access-changed', {
+          action: 'added',
+          boardId: boardIdStr,
+          source: 'task'
+        });
+      }
     }
 
     if (removedAssignees.length > 0) {
@@ -1323,6 +1333,16 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       // Dispatch chat webhook for unassigned members
       const boardForUnassign = await Board.findById(card.board).select('name department').lean();
       chatHooks.onTaskUnassigned(card, removedAssignees, boardForUnassign, req.user).catch(console.error);
+
+      // Notify each removed assignee — they may have lost project access
+      const boardIdStr = card.board.toString();
+      for (const assigneeId of removedAssignees) {
+        emitToUser(assigneeId.toString(), 'user:project-access-changed', {
+          action: 'removed',
+          boardId: boardIdStr,
+          source: 'task'
+        });
+      }
     }
   }
 

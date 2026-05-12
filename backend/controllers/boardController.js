@@ -12,6 +12,7 @@ import Subtask from "../models/Subtask.js";
 import SubtaskNano from "../models/SubtaskNano.js";
 import Comment from "../models/Comment.js";
 import User from "../models/User.js";
+import { getAssignmentBasedBoardIds, userHasCapability, CAPABILITIES } from "../services/permissionService.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitNotification, emitToAll } from "../realtime/index.js";
@@ -35,11 +36,14 @@ import {
 export const getBoards = asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const userRole = req.user.role;
-  const accessType = req.user.accessType || 'full_department';
 
-  // Support ?departmentIds=id1,id2 for HR Panel project-fetch (admin/manager/hr only)
-  // Must be checked FIRST, before the admin early-return, so admins also get dept-filtered results
-  if (req.query.departmentIds && (userRole === 'admin' || userRole === 'manager' || userRole === 'hr')) {
+  // Employees are always forced to assignment-based scope — ignore stored accessType
+  const isEmployee = userHasCapability(req.user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
+  const accessType = isEmployee ? 'assigned_tasks' : (req.user.accessType || 'full_department');
+
+  // ── HR Panel project-fetch (?departmentIds=id1,id2) — admin/manager/hr only ──
+  // Employees cannot use this query param to bypass scope restrictions.
+  if (req.query.departmentIds && !isEmployee) {
     const deptIds = req.query.departmentIds.split(',').filter(Boolean);
     const boards = await Board.find({
       department: { $in: deptIds },
@@ -54,8 +58,8 @@ export const getBoards = asyncHandler(async (req, res, next) => {
     return res.status(200).json({ success: true, count: boards.length, data: boards });
   }
 
-  // Admin always has full access regardless of accessType
-  if (userRole === 'admin') {
+  // ── Admin: full unrestricted access ──
+  if (userHasCapability(req.user, CAPABILITIES.VIEW_ALL_PROJECTS)) {
     const boards = await Board.find({ isDeleted: { $ne: true } })
       .populate("owner", "name email avatar")
       .populate("team", "name")
@@ -75,20 +79,34 @@ export const getBoards = asyncHandler(async (req, res, next) => {
       _id: { $in: allowedProjects },
       isDeleted: { $ne: true }
     };
+
   } else if (accessType === 'assigned_tasks') {
-    // Least-privilege: only boards where user is owner or explicit member
+    // Assignment-driven: boards accessible via task / subtask / nano-subtask assignee
+    // PLUS boards where user is a direct owner or board-level member.
+    const assignedBoardIds = await getAssignmentBasedBoardIds(userId);
     query = {
       isDeleted: { $ne: true },
-      $or: [{ owner: userId }, { members: userId }]
+      $or: [
+        { owner: userId },
+        { members: userId },
+        { _id: { $in: assignedBoardIds } }
+      ]
     };
-    if (req.user.team) {
+    // Team membership still applies for non-employees (employees don't get team scope)
+    if (req.user.team && !isEmployee) {
       query.$or.push({ team: req.user.team });
     }
+
   } else {
-    // full_department (default): existing behavior
+    // full_department — manager/hr: projects within their assigned departments
+    const userDeptIds = req.user.department || [];
     query = {
       isDeleted: { $ne: true },
-      $or: [{ owner: userId }, { members: userId }],
+      $or: [
+        { owner: userId },
+        { members: userId },
+        { department: { $in: userDeptIds } }
+      ]
     };
     if (userRole === 'manager') {
       query.$or.push({ visibility: 'public' });
@@ -104,7 +122,7 @@ export const getBoards = asyncHandler(async (req, res, next) => {
     .populate("department", "name")
     .populate("members", "name email avatar")
     .sort("-createdAt")
-    .lean(); // Use lean() for read-only operations - ~5x faster
+    .lean();
 
   res.status(200).json({
     success: true,

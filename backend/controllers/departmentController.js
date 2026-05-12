@@ -9,6 +9,7 @@ import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUs
 import { invalidateAuthCache } from "../middleware/authMiddleware.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
+import { getAssignmentBasedBoardIds, userHasCapability, CAPABILITIES } from '../services/permissionService.js';
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -171,7 +172,12 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
   }
 
   // Build project match filter based on user's access type (SaaS access control)
-  const userAccessType = (user.role === 'admin') ? 'full_department' : (user.accessType || 'full_department');
+  // Employees are ALWAYS forced to assignment-based scope regardless of stored accessType
+  const isEmployee = userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
+  const userAccessType = (user.role === 'admin') ? 'full_department'
+    : isEmployee ? 'assigned_tasks'
+    : (user.accessType || 'full_department');
+
   const projectMatchFilter = {
     $expr: { $eq: ['$department', '$$deptId'] },
     isArchived: false,
@@ -182,7 +188,13 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
     projectMatchFilter._id = { $in: allowedIds };
   } else if (userAccessType === 'assigned_tasks') {
     const uid = new mongoose.Types.ObjectId(user.id);
-    projectMatchFilter.$or = [{ owner: uid }, { members: uid }];
+    // Collect board IDs from task/subtask/nano-subtask assignees PLUS direct board ownership/membership
+    const assignedBoardIds = await getAssignmentBasedBoardIds(user.id);
+    projectMatchFilter.$or = [
+      { owner: uid },
+      { members: uid },
+      { _id: { $in: assignedBoardIds } }
+    ];
   }
 
   // OPTIMIZED: Single aggregation pipeline instead of N+1 queries
@@ -230,7 +242,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
           { $match: { $expr: { $and: [
             { $in: ['$board', '$$projectIds'] },
             ...(userAccessType === 'assigned_tasks'
-              ? [{ $in: [new mongoose.Types.ObjectId(user.id), '$assignees'] }]
+              ? [{ $in: [new mongoose.Types.ObjectId(user.id), { $ifNull: ['$assignees', []] }] }]
               : [])
           ] } } },
           { $project: { board: 1, assignees: 1, members: 1, status: 1, isArchived: 1 } }

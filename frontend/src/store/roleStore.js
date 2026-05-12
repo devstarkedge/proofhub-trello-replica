@@ -2,6 +2,56 @@ import { create } from 'zustand';
 import api from '../services/api';
 
 /**
+ * Access-scope capability constants — mirrors backend permissionService.js
+ * Use these with hasAccessCapability() for UI-level visibility decisions.
+ * NOTE: Never use these alone for security — backend always re-validates.
+ */
+export const CAPABILITIES = Object.freeze({
+  VIEW_ALL_PROJECTS: 'VIEW_ALL_PROJECTS',
+  VIEW_DEPT_PROJECTS: 'VIEW_DEPT_PROJECTS',
+  VIEW_SELECTED_PROJECTS: 'VIEW_SELECTED_PROJECTS',
+  VIEW_ASSIGNED_PROJECTS: 'VIEW_ASSIGNED_PROJECTS',
+  MANAGE_PROJECT: 'MANAGE_PROJECT',
+  ASSIGN_PROJECT_ACCESS: 'ASSIGN_PROJECT_ACCESS',
+  MANAGE_ROLES: 'MANAGE_ROLES',
+  MANAGE_MEMBERS: 'MANAGE_MEMBERS',
+  FORCE_ASSIGNMENT_SCOPE: 'FORCE_ASSIGNMENT_SCOPE',
+});
+
+// Role → capability set mapping (mirrors backend)
+const ROLE_CAPABILITIES_MAP = {
+  admin: new Set([
+    CAPABILITIES.VIEW_ALL_PROJECTS,
+    CAPABILITIES.VIEW_DEPT_PROJECTS,
+    CAPABILITIES.VIEW_SELECTED_PROJECTS,
+    CAPABILITIES.VIEW_ASSIGNED_PROJECTS,
+    CAPABILITIES.MANAGE_PROJECT,
+    CAPABILITIES.ASSIGN_PROJECT_ACCESS,
+    CAPABILITIES.MANAGE_ROLES,
+    CAPABILITIES.MANAGE_MEMBERS,
+  ]),
+  manager: new Set([
+    CAPABILITIES.VIEW_DEPT_PROJECTS,
+    CAPABILITIES.VIEW_SELECTED_PROJECTS,
+    CAPABILITIES.VIEW_ASSIGNED_PROJECTS,
+    CAPABILITIES.MANAGE_PROJECT,
+    CAPABILITIES.ASSIGN_PROJECT_ACCESS,
+    CAPABILITIES.MANAGE_MEMBERS,
+  ]),
+  hr: new Set([
+    CAPABILITIES.VIEW_DEPT_PROJECTS,
+    CAPABILITIES.VIEW_SELECTED_PROJECTS,
+    CAPABILITIES.VIEW_ASSIGNED_PROJECTS,
+    CAPABILITIES.MANAGE_MEMBERS,
+    CAPABILITIES.ASSIGN_PROJECT_ACCESS,
+  ]),
+  employee: new Set([
+    CAPABILITIES.VIEW_ASSIGNED_PROJECTS,
+    CAPABILITIES.FORCE_ASSIGNMENT_SCOPE,
+  ]),
+};
+
+/**
  * Permission definitions for UI rendering
  * Grouped by category with labels and keys
  */
@@ -304,6 +354,17 @@ const useRoleStore = create((set, get) => ({
     
     if (!myPermissions) return false;
     return permissions.every(perm => myPermissions[perm] === true);
+  },
+
+  /**
+   * Check if current user has a specific access-scope capability.
+   * Uses ROLE_CAPABILITIES_MAP — no server round-trip needed.
+   */
+  hasAccessCapability: (capability) => {
+    const { myRole } = get();
+    const role = (myRole || 'employee').toLowerCase();
+    const caps = ROLE_CAPABILITIES_MAP[role] ?? ROLE_CAPABILITIES_MAP.employee;
+    return caps.has(capability);
   },
 
   /**

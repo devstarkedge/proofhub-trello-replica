@@ -657,13 +657,22 @@ export const assignUser = asyncHandler(async (req, res, next) => {
 
   if (team !== undefined) user.team = team;
 
-  // SaaS access control fields
-  const validAccessTypes = ['full_department', 'selected_projects', 'assigned_tasks'];
-  if (accessType !== undefined && validAccessTypes.includes(accessType)) {
-    user.accessType = accessType;
-  }
-  if (allowedProjects !== undefined) {
-    user.allowedProjects = Array.isArray(allowedProjects) ? allowedProjects : [];
+  // ── Access Scope Enforcement ──────────────────────────────────────────────
+  // Employees MUST use assignment-based scope — they cannot have department-wide visibility.
+  const isEmployee = user.role === 'employee';
+
+  if (isEmployee) {
+    // Force assignment scope regardless of what the payload says
+    user.accessType = 'assigned_tasks';
+    user.allowedProjects = [];
+  } else {
+    const validAccessTypes = ['full_department', 'selected_projects', 'assigned_tasks'];
+    if (accessType !== undefined && validAccessTypes.includes(accessType)) {
+      user.accessType = accessType;
+    }
+    if (allowedProjects !== undefined) {
+      user.allowedProjects = Array.isArray(allowedProjects) ? allowedProjects : [];
+    }
   }
 
   await user.save();
@@ -720,9 +729,22 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
 
   user.role = normalizedRole;
   user.roleId = roleDoc._id;
+
+  // ── Access Scope Enforcement on Role Change ───────────────────────────────
+  // When a user is downgraded to employee, force assignment-based scope.
+  // When a user is promoted from employee, set a sensible default.
+  if (normalizedRole === 'employee') {
+    user.accessType = 'assigned_tasks';
+    user.allowedProjects = [];
+  } else if (previousRole === 'employee' && normalizedRole !== 'employee') {
+    // Promoted from employee — give department-wide access by default
+    user.accessType = 'full_department';
+  }
+
   await user.save();
 
-  // Caching mechanism removed
+  // Invalidate auth cache so the new role + accessType take effect immediately
+  invalidateAuthCache(req.params.id);
 
   res.status(200).json({
     success: true,
