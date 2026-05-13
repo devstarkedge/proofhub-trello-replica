@@ -23,7 +23,9 @@ import RecurringSettingsModal from "./RecurringSettingsModal";
 import DeletePopup from "./ui/DeletePopup";
 import ArchiveConfirmationModal from "./ui/ArchiveConfirmationModal";
 import RestoreConfirmationModal from "./ui/RestoreConfirmationModal";
+import UnsavedChangesModal from "./ui/UnsavedChangesModal";
 import useBilledTimeAccess from "../hooks/useBilledTimeAccess";
+import useUnsavedChanges from "../hooks/useUnsavedChanges";
 
 const themeOverlay = {
   blue: 'bg-blue-950/60',
@@ -91,6 +93,13 @@ const CardDetailModal = React.memo(({
   const [showArchiveConfirmation, setShowArchiveConfirmation] = useState(false);
   const [showRestoreConfirmation, setShowRestoreConfirmation] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
+
+  // Unsaved Changes Protection
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const initialValuesRef = useRef(null);
+  // Always-current snapshot of editable fields (updated on every render via direct assignment)
+  const currentValuesRef = useRef({});
+
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const setHierarchyProject = useModalHierarchyStore((state) => state.setProject);
   const initializeHierarchyTask = useModalHierarchyStore((state) => state.initializeTaskStack);
@@ -106,6 +115,16 @@ const CardDetailModal = React.memo(({
   const labelUpdateRef = React.useRef(onLabelUpdate);
   const managedHierarchyRef = React.useRef(false);
   const modalContentRef = useRef(null);
+
+  // Keep currentValuesRef up to date on every render (no re-render cost — ref assignment)
+  currentValuesRef.current = { title, description, priority, status, assignees, dueDate, startDate, labels };
+
+  // Detect unsaved changes
+  const { isDirty, dirtyFields } = useUnsavedChanges({
+    initialValues: initialValuesRef.current,
+    currentValues: currentValuesRef.current,
+  });
+
   useEffect(() => {
     labelUpdateRef.current = onLabelUpdate;
   }, [onLabelUpdate]);
@@ -154,6 +173,15 @@ const CardDetailModal = React.memo(({
       document.body.style.overflow = 'unset';
     };
   }, []);
+
+  // Capture the initial field values once the card data has finished loading.
+  // This establishes the "clean" baseline for dirty-state comparison.
+  useEffect(() => {
+    if (!cardDataLoading && !initialValuesRef.current) {
+      initialValuesRef.current = { ...currentValuesRef.current };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardDataLoading]);
 
   /**
    * Helper to normalize time entries from server response
@@ -1172,6 +1200,30 @@ const CardDetailModal = React.memo(({
     }
   }, [billedTime, userOwnsTimeEntry, card]);
 
+  /**
+   * Guard-aware close: shows the UnsavedChangesModal if there are pending edits,
+   * otherwise closes the modal immediately.
+   */
+  const handleRequestClose = useCallback(() => {
+    if (isDirty) {
+      setShowUnsavedModal(true);
+    } else {
+      onClose();
+    }
+  }, [isDirty, onClose]);
+
+  // ESC key closes (with dirty guard)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !showUnsavedModal) {
+        e.preventDefault();
+        handleRequestClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleRequestClose, showUnsavedModal]);
+
   const handleSave = async () => {
     const cardId = card._id || card.id;
     if (!cardId) {
@@ -1666,7 +1718,7 @@ const CardDetailModal = React.memo(({
         exit={{ opacity: 0 }}
         className={`fixed inset-0 flex items-start justify-center p-4 overflow-y-auto backdrop-blur-sm ${overlayClass}`}
         style={{ zIndex: 60 + depth }}
-        onClick={(e) => e.target === e.currentTarget && onClose()}
+        onClick={(e) => e.target === e.currentTarget && handleRequestClose()}
       >
         <motion.div
           ref={modalContentRef}
@@ -1775,8 +1827,9 @@ const CardDetailModal = React.memo(({
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  onClick={onClose}
+                  onClick={handleRequestClose}
                   className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors"
+                  aria-label="Close"
                 >
                   <X size={24} />
                 </motion.button>
@@ -2132,6 +2185,23 @@ const CardDetailModal = React.memo(({
       onConfirm={handleRestoreCard}
       onCancel={() => setShowRestoreConfirmation(false)}
       isLoading={isArchiving}
+    />
+
+    {/* Unsaved Changes Protection Modal */}
+    <UnsavedChangesModal
+      isOpen={showUnsavedModal}
+      entityName={title || card?.title || 'Task'}
+      dirtyFields={dirtyFields}
+      saving={saving}
+      onSave={async () => {
+        setShowUnsavedModal(false);
+        await handleSave();
+      }}
+      onDiscard={() => {
+        setShowUnsavedModal(false);
+        onClose();
+      }}
+      onContinueEditing={() => setShowUnsavedModal(false)}
     />
   </>
   );

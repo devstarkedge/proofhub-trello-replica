@@ -18,7 +18,9 @@ import useNanoSubtaskStore from "../store/nanoSubtaskStore";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
 import DeletePopup from "../components/ui/DeletePopup";
+import UnsavedChangesModal from "../components/ui/UnsavedChangesModal";
 import useBilledTimeAccess from "../hooks/useBilledTimeAccess";
+import useUnsavedChanges from "../hooks/useUnsavedChanges";
 
 const overlayMap = {
   purple: "bg-purple-950/50",
@@ -74,6 +76,13 @@ const SubtaskDetailModal = ({
   const [parentTaskId, setParentTaskId] = useState(initialData.task || null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deletePopup, setDeletePopup] = useState({ isOpen: false, type: null, data: null });
+
+  // Unsaved Changes Protection
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const initialValuesRef = useRef(null);
+  const currentValuesRef = useRef({});
+
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
@@ -234,6 +243,30 @@ const SubtaskDetailModal = ({
 
   const overlayClass = overlayMap[theme] || overlayMap.purple;
 
+  // Keep currentValuesRef up to date on every render
+  currentValuesRef.current = { title, description, priority, status, assignees, dueDate, startDate };
+
+  // Detect unsaved changes
+  const { isDirty, dirtyFields } = useUnsavedChanges({
+    initialValues: initialValuesRef.current,
+    currentValues: currentValuesRef.current,
+  });
+
+  // Set initial values snapshot once data finishes loading
+  useEffect(() => {
+    if (isDataLoaded) {
+      initialValuesRef.current = { ...currentValuesRef.current };
+      setIsDataLoaded(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
+  // Prevent body scroll
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = 'unset'; };
+  }, []);
+
   useEffect(() => {
     loadSubtask();
     loadTeamMembers();
@@ -390,6 +423,8 @@ const SubtaskDetailModal = ({
       setLoggedTime(normalizeTimeEntries(data.loggedTime, 'logged'));
       setBilledTime(normalizeTimeEntries(data.billedTime, 'billed'));
       setHierarchyActiveItem("subtask", data);
+      // Signal that data has loaded so initial values can be captured
+      setIsDataLoaded(true);
     } catch (error) {
       console.error("Error loading subtask:", error);
       toast.error("Failed to load subtask");
@@ -440,6 +475,26 @@ const SubtaskDetailModal = ({
       setNanoLoading(false);
     }
   };
+
+  const handleRequestClose = useCallback(() => {
+    if (isDirty) {
+      setShowUnsavedModal(true);
+    } else {
+      onClose();
+    }
+  }, [isDirty, onClose]);
+
+  // ESC key closes (with dirty guard)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !showUnsavedModal) {
+        e.preventDefault();
+        handleRequestClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleRequestClose, showUnsavedModal]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -501,6 +556,7 @@ const SubtaskDetailModal = ({
       };
       await Database.updateSubtask(entityId, payload);
       toast.success("Subtask updated");
+      // loadSubtask will set isDataLoaded=true which resets initialValuesRef via useEffect
       await loadSubtask();
     } catch (error) {
       console.error("Error saving subtask:", error);
@@ -1091,7 +1147,7 @@ const SubtaskDetailModal = ({
         exit={{ opacity: 0 }}
         className={`fixed inset-0 flex items-start justify-center p-4 overflow-y-auto backdrop-blur-sm ${overlayClass}`}
         style={{ zIndex: 65 + depth }}
-        onClick={(e) => e.target === e.currentTarget && onClose()}
+        onClick={(e) => e.target === e.currentTarget && handleRequestClose()}
       >
         <motion.div
           ref={modalContentRef}
@@ -1153,8 +1209,9 @@ const SubtaskDetailModal = ({
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  onClick={onClose}
+                  onClick={handleRequestClose}
                   className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors"
+                  aria-label="Close"
                 >
                   <X size={24} />
                 </motion.button>
@@ -1402,6 +1459,23 @@ const SubtaskDetailModal = ({
         onConfirm={handleConfirmGlobalDelete}
         itemType={deletePopup.type || 'subtask'}
         isLoading={deleteLoading}
+      />
+
+      {/* Unsaved Changes Protection Modal */}
+      <UnsavedChangesModal
+        isOpen={showUnsavedModal}
+        entityName={title || initialData?.title || 'Subtask'}
+        dirtyFields={dirtyFields}
+        saving={saving}
+        onSave={async () => {
+          setShowUnsavedModal(false);
+          await handleSave();
+        }}
+        onDiscard={() => {
+          setShowUnsavedModal(false);
+          onClose();
+        }}
+        onContinueEditing={() => setShowUnsavedModal(false)}
       />
     </>
   );

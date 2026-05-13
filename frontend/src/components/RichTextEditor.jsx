@@ -45,6 +45,25 @@ const CustomImage = Image.extend({
   },
 });
 
+/**
+ * Recursively extract all image src values from a TipTap JSON document.
+ * Used to detect images removed by the user so the Attachments section stays in sync.
+ */
+const extractImageSrcs = (json) => {
+  const srcs = [];
+  const traverse = (node) => {
+    if (!node) return;
+    if (node.type === 'image' && node.attrs?.src) {
+      srcs.push(node.attrs.src);
+    }
+    if (Array.isArray(node.content)) {
+      node.content.forEach(traverse);
+    }
+  };
+  if (json) traverse(json);
+  return srcs;
+};
+
 const RichTextEditor = ({
   content,
   onChange,
@@ -84,6 +103,13 @@ const RichTextEditor = ({
   const fileInputRef = useRef(null);
   const attachmentInputRef = useRef(null);
   const editorInstanceRef = useRef(null);
+  // Tracks image srcs currently in the editor to detect user-driven image removals
+  const previousImgSrcsRef = useRef(new Set());
+  // Stable refs for entityType/entityId used inside the onUpdate closure
+  const entityTypeRef = useRef(entityType);
+  const entityIdRef = useRef(entityId || cardId);
+  useEffect(() => { entityTypeRef.current = entityType; }, [entityType]);
+  useEffect(() => { entityIdRef.current = entityId || cardId; }, [entityId, cardId]);
 
   // Helper to determine if we have a valid entity for attachments
   const hasEntityContext = !!(entityId || cardId);
@@ -375,6 +401,26 @@ const RichTextEditor = ({
       onUpdate: ({ editor }) => {
         const html = editor.getHTML();
         onChange(html);
+
+        // Detect images deleted by the user and notify the Attachments section
+        const resolvedEntityId = entityIdRef.current;
+        if (resolvedEntityId) {
+          const currentSrcs = new Set(extractImageSrcs(editor.getJSON()));
+          previousImgSrcsRef.current.forEach((src) => {
+            if (!currentSrcs.has(src)) {
+              window.dispatchEvent(
+                new CustomEvent('editor-image-removed', {
+                  detail: {
+                    entityType: entityTypeRef.current,
+                    entityId: resolvedEntityId,
+                    url: src,
+                  },
+                })
+              );
+            }
+          });
+          previousImgSrcsRef.current = currentSrcs;
+        }
       },
     }, [getEditorSizeClass]);
 
@@ -384,8 +430,17 @@ const RichTextEditor = ({
     editor,
     entityType,
     entityId: entityId || cardId,
-    onChange
+    onChange,
+    previousImgSrcsRef,
   });
+
+  // Initialize previousImgSrcsRef from the editor's initial content
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) {
+      previousImgSrcsRef.current = new Set(extractImageSrcs(editor.getJSON()));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   // Update editor attributes when isExpanded changes
   useEffect(() => {

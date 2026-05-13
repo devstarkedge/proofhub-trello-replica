@@ -48,6 +48,7 @@ const CardSidebar = ({
   entityType = 'card',
 }) => {
   const dropdownRef = useRef(null);
+  const inputRef = useRef(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
   
@@ -58,17 +59,19 @@ const CardSidebar = ({
 
   useEffect(() => {
     const handleClickOutside = (event) => {
+      // If the click is on the search input itself, let the input's onClick handle reopening
+      if (inputRef.current && inputRef.current.contains(event.target)) return;
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         onIsDropdownOpenChange(false);
       }
     };
 
     if (isDropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener('pointerdown', handleClickOutside);
     }
 
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener('pointerdown', handleClickOutside);
     };
   }, [isDropdownOpen, onIsDropdownOpenChange]);
 
@@ -142,12 +145,20 @@ const CardSidebar = ({
             {/* Search Bar & Dropdown - Only visible if has permission */}
             {canAssign && (
               <div className="mb-3 relative">
+                {/* Hidden dummy input to absorb browser autofill targeting */}
+                <input type="text" style={{ display: 'none' }} aria-hidden="true" tabIndex="-1" />
                 <input
+                  ref={inputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => onSearchQueryChange(e.target.value)}
                   onFocus={() => onIsDropdownOpenChange(true)}
+                  onClick={() => onIsDropdownOpenChange(true)}
                   placeholder="Search members by name or email..."
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
 
@@ -270,22 +281,38 @@ const CardSidebar = ({
                   <span className="text-gray-900 font-medium">
                     {priority
                       ? priority.charAt(0).toUpperCase() + priority.slice(1)
-                      : 'No Priority'}
+                      : 'Select priority'}
                   </span>
                 </div>
               }
             >
-              <select
-                value={priority}
-                onChange={(e) => onPriorityChange(e.target.value)}
-                className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="">No Priority</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
+              <div className="relative">
+                <select
+                  value={priority}
+                  onChange={(e) => onPriorityChange(e.target.value)}
+                  className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none"
+                  style={{ paddingRight: priority ? '2.25rem' : undefined }}
+                >
+                  <option value="" disabled hidden>Select priority</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+                {priority && (
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.15 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => { e.stopPropagation(); onPriorityChange(''); }}
+                    className="absolute inset-y-0 right-6 flex items-center px-1 text-gray-400 hover:text-red-500 transition-colors"
+                    title="Clear priority"
+                    aria-label="Clear priority"
+                  >
+                    <X size={13} />
+                  </motion.button>
+                )}
+              </div>
             </EditableField>
           </div>
 
@@ -298,9 +325,8 @@ const CardSidebar = ({
             <select
               value={status}
               onChange={(e) => onStatusChange(e.target.value)}
-              className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full p-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none"
             >
-              <option value="">Select status</option>
               {availableStatuses.map((statusOption, idx) => (
                 <option key={`${statusOption.value}-${idx}`} value={statusOption.value}>
                   {statusOption.label}

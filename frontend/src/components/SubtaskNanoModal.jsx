@@ -16,7 +16,9 @@ import useModalHierarchyStore from "../store/modalHierarchyStore";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
 import DeletePopup from "./ui/DeletePopup";
+import UnsavedChangesModal from "./ui/UnsavedChangesModal";
 import useBilledTimeAccess from "../hooks/useBilledTimeAccess";
+import useUnsavedChanges from "../hooks/useUnsavedChanges";
 
 const overlayMap = {
   pink: "bg-pink-950/50"
@@ -68,6 +70,13 @@ const SubtaskNanoModal = ({
   const [parentSubtaskId, setParentSubtaskId] = useState(initialData.subtask || null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deletePopup, setDeletePopup] = useState({ isOpen: false, type: null, data: null });
+
+  // Unsaved Changes Protection
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const initialValuesRef = useRef(null);
+  const currentValuesRef = useRef({});
+
   const setHierarchyActiveItem = useModalHierarchyStore((state) => state.setActiveItem);
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
@@ -228,6 +237,30 @@ const SubtaskNanoModal = ({
 
   const overlayClass = overlayMap[theme] || overlayMap.pink;
 
+  // Keep currentValuesRef up to date on every render
+  currentValuesRef.current = { title, description, priority, status, assignees, dueDate, startDate };
+
+  // Detect unsaved changes
+  const { isDirty, dirtyFields } = useUnsavedChanges({
+    initialValues: initialValuesRef.current,
+    currentValues: currentValuesRef.current,
+  });
+
+  // Set initial values snapshot once data finishes loading
+  useEffect(() => {
+    if (isDataLoaded) {
+      initialValuesRef.current = { ...currentValuesRef.current };
+      setIsDataLoaded(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
+  // Prevent body scroll
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = 'unset'; };
+  }, []);
+
   useEffect(() => {
     loadNano();
     loadTeamMembers();
@@ -334,6 +367,8 @@ const SubtaskNanoModal = ({
       setLoggedTime(normalizeTimeEntries(data.loggedTime, 'logged'));
       setBilledTime(normalizeTimeEntries(data.billedTime, 'billed'));
       setHierarchyActiveItem("subtaskNano", data);
+      // Signal that data has loaded so initial values can be captured
+      setIsDataLoaded(true);
     } catch (error) {
       console.error("Error loading nano subtask:", error);
       toast.error("Failed to load nano subtask");
@@ -372,6 +407,26 @@ const SubtaskNanoModal = ({
       setActivitiesLoading(false);
     }
   };
+
+  const handleRequestClose = useCallback(() => {
+    if (isDirty) {
+      setShowUnsavedModal(true);
+    } else {
+      onClose();
+    }
+  }, [isDirty, onClose]);
+
+  // ESC key closes (with dirty guard)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !showUnsavedModal) {
+        e.preventDefault();
+        handleRequestClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleRequestClose, showUnsavedModal]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -932,7 +987,7 @@ const SubtaskNanoModal = ({
         exit={{ opacity: 0 }}
         className={`fixed inset-0 flex items-start justify-center p-4 overflow-y-auto backdrop-blur-sm ${overlayClass}`}
         style={{ zIndex: 70 + depth }}
-        onClick={(e) => e.target === e.currentTarget && onClose()}
+        onClick={(e) => e.target === e.currentTarget && handleRequestClose()}
       >
         <motion.div
           ref={modalContentRef}
@@ -988,7 +1043,8 @@ const SubtaskNanoModal = ({
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  onClick={onClose}
+                  onClick={handleRequestClose}
+                  aria-label="Close"
                   className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors"
                 >
                   <X size={24} />
@@ -1221,6 +1277,15 @@ const SubtaskNanoModal = ({
       onConfirm={handleConfirmGlobalDelete}
       itemType={deletePopup.type || 'subtaskNano'}
       isLoading={deleteLoading}
+    />
+    <UnsavedChangesModal
+      isOpen={showUnsavedModal}
+      entityName={title || initialData?.title || 'Nano Subtask'}
+      dirtyFields={dirtyFields}
+      saving={saving}
+      onSave={async () => { setShowUnsavedModal(false); await handleSave(); }}
+      onDiscard={() => { setShowUnsavedModal(false); onClose(); }}
+      onContinueEditing={() => setShowUnsavedModal(false)}
     />
     </>
   );
