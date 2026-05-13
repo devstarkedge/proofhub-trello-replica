@@ -323,6 +323,8 @@ export const chatHooks = {
       ? 'LOGGED_TIME'
       : entryType === 'estimation'
         ? 'ESTIMATED_TIME'
+        : entryType === 'billed'
+          ? 'BILLED_TIME'
           : null;
 
     if (!typeKey) {
@@ -339,17 +341,14 @@ export const chatHooks = {
    * Trigger when a time entry is added.
    * Accepts the legacy (card, entry, board, actor) signature for task logged time
    * and the newer structured payload used for task/subtask/nano time events.
-   * Dispatches both a type-specific event (LOGGED_TIME_ADDED etc.) and the
-   * legacy TIME_ENTRY_ADDED event for backward compatibility.
+   * Dispatches only the type-specific event (LOGGED_TIME_ADDED etc.) to prevent
+   * duplicate messages in the connected chat channel.
    */
   async onTimeEntryAdded(contextOrCard, entry, board, actor) {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildTimeEntryPayload(contextOrCard, entry, board, actor);
     const typedEvent = this._resolveTimeEventName(payload.entryType, 'added');
-    await Promise.all([
-      webhookDispatcher.dispatch(typedEvent, payload),
-      webhookDispatcher.dispatch(EVENTS.TIME_ENTRY_ADDED, payload),
-    ]);
+    await webhookDispatcher.dispatch(typedEvent, payload);
   },
 
   /**
@@ -360,10 +359,7 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildTimeEntryPayload({ ...(context || {}), operation: 'updated' });
     const typedEvent = this._resolveTimeEventName(payload.entryType, 'updated');
-    await Promise.all([
-      webhookDispatcher.dispatch(typedEvent, payload),
-      webhookDispatcher.dispatch(EVENTS.TIME_ENTRY_UPDATED, payload),
-    ]);
+    await webhookDispatcher.dispatch(typedEvent, payload);
   },
 
   /**
@@ -374,10 +370,7 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildTimeEntryPayload({ ...(context || {}), operation: 'deleted' });
     const typedEvent = this._resolveTimeEventName(payload.entryType, 'deleted');
-    await Promise.all([
-      webhookDispatcher.dispatch(typedEvent, payload),
-      webhookDispatcher.dispatch(EVENTS.TIME_ENTRY_DELETED, payload),
-    ]);
+    await webhookDispatcher.dispatch(typedEvent, payload);
   },
 
   // ─── User Hooks ────────────────────────────────────────────────────────
