@@ -101,7 +101,7 @@ class SlackSlashCommandHandler {
     }
 
     const tasks = await Card.find(query)
-      .populate('board', 'name')
+      .populate('board', 'name department')
       .sort({ priority: -1, dueDate: 1 })
       .limit(15)
       .lean();
@@ -149,7 +149,7 @@ class SlackSlashCommandHandler {
           ? ` • Due: ${blockBuilder.formatDate(task.dueDate, '{date_short}')}` 
           : '';
         blocks.push(blockBuilder.context([
-          `• ${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id))} (${task.board.name})${dueInfo}`
+          `• ${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id, task.board.department))} (${task.board.name})${dueInfo}`
         ]));
       });
     }
@@ -178,7 +178,7 @@ class SlackSlashCommandHandler {
       status: { $ne: 'completed' },
       dueDate: { $lt: now }
     })
-      .populate('board', 'name')
+      .populate('board', 'name department')
       .sort({ dueDate: 1 })
       .limit(20)
       .lean();
@@ -200,7 +200,7 @@ class SlackSlashCommandHandler {
       const urgencyEmoji = overdueDays > 7 ? '🔴' : overdueDays > 3 ? '🟠' : '🟡';
 
       blocks.push(blockBuilder.section(
-        `${urgencyEmoji} *${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id))}*\n` +
+        `${urgencyEmoji} *${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id, task.board.department))}*\n` +
         `📁 ${task.board.name} • Overdue by *${overdueDays} day${overdueDays > 1 ? 's' : ''}*`,
         blockBuilder.button('✅ Done', `complete_overdue_${task._id}`, task._id.toString())
       ));
@@ -297,7 +297,7 @@ class SlackSlashCommandHandler {
     const task = await Card.findOne({
       title: { $regex: taskName, $options: 'i' },
       isArchived: false
-    }).populate('board', 'name');
+    }).populate('board', 'name department');
 
     if (!task) {
       return this.errorResponse(`Task "${taskName}" not found.`);
@@ -315,7 +315,7 @@ class SlackSlashCommandHandler {
       blocks: [
         blockBuilder.section(
           `✅ *Task Assigned*\n` +
-          `<@${assigneeSlackId}> has been assigned to *${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id))}*`
+          `<@${assigneeSlackId}> has been assigned to *${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id, task.board.department))}*`
         ),
         blockBuilder.context([`📁 ${task.board.name}`])
       ]
@@ -336,7 +336,7 @@ class SlackSlashCommandHandler {
       title: { $regex: taskName, $options: 'i' },
       isArchived: false
     })
-      .populate('board', 'name')
+      .populate('board', 'name department')
       .populate('assignees', 'name')
       .lean();
 
@@ -382,13 +382,14 @@ class SlackSlashCommandHandler {
     }
 
     if (task.description) {
+      const descText = blockBuilder.sanitizeText(task.description || '');
       blocks.push(blockBuilder.divider());
-      blocks.push(blockBuilder.section(task.description.substring(0, 500)));
+      blocks.push(blockBuilder.section(descText.substring(0, 500)));
     }
 
     blocks.push(blockBuilder.divider());
     blocks.push(blockBuilder.actions('task_status_actions', [
-      blockBuilder.linkButton('📋 View Full Details', blockBuilder.taskUrl(task._id, task.board._id), 'view_task')
+      blockBuilder.linkButton('📋 View Full Details', blockBuilder.taskUrl(task._id, task.board._id, task.board.department), 'view_task')
     ]));
 
     return {
@@ -421,7 +422,7 @@ class SlackSlashCommandHandler {
       ],
       isArchived: false
     })
-      .populate('board', 'name')
+      .populate('board', 'name department')
       .limit(10)
       .lean();
 
@@ -440,7 +441,7 @@ class SlackSlashCommandHandler {
 
     tasks.forEach(task => {
       blocks.push(blockBuilder.context([
-        `• ${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id))} - ${task.board.name}`
+        `• ${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id, task.board.department))} - ${task.board.name}`
       ]));
     });
 
@@ -515,7 +516,7 @@ class SlackSlashCommandHandler {
 
       blocks.push(blockBuilder.section(
         `${statusEmoji} *${blockBuilder.link(board.name, blockBuilder.boardUrl(board._id, board.department))}*\n` +
-        `${board.description?.substring(0, 100) || 'No description'}`,
+        `${(blockBuilder.sanitizeText(board.description || '') || 'No description').substring(0, 100)}`,
         blockBuilder.overflowMenu(`project_menu_${board._id}`, [
           { text: '📊 View Stats', value: `stats_${board._id}` },
           { text: '📋 View Tasks', value: `tasks_${board._id}` }
@@ -571,7 +572,7 @@ class SlackSlashCommandHandler {
 
     const blocks = [
       blockBuilder.header(`📁 ${board.name}`),
-      blockBuilder.section(board.description || '_No description_'),
+      blockBuilder.section(blockBuilder.sanitizeText(board.description || '') || '_No description_'),
       blockBuilder.divider(),
       blockBuilder.section(
         `*📊 Task Overview*\n` +

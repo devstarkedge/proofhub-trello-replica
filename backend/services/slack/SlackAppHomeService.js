@@ -166,7 +166,7 @@ class SlackAppHomeService {
         isArchived: false,
         status: { $ne: 'completed' }
       })
-        .populate('board', 'name')
+        .populate('board', 'name department')
         .sort({ priority: -1, dueDate: 1 })
         .limit(25)
         .lean(),
@@ -178,7 +178,7 @@ class SlackAppHomeService {
         status: { $ne: 'completed' },
         dueDate: { $lt: now }
       })
-        .populate('board', 'name')
+        .populate('board', 'name department')
         .sort({ dueDate: 1 })
         .limit(10)
         .lean(),
@@ -190,7 +190,7 @@ class SlackAppHomeService {
         status: { $ne: 'completed' },
         dueDate: { $gte: startOfToday, $lt: endOfToday }
       })
-        .populate('board', 'name')
+        .populate('board', 'name department')
         .lean(),
 
       // Recently updated
@@ -199,7 +199,7 @@ class SlackAppHomeService {
         isArchived: false,
         updatedAt: { $gte: new Date(now.getTime() - 48 * 60 * 60 * 1000) }
       })
-        .populate('board', 'name')
+        .populate('board', 'name department')
         .sort({ updatedAt: -1 })
         .limit(5)
         .lean(),
@@ -398,7 +398,7 @@ class SlackAppHomeService {
         blocks.push(blockBuilder.section('*📋 Todo*'));
         byStatus['todo'].slice(0, 5).forEach(task => {
           blocks.push(blockBuilder.context([
-            `• ${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id))} - ${task.board?.name || 'Unknown'}`
+            `• ${blockBuilder.link(task.title, blockBuilder.taskUrl(task._id, task.board._id, task.board?.department))} - ${task.board?.name || 'Unknown'}`
           ]));
         });
 

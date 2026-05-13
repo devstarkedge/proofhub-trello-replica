@@ -155,6 +155,21 @@ const WorkFlow = memo(() => {
     }
   }, [deptId, projectId, teamLoading]);
 
+  // Redirect to correct URL if deptId is invalid (e.g. "undefined" from legacy Slack links)
+  useEffect(() => {
+    if (!board || loading) return;
+    const isInvalidDeptId = !deptId || deptId === 'undefined';
+    if (!isInvalidDeptId) return;
+    const boardDeptId = typeof board.department === 'object'
+      ? board.department?._id?.toString()
+      : board.department?.toString();
+    if (!boardDeptId) return;
+    const correctUrl = taskId
+      ? `/workflow/${boardDeptId}/${projectId}/${taskId}`
+      : `/workflow/${boardDeptId}/${projectId}`;
+    navigate(correctUrl, { replace: true });
+  }, [board, loading, deptId, projectId, taskId, navigate]);
+
   useEffect(() => {
     if (user && board) {
       socketService.connect(user.id);

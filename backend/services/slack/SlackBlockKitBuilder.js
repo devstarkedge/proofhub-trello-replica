@@ -249,12 +249,48 @@ class SlackBlockKitBuilder {
    * Uses the workflow route: /workflow/:deptId/:projectId/:taskId
    */
   taskUrl(cardId, boardId, departmentId = null) {
-    // If departmentId is available, use the full workflow URL
-    if (departmentId) {
-      return `${this.appUrl}/workflow/${departmentId}/${boardId}/${cardId}`;
+    const deptId = departmentId && departmentId !== 'undefined' ? departmentId : null;
+    if (deptId) {
+      return `${this.appUrl}/workflow/${deptId}/${boardId}/${cardId}`;
     }
-    // Fallback: Use basic workflow URL (may show undefined for department)
-    return `${this.appUrl}/workflow/${departmentId || 'undefined'}/${boardId}/${cardId}`;
+    // Fallback when department is unavailable: link to app home
+    return `${this.appUrl}/`;
+  }
+
+  /**
+   * Sanitize HTML/rich text into plaintext suitable for Slack messages.
+   * Converts common tags (<br>, <p>, etc.) to newlines and strips remaining HTML.
+   */
+  sanitizeText(html) {
+    if (!html) return '';
+    let t = String(html);
+
+    // Normalize line endings
+    t = t.replace(/\r\n?/g, '\n');
+
+    // Convert common block-level tags to newlines
+    t = t.replace(/<br\s*\/?\s*>/gi, '\n');
+    t = t.replace(/<\/p>/gi, '\n\n');
+    t = t.replace(/<p[^>]*>/gi, '');
+    t = t.replace(/<\/div>/gi, '\n');
+    t = t.replace(/<li[^>]*>/gi, ' - ');
+    t = t.replace(/<\/li>/gi, '\n');
+
+    // Remove any remaining HTML tags
+    t = t.replace(/<[^>]+>/g, '');
+
+    // Decode a few common HTML entities
+    t = t.replace(/&nbsp;/gi, ' ');
+    t = t.replace(/&amp;/gi, '&');
+    t = t.replace(/&lt;/gi, '<');
+    t = t.replace(/&gt;/gi, '>');
+    t = t.replace(/&quot;/gi, '"');
+    t = t.replace(/&#39;/g, "'");
+
+    // Collapse multiple blank lines
+    t = t.replace(/\n\s*\n+/g, '\n\n');
+
+    return t.trim();
   }
 
   /**
@@ -294,11 +330,12 @@ class SlackBlockKitBuilder {
 
     // Task details section
     let detailsText = `*${this.link(task.title, this.taskUrl(task._id, board?._id || task.board, board?.department))}*`;
-    
+
     if (task.description) {
-      const truncatedDesc = task.description.length > 150 
-        ? task.description.substring(0, 147) + '...' 
-        : task.description;
+      const descText = this.sanitizeText(task.description);
+      const truncatedDesc = descText.length > 150
+        ? descText.substring(0, 147) + '...'
+        : descText;
       detailsText += `\n${truncatedDesc}`;
     }
 
@@ -538,7 +575,10 @@ class SlackBlockKitBuilder {
     const blocks = [
       this.header(`${emoji} ${headerText}`),
       this.section(`On *${this.link(task.title, this.taskUrl(task._id, board._id, board?.department))}*`),
-      this.section(`> ${comment.text.substring(0, 500)}${comment.text.length > 500 ? '...' : ''}`),
+      (() => {
+        const commentText = this.sanitizeText(comment.text || '');
+        return this.section(`> ${commentText.substring(0, 500)}${commentText.length > 500 ? '...' : ''}`);
+      })(),
       this.context([
         author.avatar 
           ? { type: 'image', image_url: author.avatar, alt_text: author.name }
@@ -597,10 +637,11 @@ class SlackBlockKitBuilder {
     const color = categoryColors[announcement.category] || '#6366f1';
     const announcementUrl = `${this.appUrl}/announcements?open=${announcement._id}`;
 
-    // Truncate description for Slack message
-    const truncatedDescription = announcement.description.length > 300
-      ? announcement.description.substring(0, 297) + '...'
-      : announcement.description;
+    // Truncate description for Slack message (sanitize HTML)
+    const announcementText = this.sanitizeText(announcement.description || '');
+    const truncatedDescription = announcementText.length > 300
+      ? announcementText.substring(0, 297) + '...'
+      : announcementText;
 
     const blocks = [
       // Header
@@ -912,7 +953,7 @@ class SlackBlockKitBuilder {
 
       overdueTasks.slice(0, 5).forEach(task => {
         if (task && task.title) {
-          const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+          const taskUrl = this.taskUrl(task._id, task.board?._id || task.board, task.board?.department);
           const daysOverdue = task.overdueDays || Math.ceil((new Date() - new Date(task.dueDate)) / (1000 * 60 * 60 * 24));
           
           blocks.push({
@@ -963,7 +1004,7 @@ class SlackBlockKitBuilder {
 
       dueTodayTasks.slice(0, 5).forEach(task => {
         if (task && task.title) {
-          const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+          const taskUrl = this.taskUrl(task._id, task.board?._id || task.board, task.board?.department);
           const priorityEmoji = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' }[task.priority] || '';
           
           blocks.push({
@@ -1029,7 +1070,7 @@ class SlackBlockKitBuilder {
 
         inProgress.slice(0, 3).forEach(task => {
           if (task && task.title) {
-            const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+            const taskUrl = this.taskUrl(task._id, task.board?._id || task.board, task.board?.department);
             const priorityEmoji = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' }[task.priority] || '⚪';
             const dueDateStr = task.dueDate ? ` • 📅 ${new Date(task.dueDate).toLocaleDateString()}` : '';
             
@@ -1074,7 +1115,7 @@ class SlackBlockKitBuilder {
 
         todo.slice(0, 3).forEach(task => {
           if (task && task.title) {
-            const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+            const taskUrl = this.taskUrl(task._id, task.board?._id || task.board, task.board?.department);
             const priorityEmoji = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' }[task.priority] || '⚪';
             
             blocks.push({
@@ -1110,7 +1151,7 @@ class SlackBlockKitBuilder {
 
         inReview.slice(0, 2).forEach(task => {
           if (task && task.title) {
-            const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+            const taskUrl = this.taskUrl(task._id, task.board?._id || task.board, task.board?.department);
             
             blocks.push({
               type: 'section',
@@ -1162,7 +1203,7 @@ class SlackBlockKitBuilder {
       });
 
       const recentItems = recentlyUpdated.slice(0, 3).map(task => {
-        const taskUrl = `${frontendUrl}/project/${task.board?._id || task.board}/task/${task._id}`;
+        const taskUrl = this.taskUrl(task._id, task.board?._id || task.board, task.board?.department);
         const timeAgo = this.getTimeAgo(task.updatedAt);
         return `• *<${taskUrl}|${task.title}>* - ${timeAgo}`;
       });
@@ -1520,7 +1561,11 @@ class SlackBlockKitBuilder {
       },
       blocks: [
         this.section(`*Task:* ${task.title}`),
-        comment ? this.section(`> ${comment.text.substring(0, 200)}...`) : null,
+        (() => {
+          if (!comment) return null;
+          const c = this.sanitizeText(comment.text || '');
+          return this.section(`> ${c.substring(0, 200)}${c.length > 200 ? '...' : ''}`);
+        })(),
         this.divider(),
         {
           type: 'input',

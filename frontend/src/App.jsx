@@ -92,8 +92,6 @@ function App() {
                 <Route path="/workflow/:deptId/:projectId" element={<WorkFlow />} />
                 <Route path="/workflow/:deptId/:projectId/:taskId" element={<WorkFlow />} />
                 <Route path="/workflow/:deptId/:projectId/trash" element={<ProjectTrash />} />
-                <Route path="/project/:projectId/task/:taskId/subtask/:subtaskId" element={<WorkFlow />} />
-                <Route path="/project/:projectId/task/:taskId/subtask/:subtaskId/neno/:nenoId" element={<WorkFlow />} />
 
                 <Route
                   path="/teams"
