@@ -109,18 +109,26 @@ export const uploadAnnouncementAttachment = async (fileBuffer, options = {}) => 
     }
   };
 
-  // Add image-specific transformations
+  // Add image-specific transformations - but preserve SVG format
   if (isImage) {
-    uploadOptions.eager = [
-      { width: 150, height: 150, crop: 'thumb', gravity: 'auto', quality: 'auto:low', format: 'webp' },
-      { width: 400, height: 400, crop: 'limit', quality: 'auto:good', format: 'webp' },
-      { width: 1200, height: 1200, crop: 'limit', quality: 'auto:best' }
-    ];
-    uploadOptions.eager_async = true;
-    uploadOptions.transformation = [
-      { quality: 'auto:good' },
-      { fetch_format: 'auto' }
-    ];
+    // SVG files should NOT be transformed - they're vector graphics
+    // f_auto and eager transformations with format:'webp' convert SVG to raster
+    const isSvgFile = mimetype === 'image/svg+xml' || originalName?.toLowerCase().endsWith('.svg');
+    
+    if (!isSvgFile) {
+      // Apply transformations for raster images only
+      uploadOptions.eager = [
+        { width: 150, height: 150, crop: 'thumb', gravity: 'auto', quality: 'auto:low', format: 'webp' },
+        { width: 400, height: 400, crop: 'limit', quality: 'auto:good', format: 'webp' },
+        { width: 1200, height: 1200, crop: 'limit', quality: 'auto:best' }
+      ];
+      uploadOptions.eager_async = true;
+      uploadOptions.transformation = [
+        { quality: 'auto:good' },
+        { fetch_format: 'auto' }
+      ];
+    }
+    // For SVG: no transformations applied - preserves vector format
   }
 
   return new Promise((resolve, reject) => {
@@ -345,13 +353,23 @@ export const uploadToCloudinary = (fileBuffer, options = {}) => {
       ...options
     };
 
-    // Add transformations for images (thumbnails)
+    // Add transformations for images (thumbnails) - but preserve SVG format
     if (options.resourceType === 'image' || !options.resourceType) {
-      uploadOptions.eager = [
-        { width: 200, height: 200, crop: 'thumb', gravity: 'auto', quality: 'auto:low' },
-        { width: 800, height: 800, crop: 'limit', quality: 'auto:good' }
-      ];
-      uploadOptions.eager_async = true;
+      // Check if this is an SVG file - SVGs should NOT be transformed
+      // f_auto and eager transformations convert SVG to PNG/WebP
+      const mimeType = options.context?.mimetype || options.mimetype || '';
+      const fileName = options.context?.original_name || options.original_name || '';
+      const isSvgFile = mimeType === 'image/svg+xml' || fileName.toLowerCase().endsWith('.svg');
+      
+      if (!isSvgFile) {
+        // Apply transformations for raster images only
+        uploadOptions.eager = [
+          { width: 200, height: 200, crop: 'thumb', gravity: 'auto', quality: 'auto:low' },
+          { width: 800, height: 800, crop: 'limit', quality: 'auto:good' }
+        ];
+        uploadOptions.eager_async = true;
+      }
+      // For SVG: no eager transformations - preserves vector format
     }
 
     const uploadStream = cloudinary.uploader.upload_stream(

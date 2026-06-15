@@ -218,14 +218,20 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     attachmentData.board = resolvedBoardId;
   }
 
-  // Add thumbnail URLs for images
+  // Add thumbnail URLs for images - but not for SVGs (vector format)
   if (fileType === 'image') {
-    attachmentData.thumbnailUrl = getThumbnailUrl(cloudinaryResult.public_id, 200, 200);
-    attachmentData.previewUrl = getOptimizedUrl(cloudinaryResult.public_id, {
-      width: 800,
-      height: 800,
-      crop: 'limit'
-    });
+    const mimeType = req.file.mimetype;
+    const isSvg = mimeType === 'image/svg+xml';
+    
+    if (!isSvg) {
+      // Only generate thumbnails for raster images
+      attachmentData.thumbnailUrl = getThumbnailUrl(cloudinaryResult.public_id, 200, 200);
+      attachmentData.previewUrl = getOptimizedUrl(cloudinaryResult.public_id, {
+        width: 800,
+        height: 800,
+        crop: 'limit'
+      });
+    }
   }
 
   const attachment = await Attachment.create(attachmentData);
@@ -364,12 +370,16 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
       };
 
       if (fileType === 'image') {
-        attachmentData.thumbnailUrl = getThumbnailUrl(cloudinaryResult.public_id, 200, 200);
-        attachmentData.previewUrl = getOptimizedUrl(cloudinaryResult.public_id, {
-          width: 800,
-          height: 800,
-          crop: 'limit'
-        });
+        // Skip thumbnails for SVG - vector format doesn't need rasterization
+        const isSvg = file.mimetype === 'image/svg+xml';
+        if (!isSvg) {
+          attachmentData.thumbnailUrl = getThumbnailUrl(cloudinaryResult.public_id, 200, 200);
+          attachmentData.previewUrl = getOptimizedUrl(cloudinaryResult.public_id, {
+            width: 800,
+            height: 800,
+            crop: 'limit'
+          });
+        }
       }
 
       return { success: true, data: attachmentData, originalName: file.originalname };
@@ -1245,14 +1255,19 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
     attachmentData.nanoSubtask = nanoSubtaskId;
   }
 
-  // Add thumbnail URLs for images
+  // Add thumbnail URLs for images - but not for SVGs (vector format)
   if (fileType === 'image') {
-    attachmentData.thumbnailUrl = getThumbnailUrl(cloudinaryResult.public_id, 200, 200);
-    attachmentData.previewUrl = getOptimizedUrl(cloudinaryResult.public_id, {
-      width: 800,
-      height: 800,
-      crop: 'limit'
-    });
+    const isSvg = actualMimeType === 'image/svg+xml';
+    if (!isSvg) {
+      // Only generate thumbnails for raster images
+      attachmentData.thumbnailUrl = getThumbnailUrl(cloudinaryResult.public_id, 200, 200);
+      attachmentData.previewUrl = getOptimizedUrl(cloudinaryResult.public_id, {
+        width: 800,
+        height: 800,
+        crop: 'limit'
+      });
+    }
+    // SVG: skip thumbnails - vector format scales infinitely
   }
 
   const attachment = await Attachment.create(attachmentData);

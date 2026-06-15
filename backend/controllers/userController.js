@@ -769,6 +769,9 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
 
       // Notify admins viewing HR panel
       emitToTeam('admin', 'user-role-changed', payload);
+
+      // Sync role change to Chat App
+      chatHooks.onUserUpdated(user, { role: { old: previousRole, new: normalizedRole } }, req.user).catch(console.error);
     } catch (err) {
       console.error('Error emitting role change socket event:', err);
     }

@@ -522,14 +522,30 @@ export function buildUserPayload(user, event) {
 }
 
 export function buildUserUpdatedPayload(user, changes, actor) {
+  const workspaceId = resolveWorkspaceId();
   return {
-    ...buildUserPayload(user, 'USER_UPDATED'),
+    workspaceId,
+    user: {
+      _id: (user._id || user.id)?.toString(),
+      id: (user._id || user.id)?.toString(),
+      name: user.name || '',
+      email: user.email || '',
+      role: user.role || 'employee',
+      department: Array.isArray(user.department)
+        ? user.department.map((d) => (d._id || d).toString())
+        : user.department
+          ? [user.department.toString()]
+          : [],
+      avatar: user.avatar || null,
+      isActive: user.isActive !== false,
+      isVerified: user.isVerified !== false,
+    },
     changes: changes || {},
     actor: buildActor(actor),
   };
 }
 
-// â”€â”€â”€ Announcement Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Announcement Payloads 
 
 export function buildAnnouncementPayload(announcement, actor) {
   const workspaceId = resolveWorkspaceId();
