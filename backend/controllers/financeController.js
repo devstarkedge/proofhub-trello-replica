@@ -23,8 +23,7 @@ const calculatePayment = (project, totalBilledMinutes) => {
   const billedHours = totalBilledMinutes / 60;
   
   if (project.billingCycle === 'fixed') {
-    // Only count fixed payment when there is actual billed activity in the filtered period
-    return totalBilledMinutes > 0 ? (project.fixedPrice || 0) : 0;
+    return project.fixedPrice || 0;
   } else if (project.billingCycle === 'hr') {
     return billedHours * (project.hourlyPrice || 0);
   }
@@ -950,7 +949,7 @@ export const getWeeklyReportData = async (req, res) => {
             if (proj.billingCycle === 'hr') {
               return sum + (mins / 60) * (proj.hourlyPrice || 0);
             }
-            if (proj.billingCycle === 'fixed' && mins > 0) {
+            if (proj.billingCycle === 'fixed') {
               return sum + (proj.fixedPrice || 0);
             }
             return sum;
