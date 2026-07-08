@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
+import React, { useState, useEffect } from 'react';
+import {
   Calendar,
   Clock,
   DollarSign,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import ProjectWorkflowLink from './ProjectWorkflowLink';
+import BillingTypeFilter from './BillingTypeFilter';
 
 /**
  * WeeklyReport - Week-wise finance report view
@@ -28,6 +29,7 @@ const WeeklyReport = ({ viewType = 'users' }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [expandedWeeks, setExpandedWeeks] = useState({});
   const [currentViewType, setCurrentViewType] = useState(viewType);
+  const [billingType, setBillingType] = useState('all');
 
   // Month names
   const months = [
@@ -40,19 +42,20 @@ const WeeklyReport = ({ viewType = 'users' }) => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const params = new URLSearchParams({
         year: selectedYear.toString(),
         month: selectedMonth.toString(),
-        viewType: currentViewType
+        viewType: currentViewType,
+        billingType
       });
-      
+
       const response = await api.get(`/api/finance/weekly?${params.toString()}`);
-      
+
       if (response.data.success) {
         setWeeklyData(response.data.data.weeks || []);
         setMonthlyTotals(response.data.data.monthlyTotals || {});
-        
+
         // Auto-expand all weeks
         const expanded = {};
         (response.data.data.weeks || []).forEach(w => { expanded[w.week] = true; });
@@ -68,7 +71,7 @@ const WeeklyReport = ({ viewType = 'users' }) => {
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth, selectedYear, currentViewType]);
+  }, [selectedMonth, selectedYear, currentViewType, billingType]);
 
   // Toggle week expansion
   const toggleWeek = (week) => {
@@ -111,26 +114,26 @@ const WeeklyReport = ({ viewType = 'users' }) => {
   return (
     <div>
       {/* Header with Month/Year Selector */}
-      <div 
+      <div
         className="p-4 rounded-xl mb-6 border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-        style={{ 
+        style={{
           backgroundColor: 'var(--color-bg-secondary)',
           borderColor: 'var(--color-border-subtle)'
         }}
       >
         <div className="flex items-center gap-2">
           <Calendar className="w-5 h-5" style={{ color: '#10b981' }} />
-          <h2 
+          <h2
             className="text-lg font-semibold"
             style={{ color: 'var(--color-text-primary)' }}
           >
             Weekly Report
           </h2>
         </div>
-        
+
         <div className="flex flex-wrap items-center gap-3">
           {/* View Type Toggle */}
-          <div 
+          <div
             className="flex items-center gap-1 p-1 rounded-lg"
             style={{ backgroundColor: 'var(--color-bg-muted)' }}
           >
@@ -160,6 +163,11 @@ const WeeklyReport = ({ viewType = 'users' }) => {
             </button>
           </div>
 
+          <BillingTypeFilter
+            value={billingType}
+            onChange={setBillingType}
+          />
+
           {/* Month Selector */}
           <select
             value={selectedMonth}
@@ -175,7 +183,7 @@ const WeeklyReport = ({ viewType = 'users' }) => {
               <option key={month} value={idx}>{month}</option>
             ))}
           </select>
-          
+
           {/* Year Selector */}
           <select
             value={selectedYear}
@@ -191,13 +199,13 @@ const WeeklyReport = ({ viewType = 'users' }) => {
               <option key={year} value={year}>{year}</option>
             ))}
           </select>
-          
+
           {/* Refresh */}
           <button
             onClick={fetchData}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all duration-200 hover:border-emerald-500"
-            style={{ 
+            style={{
               backgroundColor: 'var(--color-bg-primary)',
               borderColor: 'var(--color-border-subtle)',
               color: 'var(--color-text-secondary)'
@@ -210,9 +218,9 @@ const WeeklyReport = ({ viewType = 'users' }) => {
 
       {/* Error State */}
       {error && (
-        <div 
+        <div
           className="p-4 rounded-xl border text-center mb-6"
-          style={{ 
+          style={{
             backgroundColor: 'rgba(239, 68, 68, 0.1)',
             borderColor: 'rgba(239, 68, 68, 0.3)',
             color: '#ef4444'
@@ -227,20 +235,20 @@ const WeeklyReport = ({ viewType = 'users' }) => {
       {loading ? (
         <div className="space-y-4">
           {[1, 2, 3, 4].map(i => (
-            <div 
+            <div
               key={i}
               className="p-4 rounded-xl border animate-pulse"
-              style={{ 
+              style={{
                 backgroundColor: 'var(--color-bg-secondary)',
                 borderColor: 'var(--color-border-subtle)'
               }}
             >
               <div className="flex items-center justify-between">
-                <div 
+                <div
                   className="h-6 w-32 rounded"
                   style={{ backgroundColor: 'var(--color-bg-muted)' }}
                 />
-                <div 
+                <div
                   className="h-6 w-24 rounded"
                   style={{ backgroundColor: 'var(--color-bg-muted)' }}
                 />
@@ -251,10 +259,10 @@ const WeeklyReport = ({ viewType = 'users' }) => {
       ) : (
         <div className="space-y-4">
           {weeklyData.map((week) => (
-            <div 
+            <div
               key={week.week}
               className="rounded-xl border overflow-hidden"
-              style={{ 
+              style={{
                 backgroundColor: 'var(--color-bg-secondary)',
                 borderColor: 'var(--color-border-subtle)'
               }}
@@ -266,9 +274,9 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                 style={{ backgroundColor: 'var(--color-bg-muted)' }}
               >
                 <div className="flex items-center gap-4">
-                  <div 
+                  <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold"
-                    style={{ 
+                    style={{
                       backgroundColor: 'rgba(16, 185, 129, 0.15)',
                       color: '#10b981'
                     }}
@@ -276,13 +284,13 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                     {week.week}
                   </div>
                   <div className="text-left">
-                    <p 
+                    <p
                       className="font-semibold"
                       style={{ color: 'var(--color-text-primary)' }}
                     >
                       {week.label}
                     </p>
-                    <p 
+                    <p
                       className="text-xs"
                       style={{ color: 'var(--color-text-muted)' }}
                     >
@@ -290,10 +298,10 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-6">
                   <div className="text-right hidden sm:block">
-                    <p 
+                    <p
                       className="text-sm"
                       style={{ color: 'var(--color-text-secondary)' }}
                     >
@@ -301,13 +309,13 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p 
+                    <p
                       className="text-lg font-bold"
                       style={{ color: '#10b981' }}
                     >
                       {formatCurrency(week.totalPayment)}
                     </p>
-                    <p 
+                    <p
                       className="text-xs"
                       style={{ color: 'var(--color-text-muted)' }}
                     >
@@ -327,17 +335,17 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                 <div className="p-4">
                   <div className="space-y-2">
                     {week.items.map((item, idx) => (
-                      <div 
+                      <div
                         key={idx}
                         className="flex items-center justify-between p-3 rounded-lg"
                         style={{ backgroundColor: 'var(--color-bg-primary)' }}
                       >
                         <div className="flex items-center gap-3">
-                          <div 
+                          <div
                             className="w-8 h-8 rounded-lg flex items-center justify-center"
-                            style={{ 
-                              backgroundColor: currentViewType === 'users' 
-                                ? 'rgba(59, 130, 246, 0.12)' 
+                            style={{
+                              backgroundColor: currentViewType === 'users'
+                                ? 'rgba(59, 130, 246, 0.12)'
                                 : 'rgba(139, 92, 246, 0.12)'
                             }}
                           >
@@ -349,7 +357,7 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                           </div>
                           <div>
                             {currentViewType === 'users' ? (
-                              <p 
+                              <p
                                 className="font-medium text-sm"
                                 style={{ color: 'var(--color-text-primary)' }}
                               >
@@ -365,12 +373,12 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                                 {item.projectName}
                               </ProjectWorkflowLink>
                             )}
-                            <p 
+                            <p
                               className="text-xs"
                               style={{ color: 'var(--color-text-muted)' }}
                             >
-                              {currentViewType === 'users' 
-                                ? `${item.projectCount || 0} projects` 
+                              {currentViewType === 'users'
+                                ? `${item.projectCount || 0} projects`
                                 : item.department}
                             </p>
                           </div>
@@ -380,14 +388,14 @@ const WeeklyReport = ({ viewType = 'users' }) => {
                             <p style={{ color: 'var(--color-text-secondary)' }}>
                               {formatTime(item.billedMinutes)}
                             </p>
-                            <p 
+                            <p
                               className="text-xs"
                               style={{ color: 'var(--color-text-muted)' }}
                             >
                               billed
                             </p>
                           </div>
-                          <p 
+                          <p
                             className="font-semibold min-w-20 text-right"
                             style={{ color: '#10b981' }}
                           >
@@ -403,7 +411,7 @@ const WeeklyReport = ({ viewType = 'users' }) => {
               {/* Empty Week */}
               {expandedWeeks[week.week] && (!week.items || week.items.length === 0) && (
                 <div className="p-8 text-center">
-                  <p 
+                  <p
                     className="text-sm"
                     style={{ color: 'var(--color-text-muted)' }}
                   >
@@ -418,15 +426,15 @@ const WeeklyReport = ({ viewType = 'users' }) => {
 
       {/* Monthly Summary */}
       {!loading && (
-        <div 
+        <div
           className="mt-6 p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-          style={{ 
+          style={{
             backgroundColor: 'rgba(16, 185, 129, 0.08)',
             borderColor: 'rgba(16, 185, 129, 0.3)'
           }}
         >
           <div>
-            <span 
+            <span
               className="font-semibold"
               style={{ color: 'var(--color-text-primary)' }}
             >
@@ -436,7 +444,7 @@ const WeeklyReport = ({ viewType = 'users' }) => {
               {formatTime(monthlyTotals.totalBilledMinutes || 0)} total billed time
             </p>
           </div>
-          <span 
+          <span
             className="text-xl font-bold"
             style={{ color: '#10b981' }}
           >

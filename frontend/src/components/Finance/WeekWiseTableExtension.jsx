@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar,
   ChevronDown,
@@ -22,6 +22,7 @@ const WeekWiseTableExtension = ({
   type = 'users', 
   year,
   departmentId,
+  billingType = 'all',
   onDataLoaded,
   formatCurrency
 }) => {
@@ -32,7 +33,7 @@ const WeekWiseTableExtension = ({
 
   // Default currency formatter
   const defaultFormatCurrency = (amount) => {
-    if (amount === null || amount === undefined) return '—';
+    if (amount === null || amount === undefined) return '-';
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
@@ -51,7 +52,8 @@ const WeekWiseTableExtension = ({
       
       const params = new URLSearchParams({
         year: year.toString(),
-        viewType: type
+        viewType: type,
+        billingType
       });
       
       if (departmentId) {
@@ -85,7 +87,7 @@ const WeekWiseTableExtension = ({
 
   useEffect(() => {
     fetchData();
-  }, [year, type, departmentId]);
+  }, [year, type, departmentId, billingType]);
 
   // Toggle month expansion
   const toggleMonth = (month) => {
@@ -97,7 +99,7 @@ const WeekWiseTableExtension = ({
 
   // Format week value
   const formatWeekValue = (value) => {
-    if (value === null || value === undefined || value === 0) return '—';
+    if (value === null || value === undefined || value === 0) return '-';
     return currencyFormatter(value);
   };
 

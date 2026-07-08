@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { 
+import {
   Search as SearchIcon,
   FolderKanban,
   Building2,
@@ -24,6 +24,7 @@ import api from '../../services/api';
 import SummaryCards from '../../components/Finance/SummaryCards';
 import DateFilters from '../../components/Finance/DateFilters';
 import DepartmentFilter from '../../components/Finance/DepartmentFilter';
+import BillingTypeFilter from '../../components/Finance/BillingTypeFilter';
 import CoordinatorAvatars from '../../components/Finance/CoordinatorAvatars';
 import GlobalSearch from '../../components/Finance/GlobalSearch';
 import ExportButton from '../../components/Finance/ExportButton';
@@ -32,7 +33,7 @@ import ColumnTooltip, { COLUMN_EXPLANATIONS } from '../../components/Finance/Col
 import { PaymentBreakdownCell } from '../../components/Finance/PaymentBreakdown';
 import EmptyState from '../../components/Finance/EmptyState';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
-import { WeekWiseHeaders, WeekWiseCells, formatWeekValue } from '../../components/Finance/WeekWiseColumns';
+import { WeekWiseHeaders, WeekWiseCells } from '../../components/Finance/WeekWiseColumns';
 
 /**
  * ProjectsTab - Project-centric Finance View (Enhanced)
@@ -58,7 +59,8 @@ const ProjectsTab = () => {
     startDate: null,
     endDate: null,
     departmentId: null,
-    projectId: null
+    projectId: null,
+    billingType: 'all'
   });
 
   // Week-wise reporting mode state
@@ -73,12 +75,14 @@ const ProjectsTab = () => {
     const params = new URLSearchParams(location.search);
     const projectIdParam = params.get('projectId');
     const departmentIdParam = params.get('departmentId');
-    
-    if (projectIdParam || departmentIdParam) {
+    const billingTypeParam = params.get('billingType');
+
+    if (projectIdParam || departmentIdParam || billingTypeParam) {
       setFilters(prev => ({
         ...prev,
         projectId: projectIdParam || null,
-        departmentId: departmentIdParam || null
+        departmentId: departmentIdParam || null,
+        billingType: billingTypeParam || prev.billingType
       }));
     }
   }, [location.search]);
@@ -88,18 +92,19 @@ const ProjectsTab = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const params = new URLSearchParams();
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
       if (filters.departmentId) params.append('departmentId', filters.departmentId);
       if (filters.projectId) params.append('projectId', filters.projectId);
-      
+      if (filters.billingType) params.append('billingType', filters.billingType);
+
       const response = await api.get(`/api/finance/projects?${params.toString()}`);
-      
+
       if (response.data.success) {
         setData(response.data.data || []);
-        
+
         // Auto-expand all departments initially
         const expanded = {};
         Object.keys(response.data.groupedByDepartment || {}).forEach(dept => {
@@ -126,7 +131,7 @@ const ProjectsTab = () => {
         setWeeklyData(null);
         return;
       }
-      
+
       try {
         setWeeklyDataLoading(true);
         const params = new URLSearchParams({
@@ -137,7 +142,10 @@ const ProjectsTab = () => {
         if (filters.departmentId) {
           params.append('departmentId', filters.departmentId);
         }
-        
+
+        if (filters.billingType) {
+          params.append('billingType', filters.billingType);
+        }
         const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`);
         if (response.data.success) {
           setWeeklyData(response.data.data);
@@ -148,9 +156,9 @@ const ProjectsTab = () => {
         setWeeklyDataLoading(false);
       }
     };
-    
+
     fetchWeeklyData();
-  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId]);
+  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, filters.billingType]);
 
   // Handle card click for filtering
   const handleCardClick = (action, value) => {
@@ -222,7 +230,7 @@ const ProjectsTab = () => {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
@@ -233,48 +241,48 @@ const ProjectsTab = () => {
   // Filter and sort data
   const processedData = useMemo(() => {
     let result = [...data];
-    
+
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      result = result.filter(project => 
+      result = result.filter(project =>
         project.projectName?.toLowerCase().includes(query) ||
         project.clientInfo?.clientName?.toLowerCase().includes(query) ||
         project.upworkId?.toLowerCase().includes(query) ||
         project.department?.toLowerCase().includes(query)
       );
     }
-    
+
     // Sort
     result.sort((a, b) => {
       let aVal = a[sortConfig.key];
       let bVal = b[sortConfig.key];
-      
+
       if (sortConfig.key === 'billedTime' || sortConfig.key === 'loggedTime') {
         aVal = a[sortConfig.key]?.totalMinutes || 0;
         bVal = b[sortConfig.key]?.totalMinutes || 0;
       }
-      
+
       if (sortConfig.direction === 'asc') {
         return aVal > bVal ? 1 : -1;
       }
       return aVal < bVal ? 1 : -1;
     });
-    
+
     return result;
   }, [data, searchQuery, sortConfig]);
 
   // Build weekly payments lookup from weeklyData (grouped by projectId)
   // Also track which month the data is from
   const weeklyPaymentsMap = useMemo(() => {
-    if (!weeklyData || !weeklyData.months) return { payments: {}, activeMonth: 0 };
-    
+    if (!weeklyData || !weeklyData.months) return { payments: {}, activeMonth: 0, activeMonthTotal: 0 };
+
     const map = {};
-    
+
     // Find data for the selected month (fall back to first available month)
     const monthData = weeklyData.months?.find(m => m.month === selectedMonth) || weeklyData.months?.[0];
     const activeMonth = monthData?.month ?? 0;
-    
+
     if (monthData?.items) {
       monthData.items.forEach(item => {
         if (item.projectId) {
@@ -282,8 +290,8 @@ const ProjectsTab = () => {
         }
       });
     }
-    
-    return { payments: map, activeMonth };
+
+    return { payments: map, activeMonth, activeMonthTotal: monthData?.totalPayment || 0 };
   }, [weeklyData, selectedMonth]);
 
   // Get the active month name for the week-wise report (data-driven, not current date)
@@ -302,10 +310,10 @@ const ProjectsTab = () => {
     if (!weekWiseMode) return true; // Not in week-wise mode, show all data
     if (weeklyDataLoading) return true; // Still loading, don't show empty state yet
     if (!weeklyData || !weeklyData.months || weeklyData.months.length === 0) return false;
-    
+
     // Check if any month has items with payment data (any week with value > 0)
-    return weeklyData.months.some(month => 
-      month.items && month.items.length > 0 && 
+    return weeklyData.months.some(month =>
+      month.items && month.items.length > 0 &&
       month.items.some(item => {
         const weeks = item.weeks || [0, 0, 0, 0, 0];
         return weeks.some(w => w > 0);
@@ -325,17 +333,21 @@ const ProjectsTab = () => {
           totalBilledMinutes: 0
         };
       }
-      // Add weeklyPayments to each project
+      const weeklyPayments = weeklyPaymentsMap.payments?.[project.projectId] || [0, 0, 0, 0, 0];
+      const visiblePayment = weekWiseMode
+        ? weeklyPayments.reduce((sum, value) => sum + (value || 0), 0)
+        : (project.payment || 0);
       const projectWithWeekly = {
         ...project,
-        weeklyPayments: weeklyPaymentsMap.payments?.[project.projectId] || [0, 0, 0, 0, 0]
+        weeklyPayments,
+        payment: visiblePayment
       };
       grouped[dept].projects.push(projectWithWeekly);
-      grouped[dept].totalPayment += project.payment || 0;
+      grouped[dept].totalPayment += visiblePayment;
       grouped[dept].totalBilledMinutes += project.billedTime?.totalMinutes || 0;
     });
     return grouped;
-  }, [processedData, weeklyPaymentsMap]);
+  }, [processedData, weeklyPaymentsMap, weekWiseMode]);
 
   // Calculate grand totals
   const grandTotals = useMemo(() => {
@@ -373,12 +385,12 @@ const ProjectsTab = () => {
       hourlyRate: project.hourlyPrice ? `$${project.hourlyPrice}/hr` : '-',
       loggedTime: project.loggedTime || { hours: 0, minutes: 0 },
       billedTime: project.billedTime || { hours: 0, minutes: 0 },
-      payment: project.payment || 0,
+      payment: weekWiseMode ? (weeklyPaymentsMap.payments?.[project.projectId] || [0, 0, 0, 0, 0]).reduce((sum, value) => sum + (value || 0), 0) : (project.payment || 0),
       status: project.status || '-',
       startDate: project.startDate ? new Date(project.startDate).toLocaleDateString() : '-',
       endDate: project.endDate ? new Date(project.endDate).toLocaleDateString() : '-'
     }));
-  }, [processedData]);
+  }, [processedData, weekWiseMode, weeklyPaymentsMap]);
 
   // Get status badge color
   const getStatusColor = (status) => {
@@ -397,9 +409,9 @@ const ProjectsTab = () => {
     <tr className="animate-pulse">
       {[...Array(10)].map((_, i) => (
         <td key={i} className="px-3 py-3">
-          <div 
+          <div
             className="h-4 rounded"
-            style={{ 
+            style={{
               backgroundColor: 'var(--color-bg-muted)',
               width: `${50 + Math.random() * 50}%`
             }}
@@ -418,9 +430,9 @@ const ProjectsTab = () => {
       <DataIntegrityWarnings data={data} type="projects" />
 
       {/* Filters Bar */}
-      <div 
+      <div
         className="p-4 rounded-xl mb-6 border"
-        style={{ 
+        style={{
           backgroundColor: 'var(--color-bg-secondary)',
           borderColor: 'var(--color-border-subtle)'
         }}
@@ -428,7 +440,7 @@ const ProjectsTab = () => {
         <div className="flex flex-wrap items-center gap-4">
           {/* Global Search with Autocomplete */}
           <div className="flex-1 min-w-64">
-            <GlobalSearch 
+            <GlobalSearch
               data={data}
               type="projects"
               placeholder="Search projects, clients, Upwork ID..."
@@ -450,13 +462,18 @@ const ProjectsTab = () => {
           </div>
 
           {/* Department Filter */}
-          <DepartmentFilter 
+          <DepartmentFilter
             selectedDepartmentId={filters.departmentId}
             onChange={(deptId) => setFilters(prev => ({ ...prev, departmentId: deptId }))}
           />
 
+          <BillingTypeFilter
+            value={filters.billingType}
+            onChange={(billingType) => setFilters(prev => ({ ...prev, billingType }))}
+          />
+
           {/* Export Button */}
-          <ExportButton 
+          <ExportButton
             data={exportDataFlattened}
             columns={exportColumns}
             filename="projects-finance-report"
@@ -469,7 +486,7 @@ const ProjectsTab = () => {
             onClick={fetchData}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all duration-200 hover:border-emerald-500"
-            style={{ 
+            style={{
               backgroundColor: 'var(--color-bg-primary)',
               borderColor: 'var(--color-border-subtle)',
               color: 'var(--color-text-secondary)'
@@ -482,8 +499,8 @@ const ProjectsTab = () => {
 
         {/* Date Filters Row */}
         <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
-          <DateFilters 
-            filters={filters} 
+          <DateFilters
+            filters={filters}
             setFilters={setFilters}
             onClear={() => {}}
             showSavedPresets={true}
@@ -501,9 +518,9 @@ const ProjectsTab = () => {
 
       {/* Error State */}
       {error && (
-        <div 
+        <div
           className="p-4 rounded-xl border text-center mb-6"
-          style={{ 
+          style={{
             backgroundColor: 'rgba(239, 68, 68, 0.1)',
             borderColor: 'rgba(239, 68, 68, 0.3)',
             color: '#ef4444'
@@ -511,7 +528,7 @@ const ProjectsTab = () => {
         >
           <AlertCircle className="w-5 h-5 mx-auto mb-2" />
           <p className="text-sm">Failed to load data: {error}</p>
-          <button 
+          <button
             onClick={fetchData}
             className="mt-2 text-xs flex items-center gap-1 mx-auto hover:underline"
           >
@@ -522,7 +539,7 @@ const ProjectsTab = () => {
 
       {/* Week-Wise Mode Header */}
       {weekWiseMode && (
-        <div 
+        <div
           className="flex items-center justify-between p-3 rounded-lg mb-4"
           style={{ backgroundColor: 'var(--color-bg-muted)' }}
         >
@@ -534,7 +551,7 @@ const ProjectsTab = () => {
           </div>
           {weeklyData && (
             <span className="text-lg font-bold" style={{ color: '#10b981' }}>
-              {formatCurrency(weeklyData.yearTotal || 0)}
+              {formatCurrency(weeklyData.selectedMonthTotal ?? weeklyPaymentsMap.activeMonthTotal ?? weeklyData.yearTotal ?? 0)}
             </span>
           )}
         </div>
@@ -542,9 +559,9 @@ const ProjectsTab = () => {
 
       {/* Data by Department */}
       {(loading || weeklyDataLoading) ? (
-        <div 
+        <div
           className="rounded-xl border overflow-x-auto overflow-y-hidden"
-          style={{ 
+          style={{
             backgroundColor: 'var(--color-bg-secondary)',
             borderColor: 'var(--color-border-subtle)'
           }}
@@ -579,42 +596,42 @@ const ProjectsTab = () => {
           </table>
         </div>
           ) : Object.keys(groupedProcessedData).length === 0 ? (
-            <div 
+            <div
               className="rounded-xl border"
-              style={{ 
+              style={{
                 backgroundColor: 'var(--color-bg-secondary)',
                 borderColor: 'var(--color-border-subtle)'
               }}
             >
-              <EmptyState 
+              <EmptyState
                 type={searchQuery ? 'noSearchResults' : 'noProjects'}
-                description={searchQuery 
-                  ? 'Try adjusting your search or filters to find projects' 
- 
+                description={searchQuery
+                  ? 'Try adjusting your search or filters to find projects'
+
               : 'Projects with billing information will appear here once created'
             }
           />
         </div>
       ) : weekWiseMode && !hasDataForYear ? (
         // Empty state when no data exists for selected year in week-wise mode
-        <div 
+        <div
           className="rounded-xl border p-12 text-center"
-          style={{ 
+          style={{
             backgroundColor: 'var(--color-bg-secondary)',
             borderColor: 'var(--color-border-subtle)'
           }}
         >
-          <Calendar 
-            className="w-16 h-16 mx-auto mb-4" 
-            style={{ color: 'var(--color-text-muted)' }} 
+          <Calendar
+            className="w-16 h-16 mx-auto mb-4"
+            style={{ color: 'var(--color-text-muted)' }}
           />
-          <h3 
+          <h3
             className="text-lg font-semibold mb-2"
             style={{ color: 'var(--color-text-primary)' }}
           >
             No Data for {selectedYear}
           </h3>
-          <p 
+          <p
             className="text-sm max-w-md mx-auto"
             style={{ color: 'var(--color-text-secondary)' }}
           >
@@ -624,10 +641,10 @@ const ProjectsTab = () => {
       ) : (
         <div className="space-y-6">
           {Object.entries(groupedProcessedData).map(([department, deptData]) => (
-            <div 
+            <div
               key={department}
               className="rounded-xl border overflow-hidden"
-              style={{ 
+              style={{
                 backgroundColor: 'var(--color-bg-secondary)',
                 borderColor: 'var(--color-border-subtle)'
               }}
@@ -639,26 +656,26 @@ const ProjectsTab = () => {
                 style={{ backgroundColor: 'var(--color-bg-muted)' }}
               >
                 <div className="flex items-center gap-3">
-                  <Building2 
+                  <Building2
                     className="w-5 h-5"
                     style={{ color: '#10b981' }}
                   />
-                  <span 
+                  <span
                     className="font-semibold"
                     style={{ color: 'var(--color-text-primary)' }}
                   >
                     {department}
                   </span>
-                  <span 
+                  <span
                     className="text-xs px-2 py-1 rounded-full"
-                    style={{ 
+                    style={{
                       backgroundColor: 'rgba(16, 185, 129, 0.12)',
                       color: '#10b981'
                     }}
                   >
                     {deptData.projects.length} project{deptData.projects.length !== 1 ? 's' : ''}
                   </span>
-                  <span 
+                  <span
                     className="text-sm font-semibold ml-4"
                     style={{ color: '#10b981' }}
                   >
@@ -678,9 +695,9 @@ const ProjectsTab = () => {
                   <table className="w-full">
                     <thead>
                       <tr style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider sticky left-0 min-w-48"
-                          style={{ 
+                          style={{
                             color: 'var(--color-text-secondary)',
                             backgroundColor: 'var(--color-bg-primary)'
                           }}
@@ -690,7 +707,7 @@ const ProjectsTab = () => {
                             Project
                           </div>
                         </th>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider min-w-28"
                           style={{ color: 'var(--color-text-secondary)' }}
                         >
@@ -699,7 +716,7 @@ const ProjectsTab = () => {
                             Dates
                           </div>
                         </th>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider min-w-28"
                           style={{ color: 'var(--color-text-secondary)' }}
                         >
@@ -708,19 +725,19 @@ const ProjectsTab = () => {
                             Coordinators
                           </div>
                         </th>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider min-w-24"
                           style={{ color: 'var(--color-text-secondary)' }}
                         >
                           Source
                         </th>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider min-w-24"
                           style={{ color: 'var(--color-text-secondary)' }}
                         >
                           Billing
                         </th>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer hover:opacity-70 min-w-20"
                           style={{ color: 'var(--color-text-secondary)' }}
                           onClick={() => handleSort('loggedTime')}
@@ -731,7 +748,7 @@ const ProjectsTab = () => {
                             <ArrowUpDown className="w-3 h-3" />
                           </div>
                         </th>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer hover:opacity-70 min-w-20"
                           style={{ color: 'var(--color-text-secondary)' }}
                           onClick={() => handleSort('billedTime')}
@@ -747,7 +764,7 @@ const ProjectsTab = () => {
                         {weekWiseMode && (
                           <WeekWiseHeaders year={selectedYear} showMonthColumn={true} currentMonth={weeklyPaymentsMap.activeMonth} />
                         )}
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer hover:opacity-70 min-w-24"
                           style={{ color: 'var(--color-text-secondary)' }}
                           onClick={() => handleSort('payment')}
@@ -760,13 +777,13 @@ const ProjectsTab = () => {
                             </div>
                           </ColumnTooltip>
                         </th>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider min-w-24"
                           style={{ color: 'var(--color-text-secondary)' }}
                         >
                           Status
                         </th>
-                        <th 
+                        <th
                           className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider min-w-28"
                           style={{ color: 'var(--color-text-secondary)' }}
                         >
@@ -780,10 +797,10 @@ const ProjectsTab = () => {
                     <tbody>
                       {deptData.projects.map((project) => {
                         const statusColor = getStatusColor(project.status);
-                        
+
                         return (
                           <React.Fragment key={project.projectId}>
-                            <tr 
+                            <tr
                               className="transition-colors duration-150"
                               style={{ borderTop: '1px solid var(--color-border-subtle)' }}
                               onMouseEnter={(e) => {
@@ -794,7 +811,7 @@ const ProjectsTab = () => {
                               }}
                             >
                               {/* Project Name */}
-                              <td 
+                              <td
                                 className="px-3 py-3 sticky left-0"
                                 style={{ backgroundColor: 'var(--color-bg-secondary)' }}
                               >
@@ -804,11 +821,11 @@ const ProjectsTab = () => {
                                     projectId={project.projectId}
                                     className="font-medium text-sm"
                                     title={project.projectName}
-                                  >
+                                   openInNewTab={true}>
                                     {project.projectName}
                                   </ProjectWorkflowLink>
                                   {project.projectCategory && (
-                                    <span 
+                                    <span
                                       className="text-xs"
                                       style={{ color: 'var(--color-text-muted)' }}
                                     >
@@ -834,15 +851,15 @@ const ProjectsTab = () => {
                                 <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                                   <p>{formatDate(project.startDate)}</p>
                                   <p style={{ color: 'var(--color-text-muted)' }}>
-                                    → {formatDate(project.endDate)}
+                                    to {formatDate(project.endDate)}
                                   </p>
                                 </div>
                               </td>
 
                               {/* Coordinators */}
                               <td className="px-3 py-3">
-                                <CoordinatorAvatars 
-                                  coordinators={project.coordinators} 
+                                <CoordinatorAvatars
+                                  coordinators={project.coordinators}
                                   maxVisible={2}
                                 />
                               </td>
@@ -851,21 +868,21 @@ const ProjectsTab = () => {
                               <td className="px-3 py-3">
                                 {project.projectSource ? (
                                   <div>
-                                    <span 
+                                    <span
                                       className="text-xs px-1.5 py-0.5 rounded"
-                                      style={{ 
-                                        backgroundColor: project.projectSource === 'Upwork' 
-                                          ? 'rgba(34, 197, 94, 0.12)' 
+                                      style={{
+                                        backgroundColor: project.projectSource === 'Upwork'
+                                          ? 'rgba(34, 197, 94, 0.12)'
                                           : 'rgba(6, 182, 212, 0.12)',
-                                        color: project.projectSource === 'Upwork' 
-                                          ? '#22c55e' 
+                                        color: project.projectSource === 'Upwork'
+                                          ? '#22c55e'
                                           : '#06b6d4'
                                       }}
                                     >
                                       {project.projectSource}
                                     </span>
                                     {project.upworkId && (
-                                      <p 
+                                      <p
                                         className="text-xs mt-1 truncate max-w-20"
                                         style={{ color: 'var(--color-text-muted)' }}
                                         title={project.upworkId}
@@ -882,32 +899,32 @@ const ProjectsTab = () => {
                               {/* Billing Type */}
                               <td className="px-3 py-3">
                                 <div>
-                                  <span 
+                                  <span
                                     className="px-2 py-1 rounded text-xs font-medium"
-                                    style={{ 
-                                      backgroundColor: project.billingCycle === 'hr' 
-                                        ? 'rgba(139, 92, 246, 0.12)' 
+                                    style={{
+                                      backgroundColor: project.billingCycle === 'hr'
+                                        ? 'rgba(139, 92, 246, 0.12)'
                                         : 'rgba(59, 130, 246, 0.12)',
-                                      color: project.billingCycle === 'hr' 
-                                        ? '#8b5cf6' 
+                                      color: project.billingCycle === 'hr'
+                                        ? '#8b5cf6'
                                         : '#3b82f6'
                                     }}
                                   >
                                     {project.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
                                   </span>
-                                  <p 
+                                  <p
                                     className="text-xs mt-1"
                                     style={{ color: 'var(--color-text-muted)' }}
                                   >
-                                    {project.billingCycle === 'hr' 
-                                      ? `$${project.hourlyPrice || 0}/hr` 
+                                    {project.billingCycle === 'hr'
+                                      ? `$${project.hourlyPrice || 0}/hr`
                                       : formatCurrency(project.fixedPrice)}
                                   </p>
                                 </div>
                               </td>
 
                               {/* Logged Time */}
-                              <td 
+                              <td
                                 className="px-3 py-3 text-sm"
                                 style={{ color: 'var(--color-text-secondary)' }}
                               >
@@ -915,7 +932,7 @@ const ProjectsTab = () => {
                               </td>
 
                               {/* Billed Time */}
-                              <td 
+                              <td
                                 className="px-3 py-3 text-sm"
                                 style={{ color: 'var(--color-text-secondary)' }}
                               >
@@ -924,7 +941,7 @@ const ProjectsTab = () => {
 
                               {/* Week-wise cells - dynamically inserted */}
                               {weekWiseMode && (
-                                <WeekWiseCells 
+                                <WeekWiseCells
                                   weeklyPayments={project.weeklyPayments || [0, 0, 0, 0, 0]}
                                   formatCurrency={formatCurrency}
                                   showMonthColumn={true}
@@ -933,7 +950,7 @@ const ProjectsTab = () => {
                               )}
 
                               {/* Payment */}
-                              <td 
+                              <td
                                 className="px-3 py-3 text-sm font-semibold"
                                 style={{ color: '#10b981' }}
                               >
@@ -942,9 +959,9 @@ const ProjectsTab = () => {
 
                               {/* Status */}
                               <td className="px-3 py-3">
-                                <span 
+                                <span
                                   className="px-2 py-1 rounded text-xs font-medium capitalize"
-                                  style={{ 
+                                  style={{
                                     backgroundColor: statusColor.bg,
                                     color: statusColor.text
                                   }}
@@ -954,7 +971,7 @@ const ProjectsTab = () => {
                               </td>
 
                               {/* Last Activity */}
-                              <td 
+                              <td
                                 className="px-3 py-3 text-xs"
                                 style={{ color: 'var(--color-text-muted)' }}
                               >
@@ -985,7 +1002,7 @@ const ProjectsTab = () => {
                                     {project.clientInfo.clientEmail && (
                                       <div className="flex items-center gap-2">
                                         <Mail className="w-4 h-4" style={{ color: '#06b6d4' }} />
-                                        <a 
+                                        <a
                                           href={`mailto:${project.clientInfo.clientEmail}`}
                                           className="hover:underline"
                                           style={{ color: '#06b6d4' }}
@@ -1017,28 +1034,28 @@ const ProjectsTab = () => {
           ))}
 
           {/* Grand Total */}
-          <div 
+          <div
             className="p-4 rounded-xl border flex items-center justify-between"
-            style={{ 
+            style={{
               backgroundColor: 'rgba(16, 185, 129, 0.08)',
               borderColor: 'rgba(16, 185, 129, 0.3)'
             }}
           >
             <div className="flex items-center gap-6">
-              <span 
+              <span
                 className="font-semibold"
                 style={{ color: 'var(--color-text-primary)' }}
               >
                 Total Across All Projects
               </span>
-              <span 
+              <span
                 className="text-sm"
                 style={{ color: 'var(--color-text-secondary)' }}
               >
                 {formatTime({ totalMinutes: grandTotals.billedMinutes })} billed
               </span>
             </div>
-            <span 
+            <span
               className="text-lg font-bold"
               style={{ color: '#10b981' }}
             >
@@ -1050,24 +1067,24 @@ const ProjectsTab = () => {
 
       {/* Year Total for Week-Wise Mode */}
       {weekWiseMode && weeklyData && (
-        <div 
+        <div
           className="p-4 rounded-xl border flex items-center justify-between mt-4"
-          style={{ 
+          style={{
             backgroundColor: 'rgba(16, 185, 129, 0.08)',
             borderColor: 'rgba(16, 185, 129, 0.3)'
           }}
         >
-          <span 
+          <span
             className="font-semibold"
             style={{ color: 'var(--color-text-primary)' }}
           >
-            Year Total ({selectedYear})
+            Selected Month Total ({['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][selectedMonth]} {selectedYear})
           </span>
-          <span 
+          <span
             className="text-lg font-bold"
             style={{ color: '#10b981' }}
           >
-            {formatCurrency(weeklyData.yearTotal || 0)}
+            {formatCurrency(weeklyData.selectedMonthTotal ?? weeklyPaymentsMap.activeMonthTotal ?? weeklyData.yearTotal ?? 0)}
           </span>
         </div>
       )}
@@ -1076,4 +1093,3 @@ const ProjectsTab = () => {
 };
 
 export default ProjectsTab;
-

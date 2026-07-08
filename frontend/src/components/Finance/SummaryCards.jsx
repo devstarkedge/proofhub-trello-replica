@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  DollarSign, 
-  Clock, 
-  FileCheck, 
+import {
+  DollarSign,
+  FileCheck,
   AlertCircle,
   User,
   FolderKanban,
   TrendingUp,
-  ChevronRight,
   RefreshCw
 } from 'lucide-react';
 import api from '../../services/api';
@@ -28,14 +26,15 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const params = new URLSearchParams();
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
       if (filters.departmentId) params.append('departmentId', filters.departmentId);
-      
+      if (filters.billingType) params.append('billingType', filters.billingType);
+
       const response = await api.get(`/api/finance/summary?${params.toString()}`);
-      
+
       if (response.data.success) {
         setSummary(response.data.data);
       }
@@ -49,7 +48,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
 
   useEffect(() => {
     fetchSummary();
-  }, [filters.startDate, filters.endDate, filters.departmentId]);
+  }, [filters.startDate, filters.endDate, filters.departmentId, filters.billingType]);
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -73,19 +72,29 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
       id: 'revenue',
       title: 'Total Revenue',
       value: summary ? formatCurrency(summary.totalRevenue) : '$0',
+      subtitle: summary ? `${summary.billableProjectCount || 0} billable projects` : null,
       icon: DollarSign,
       color: '#10b981',
       bg: 'rgba(16, 185, 129, 0.12)',
       filterAction: 'revenue'
     },
     {
-      id: 'logged',
-      title: 'Total Logged Time',
-      value: summary ? formatTime(summary.totalLoggedTime) : '0h 0m',
-      icon: Clock,
-      color: '#3b82f6',
-      bg: 'rgba(59, 130, 246, 0.12)',
-      filterAction: 'logged'
+      id: 'fixedRevenue',
+      title: 'Fixed Amount Revenue',
+      value: summary ? formatCurrency(summary.fixedRevenue) : '$0',
+      icon: DollarSign,
+      color: '#14b8a6',
+      bg: 'rgba(20, 184, 166, 0.12)',
+      filterAction: 'fixedRevenue'
+    },
+    {
+      id: 'hourlyRevenue',
+      title: 'Hourly Revenue',
+      value: summary ? formatCurrency(summary.hourlyRevenue) : '$0',
+      icon: TrendingUp,
+      color: '#a855f7',
+      bg: 'rgba(168, 85, 247, 0.12)',
+      filterAction: 'hourlyRevenue'
     },
     {
       id: 'billed',
@@ -97,20 +106,11 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
       filterAction: 'billed'
     },
     {
-      id: 'unbilled',
-      title: 'Unbilled Time',
-      value: summary ? formatTime(summary.unbilledTime) : '0h 0m',
-      icon: AlertCircle,
-      color: '#f59e0b',
-      bg: 'rgba(245, 158, 11, 0.12)',
-      filterAction: 'unbilled'
-    },
-    {
       id: 'topUser',
       title: 'Top Earning User',
       value: summary?.topEarningUser?.userName || 'N/A',
-      subtitle: summary?.topEarningUser 
-        ? formatTime({ 
+      subtitle: summary?.topEarningUser
+        ? formatTime({
             hours: Math.floor(summary.topEarningUser.billedMinutes / 60),
             minutes: summary.topEarningUser.billedMinutes % 60
           })
@@ -125,7 +125,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
       id: 'topProject',
       title: 'Top Revenue Project',
       value: summary?.topRevenueProject?.name || 'N/A',
-      subtitle: summary?.topRevenueProject 
+      subtitle: summary?.topRevenueProject
         ? formatCurrency(summary.topRevenueProject.payment)
         : null,
       icon: FolderKanban,
@@ -138,25 +138,25 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
 
   // Skeleton loader
   const SkeletonCard = () => (
-    <div 
+    <div
       className="p-5 rounded-xl border animate-pulse"
-      style={{ 
+      style={{
         backgroundColor: 'var(--color-bg-secondary)',
         borderColor: 'var(--color-border-subtle)'
       }}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <div 
+          <div
             className="h-4 w-24 rounded mb-3"
             style={{ backgroundColor: 'var(--color-bg-muted)' }}
           />
-          <div 
+          <div
             className="h-8 w-32 rounded mb-2"
             style={{ backgroundColor: 'var(--color-bg-muted)' }}
           />
         </div>
-        <div 
+        <div
           className="w-10 h-10 rounded-lg"
           style={{ backgroundColor: 'var(--color-bg-muted)' }}
         />
@@ -166,7 +166,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4 mb-6">
         {[...Array(6)].map((_, i) => (
           <SkeletonCard key={i} />
         ))}
@@ -176,9 +176,9 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
 
   if (error) {
     return (
-      <div 
+      <div
         className="p-4 rounded-xl border text-center mb-6"
-        style={{ 
+        style={{
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           borderColor: 'rgba(239, 68, 68, 0.3)',
           color: '#ef4444'
@@ -186,7 +186,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
       >
         <AlertCircle className="w-5 h-5 mx-auto mb-2" />
         <p className="text-sm">Failed to load summary: {error}</p>
-        <button 
+        <button
           onClick={fetchSummary}
           className="mt-2 text-xs flex items-center gap-1 mx-auto hover:underline"
         >
@@ -197,7 +197,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4 mb-6">
       {cards.map((card) => {
         const Icon = card.icon;
         const isProjectCard = card.id === 'topProject';
@@ -260,7 +260,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
             </div>
           </>
         );
-        
+
         if (isProjectCard) {
           return (
             <div

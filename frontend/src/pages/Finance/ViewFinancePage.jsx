@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
+import {
   ArrowLeft,
   Users,
   FolderKanban,
@@ -19,8 +19,9 @@ import api from '../../services/api';
 import { toast } from 'react-toastify';
 import DateFilters from '../../components/Finance/DateFilters';
 import DepartmentFilter from '../../components/Finance/DepartmentFilter';
+import BillingTypeFilter from '../../components/Finance/BillingTypeFilter';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
-import { WeekWiseHeaders, WeekWiseCells, formatWeekValue } from '../../components/Finance/WeekWiseColumns';
+import { WeekWiseHeaders, WeekWiseCells } from '../../components/Finance/WeekWiseColumns';
 
 /**
  * ViewFinancePage - Renders a custom finance page with its configured columns
@@ -40,7 +41,8 @@ const ViewFinancePage = () => {
   const [filters, setFilters] = useState({
     startDate: null,
     endDate: null,
-    departmentId: null
+    departmentId: null,
+    billingType: 'all'
   });
 
   // Week-wise reporting mode state
@@ -64,6 +66,9 @@ const ViewFinancePage = () => {
           if (df.departmentId) {
             setFilters(prev => ({ ...prev, departmentId: df.departmentId }));
           }
+          if (df.billingType) {
+            setFilters(prev => ({ ...prev, billingType: df.billingType }));
+          }
         }
       }
     } catch (err) {
@@ -78,21 +83,22 @@ const ViewFinancePage = () => {
   // Fetch data based on page type
   const fetchData = async () => {
     if (!page) return;
-    
+
     try {
       setDataLoading(true);
-      
+
       const params = new URLSearchParams();
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
       if (filters.departmentId) params.append('departmentId', filters.departmentId);
-      
+      if (filters.billingType) params.append('billingType', filters.billingType);
+
       const endpoint = page.pageType === 'users' ? '/api/finance/users' : '/api/finance/projects';
       const response = await api.get(`${endpoint}?${params.toString()}`);
-      
+
       if (response.data.success) {
         setData(response.data.data || []);
-        
+
         // Auto-expand departments
         const depts = new Set();
         if (page.pageType === 'users') {
@@ -133,7 +139,7 @@ const ViewFinancePage = () => {
         setWeeklyData(null);
         return;
       }
-      
+
       try {
         setWeeklyDataLoading(true);
         const params = new URLSearchParams({
@@ -144,7 +150,10 @@ const ViewFinancePage = () => {
         if (filters.departmentId) {
           params.append('departmentId', filters.departmentId);
         }
-        
+
+        if (filters.billingType) {
+          params.append('billingType', filters.billingType);
+        }
         const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`);
         if (response.data.success) {
           setWeeklyData(response.data.data);
@@ -155,9 +164,9 @@ const ViewFinancePage = () => {
         setWeeklyDataLoading(false);
       }
     };
-    
+
     fetchWeeklyData();
-  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, page]);
+  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, filters.billingType, page]);
 
   // Format helpers
   const formatCurrency = (amount) => {
@@ -188,14 +197,14 @@ const ViewFinancePage = () => {
   const filteredData = useMemo(() => {
     if (!searchQuery) return data;
     const query = searchQuery.toLowerCase();
-    
+
     if (page?.pageType === 'users') {
-      return data.filter(user => 
+      return data.filter(user =>
         user.userName?.toLowerCase().includes(query) ||
         user.projects?.some(p => p.projectName?.toLowerCase().includes(query))
       );
     } else {
-      return data.filter(project => 
+      return data.filter(project =>
         project.projectName?.toLowerCase().includes(query) ||
         project.department?.toLowerCase().includes(query)
       );
@@ -205,24 +214,31 @@ const ViewFinancePage = () => {
   // Build weekly payments lookup from weeklyData
   // Also track which month the data is from
   const weeklyPaymentsMap = useMemo(() => {
-    if (!weeklyData || !weeklyData.months) return { payments: {}, activeMonth: 0 };
-    
+    if (!weeklyData || !weeklyData.months) return { payments: {}, activeMonth: 0, activeMonthTotal: 0 };
+
     const map = {};
-    
+
     // Find data for the selected month (fall back to first available month)
     const monthData = weeklyData.months?.find(m => m.month === selectedMonth) || weeklyData.months?.[0];
     const activeMonth = monthData?.month ?? 0;
-    
+
     if (monthData?.items) {
       monthData.items.forEach(item => {
         const key = item.userId || item.projectId;
         if (key) {
           map[key] = item.weeks || [0, 0, 0, 0, 0];
         }
+        if (item.userId && Array.isArray(item.projects)) {
+          item.projects.forEach(project => {
+            if (project.projectId) {
+              map[[item.userId, project.projectId].filter(Boolean).join('_')] = project.weeks || [0, 0, 0, 0, 0];
+            }
+          });
+        }
       });
     }
-    
-    return { payments: map, activeMonth };
+
+    return { payments: map, activeMonth, activeMonthTotal: monthData?.totalPayment || 0 };
   }, [weeklyData, selectedMonth]);
 
   // Get the active month name for the week-wise report (data-driven, not current date)
@@ -241,10 +257,10 @@ const ViewFinancePage = () => {
     if (!weekWiseMode) return true; // Not in week-wise mode, show all data
     if (weeklyDataLoading) return true; // Still loading, don't show empty state yet
     if (!weeklyData || !weeklyData.months || weeklyData.months.length === 0) return false;
-    
+
     // Check if any month has items with payment data (any week with value > 0)
-    return weeklyData.months.some(month => 
-      month.items && month.items.length > 0 && 
+    return weeklyData.months.some(month =>
+      month.items && month.items.length > 0 &&
       month.items.some(item => {
         const weeks = item.weeks || [0, 0, 0, 0, 0];
         return weeks.some(w => w > 0);
@@ -255,7 +271,7 @@ const ViewFinancePage = () => {
   // Group data by department
   const groupedData = useMemo(() => {
     const grouped = {};
-    
+
     if (page?.pageType === 'users') {
       filteredData.forEach(user => {
         user.projects?.forEach(project => {
@@ -263,7 +279,7 @@ const ViewFinancePage = () => {
           if (!grouped[dept]) {
             grouped[dept] = { items: [], totalPayment: 0, usersMap: {} };
           }
-          
+
           // Initialize user entry in this department if not exists
           if (!grouped[dept].usersMap[user.userId]) {
             grouped[dept].usersMap[user.userId] = {
@@ -279,24 +295,38 @@ const ViewFinancePage = () => {
               // Reset lastActivity to compare and find latest
               lastActivity: null,
               // Add weekly payments from lookup
-              weeklyPayments: weeklyPaymentsMap.payments?.[user.userId] || [0, 0, 0, 0, 0]
+              weeklyPayments: [0, 0, 0, 0, 0]
             };
           }
-          
+
           const u = grouped[dept].usersMap[user.userId];
-          
+
+          const projectWeeklyKey = [user.userId, project.projectId].filter(Boolean).join('_');
+          const projectWeeklyPayments = weeklyPaymentsMap.payments?.[projectWeeklyKey] || [0, 0, 0, 0, 0];
+          const visiblePayment = weekWiseMode
+            ? projectWeeklyPayments.reduce((sum, value) => sum + (value || 0), 0)
+            : (project.payment || 0);
+          const projectWithWeekly = {
+            ...project,
+            weeklyPayments: projectWeeklyPayments,
+            payment: visiblePayment
+          };
+
           // Aggregate data
-          u.projects.push(project);
+          u.projects.push(projectWithWeekly);
           u.projectName.push(project.projectName || 'Unnamed Project');
-          u.payment += project.payment || 0;
+          u.payment += visiblePayment;
           u.taskCount += project.taskCount || 0;
-          
+          for (let i = 0; i < 5; i += 1) {
+            u.weeklyPayments[i] += projectWeeklyPayments[i] || 0;
+          }
+
           // Time aggregation
           const pLogged = project.loggedTime?.totalMinutes || project.loggedMinutes || 0;
           const pBilled = project.billedTime?.totalMinutes || project.billedMinutes || 0;
           u.loggedTime.totalMinutes += pLogged;
           u.billedTime.totalMinutes += pBilled;
-          
+
           // Update Last Activity (keep latest)
           if (project.lastActivity?.date) {
             const currentLast = u.lastActivity?.date ? new Date(u.lastActivity.date).getTime() : 0;
@@ -307,8 +337,8 @@ const ViewFinancePage = () => {
           } else if (!u.lastActivity && project.lastActivity) {
              u.lastActivity = project.lastActivity;
           }
-          
-          grouped[dept].totalPayment += project.payment || 0;
+
+          grouped[dept].totalPayment += visiblePayment;
         });
       });
 
@@ -320,7 +350,7 @@ const ViewFinancePage = () => {
            if (Array.isArray(u.projectName)) {
              u.projectName = [...new Set(u.projectName)].join(', ');
            }
-           
+
            // Determine billing cycle from projects
            if (u.projects && u.projects.length > 0) {
              const cycles = new Set(u.projects.map(p => p.billingCycle).filter(Boolean));
@@ -341,18 +371,22 @@ const ViewFinancePage = () => {
         if (!grouped[dept]) {
           grouped[dept] = { items: [], totalPayment: 0 };
         }
-        // Add weeklyPayments to each project
+        const weeklyPayments = weeklyPaymentsMap.payments?.[project.projectId] || [0, 0, 0, 0, 0];
+        const visiblePayment = weekWiseMode
+          ? weeklyPayments.reduce((sum, value) => sum + (value || 0), 0)
+          : (project.payment || 0);
         const projectWithWeekly = {
           ...project,
-          weeklyPayments: weeklyPaymentsMap.payments?.[project.projectId] || [0, 0, 0, 0, 0]
+          weeklyPayments,
+          payment: visiblePayment
         };
         grouped[dept].items.push(projectWithWeekly);
-        grouped[dept].totalPayment += project.payment || 0;
+        grouped[dept].totalPayment += visiblePayment;
       });
     }
-    
+
     return grouped;
-  }, [filteredData, page, weeklyPaymentsMap]);
+  }, [filteredData, page, weeklyPaymentsMap, weekWiseMode]);
 
   // Get visible columns
   const visibleColumns = useMemo(() => {
@@ -405,7 +439,7 @@ const ViewFinancePage = () => {
                     projectId={project.projectId || project._id}
                     className="font-medium text-sm"
                     title={project.projectName || 'Unknown'}
-                  >
+                   openInNewTab={true}>
                     {project.projectName || 'Unknown'}
                   </ProjectWorkflowLink>
                   {index < uniqueProjects.length - 1 && (
@@ -427,7 +461,7 @@ const ViewFinancePage = () => {
             projectId={projectId}
             className="font-medium"
             title={projectName}
-          >
+           openInNewTab={true}>
             {projectName}
           </ProjectWorkflowLink>
         );
@@ -444,9 +478,9 @@ const ViewFinancePage = () => {
         return <span className="font-semibold" style={{ color: '#10b981' }}>{formatCurrency(item.payment || item.totalPayment || item.project?.payment)}</span>;
       case 'status':
         return (
-          <span 
+          <span
             className="px-2 py-1 rounded text-xs font-medium capitalize"
-            style={{ 
+            style={{
               backgroundColor: item.status === 'completed' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(59, 130, 246, 0.12)',
               color: item.status === 'completed' ? '#10b981' : '#3b82f6'
             }}
@@ -456,16 +490,16 @@ const ViewFinancePage = () => {
         );
       case 'billingType':
         return (
-          <span 
+          <span
             className="px-2 py-1 rounded text-xs font-medium"
-            style={{ 
-              backgroundColor: item.billingCycle === 'hr' ? 'rgba(139, 92, 246, 0.12)' : 
+            style={{
+              backgroundColor: item.billingCycle === 'hr' ? 'rgba(139, 92, 246, 0.12)' :
                               item.billingCycle === 'mixed' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(59, 130, 246, 0.12)',
-              color: item.billingCycle === 'hr' ? '#8b5cf6' : 
+              color: item.billingCycle === 'hr' ? '#8b5cf6' :
                      item.billingCycle === 'mixed' ? '#f59e0b' : '#3b82f6'
             }}
           >
-            {item.billingCycle === 'hr' ? 'Hourly' : 
+            {item.billingCycle === 'hr' ? 'Hourly' :
              item.billingCycle === 'mixed' ? 'Mixed' : 'Fixed'}
           </span>
         );
@@ -488,30 +522,33 @@ const ViewFinancePage = () => {
       case 'taskCount':
         return item.taskCount || 0;
       case 'lastActivity':
-        return item.lastActivity?.date 
-          ? new Date(item.lastActivity.date).toLocaleDateString() 
+        return item.lastActivity?.date
+          ? new Date(item.lastActivity.date).toLocaleDateString()
           : 'No activity';
       // Handle user reference fields
       case 'assignedTo':
       case 'coordinator':
       case 'createdBy':
-      case 'updatedBy':
+      case 'updatedBy': {
         const userObj = item[columnKey];
         if (!userObj) return '-';
         if (typeof userObj === 'string') return userObj;
         return userObj.name || userObj.userName || userObj.email || '-';
+      }
       // Handle team/members array
       case 'team':
       case 'members':
-      case 'assignees':
+      case 'assignees': {
         const teamArr = item[columnKey];
         if (!teamArr) return '-';
         if (!Array.isArray(teamArr)) return getDisplayValue(teamArr);
         return teamArr.map(u => u?.name || u?.userName || u).filter(Boolean).join(', ') || '-';
-      default:
+      }
+      default: {
         // Safe fallback for any other field
         const value = item[columnKey];
         return getDisplayValue(value);
+      }
     }
   };
 
@@ -525,9 +562,9 @@ const ViewFinancePage = () => {
 
   if (error || !page) {
     return (
-      <div 
+      <div
         className="p-8 rounded-xl border text-center"
-        style={{ 
+        style={{
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           borderColor: 'rgba(239, 68, 68, 0.3)'
         }}
@@ -560,11 +597,11 @@ const ViewFinancePage = () => {
             <ArrowLeft className="w-5 h-5" style={{ color: 'var(--color-text-secondary)' }} />
           </button>
           <div className="flex items-center gap-3">
-            <div 
+            <div
               className="p-2.5 rounded-xl"
-              style={{ 
-                backgroundColor: page.pageType === 'users' 
-                  ? 'rgba(59, 130, 246, 0.12)' 
+              style={{
+                backgroundColor: page.pageType === 'users'
+                  ? 'rgba(59, 130, 246, 0.12)'
                   : 'rgba(139, 92, 246, 0.12)'
               }}
             >
@@ -586,11 +623,11 @@ const ViewFinancePage = () => {
             </div>
           </div>
         </div>
-        
+
         <button
           onClick={() => navigate(`/finance/pages/${id}/edit`)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          style={{ 
+          style={{
             backgroundColor: 'var(--color-bg-secondary)',
             color: 'var(--color-text-secondary)'
           }}
@@ -601,9 +638,9 @@ const ViewFinancePage = () => {
       </div>
 
       {/* Filters */}
-      <div 
+      <div
         className="p-4 rounded-xl mb-6 border"
-        style={{ 
+        style={{
           backgroundColor: 'var(--color-bg-secondary)',
           borderColor: 'var(--color-border-subtle)'
         }}
@@ -611,7 +648,7 @@ const ViewFinancePage = () => {
         <div className="flex flex-wrap items-center gap-4">
           {/* Search */}
           <div className="relative flex-1 min-w-64">
-            <SearchIcon 
+            <SearchIcon
               className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
               style={{ color: 'var(--color-text-muted)' }}
             />
@@ -621,7 +658,7 @@ const ViewFinancePage = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 rounded-lg border text-sm"
-              style={{ 
+              style={{
                 backgroundColor: 'var(--color-bg-primary)',
                 borderColor: 'var(--color-border-subtle)',
                 color: 'var(--color-text-primary)'
@@ -629,16 +666,21 @@ const ViewFinancePage = () => {
             />
           </div>
 
-          <DepartmentFilter 
+          <DepartmentFilter
             selectedDepartmentId={filters.departmentId}
             onChange={(deptId) => setFilters(prev => ({ ...prev, departmentId: deptId }))}
+          />
+
+          <BillingTypeFilter
+            value={filters.billingType}
+            onChange={(billingType) => setFilters(prev => ({ ...prev, billingType }))}
           />
 
           <button
             onClick={fetchData}
             disabled={dataLoading}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium"
-            style={{ 
+            style={{
               backgroundColor: 'var(--color-bg-primary)',
               borderColor: 'var(--color-border-subtle)',
               color: 'var(--color-text-secondary)'
@@ -649,8 +691,8 @@ const ViewFinancePage = () => {
         </div>
 
         <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
-          <DateFilters 
-            filters={filters} 
+          <DateFilters
+            filters={filters}
             setFilters={setFilters}
             onClear={() => {}}
             showWeekWiseToggle={true}
@@ -666,7 +708,7 @@ const ViewFinancePage = () => {
 
       {/* Week-Wise Mode Header */}
       {weekWiseMode && (
-        <div 
+        <div
           className="flex items-center justify-between p-3 rounded-lg mb-4"
           style={{ backgroundColor: 'var(--color-bg-muted)' }}
         >
@@ -678,7 +720,7 @@ const ViewFinancePage = () => {
           </div>
           {weeklyData && (
             <span className="text-lg font-bold" style={{ color: '#10b981' }}>
-              {formatCurrency(weeklyData.yearTotal || 0)}
+              {formatCurrency(weeklyData.selectedMonthTotal ?? weeklyPaymentsMap.activeMonthTotal ?? weeklyData.yearTotal ?? 0)}
             </span>
           )}
         </div>
@@ -686,9 +728,9 @@ const ViewFinancePage = () => {
 
       {/* Data Table */}
       {(dataLoading || weeklyDataLoading) ? (
-        <div 
+        <div
           className="p-8 rounded-xl border text-center"
-          style={{ 
+          style={{
             backgroundColor: 'var(--color-bg-secondary)',
             borderColor: 'var(--color-border-subtle)'
           }}
@@ -697,9 +739,9 @@ const ViewFinancePage = () => {
           <p className="mt-4 text-sm" style={{ color: 'var(--color-text-muted)' }}>Loading data...</p>
         </div>
           ) : Object.keys(groupedData).length === 0 ? (
-            <div 
+            <div
               className="p-12 rounded-xl border text-center"
-              style={{ 
+              style={{
                 backgroundColor: 'var(--color-bg-secondary)',
                 borderColor: 'var(--color-border-subtle)'
               }}
@@ -715,24 +757,24 @@ const ViewFinancePage = () => {
         </div>
       ) : weekWiseMode && !hasDataForYear ? (
         // Empty state when no data exists for selected year in week-wise mode
-        <div 
+        <div
           className="rounded-xl border p-12 text-center"
-          style={{ 
+          style={{
             backgroundColor: 'var(--color-bg-secondary)',
             borderColor: 'var(--color-border-subtle)'
           }}
         >
-          <Calendar 
-            className="w-16 h-16 mx-auto mb-4" 
-            style={{ color: 'var(--color-text-muted)' }} 
+          <Calendar
+            className="w-16 h-16 mx-auto mb-4"
+            style={{ color: 'var(--color-text-muted)' }}
           />
-          <h3 
+          <h3
             className="text-lg font-semibold mb-2"
             style={{ color: 'var(--color-text-primary)' }}
           >
             No Data for {selectedYear}
           </h3>
-          <p 
+          <p
             className="text-sm max-w-md mx-auto"
             style={{ color: 'var(--color-text-secondary)' }}
           >
@@ -742,10 +784,10 @@ const ViewFinancePage = () => {
       ) : (
         <div className="space-y-6">
           {Object.entries(groupedData).map(([department, deptData]) => (
-            <div 
+            <div
               key={department}
               className="rounded-xl border overflow-hidden"
-              style={{ 
+              style={{
                 backgroundColor: 'var(--color-bg-secondary)',
                 borderColor: 'var(--color-border-subtle)'
               }}
@@ -761,7 +803,7 @@ const ViewFinancePage = () => {
                   <span className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                     {department}
                   </span>
-                  <span 
+                  <span
                     className="text-xs px-2 py-1 rounded-full"
                     style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}
                   >
@@ -785,7 +827,7 @@ const ViewFinancePage = () => {
                     <thead>
                       <tr style={{ backgroundColor: 'var(--color-bg-primary)' }}>
                         {visibleColumns.map(column => (
-                          <th 
+                          <th
                             key={column.key}
                             className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider"
                             style={{ color: 'var(--color-text-secondary)' }}
@@ -801,7 +843,7 @@ const ViewFinancePage = () => {
                     </thead>
                     <tbody>
                       {deptData.items.map((item, idx) => (
-                        <tr 
+                        <tr
                           key={idx}
                           className="transition-colors duration-150"
                           style={{ borderTop: '1px solid var(--color-border-subtle)' }}
@@ -813,7 +855,7 @@ const ViewFinancePage = () => {
                           }}
                         >
                           {visibleColumns.map(column => (
-                            <td 
+                            <td
                               key={column.key}
                               className="px-4 py-3 text-sm"
                               style={{ color: 'var(--color-text-secondary)' }}
@@ -823,7 +865,7 @@ const ViewFinancePage = () => {
                           ))}
                           {/* Week-wise cells - dynamically inserted */}
                           {weekWiseMode && (
-                            <WeekWiseCells 
+                            <WeekWiseCells
                               weeklyPayments={item.weeklyPayments || [0, 0, 0, 0, 0]}
                               formatCurrency={formatCurrency}
                               showMonthColumn={true}
@@ -840,9 +882,9 @@ const ViewFinancePage = () => {
           ))}
 
           {/* Grand Total */}
-          <div 
+          <div
             className="p-4 rounded-xl border flex items-center justify-between"
-            style={{ 
+            style={{
               backgroundColor: 'rgba(16, 185, 129, 0.08)',
               borderColor: 'rgba(16, 185, 129, 0.3)'
             }}
@@ -859,24 +901,24 @@ const ViewFinancePage = () => {
 
       {/* Year Total for Week-Wise Mode */}
       {weekWiseMode && weeklyData && (
-        <div 
+        <div
           className="p-4 rounded-xl border flex items-center justify-between mt-4"
-          style={{ 
+          style={{
             backgroundColor: 'rgba(16, 185, 129, 0.08)',
             borderColor: 'rgba(16, 185, 129, 0.3)'
           }}
         >
-          <span 
+          <span
             className="font-semibold"
             style={{ color: 'var(--color-text-primary)' }}
           >
-            Year Total ({selectedYear})
+            Selected Month Total ({['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][selectedMonth]} {selectedYear})
           </span>
-          <span 
+          <span
             className="text-lg font-bold"
             style={{ color: '#10b981' }}
           >
-            {formatCurrency(weeklyData.yearTotal || 0)}
+            {formatCurrency(weeklyData.selectedMonthTotal ?? weeklyPaymentsMap.activeMonthTotal ?? weeklyData.yearTotal ?? 0)}
           </span>
         </div>
       )}
@@ -885,4 +927,3 @@ const ViewFinancePage = () => {
 };
 
 export default ViewFinancePage;
-

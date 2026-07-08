@@ -19,7 +19,8 @@ const ProjectWorkflowLink = ({
   ariaLabel,
   stopPropagation = false,
   onClick,
-  underlineOnHover = true
+  underlineOnHover = true,
+  openInNewTab = false
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -59,6 +60,8 @@ const ProjectWorkflowLink = ({
   return (
     <Link
       to={to}
+      target={openInNewTab ? "_blank" : undefined}
+      rel={openInNewTab ? "noopener noreferrer" : undefined}
       className={`inline-block max-w-full align-baseline focus:outline-none ${className}`.trim()}
       style={baseStyle}
       title={resolvedTitle}

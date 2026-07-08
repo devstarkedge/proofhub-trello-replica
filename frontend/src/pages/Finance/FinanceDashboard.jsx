@@ -1,19 +1,15 @@
 import React, { useState, useEffect, useContext, useMemo } from 'react';
-import { 
-  DollarSign, 
-  TrendingUp, 
-  TrendingDown,
-  Users, 
-  FolderKanban, 
-  Clock, 
+import {
+  DollarSign,
+  TrendingUp,
+  Users,
+  FolderKanban,
   FileCheck,
   Building2,
   AlertCircle,
   RefreshCw,
   Calendar,
-  ArrowRight,
-  PieChart,
-  BarChart3
+  ArrowRight
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
@@ -54,7 +50,7 @@ const FinanceDashboard = () => {
       // Build date range based on selected period
       const now = new Date();
       let startDate, endDate;
-      
+
       switch (selectedPeriod) {
         case 'today':
           startDate = formatDate(now);
@@ -84,7 +80,8 @@ const FinanceDashboard = () => {
 
       const params = new URLSearchParams({
         startDate: startDate,
-        endDate: endDate
+        endDate: endDate,
+        fixedRevenueMode: 'asOfEndDate'
       });
 
       // Fetch all data in parallel
@@ -114,15 +111,15 @@ const FinanceDashboard = () => {
   useEffect(() => {
     // Join finance room to receive real-time updates
     socketService.joinFinance();
-    
+
     // Debounced refresh handler to prevent excessive API calls
     let refreshTimeout;
     const handleFinanceRefresh = (event) => {
       console.log('Finance data refresh triggered:', event?.detail);
-      
+
       // Clear any pending refresh
       clearTimeout(refreshTimeout);
-      
+
       // Debounce: wait 500ms before refreshing to batch rapid changes
       refreshTimeout = setTimeout(() => {
         // Don't show loading spinner for background refresh
@@ -130,10 +127,10 @@ const FinanceDashboard = () => {
         fetchDashboardData();
       }, 500);
     };
-    
+
     // Listen for finance refresh events from socket
     window.addEventListener('socket-finance-refresh', handleFinanceRefresh);
-    
+
     // Cleanup on unmount
     return () => {
       window.removeEventListener('socket-finance-refresh', handleFinanceRefresh);
@@ -163,7 +160,7 @@ const FinanceDashboard = () => {
   // Department statistics
   const departmentStats = useMemo(() => {
     const stats = {};
-    
+
     projectsData.forEach(project => {
       const dept = project.department || 'Unassigned';
       if (!stats[dept]) {
@@ -178,7 +175,7 @@ const FinanceDashboard = () => {
       stats[dept].totalPayment += project.payment || 0;
       stats[dept].totalBilledMinutes += project.billedTime?.totalMinutes || 0;
     });
-    
+
     return Object.values(stats).sort((a, b) => b.totalPayment - a.totalPayment);
   }, [projectsData]);
 
@@ -198,9 +195,9 @@ const FinanceDashboard = () => {
 
   // Skeleton loader
   const SkeletonCard = () => (
-    <div 
+    <div
       className="p-6 rounded-xl border animate-pulse"
-      style={{ 
+      style={{
         backgroundColor: 'var(--color-bg-secondary)',
         borderColor: 'var(--color-border-subtle)'
       }}
@@ -225,9 +222,9 @@ const FinanceDashboard = () => {
 
   if (error) {
     return (
-      <div 
+      <div
         className="p-8 rounded-xl border text-center"
-        style={{ 
+        style={{
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           borderColor: 'rgba(239, 68, 68, 0.3)'
         }}
@@ -253,9 +250,9 @@ const FinanceDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Period Selector */}
-      <div 
+      <div
         className="flex items-center justify-between p-4 rounded-xl border"
-        style={{ 
+        style={{
           backgroundColor: 'var(--color-bg-secondary)',
           borderColor: 'var(--color-border-subtle)'
         }}
@@ -266,7 +263,7 @@ const FinanceDashboard = () => {
             Time Period
           </span>
         </div>
-        
+
         <div className="flex items-center gap-2">
           {periods.map(period => (
             <button
@@ -274,26 +271,26 @@ const FinanceDashboard = () => {
               onClick={() => setSelectedPeriod(period.id)}
               className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
               style={{
-                backgroundColor: selectedPeriod === period.id 
-                  ? 'rgba(16, 185, 129, 0.15)' 
+                backgroundColor: selectedPeriod === period.id
+                  ? 'rgba(16, 185, 129, 0.15)'
                   : 'transparent',
-                color: selectedPeriod === period.id 
-                  ? '#10b981' 
+                color: selectedPeriod === period.id
+                  ? '#10b981'
                   : 'var(--color-text-secondary)',
-                border: selectedPeriod === period.id 
-                  ? '1px solid rgba(16, 185, 129, 0.3)' 
+                border: selectedPeriod === period.id
+                  ? '1px solid rgba(16, 185, 129, 0.3)'
                   : '1px solid transparent'
               }}
             >
               {period.label}
             </button>
           ))}
-          
+
           <button
             onClick={fetchDashboardData}
             disabled={loading}
             className="ml-2 p-2 rounded-lg border transition-all duration-200 hover:border-emerald-500"
-            style={{ 
+            style={{
               backgroundColor: 'var(--color-bg-primary)',
               borderColor: 'var(--color-border-subtle)'
             }}
@@ -305,15 +302,15 @@ const FinanceDashboard = () => {
 
       {/* Key Metrics Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4 gap-4">
           {/* Total Revenue */}
-          <div 
+          <div
             className="p-6 rounded-xl border group hover:scale-[1.02] transition-all duration-200 cursor-pointer"
-            style={{ 
+            style={{
               backgroundColor: 'var(--color-bg-secondary)',
               borderColor: 'var(--color-border-subtle)'
             }}
@@ -328,11 +325,11 @@ const FinanceDashboard = () => {
                   {formatCurrency(summary?.totalRevenue)}
                 </p>
                 <p className="text-xs mt-2 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
-                  <span>{projectsData.length} projects</span>
+                  <span>{summary?.billableProjectCount ?? projectsData.length} projects</span>
                   <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </p>
               </div>
-              <div 
+              <div
                 className="p-3 rounded-xl"
                 style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)' }}
               >
@@ -341,10 +338,67 @@ const FinanceDashboard = () => {
             </div>
           </div>
 
+          {/* Fixed Amount Revenue */}
+          <div
+            className="p-6 rounded-xl border"
+            style={{
+              backgroundColor: 'var(--color-bg-secondary)',
+              borderColor: 'var(--color-border-subtle)'
+            }}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  Fixed Amount Revenue
+                </p>
+                <p className="text-2xl font-bold" style={{ color: '#14b8a6' }}>
+                  {formatCurrency(summary?.fixedRevenue)}
+                </p>
+                <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                  Recognized fixed work
+                </p>
+              </div>
+              <div
+                className="p-3 rounded-xl"
+                style={{ backgroundColor: 'rgba(20, 184, 166, 0.12)' }}
+              >
+                <DollarSign className="w-6 h-6" style={{ color: '#14b8a6' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Hourly Revenue */}
+          <div
+            className="p-6 rounded-xl border"
+            style={{
+              backgroundColor: 'var(--color-bg-secondary)',
+              borderColor: 'var(--color-border-subtle)'
+            }}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  Hourly Revenue
+                </p>
+                <p className="text-2xl font-bold" style={{ color: '#a855f7' }}>
+                  {formatCurrency(summary?.hourlyRevenue)}
+                </p>
+                <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                  Recognized hourly work
+                </p>
+              </div>
+              <div
+                className="p-3 rounded-xl"
+                style={{ backgroundColor: 'rgba(168, 85, 247, 0.12)' }}
+              >
+                <TrendingUp className="w-6 h-6" style={{ color: '#a855f7' }} />
+              </div>
+            </div>
+          </div>
           {/* Total Billed Time */}
-          <div 
+          <div
             className="p-6 rounded-xl border group hover:scale-[1.02] transition-all duration-200 cursor-pointer"
-            style={{ 
+            style={{
               backgroundColor: 'var(--color-bg-secondary)',
               borderColor: 'var(--color-border-subtle)'
             }}
@@ -363,7 +417,7 @@ const FinanceDashboard = () => {
                   <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </p>
               </div>
-              <div 
+              <div
                 className="p-3 rounded-xl"
                 style={{ backgroundColor: 'rgba(139, 92, 246, 0.12)' }}
               >
@@ -372,77 +426,20 @@ const FinanceDashboard = () => {
             </div>
           </div>
 
-          {/* Logged Time */}
-          <div 
-            className="p-6 rounded-xl border"
-            style={{ 
-              backgroundColor: 'var(--color-bg-secondary)',
-              borderColor: 'var(--color-border-subtle)'
-            }}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
-                  Total Logged Time
-                </p>
-                <p className="text-2xl font-bold" style={{ color: '#3b82f6' }}>
-                  {formatTime(summary?.totalLoggedTime)}
-                </p>
-                <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
-                  Across all tasks
-                </p>
-              </div>
-              <div 
-                className="p-3 rounded-xl"
-                style={{ backgroundColor: 'rgba(59, 130, 246, 0.12)' }}
-              >
-                <Clock className="w-6 h-6" style={{ color: '#3b82f6' }} />
-              </div>
-            </div>
-          </div>
-
-          {/* Unbilled Time */}
-          <div 
-            className="p-6 rounded-xl border"
-            style={{ 
-              backgroundColor: 'var(--color-bg-secondary)',
-              borderColor: 'var(--color-border-subtle)'
-            }}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
-                  Unbilled Time
-                </p>
-                <p className="text-2xl font-bold" style={{ color: '#f59e0b' }}>
-                  {formatTime(summary?.unbilledTime)}
-                </p>
-                <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
-                  Pending billing
-                </p>
-              </div>
-              <div 
-                className="p-3 rounded-xl"
-                style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)' }}
-              >
-                <AlertCircle className="w-6 h-6" style={{ color: '#f59e0b' }} />
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top Users */}
-        <div 
+        <div
           className="rounded-xl border overflow-hidden"
-          style={{ 
+          style={{
             backgroundColor: 'var(--color-bg-secondary)',
             borderColor: 'var(--color-border-subtle)'
           }}
         >
-          <div 
+          <div
             className="flex items-center justify-between px-4 py-3"
             style={{ backgroundColor: 'var(--color-bg-muted)' }}
           >
@@ -460,7 +457,7 @@ const FinanceDashboard = () => {
               View all <ArrowRight className="w-3 h-3" />
             </button>
           </div>
-          
+
           {loading ? (
             <div className="p-4 space-y-3">
               {[...Array(5)].map((_, i) => (
@@ -476,15 +473,15 @@ const FinanceDashboard = () => {
           ) : topUsers.length > 0 ? (
             <div className="divide-y" style={{ borderColor: 'var(--color-border-subtle)' }}>
               {topUsers.map((user, idx) => (
-                <div 
+                <div
                   key={user.userId}
                   className="flex items-center justify-between px-4 py-3 hover:bg-opacity-50 transition-colors"
                   style={{ backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--color-bg-primary)' }}
                 >
                   <div className="flex items-center gap-3">
-                    <div 
+                    <div
                       className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
-                      style={{ 
+                      style={{
                         backgroundColor: idx === 0 ? 'rgba(245, 158, 11, 0.15)' : 'var(--color-bg-muted)',
                         color: idx === 0 ? '#f59e0b' : 'var(--color-text-secondary)'
                       }}
@@ -496,7 +493,7 @@ const FinanceDashboard = () => {
                         {user.userName}
                       </p>
                       <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        {user.projects?.length || 0} projects • {formatTime(user.totalBilledTime)} billed
+                        {user.projects?.length || 0} projects - {formatTime(user.totalBilledTime)} billed
                       </p>
                     </div>
                   </div>
@@ -517,14 +514,14 @@ const FinanceDashboard = () => {
         </div>
 
         {/* Top Projects */}
-        <div 
+        <div
           className="rounded-xl border overflow-hidden"
-          style={{ 
+          style={{
             backgroundColor: 'var(--color-bg-secondary)',
             borderColor: 'var(--color-border-subtle)'
           }}
         >
-          <div 
+          <div
             className="flex items-center justify-between px-4 py-3"
             style={{ backgroundColor: 'var(--color-bg-muted)' }}
           >
@@ -542,7 +539,7 @@ const FinanceDashboard = () => {
               View all <ArrowRight className="w-3 h-3" />
             </button>
           </div>
-          
+
           {loading ? (
             <div className="p-4 space-y-3">
               {[...Array(5)].map((_, i) => (
@@ -558,25 +555,25 @@ const FinanceDashboard = () => {
           ) : topProjects.length > 0 ? (
             <div className="divide-y" style={{ borderColor: 'var(--color-border-subtle)' }}>
               {topProjects.map((project, idx) => (
-                <div 
+                <div
                   key={project.projectId}
                   className="flex items-center justify-between px-4 py-3 hover:bg-opacity-50 transition-colors"
                   style={{ backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--color-bg-primary)' }}
                 >
                   <div className="flex items-center gap-3">
-                    <div 
+                    <div
                       className="w-8 h-8 rounded-lg flex items-center justify-center"
-                      style={{ 
-                        backgroundColor: project.billingCycle === 'hr' 
-                          ? 'rgba(139, 92, 246, 0.12)' 
+                      style={{
+                        backgroundColor: project.billingCycle === 'hr'
+                          ? 'rgba(139, 92, 246, 0.12)'
                           : 'rgba(59, 130, 246, 0.12)'
                       }}
                     >
-                      <FolderKanban 
-                        className="w-4 h-4" 
-                        style={{ 
-                          color: project.billingCycle === 'hr' ? '#8b5cf6' : '#3b82f6' 
-                        }} 
+                      <FolderKanban
+                        className="w-4 h-4"
+                        style={{
+                          color: project.billingCycle === 'hr' ? '#8b5cf6' : '#3b82f6'
+                        }}
                       />
                     </div>
                     <div>
@@ -585,17 +582,17 @@ const FinanceDashboard = () => {
                         projectId={project.projectId}
                         className="font-medium text-sm"
                         title={project.projectName}
-                      >
+                       openInNewTab={true}>
                         {project.projectName}
                       </ProjectWorkflowLink>
-                      <p 
-                        className="text-xs cursor-help" 
+                      <p
+                        className="text-xs cursor-help"
                         style={{ color: 'var(--color-text-muted)' }}
                         title={project.billedTime ? `Billed: ${formatTime(project.billedTime)} | Logged: ${formatTime(project.loggedTime)}` : ''}
                       >
-                        {project.department} • {project.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
-                        {project.billingCycle === 'hr' && project.billedTime ? ` • ${formatTime(project.billedTime)} billed` : ''}
-                        {project.billingCycle === 'fixed' && project.billedTime && project.billedTime.totalMinutes > 0 ? ` • ${formatTime(project.billedTime)} billed` : ''}
+                        {project.department} - {project.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
+                        {project.billingCycle === 'hr' && project.billedTime ? ` - ${formatTime(project.billedTime)} billed` : ''}
+                        {project.billingCycle === 'fixed' && project.billedTime && project.billedTime.totalMinutes > 0 ? ` - ${formatTime(project.billedTime)} billed` : ''}
                       </p>
                     </div>
                   </div>
@@ -617,14 +614,14 @@ const FinanceDashboard = () => {
       </div>
 
       {/* Department Breakdown */}
-      <div 
+      <div
         className="rounded-xl border overflow-hidden"
-        style={{ 
+        style={{
           backgroundColor: 'var(--color-bg-secondary)',
           borderColor: 'var(--color-border-subtle)'
         }}
       >
-        <div 
+        <div
           className="flex items-center justify-between px-4 py-3"
           style={{ backgroundColor: 'var(--color-bg-muted)' }}
         >
@@ -635,7 +632,7 @@ const FinanceDashboard = () => {
             </h3>
           </div>
         </div>
-        
+
         {loading ? (
           <div className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -653,12 +650,12 @@ const FinanceDashboard = () => {
               {departmentStats.map((dept, idx) => {
                 const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4'];
                 const color = colors[idx % colors.length];
-                
+
                 return (
-                  <div 
+                  <div
                     key={dept.name}
                     className="p-4 rounded-xl border transition-all duration-200 hover:scale-[1.02]"
-                    style={{ 
+                    style={{
                       backgroundColor: 'var(--color-bg-primary)',
                       borderColor: 'var(--color-border-subtle)',
                       borderLeftWidth: '4px',
@@ -669,7 +666,7 @@ const FinanceDashboard = () => {
                       <h4 className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
                         {dept.name}
                       </h4>
-                      <span 
+                      <span
                         className="text-xs px-2 py-1 rounded-full"
                         style={{ backgroundColor: `${color}20`, color }}
                       >
@@ -698,9 +695,9 @@ const FinanceDashboard = () => {
       </div>
 
       {/* Quick Actions */}
-      <div 
+      <div
         className="p-4 rounded-xl border"
-        style={{ 
+        style={{
           backgroundColor: 'var(--color-bg-secondary)',
           borderColor: 'var(--color-border-subtle)'
         }}
@@ -712,7 +709,7 @@ const FinanceDashboard = () => {
           <button
             onClick={() => navigate('/finance/users')}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-[1.02]"
-            style={{ 
+            style={{
               backgroundColor: 'rgba(59, 130, 246, 0.12)',
               color: '#3b82f6'
             }}
@@ -723,7 +720,7 @@ const FinanceDashboard = () => {
           <button
             onClick={() => navigate('/finance/projects')}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-[1.02]"
-            style={{ 
+            style={{
               backgroundColor: 'rgba(139, 92, 246, 0.12)',
               color: '#8b5cf6'
             }}
@@ -734,7 +731,7 @@ const FinanceDashboard = () => {
           <button
             onClick={() => navigate('/finance/weekly')}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-[1.02]"
-            style={{ 
+            style={{
               backgroundColor: 'rgba(16, 185, 129, 0.12)',
               color: '#10b981'
             }}

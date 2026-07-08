@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useContext } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Search as SearchIcon,
@@ -20,13 +20,14 @@ import api from '../../services/api';
 import SummaryCards from '../../components/Finance/SummaryCards';
 import DateFilters from '../../components/Finance/DateFilters';
 import DepartmentFilter from '../../components/Finance/DepartmentFilter';
+import BillingTypeFilter from '../../components/Finance/BillingTypeFilter';
 import GlobalSearch from '../../components/Finance/GlobalSearch';
 import ExportButton from '../../components/Finance/ExportButton';
 import DataIntegrityWarnings from '../../components/Finance/DataIntegrityWarnings';
 import ColumnTooltip, { COLUMN_EXPLANATIONS } from '../../components/Finance/ColumnTooltip';
 import EmptyState from '../../components/Finance/EmptyState';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
-import { WeekWiseHeaders, WeekWiseCells, formatWeekValue } from '../../components/Finance/WeekWiseColumns';
+import { WeekWiseHeaders, WeekWiseCells } from '../../components/Finance/WeekWiseColumns';
 
 /**
  * UsersTab - User-centric Finance View (Enhanced)
@@ -52,7 +53,8 @@ const UsersTab = () => {
     startDate: null,
     endDate: null,
     departmentId: null,
-    userId: null
+    userId: null,
+    billingType: 'all'
   });
 
   // Week-wise reporting mode state
@@ -68,12 +70,14 @@ const UsersTab = () => {
     const params = new URLSearchParams(location.search);
     const userIdParam = params.get('userId');
     const departmentIdParam = params.get('departmentId');
+    const billingTypeParam = params.get('billingType');
     
-    if (userIdParam || departmentIdParam) {
+    if (userIdParam || departmentIdParam || billingTypeParam) {
       setFilters(prev => ({
         ...prev,
         userId: userIdParam || null,
-        departmentId: departmentIdParam || null
+        departmentId: departmentIdParam || null,
+        billingType: billingTypeParam || prev.billingType
       }));
     }
   }, [location.search]);
@@ -89,6 +93,7 @@ const UsersTab = () => {
       if (filters.endDate) params.append('endDate', filters.endDate);
       if (filters.departmentId) params.append('departmentId', filters.departmentId);
       if (filters.userId) params.append('userId', filters.userId);
+      if (filters.billingType) params.append('billingType', filters.billingType);
       
       const response = await api.get(`/api/finance/users?${params.toString()}`);
       
@@ -134,6 +139,9 @@ const UsersTab = () => {
         if (filters.departmentId) {
           params.append('departmentId', filters.departmentId);
         }
+        if (filters.billingType) {
+          params.append('billingType', filters.billingType);
+        }
         
         const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`);
         if (response.data.success) {
@@ -147,7 +155,7 @@ const UsersTab = () => {
     };
     
     fetchWeeklyData();
-  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId]);
+  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, filters.billingType]);
 
   // Handle card click for filtering
   const handleCardClick = (action, value) => {
@@ -203,7 +211,7 @@ const UsersTab = () => {
   // Build weekly payments lookup from weeklyData (grouped by userId and userId_projectId)
   // Also track which month the data is from
   const weeklyPaymentsMap = useMemo(() => {
-    if (!weeklyData || !weeklyData.months) return { payments: {}, activeMonth: 0 };
+    if (!weeklyData || !weeklyData.months) return { payments: {}, activeMonth: 0, activeMonthTotal: 0 };
     
     const map = {};
     
@@ -230,7 +238,7 @@ const UsersTab = () => {
       });
     }
     
-    return { payments: map, activeMonth };
+    return { payments: map, activeMonth, activeMonthTotal: monthData?.totalPayment || 0 };
   }, [weeklyData, selectedMonth]);
 
   // Get the active month name for the week-wise report (data-driven, not current date)
@@ -302,7 +310,8 @@ const UsersTab = () => {
         const projectWeeklyPayments = weeklyPaymentsMap.payments?.[projectWeeklyKey] || [0, 0, 0, 0, 0];
         const projectWithWeekly = {
           ...project,
-          weeklyPayments: projectWeeklyPayments
+          weeklyPayments: projectWeeklyPayments,
+          payment: weekWiseMode ? projectWeeklyPayments.reduce((sum, value) => sum + (value || 0), 0) : (project.payment || 0)
         };
         grouped[dept].users[user.userId].projectsInDept.push(projectWithWeekly);
         
@@ -313,9 +322,9 @@ const UsersTab = () => {
         
         grouped[dept].users[user.userId].deptBilledMinutes += project.billedMinutes || 0;
         grouped[dept].users[user.userId].deptLoggedMinutes += project.loggedMinutes || 0;
-        grouped[dept].users[user.userId].deptPayment += project.payment || 0;
+        grouped[dept].users[user.userId].deptPayment += projectWithWeekly.payment || 0;
         
-        grouped[dept].totalPayment += project.payment || 0;
+        grouped[dept].totalPayment += projectWithWeekly.payment || 0;
         grouped[dept].totalBilledMinutes += project.billedMinutes || 0;
         grouped[dept].totalLoggedMinutes += project.loggedMinutes || 0;
       });
@@ -332,7 +341,7 @@ const UsersTab = () => {
     });
     
     return grouped;
-  }, [data, searchQuery, sortConfig, weeklyPaymentsMap]);
+  }, [data, searchQuery, sortConfig, weeklyPaymentsMap, weekWiseMode]);
 
   // Calculate department totals
   const departmentTotals = useMemo(() => {
@@ -436,6 +445,11 @@ const UsersTab = () => {
             onChange={(deptId) => setFilters(prev => ({ ...prev, departmentId: deptId }))}
           />
 
+          <BillingTypeFilter
+            value={filters.billingType}
+            onChange={(billingType) => setFilters(prev => ({ ...prev, billingType }))}
+          />
+
           {/* Export Button */}
           <ExportButton 
             data={flattenedDataForExport}
@@ -516,7 +530,7 @@ const UsersTab = () => {
           </div>
           {weeklyData && (
             <span className="text-lg font-bold" style={{ color: '#10b981' }}>
-              {formatCurrency(weeklyData.yearTotal || 0)}
+              {formatCurrency(weeklyData.selectedMonthTotal ?? weeklyPaymentsMap.activeMonthTotal ?? weeklyData.yearTotal ?? 0)}
             </span>
           )}
         </div>
@@ -835,7 +849,7 @@ const UsersTab = () => {
                                     className="text-sm"
                                     defaultColor="var(--color-text-secondary)"
                                     title={project.projectName}
-                                  >
+                                   openInNewTab={true}>
                                     {project.projectName}
                                   </ProjectWorkflowLink>
                                   {project.billingCycle === 'hr' && project.hourlyPrice && (
@@ -924,7 +938,7 @@ const UsersTab = () => {
             className="font-semibold"
             style={{ color: 'var(--color-text-primary)' }}
           >
-            Year Total ({selectedYear})
+            Selected Month Total ({['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][selectedMonth]} {selectedYear})
           </span>
           <span 
             className="text-lg font-bold"
