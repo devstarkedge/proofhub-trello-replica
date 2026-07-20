@@ -430,7 +430,37 @@ export function buildAnnouncementPayload(announcement, actor) {
   };
 }
 
-// ─── Subtask Event Payloads ──────────────────────────────────────────────────
+// ─── Department Payloads ───────────────────────────────────────────────────
+
+export function buildDepartmentPayload(department, event, actor) {
+  const workspaceId = resolveWorkspaceId();
+  return {
+    workspaceId,
+    event,
+    department: {
+      id: (department._id || department.id)?.toString(),
+      name: department.name || '',
+      description: department.description || '',
+      color: department.color || '',
+      icon: department.icon || '',
+      managers: (department.managers || []).map((m) => (m._id || m).toString()),
+      members: (department.members || []).map((m) => (m._id || m).toString()),
+    },
+    // Maintain ChatApp-compatible aliases if necessary
+    departmentId: (department._id || department.id)?.toString(),
+    departmentName: department.name || '',
+    actor: buildActor(actor),
+  };
+}
+
+export function buildDepartmentUpdatedPayload(department, changes, actor) {
+  return {
+    ...buildDepartmentPayload(department, 'DEPARTMENT_UPDATED', actor),
+    changes: changes || {},
+  };
+}
+
+// ─── Project / Board Payloads ──────────────────────────────────────────────────
 
 export function buildSubtaskEventPayload(subtask, card, board, actor, eventType) {
   const workspaceId = resolveWorkspaceId();
