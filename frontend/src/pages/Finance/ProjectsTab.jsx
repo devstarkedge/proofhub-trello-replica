@@ -34,6 +34,7 @@ import { PaymentBreakdownCell } from '../../components/Finance/PaymentBreakdown'
 import EmptyState from '../../components/Finance/EmptyState';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 import { WeekWiseHeaders, WeekWiseCells } from '../../components/Finance/WeekWiseColumns';
+import { getBillingContractValue, getBillingTypeLabel, getBillingTypeStyle, normalizeBillingType } from '../../utils/billing';
 
 /**
  * ProjectsTab - Project-centric Finance View (Enhanced)
@@ -162,7 +163,15 @@ const ProjectsTab = () => {
 
   // Handle card click for filtering
   const handleCardClick = (action, value) => {
-    if (action === 'project' && value) {
+    if (action === 'fixedRevenue') {
+      setFilters(prev => ({ ...prev, billingType: 'fixed' }));
+    } else if (action === 'hourlyRevenue') {
+      setFilters(prev => ({ ...prev, billingType: 'hourly' }));
+    } else if (action === 'milestoneRevenue') {
+      setFilters(prev => ({ ...prev, billingType: 'milestone' }));
+    } else if (action === 'revenue') {
+      setFilters(prev => ({ ...prev, billingType: 'all' }));
+    } else if (action === 'project' && value) {
       setFilters(prev => ({ ...prev, projectId: value }));
     } else if (action === 'user' && value) {
       navigate(`/finance/users?userId=${value}`);
@@ -360,13 +369,33 @@ const ProjectsTab = () => {
     return { payment, billedMinutes };
   }, [groupedProcessedData]);
 
+  const visibleSummary = useMemo(() => {
+    const result = { totalRevenue: 0, fixedRevenue: 0, hourlyRevenue: 0, milestoneRevenue: 0, totalBilledTime: { totalMinutes: 0 }, billableProjectCount: processedData.length };
+    processedData.forEach((project) => {
+      const payment = weekWiseMode
+        ? (weeklyPaymentsMap.payments?.[project.projectId] || []).reduce((sum, value) => sum + (value || 0), 0)
+        : (project.payment || 0);
+      const type = normalizeBillingType(project.billingCycle || project.billingType);
+      result.totalRevenue += payment;
+      if (type === 'fixed') result.fixedRevenue += payment;
+      if (type === 'hr') result.hourlyRevenue += payment;
+      if (type === 'milestone') result.milestoneRevenue += payment;
+      result.totalBilledTime.totalMinutes += project.billedTime?.totalMinutes || 0;
+    });
+    result.totalBilledTime.hours = Math.floor(result.totalBilledTime.totalMinutes / 60);
+    result.totalBilledTime.minutes = result.totalBilledTime.totalMinutes % 60;
+    return result;
+  }, [processedData, weekWiseMode, weeklyPaymentsMap]);
+
   // Export columns configuration
   const exportColumns = [
     { key: 'projectName', label: 'Project Name' },
     { key: 'department', label: 'Department' },
     { key: 'clientName', label: 'Client Name' },
     { key: 'billingType', label: 'Billing Type' },
-    { key: 'hourlyRate', label: 'Hourly Rate' },
+    { key: 'contractValue', label: 'Rate / Budget' },
+    { key: 'milestoneRevenue', label: 'Recognized Milestone Revenue' },
+    { key: 'remainingProjectAmount', label: 'Remaining Project Amount' },
     { key: 'loggedTime', label: 'Logged Time' },
     { key: 'billedTime', label: 'Billed Time' },
     { key: 'payment', label: 'Payment' },
@@ -381,8 +410,10 @@ const ProjectsTab = () => {
       projectName: project.projectName || project.boardName || '',
       department: project.department || 'Unassigned',
       clientName: project.clientInfo?.clientName || '',
-      billingType: project.billingType === 'hr' ? 'Hourly' : project.billingType === 'fixed' ? 'Fixed' : '-',
-      hourlyRate: project.hourlyPrice ? `$${project.hourlyPrice}/hr` : '-',
+      billingType: getBillingTypeLabel(project.billingType),
+      contractValue: getBillingContractValue(project, formatCurrency),
+      milestoneRevenue: project.milestoneRevenue || 0,
+      remainingProjectAmount: project.remainingProjectAmount || 0,
       loggedTime: project.loggedTime || { hours: 0, minutes: 0 },
       billedTime: project.billedTime || { hours: 0, minutes: 0 },
       payment: weekWiseMode ? (weeklyPaymentsMap.payments?.[project.projectId] || [0, 0, 0, 0, 0]).reduce((sum, value) => sum + (value || 0), 0) : (project.payment || 0),
@@ -424,7 +455,7 @@ const ProjectsTab = () => {
   return (
     <div>
       {/* Summary Cards */}
-      <SummaryCards filters={filters} onCardClick={handleCardClick} />
+      <SummaryCards filters={filters} onCardClick={handleCardClick} summaryOverride={(searchQuery || weekWiseMode) ? visibleSummary : null} />
 
       {/* Data Integrity Warnings */}
       <DataIntegrityWarnings data={data} type="projects" />
@@ -479,6 +510,7 @@ const ProjectsTab = () => {
             filename="projects-finance-report"
             title="Projects Finance Report"
             filters={filters}
+            summary={{ totalRevenue: grandTotals.payment, totalBilledTime: { totalMinutes: grandTotals.billedMinutes } }}
           />
 
           {/* Refresh Button */}
@@ -769,7 +801,7 @@ const ProjectsTab = () => {
                           style={{ color: 'var(--color-text-secondary)' }}
                           onClick={() => handleSort('payment')}
                         >
-                          <ColumnTooltip explanation={COLUMN_EXPLANATIONS.payment.hourly}>
+                          <ColumnTooltip explanation={COLUMN_EXPLANATIONS.allRevenue}>
                             <div className="flex items-center gap-1">
                               <DollarSign className="w-4 h-4" />
                               Payment
@@ -901,24 +933,15 @@ const ProjectsTab = () => {
                                 <div>
                                   <span
                                     className="px-2 py-1 rounded text-xs font-medium"
-                                    style={{
-                                      backgroundColor: project.billingCycle === 'hr'
-                                        ? 'rgba(139, 92, 246, 0.12)'
-                                        : 'rgba(59, 130, 246, 0.12)',
-                                      color: project.billingCycle === 'hr'
-                                        ? '#8b5cf6'
-                                        : '#3b82f6'
-                                    }}
+                                    style={getBillingTypeStyle(project.billingCycle)}
                                   >
-                                    {project.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
+                                    {getBillingTypeLabel(project.billingCycle)}
                                   </span>
                                   <p
                                     className="text-xs mt-1"
                                     style={{ color: 'var(--color-text-muted)' }}
                                   >
-                                    {project.billingCycle === 'hr'
-                                      ? `$${project.hourlyPrice || 0}/hr`
-                                      : formatCurrency(project.fixedPrice)}
+                                    {getBillingContractValue(project, formatCurrency)}
                                   </p>
                                 </div>
                               </td>

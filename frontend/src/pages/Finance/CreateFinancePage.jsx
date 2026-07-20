@@ -64,7 +64,9 @@ const CreateFinancePage = () => {
       { key: 'projectSource', label: 'Source', required: false },
       { key: 'upworkId', label: 'Upwork ID', required: false },
       { key: 'billingType', label: 'Billing Type', required: false },
-      { key: 'hourlyRate', label: 'Hourly Rate', required: false },
+      { key: 'hourlyRate', label: 'Rate / Contract Budget', required: false },
+      { key: 'milestoneRevenue', label: 'Recognized Milestone Revenue', required: false },
+      { key: 'remainingProjectAmount', label: 'Remaining Project Amount', required: false },
       { key: 'loggedTime', label: 'Logged Time', required: false },
       { key: 'billedTime', label: 'Billed Time', required: false },
       { key: 'payment', label: 'Payment', required: true },
@@ -472,6 +474,7 @@ const CreateFinancePage = () => {
                 <option value="all">All Types</option>
                 <option value="hr">Hourly</option>
                 <option value="fixed">Fixed</option>
+                <option value="milestone">Milestone</option>
               </select>
             </div>
           </div>

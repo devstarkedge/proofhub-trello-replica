@@ -20,6 +20,8 @@ import AuthContext from '../context/AuthContext';
 import ProjectOptionsDropdown from './ProjectOptionsDropdown';
 import DatePickerModal from "./DatePickerModal";
 import RichTextEditor from './RichTextEditor';
+import MilestoneScheduleEditor from './MilestoneScheduleEditor';
+import { createEmptyMilestone, validateMilestoneSchedule } from '../utils/milestones';
 
 // Country codes data
 const COUNTRY_CODES = [
@@ -122,6 +124,9 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     billingCycle: "hr",
     fixedPrice: "",
     hourlyPrice: "",
+    totalProjectBudget: "",
+    milestoneWorkflow: "sequential",
+    milestones: [],
     dueDate: "",
     clientName: "",
     clientEmail: "",
@@ -317,6 +322,8 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         next.billingCycle = 'hr';
         next.fixedPrice = '';
         next.hourlyPrice = '';
+        next.totalProjectBudget = '';
+        next.milestones = [];
         next.projectUrl = '';
         next.upworkId = '';
         next.estimatedTime = '';
@@ -545,9 +552,13 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       if (formData.clientMobileNumber && formData.clientMobileNumber.length !== selectedCountry.digits) {
         newErrors.clientMobileNumber = `Must be ${selectedCountry.digits} digits`;
       }
+      if (formData.billingCycle === 'milestone') {
+        const milestoneError = validateMilestoneSchedule(formData);
+        if (milestoneError) newErrors.milestones = milestoneError;
+      }
     }
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
   }, [formData, selectedCountry]);
 
   const handleSubmit = useCallback(async (e) => {
@@ -556,8 +567,19 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       toast.error("Please enter a valid project URL");
       return;
     }
-    if (!validateForm()) {
-      toast.error("Please fix the validation errors");
+    const validation = validateForm();
+    if (!validation.isValid) {
+      const errorMessages = Object.values(validation.errors).filter(Boolean);
+      toast.error(
+        <div>
+          <p className="font-semibold mb-1">Please fix the validation errors:</p>
+          <ul className="list-disc pl-4 text-sm">
+            {errorMessages.map((msg, i) => (
+              <li key={i}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      );
       setActiveTab('details');
       return;
     }
@@ -611,8 +633,18 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         projectData.projectSource = formData.projectSource;
         projectData.upworkId = formData.upworkId;
         projectData.billingCycle = formData.billingCycle;
-        projectData.fixedPrice = formData.fixedPrice;
-        projectData.hourlyPrice = formData.hourlyPrice;
+        if (formData.billingCycle === 'fixed') projectData.fixedPrice = formData.fixedPrice;
+        if (['hr', 'hourly'].includes(formData.billingCycle)) projectData.hourlyPrice = formData.hourlyPrice;
+        if (formData.billingCycle === 'milestone') {
+          projectData.totalProjectBudget = formData.totalProjectBudget;
+          projectData.milestoneWorkflow = formData.milestoneWorkflow;
+          projectData.milestones = formData.milestones.map((milestone, order) => ({
+            title: milestone.title,
+            amount: milestone.amount,
+            dueDate: milestone.dueDate,
+            order
+          }));
+        }
         projectData.estimatedTime = formData.estimatedTime;
         projectData.clientDetails = {
           clientName: formData.clientName,
@@ -1012,14 +1044,32 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                           <ProjectOptionsDropdown
                             optionType="billingType"
                             value={formData.billingCycle}
-                            onChange={(val) => setFormData((prev) => ({ ...prev, billingCycle: val }))}
+                            onChange={(val) => setFormData((prev) => ({
+                              ...prev,
+                              billingCycle: val,
+                              fixedPrice: val === 'fixed' ? prev.fixedPrice : '',
+                              hourlyPrice: ['hr', 'hourly'].includes(val) ? prev.hourlyPrice : '',
+                              milestones: val === 'milestone' && prev.milestones.length === 0
+                                ? [{ ...createEmptyMilestone(), order: 0 }]
+                                : prev.milestones
+                            }))}
                             allowManage={true}
                             showLabel={false}
                             theme="blue"
                           />
                         </FormField>
 
-                        {formData.billingCycle === 'fixed' ? (
+                        {formData.billingCycle === 'milestone' ? (
+                          <MilestoneScheduleEditor
+                            totalProjectBudget={formData.totalProjectBudget}
+                            milestoneWorkflow={formData.milestoneWorkflow}
+                            milestones={formData.milestones}
+                            onBudgetChange={(totalProjectBudget) => setFormData((prev) => ({ ...prev, totalProjectBudget }))}
+                            onWorkflowChange={(milestoneWorkflow) => setFormData((prev) => ({ ...prev, milestoneWorkflow }))}
+                            onMilestonesChange={(milestones) => setFormData((prev) => ({ ...prev, milestones }))}
+                            error={errors.milestones}
+                          />
+                        ) : formData.billingCycle === 'fixed' ? (
                           <FormField label="Fixed Price" icon={DollarSign}>
                             <input
                               type="number"

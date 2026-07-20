@@ -4,12 +4,17 @@ import Subtask from '../../models/Subtask.js';
 import SubtaskNano from '../../models/SubtaskNano.js';
 import User from '../../models/User.js';
 import UserPermission, { FINANCE_PAGE_KEY } from '../../models/UserPermission.js';
+import Milestone from '../../models/Milestone.js';
+import MilestoneApproval from '../../models/MilestoneApproval.js';
+import MilestoneRevenueRecognition from '../../models/MilestoneRevenueRecognition.js';
 import logger from '../../utils/logger.js';
+import { fromCents } from '../../utils/money.js';
 
 export const BILLING_TYPES = Object.freeze({
   ALL: 'ALL',
   FIXED: 'FIXED',
-  HOURLY: 'HOURLY'
+  HOURLY: 'HOURLY',
+  MILESTONE: 'MILESTONE'
 });
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -18,6 +23,7 @@ export const normalizeBillingType = (value) => {
   const normalized = String(value || 'all').trim().toLowerCase();
   if (normalized === 'fixed') return BILLING_TYPES.FIXED;
   if (normalized === 'hourly' || normalized === 'hr') return BILLING_TYPES.HOURLY;
+  if (normalized === 'milestone') return BILLING_TYPES.MILESTONE;
   return BILLING_TYPES.ALL;
 };
 
@@ -64,6 +70,7 @@ const getBillingTypeForProject = (project) => {
   const billingCycle = String(project?.billingCycle || '').trim().toLowerCase();
   if (billingCycle === 'fixed') return BILLING_TYPES.FIXED;
   if (billingCycle === 'hr' || billingCycle === 'hourly') return BILLING_TYPES.HOURLY;
+  if (billingCycle === 'milestone') return BILLING_TYPES.MILESTONE;
   return null;
 };
 
@@ -92,8 +99,71 @@ export const calculateFixedRevenue = (project, filters = {}) => {
   return applyFinanceDateRange(getFixedRevenueDate(project), filters) ? fixedPrice : 0;
 };
 
-export const calculateTotalRevenue = ({ fixedRevenue = 0, hourlyRevenue = 0 } = {}) => (
-  Number(fixedRevenue || 0) + Number(hourlyRevenue || 0)
+export const calculateMilestoneRevenue = (recognitions = [], filters = {}) => (
+  fromCents((recognitions || []).reduce((total, recognition) => {
+    if (!applyFinanceDateRange(recognition.recognizedAt, filters)) return total;
+    return total + Number(recognition.amountCents || 0);
+  }, 0))
+);
+
+export const allocateMilestoneRevenueByApprover = (recognitions = [], approvals = [], filters = {}) => {
+  const approvalsByMilestone = new Map();
+  approvals.forEach((approval) => {
+    const milestoneId = approval?.milestone?.toString();
+    const approverId = approval?.approvedBy?.toString();
+    const amountCents = Number(approval?.amountCents || 0);
+    if (!milestoneId || !approverId || amountCents <= 0) return;
+    if (!approvalsByMilestone.has(milestoneId)) approvalsByMilestone.set(milestoneId, []);
+    approvalsByMilestone.get(milestoneId).push({ approverId, amountCents });
+  });
+
+  const allocatedCentsByUser = new Map();
+  const addAllocation = (userId, amountCents) => {
+    if (!userId || amountCents <= 0) return;
+    allocatedCentsByUser.set(userId, (allocatedCentsByUser.get(userId) || 0) + amountCents);
+  };
+
+  recognitions.forEach((recognition) => {
+    if (!applyFinanceDateRange(recognition?.recognizedAt, filters)) return;
+    const recognizedCents = Number(recognition?.amountCents || 0);
+    if (!Number.isSafeInteger(recognizedCents) || recognizedCents <= 0) return;
+
+    const milestoneId = recognition?.milestone?.toString();
+    const milestoneApprovals = approvalsByMilestone.get(milestoneId) || [];
+    const approvedCents = milestoneApprovals.reduce((sum, approval) => sum + approval.amountCents, 0);
+
+    if (approvedCents <= 0) {
+      addAllocation(recognition?.recognizedBy?.toString(), recognizedCents);
+      return;
+    }
+
+    const allocations = milestoneApprovals.map((approval) => {
+      const exactCents = (recognizedCents * approval.amountCents) / approvedCents;
+      return {
+        userId: approval.approverId,
+        cents: Math.floor(exactCents),
+        remainder: exactCents - Math.floor(exactCents)
+      };
+    });
+    let remainingCents = recognizedCents - allocations.reduce((sum, allocation) => sum + allocation.cents, 0);
+    allocations.sort((left, right) => (
+      right.remainder - left.remainder || String(left.userId).localeCompare(String(right.userId))
+    ));
+    for (let index = 0; index < allocations.length && remainingCents > 0; index += 1, remainingCents -= 1) {
+      allocations[index].cents += 1;
+    }
+    allocations.forEach((allocation) => addAllocation(allocation.userId, allocation.cents));
+  });
+
+  return new Map([...allocatedCentsByUser].map(([userId, cents]) => [userId, fromCents(cents)]));
+};
+
+export const calculateTotalRevenue = ({
+  fixedRevenue = 0,
+  hourlyRevenue = 0,
+  milestoneRevenue = 0
+} = {}) => (
+  Number(fixedRevenue || 0) + Number(hourlyRevenue || 0) + Number(milestoneRevenue || 0)
 );
 
 const buildDuration = (totalMinutes = 0) => {
@@ -172,11 +242,15 @@ const collectUserIds = (entries = [], idSet) => {
   }
 };
 
-const buildUserNameMap = async (items = []) => {
+const buildUserNameMap = async (items = [], milestoneApprovals = []) => {
   const ids = new Set();
   items.forEach((item) => {
     collectUserIds(item.billedTime, ids);
     collectUserIds(item.loggedTime, ids);
+  });
+  milestoneApprovals.forEach((approval) => {
+    const approverId = approval?.approvedBy?.toString();
+    if (approverId) ids.add(approverId);
   });
 
   if (ids.size === 0) return new Map();
@@ -211,7 +285,8 @@ const buildProjectMatch = (filters, includeBillingType = true) => {
   if (includeBillingType) {
     if (filters.billingType === BILLING_TYPES.FIXED) match.billingCycle = 'fixed';
     if (filters.billingType === BILLING_TYPES.HOURLY) match.billingCycle = { $in: ['hr', 'hourly'] };
-    if (filters.billingType === BILLING_TYPES.ALL) match.billingCycle = { $in: ['fixed', 'hr', 'hourly'] };
+    if (filters.billingType === BILLING_TYPES.MILESTONE) match.billingCycle = 'milestone';
+    if (filters.billingType === BILLING_TYPES.ALL) match.billingCycle = { $in: ['fixed', 'hr', 'hourly', 'milestone'] };
   }
 
   return match;
@@ -245,7 +320,7 @@ const buildDataContext = async (rawFilters = {}) => {
   ]);
 
   const projectIds = projects.map((project) => project._id);
-  const [cards, subtasks, nanos] = projectIds.length > 0
+  const [cards, subtasks, nanos, milestones, milestoneRecognitions, milestoneApprovals] = projectIds.length > 0
     ? await Promise.all([
       Card.find({ board: { $in: projectIds }, isArchived: { $ne: true } })
         .select('board billedTime loggedTime title updatedAt')
@@ -255,11 +330,21 @@ const buildDataContext = async (rawFilters = {}) => {
         .lean(),
       SubtaskNano.find({ board: { $in: projectIds } })
         .select('board subtask billedTime loggedTime title updatedAt')
+        .lean(),
+      Milestone.find({ board: { $in: projectIds } })
+        .select('board title amountCents approvedAmountCents status paidAt revenueRecognizedAt order')
+        .sort({ board: 1, order: 1 })
+        .lean(),
+      MilestoneRevenueRecognition.find({ board: { $in: projectIds } })
+        .select('board milestone amountCents recognizedAt recognizedBy')
+        .lean(),
+      MilestoneApproval.find({ board: { $in: projectIds } })
+        .select('board milestone amountCents approvedBy approvedAt')
         .lean()
     ])
-    : [[], [], []];
+    : [[], [], [], [], [], []];
 
-  const usersById = await buildUserNameMap([...cards, ...subtasks, ...nanos]);
+  const usersById = await buildUserNameMap([...cards, ...subtasks, ...nanos], milestoneApprovals);
 
   return {
     filters,
@@ -269,6 +354,9 @@ const buildDataContext = async (rawFilters = {}) => {
     cardsByBoard: groupByBoard(cards),
     subtasksByBoard: groupByBoard(subtasks),
     nanosByBoard: groupByBoard(nanos),
+    milestonesByBoard: groupByBoard(milestones),
+    milestoneRecognitionsByBoard: groupByBoard(milestoneRecognitions),
+    milestoneApprovalsByBoard: groupByBoard(milestoneApprovals),
     diagnostics: {
       totalProjectsBeforeFiltering,
       projectsAfterBillingTypeFiltering: projects.length
@@ -300,6 +388,9 @@ const getLastActivity = (entities = []) => {
 export const buildProjectMetric = (project, context, rangeFilters = context.filters) => {
   const projectId = project._id.toString();
   const entities = getProjectEntities(context, projectId);
+  const milestones = context.milestonesByBoard.get(projectId) || [];
+  const milestoneRecognitions = context.milestoneRecognitionsByBoard.get(projectId) || [];
+  const milestoneApprovals = context.milestoneApprovalsByBoard?.get(projectId) || [];
   const users = {};
   let billedMinutes = 0;
   let loggedMinutes = 0;
@@ -322,7 +413,28 @@ export const buildProjectMetric = (project, context, rangeFilters = context.filt
   const hourlyRevenue = billingType === BILLING_TYPES.HOURLY
     ? calculateHourlyRevenue(billedMinutes, project.hourlyPrice)
     : 0;
-  const totalRevenue = calculateTotalRevenue({ fixedRevenue, hourlyRevenue });
+  const milestoneRevenue = billingType === BILLING_TYPES.MILESTONE
+    ? calculateMilestoneRevenue(milestoneRecognitions, rangeFilters)
+    : 0;
+  const lifetimeMilestoneRevenue = billingType === BILLING_TYPES.MILESTONE
+    ? calculateMilestoneRevenue(milestoneRecognitions, {})
+    : 0;
+  const milestoneRevenueByApprover = billingType === BILLING_TYPES.MILESTONE
+    ? allocateMilestoneRevenueByApprover(milestoneRecognitions, milestoneApprovals, rangeFilters)
+    : new Map();
+  milestoneRevenueByApprover.forEach((revenue, userId) => {
+    if (rangeFilters.userId && userId !== rangeFilters.userId) return;
+    if (!users[userId]) {
+      users[userId] = {
+        userId,
+        userName: context.usersById.get(userId) || 'Unknown',
+        billedMinutes: 0,
+        loggedMinutes: 0
+      };
+    }
+    users[userId].milestoneRevenue = Number(users[userId].milestoneRevenue || 0) + revenue;
+  });
+  const totalRevenue = calculateTotalRevenue({ fixedRevenue, hourlyRevenue, milestoneRevenue });
   const hasBillingData = billedMinutes > 0 || totalRevenue > 0;
   const hasActivityInRange = billedMinutes > 0 || loggedMinutes > 0 || totalRevenue > 0;
 
@@ -334,11 +446,16 @@ export const buildProjectMetric = (project, context, rangeFilters = context.filt
     loggedMinutes,
     fixedRevenue,
     hourlyRevenue,
+    milestoneRevenue,
+    lifetimeMilestoneRevenue,
     totalRevenue,
     payment: totalRevenue,
     hasBillingData,
     hasActivityInRange,
     users,
+    milestones,
+    milestoneRecognitions,
+    milestoneApprovals,
     lastActivity: getLastActivity(entities)
   };
 };
@@ -346,6 +463,7 @@ export const buildProjectMetric = (project, context, rangeFilters = context.filt
 const shouldIncludeProjectMetric = (metric, filters) => {
   if (!metric.billingType) return false;
   if (!dateRangeIsActive(filters)) return true;
+  if (metric.billingType === BILLING_TYPES.MILESTONE) return true;
   return metric.hasActivityInRange;
 };
 
@@ -355,21 +473,68 @@ const buildProjectMetrics = (context, rangeFilters = context.filters) => (
     .filter((metric) => shouldIncludeProjectMetric(metric, rangeFilters))
 );
 
+const metricRevenueAllocationCache = new WeakMap();
+
+const getMetricProjectRevenueAllocations = (metric) => {
+  const cached = metricRevenueAllocationCache.get(metric);
+  if (cached) return cached;
+  const result = new Map();
+  const projectRevenue = metric.billingType === BILLING_TYPES.MILESTONE
+    ? metric.milestoneRevenue
+    : metric.fixedRevenue;
+  const eligibleUsers = Object.values(metric.users || {}).filter((item) => item.billedMinutes > 0);
+  const totalEligibleMinutes = eligibleUsers.reduce((sum, item) => sum + item.billedMinutes, 0);
+  if (projectRevenue <= 0 || totalEligibleMinutes <= 0) {
+    metricRevenueAllocationCache.set(metric, result);
+    return result;
+  }
+
+  const revenueCents = Math.round(projectRevenue * 100);
+  const allocations = eligibleUsers.map((item) => {
+    const exactCents = (revenueCents * item.billedMinutes) / totalEligibleMinutes;
+    return { userId: item.userId, cents: Math.floor(exactCents), remainder: exactCents - Math.floor(exactCents) };
+  });
+  let remainingCents = revenueCents - allocations.reduce((sum, allocation) => sum + allocation.cents, 0);
+  allocations.sort((a, b) => b.remainder - a.remainder || String(a.userId).localeCompare(String(b.userId)));
+  for (let index = 0; index < allocations.length && remainingCents > 0; index += 1, remainingCents -= 1) {
+    allocations[index].cents += 1;
+  }
+  allocations.forEach((allocation) => result.set(allocation.userId, fromCents(allocation.cents)));
+  metricRevenueAllocationCache.set(metric, result);
+  return result;
+};
+
+export const calculateMetricUserRevenue = (metric, user) => {
+  if (metric.billingType === BILLING_TYPES.HOURLY) {
+    return calculateHourlyRevenue(user.billedMinutes, metric.project.hourlyPrice);
+  }
+  if (metric.billingType === BILLING_TYPES.MILESTONE) {
+    return Number(user.milestoneRevenue || 0);
+  }
+  return getMetricProjectRevenueAllocations(metric).get(user.userId) || 0;
+};
+
 const buildSummaryFromMetrics = (metrics, context, filters = context.filters) => {
   let totalLoggedMinutes = 0;
   let totalBilledMinutes = 0;
   let fixedRevenue = 0;
   let hourlyRevenue = 0;
+  let milestoneRevenue = 0;
   const userRevenue = {};
   const fixedProjectIds = new Set();
+  const milestoneProjectIds = new Set();
 
   metrics.forEach((metric) => {
     totalLoggedMinutes += metric.loggedMinutes;
     totalBilledMinutes += metric.billedMinutes;
     fixedRevenue += metric.fixedRevenue;
     hourlyRevenue += metric.hourlyRevenue;
+    milestoneRevenue += metric.milestoneRevenue;
     if (metric.billingType === BILLING_TYPES.FIXED && metric.fixedRevenue > 0) {
       fixedProjectIds.add(metric.projectId);
+    }
+    if (metric.billingType === BILLING_TYPES.MILESTONE) {
+      milestoneProjectIds.add(metric.projectId);
     }
 
     Object.values(metric.users).forEach((user) => {
@@ -384,24 +549,22 @@ const buildSummaryFromMetrics = (metrics, context, filters = context.filters) =>
 
       userRevenue[user.userId].billedMinutes += user.billedMinutes;
 
-      if (metric.billingType === BILLING_TYPES.HOURLY) {
-        userRevenue[user.userId].payment += calculateHourlyRevenue(user.billedMinutes, metric.project.hourlyPrice);
-      } else if (metric.fixedRevenue > 0 && metric.billedMinutes > 0 && user.billedMinutes > 0) {
-        userRevenue[user.userId].payment += metric.fixedRevenue * (user.billedMinutes / metric.billedMinutes);
-      }
+      userRevenue[user.userId].payment += calculateMetricUserRevenue(metric, user);
     });
   });
 
-  const totalRevenue = calculateTotalRevenue({ fixedRevenue, hourlyRevenue });
+  const totalRevenue = calculateTotalRevenue({ fixedRevenue, hourlyRevenue, milestoneRevenue });
   const topEarningUser = Object.values(userRevenue).sort((a, b) => b.payment - a.payment)[0] || null;
   const topMetric = [...metrics].sort((a, b) => b.totalRevenue - a.totalRevenue)[0] || null;
   const billableProjectCount = getBillableProjectCount(metrics);
   const fixedProjectCount = fixedProjectIds.size;
+  const milestoneProjectCount = milestoneProjectIds.size;
 
   return {
     totalRevenue,
     fixedRevenue,
     hourlyRevenue,
+    milestoneRevenue,
     totalLoggedTime: buildDuration(totalLoggedMinutes),
     totalBilledTime: buildDuration(totalBilledMinutes),
     unbilledTime: buildDuration(Math.max(0, totalLoggedMinutes - totalBilledMinutes)),
@@ -422,14 +585,20 @@ const buildSummaryFromMetrics = (metrics, context, filters = context.filters) =>
         payment: topMetric.totalRevenue,
         fixedRevenue: topMetric.fixedRevenue,
         hourlyRevenue: topMetric.hourlyRevenue,
+        milestoneRevenue: topMetric.milestoneRevenue,
         billedMinutes: topMetric.billedMinutes,
         loggedMinutes: topMetric.loggedMinutes
       }
       : null,
     fixedProjectCount,
+    milestoneProjectCount,
     totalFixedAmountProjects: {
       count: fixedProjectCount,
       amount: fixedRevenue
+    },
+    totalMilestoneProjects: {
+      count: milestoneProjectCount,
+      amount: milestoneRevenue
     },
     billableProjectCount,
     projectCount: billableProjectCount,
@@ -444,12 +613,15 @@ const buildSummaryFromMetrics = (metrics, context, filters = context.filters) =>
 };
 
 export const getBillableProjectCount = (metrics = []) => (
-  metrics.filter((metric) => metric.hasBillingData).length
+  metrics.filter((metric) => (
+    metric.hasBillingData || metric.billingType === BILLING_TYPES.MILESTONE
+  )).length
 );
 
 const logFinanceCalculation = (label, filters, context, metrics, summary, extra = {}) => {
   const fixedProjectCount = metrics.filter((metric) => metric.billingType === BILLING_TYPES.FIXED).length;
   const hourlyProjectCount = metrics.filter((metric) => metric.billingType === BILLING_TYPES.HOURLY).length;
+  const milestoneProjectCount = metrics.filter((metric) => metric.billingType === BILLING_TYPES.MILESTONE).length;
 
   logger.info(`Finance ${label} calculated`, {
     filters: {
@@ -465,9 +637,11 @@ const logFinanceCalculation = (label, filters, context, metrics, summary, extra 
     projectsAfterBillingTypeFiltering: context.diagnostics.projectsAfterBillingTypeFiltering,
     fixedProjectCount,
     hourlyProjectCount,
+    milestoneProjectCount,
     billableProjectCount: summary.billableProjectCount,
     fixedRevenue: summary.fixedRevenue,
     hourlyRevenue: summary.hourlyRevenue,
+    milestoneRevenue: summary.milestoneRevenue,
     totalRevenue: summary.totalRevenue,
     ...extra
   });
@@ -501,8 +675,17 @@ export const buildProjectFinanceReport = async (rawFilters = {}) => {
     billingType: metric.project.billingCycle,
     hourlyPrice: metric.project.hourlyPrice,
     fixedPrice: metric.project.fixedPrice,
+    totalProjectBudget: fromCents(metric.project.totalProjectBudgetCents),
     fixedRevenue: metric.fixedRevenue,
     hourlyRevenue: metric.hourlyRevenue,
+    milestoneRevenue: metric.milestoneRevenue,
+    recognizedMilestoneRevenue: metric.milestoneRevenue,
+    lifetimeMilestoneRevenue: metric.lifetimeMilestoneRevenue,
+    remainingProjectAmount: metric.billingType === BILLING_TYPES.MILESTONE
+      ? Math.max(0, fromCents(metric.project.totalProjectBudgetCents) - metric.lifetimeMilestoneRevenue)
+      : 0,
+    milestoneCount: metric.milestones.length,
+    paidMilestoneCount: metric.milestones.filter((milestone) => milestone.status === 'paid').length,
     totalRevenue: metric.totalRevenue,
     status: metric.project.status,
     clientInfo: metric.project.clientDetails,
@@ -534,11 +717,7 @@ export const buildUserFinanceReport = async (rawFilters = {}) => {
 
   metrics.forEach((metric) => {
     Object.values(metric.users).forEach((user) => {
-      const userPayment = metric.billingType === BILLING_TYPES.HOURLY
-        ? calculateHourlyRevenue(user.billedMinutes, metric.project.hourlyPrice)
-        : metric.fixedRevenue > 0 && metric.billedMinutes > 0 && user.billedMinutes > 0
-          ? metric.fixedRevenue * (user.billedMinutes / metric.billedMinutes)
-          : 0;
+      const userPayment = calculateMetricUserRevenue(metric, user);
 
       if ((user.billedMinutes + user.loggedMinutes + userPayment) <= 0) return;
 
@@ -563,8 +742,10 @@ export const buildUserFinanceReport = async (rawFilters = {}) => {
         billingType: metric.project.billingCycle,
         hourlyPrice: metric.project.hourlyPrice,
         fixedPrice: metric.project.fixedPrice,
+        totalProjectBudget: fromCents(metric.project.totalProjectBudgetCents),
         fixedRevenue: metric.fixedRevenue,
         hourlyRevenue: metric.hourlyRevenue,
+        milestoneRevenue: metric.milestoneRevenue,
         billedMinutes: user.billedMinutes,
         loggedMinutes: user.loggedMinutes,
         payment: userPayment
@@ -646,11 +827,7 @@ const buildWeeklyUsers = (metrics) => {
 
   metrics.forEach((metric) => {
     Object.values(metric.users).forEach((user) => {
-      const payment = metric.billingType === BILLING_TYPES.HOURLY
-        ? calculateHourlyRevenue(user.billedMinutes, metric.project.hourlyPrice)
-        : metric.fixedRevenue > 0 && metric.billedMinutes > 0 && user.billedMinutes > 0
-          ? metric.fixedRevenue * (user.billedMinutes / metric.billedMinutes)
-          : 0;
+      const payment = calculateMetricUserRevenue(metric, user);
 
       if ((user.billedMinutes + user.loggedMinutes + payment) <= 0) return;
 
@@ -711,7 +888,8 @@ const buildWeeklyProjects = (metrics) => (
       loggedMinutes: metric.loggedMinutes,
       payment: metric.totalRevenue,
       fixedRevenue: metric.fixedRevenue,
-      hourlyRevenue: metric.hourlyRevenue
+      hourlyRevenue: metric.hourlyRevenue,
+      milestoneRevenue: metric.milestoneRevenue
     }))
     .sort((a, b) => b.payment - a.payment)
 );
@@ -730,6 +908,7 @@ export const buildWeekWiseRevenue = (context, weeks, viewType = 'users') => (
       totalPayment: summary.totalRevenue,
       fixedRevenue: summary.fixedRevenue,
       hourlyRevenue: summary.hourlyRevenue,
+      milestoneRevenue: summary.milestoneRevenue,
       totalBilledMinutes: summary.totalBilledTime.totalMinutes,
       totalLoggedMinutes: summary.totalLoggedTime.totalMinutes,
       items: viewType === 'projects' ? buildWeeklyProjects(metrics) : buildWeeklyUsers(metrics)
@@ -747,6 +926,7 @@ export const buildWeeklyFinanceReport = async (rawFilters = {}) => {
     totalPayment: weeklyData.reduce((sum, week) => sum + week.totalPayment, 0),
     fixedRevenue: weeklyData.reduce((sum, week) => sum + week.fixedRevenue, 0),
     hourlyRevenue: weeklyData.reduce((sum, week) => sum + week.hourlyRevenue, 0),
+    milestoneRevenue: weeklyData.reduce((sum, week) => sum + week.milestoneRevenue, 0),
     totalBilledMinutes: weeklyData.reduce((sum, week) => sum + week.totalBilledMinutes, 0),
     totalLoggedMinutes: weeklyData.reduce((sum, week) => sum + week.totalLoggedMinutes, 0)
   };
@@ -780,6 +960,7 @@ const buildMonthFromWeeklyData = (month, year, weeklyData) => {
     totalPayment: 0,
     fixedRevenue: 0,
     hourlyRevenue: 0,
+    milestoneRevenue: 0,
     items: []
   };
 
@@ -796,6 +977,7 @@ const buildMonthFromWeeklyData = (month, year, weeklyData) => {
       monthResult.totalPayment += week.totalPayment;
       monthResult.fixedRevenue += week.fixedRevenue;
       monthResult.hourlyRevenue += week.hourlyRevenue;
+      monthResult.milestoneRevenue += week.milestoneRevenue;
     }
   }
 
@@ -900,11 +1082,7 @@ export const buildUserContributionsReport = async (projectId) => {
     taskCount: user.billedMinutes > 0 ? 1 : 0,
     billedTime: buildDuration(user.billedMinutes),
     loggedTime: buildDuration(user.loggedMinutes),
-    payment: metric.billingType === BILLING_TYPES.HOURLY
-      ? calculateHourlyRevenue(user.billedMinutes, metric.project.hourlyPrice)
-      : metric.fixedRevenue > 0 && metric.billedMinutes > 0 && user.billedMinutes > 0
-        ? metric.fixedRevenue * (user.billedMinutes / metric.billedMinutes)
-        : 0
+    payment: calculateMetricUserRevenue(metric, user)
   })).sort((a, b) => b.billedMinutes - a.billedMinutes);
 
   return {
@@ -915,6 +1093,9 @@ export const buildUserContributionsReport = async (projectId) => {
       billingCycle: metric.project.billingCycle,
       hourlyPrice: metric.project.hourlyPrice,
       fixedPrice: metric.project.fixedPrice
+      ,
+      totalProjectBudget: fromCents(metric.project.totalProjectBudgetCents),
+      milestoneRevenue: metric.milestoneRevenue
     },
     contributions,
     totalContributors: contributions.length

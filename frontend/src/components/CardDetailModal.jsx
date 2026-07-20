@@ -2013,6 +2013,8 @@ const CardDetailModal = React.memo(({
                   billedValidationError={billedValidationError}
                   canAccessBilledTime={canAccessBilledTime}
                   billedTimeHiddenReason={billedTimeHiddenReason}
+                  project={currentProject}
+                  billingSource={{ sourceType: 'task', sourceId: card._id || card.id }}
                 />
 
                 {/* Subtasks Component */}

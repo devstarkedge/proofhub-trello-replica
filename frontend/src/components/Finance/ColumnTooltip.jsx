@@ -96,10 +96,12 @@ const ColumnTooltip = ({ children, explanation, position = 'top' }) => {
 export const COLUMN_EXPLANATIONS = {
   payment: {
     hourly: 'Payment = Billed Time × Hourly Rate\nIncludes time from tasks, subtasks & nano-subtasks',
-    fixed: 'Payment = Fixed Project Amount\nHourly rate is not considered for fixed projects'
+    fixed: 'Payment = Fixed Project Amount\nHourly rate is not considered for fixed projects',
+    milestone: 'Revenue = Fully Paid Milestone Amounts\nPartial approvals and time do not recognize revenue'
   },
   loggedTime: 'Total time logged by all users on this project/task\nSum of hours:minutes from all time entries',
-  billedTime: 'Time marked as billable to client\nUsed for calculating hourly project payments',
+  billedTime: 'Time marked as billable to client\nUsed for hourly revenue; visible but not converted to Milestone revenue',
+  allRevenue: 'Hourly: Billed Time multiplied by Rate\nFixed: Project Amount\nMilestone: Fully Paid Milestones by Paid date',
   unbilledTime: 'Logged Time - Billed Time\nTime that hasn\'t been invoiced yet',
   totalRevenue: 'Sum of all payments across selected filters\nHourly: Billed Time × Rate\nFixed: Project Amount',
   topEarner: 'User with highest total payment in selected period',

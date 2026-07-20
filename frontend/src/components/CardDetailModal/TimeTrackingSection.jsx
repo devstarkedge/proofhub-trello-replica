@@ -16,6 +16,7 @@ import {
   Info,
 } from "lucide-react";
 import AuthContext from "../../context/AuthContext";
+import MilestoneApprovalPanel from "./MilestoneApprovalPanel";
 
 const TimeTrackingSection = ({
   estimationEntries,
@@ -95,8 +96,11 @@ const TimeTrackingSection = ({
   // Billed Time visibility props
   canAccessBilledTime = true, // Default to true for backward compatibility
   billedTimeHiddenReason = null,
+  project,
+  billingSource,
 }) => {
   const { user } = useContext(AuthContext);
+  const isMilestoneProject = String(project?.billingCycle || '').toLowerCase() === 'milestone';
 
   // Get today's date in YYYY-MM-DD format for max date restriction
   const todayDate = useMemo(() => {
@@ -881,7 +885,10 @@ const TimeTrackingSection = ({
                     )}
                   </div>
 
-                  {/* Billed Time - Conditionally rendered based on access */}
+                  <MilestoneApprovalPanel project={project} source={billingSource} />
+
+                  {/* Milestone projects recognize revenue through paid milestones, not manual billed-time entry. */}
+                  {!isMilestoneProject && (
                   <div className="bg-white rounded-lg p-4 shadow-sm border border-yellow-100">
                     <div className="flex items-center gap-2 mb-3">
                       <DollarSign size={16} className="text-yellow-600" />
@@ -1182,6 +1189,7 @@ const TimeTrackingSection = ({
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
 

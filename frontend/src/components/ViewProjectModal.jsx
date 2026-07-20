@@ -391,7 +391,61 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
                                 <p className="text-sm text-gray-900">{project.hourlyPrice || '—'}</p>
                               </div>
                             )}
+                            {project.billingCycle === 'milestone' && (
+                              <>
+                                <div>
+                                  <label className="text-xs text-gray-500">Total Project Budget</label>
+                                  <p className="text-sm text-gray-900">${Number(project.totalProjectBudget || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div>
+                                  <label className="text-xs text-gray-500">Milestone Workflow</label>
+                                  <p className="text-sm text-gray-900 capitalize">{project.milestoneWorkflow || 'sequential'}</p>
+                                </div>
+                              </>
+                            )}
                           </div>
+                          {project.billingCycle === 'milestone' && (
+                            <div className="mt-5 space-y-3">
+                              {(project.milestones || []).map((milestone) => (
+                                <div key={milestone._id} className="rounded-xl border border-gray-200 bg-white p-4">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900">{milestone.order + 1}. {milestone.title}</p>
+                                      <p className="mt-1 text-xs text-gray-500">
+                                        Due {new Date(milestone.dueDate).toLocaleDateString()}
+                                        {milestone.paidAt ? ` · Paid ${new Date(milestone.paidAt).toLocaleDateString()}` : ''}
+                                      </p>
+                                    </div>
+                                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize text-gray-700">
+                                      {milestone.status?.replace('-', ' ')}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                                    <div>
+                                      <span className="text-gray-500">Amount</span>
+                                      <p className="font-semibold text-gray-900">${Number(milestone.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Approved</span>
+                                      <p className="font-semibold text-gray-900">${Number(milestone.approvedAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                  </div>
+                                  {(milestone.approvals || []).length > 0 && (
+                                    <div className="mt-3 border-t border-gray-100 pt-3">
+                                      <p className="mb-2 text-xs font-medium text-gray-700">Approval history</p>
+                                      {(milestone.approvals || []).map((approval) => (
+                                        <p key={approval._id} className="text-xs text-gray-500">
+                                          ${Number(approval.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                          {' · '}{new Date(approval.approvedAt).toLocaleString()}
+                                          {approval.approvedBy?.name ? ` · ${approval.approvedBy.name}` : ''}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </section>
 
                         <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">

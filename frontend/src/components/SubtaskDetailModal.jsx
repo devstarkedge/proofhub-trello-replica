@@ -1362,6 +1362,8 @@ const SubtaskDetailModal = ({
                   billedValidationError={billedValidationError}
                   canAccessBilledTime={canAccessBilledTime}
                   billedTimeHiddenReason={billedTimeHiddenReason}
+                  project={currentProject}
+                  billingSource={{ sourceType: 'subtask', sourceId: entityId }}
                 />
 
                 <div className="mt-8">

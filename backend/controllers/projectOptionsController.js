@@ -10,7 +10,8 @@ const DEFAULT_OPTIONS = {
   ],
   billingType: [
     { value: 'hr', label: 'Hourly Rate' },
-    { value: 'fixed', label: 'Fixed Price' }
+    { value: 'fixed', label: 'Fixed Price' },
+    { value: 'milestone', label: 'Milestone' }
   ]
 };
 
@@ -24,21 +25,26 @@ const normalizeSlug = (label) =>
     .replace(/[^a-z0-9_]/g, '');
 
 const ensureDefaults = async (type, userId) => {
-  const existingCount = await ProjectDropdownOption.countDocuments({ type });
-  if (existingCount > 0) return;
-
   const defaults = DEFAULT_OPTIONS[type] || [];
   if (defaults.length === 0) return;
 
-  await ProjectDropdownOption.insertMany(
-    defaults.map((opt, index) => ({
-      type,
-      value: opt.value,
-      label: opt.label,
-      displayOrder: index,
-      createdBy: userId
-    }))
-  );
+  await ProjectDropdownOption.bulkWrite(defaults.map((opt, index) => ({
+    updateOne: {
+      filter: { type, value: opt.value },
+      update: {
+        $setOnInsert: {
+          type,
+          value: opt.value,
+          label: opt.label,
+          displayOrder: index,
+          createdBy: userId,
+          isActive: true
+        },
+        $set: { isSystem: type === 'billingType' }
+      },
+      upsert: true
+    }
+  })));
 };
 
 const getUsedValues = async (type) => {
@@ -190,6 +196,13 @@ export const deleteProjectDropdownOption = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Option not found'
+      });
+    }
+
+    if (option.isSystem) {
+      return res.status(409).json({
+        success: false,
+        message: 'System billing options cannot be deleted.'
       });
     }
 

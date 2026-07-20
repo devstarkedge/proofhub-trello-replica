@@ -20,7 +20,8 @@ const ExportButton = ({
   filename = 'finance-report',
   title = 'Finance Report',
   filters = {},
-  groupByDepartment = true
+  groupByDepartment = true,
+  summary = null
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [exporting, setExporting] = useState(null);
@@ -60,13 +61,18 @@ const ExportButton = ({
     return `${hours}h ${minutes}m`;
   };
 
+  const getSummaryRows = () => summary ? [
+    ['Total Revenue', formatCurrency(summary.totalRevenue)],
+    ['Total Billed Time', formatTime(summary.totalBilledTime)]
+  ] : [];
+
   // Get cell value for export
   const getCellValue = (item, col) => {
     const value = item[col.key];
     if (col.key.includes('Time') || col.key.includes('time')) {
       return formatTime(value);
     }
-    if (col.key === 'payment' || col.key.includes('Payment') || col.key.includes('Revenue')) {
+    if (col.key === 'payment' || col.key.includes('Payment') || col.key.includes('Revenue') || col.key.includes('Amount') || col.key.includes('Budget')) {
       return typeof value === 'number' ? formatCurrency(value) : value;
     }
     if (typeof value === 'object' && value !== null) {
@@ -89,7 +95,8 @@ const ExportButton = ({
         }).join(',')
       );
       
-      const csvContent = [headers, ...rows].join('\n');
+      const summaryRows = getSummaryRows().map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','));
+      const csvContent = [headers, ...rows, ...(summaryRows.length ? ['', 'Summary,Value', ...summaryRows] : [])].join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -121,7 +128,8 @@ const ExportButton = ({
       // Create worksheet data
       const wsData = [
         columns.map(col => col.label || col.key),
-        ...data.map(item => columns.map(col => getCellValue(item, col)))
+        ...data.map(item => columns.map(col => getCellValue(item, col))),
+        ...(summary ? [[], ['Summary', 'Value'], ...getSummaryRows()] : [])
       ];
       
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -184,6 +192,17 @@ const ExportButton = ({
         headStyles: { fillColor: [16, 185, 129], textColor: 255 },
         alternateRowStyles: { fillColor: [245, 245, 245] }
       });
+
+      if (summary) {
+        doc.autoTable({
+          head: [['Summary', 'Value']],
+          body: getSummaryRows(),
+          startY: (doc.lastAutoTable?.finalY || 22) + 8,
+          tableWidth: 100,
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [5, 150, 105], textColor: 255 }
+        });
+      }
       
       // Add footer
       const pageCount = doc.internal.getNumberOfPages();

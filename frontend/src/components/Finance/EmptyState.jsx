@@ -37,7 +37,7 @@ const EmptyState = ({
     noBillingConfig: {
       icon: Settings,
       title: 'Billing not configured',
-      description: 'This project needs billing settings. Configure hourly rate or fixed price to see payment calculations.',
+      description: 'This project needs billing settings. Configure an hourly rate, fixed price, or balanced milestone schedule to see revenue.',
       color: '#f59e0b'
     },
     noProjects: {

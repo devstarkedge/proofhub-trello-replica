@@ -22,6 +22,7 @@ import DepartmentFilter from '../../components/Finance/DepartmentFilter';
 import BillingTypeFilter from '../../components/Finance/BillingTypeFilter';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 import { WeekWiseHeaders, WeekWiseCells } from '../../components/Finance/WeekWiseColumns';
+import { getBillingContractValue, getBillingTypeLabel, getBillingTypeStyle } from '../../utils/billing';
 
 /**
  * ViewFinancePage - Renders a custom finance page with its configured columns
@@ -492,19 +493,17 @@ const ViewFinancePage = () => {
         return (
           <span
             className="px-2 py-1 rounded text-xs font-medium"
-            style={{
-              backgroundColor: item.billingCycle === 'hr' ? 'rgba(139, 92, 246, 0.12)' :
-                              item.billingCycle === 'mixed' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(59, 130, 246, 0.12)',
-              color: item.billingCycle === 'hr' ? '#8b5cf6' :
-                     item.billingCycle === 'mixed' ? '#f59e0b' : '#3b82f6'
-            }}
+            style={getBillingTypeStyle(item.billingCycle)}
           >
-            {item.billingCycle === 'hr' ? 'Hourly' :
-             item.billingCycle === 'mixed' ? 'Mixed' : 'Fixed'}
+            {getBillingTypeLabel(item.billingCycle)}
           </span>
         );
       case 'hourlyRate':
-        return item.hourlyPrice ? `$${item.hourlyPrice}/hr` : '-';
+        return getBillingContractValue(item, formatCurrency);
+      case 'milestoneRevenue':
+        return formatCurrency(item.milestoneRevenue || item.project?.milestoneRevenue || 0);
+      case 'remainingProjectAmount':
+        return formatCurrency(item.remainingProjectAmount || item.project?.remainingProjectAmount || 0);
       case 'startDate':
         return item.startDate ? new Date(item.startDate).toLocaleDateString() : '-';
       case 'endDate':

@@ -239,6 +239,33 @@ class DatabaseService {
     return await res.json();
   }
 
+  async getProjectMilestones(projectId) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${baseURL}/api/projects/${projectId}/milestones`, { headers });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to load project milestones');
+    return data.data || data;
+  }
+
+  async approveProjectMilestone(projectId, milestoneId, payload, idempotencyKey) {
+    const token = localStorage.getItem('token');
+    const headers = {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${baseURL}/api/projects/${projectId}/milestones/${milestoneId}/approvals`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to approve milestone amount');
+    return { ...(data.data || data), message: data.message };
+  }
+
   async uploadProjectAttachment(projectId, file, onUploadProgress) {
     const token = localStorage.getItem('token');
     const formData = new FormData();

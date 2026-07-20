@@ -108,7 +108,7 @@ export const getFinanceFilterOptions = async (req, res) => {
         isArchived: false,
         isDeleted: { $ne: true },
         projectType: 'Hired Client',
-        billingCycle: { $in: ['fixed', 'hr', 'hourly'] }
+        billingCycle: { $in: ['fixed', 'hr', 'hourly', 'milestone'] }
       })
         .select('name department billingCycle')
         .populate('department', 'name')
@@ -126,7 +126,8 @@ export const getFinanceFilterOptions = async (req, res) => {
           { value: 'all', label: 'All' },
           { value: 'fixed', label: 'Fixed' },
           { value: 'hourly', label: 'Hourly' },
-          { value: 'hr', label: 'Hourly (legacy)' }
+          { value: 'hr', label: 'Hourly (legacy)' },
+          { value: 'milestone', label: 'Milestone' }
         ],
         projectSources: [
           { value: 'Upwork', label: 'Upwork' },

@@ -125,6 +125,17 @@ const boardSchema = new mongoose.Schema({
   hourlyPrice: {
     type: Number
   },
+  // Milestone contracts use integer minor units to avoid currency drift.
+  totalProjectBudgetCents: {
+    type: Number,
+    min: 0,
+    max: Number.MAX_SAFE_INTEGER
+  },
+  milestoneWorkflow: {
+    type: String,
+    enum: ['sequential', 'parallel'],
+    default: 'sequential'
+  },
   clientDetails: {
     clientName: {
       type: String,
@@ -228,6 +239,7 @@ boardSchema.index({ department: 1, priority: 1 });
 
 // Project type filter
 boardSchema.index({ department: 1, projectType: 1 });
+boardSchema.index({ department: 1, billingCycle: 1 });
 
 // Owner compound (covers standalone { owner: 1 })
 boardSchema.index({ owner: 1, createdAt: -1 });

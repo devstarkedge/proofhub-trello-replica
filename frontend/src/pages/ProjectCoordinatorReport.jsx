@@ -12,6 +12,7 @@ import {
   CoordinatorDisplay,
   BillingTypeBadge
 } from '../components/PMSheet';
+import { getBillingTypeLabel } from '../utils/billing';
 
 /**
  * Project Coordinator Report Page
@@ -80,7 +81,7 @@ const ProjectCoordinatorReportContent = () => {
             week.week,
             week.month,
             project.projectName,
-            project.billingType === 'hr' ? 'Hourly' : 'Fixed',
+            getBillingTypeLabel(project.billingType),
             project.billedTime?.display || '0h 0m',
             `$${project.payment?.toFixed(2) || '0.00'}`
           ]);

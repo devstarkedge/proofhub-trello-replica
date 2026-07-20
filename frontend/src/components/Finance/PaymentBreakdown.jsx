@@ -49,9 +49,7 @@ const PaymentBreakdown = ({
 
     // Calculate payments
     const calculatePayment = (minutes) => {
-      if (billingType === 'fixed') {
-        return null; // Fixed doesn't break down by time
-      }
+      if (!['hourly', 'hr'].includes(billingType)) return null;
       return (minutes / 60) * hourlyRate;
     };
 
@@ -98,7 +96,7 @@ const PaymentBreakdown = ({
           >
             <Icon className="w-3 h-3 mb-0.5" style={{ color }} />
             <span className="text-xs font-semibold" style={{ color }}>
-              {billingType === 'hourly' 
+              {['hourly', 'hr'].includes(billingType)
                 ? formatCurrency(breakdown[key].payment)
                 : formatTime(breakdown[key].minutes)
               }
@@ -128,7 +126,7 @@ const PaymentBreakdown = ({
             {label}
           </span>
           <span className="text-sm font-bold" style={{ color }}>
-            {billingType === 'hourly' 
+            {['hourly', 'hr'].includes(billingType)
               ? formatCurrency(breakdown[key].payment)
               : formatTime(breakdown[key].minutes)
             }
@@ -160,7 +158,7 @@ export const PaymentBreakdownCell = ({
     }).format(amount);
   };
 
-  if (billingType === 'fixed') {
+  if (!['hourly', 'hr'].includes(billingType)) {
     return <span style={{ color: 'var(--color-text-muted)' }}>-</span>;
   }
 

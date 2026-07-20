@@ -45,7 +45,7 @@ const financePageSchema = new mongoose.Schema({
     datePreset: { type: String, enum: ['today', 'thisWeek', 'thisMonth', 'thisYear', 'custom'] },
     startDate: Date,
     endDate: Date,
-    billingType: { type: String, enum: ['hr', 'fixed', 'all'] },
+    billingType: { type: String, enum: ['hr', 'hourly', 'fixed', 'milestone', 'all'] },
     projectSource: String
   },
   

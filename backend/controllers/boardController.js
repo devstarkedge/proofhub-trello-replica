@@ -30,6 +30,17 @@ import {
   deleteProjectCover
 } from "../utils/cloudinary.js";
 
+import mongoose from 'mongoose';
+import {
+  MILESTONE_BILLING_TYPE,
+  createMilestonesForProject,
+  getProjectMilestones,
+  normalizeMilestoneSchedule,
+  removeUnapprovedMilestoneSchedule,
+  syncMilestoneSchedule
+} from '../services/milestone/milestoneService.js';
+import { fromCents } from '../utils/money.js';
+
 // @desc    Get all boards for user
 // @route   GET /api/boards
 // @access  Private
@@ -419,6 +430,10 @@ export const getBoard = asyncHandler(async (req, res, next) => {
   board.progress = progress;
   board.totalCards = totalCards;
   board.completedCards = completedCards;
+  if (String(board.billingCycle || '').toLowerCase() === MILESTONE_BILLING_TYPE) {
+    board.totalProjectBudget = fromCents(board.totalProjectBudgetCents);
+    board.milestones = await getProjectMilestones(board._id, { includeApprovals: true });
+  }
 
   res.status(200).json({
     success: true,
@@ -450,6 +465,9 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     billingCycle,
     fixedPrice,
     hourlyPrice,
+    totalProjectBudget,
+    milestoneWorkflow,
+    milestones,
     clientDetails,
     projectCategory,
     projectType
@@ -506,7 +524,17 @@ export const createBoard = asyncHandler(async (req, res, next) => {
   // Check if background tasks should be used (for optimistic UI)
   const runBackgroundTasks = req.body.runBackgroundTasks === true;
 
-  const board = await Board.create({
+  const normalizedBillingCycle = String(billingCycle || '').trim().toLowerCase();
+  let milestoneSchedule = null;
+  if (projectType !== 'Inhouse' && normalizedBillingCycle === MILESTONE_BILLING_TYPE) {
+    milestoneSchedule = normalizeMilestoneSchedule({
+      totalProjectBudget,
+      milestoneWorkflow,
+      milestones
+    });
+  }
+
+  const boardData = {
     name,
     description,
     team: team || req.user.team,
@@ -525,29 +553,59 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     projectUrl: projectType === 'Inhouse' ? undefined : projectUrl,
     projectSource: projectType === 'Inhouse' ? undefined : projectSource,
     upworkId: projectType === 'Inhouse' ? undefined : upworkId,
-    billingCycle: projectType === 'Inhouse' ? undefined : billingCycle,
-    fixedPrice: projectType === 'Inhouse' ? undefined : fixedPrice,
-    hourlyPrice: projectType === 'Inhouse' ? undefined : hourlyPrice,
+    billingCycle: projectType === 'Inhouse' ? undefined : normalizedBillingCycle,
+    fixedPrice: projectType === 'Inhouse' || normalizedBillingCycle !== 'fixed' ? undefined : fixedPrice,
+    hourlyPrice: projectType === 'Inhouse' || !['hr', 'hourly'].includes(normalizedBillingCycle) ? undefined : hourlyPrice,
+    totalProjectBudgetCents: milestoneSchedule?.budgetCents,
+    milestoneWorkflow: milestoneSchedule?.workflow || 'sequential',
     clientDetails: projectType === 'Inhouse' ? undefined : clientDetails,
     projectCategory,
     projectType: projectType || 'Hired Client'
-  });
+  };
 
-  // Add board to department's projects array
-  await Department.findByIdAndUpdate(board.department, {
-    $push: { projects: board._id }
-  });
-
-  // Create default lists (essential, do synchronously)
-  const defaultLists = ["To Do", "In Progress", "Review", "Done"];
-  const listPromises = defaultLists.map((title, i) => 
-    List.create({
+  const defaultLists = ['To Do', 'In Progress', 'Review', 'Done'];
+  let board;
+  if (milestoneSchedule) {
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        [board] = await Board.create([boardData], { session });
+        await Department.findByIdAndUpdate(board.department, {
+          $push: { projects: board._id }
+        }, { session });
+        await List.insertMany(defaultLists.map((title, position) => ({
+          title,
+          board: board._id,
+          position
+        })), { session });
+        await createMilestonesForProject({
+          boardId: board._id,
+          schedule: milestoneSchedule,
+          actorId: req.user.id,
+          session,
+          requestContext: {
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+          }
+        });
+      }, {
+        readConcern: { level: 'snapshot' },
+        writeConcern: { w: 'majority' }
+      });
+    } finally {
+      await session.endSession();
+    }
+  } else {
+    board = await Board.create(boardData);
+    await Department.findByIdAndUpdate(board.department, {
+      $push: { projects: board._id }
+    });
+    await Promise.all(defaultLists.map((title, position) => List.create({
       title,
       board: board._id,
-      position: i,
-    })
-  );
-  await Promise.all(listPromises);
+      position
+    })));
+  }
 
   // Populate board for response (essential, do synchronously)
   const populatedBoard = await Board.findById(board._id)
@@ -557,10 +615,18 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     .populate("members", "name email avatar")
     .lean();
 
+  const responseBoard = milestoneSchedule
+    ? {
+      ...populatedBoard,
+      totalProjectBudget: fromCents(populatedBoard.totalProjectBudgetCents),
+      milestones: await getProjectMilestones(board._id, { includeApprovals: false })
+    }
+    : populatedBoard;
+
   // Send response immediately for fast UI update
   res.status(201).json({
     success: true,
-    data: populatedBoard,
+    data: responseBoard,
   });
 
   // Run heavy tasks in background (after response is sent)
@@ -631,14 +697,98 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     updateBody.estimatedTime = null;
     updateBody.clientDetails = { clientName: null, clientEmail: null, clientWhatsappNumber: null };
   }
+  delete updateBody.totalProjectBudgetCents;
 
-  board = await Board.findByIdAndUpdate(req.params.id, updateBody, {
-    new: true,
-    runValidators: true,
-  })
-    .populate("owner", "name email avatar")
-    .populate("members", "name email avatar")
-    .lean();
+  const previousBillingCycle = String(previousBoard.billingCycle || '').toLowerCase();
+  const nextBillingCycle = updateBody.billingCycle === null
+    ? null
+    : String(updateBody.billingCycle ?? previousBoard.billingCycle ?? '').trim().toLowerCase();
+  const touchesMilestoneFinance = (
+    previousBillingCycle === MILESTONE_BILLING_TYPE
+    || nextBillingCycle === MILESTONE_BILLING_TYPE
+  ) && (
+    Object.hasOwn(req.body, 'billingCycle')
+    || Object.hasOwn(req.body, 'totalProjectBudget')
+    || Object.hasOwn(req.body, 'milestoneWorkflow')
+    || Object.hasOwn(req.body, 'milestones')
+    || updateBody.projectType === 'Inhouse'
+  );
+
+  if (touchesMilestoneFinance) {
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const transactionalBoard = await Board.findById(req.params.id).session(session);
+        if (nextBillingCycle === MILESTONE_BILLING_TYPE) {
+          const currentMilestones = await getProjectMilestones(transactionalBoard._id, {
+            includeApprovals: false,
+            session
+          });
+          const schedule = normalizeMilestoneSchedule({
+            totalProjectBudget: req.body.totalProjectBudget
+              ?? fromCents(transactionalBoard.totalProjectBudgetCents),
+            milestoneWorkflow: req.body.milestoneWorkflow
+              ?? transactionalBoard.milestoneWorkflow
+              ?? 'sequential',
+            milestones: req.body.milestones ?? currentMilestones
+          });
+          await syncMilestoneSchedule({
+            board: transactionalBoard,
+            schedule,
+            actorId: req.user.id,
+            session,
+            requestContext: {
+              ipAddress: req.ip,
+              userAgent: req.get('user-agent')
+            }
+          });
+          updateBody.billingCycle = MILESTONE_BILLING_TYPE;
+          updateBody.totalProjectBudgetCents = schedule.budgetCents;
+          updateBody.milestoneWorkflow = schedule.workflow;
+          updateBody.fixedPrice = null;
+          updateBody.hourlyPrice = null;
+        } else if (previousBillingCycle === MILESTONE_BILLING_TYPE) {
+          await removeUnapprovedMilestoneSchedule({
+            board: transactionalBoard,
+            actorId: req.user.id,
+            session,
+            requestContext: {
+              ipAddress: req.ip,
+              userAgent: req.get('user-agent')
+            }
+          });
+          updateBody.totalProjectBudgetCents = null;
+          updateBody.milestoneWorkflow = 'sequential';
+        }
+        delete updateBody.totalProjectBudget;
+        delete updateBody.milestones;
+        await Board.findByIdAndUpdate(req.params.id, updateBody, {
+          new: true,
+          runValidators: true,
+          session
+        });
+      }, {
+        readConcern: { level: 'snapshot' },
+        writeConcern: { w: 'majority' }
+      });
+    } finally {
+      await session.endSession();
+    }
+    board = await Board.findById(req.params.id)
+      .populate('owner', 'name email avatar')
+      .populate('members', 'name email avatar')
+      .lean();
+  } else {
+    delete updateBody.totalProjectBudget;
+    delete updateBody.milestones;
+    board = await Board.findByIdAndUpdate(req.params.id, updateBody, {
+      new: true,
+      runValidators: true,
+    })
+      .populate('owner', 'name email avatar')
+      .populate('members', 'name email avatar')
+      .lean();
+  }
 
   // Activity + notifications
   const changes = [];
@@ -759,6 +909,11 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     updates: req.body,
     projectName: board.name
   });
+
+  if (String(board.billingCycle || '').toLowerCase() === MILESTONE_BILLING_TYPE) {
+    board.totalProjectBudget = fromCents(board.totalProjectBudgetCents);
+    board.milestones = await getProjectMilestones(board._id, { includeApprovals: true });
+  }
 
   res.status(200).json({
     success: true,

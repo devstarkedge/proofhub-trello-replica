@@ -23,6 +23,8 @@ import EnterpriseFileUploader from './EnterpriseFileUploader';
 import ActivityTimeline from './ActivityTimeline';
 import ProjectOptionsDropdown from './ProjectOptionsDropdown';
 import RichTextEditor from './RichTextEditor';
+import MilestoneScheduleEditor from './MilestoneScheduleEditor';
+import { createEmptyMilestone, validateMilestoneSchedule } from '../utils/milestones';
 
 // Enterprise drawer variants
 const drawerVariants = {
@@ -161,6 +163,9 @@ const EnterpriseEditProjectModal = React.memo(({
     billingCycle: 'hr',
     fixedPrice: '',
     hourlyPrice: '',
+    totalProjectBudget: '',
+    milestoneWorkflow: 'sequential',
+    milestones: [],
     dueDate: '',
     clientName: '',
     clientEmail: '',
@@ -280,6 +285,14 @@ const EnterpriseEditProjectModal = React.memo(({
             billingCycle: fullProject.billingCycle === 'hourly' ? 'hr' : (fullProject.billingCycle || 'hr'),
             fixedPrice: fullProject.fixedPrice || '',
             hourlyPrice: fullProject.hourlyPrice || '',
+            totalProjectBudget: fullProject.totalProjectBudget || '',
+            milestoneWorkflow: fullProject.milestoneWorkflow || 'sequential',
+            milestones: (fullProject.milestones || []).map((milestone, order) => ({
+              ...milestone,
+              amount: milestone.amount,
+              dueDate: milestone.dueDate ? String(milestone.dueDate).slice(0, 10) : '',
+              order
+            })),
             dueDate: fullProject.dueDate ? new Date(fullProject.dueDate).toISOString().split('T')[0] : '',
             clientName: fullProject.clientDetails?.clientName || '',
             clientEmail: fullProject.clientDetails?.clientEmail || '',
@@ -373,6 +386,8 @@ const EnterpriseEditProjectModal = React.memo(({
         next.billingCycle = 'hr';
         next.fixedPrice = '';
         next.hourlyPrice = '';
+        next.totalProjectBudget = '';
+        next.milestones = [];
         next.projectUrl = '';
         next.upworkId = '';
         next.estimatedTime = '';
@@ -492,16 +507,31 @@ const EnterpriseEditProjectModal = React.memo(({
       if (formData.clientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.clientEmail)) {
         newErrors.clientEmail = 'Invalid email format';
       }
+      if (formData.billingCycle === 'milestone') {
+        const milestoneError = validateMilestoneSchedule(formData);
+        if (milestoneError) newErrors.milestones = milestoneError;
+      }
     }
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
   };
 
   // Submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validateForm()) {
-      toast.error('Please fix the validation errors');
+    const validation = validateForm();
+    if (!validation.isValid) {
+      const errorMessages = Object.values(validation.errors).filter(Boolean);
+      toast.error(
+        <div>
+          <p className="font-semibold mb-1">Please fix the validation errors:</p>
+          <ul className="list-disc pl-4 text-sm">
+            {errorMessages.map((msg, i) => (
+              <li key={i}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      );
       return;
     }
 
@@ -526,8 +556,19 @@ const EnterpriseEditProjectModal = React.memo(({
         updates.projectSource = formData.projectSource;
         updates.upworkId = formData.upworkId;
         updates.billingCycle = formData.billingCycle;
-        updates.fixedPrice = formData.fixedPrice;
-        updates.hourlyPrice = formData.hourlyPrice;
+        if (formData.billingCycle === 'fixed') updates.fixedPrice = formData.fixedPrice;
+        if (['hr', 'hourly'].includes(formData.billingCycle)) updates.hourlyPrice = formData.hourlyPrice;
+        if (formData.billingCycle === 'milestone') {
+          updates.totalProjectBudget = formData.totalProjectBudget;
+          updates.milestoneWorkflow = formData.milestoneWorkflow;
+          updates.milestones = formData.milestones.map((milestone, order) => ({
+            _id: milestone._id,
+            title: milestone.title,
+            amount: milestone.amount,
+            dueDate: milestone.dueDate,
+            order
+          }));
+        }
         updates.estimatedTime = formData.estimatedTime;
         updates.clientDetails = {
           clientName: formData.clientName,
@@ -936,13 +977,31 @@ const EnterpriseEditProjectModal = React.memo(({
                             <ProjectOptionsDropdown
                               optionType="billingType"
                               value={formData.billingCycle}
-                              onChange={(val) => setFormData((prev) => ({ ...prev, billingCycle: val }))}
+                              onChange={(val) => setFormData((prev) => ({
+                                ...prev,
+                                billingCycle: val,
+                                fixedPrice: val === 'fixed' ? prev.fixedPrice : '',
+                                hourlyPrice: ['hr', 'hourly'].includes(val) ? prev.hourlyPrice : '',
+                                milestones: val === 'milestone' && prev.milestones.length === 0
+                                  ? [{ ...createEmptyMilestone(), order: 0 }]
+                                  : prev.milestones
+                              }))}
                               showLabel={false}
                               theme="indigo"
                             />
                           </FormField>
 
-                          {formData.billingCycle === 'fixed' ? (
+                          {formData.billingCycle === 'milestone' ? (
+                            <MilestoneScheduleEditor
+                              totalProjectBudget={formData.totalProjectBudget}
+                              milestoneWorkflow={formData.milestoneWorkflow}
+                              milestones={formData.milestones}
+                              onBudgetChange={(totalProjectBudget) => setFormData((prev) => ({ ...prev, totalProjectBudget }))}
+                              onWorkflowChange={(milestoneWorkflow) => setFormData((prev) => ({ ...prev, milestoneWorkflow }))}
+                              onMilestonesChange={(milestones) => setFormData((prev) => ({ ...prev, milestones }))}
+                              error={errors.milestones}
+                            />
+                          ) : formData.billingCycle === 'fixed' ? (
                             <FormField label="Fixed Price" icon={DollarSign}>
                               <input
                                 type="number"

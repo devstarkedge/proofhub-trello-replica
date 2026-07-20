@@ -1182,6 +1182,8 @@ const SubtaskNanoModal = ({
                   billedValidationError={billedValidationError}
                   canAccessBilledTime={canAccessBilledTime}
                   billedTimeHiddenReason={billedTimeHiddenReason}
+                  project={currentProject}
+                  billingSource={{ sourceType: 'nanoSubtask', sourceId: entityId }}
                 />
 
                 <div className="mt-8">

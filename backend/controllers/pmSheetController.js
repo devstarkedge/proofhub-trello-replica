@@ -7,6 +7,8 @@ import Department from '../models/Department.js';
 import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import MilestoneRevenueRecognition from '../models/MilestoneRevenueRecognition.js';
+import { fromCents } from '../utils/money.js';
 
 // Helper function to get week number in month
 const getWeekOfMonth = (date) => {
@@ -28,7 +30,7 @@ const calculatePayment = (billedMinutes, billingType, hourlyRate, fixedPrice) =>
   if (billingType === 'fixed') {
     return fixedPrice || 0;
   }
-  // Hourly billing
+  if (!['hr', 'hourly'].includes(billingType)) return 0;
   const hours = billedMinutes / 60;
   return hours * (hourlyRate || 0);
 };
@@ -902,9 +904,11 @@ export const getCoordinatorReport = asyncHandler(async (req, res, next) => {
         };
       }
 
-      const payment = item.billingType === 'fixed' 
+      const payment = item.billingType === 'fixed'
         ? (item.fixedPrice || 0)
-        : (item.billedMinutes / 60) * (item.hourlyRate || 0);
+        : ['hr', 'hourly'].includes(item.billingType)
+          ? (item.billedMinutes / 60) * (item.hourlyRate || 0)
+          : 0;
 
       // Get coordinators from the pre-populated boardMap instead of raw ObjectIds from aggregation
       const boardData = boardMap[item.boardId?.toString()];
@@ -999,6 +1003,12 @@ export const getApproachData = asyncHandler(async (req, res, next) => {
     .lean();
 
   const boardIds = boards.map(b => b._id);
+
+  const recognitionTotals = await MilestoneRevenueRecognition.aggregate([
+    { $match: { board: { $in: boardIds }, recognizedAt: { $gte: start, $lte: end } } },
+    { $group: { _id: '$board', amountCents: { $sum: '$amountCents' } } }
+  ]);
+  const milestoneRevenueByBoard = new Map(recognitionTotals.map((item) => [item._id.toString(), fromCents(item.amountCents)]));
 
   // Get all time data for completed projects
   const projectData = await Promise.all(boards.map(async (board) => {
@@ -1098,7 +1108,11 @@ export const getApproachData = asyncHandler(async (req, res, next) => {
     const totalBilledMinutes = Object.values(userBilledMap).reduce((a, b) => a + b, 0);
     const payment = board.billingCycle === 'fixed'
       ? (board.fixedPrice || 0)
-      : (totalBilledMinutes / 60) * (board.hourlyPrice || 0);
+      : ['hr', 'hourly'].includes(board.billingCycle)
+        ? (totalBilledMinutes / 60) * (board.hourlyPrice || 0)
+        : board.billingCycle === 'milestone'
+          ? (milestoneRevenueByBoard.get(board._id.toString()) || 0)
+          : 0;
 
     // Get last activity
     const lastCard = await Card.findOne({ board: board._id })
@@ -1115,6 +1129,8 @@ export const getApproachData = asyncHandler(async (req, res, next) => {
       billingType: board.billingCycle,
       hourlyRate: board.hourlyPrice,
       fixedPrice: board.fixedPrice,
+      totalProjectBudget: fromCents(board.totalProjectBudgetCents),
+      milestoneRevenue: board.billingCycle === 'milestone' ? payment : 0,
       estimatedTime: board.estimatedTime,
       startDate: board.startDate,
       status: board.status,
@@ -1237,7 +1253,8 @@ export const getFilterOptions = asyncHandler(async (req, res, next) => {
       })),
       billingTypes: [
         { value: 'hr', label: 'Hourly' },
-        { value: 'fixed', label: 'Fixed' }
+        { value: 'fixed', label: 'Fixed' },
+        { value: 'milestone', label: 'Milestone' }
       ],
       statuses: [
         { value: 'planning', label: 'Planning' },

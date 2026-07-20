@@ -26,6 +26,10 @@ const projectDropdownOptionSchema = new mongoose.Schema({
     default: true,
     index: true
   },
+  isSystem: {
+    type: Boolean,
+    default: false
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

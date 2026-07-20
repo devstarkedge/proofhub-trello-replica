@@ -286,15 +286,18 @@ export const StatusBadge = ({ status, editable = false, onChange = null, classNa
  */
 export const BillingTypeBadge = ({ type, rate, className = '' }) => {
   const isHourly = type === 'hr' || type === 'hourly';
+  const isMilestone = type === 'milestone';
   
   return (
     <div className={`flex items-center gap-1 ${className}`}>
       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-        isHourly 
+        isHourly
           ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+          : isMilestone
+            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
           : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
       }`}>
-        {isHourly ? 'Hourly' : 'Fixed'}
+        {isHourly ? 'Hourly' : isMilestone ? 'Milestone' : 'Fixed'}
       </span>
       {isHourly && rate > 0 && (
         <span className="text-xs text-gray-500 dark:text-gray-400">

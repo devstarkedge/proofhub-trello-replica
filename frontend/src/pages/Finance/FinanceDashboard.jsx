@@ -17,6 +17,7 @@ import AuthContext from '../../context/AuthContext';
 import socketService from '../../services/socket';
 import FinanceAccessControl from '../../components/Finance/FinanceAccessControl';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
+import { getBillingTypeLabel, getBillingTypeStyle } from '../../utils/billing';
 
 /**
  * FinanceDashboard - Single Source of Truth Dashboard
@@ -302,11 +303,11 @@ const FinanceDashboard = () => {
 
       {/* Key Metrics Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+          {[...Array(5)].map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           {/* Total Revenue */}
           <div
             className="p-6 rounded-xl border group hover:scale-[1.02] transition-all duration-200 cursor-pointer"
@@ -392,6 +393,22 @@ const FinanceDashboard = () => {
                 style={{ backgroundColor: 'rgba(168, 85, 247, 0.12)' }}
               >
                 <TrendingUp className="w-6 h-6" style={{ color: '#a855f7' }} />
+              </div>
+            </div>
+          </div>
+          {/* Paid Milestone Revenue */}
+          <div
+            className="p-6 rounded-xl border"
+            style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Milestone Revenue</p>
+                <p className="text-2xl font-bold" style={{ color: '#059669' }}>{formatCurrency(summary?.milestoneRevenue)}</p>
+                <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>Milestones paid in this period</p>
+              </div>
+              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(5, 150, 105, 0.12)' }}>
+                <FileCheck className="w-6 h-6" style={{ color: '#059669' }} />
               </div>
             </div>
           </div>
@@ -563,17 +580,11 @@ const FinanceDashboard = () => {
                   <div className="flex items-center gap-3">
                     <div
                       className="w-8 h-8 rounded-lg flex items-center justify-center"
-                      style={{
-                        backgroundColor: project.billingCycle === 'hr'
-                          ? 'rgba(139, 92, 246, 0.12)'
-                          : 'rgba(59, 130, 246, 0.12)'
-                      }}
+                      style={{ backgroundColor: getBillingTypeStyle(project.billingCycle).backgroundColor }}
                     >
                       <FolderKanban
                         className="w-4 h-4"
-                        style={{
-                          color: project.billingCycle === 'hr' ? '#8b5cf6' : '#3b82f6'
-                        }}
+                        style={{ color: getBillingTypeStyle(project.billingCycle).color }}
                       />
                     </div>
                     <div>
@@ -590,9 +601,8 @@ const FinanceDashboard = () => {
                         style={{ color: 'var(--color-text-muted)' }}
                         title={project.billedTime ? `Billed: ${formatTime(project.billedTime)} | Logged: ${formatTime(project.loggedTime)}` : ''}
                       >
-                        {project.department} - {project.billingCycle === 'hr' ? 'Hourly' : 'Fixed'}
-                        {project.billingCycle === 'hr' && project.billedTime ? ` - ${formatTime(project.billedTime)} billed` : ''}
-                        {project.billingCycle === 'fixed' && project.billedTime && project.billedTime.totalMinutes > 0 ? ` - ${formatTime(project.billedTime)} billed` : ''}
+                        {project.department} - {getBillingTypeLabel(project.billingCycle)}
+                        {project.billedTime && project.billedTime.totalMinutes > 0 ? ` - ${formatTime(project.billedTime)} billed` : ''}
                       </p>
                     </div>
                   </div>

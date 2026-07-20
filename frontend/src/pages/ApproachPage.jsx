@@ -12,6 +12,7 @@ import {
   BillingTypeBadge,
   CoordinatorDisplay
 } from '../components/PMSheet';
+import { getBillingTypeLabel } from '../utils/billing';
 
 /**
  * Approach Page - Completed work & payment review
@@ -70,8 +71,8 @@ const ApproachPageContent = () => {
       project.projectName,
       project.projectSource || '-',
       project.projectCategory || '-',
-      project.billingType === 'hr' ? 'Hourly' : 'Fixed',
-      project.billingType === 'hr' ? `$${project.hourlyRate || 0}/hr` : `$${project.fixedPrice || 0}`,
+      getBillingTypeLabel(project.billingType),
+      project.billingType === 'hr' ? `$${project.hourlyRate || 0}/hr` : project.billingType === 'milestone' ? `$${project.totalProjectBudget || 0} budget` : `$${project.fixedPrice || 0}`,
       project.clientDetails?.clientName || '-',
       project.clientDetails?.clientEmail || '-',
       project.totalBilledTime?.display || '0h 0m',

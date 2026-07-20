@@ -100,8 +100,8 @@ const ProjectOptionsDropdown = ({
   };
 
   const handleDeleteOption = async (option) => {
-    if (option?.isUsed) {
-      toast.error('This option is used by existing projects');
+    if (option?.isSystem || option?.isUsed) {
+      toast.error(option?.isSystem ? 'System billing options cannot be deleted' : 'This option is used by existing projects');
       return;
     }
 
@@ -194,10 +194,10 @@ const ProjectOptionsDropdown = ({
                           event.stopPropagation();
                           handleDeleteOption(option);
                         }}
-                        disabled={deletingId === option._id || option.isUsed}
-                        title={option.isUsed ? 'Option is used by existing projects' : 'Delete option'}
+                        disabled={deletingId === option._id || option.isUsed || option.isSystem}
+                        title={option.isSystem ? 'System option' : option.isUsed ? 'Option is used by existing projects' : 'Delete option'}
                         className={`p-1 rounded-md transition-colors ${
-                          option.isUsed
+                          option.isUsed || option.isSystem
                             ? 'text-gray-300 cursor-not-allowed'
                             : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                         }`}

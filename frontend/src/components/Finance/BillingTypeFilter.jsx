@@ -8,13 +8,14 @@ import {
 const BILLING_OPTIONS = [
   { value: 'all', label: 'All Billing' },
   { value: 'fixed', label: 'Fixed' },
-  { value: 'hourly', label: 'Hourly' }
+  { value: 'hourly', label: 'Hourly' },
+  { value: 'milestone', label: 'Milestone' }
 ];
 
 const BillingTypeFilter = ({ value = 'all', onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
-  const selectedValue = value || 'all';
+  const selectedValue = value === 'hr' ? 'hourly' : (value || 'all');
   const selectedOption = BILLING_OPTIONS.find(option => option.value === selectedValue) || BILLING_OPTIONS[0];
 
   useEffect(() => {

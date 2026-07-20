@@ -93,7 +93,7 @@ const GlobalSearch = ({
               icon: Building2,
               label: department,
               sublabel: 'Department',
-              value: department,
+              value: user.departmentId || department,
               data: { department }
             });
           }
@@ -103,8 +103,8 @@ const GlobalSearch = ({
 
     if (type === 'projects') {
       data.forEach(project => {
-        const projectName = project.boardName || project.name || project.title || '';
-        const clientName = project.clientName || project.client || '';
+        const projectName = project.projectName || project.boardName || project.name || project.title || '';
+        const clientName = project.clientInfo?.clientName || project.clientName || project.client || '';
         const upworkId = project.upworkId || '';
         const department = project.departmentName || project.department || '';
 
@@ -114,7 +114,7 @@ const GlobalSearch = ({
             icon: Briefcase,
             label: projectName,
             sublabel: clientName || department,
-            value: project.boardId || project._id,
+            value: project.projectId || project.boardId || project._id,
             data: project
           });
         }
@@ -152,7 +152,7 @@ const GlobalSearch = ({
               icon: Building2,
               label: department,
               sublabel: 'Department',
-              value: department,
+              value: project.departmentId || department,
               data: { department }
             });
           }

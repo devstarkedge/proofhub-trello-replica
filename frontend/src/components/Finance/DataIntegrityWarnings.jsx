@@ -69,6 +69,19 @@ const DataIntegrityWarnings = ({
           });
         }
 
+        if (billingType === 'milestone' && (Number(project.totalProjectBudget || 0) <= 0 || Number(project.milestoneCount || 0) <= 0)) {
+          issues.push({
+            id: `${projectId}-invalid-milestone-contract`,
+            type: 'critical',
+            icon: AlertCircle,
+            projectName,
+            detail: 'is missing a valid Milestone budget or schedule',
+            suggestion: 'Open project settings and save a balanced milestone schedule',
+            projectId,
+            departmentId
+          });
+        }
+
         // Warning: Fixed project exceeding limit
         if ((billingType === 'fixed') && project.fixedHours) {
           const fixedMinutes = project.fixedHours * 60;

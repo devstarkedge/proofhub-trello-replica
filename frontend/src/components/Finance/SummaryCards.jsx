@@ -16,7 +16,7 @@ import ProjectWorkflowLink from './ProjectWorkflowLink';
  * Cards update instantly when filters change
  * Clicking a card applies related filters
  */
-const SummaryCards = ({ filters = {}, onCardClick }) => {
+const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null }) => {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -67,12 +67,13 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
   };
 
   // Card configurations
+  const visibleSummary = summaryOverride || summary;
   const cards = [
     {
       id: 'revenue',
       title: 'Total Revenue',
-      value: summary ? formatCurrency(summary.totalRevenue) : '$0',
-      subtitle: summary ? `${summary.billableProjectCount || 0} billable projects` : null,
+      value: visibleSummary ? formatCurrency(visibleSummary.totalRevenue) : '$0',
+      subtitle: visibleSummary ? `${visibleSummary.billableProjectCount || 0} billable projects` : null,
       icon: DollarSign,
       color: '#10b981',
       bg: 'rgba(16, 185, 129, 0.12)',
@@ -81,7 +82,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
     {
       id: 'fixedRevenue',
       title: 'Fixed Amount Revenue',
-      value: summary ? formatCurrency(summary.fixedRevenue) : '$0',
+      value: visibleSummary ? formatCurrency(visibleSummary.fixedRevenue) : '$0',
       icon: DollarSign,
       color: '#14b8a6',
       bg: 'rgba(20, 184, 166, 0.12)',
@@ -90,16 +91,25 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
     {
       id: 'hourlyRevenue',
       title: 'Hourly Revenue',
-      value: summary ? formatCurrency(summary.hourlyRevenue) : '$0',
+      value: visibleSummary ? formatCurrency(visibleSummary.hourlyRevenue) : '$0',
       icon: TrendingUp,
       color: '#a855f7',
       bg: 'rgba(168, 85, 247, 0.12)',
       filterAction: 'hourlyRevenue'
     },
     {
+      id: 'milestoneRevenue',
+      title: 'Milestone Revenue',
+      value: visibleSummary ? formatCurrency(visibleSummary.milestoneRevenue) : '$0',
+      icon: FileCheck,
+      color: '#059669',
+      bg: 'rgba(5, 150, 105, 0.12)',
+      filterAction: 'milestoneRevenue'
+    },
+    {
       id: 'billed',
       title: 'Total Billed Time',
-      value: summary ? formatTime(summary.totalBilledTime) : '0h 0m',
+      value: visibleSummary ? formatTime(visibleSummary.totalBilledTime) : '0h 0m',
       icon: FileCheck,
       color: '#8b5cf6',
       bg: 'rgba(139, 92, 246, 0.12)',
@@ -108,31 +118,31 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
     {
       id: 'topUser',
       title: 'Top Earning User',
-      value: summary?.topEarningUser?.userName || 'N/A',
-      subtitle: summary?.topEarningUser
+      value: visibleSummary?.topEarningUser?.userName || 'N/A',
+      subtitle: visibleSummary?.topEarningUser
         ? formatTime({
-            hours: Math.floor(summary.topEarningUser.billedMinutes / 60),
-            minutes: summary.topEarningUser.billedMinutes % 60
+            hours: Math.floor(visibleSummary.topEarningUser.billedMinutes / 60),
+            minutes: visibleSummary.topEarningUser.billedMinutes % 60
           })
         : null,
       icon: User,
       color: '#ec4899',
       bg: 'rgba(236, 72, 153, 0.12)',
       filterAction: 'user',
-      filterValue: summary?.topEarningUser?.userId
+      filterValue: visibleSummary?.topEarningUser?.userId
     },
     {
       id: 'topProject',
       title: 'Top Revenue Project',
-      value: summary?.topRevenueProject?.name || 'N/A',
-      subtitle: summary?.topRevenueProject
-        ? formatCurrency(summary.topRevenueProject.payment)
+      value: visibleSummary?.topRevenueProject?.name || 'N/A',
+      subtitle: visibleSummary?.topRevenueProject
+        ? formatCurrency(visibleSummary.topRevenueProject.payment)
         : null,
       icon: FolderKanban,
       color: '#06b6d4',
       bg: 'rgba(6, 182, 212, 0.12)',
-      departmentId: summary?.topRevenueProject?.departmentId,
-      projectId: summary?.topRevenueProject?.projectId
+      departmentId: visibleSummary?.topRevenueProject?.departmentId,
+      projectId: visibleSummary?.topRevenueProject?.projectId
     }
   ];
 
@@ -166,8 +176,8 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4 mb-6">
-        {[...Array(6)].map((_, i) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7 gap-4 mb-6">
+        {[...Array(7)].map((_, i) => (
           <SkeletonCard key={i} />
         ))}
       </div>
@@ -197,7 +207,7 @@ const SummaryCards = ({ filters = {}, onCardClick }) => {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4 mb-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7 gap-4 mb-6">
       {cards.map((card) => {
         const Icon = card.icon;
         const isProjectCard = card.id === 'topProject';
