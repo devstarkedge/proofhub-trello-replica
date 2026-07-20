@@ -53,15 +53,15 @@ const overlayVariants = {
 
 // Tab navigation component
 const TabNavigation = React.memo(({ tabs, activeTab, onTabChange }) => (
-  <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
+  <div className="flex gap-2 px-6">
     {tabs.map((tab) => (
       <button
         key={tab.id}
         onClick={() => onTabChange(tab.id)}
-        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+        className={`flex items-center gap-2 px-6 py-3 rounded-t-xl text-sm font-semibold transition-all ${
           activeTab === tab.id
-            ? 'bg-white text-indigo-600 shadow-sm'
-            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            ? 'bg-[#f4f5f7] text-blue-600'
+            : 'text-white/80 hover:text-white hover:bg-white/10'
         }`}
       >
         <tab.icon size={16} />
@@ -655,12 +655,12 @@ const EnterpriseEditProjectModal = React.memo(({
             initial="hidden"
             animate="visible"
             exit="exit"
-            className={`fixed right-0 top-0 h-full ${drawerWidth} bg-white shadow-2xl z-[61] flex flex-col`}
+            className={`fixed right-0 top-0 h-full ${drawerWidth} bg-[#f4f5f7] shadow-2xl z-[61] flex flex-col`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex-shrink-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 px-6 py-5">
-              <div className="flex items-center justify-between">
+            <div className="flex-shrink-0 bg-blue-600 pt-5">
+              <div className="flex items-center justify-between px-6">
                 <div className="flex items-center gap-4">
                   <button
                     type="button"

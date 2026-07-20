@@ -91,14 +91,14 @@ const FormField = memo(({ label, icon: Icon, required, error, helperText, childr
 
 // Tab component
 const Tab = memo(({ tabs, activeTab, onTabChange }) => (
-  <div className="flex gap-1 p-1 bg-white/10 rounded-xl backdrop-blur-sm">
+  <div className="flex gap-2 px-6">
     {tabs.map((tab) => (
       <button
         key={tab.id}
         onClick={() => onTabChange(tab.id)}
-        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+        className={`flex items-center gap-2 px-6 py-3 rounded-t-xl text-sm font-semibold transition-all ${
           activeTab === tab.id
-            ? 'bg-white text-blue-600 shadow-sm'
+            ? 'bg-[#f4f5f7] text-blue-600'
             : 'text-white/80 hover:text-white hover:bg-white/10'
         }`}
       >
@@ -727,13 +727,18 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     [formData.assignees, managers]
   );
 
-  const isFormReady = useMemo(() => {
+  const isDetailsComplete = useMemo(() => {
     if (!formData.title.trim() || formData.title.trim().length < 3) return false;
     if (!formData.startDate) return false;
-    if (formData.assignees.length === 0) return false;
     if (formData.projectUrl && !PROJECT_URL_REGEX.test(formData.projectUrl)) return false;
     return true;
   }, [formData]);
+
+  const isFormReady = useMemo(() => {
+    if (!isDetailsComplete) return false;
+    if (formData.assignees.length === 0) return false;
+    return true;
+  }, [isDetailsComplete, formData.assignees.length]);
 
   if (!isOpen) return null;
 
@@ -758,12 +763,12 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
             initial="hidden"
             animate="visible"
             exit="exit"
-            className={`fixed right-0 top-0 h-full ${drawerWidth} bg-white shadow-2xl z-[61] flex flex-col`}
+            className={`fixed right-0 top-0 h-full ${drawerWidth} bg-[#f4f5f7] shadow-2xl z-[61] flex flex-col`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex-shrink-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-6 py-5">
-              <div className="flex items-center justify-between">
+            <div className="flex-shrink-0 bg-blue-600 pt-5">
+              <div className="flex items-center justify-between px-6">
                 <div className="flex items-center gap-4">
                   <button
                     type="button"
@@ -1483,24 +1488,36 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                   Cancel
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={isSaving || !isFormReady}
-                  className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 font-semibold transition-all active:scale-[0.98] shadow-lg shadow-blue-500/30"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader size={20} className="animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 size={20} />
-                      Create Project
-                    </>
-                  )}
-                </button>
+                {isDetailsComplete && formData.assignees.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('team')}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 font-semibold transition-all active:scale-[0.98] shadow-lg shadow-blue-500/30"
+                  >
+                    <Users size={20} />
+                    Select Project Manager
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={isSaving || !isFormReady}
+                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 font-semibold transition-all active:scale-[0.98] shadow-lg shadow-blue-500/30"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader size={20} className="animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={20} />
+                        Create Project
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </motion.div>
