@@ -6,7 +6,6 @@ import User from '../../models/User.js';
 import UserPermission, { FINANCE_PAGE_KEY } from '../../models/UserPermission.js';
 import Milestone from '../../models/Milestone.js';
 import MilestoneApproval from '../../models/MilestoneApproval.js';
-import MilestoneRevenueRecognition from '../../models/MilestoneRevenueRecognition.js';
 import logger from '../../utils/logger.js';
 import { fromCents } from '../../utils/money.js';
 
@@ -99,62 +98,22 @@ export const calculateFixedRevenue = (project, filters = {}) => {
   return applyFinanceDateRange(getFixedRevenueDate(project), filters) ? fixedPrice : 0;
 };
 
-export const calculateMilestoneRevenue = (recognitions = [], filters = {}) => (
-  fromCents((recognitions || []).reduce((total, recognition) => {
-    if (!applyFinanceDateRange(recognition.recognizedAt, filters)) return total;
-    return total + Number(recognition.amountCents || 0);
+export const calculateMilestoneRevenue = (approvals = [], filters = {}) => (
+  fromCents((approvals || []).reduce((total, approval) => {
+    if (!applyFinanceDateRange(approval.approvedAt || approval.recognizedAt, filters)) return total;
+    return total + Number(approval.amountCents || 0);
   }, 0))
 );
 
-export const allocateMilestoneRevenueByApprover = (recognitions = [], approvals = [], filters = {}) => {
-  const approvalsByMilestone = new Map();
+export const allocateMilestoneRevenueByApprover = (approvals = [], filters = {}) => {
+  const allocatedCentsByUser = new Map();
   approvals.forEach((approval) => {
-    const milestoneId = approval?.milestone?.toString();
+    if (!applyFinanceDateRange(approval?.approvedAt, filters)) return;
     const approverId = approval?.approvedBy?.toString();
     const amountCents = Number(approval?.amountCents || 0);
-    if (!milestoneId || !approverId || amountCents <= 0) return;
-    if (!approvalsByMilestone.has(milestoneId)) approvalsByMilestone.set(milestoneId, []);
-    approvalsByMilestone.get(milestoneId).push({ approverId, amountCents });
+    if (!approverId || !Number.isSafeInteger(amountCents) || amountCents <= 0) return;
+    allocatedCentsByUser.set(approverId, (allocatedCentsByUser.get(approverId) || 0) + amountCents);
   });
-
-  const allocatedCentsByUser = new Map();
-  const addAllocation = (userId, amountCents) => {
-    if (!userId || amountCents <= 0) return;
-    allocatedCentsByUser.set(userId, (allocatedCentsByUser.get(userId) || 0) + amountCents);
-  };
-
-  recognitions.forEach((recognition) => {
-    if (!applyFinanceDateRange(recognition?.recognizedAt, filters)) return;
-    const recognizedCents = Number(recognition?.amountCents || 0);
-    if (!Number.isSafeInteger(recognizedCents) || recognizedCents <= 0) return;
-
-    const milestoneId = recognition?.milestone?.toString();
-    const milestoneApprovals = approvalsByMilestone.get(milestoneId) || [];
-    const approvedCents = milestoneApprovals.reduce((sum, approval) => sum + approval.amountCents, 0);
-
-    if (approvedCents <= 0) {
-      addAllocation(recognition?.recognizedBy?.toString(), recognizedCents);
-      return;
-    }
-
-    const allocations = milestoneApprovals.map((approval) => {
-      const exactCents = (recognizedCents * approval.amountCents) / approvedCents;
-      return {
-        userId: approval.approverId,
-        cents: Math.floor(exactCents),
-        remainder: exactCents - Math.floor(exactCents)
-      };
-    });
-    let remainingCents = recognizedCents - allocations.reduce((sum, allocation) => sum + allocation.cents, 0);
-    allocations.sort((left, right) => (
-      right.remainder - left.remainder || String(left.userId).localeCompare(String(right.userId))
-    ));
-    for (let index = 0; index < allocations.length && remainingCents > 0; index += 1, remainingCents -= 1) {
-      allocations[index].cents += 1;
-    }
-    allocations.forEach((allocation) => addAllocation(allocation.userId, allocation.cents));
-  });
-
   return new Map([...allocatedCentsByUser].map(([userId, cents]) => [userId, fromCents(cents)]));
 };
 
@@ -320,7 +279,7 @@ const buildDataContext = async (rawFilters = {}) => {
   ]);
 
   const projectIds = projects.map((project) => project._id);
-  const [cards, subtasks, nanos, milestones, milestoneRecognitions, milestoneApprovals] = projectIds.length > 0
+  const [cards, subtasks, nanos, milestones, milestoneApprovals] = projectIds.length > 0
     ? await Promise.all([
       Card.find({ board: { $in: projectIds }, isArchived: { $ne: true } })
         .select('board billedTime loggedTime title updatedAt')
@@ -335,14 +294,11 @@ const buildDataContext = async (rawFilters = {}) => {
         .select('board title amountCents approvedAmountCents status paidAt revenueRecognizedAt order')
         .sort({ board: 1, order: 1 })
         .lean(),
-      MilestoneRevenueRecognition.find({ board: { $in: projectIds } })
-        .select('board milestone amountCents recognizedAt recognizedBy')
-        .lean(),
       MilestoneApproval.find({ board: { $in: projectIds } })
         .select('board milestone amountCents approvedBy approvedAt')
         .lean()
     ])
-    : [[], [], [], [], [], []];
+    : [[], [], [], [], []];
 
   const usersById = await buildUserNameMap([...cards, ...subtasks, ...nanos], milestoneApprovals);
 
@@ -355,7 +311,6 @@ const buildDataContext = async (rawFilters = {}) => {
     subtasksByBoard: groupByBoard(subtasks),
     nanosByBoard: groupByBoard(nanos),
     milestonesByBoard: groupByBoard(milestones),
-    milestoneRecognitionsByBoard: groupByBoard(milestoneRecognitions),
     milestoneApprovalsByBoard: groupByBoard(milestoneApprovals),
     diagnostics: {
       totalProjectsBeforeFiltering,
@@ -389,7 +344,6 @@ export const buildProjectMetric = (project, context, rangeFilters = context.filt
   const projectId = project._id.toString();
   const entities = getProjectEntities(context, projectId);
   const milestones = context.milestonesByBoard.get(projectId) || [];
-  const milestoneRecognitions = context.milestoneRecognitionsByBoard.get(projectId) || [];
   const milestoneApprovals = context.milestoneApprovalsByBoard?.get(projectId) || [];
   const users = {};
   let billedMinutes = 0;
@@ -414,13 +368,13 @@ export const buildProjectMetric = (project, context, rangeFilters = context.filt
     ? calculateHourlyRevenue(billedMinutes, project.hourlyPrice)
     : 0;
   const milestoneRevenue = billingType === BILLING_TYPES.MILESTONE
-    ? calculateMilestoneRevenue(milestoneRecognitions, rangeFilters)
+    ? calculateMilestoneRevenue(milestoneApprovals, rangeFilters)
     : 0;
   const lifetimeMilestoneRevenue = billingType === BILLING_TYPES.MILESTONE
-    ? calculateMilestoneRevenue(milestoneRecognitions, {})
+    ? calculateMilestoneRevenue(milestoneApprovals, {})
     : 0;
   const milestoneRevenueByApprover = billingType === BILLING_TYPES.MILESTONE
-    ? allocateMilestoneRevenueByApprover(milestoneRecognitions, milestoneApprovals, rangeFilters)
+    ? allocateMilestoneRevenueByApprover(milestoneApprovals, rangeFilters)
     : new Map();
   milestoneRevenueByApprover.forEach((revenue, userId) => {
     if (rangeFilters.userId && userId !== rangeFilters.userId) return;
@@ -454,7 +408,6 @@ export const buildProjectMetric = (project, context, rangeFilters = context.filt
     hasActivityInRange,
     users,
     milestones,
-    milestoneRecognitions,
     milestoneApprovals,
     lastActivity: getLastActivity(entities)
   };

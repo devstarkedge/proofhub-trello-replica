@@ -450,7 +450,7 @@ export const approveMilestone = async ({
           approvedAmountCents: nextApprovedCents,
           status: becomesPaid ? MILESTONE_STATUSES.PAID : MILESTONE_STATUSES.IN_PROGRESS,
           paidAt: becomesPaid ? now : null,
-          revenueRecognizedAt: becomesPaid ? now : null,
+          revenueRecognizedAt: milestone.revenueRecognizedAt || now,
           updatedBy: actorId
         }
       }, { new: true, runValidators: true, session });
@@ -481,6 +481,8 @@ export const approveMilestone = async ({
           approvalId: approval._id,
           approvalAmountCents: amountCents,
           approvedAmountCents: nextApprovedCents,
+          financeRecognizedAmountCents: amountCents,
+          financeRecognizedAt: now,
           sourceType,
           sourceId: source._id,
           status: updatedMilestone.status
@@ -489,25 +491,15 @@ export const approveMilestone = async ({
       })];
 
       if (becomesPaid) {
-        await MilestoneRevenueRecognition.create([{
-          board: boardId,
-          milestone: milestone._id,
-          triggeringApproval: approval._id,
-          amountCents: milestone.amountCents,
-          recognizedAt: now,
-          recognizedBy: actorId
-        }], { session });
-
         audits.push(auditEntry({
           actorId,
-          action: 'MILESTONE_PAID_AND_REVENUE_RECOGNIZED',
+          action: 'MILESTONE_PAID',
           targetId: milestone._id,
-          before: { status: milestone.status, revenueRecognizedAt: null },
+          before: { status: milestone.status },
           after: {
             status: MILESTONE_STATUSES.PAID,
             paidAt: now,
-            revenueRecognizedAt: now,
-            revenueAmountCents: milestone.amountCents
+            approvedAmountCents: nextApprovedCents
           },
           requestContext
         }));
