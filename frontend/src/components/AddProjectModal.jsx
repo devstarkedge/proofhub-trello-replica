@@ -22,6 +22,11 @@ import DatePickerModal from "./DatePickerModal";
 import RichTextEditor from './RichTextEditor';
 import MilestoneScheduleEditor from './MilestoneScheduleEditor';
 import { createEmptyMilestone, validateMilestoneSchedule } from '../utils/milestones';
+import BasicInfoSection from './ProjectModals/sections/BasicInfoSection';
+import ProjectDetailsSection from './ProjectModals/sections/ProjectDetailsSection';
+import ClientSection from './ProjectModals/sections/ClientSection';
+import FilesTab from './ProjectModals/tabs/FilesTab';
+import TeamTab from './ProjectModals/tabs/TeamTab';
 
 // Country codes data
 const COUNTRY_CODES = [
@@ -929,549 +934,111 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                     </section>
 
                     {/* Basic Info */}
-                    <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
-                      <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                        <Info size={16} className="text-blue-600" />
-                        Basic Information
-                      </h3>
+                    <BasicInfoSection
+                      title={formData.title}
+                      description={formData.description}
+                      startDate={formData.startDate}
+                      dueDate={formData.dueDate}
+                      errors={errors}
+                      handleInputChange={handleInputChange}
+                      handleDescriptionChange={(val) => setFormData(prev => ({ ...prev, description: val }))}
+                      handleStartDateChange={(date) => {
+                        setFormData(prev => ({ ...prev, startDate: date || '' }));
+                        if (errors.startDate) setErrors(prev => ({ ...prev, startDate: '' }));
+                        if (date && formData.dueDate && new Date(formData.dueDate) < new Date(date)) {
+                          setFormData(prev => ({ ...prev, dueDate: '' }));
+                        }
+                      }}
+                      handleDueDateChange={(date) => {
+                        setFormData(prev => ({ ...prev, dueDate: date || '' }));
+                        if (errors.dueDate) setErrors(prev => ({ ...prev, dueDate: '' }));
+                      }}
+                    />
 
-                      <div className="space-y-5">
-                        <FormField label="Project Title" icon={FileText} required error={errors.title}>
-                          <input
-                            type="text"
-                            name="title"
-                            value={formData.title}
-                            onChange={handleInputChange}
-                            className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
-                              errors.title ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-blue-300'
-                            }`}
-                            placeholder="Enter a descriptive project title"
-                          />
-                        </FormField>
-
-                        <FormField label="Description" icon={FileText} helperText="No character limit - describe your project in detail">
-                          <RichTextEditor
-                            content={formData.description}
-                            onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
-                            placeholder="Describe the project goals, deliverables, and requirements..."
-                            startExpanded={true}
-                            allowMentions={false}
-                            enableAttachments={false}
-                            showLinkTool={false}
-                            showImageTool={false}
-                            editorMinHeightClass="min-h-[120px]"
-                            className="bg-white border border-gray-300 rounded-xl p-2 hover:border-blue-300"
-                          />
-                        </FormField>
-                      </div>
-                    </section>
-
-                    {/* Dates */}
-                    <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
-                      <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                        <Calendar size={16} className="text-green-600" />
-                        Timeline
-                      </h3>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FormField label="Start Date" icon={Calendar} required error={errors.startDate}>
-                          <div
-                            onClick={() => setShowStartDatePicker(true)}
-                            className={`w-full px-4 py-3 border rounded-xl cursor-pointer flex items-center justify-between hover:border-blue-300 ${
-                              errors.startDate ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                            }`}
-                          >
-                            <span className={formData.startDate ? 'text-gray-900' : 'text-gray-400'}>
-                              {formData.startDate
-                                ? new Date(formData.startDate).toLocaleDateString('en-US', {
-                                    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
-                                  })
-                                : 'Select start date'}
-                            </span>
-                            <Calendar size={16} className="text-gray-400" />
-                          </div>
-                        </FormField>
-
-                        <FormField label="Due Date" icon={Calendar} error={errors.dueDate}>
-                          <div
-                            onClick={() => setShowDueDatePicker(true)}
-                            className={`w-full px-4 py-3 border rounded-xl cursor-pointer flex items-center justify-between hover:border-blue-300 ${
-                              errors.dueDate ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                            }`}
-                          >
-                            <span className={formData.dueDate ? 'text-gray-900' : 'text-gray-400'}>
-                              {formData.dueDate
-                                ? new Date(formData.dueDate).toLocaleDateString('en-US', {
-                                    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
-                                  })
-                                : 'Select due date'}
-                            </span>
-                            <Calendar size={16} className="text-gray-400" />
-                          </div>
-                        </FormField>
-                      </div>
-                    </section>
-
-                    {/* Project Details — only for Hired Client */}
+                    {/* Project Details */}
                     {formData.projectType !== 'Inhouse' && (
-                    <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
-                      <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                        <Briefcase size={16} className="text-indigo-600" />
-                        Project Details
-                      </h3>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <FormField label="Project Source" icon={Briefcase}>
-                          <ProjectOptionsDropdown
-                            optionType="projectSource"
-                            value={formData.projectSource}
-                            onChange={(val) => setFormData((prev) => ({ ...prev, projectSource: val }))}
-                            allowManage={true}
-                            showLabel={false}
-                            theme="blue"
-                          />
-                        </FormField>
-
-                        {formData.projectSource === 'Upwork' && (
-                          <FormField label="Upwork ID" icon={Tag}>
-                            <input
-                              type="text"
-                              name="upworkId"
-                              value={formData.upworkId}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
-                              placeholder="Upwork Job ID"
-                            />
-                          </FormField>
-                        )}
-
-                        <FormField label="Billing Type" icon={DollarSign}>
-                          <ProjectOptionsDropdown
-                            optionType="billingType"
-                            value={formData.billingCycle}
-                            onChange={(val) => setFormData((prev) => ({
-                              ...prev,
-                              billingCycle: val,
-                              fixedPrice: val === 'fixed' ? prev.fixedPrice : '',
-                              hourlyPrice: ['hr', 'hourly'].includes(val) ? prev.hourlyPrice : '',
-                              milestones: val === 'milestone' && prev.milestones.length === 0
-                                ? [{ ...createEmptyMilestone(), order: 0 }]
-                                : prev.milestones
-                            }))}
-                            allowManage={true}
-                            showLabel={false}
-                            theme="blue"
-                          />
-                        </FormField>
-
-                        {formData.billingCycle === 'milestone' ? (
-                          <MilestoneScheduleEditor
-                            totalProjectBudget={formData.totalProjectBudget}
-                            milestoneWorkflow={formData.milestoneWorkflow}
-                            milestones={formData.milestones}
-                            onBudgetChange={(totalProjectBudget) => setFormData((prev) => ({ ...prev, totalProjectBudget }))}
-                            onWorkflowChange={(milestoneWorkflow) => setFormData((prev) => ({ ...prev, milestoneWorkflow }))}
-                            onMilestonesChange={(milestones) => setFormData((prev) => ({ ...prev, milestones }))}
-                            error={errors.milestones}
-                          />
-                        ) : formData.billingCycle === 'fixed' ? (
-                          <FormField label="Fixed Price" icon={DollarSign}>
-                            <input
-                              type="number"
-                              name="fixedPrice"
-                              value={formData.fixedPrice}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
-                              placeholder="$0.00"
-                              min="0"
-                            />
-                          </FormField>
-                        ) : (
-                          <FormField label="Hourly Rate" icon={DollarSign}>
-                            <input
-                              type="number"
-                              name="hourlyPrice"
-                              value={formData.hourlyPrice}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
-                              placeholder="$/hr"
-                              min="0"
-                            />
-                          </FormField>
-                        )}
-
-                        <FormField label="Estimated Time" icon={Clock}>
-                          <input
-                            type="text"
-                            name="estimatedTime"
-                            value={formData.estimatedTime}
-                            autoComplete="off"
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
-                            placeholder="e.g., 3 days, 40h"
-                          />
-                        </FormField>
-
-                        <FormField label="Website URL" icon={Link2} error={errors.projectUrl}>
-                          <input
-                            type="text"
-                            name="projectUrl"
-                            value={formData.projectUrl}
-                            onChange={handleInputChange}
-                            autoComplete="off"
-                            className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                              errors.projectUrl ? 'border-red-500 bg-red-50' : projectUrlValid && formData.projectUrl ? 'border-green-500 bg-green-50' : 'border-gray-300 hover:border-blue-300'
-                            }`}
-                            placeholder="https://example.com"
-                          />
-                        </FormField>
-
-                        <FormField label="Category" icon={Tag}>
-                          <div className="relative" ref={categoryDropdownRef}>
-                            <div
-                              onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
-                              className="w-full px-4 py-3 border border-gray-300 rounded-xl cursor-pointer flex items-center justify-between hover:border-blue-300 bg-white"
-                            >
-                              <span className={formData.projectCategory ? 'text-gray-900' : 'text-gray-400'}>
-                                {formData.projectCategory || 'Select category'}
-                              </span>
-                              <ChevronDown size={16} className={`text-gray-400 transition-transform ${categoryDropdownOpen ? 'rotate-180' : ''}`} />
-                            </div>
-
-                            {categoryDropdownOpen && (
-                              <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
-                                {categories.length === 0 ? (
-                                  <div className="px-4 py-3 text-sm text-gray-500">
-                                    No categories available
-                                  </div>
-                                ) : (
-                                  categories.map((cat) => (
-                                    <div
-                                      key={cat._id}
-                                      className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 group transition-colors border-b border-gray-100 last:border-b-0"
-                                    >
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setFormData((prev) => ({ ...prev, projectCategory: cat.name }));
-                                          setCategoryDropdownOpen(false);
-                                        }}
-                                        className="flex-1 text-left text-sm text-gray-700 hover:text-gray-900"
-                                      >
-                                        {cat.name}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleDeleteCategory(cat._id, cat.name, e)}
-                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all ml-2"
-                                        title="Delete category"
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-                                    </div>
-                                  ))
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setShowAddCategory(true);
-                                    setCategoryDropdownOpen(false);
-                                  }}
-                                  className="w-full px-4 py-2.5 flex items-center gap-2 text-blue-600 hover:bg-blue-50 text-sm font-medium transition-colors border-t border-gray-200"
-                                >
-                                  <Plus size={14} />
-                                  Add New Category
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </FormField>
-                      </div>
-
-                      {/* Add Category Form */}
-                      <AnimatePresence>
-                        {showAddCategory && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="mt-4 p-4 bg-pink-50 border border-pink-200 rounded-xl"
-                          >
-                            <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                              <Plus size={14} className="text-pink-600" />
-                              New Category
-                            </h4>
-                            <div className="space-y-3">
-                              <input
-                                type="text"
-                                placeholder="Category name"
-                                value={newCategoryName}
-                                onChange={(e) => setNewCategoryName(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
-                              />
-                              <textarea
-                                placeholder="Description (optional)"
-                                value={newCategoryDescription}
-                                onChange={(e) => setNewCategoryDescription(e.target.value)}
-                                rows={2}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={handleCreateCategory}
-                                  className="flex-1 px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 font-medium"
-                                >
-                                  Create
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => { setShowAddCategory(false); setNewCategoryName(""); setNewCategoryDescription(""); }}
-                                  className="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </section>
+                      <ProjectDetailsSection
+                        projectSource={formData.projectSource}
+                        upworkId={formData.upworkId}
+                        billingCycle={formData.billingCycle}
+                        fixedPrice={formData.fixedPrice}
+                        hourlyPrice={formData.hourlyPrice}
+                        totalProjectBudget={formData.totalProjectBudget}
+                        milestoneWorkflow={formData.milestoneWorkflow}
+                        milestones={formData.milestones}
+                        estimatedTime={formData.estimatedTime}
+                        projectUrl={formData.projectUrl}
+                        projectCategory={formData.projectCategory}
+                        categories={categories}
+                        errors={errors}
+                        projectUrlValid={projectUrlValid}
+                        handleInputChange={handleInputChange}
+                        handleDropdownChange={(name, val) => {
+                          setFormData(prev => {
+                            if (name === 'billingCycle') {
+                              return {
+                                ...prev,
+                                billingCycle: val,
+                                fixedPrice: val === 'fixed' ? prev.fixedPrice : '',
+                                hourlyPrice: ['hr', 'hourly'].includes(val) ? prev.hourlyPrice : '',
+                                milestones: val === 'milestone' && prev.milestones.length === 0
+                                  ? [{ ...createEmptyMilestone(), order: 0 }]
+                                  : prev.milestones
+                              };
+                            }
+                            return { ...prev, [name]: val };
+                          });
+                        }}
+                        handleMilestonesChange={(milestones) => setFormData(prev => ({ ...prev, milestones }))}
+                        handleBudgetChange={(totalProjectBudget) => setFormData(prev => ({ ...prev, totalProjectBudget }))}
+                        handleWorkflowChange={(milestoneWorkflow) => setFormData(prev => ({ ...prev, milestoneWorkflow }))}
+                        handleCategoryChange={(category) => setFormData(prev => ({ ...prev, projectCategory: category }))}
+                        handleDeleteCategory={handleDeleteCategory}
+                        handleCreateCategory={(name, description) => {
+                          setNewCategoryName(name);
+                          setNewCategoryDescription(description);
+                          handleCreateCategory();
+                        }}
+                      />
                     )}
 
-                    {/* Client Information — only for Hired Client */}
+                    {/* Client Information */}
                     {formData.projectType !== 'Inhouse' && (
-                    <section className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-200">
-                      <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                        <Mail size={16} className="text-blue-600" />
-                        Client Information
-                      </h3>
-
-                      <div className="space-y-4">
-                        <FormField label="Client Name" icon={User}>
-                          <input
-                            type="text"
-                            name="clientName"
-                            autoComplete="off"
-                            value={formData.clientName}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
-                            placeholder="Client's full name"
-                          />
-                        </FormField>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormField label="Email Address" icon={Mail} error={errors.clientEmail}>
-                            <input
-                              type="email"
-                              name="clientEmail"
-                              autoComplete="off"
-                              value={formData.clientEmail}
-                              onChange={handleInputChange}
-                              onBlur={() => handleBlur('clientEmail')}
-                              className={`w-full px-4 py-3 border bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                errors.clientEmail ? 'border-red-500' : 'border-gray-300 hover:border-blue-300'
-                              }`}
-                              placeholder="client@company.com"
-                            />
-                          </FormField>
-
-                          <FormField label="Phone Number" icon={Phone} error={errors.clientMobileNumber}>
-                            <div className="flex gap-2">
-                              {/* Country Code */}
-                              <div className="relative" ref={countryDropdownRef}>
-                                <button
-                                  type="button"
-                                  onClick={() => setCountryDropdownOpen(!countryDropdownOpen)}
-                                  className="flex items-center gap-2 px-3 py-3 border border-gray-300 bg-white rounded-xl hover:border-blue-300 h-[50px] min-w-[110px]"
-                                >
-                                  <ReactCountryFlag countryCode={selectedCountry.countryCode} svg style={{ width: '1.2em', height: '1.2em' }} />
-                                  <span className="text-sm font-medium">{selectedCountry.code}</span>
-                                  <ChevronDown size={14} className="text-gray-400" />
-                                </button>
-
-                                <AnimatePresence>
-                                  {countryDropdownOpen && (
-                                    <div
-                                      className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50"
-                                    >
-                                      <div className="p-2 border-b border-gray-100">
-                                        <input
-                                          type="text"
-                                          value={countrySearchQuery}
-                                          onChange={(e) => setCountrySearchQuery(e.target.value)}
-                                          placeholder="Search..."
-                                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        />
-                                      </div>
-                                      <div className="max-h-48 overflow-y-auto">
-                                        {filteredCountries.map((country) => (
-                                          <div
-                                            key={country.code}
-                                            onClick={() => handleCountryCodeChange(country.code)}
-                                            className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-blue-50 ${
-                                              formData.clientCountryCode === country.code ? 'bg-blue-50' : ''
-                                            }`}
-                                          >
-                                            <ReactCountryFlag countryCode={country.countryCode} svg style={{ width: '1.2em', height: '1.2em' }} />
-                                            <span className="flex-1 text-sm">{country.name}</span>
-                                            <span className="text-xs text-gray-500">{country.code}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
-
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={formData.clientMobileNumber}
-                                onChange={handleMobileNumberChange}
-                                onBlur={() => handleBlur('clientMobileNumber')}
-                                placeholder={`${selectedCountry.digits}-digit number`}
-                                className={`flex-1 px-4 py-3 border bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                  errors.clientMobileNumber ? 'border-red-500' : 'border-gray-300 hover:border-blue-300'
-                                }`}
-                              />
-                            </div>
-                          </FormField>
-                        </div>
-                      </div>
-                    </section>
+                      <ClientSection
+                        clientName={formData.clientName}
+                        clientEmail={formData.clientEmail}
+                        clientCountryCode={formData.clientCountryCode}
+                        clientMobileNumber={formData.clientMobileNumber}
+                        errors={errors}
+                        handleInputChange={handleInputChange}
+                        handleBlur={handleBlur}
+                        handleCountryCodeChange={handleCountryCodeChange}
+                        handleMobileNumberChange={handleMobileNumberChange}
+                      />
                     )}
                   </form>
                 )}
 
                 {/* Files Tab */}
                 {activeTab === 'files' && (
-                  <div className="space-y-6">
-                    {/* Files info banner */}
-                    <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <Paperclip size={20} className="text-blue-600" />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="text-sm font-semibold text-gray-900">Attach Project Files</h4>
-                        <p className="text-xs text-gray-600 mt-0.5">
-                          Upload documents, images, videos, and more. Files will be saved when you create the project.
-                        </p>
-                      </div>
-                      {pendingFiles.length > 0 && (
-                        <span className="px-3 py-1.5 bg-white text-blue-700 text-sm font-medium rounded-lg border border-blue-200 shadow-sm">
-                          {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''} ready
-                        </span>
-                      )}
-                    </div>
-
-                    <EnterpriseFileUploader
-                      title="Project Attachments"
-                      description="Drag & drop files here, or click to browse"
-                      helperText="Supported: PDF, Docs, Images, Videos, Spreadsheets, Audio (Max 25MB each)"
-                      pendingFiles={pendingFiles}
-                      existingFiles={[]}
-                      onFilesAdded={handleFilesAdded}
-                      onRemovePending={handleRemovePendingFile}
-                      onRetryUpload={handleRetryUpload}
-                      errors={uploadErrors}
-                      showPreview={true}
-                    />
-                  </div>
+                  <FilesTab
+                    pendingFiles={pendingFiles}
+                    handleFilesAdded={handleFilesAdded}
+                    handleRemovePendingFile={handleRemovePendingFile}
+                    handleRetryUpload={handleRetryUpload}
+                    uploadErrors={uploadErrors}
+                  />
                 )}
 
                 {/* Team Tab */}
                 {activeTab === 'team' && (
-                  <div className="space-y-6">
-                    <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
-                      <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                        <Shield size={16} className="text-purple-600" />
-                        Project manager
-                        {formData.assignees.length > 0 && (
-                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-600 text-xs font-semibold rounded-full">
-                            {formData.assignees.length} selected
-                          </span>
-                        )}
-                      </h3>
-
-                      {managers.length === 0 ? (
-                        <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                          <AlertCircle className="h-5 w-5 text-amber-600" />
-                          <div>
-                            <p className="text-sm font-medium text-amber-800">No Manager Available</p>
-                            <p className="text-xs text-amber-600">Please assign a manager to this department first.</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-3 max-h-96 overflow-y-auto">
-                          {managers.map((manager) => (
-                            <label
-                              key={manager._id}
-                              className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all ${
-                                formData.assignees.includes(manager._id)
-                                  ? 'bg-indigo-50 border-2 border-indigo-300'
-                                  : 'bg-white border border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={formData.assignees.includes(manager._id)}
-                                onChange={() => handleAssigneeChange(manager._id)}
-                                className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                              />
-                              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
-                                {(manager.name || 'U').charAt(0).toUpperCase()}
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold text-gray-900">{manager.name}</span>
-                                  <Shield size={14} className="text-blue-500" />
-                                </div>
-                                <p className="text-sm text-gray-500">{manager.email || 'No email'}</p>
-                                <p className="text-xs text-blue-600 font-medium">Manager</p>
-                              </div>
-                              {formData.assignees.includes(manager._id) && (
-                                <CheckCircle2 className="h-6 w-6 text-indigo-600" />
-                              )}
-                            </label>
-                          ))}
-                        </div>
-                      )}
-
-                      {errors.assignees && (
-                        <p className="text-red-600 text-sm mt-3 flex items-center gap-1">
-                          <AlertCircle size={14} /> {errors.assignees}
-                        </p>
-                      )}
-                    </section>
-
-                    {/* Selected Team Summary */}
-                    {selectedEmployees.length > 0 && (
-                      <section className="bg-white rounded-2xl p-5 border border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Selected Team Members</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {selectedEmployees.map((mgr) => (
-                            <Badge
-                              key={mgr._id}
-                              className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-3 py-2 flex items-center gap-2"
-                            >
-                              <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-semibold">
-                                {(mgr?.name || 'U').charAt(0).toUpperCase()}
-                              </div>
-                              {mgr?.name || 'Unknown'}
-                              <button
-                                type="button"
-                                onClick={() => handleAssigneeChange(mgr._id)}
-                                className="ml-1 hover:bg-white/20 rounded-full p-0.5"
-                              >
-                                <X size={14} />
-                              </button>
-                            </Badge>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-                  </div>
+                  <TeamTab
+                    managers={managers}
+                    assignees={formData.assignees}
+                    selectedEmployees={selectedEmployees}
+                    errors={errors}
+                    handleAssigneeChange={handleAssigneeChange}
+                  />
                 )}
               </div>
             </div>
