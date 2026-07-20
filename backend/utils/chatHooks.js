@@ -33,6 +33,8 @@ import {
   buildSubtaskEventPayload,
   buildNanoEventPayload,
   buildAttachmentEventPayload,
+  buildDepartmentPayload,
+  buildDepartmentUpdatedPayload,
 } from './chatWebhookPayloads.js';
 
 // ─── Event Constants (must match ChatApp's FLOWTASK_EVENTS) ──────────────────
@@ -77,6 +79,9 @@ const EVENTS = {
   NANO_COMPLETED: 'NANO_COMPLETED',
   NANO_DELETED: 'NANO_DELETED',
   ATTACHMENT_ADDED: 'ATTACHMENT_ADDED',
+  DEPARTMENT_CREATED: 'DEPARTMENT_CREATED',
+  DEPARTMENT_UPDATED: 'DEPARTMENT_UPDATED',
+  DEPARTMENT_DELETED: 'DEPARTMENT_DELETED',
 };
 
 export const chatHooks = {
@@ -561,7 +566,25 @@ export const chatHooks = {
     await webhookDispatcher.dispatch(EVENTS.ATTACHMENT_ADDED, payload);
   },
 
-  
+  // ─── Department Hooks ────────────────────────────────────────────────────
+
+  async onDepartmentCreated(department, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildDepartmentPayload(department, 'DEPARTMENT_CREATED', actor);
+    await webhookDispatcher.dispatch(EVENTS.DEPARTMENT_CREATED, payload);
+  },
+
+  async onDepartmentUpdated(department, changes, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildDepartmentUpdatedPayload(department, changes, actor);
+    await webhookDispatcher.dispatch(EVENTS.DEPARTMENT_UPDATED, payload);
+  },
+
+  async onDepartmentDeleted(department, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildDepartmentPayload(department, 'DEPARTMENT_DELETED', actor);
+    await webhookDispatcher.dispatch(EVENTS.DEPARTMENT_DELETED, payload);
+  }
 };
 
 export default chatHooks;

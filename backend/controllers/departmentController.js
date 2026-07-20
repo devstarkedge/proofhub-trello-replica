@@ -10,6 +10,7 @@ import { invalidateAuthCache } from "../middleware/authMiddleware.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
 import { getAssignmentBasedBoardIds, getAssignmentBasedDepartmentIds, userHasCapability, CAPABILITIES } from '../services/permissionService.js';
+import { chatHooks } from '../utils/chatHooks.js';
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -579,6 +580,9 @@ export const createDepartment = asyncHandler(async (req, res, next) => {
     );
   }
 
+  // Dispatch chat webhook
+  chatHooks.onDepartmentCreated(department, req.user).catch(console.error);
+
   res.status(201).json({
     success: true,
     data: department,
@@ -597,15 +601,26 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Department not found", 404));
   }
 
-  // Store old managers for cleanup
   const oldManagers = department.managers || [];
+  
+  // Track changes for webhook
+  const changes = {};
 
   // Update fields
-  if (name) department.name = name;
-  if (description !== undefined) department.description = description;
+  if (name && department.name !== name) {
+    changes.name = name;
+    department.name = name;
+  }
+  if (description !== undefined && department.description !== description) {
+    changes.description = description;
+    department.description = description;
+  }
   if (managers !== undefined) department.managers = managers;
   if (members) department.members = members;
-  if (isActive !== undefined) department.isActive = isActive;
+  if (isActive !== undefined && department.isActive !== isActive) {
+    changes.isActive = isActive;
+    department.isActive = isActive;
+  }
 
   await department.save();
 
@@ -635,6 +650,11 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
   // Populate managers data before returning
   await department.populate("managers", "name email");
 
+  // Dispatch chat webhook if there were substantive changes
+  if (Object.keys(changes).length > 0) {
+    chatHooks.onDepartmentUpdated(department, changes, req.user).catch(console.error);
+  }
+
   res.status(200).json({
     success: true,
     data: department,
@@ -659,6 +679,9 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
 
   // Actually delete the department from database
   await Department.findByIdAndDelete(req.params.id);
+
+  // Dispatch chat webhook
+  chatHooks.onDepartmentDeleted(department, req.user).catch(console.error);
 
   res.status(200).json({
     success: true,
