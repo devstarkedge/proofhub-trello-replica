@@ -12,7 +12,7 @@ const milestoneSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true, maxlength: 200 },
   amountCents: { type: Number, required: true, min: 1, max: Number.MAX_SAFE_INTEGER },
   approvedAmountCents: { type: Number, required: true, min: 0, max: Number.MAX_SAFE_INTEGER, default: 0 },
-  dueDate: { type: Date, required: true },
+  dueDate: { type: Date, default: null },
   order: { type: Number, required: true, min: 0 },
   status: {
     type: String,

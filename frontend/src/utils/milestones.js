@@ -22,7 +22,6 @@ export const validateMilestoneSchedule = ({ totalProjectBudget, milestones = [] 
   for (let index = 0; index < milestones.length; index += 1) {
     const milestone = milestones[index];
     if (!String(milestone.title || '').trim()) return `Milestone ${index + 1} title is required`;
-    if (!milestone.dueDate) return `Milestone ${index + 1} due date is required`;
     const amountCents = moneyToCents(milestone.amount);
     if (!amountCents || amountCents <= 0) return `Milestone ${index + 1} amount must be greater than zero`;
     totalCents += amountCents;

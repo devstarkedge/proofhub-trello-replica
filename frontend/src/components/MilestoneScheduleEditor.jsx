@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
-import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ArrowDown, ArrowUp, Calendar, Plus, Trash2 } from 'lucide-react';
 import { createEmptyMilestone, moneyToCents } from '../utils/milestones';
+import DatePickerModal from './DatePickerModal';
 
 const formatCurrency = (cents) => new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -9,6 +10,15 @@ const formatCurrency = (cents) => new Intl.NumberFormat('en-US', {
 }).format((cents || 0) / 100);
 
 const isMoneyDraft = (value) => /^\d*(?:\.\d{0,2})?$/.test(value);
+
+const formatDisplayDate = (value) => {
+  if (!value) return 'Select date';
+  return new Date(`${String(value).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+};
 
 const MilestoneScheduleEditor = ({
   totalProjectBudget,
@@ -19,11 +29,19 @@ const MilestoneScheduleEditor = ({
   onMilestonesChange,
   error
 }) => {
+  const [datePickerIndex, setDatePickerIndex] = useState(null);
   const totals = useMemo(() => {
     const budgetCents = moneyToCents(totalProjectBudget) || 0;
     const milestoneCents = milestones.reduce((sum, milestone) => sum + (moneyToCents(milestone.amount) || 0), 0);
     return { budgetCents, milestoneCents, matches: budgetCents > 0 && budgetCents === milestoneCents };
   }, [totalProjectBudget, milestones]);
+  const todayDate = useMemo(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
   const hasApprovals = milestones.some((milestone) => Number(milestone.approvedAmount || 0) > 0);
 
   const updateMilestone = (index, changes) => {
@@ -77,7 +95,7 @@ const MilestoneScheduleEditor = ({
         <div className="hidden grid-cols-[minmax(12rem,2fr)_minmax(8rem,1fr)_minmax(10rem,1fr)_auto] gap-3 px-3 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
           <span>Milestone Name</span>
           <span>Amount</span>
-          <span>Due Date</span>
+          <span>Due Date (Optional)</span>
           <span className="text-center">Actions</span>
         </div>
         {milestones.map((milestone, index) => {
@@ -122,16 +140,20 @@ const MilestoneScheduleEditor = ({
                     />
                   </div>
                 </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold text-gray-600 md:sr-only">Due Date</span>
-                  <input
-                    type="date"
-                    value={milestone.dueDate ? String(milestone.dueDate).slice(0, 10) : ''}
-                    onChange={(event) => updateMilestone(index, { dueDate: event.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-                    aria-label={`Milestone ${index + 1} due date`}
-                  />
-                </label>
+                <div className="space-y-1">
+                  <span className="text-xs font-semibold text-gray-600 md:sr-only">Due Date (Optional)</span>
+                  <button
+                    type="button"
+                    onClick={() => setDatePickerIndex(index)}
+                    className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm transition-colors hover:border-amber-400 focus:border-amber-500 focus:outline-none"
+                    aria-label={`Select milestone ${index + 1} due date`}
+                  >
+                    <span className={milestone.dueDate ? 'text-gray-900' : 'text-gray-400'}>
+                      {formatDisplayDate(milestone.dueDate)}
+                    </span>
+                    <Calendar size={16} className="shrink-0 text-gray-400" />
+                  </button>
+                </div>
                 <div className="flex items-center justify-end gap-1 md:self-center" aria-label={`Milestone ${index + 1} actions`}>
                   <button
                     type="button"
@@ -185,11 +207,22 @@ const MilestoneScheduleEditor = ({
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-gray-600">Milestones: {formatCurrency(totals.milestoneCents)} / Budget: {formatCurrency(totals.budgetCents)}</span>
-        <span className={totals.matches ? 'font-semibold text-emerald-600' : 'font-semibold text-red-600'}>
+        <span className={totals.matches ? 'font-semibold text-emerald-600' : 'font-semibold text-indigo-600'}>
           {totals.matches ? 'Budget balanced' : 'Amounts must match'}
         </span>
       </div>
       {error && <p className="text-xs font-medium text-red-600">{error}</p>}
+
+      <DatePickerModal
+        isOpen={datePickerIndex !== null}
+        onClose={() => setDatePickerIndex(null)}
+        onSelectDate={(date) => {
+          if (datePickerIndex !== null) updateMilestone(datePickerIndex, { dueDate: date || '' });
+        }}
+        selectedDate={datePickerIndex !== null ? milestones[datePickerIndex]?.dueDate : null}
+        title="Select Milestone Due Date"
+        minDate={todayDate}
+      />
     </div>
   );
 };

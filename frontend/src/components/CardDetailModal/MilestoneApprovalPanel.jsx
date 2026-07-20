@@ -44,10 +44,11 @@ const MilestoneApprovalPanel = ({ project, source }) => {
   const [collapsedMilestoneIds, setCollapsedMilestoneIds] = useState(() => new Set());
   const idempotencyKey = useRef(null);
   const isMilestoneProject = String(project?.billingCycle || '').toLowerCase() === 'milestone';
+  const isEmployee = String(user?.role || '').toLowerCase() === 'employee';
   const canApprove = ['admin', 'manager'].includes(user?.role?.toLowerCase());
 
   const loadMilestones = useCallback(async () => {
-    if (!isMilestoneProject || !project?._id) return;
+    if (!isMilestoneProject || isEmployee || !project?._id) return;
     setLoading(true);
     try {
       const response = await Database.getProjectMilestones(project._id);
@@ -61,7 +62,7 @@ const MilestoneApprovalPanel = ({ project, source }) => {
     } finally {
       setLoading(false);
     }
-  }, [isMilestoneProject, project?._id]);
+  }, [isEmployee, isMilestoneProject, project?._id]);
 
   useEffect(() => {
     loadMilestones();
@@ -132,7 +133,7 @@ const MilestoneApprovalPanel = ({ project, source }) => {
     }
   };
 
-  if (!isMilestoneProject) return null;
+  if (!isMilestoneProject || isEmployee) return null;
 
   return (
     <>

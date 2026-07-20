@@ -28,10 +28,11 @@ const parseMilestones = (value) => {
   }
 };
 
-const normalizeDate = (value, fieldName) => {
+const normalizeOptionalDate = (value, fieldName) => {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
   const date = new Date(value);
-  if (!value || Number.isNaN(date.getTime())) {
-    throw new ErrorResponse(`${fieldName} is required and must be a valid date`, 400);
+  if (Number.isNaN(date.getTime())) {
+    throw new ErrorResponse(`${fieldName} must be a valid date when provided`, 400);
   }
   return date;
 };
@@ -69,7 +70,7 @@ export const normalizeMilestoneSchedule = ({
           throw new ErrorResponse(error.message, 400);
         }
       })(),
-      dueDate: normalizeDate(milestone?.dueDate, `Milestone ${index + 1} due date`),
+      dueDate: normalizeOptionalDate(milestone?.dueDate, `Milestone ${index + 1} due date`),
       requestedOrder: Number.isInteger(Number(milestone?.order)) ? Number(milestone.order) : index
     }))
     .sort((a, b) => a.requestedOrder - b.requestedOrder)

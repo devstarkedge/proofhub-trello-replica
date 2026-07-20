@@ -101,6 +101,7 @@ const TimeTrackingSection = ({
 }) => {
   const { user } = useContext(AuthContext);
   const isMilestoneProject = String(project?.billingCycle || '').toLowerCase() === 'milestone';
+  const isEmployee = String(user?.role || '').toLowerCase() === 'employee';
 
   // Get today's date in YYYY-MM-DD format for max date restriction
   const todayDate = useMemo(() => {
@@ -319,7 +320,9 @@ const TimeTrackingSection = ({
               </div>
 
               <div className="flex-grow overflow-y-auto p-2">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className={`grid grid-cols-1 gap-4 ${
+                  isMilestoneProject && isEmployee ? 'lg:grid-cols-2' : 'lg:grid-cols-3'
+                }`}>
                   {/* Estimation Time */}
                   <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-100">
                     <div className="flex items-center gap-2 mb-3">
@@ -885,7 +888,7 @@ const TimeTrackingSection = ({
                     )}
                   </div>
 
-                  <MilestoneApprovalPanel project={project} source={billingSource} />
+                  {!isEmployee && <MilestoneApprovalPanel project={project} source={billingSource} />}
 
                   {/* Milestone projects recognize revenue through paid milestones, not manual billed-time entry. */}
                   {!isMilestoneProject && (
