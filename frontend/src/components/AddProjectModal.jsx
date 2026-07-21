@@ -28,91 +28,11 @@ import ClientSection from './ProjectModals/sections/ClientSection';
 import FilesTab from './ProjectModals/tabs/FilesTab';
 import TeamTab from './ProjectModals/tabs/TeamTab';
 
-// Country codes data
-const COUNTRY_CODES = [
-  { code: "+91", country: "IND", countryCode: "IN", name: "India", digits: 10 },
-  { code: "+1", country: "USA", countryCode: "US", name: "United States", digits: 10 },
-  { code: "+44", country: "UK", countryCode: "GB", name: "United Kingdom", digits: 10 },
-  { code: "+61", country: "AUS", countryCode: "AU", name: "Australia", digits: 9 },
-  { code: "+86", country: "CHN", countryCode: "CN", name: "China", digits: 11 },
-  { code: "+81", country: "JPN", countryCode: "JP", name: "Japan", digits: 10 },
-  { code: "+49", country: "DEU", countryCode: "DE", name: "Germany", digits: 10 },
-  { code: "+33", country: "FRA", countryCode: "FR", name: "France", digits: 9 },
-  { code: "+971", country: "UAE", countryCode: "AE", name: "UAE", digits: 9 },
-  { code: "+65", country: "SGP", countryCode: "SG", name: "Singapore", digits: 8 },
-  { code: "+55", country: "BRA", countryCode: "BR", name: "Brazil", digits: 11 },
-  { code: "+7", country: "RUS", countryCode: "RU", name: "Russia", digits: 10 },
-  { code: "+39", country: "ITA", countryCode: "IT", name: "Italy", digits: 10 },
-  { code: "+34", country: "ESP", countryCode: "ES", name: "Spain", digits: 9 },
-  { code: "+82", country: "KOR", countryCode: "KR", name: "South Korea", digits: 10 },
-  { code: "+92", country: "PAK", countryCode: "PK", name: "Pakistan", digits: 10 },
-  { code: "+880", country: "BGD", countryCode: "BD", name: "Bangladesh", digits: 10 },
-  { code: "+27", country: "ZAF", countryCode: "ZA", name: "South Africa", digits: 9 },
-  { code: "+60", country: "MYS", countryCode: "MY", name: "Malaysia", digits: 9 },
-  { code: "+63", country: "PHL", countryCode: "PH", name: "Philippines", digits: 10 },
-  { code: "+966", country: "SAU", countryCode: "SA", name: "Saudi Arabia", digits: 9 },
-  { code: "+64", country: "NZL", countryCode: "NZ", name: "New Zealand", digits: 9 },
-  { code: "+41", country: "CHE", countryCode: "CH", name: "Switzerland", digits: 9 },
-  { code: "+31", country: "NLD", countryCode: "NL", name: "Netherlands", digits: 9 },
-  { code: "+46", country: "SWE", countryCode: "SE", name: "Sweden", digits: 9 },
-];
-
-// Validation regex
-const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-const PROJECT_URL_REGEX = /^https?:\/\/([a-z0-9-]+\.)+[a-z]{2,}(?:[:0-9]*)?(?:\/\S*)?$/i;
-
-// Drawer variants
-const drawerVariants = {
-  hidden: { x: '100%', opacity: 0 },
-  visible: { 
-    x: 0, 
-    opacity: 1,
-    transition: { type: 'spring', damping: 30, stiffness: 300 } 
-  },
-  exit: { x: '100%', opacity: 0, transition: { duration: 0.2 } }
-};
-
-// Form field component — CSS transitions instead of framer-motion for error messages
-const FormField = memo(({ label, icon: Icon, required, error, helperText, children, className = '' }) => (
-  <div className={`space-y-2 ${className}`}>
-    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-      {Icon && <Icon className="h-4 w-4 text-blue-600" />}
-      {label}
-      {required && <span className="text-red-500">*</span>}
-    </label>
-    {children}
-    {helperText && !error && (
-      <p className="text-xs text-gray-500">{helperText}</p>
-    )}
-    <p
-      className={`text-red-600 text-sm flex items-center gap-1 transition-all duration-200 ${
-        error ? 'opacity-100 max-h-8' : 'opacity-0 max-h-0 overflow-hidden'
-      }`}
-    >
-      <AlertCircle size={14} /> {error || ''}
-    </p>
-  </div>
-));
-
-// Tab component
-const Tab = memo(({ tabs, activeTab, onTabChange }) => (
-  <div className="flex gap-2 px-6">
-    {tabs.map((tab) => (
-      <button
-        key={tab.id}
-        onClick={() => onTabChange(tab.id)}
-        className={`flex items-center gap-2 px-6 py-3 rounded-t-xl text-sm font-semibold transition-all ${
-          activeTab === tab.id
-            ? 'bg-[#f4f5f7] text-blue-600'
-            : 'text-white/80 hover:text-white hover:bg-white/10'
-        }`}
-      >
-        <tab.icon size={16} />
-        {tab.label}
-      </button>
-    ))}
-  </div>
-));
+import { TabNavigation as Tab } from './ProjectModals/shared/TabNavigation';
+import { COUNTRY_CODES, EMAIL_REGEX, PROJECT_URL_REGEX } from './ProjectModals/shared/constants';
+import { drawerVariants } from './ProjectModals/shared/animations';
+import FormField from './ProjectModals/sections/FormField';
+import { useFileUploadSimulation } from './ProjectModals/shared/useFileUploadSimulation';
 
 const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, departmentManagers = [] }) => {
   const { user } = useContext(AuthContext);
@@ -165,8 +85,16 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const [coverImagePreview, setCoverImagePreview] = useState(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showDueDatePicker, setShowDueDatePicker] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState([]);
-  const [uploadErrors, setUploadErrors] = useState([]);
+  const {
+    pendingFiles,
+    setPendingFiles,
+    uploadErrors,
+    setUploadErrors,
+    handleFilesAdded,
+    handleRemovePendingFile,
+    handleRetryUpload,
+    updatePendingFile,
+  } = useFileUploadSimulation();
   const [draftStatus, setDraftStatus] = useState("");
   const draftTimerRef = useRef(null);
   const urlValidationTimer = useRef(null);
@@ -174,7 +102,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const categoryDropdownRef = useRef(null);
   const visibilityDropdownRef = useRef(null);
   const projectTypeDropdownRef = useRef(null);
-  const uploadProgressTimers = useRef(new Map());
+
 
   // Filter countries
   const filteredCountries = useMemo(() => {
@@ -239,19 +167,8 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       setUploadErrors([]);
       setDraftStatus("");
       setActiveTab('details');
-      // Clear progress timers
-      uploadProgressTimers.current.forEach((timer) => clearInterval(timer));
-      uploadProgressTimers.current.clear();
     }
   }, [isOpen, initialFormData]);
-
-  // Cleanup progress timers on unmount
-  useEffect(() => {
-    return () => {
-      uploadProgressTimers.current.forEach((timer) => clearInterval(timer));
-      uploadProgressTimers.current.clear();
-    };
-  }, []);
 
   // Restore draft
   useEffect(() => {
@@ -477,68 +394,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       setErrors((prev) => ({ ...prev, assignees: "" }));
     }
   }, [errors.assignees]);
-
-  // Start progress simulation for a file (animates 0% -> 90%)
-  const startProgressSimulation = useCallback((id) => {
-    if (uploadProgressTimers.current.has(id)) return;
-    const timer = setInterval(() => {
-      setPendingFiles(prev => prev.map(fileItem => {
-        if (fileItem.id !== id || fileItem.status !== 'uploading') return fileItem;
-        const current = Number(fileItem.progress) || 0;
-        if (current >= 90) {
-          // Stop at 90%, mark as ready for actual upload
-          clearInterval(uploadProgressTimers.current.get(id));
-          uploadProgressTimers.current.delete(id);
-          return { ...fileItem, progress: 90, status: 'ready' };
-        }
-        const increment = 3 + Math.round(Math.random() * 5);
-        return { ...fileItem, progress: Math.min(90, current + increment) };
-      }));
-    }, 300);
-    uploadProgressTimers.current.set(id, timer);
-  }, []);
-
-  // Stop progress simulation for a file
-  const stopProgressSimulation = useCallback((id) => {
-    const timer = uploadProgressTimers.current.get(id);
-    if (timer) {
-      clearInterval(timer);
-      uploadProgressTimers.current.delete(id);
-    }
-  }, []);
-
-  const handleFilesAdded = useCallback((files) => {
-    const newItems = files.map((file) => ({
-      id: `${file.name}-${Date.now()}-${Math.random()}`,
-      file,
-      progress: 0,
-      status: 'uploading' // Start as uploading to show progress bar
-    }));
-    setPendingFiles((prev) => [...prev, ...newItems]);
-    setUploadErrors([]);
-
-    // Start progress simulation for each file
-    newItems.forEach(item => startProgressSimulation(item.id));
-  }, [startProgressSimulation]);
-
-  const handleRemovePendingFile = useCallback((item) => {
-    // Stop any running progress simulation
-    stopProgressSimulation(item.id);
-    setPendingFiles((prev) => prev.filter((f) => f.id !== item.id));
-  }, [stopProgressSimulation]);
-
-  const updatePendingFile = useCallback((id, updates) => {
-    setPendingFiles((prev) => prev.map((fileItem) => (
-      fileItem.id === id ? { ...fileItem, ...updates } : fileItem
-    )));
-  }, []);
-
-  // Retry failed upload
-  const handleRetryUpload = useCallback((item) => {
-    // Reset status and restart progress simulation
-    updatePendingFile(item.id, { status: 'uploading', progress: 0, error: null });
-    startProgressSimulation(item.id);
-  }, [updatePendingFile, startProgressSimulation]);
 
   const validateForm = useCallback(() => {
     const newErrors = {};

@@ -4,8 +4,10 @@ import EnterpriseFileUploader from '../../EnterpriseFileUploader';
 
 const FilesTab = memo(({
   pendingFiles,
+  existingFiles = [],
   handleFilesAdded,
   handleRemovePendingFile,
+  handleRemoveExisting = null,
   handleRetryUpload,
   uploadErrors
 }) => {
@@ -22,9 +24,9 @@ const FilesTab = memo(({
             Upload documents, images, videos, and more. Files will be saved when you create the project.
           </p>
         </div>
-        {pendingFiles.length > 0 && (
+        {(pendingFiles.length > 0 || existingFiles.length > 0) && (
           <span className="px-3 py-1.5 bg-white text-blue-700 text-sm font-medium rounded-lg border border-blue-200 shadow-sm">
-            {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''} ready
+            {pendingFiles.length + existingFiles.length} file{(pendingFiles.length + existingFiles.length) !== 1 ? 's' : ''} ready
           </span>
         )}
       </div>
@@ -34,9 +36,10 @@ const FilesTab = memo(({
         description="Drag & drop files here, or click to browse"
         helperText="Supported: PDF, Docs, Images, Videos, Spreadsheets, Audio (Max 25MB each)"
         pendingFiles={pendingFiles}
-        existingFiles={[]}
+        existingFiles={existingFiles}
         onFilesAdded={handleFilesAdded}
         onRemovePending={handleRemovePendingFile}
+        onRemoveExisting={handleRemoveExisting}
         onRetryUpload={handleRetryUpload}
         errors={uploadErrors}
         showPreview={true}

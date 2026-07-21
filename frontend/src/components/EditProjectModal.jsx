@@ -31,117 +31,11 @@ import FilesTab from './ProjectModals/tabs/FilesTab';
 import TeamTab from './ProjectModals/tabs/TeamTab';
 import { createEmptyMilestone, validateMilestoneSchedule } from '../utils/milestones';
 
-// Enterprise drawer variants
-const drawerVariants = {
-  hidden: { x: '100%', opacity: 0 },
-  visible: { 
-    x: 0, 
-    opacity: 1,
-    transition: { 
-      type: 'spring',
-      damping: 30,
-      stiffness: 300
-    } 
-  },
-  exit: { 
-    x: '100%', 
-    opacity: 0,
-    transition: { duration: 0.2 } 
-  }
-};
-
-const overlayVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1 },
-  exit: { opacity: 0 }
-};
-
-// Tab navigation component
-const TabNavigation = React.memo(({ tabs, activeTab, onTabChange }) => (
-  <div className="flex gap-2 px-6">
-    {tabs.map((tab) => (
-      <button
-        key={tab.id}
-        onClick={() => onTabChange(tab.id)}
-        className={`flex items-center gap-2 px-6 py-3 rounded-t-xl text-sm font-semibold transition-all ${
-          activeTab === tab.id
-            ? 'bg-[#f4f5f7] text-blue-600'
-            : 'text-white/80 hover:text-white hover:bg-white/10'
-        }`}
-      >
-        <tab.icon size={16} />
-        {tab.label}
-        {tab.badge && (
-          <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-600 text-xs font-semibold rounded-full">
-            {tab.badge}
-          </span>
-        )}
-      </button>
-    ))}
-  </div>
-));
-
-// Status badge component
-const StatusBadge = React.memo(({ status }) => {
-  const statusConfig = {
-    planning: { color: 'bg-gray-100 text-gray-700 border-gray-300', label: 'Planning' },
-    'in-progress': { color: 'bg-blue-100 text-blue-700 border-blue-300', label: 'In Progress' },
-    completed: { color: 'bg-green-100 text-green-700 border-green-300', label: 'Completed' },
-    'on-hold': { color: 'bg-yellow-100 text-yellow-700 border-yellow-300', label: 'On Hold' }
-  };
-  const config = statusConfig[status] || statusConfig.planning;
-  return (
-    <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${config.color}`}>
-      {config.label}
-    </span>
-  );
-});
-
-// Priority badge component
-const PriorityBadge = React.memo(({ priority }) => {
-  const priorityConfig = {
-    low: { color: 'bg-emerald-100 text-emerald-700', label: 'Low' },
-    medium: { color: 'bg-amber-100 text-amber-700', label: 'Medium' },
-    high: { color: 'bg-orange-100 text-orange-700', label: 'High' },
-    urgent: { color: 'bg-red-100 text-red-700', label: 'Urgent' }
-  };
-  const config = priorityConfig[priority] || priorityConfig.medium;
-  return (
-    <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${config.color}`}>
-      {config.label}
-    </span>
-  );
-});
-
-// Form field component with validation — CSS transitions for errors
-const FormField = React.memo(({ 
-  label, 
-  icon: Icon, 
-  required, 
-  error, 
-  helperText, 
-  children,
-  className = ''
-}) => (
-  <div className={`space-y-2 ${className}`}>
-    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-      {Icon && <Icon className="h-4 w-4 text-indigo-600" />}
-      {label}
-      {required && <span className="text-red-500">*</span>}
-    </label>
-    {children}
-    {helperText && !error && (
-      <p className="text-xs text-gray-500">{helperText}</p>
-    )}
-    <p
-      className={`text-red-600 text-sm flex items-center gap-1 transition-all duration-200 ${
-        error ? 'opacity-100 max-h-8' : 'opacity-0 max-h-0 overflow-hidden'
-      }`}
-    >
-      <AlertCircle size={14} /> {error || ''}
-    </p>
-  </div>
-));
+import { TabNavigation } from './ProjectModals/shared/TabNavigation';
+import { StatusBadge, PriorityBadge } from './ProjectModals/shared/Badges';
+import { drawerVariants, overlayVariants } from './ProjectModals/shared/animations';
+import FormField from './ProjectModals/sections/FormField';
+import { useFileUploadSimulation } from './ProjectModals/shared/useFileUploadSimulation';
 
 // Main Enterprise Edit Project Modal
 const EnterpriseEditProjectModal = React.memo(({ 
@@ -185,15 +79,26 @@ const EnterpriseEditProjectModal = React.memo(({
   });
 
   const managers = useMemo(() => departmentManagers || [], [departmentManagers]);
+  const selectedEmployees = useMemo(() =>
+    formData.assignees.map(id => managers.find(m => m._id === id)).filter(Boolean),
+    [formData.assignees, managers]
+  );
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   
   // File management state
-  const [pendingFiles, setPendingFiles] = useState([]);
+  const {
+    pendingFiles,
+    setPendingFiles,
+    uploadErrors,
+    setUploadErrors,
+    handleRemovePendingFile,
+    updatePendingFile,
+    startProgressSimulation,
+    stopProgressSimulation,
+  } = useFileUploadSimulation();
   const [projectFiles, setProjectFiles] = useState([]);
-  const [uploadErrors, setUploadErrors] = useState([]);
-  const uploadProgressTimers = useRef(new Map());
   
   // Activity state
   const [activityLog, setActivityLog] = useState([]);
@@ -406,9 +311,6 @@ const EnterpriseEditProjectModal = React.memo(({
   }, []);
 
   // File handlers
-  const handleRemovePendingFile = useCallback((item) => {
-    setPendingFiles(prev => prev.filter(f => f.id !== item.id));
-  }, []);
 
   const handleDeleteExistingFile = useCallback(async (fileItem) => {
     try {
@@ -421,40 +323,6 @@ const EnterpriseEditProjectModal = React.memo(({
     }
   }, []);
 
-  const updatePendingFile = useCallback((id, updates) => {
-    setPendingFiles(prev => prev.map(fileItem => (
-      fileItem.id === id ? { ...fileItem, ...updates } : fileItem
-    )));
-  }, []);
-
-  const startProgressSimulation = useCallback((id) => {
-    if (uploadProgressTimers.current.has(id)) return;
-    const timer = setInterval(() => {
-      setPendingFiles(prev => prev.map(fileItem => {
-        if (fileItem.id !== id || fileItem.status !== 'uploading') return fileItem;
-        const current = Number(fileItem.progress) || 0;
-        if (current >= 90) return fileItem;
-        const increment = 3 + Math.round(Math.random() * 5);
-        return { ...fileItem, progress: Math.min(90, current + increment) };
-      }));
-    }, 300);
-    uploadProgressTimers.current.set(id, timer);
-  }, []);
-
-  const stopProgressSimulation = useCallback((id) => {
-    const timer = uploadProgressTimers.current.get(id);
-    if (timer) {
-      clearInterval(timer);
-      uploadProgressTimers.current.delete(id);
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      uploadProgressTimers.current.forEach((timer) => clearInterval(timer));
-      uploadProgressTimers.current.clear();
-    };
-  }, []);
 
   const uploadPendingFile = useCallback(async (item) => {
     const projectId = project?._id || project?.id;
@@ -891,104 +759,26 @@ const EnterpriseEditProjectModal = React.memo(({
 
                   {/* Files Tab */}
                   {activeTab === 'files' && (
-                    <div className="space-y-6">
-                      {/* Files info banner */}
-                      <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                          <Paperclip size={20} className="text-indigo-600" />
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="text-sm font-semibold text-gray-900">Project Files</h4>
-                          <p className="text-xs text-gray-600 mt-0.5">
-                            Manage attachments for this project. Click any file to preview.
-                          </p>
-                        </div>
-                        {(pendingFiles.length > 0 || projectFiles.length > 0) && (
-                          <span className="px-3 py-1.5 bg-white text-indigo-700 text-sm font-medium rounded-lg border border-indigo-200 shadow-sm">
-                            {pendingFiles.length + projectFiles.length} file{(pendingFiles.length + projectFiles.length) !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
-
-                      <EnterpriseFileUploader
-                        title="Project Attachments"
-                        description="Drag & drop files here, or click to browse"
-                        helperText="Supported: PDF, Docs, Images, Videos, Spreadsheets, Audio (Max 25MB each)"
-                        pendingFiles={pendingFiles}
-                        existingFiles={projectFiles}
-                        onFilesAdded={handleFilesAdded}
-                        onRemovePending={handleRemovePendingFile}
-                        onRemoveExisting={handleDeleteExistingFile}
-                        errors={uploadErrors}
-                        showVersionHistory={true}
-                        showPreview={true}
-                      />
-                    </div>
+                    <FilesTab
+                      pendingFiles={pendingFiles}
+                      existingFiles={projectFiles}
+                      handleFilesAdded={handleFilesAdded}
+                      handleRemovePendingFile={handleRemovePendingFile}
+                      handleRemoveExisting={handleDeleteExistingFile}
+                      uploadErrors={uploadErrors}
+                      showVersionHistory={true}
+                    />
                   )}
 
                   {/* Team Tab */}
                   {activeTab === 'team' && (
-                    <div className="space-y-6">
-                      <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
-                        <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                          <Shield size={16} className="text-purple-600" />
-                          Project Manager
-                          <span className="text-xs text-gray-500 font-normal">
-                            ({formData.assignees.length} assigned)
-                          </span>
-                        </h3>
-                        
-                        {managers.length === 0 ? (
-                          <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                            <AlertCircle className="h-5 w-5 text-amber-600" />
-                            <div>
-                              <p className="text-sm font-medium text-amber-800">No Manager Available</p>
-                              <p className="text-xs text-amber-600">Please assign a manager to this department first.</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-3 max-h-96 overflow-y-auto">
-                            {managers.map((manager) => (
-                              <label
-                                key={manager._id}
-                                className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all ${
-                                  formData.assignees.includes(manager._id)
-                                    ? 'bg-indigo-50 border-2 border-indigo-300'
-                                    : 'bg-white border border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={formData.assignees.includes(manager._id)}
-                                  onChange={() => handleAssigneeChange(manager._id)}
-                                  className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                />
-                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold">
-                                  {(manager.name || 'U').charAt(0).toUpperCase()}
-                                </div>
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-gray-900">{manager.name}</span>
-                                    <Shield size={14} className="text-blue-500" />
-                                  </div>
-                                  <p className="text-sm text-gray-500">{manager.email || 'No email'}</p>
-                                  <p className="text-xs text-blue-600 font-medium">Manager</p>
-                                </div>
-                                {formData.assignees.includes(manager._id) && (
-                                  <CheckCircle2 className="h-6 w-6 text-indigo-600" />
-                                )}
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                        
-                        {errors.assignees && (
-                          <p className="text-red-600 text-sm mt-3 flex items-center gap-1">
-                            <AlertCircle size={14} /> {errors.assignees}
-                          </p>
-                        )}
-                      </section>
-                    </div>
+                    <TeamTab
+                      managers={managers}
+                      assignees={formData.assignees}
+                      selectedEmployees={selectedEmployees}
+                      errors={errors}
+                      handleAssigneeChange={handleAssigneeChange}
+                    />
                   )}
 
                   {/* Activity Tab */}

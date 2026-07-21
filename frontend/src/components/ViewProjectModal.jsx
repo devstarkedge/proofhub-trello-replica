@@ -28,76 +28,9 @@ import ActivityTimeline from './ActivityTimeline';
 import HtmlContent from './ui/HtmlContent';
 import ViewDetailsTab from './ProjectModals/tabs/ViewDetailsTab';
 
-const drawerVariants = {
-  hidden: { x: '100%', opacity: 0 },
-  visible: {
-    x: 0,
-    opacity: 1,
-    transition: { type: 'spring', damping: 30, stiffness: 300 }
-  },
-  exit: { x: '100%', opacity: 0, transition: { duration: 0.2 } }
-};
-
-const overlayVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1 },
-  exit: { opacity: 0 }
-};
-
-const StatusBadge = React.memo(({ status }) => {
-  const statusConfig = {
-    planning: { color: 'bg-gray-100 text-gray-700 border-gray-300', label: 'Planning' },
-    'in-progress': { color: 'bg-blue-100 text-blue-700 border-blue-300', label: 'In Progress' },
-    completed: { color: 'bg-green-100 text-green-700 border-green-300', label: 'Completed' },
-    'on-hold': { color: 'bg-yellow-100 text-yellow-700 border-yellow-300', label: 'On Hold' }
-  };
-  const config = statusConfig[status] || statusConfig.planning;
-  return (
-    <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${config.color}`}>
-      {config.label}
-    </span>
-  );
-});
-
-const PriorityBadge = React.memo(({ priority }) => {
-  const priorityConfig = {
-    low: { color: 'bg-emerald-100 text-emerald-700', label: 'Low' },
-    medium: { color: 'bg-amber-100 text-amber-700', label: 'Medium' },
-    high: { color: 'bg-orange-100 text-orange-700', label: 'High' },
-    urgent: { color: 'bg-red-100 text-red-700', label: 'Urgent' }
-  };
-  const config = priorityConfig[priority] || priorityConfig.medium;
-  return (
-    <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${config.color}`}>
-      {config.label}
-    </span>
-  );
-});
-
-const TabNavigation = React.memo(({ tabs, activeTab, onTabChange }) => (
-  <div className="flex gap-1 p-1 bg-white/10 rounded-xl backdrop-blur-sm">
-    {tabs.map((tab) => (
-      <button
-        key={tab.id}
-        onClick={() => onTabChange(tab.id)}
-        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-          activeTab === tab.id
-            ? 'bg-white text-indigo-600 shadow-sm'
-            : 'text-white/80 hover:text-white hover:bg-white/10'
-        }`}
-      >
-        <tab.icon size={16} />
-        {tab.label}
-        {tab.badge && (
-          <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-600 text-xs font-semibold rounded-full">
-            {tab.badge}
-          </span>
-        )}
-      </button>
-    ))}
-  </div>
-));
-
+import { drawerVariants, overlayVariants } from './ProjectModals/shared/animations';
+import { StatusBadge, PriorityBadge } from './ProjectModals/shared/Badges';
+import { TabNavigation } from './ProjectModals/shared/TabNavigation';
 const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [project, setProject] = useState(null);
@@ -249,7 +182,7 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
               </div>
 
               <div className="mt-4">
-                <TabNavigation tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+                <TabNavigation tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} variant="view" />
               </div>
             </div>
 
