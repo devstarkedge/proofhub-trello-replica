@@ -225,6 +225,7 @@ app.get('*', (req, res, next) => {
 import seedAdmin from './utils/seed.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
 import { initQueues, shutdownQueues } from './queues/queueManager.js';
+import { startAnalyticsReportScheduler, stopAnalyticsReportScheduler } from './schedulers/analyticsReportScheduler.js';
 
 mongoose.connect(config.db.uri, {
   maxPoolSize: config.db.maxPoolSize,
@@ -239,6 +240,7 @@ mongoose.connect(config.db.uri, {
     logger.info(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
 
     seedAdmin();
+    startAnalyticsReportScheduler();
 
     initializeSlackServices().then(() => {
       logger.info('Slack services initialized');
@@ -265,6 +267,7 @@ const gracefulShutdown = async (signal) => {
     await Promise.allSettled([
       shutdownSlackServices(),
       shutdownQueues(),
+      Promise.resolve(stopAnalyticsReportScheduler()),
     ]);
   } catch (err) {
     logger.error('Error during service shutdown', { error: err.message });

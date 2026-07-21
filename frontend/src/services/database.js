@@ -1925,6 +1925,84 @@ class DatabaseService {
   }
 
   // Analytics operations
+  async getAnalyticsDashboard(params = {}, options = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, value);
+    });
+    const res = await fetch(`${baseURL}/api/analytics/dashboard?${query}`, {
+      headers,
+      cache: 'no-store',
+      signal: options.signal,
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.message || 'Failed to load analytics');
+    return payload;
+  }
+
+  async getEmployeeAnalyticsTasks(employeeId, params = {}, options = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, value);
+    });
+    const res = await fetch(`${baseURL}/api/analytics/employees/${employeeId}/tasks?${query}`, {
+      headers,
+      cache: 'no-store',
+      signal: options.signal,
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.message || 'Failed to load assigned tasks');
+    return payload;
+  }
+
+  async getAnalyticsTasks(params = {}, options = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, value);
+    });
+    const res = await fetch(`${baseURL}/api/analytics/tasks?${query}`, {
+      headers,
+      cache: 'no-store',
+      signal: options.signal,
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.message || 'Failed to load analytics tasks');
+    return payload;
+  }
+
+  async getAnalyticsReportSchedules() {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${baseURL}/api/analytics/reports/schedules`, { headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, cache: 'no-store' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.message || 'Failed to load report schedules');
+    return payload;
+  }
+
+  async createAnalyticsReportSchedule(body) {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${baseURL}/api/analytics/reports/schedules`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.message || 'Failed to schedule report');
+    return payload;
+  }
+
+  async deleteAnalyticsReportSchedule(id) {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${baseURL}/api/analytics/reports/schedules/${id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.message || 'Failed to delete report schedule');
+    return payload;
+  }
+
   async getDepartmentAnalytics(departmentId) {
     const token = localStorage.getItem('token');
     const headers = { 'Content-Type': 'application/json' };

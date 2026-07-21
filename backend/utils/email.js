@@ -39,7 +39,8 @@ export const sendEmail = async (options) => {
       from: `${process.env.EMAIL_USER || 'FlowTask'} <${process.env.SMTP_USER || process.env.EMAIL_USER}>`,
       to: options.to,
       subject: options.subject,
-      html: options.html
+      html: options.html,
+      attachments: options.attachments || undefined
     };
 
     await transporter.sendMail(message);
