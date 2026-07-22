@@ -4,6 +4,9 @@ import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import config from '../config/index.js';
 import webhookDispatcher from '../services/chat/webhookDispatcher.js';
+import Board from '../models/Board.js';
+import { getProjectMembershipSnapshot } from '../services/chat/projectMembershipService.js';
+import chatHooks from '../utils/chatHooks.js';
 
 function resolveWorkspaceIdFromRequest(req) {
   const fromHeader = req.headers['x-workspace-id'];
@@ -222,17 +225,46 @@ export const triggerSync = asyncHandler(async (req, res, next) => {
 
   // Dispatch a SYNC_REQUESTED event — ChatApp's webhook handler
   // will orchestrate the actual sync using its sync.service.js
-  await webhookDispatcher.dispatch('SYNC_REQUESTED', {
-    workspaceId,
-    requestedBy: {
-      userId: req.user._id,
-      name: req.user.name,
-    },
-    requestedAt: new Date().toISOString(),
-  });
+  let dispatchedProjects = 0;
+  const cursor = Board.find({
+    visibility: 'public',
+    isArchived: { $ne: true },
+    isDeleted: { $ne: true },
+  }).cursor();
+
+  for await (const board of cursor) {
+    await chatHooks.onProjectCreated(board, req.user);
+    dispatchedProjects += 1;
+  }
 
   res.json({
     success: true,
-    data: { message: 'Sync request dispatched to ChatApp' },
+    data: {
+      message: 'Project reconciliation dispatched to ChatApp',
+      dispatchedProjects,
+    },
   });
+});
+
+/**
+ * Return the exact project, task, subtask, and nano-subtask participant union.
+ */
+export const getProjectParticipants = asyncHandler(async (req, res, next) => {
+  const snapshot = await getProjectMembershipSnapshot(req.params.projectId);
+  if (!snapshot) {
+    return next(new ErrorResponse('Project not found', 404));
+  }
+
+  const requesterId = req.user.id || req.user._id?.toString();
+  const isParticipant = snapshot.participants.some(
+    (participant) => participant.flowTaskUserId === requesterId,
+  );
+  const canViewPublicProject = snapshot.project.sourceVisibility === 'public';
+  const isAdmin = req.user.role === 'admin';
+
+  if (!isParticipant && !canViewPublicProject && !isAdmin) {
+    return next(new ErrorResponse('Not authorized to access this project', 403));
+  }
+
+  res.json({ success: true, data: snapshot });
 });

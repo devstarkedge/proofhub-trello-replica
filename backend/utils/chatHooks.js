@@ -35,7 +35,9 @@ import {
   buildAttachmentEventPayload,
   buildDepartmentPayload,
   buildDepartmentUpdatedPayload,
+  buildProjectMembershipPayload,
 } from './chatWebhookPayloads.js';
+import { getProjectMembershipSnapshot } from '../services/chat/projectMembershipService.js';
 
 // ─── Event Constants (must match ChatApp's FLOWTASK_EVENTS) ──────────────────
 const EVENTS = {
@@ -45,6 +47,7 @@ const EVENTS = {
   PROJECT_MEMBER_ADDED: 'PROJECT_MEMBER_ADDED',
   PROJECT_MEMBER_REMOVED: 'PROJECT_MEMBER_REMOVED',
   PROJECT_MEMBER_ASSIGNED: 'PROJECT_MEMBER_ASSIGNED',
+  PROJECT_MEMBERSHIP_SYNCED: 'PROJECT_MEMBERSHIP_SYNCED',
   TASK_CREATED: 'TASK_CREATED',
   TASK_UPDATED: 'TASK_UPDATED',
   TASK_DELETED: 'TASK_DELETED',
@@ -96,6 +99,25 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildProjectCreatedPayload(board, actor);
     await webhookDispatcher.dispatch(EVENTS.PROJECT_CREATED, payload);
+    await this.onProjectMembershipChanged(board, actor, 'project_created');
+  },
+
+  /**
+   * Dispatch the exact hierarchy membership after an assignment mutation.
+   * The monotonic version lets ChatApp reject delayed/out-of-order snapshots.
+   */
+  async onProjectMembershipChanged(boardOrId, actor, reason = 'assignment_changed') {
+    if (!webhookDispatcher.isEnabled()) return;
+    const boardId = (boardOrId?._id || boardOrId?.id || boardOrId)?.toString();
+    if (!boardId) return;
+
+    const snapshot = await getProjectMembershipSnapshot(boardId, { incrementVersion: true });
+    if (!snapshot) return;
+
+    await webhookDispatcher.dispatch(
+      EVENTS.PROJECT_MEMBERSHIP_SYNCED,
+      buildProjectMembershipPayload(snapshot, actor, reason),
+    );
   },
 
   /**
@@ -191,6 +213,18 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildTaskCreatedPayload(card, board, actor);
     await webhookDispatcher.dispatch(EVENTS.TASK_CREATED, payload);
+    // Assignee creation is followed by onTaskAssigned, which publishes the
+    // exact snapshot. A member-only task still needs one reconciliation.
+    if (
+      (card.members || []).length > 0 &&
+      (card.assignees || []).length === 0
+    ) {
+      await this.onProjectMembershipChanged(
+        board?._id || board?.id || card.board,
+        actor,
+        'task_created_with_members',
+      );
+    }
   },
 
   /**
@@ -216,6 +250,11 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildTaskDeletedPayload(card, board, actor);
     await webhookDispatcher.dispatch(EVENTS.TASK_DELETED, payload);
+    await this.onProjectMembershipChanged(
+      board?._id || board?.id || card.board,
+      actor,
+      'task_deleted',
+    );
   },
 
   /**
@@ -229,6 +268,11 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildTaskAssignedPayload(card, assignees, board, actor);
     await webhookDispatcher.dispatch(EVENTS.TASK_ASSIGNED, payload);
+    await this.onProjectMembershipChanged(
+      board?._id || board?.id || card.board,
+      actor,
+      'task_assigned',
+    );
   },
 
   /**
@@ -272,6 +316,7 @@ export const chatHooks = {
 
     const payload = buildTaskUnassignedPayload(card, removedUserIds, board, actor, activeTaskFlags);
     await webhookDispatcher.dispatch(EVENTS.TASK_UNASSIGNED, payload);
+    await this.onProjectMembershipChanged(boardId, actor, 'task_unassigned');
   },
 
   /**
@@ -491,6 +536,13 @@ export const chatHooks = {
     }
     const payload = buildSubtaskEventPayload(subtask, card, board, actor, 'SUBTASK_CREATED');
     await webhookDispatcher.dispatch(EVENTS.SUBTASK_CREATED, payload);
+    if ((subtask.assignees || []).length > 0) {
+      await this.onProjectMembershipChanged(
+        board?._id || board?.id || subtask.board,
+        actor,
+        'subtask_created',
+      );
+    }
   },
 
   async onSubtaskCompleted(subtask, card, board, actor) {
@@ -527,6 +579,11 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildSubtaskEventPayload(subtask, card, board, actor, 'SUBTASK_DELETED');
     await webhookDispatcher.dispatch(EVENTS.SUBTASK_DELETED, payload);
+    await this.onProjectMembershipChanged(
+      board?._id || board?.id || subtask.board,
+      actor,
+      'subtask_deleted',
+    );
   },
 
   // ─── Nano Subtask Hooks ────────────────────────────────────────────────
@@ -535,6 +592,13 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildNanoEventPayload(nano, subtask, card, board, actor, 'NANO_CREATED');
     await webhookDispatcher.dispatch(EVENTS.NANO_CREATED, payload);
+    if ((nano.assignees || []).length > 0) {
+      await this.onProjectMembershipChanged(
+        board?._id || board?.id || nano.board,
+        actor,
+        'nano_created',
+      );
+    }
   },
 
   async onNanoCompleted(nano, subtask, card, board, actor) {
@@ -547,6 +611,11 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildNanoEventPayload(nano, subtask, card, board, actor, 'NANO_DELETED');
     await webhookDispatcher.dispatch(EVENTS.NANO_DELETED, payload);
+    await this.onProjectMembershipChanged(
+      board?._id || board?.id || nano.board,
+      actor,
+      'nano_deleted',
+    );
   },
 
   // ─── Attachment Hooks ──────────────────────────────────────────────────

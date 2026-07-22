@@ -891,6 +891,25 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
         chatHooks.onProjectMemberRemoved(board, memberId, req.user).catch(console.error);
       }
     }
+
+    if (added.length > 0 || removed.length > 0) {
+      chatHooks.onProjectMembershipChanged(
+        board,
+        req.user,
+        'project_members_changed',
+      ).catch(console.error);
+    }
+  }
+
+  if (
+    req.body.owner &&
+    req.body.owner.toString() !== previousBoard.owner?.toString()
+  ) {
+    chatHooks.onProjectMembershipChanged(
+      board,
+      req.user,
+      'project_owner_changed',
+    ).catch(console.error);
   }
 
   if (activityTasks.length > 0) {

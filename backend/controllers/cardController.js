@@ -928,6 +928,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
   // Store old values for change detection
   const oldAssignees = card.assignees?.map(a => a.toString()) || [];
+  const oldMembers = card.members?.map(member => member.toString()) || [];
   const oldDueDate = card.dueDate;
   const oldStatus = card.status;
   const oldDescription = card.description || '';
@@ -1343,6 +1344,20 @@ export const updateCard = asyncHandler(async (req, res, next) => {
           source: 'task'
         });
       }
+    }
+  }
+
+  if (req.body.members !== undefined) {
+    const newMembers = (req.body.members || []).map(member => member.toString());
+    const membersChanged =
+      oldMembers.length !== newMembers.length ||
+      oldMembers.some(memberId => !newMembers.includes(memberId));
+    if (membersChanged) {
+      chatHooks.onProjectMembershipChanged(
+        card.board,
+        req.user,
+        'task_members_changed',
+      ).catch(console.error);
     }
   }
 
@@ -2490,6 +2505,12 @@ export const copyCard = asyncHandler(async (req, res, next) => {
         listName: destList.title
       });
 
+      await chatHooks.onProjectMembershipChanged(
+        destinationBoardId,
+        req.user,
+        'task_copied',
+      );
+
     } catch (bgError) {
       console.error('Error in copyCard background tasks:', bgError);
     }
@@ -2589,6 +2610,16 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
         { board: destinationBoardId, departmentId: destBoard.department }
       )
     ]);
+    chatHooks.onProjectMembershipChanged(
+      sourceBoardId,
+      req.user,
+      'task_moved_from_project',
+    ).catch(console.error);
+    chatHooks.onProjectMembershipChanged(
+      destinationBoardId,
+      req.user,
+      'task_moved_to_project',
+    ).catch(console.error);
   }
 
   // Generate undo token
@@ -2742,6 +2773,16 @@ export const undoMove = asyncHandler(async (req, res, next) => {
       SubtaskNano.updateMany({ task: card._id }, { board: originalState.sourceBoardId }),
       Attachment.updateMany({ card: card._id, isDeleted: false }, { board: originalState.sourceBoardId })
     ]);
+    chatHooks.onProjectMembershipChanged(
+      currentBoardId,
+      req.user,
+      'task_move_undone_from_project',
+    ).catch(console.error);
+    chatHooks.onProjectMembershipChanged(
+      originalState.sourceBoardId,
+      req.user,
+      'task_move_undone_to_project',
+    ).catch(console.error);
   }
 
   // Emit socket events to both boards for real-time sync

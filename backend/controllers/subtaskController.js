@@ -384,6 +384,11 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
         for (const id of oldIds.filter(id => !newIds.includes(id))) {
           emitToUser(id, 'user:project-access-changed', { action: 'removed', boardId: boardIdStr, source: 'subtask' });
         }
+        chatHooks.onProjectMembershipChanged(
+          boardId,
+          req.user,
+          'subtask_assignees_changed',
+        ).catch(console.error);
       }
       if (JSON.stringify(oldSubtask.loggedTime) !== JSON.stringify(subtask.loggedTime)) {
         activities.push({

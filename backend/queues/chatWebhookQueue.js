@@ -6,7 +6,9 @@ const chatWebhookQueue = new Queue('chat-webhooks', {
   defaultJobOptions: {
     attempts: 5,
     backoff: { type: 'exponential', delay: 1000 },
-    removeOnComplete: true,
+    // Retain completed event IDs briefly so BullMQ can suppress duplicate
+    // deliveries caused by concurrent hooks/retries.
+    removeOnComplete: { age: 86400, count: 10000 },
     removeOnFail: false,
   },
 });

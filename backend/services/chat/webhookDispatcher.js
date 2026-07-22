@@ -67,6 +67,12 @@ async function dispatch(eventName, payload) {
   const deliveryId = generateDeliveryId();
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const workspaceId = payload?.workspaceId || null;
+  const jobId = payload?.eventId
+    ? crypto
+        .createHash('sha256')
+        .update(`${eventName}:${workspaceId}:${payload.eventId}`)
+        .digest('hex')
+    : deliveryId;
   const body = JSON.stringify(payload);
   const signaturePayload = `${timestamp}.${body}`;
   const signature = computeSignature(signaturePayload);
@@ -83,12 +89,14 @@ async function dispatch(eventName, payload) {
   // Prefer enqueuing webhook dispatch to a Redis-backed queue for reliability
   try {
     if (chatWebhookQueue) {
-      await chatWebhookQueue.add('dispatch', { eventName, payload }, {
+      await chatWebhookQueue.add('dispatch', { eventName, payload, deliveryId: jobId }, {
+        jobId,
         attempts: 5,
         backoff: { type: 'exponential', delay: 1000 },
-        removeOnComplete: true,
+        removeOnComplete: { age: 86400, count: 10000 },
+        removeOnFail: false,
       });
-      logger.debug('ChatWebhook: enqueued dispatch job', { eventName, deliveryId, workspaceId });
+      logger.debug('ChatWebhook: enqueued dispatch job', { eventName, deliveryId: jobId, workspaceId });
       return;
     }
   } catch (err) {

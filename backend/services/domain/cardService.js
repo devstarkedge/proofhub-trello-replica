@@ -113,6 +113,7 @@ class CardService {
       dueDate: card.dueDate,
       startDate: card.startDate,
       assignees: card.assignees?.map((a) => a.toString()) || [],
+      members: card.members?.map((member) => member.toString()) || [],
       labels: card.labels?.map((l) => l.toString()) || [],
       estimationTime: snapshotTimeEntries(card.estimationTime),
       loggedTime: snapshotTimeEntries(card.loggedTime),
@@ -568,6 +569,20 @@ class CardService {
         // Dispatch chat webhook for unassigned members
         const boardData = await Board.findById(card.board).select('name department').lean();
         chatHooks.onTaskUnassigned(card, removed, boardData, user).catch(() => {});
+      }
+    }
+
+    if (updates.members !== undefined) {
+      const newMembers = (updates.members || []).map(String);
+      const membersChanged =
+        old.members.length !== newMembers.length ||
+        old.members.some((memberId) => !newMembers.includes(memberId));
+      if (membersChanged) {
+        await chatHooks.onProjectMembershipChanged(
+          card.board,
+          user,
+          'task_members_changed',
+        );
       }
     }
 

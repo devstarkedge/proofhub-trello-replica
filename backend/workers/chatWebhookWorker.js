@@ -1,4 +1,4 @@
-import { Worker } from 'bullmq';
+import { UnrecoverableError, Worker } from 'bullmq';
 import { getWorkerConnection } from '../queues/connection.js';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -18,7 +18,7 @@ export function startChatWebhookWorker(options = { concurrency: 5 }) {
   if (_worker) return _worker;
 
   _worker = new Worker('chat-webhooks', async (job) => {
-    const { eventName, payload } = job.data;
+    const { eventName, payload, deliveryId = job.id.toString() } = job.data;
 
     if (!CHAT_WEBHOOK_URL || !WEBHOOK_SECRET) {
       logger.warn('chatWebhookWorker: missing config; skipping job', { jobId: job.id });
@@ -38,7 +38,7 @@ export function startChatWebhookWorker(options = { concurrency: 5 }) {
       'Content-Type': 'application/json',
       'X-FlowTask-Signature': signature,
       'X-FlowTask-Timestamp': timestamp,
-      'X-FlowTask-Delivery-Id': job.id.toString(),
+      'X-FlowTask-Delivery-Id': deliveryId,
       'X-FlowTask-Event': eventName,
       'X-FlowTask-Workspace': payload.workspaceId.toString(),
     };
@@ -56,7 +56,7 @@ export function startChatWebhookWorker(options = { concurrency: 5 }) {
       if (status && status >= 400 && status < 500) {
         // Non-retryable client error — log and do not retry
         logger.error('chatWebhookWorker: non-retryable failure', { jobId: job.id, status, eventName, error: err.message });
-        return;
+        throw new UnrecoverableError(`ChatApp rejected ${eventName} with HTTP ${status}`);
       }
       // For network/5xx errors, throw to allow BullMQ to retry
       logger.warn('chatWebhookWorker: retryable failure, will throw to retry', { jobId: job.id, eventName, error: err.message });

@@ -35,6 +35,12 @@ const boardSchema = new mongoose.Schema({
     enum: ['public', 'private'],
     default: 'public'
   },
+  // Monotonic version used by ChatApp to reject stale membership snapshots.
+  chatMembershipVersion: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   background: {
     type: String,
     default: '#6366f1'

@@ -86,12 +86,16 @@ export function buildProjectCreatedPayload(board, actor) {
     departmentName: board.department?.name || null,
     owner: board.owner?.toString(),
     members: (board.members || []).map((m) => (m._id || m).toString()),
-    visibility: board.visibility || 'private',
+    sourceVisibility: board.visibility || 'public',
+    // Project visibility is FlowTask discoverability, not ChatApp access.
+    visibility: 'private',
+    channelVisibility: 'private',
     status: board.status || 'planning',
     createdAt: board.createdAt || new Date().toISOString(),
   };
   return {
     workspaceId,
+    authoritativeSnapshotFollows: true,
     project: projectData,
     // ChatApp-compatible aliases (handlers expect board/_id/title)
     board: {
@@ -105,9 +109,37 @@ export function buildProjectCreatedPayload(board, actor) {
       owner: projectData.owner,
       members: projectData.members,
       visibility: projectData.visibility,
+      sourceVisibility: projectData.sourceVisibility,
+      channelVisibility: 'private',
       status: projectData.status,
     },
     userId: actor ? (actor._id || actor.id)?.toString() : null,
+    actor: buildActor(actor),
+  };
+}
+
+export function buildProjectMembershipPayload(snapshot, actor, reason = 'reconcile') {
+  return {
+    eventId: `project-membership:${snapshot.project.id}:${snapshot.membershipVersion}`,
+    workspaceId: resolveWorkspaceId(),
+    project: snapshot.project,
+    board: {
+      _id: snapshot.project.id,
+      id: snapshot.project.id,
+      name: snapshot.project.name,
+      title: snapshot.project.name,
+      description: snapshot.project.description,
+      department: snapshot.project.department,
+      owner: snapshot.project.owner,
+      visibility: 'private',
+      sourceVisibility: snapshot.project.sourceVisibility,
+      isArchived: snapshot.project.isArchived,
+    },
+    participants: snapshot.participants,
+    memberIds: snapshot.participants.map((participant) => participant.flowTaskUserId),
+    membershipVersion: snapshot.membershipVersion,
+    calculatedAt: snapshot.calculatedAt,
+    reason,
     actor: buildActor(actor),
   };
 }
@@ -152,6 +184,7 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
   const ownerId = board.owner?._id?.toString?.() || board.owner?.toString?.() || null;
   return {
     workspaceId,
+    authoritativeSnapshotFollows: true,
     project: {
       id: board._id?.toString(),
       name: board.name,
@@ -260,6 +293,7 @@ export function buildTaskAssignedPayload(card, assignees, board, actor) {
   }));
   return {
     workspaceId,
+    authoritativeSnapshotFollows: true,
     task: {
       id: card._id?.toString(),
       title: card.title,
@@ -284,6 +318,7 @@ export function buildTaskUnassignedPayload(card, removedUserIds, board, actor, a
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
+    authoritativeSnapshotFollows: true,
     eventType: 'TASK_UNASSIGNED',
     task: {
       id: card._id?.toString(),

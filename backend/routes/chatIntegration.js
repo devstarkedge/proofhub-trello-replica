@@ -7,6 +7,7 @@ import {
   testConnection,
   triggerSync,
   getChatRedirectUrl,
+  getProjectParticipants,
 } from '../controllers/chatIntegrationController.js';
 
 const router = express.Router();
@@ -19,6 +20,7 @@ router.get('/redirect', getChatRedirectUrl);
 
 // Status check (any authenticated user)
 router.get('/status', getStatus);
+router.get('/projects/:projectId/participants', getProjectParticipants);
 
 // Admin-only routes — connect, disconnect, test, sync
 router.post('/connect', authorize('admin'), connect);

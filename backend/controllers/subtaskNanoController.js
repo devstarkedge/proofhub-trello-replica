@@ -350,6 +350,11 @@ export const updateNano = asyncHandler(async (req, res, next) => {
         for (const id of oldIds.filter(id => !newIds.includes(id))) {
           emitToUser(id, 'user:project-access-changed', { action: 'removed', boardId: boardIdStr, source: 'nano' });
         }
+        chatHooks.onProjectMembershipChanged(
+          boardId,
+          req.user,
+          'nano_assignees_changed',
+        ).catch(console.error);
       }
       if (JSON.stringify(oldNano.loggedTime) !== JSON.stringify(nano.loggedTime)) {
         activities.push({
