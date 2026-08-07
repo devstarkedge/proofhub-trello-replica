@@ -59,7 +59,12 @@ const SubtaskDetailModal = ({
   );
   const [tags, setTags] = useState(initialData.tags || []);
   const [attachments, setAttachments] = useState(initialData.attachments || []);
-  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamMembers, setTeamMembers] = useState(() => {
+    if (initialData.assignees) {
+      return initialData.assignees.filter(a => typeof a === "object" && a._id);
+    }
+    return [];
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
   const [expandedDepartments, setExpandedDepartments] = useState({});
@@ -414,6 +419,18 @@ const SubtaskDetailModal = ({
       setPriority(data.priority || "");
       setDueDate(data.dueDate ? new Date(data.dueDate).toISOString().split("T")[0] : "");
       setStartDate(data.startDate ? new Date(data.startDate).toISOString().split("T")[0] : "");
+      
+      if (data.assignees && data.assignees.length > 0) {
+        const populated = data.assignees.filter(a => typeof a === 'object' && a._id);
+        if (populated.length > 0) {
+          setTeamMembers(prev => {
+            const map = new Map(prev.map(m => [m._id, m]));
+            populated.forEach(p => map.set(p._id, p));
+            return Array.from(map.values());
+          });
+        }
+      }
+
       setAssignees(data.assignees ? data.assignees.map(a => (typeof a === "object" ? a._id : a)).filter(Boolean) : []);
       setTags(data.tags || []);
       setAttachments(data.attachments || []);

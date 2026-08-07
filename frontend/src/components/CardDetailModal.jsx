@@ -366,6 +366,18 @@ const CardDetailModal = React.memo(({
         if (freshCard) {
           setTitle(freshCard.title);
           setDescription(freshCard.description || "");
+
+          if (freshCard.assignees && freshCard.assignees.length > 0) {
+            const populated = freshCard.assignees.filter(a => typeof a === 'object' && a._id);
+            if (populated.length > 0) {
+              setTeamMembers(prev => {
+                const map = new Map(prev.map(m => [m._id, m]));
+                populated.forEach(p => map.set(p._id, p));
+                return Array.from(map.values());
+              });
+            }
+          }
+
           setAssignees(freshCard.assignees ? freshCard.assignees.map((a) => (typeof a === 'object' ? a._id : a)).filter(Boolean) : []);
           setPriority(freshCard.priority || "");
           setStatus(freshCard.status || "");
@@ -453,6 +465,14 @@ const CardDetailModal = React.memo(({
         if (updates.assignees) {
           // If incoming is Objects (populated)
           if (updates.assignees.length > 0 && typeof updates.assignees[0] === 'object') {
+             const populated = updates.assignees.filter(a => typeof a === 'object' && a._id);
+             if (populated.length > 0) {
+               setTeamMembers(prev => {
+                 const map = new Map(prev.map(m => [m._id, m]));
+                 populated.forEach(p => map.set(p._id, p));
+                 return Array.from(map.values());
+               });
+             }
              setAssignees(updates.assignees.map(a => a._id).filter(Boolean));
           }
           // If incoming is IDs
