@@ -27,7 +27,12 @@ const permissionSchema = new mongoose.Schema({
   // Management Permissions
   canManageRoles: { type: Boolean, default: false },
   canManageUsers: { type: Boolean, default: false },
-  canManageSystem: { type: Boolean, default: false }
+  canManageSystem: { type: Boolean, default: false },
+  // Delegated administration of the Access & Permissions module itself.
+  // Lets an Admin grant a custom role (or, via a personal AccessOverride,
+  // a single user) the ability to manage other users' access without
+  // making them a full Admin. See modules/permissions/permissionEngine.js.
+  canManageAccessControl: { type: Boolean, default: false }
 }, { _id: false });
 
 /**
@@ -111,7 +116,8 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canManageAttachments: true,
       canManageRoles: true,
       canManageUsers: true,
-      canManageSystem: true
+      canManageSystem: true,
+      canManageAccessControl: true
     },
     manager: {
       canCreateDepartment: false,
@@ -124,7 +130,8 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canDeleteProjects: true,
       canEditPriority: true,
       canEditDates: true,
-      canManageAttachments: true
+      canManageAttachments: true,
+      canManageAccessControl: false
     },
     hr: {
       canCreateDepartment: true,

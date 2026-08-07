@@ -39,6 +39,9 @@ import RemindersPage from "./pages/RemindersPage";
 import ClientReminderCalendarPage from "./pages/ClientReminderCalendarPage";
 import PrivateRoute from "./components/PrivateRoute";
 import FinanceRouteGuard from "./components/FinanceRouteGuard";
+import AccessControlRouteGuard from "./components/AccessControlRouteGuard";
+import AccessControlPage from "./pages/AccessControlPage";
+import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
 import ProjectTrash from "./pages/ProjectTrash";
 
 // PM Sheet Pages
@@ -128,6 +131,14 @@ function App() {
                     </PrivateRoute>
                   }
                 />
+                <Route
+                  path="/access-control"
+                  element={
+                    <AccessControlRouteGuard>
+                      <AccessControlPage />
+                    </AccessControlRouteGuard>
+                  }
+                />
                 <Route path="/search" element={<Search />} />
 
                 <Route path="/list-view" element={<ListViewLayout />}>
@@ -210,6 +221,9 @@ function App() {
             />
             <NetworkStatusToast />
             <GlobalPushPrompt />
+            {/* The one confirmation modal for every permission change in the
+                app — see components/AccessControl/PermissionConfirmModal.jsx */}
+            <PermissionConfirmModal />
           </NotificationProvider>
         </TeamProvider>
       </MeProvider>

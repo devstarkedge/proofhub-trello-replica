@@ -4,6 +4,7 @@ import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, upda
 import { uploadAvatar, uploadAvatarFromGoogleDrive, removeAvatar } from '../controllers/avatarController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
+import { allowRolesOrAccessControlManage } from '../middleware/requireAccessControl.js';
 import { getPushStatusForDevice, getVapidKeys, removeUserPushSubscription, saveUserPushSubscription } from '../utils/pushNotification.js';
 
 const router = express.Router();
@@ -104,8 +105,9 @@ router.get('/verified', protect, hrOrAdmin, getVerifiedUsers);
 router.get('/by-departments', protect, hrOrAdmin, getUsersByDepartments);
 router.get('/managers', protect, hrOrAdmin, getManagerUsers);
 
-// Admin and HR can view all users, Manager can view users in their department/team
-router.get('/', protect, hrOrAdmin, getUsers);
+// Admin and HR can view all users; anyone delegated access_control.manage
+// (the centralized Access & Permissions module's "Users" tab) can too.
+router.get('/', protect, allowRolesOrAccessControlManage('hr'), getUsers);
 
 // Page/module permissions (self can read; only admin can update)
 router.get('/:id/permissions', protect, getUserPagePermissions);
@@ -123,11 +125,12 @@ router.put('/:id/verify', protect, authorize('admin'), verifyUser);
 // Only admin can decline user registrations
 router.delete('/:id/decline', protect, authorize('admin'), declineUser);
 
-// Admin and Manager can assign Employee to departments/teams
-router.put('/:id/assign', protect, managerHrOrAdmin, assignUser);
+// Admin, Manager, and HR can assign Employee to departments/teams; anyone
+// delegated access_control.manage can too, via the centralized module.
+router.put('/:id/assign', protect, allowRolesOrAccessControlManage('manager', 'hr'), assignUser);
 
-// Only admin can change user roles
-router.put('/:id/role', protect, authorize('admin'), changeUserRole);
+// Only admin can change user roles — or anyone delegated access_control.manage.
+router.put('/:id/role', protect, allowRolesOrAccessControlManage(), changeUserRole);
 
 // Only admin can delete users
 router.delete('/:id', protect, authorize('admin'), deleteUser);

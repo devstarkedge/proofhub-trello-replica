@@ -84,7 +84,8 @@ export const PERMISSION_CATEGORIES = {
     permissions: [
       { key: 'canManageRoles', label: 'Manage roles' },
       { key: 'canManageUsers', label: 'Manage users' },
-      { key: 'canManageSystem', label: 'Full system access (Admin equivalent)' }
+      { key: 'canManageSystem', label: 'Full system access (Admin equivalent)' },
+      { key: 'canManageAccessControl', label: 'Manage Access & Permissions module (delegated admin)' }
     ]
   },
   editing: {

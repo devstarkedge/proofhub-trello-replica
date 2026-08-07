@@ -2,6 +2,11 @@ import React, { memo, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, X, Check, AlertCircle, Loader2, Trash2, Zap } from 'lucide-react';
 import { PERMISSION_CATEGORIES, SYSTEM_ROLE_PERMISSIONS, ALL_PERMISSION_KEYS } from '../../../store/roleStore';
+import useConfirmPermissionChange from '../../../hooks/useConfirmPermissionChange';
+
+const PERMISSION_LABEL_BY_KEY = Object.values(PERMISSION_CATEGORIES)
+  .flatMap((category) => category.permissions)
+  .reduce((acc, p) => ({ ...acc, [p.key]: p.label }), {});
 
 /**
  * EditRoleModal Component
@@ -18,13 +23,14 @@ const EditRoleModal = memo(({
   onClose,
   existingRoleNames = []
 }) => {
+  const confirmChange = useConfirmPermissionChange();
+
   // Form state
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
   const [permissions, setPermissions] = useState({});
   const [selectedPreset, setSelectedPreset] = useState('custom');
   const [errors, setErrors] = useState({});
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Initialize form when role changes
   useEffect(() => {
@@ -34,7 +40,6 @@ const EditRoleModal = memo(({
       setPermissions(role.permissions || {});
       setSelectedPreset('custom'); // Reset preset when role changes
       setErrors({});
-      setShowDeleteConfirm(false);
     }
   }, [role]);
 
@@ -99,30 +104,67 @@ const EditRoleModal = memo(({
     return Object.keys(newErrors).length === 0;
   }, [roleName, roleDescription, existingRoleNames, role]);
 
-  // Handle form submission
-  const handleSubmit = useCallback((e) => {
+  // Handle form submission — confirms via the one centralized permission
+  // confirmation modal instead of just saving silently, since this changes
+  // every user assigned to this role's effective permissions.
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
-    
+
+    const changes = [];
+    if (roleName.trim() !== role.name) {
+      changes.push({ label: 'Role name', previous: role.name, next: roleName.trim() });
+    }
+    ALL_PERMISSION_KEYS.forEach((key) => {
+      const previous = role.permissions?.[key] === true;
+      const next = permissions[key] === true;
+      if (previous !== next) {
+        changes.push({ label: PERMISSION_LABEL_BY_KEY[key] || key, previous, next });
+      }
+    });
+
+    if (changes.length > 0) {
+      const grants = changes.filter((c) => c.next === true && typeof c.previous === 'boolean').length;
+      const revokes = changes.filter((c) => c.next === false && typeof c.previous === 'boolean').length;
+      const actionVerb = revokes > 0 && grants === 0 ? 'revoke' : 'update';
+      const confirmed = await confirmChange({
+        targetUserName: role.name,
+        targetUserRole: role.isSystem ? 'System Role' : 'Custom Role',
+        actionVerb,
+        changes,
+        message: `You are updating permissions for the role "${role.name}". This affects every user currently assigned to it.`
+      });
+      if (!confirmed) return;
+    }
+
     onSubmit(role._id, {
       name: roleName.trim(),
       description: roleDescription.trim(),
       permissions
     });
-  }, [role, roleName, roleDescription, permissions, validateForm, onSubmit]);
+  }, [role, roleName, roleDescription, permissions, validateForm, onSubmit, confirmChange]);
 
-  // Handle delete
-  const handleDelete = useCallback(() => {
-    if (onDelete && role) {
-      onDelete(role._id);
-    }
-  }, [role, onDelete]);
+  // Handle delete — routed through the same centralized confirmation modal
+  // instead of the inline two-step "are you sure" this modal used to have.
+  const handleDelete = useCallback(async () => {
+    if (!onDelete || !role) return;
+
+    const confirmed = await confirmChange({
+      targetUserName: role.name,
+      targetUserRole: 'Custom Role',
+      actionVerb: 'revoke',
+      changes: [{ label: 'Role', previous: role.name, next: 'Deleted' }],
+      message: `You are about to permanently delete the role "${role.name}". This cannot be undone — users assigned to it will need to be reassigned first.`
+    });
+    if (!confirmed) return;
+
+    onDelete(role._id);
+  }, [role, onDelete, confirmChange]);
 
   // Reset form on close
   const handleClose = useCallback(() => {
     setErrors({});
-    setShowDeleteConfirm(false);
     setSelectedPreset('custom');
     onClose();
   }, [onClose]);
@@ -383,52 +425,20 @@ const EditRoleModal = memo(({
                   </div>
                 </div>
 
-                {/* Delete Section (only for custom roles) */}
+                {/* Delete Section (only for custom roles) — confirmation now
+                    comes from the one centralized modal, not a second
+                    inline "are you sure" built into this form. */}
                 {!isSystemRole && onDelete && (
                   <div className="border-t border-gray-200 pt-6">
-                    {!showDeleteConfirm ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowDeleteConfirm(true)}
-                        className="flex items-center gap-2 text-red-600 hover:text-red-700 font-medium transition-colors"
-                        disabled={isLoading}
-                      >
-                        <Trash2 size={18} />
-                        Delete this role
-                      </button>
-                    ) : (
-                      <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-                        <p className="text-red-800 font-medium mb-3">
-                          Are you sure you want to delete this role?
-                        </p>
-                        <p className="text-red-600 text-sm mb-4">
-                          This action cannot be undone. Users with this role will need to be reassigned.
-                        </p>
-                        <div className="flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setShowDeleteConfirm(false)}
-                            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-                            disabled={isLoading}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleDelete}
-                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center gap-2"
-                            disabled={isLoading}
-                          >
-                            {isLoading ? (
-                              <Loader2 size={16} className="animate-spin" />
-                            ) : (
-                              <Trash2 size={16} />
-                            )}
-                            Delete Role
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      className="flex items-center gap-2 text-red-600 hover:text-red-700 font-medium transition-colors disabled:opacity-50"
+                      disabled={isLoading}
+                    >
+                      {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+                      Delete this role
+                    </button>
                   </div>
                 )}
               </div>

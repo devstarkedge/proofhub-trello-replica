@@ -2,6 +2,17 @@ import Role from '../models/Role.js';
 import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import { recordAuditLog } from '../modules/permissions/auditLogService.js';
+
+let permissionLabelByKeyCache = null;
+const permissionLabelByKey = (key) => {
+  if (!permissionLabelByKeyCache) {
+    permissionLabelByKeyCache = Object.values(PERMISSION_DEFINITIONS)
+      .flatMap((category) => category.permissions)
+      .reduce((acc, p) => ({ ...acc, [p.key]: p.label }), {});
+  }
+  return permissionLabelByKeyCache[key] || key;
+};
 
 /**
  * Permission definitions for UI rendering
@@ -29,6 +40,23 @@ export const PERMISSION_DEFINITIONS = {
     permissions: [
       { key: 'canDeleteTasks', label: 'Delete tasks' },
       { key: 'canDeleteProjects', label: 'Delete projects' }
+    ]
+  },
+  editing: {
+    label: '✏️ Editing Permissions',
+    permissions: [
+      { key: 'canEditPriority', label: 'Edit task priority' },
+      { key: 'canEditDates', label: 'Edit start/due dates' },
+      { key: 'canManageAttachments', label: 'Manage all attachments' }
+    ]
+  },
+  management: {
+    label: '⚙️ Management Permissions',
+    permissions: [
+      { key: 'canManageRoles', label: 'Manage roles' },
+      { key: 'canManageUsers', label: 'Manage users' },
+      { key: 'canManageSystem', label: 'Full system access (Admin equivalent)' },
+      { key: 'canManageAccessControl', label: 'Manage Access & Permissions module (delegated admin)' }
     ]
   }
 };
@@ -131,11 +159,29 @@ export const createRole = asyncHandler(async (req, res, next) => {
     isSystem: false,
     createdBy: req.user.id
   });
-  
+
   res.status(201).json({
     success: true,
     data: role
   });
+
+  const grantedKeys = Object.entries(role.permissions?.toObject?.() || role.permissions || {})
+    .filter(([, v]) => v === true)
+    .map(([k]) => permissionLabelByKey(k));
+
+  recordAuditLog({
+    actor: req.user,
+    action: 'ROLE_CREATED',
+    targetType: 'Role',
+    targetId: role._id,
+    resourceKey: 'role_definition',
+    resourceLabel: `Role: ${role.name}`,
+    summary: `${req.user.name} created role "${role.name}"${grantedKeys.length ? ` with ${grantedKeys.length} permission(s)` : ''}`,
+    changeDetails: grantedKeys.map((label) => ({ label, previous: false, next: true })),
+    before: null,
+    after: { name: role.name, permissions: role.permissions },
+    meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+  }).catch(() => {});
 });
 
 // @desc    Update role
@@ -166,16 +212,44 @@ export const updateRole = asyncHandler(async (req, res, next) => {
     role.slug = newSlug;
   }
   
+  const beforePermissions = { ...role.permissions?.toObject?.() || role.permissions };
+
   if (description !== undefined) role.description = description;
   if (permissions) role.permissions = permissions;
   if (typeof isActive === 'boolean') role.isActive = isActive;
-  
+
   await role.save();
-  
+
   res.status(200).json({
     success: true,
     data: role
   });
+
+  const afterPermissions = role.permissions?.toObject?.() || role.permissions || {};
+  const changeDetails = [];
+  new Set([...Object.keys(beforePermissions), ...Object.keys(afterPermissions)]).forEach((key) => {
+    const previous = beforePermissions[key] === true;
+    const next = afterPermissions[key] === true;
+    if (previous !== next) {
+      changeDetails.push({ label: permissionLabelByKey(key), previous, next });
+    }
+  });
+
+  if (changeDetails.length > 0) {
+    recordAuditLog({
+      actor: req.user,
+      action: 'ROLE_PERMISSIONS_UPDATED',
+      targetType: 'Role',
+      targetId: role._id,
+      resourceKey: 'role_definition',
+      resourceLabel: `Role: ${role.name}`,
+      summary: `${req.user.name} updated permissions for role "${role.name}"`,
+      changeDetails,
+      before: { name: role.name, permissions: beforePermissions },
+      after: { name: role.name, permissions: afterPermissions },
+      meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+    }).catch(() => {});
+  }
 });
 
 // @desc    Delete role
@@ -200,11 +274,25 @@ export const deleteRole = asyncHandler(async (req, res, next) => {
   }
   
   await role.deleteOne();
-  
+
   res.status(200).json({
     success: true,
     data: {}
   });
+
+  recordAuditLog({
+    actor: req.user,
+    action: 'ROLE_DELETED',
+    targetType: 'Role',
+    targetId: role._id,
+    resourceKey: 'role_definition',
+    resourceLabel: `Role: ${role.name}`,
+    summary: `${req.user.name} deleted role "${role.name}"`,
+    changeDetails: [{ label: 'Role', previous: role.name, next: 'Deleted' }],
+    before: { name: role.name, permissions: role.permissions },
+    after: null,
+    meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+  }).catch(() => {});
 });
 
 // @desc    Get permission definitions (for UI)

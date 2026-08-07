@@ -1,10 +1,10 @@
 import React, { useState, useContext } from "react";
-import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield, MessageSquare, Blocks } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield, MessageSquare, ShieldCheck } from "lucide-react";
 import AuthContext from "../context/AuthContext";
 import api from "../services/api";
 import Avatar from "../components/Avatar";
 import SlackAdminPanel from "../components/SlackAdminPanel";
-import ModuleAccessPanel from "../components/Admin/ModuleAccessPanel";
 
 const AdminSettings = () => {
   const { user, token, setUser } = useContext(AuthContext);
@@ -21,7 +21,6 @@ const AdminSettings = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
-  const [activeTab, setActiveTab] = useState('account'); // 'account' | 'modules'
 
   const { newEmail, currentPassword, newPassword, confirmNewPassword } = formData;
 
@@ -123,33 +122,26 @@ const AdminSettings = () => {
               <p className="text-gray-600">Manage your account security and preferences</p>
             </div>
 
-            {/* Tab Navigation */}
-            <div className="mb-6 border-b border-gray-200">
-              <nav className="flex gap-4" aria-label="Tabs">
-                <button
-                  onClick={() => setActiveTab('account')}
-                  className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
-                    activeTab === 'account'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Shield className="w-4 h-4" />
-                  Account Security
-                </button>
-                <button
-                  onClick={() => setActiveTab('modules')}
-                  className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
-                    activeTab === 'modules'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Blocks className="w-4 h-4" />
-                  Modules Access
-                </button>
-              </nav>
-            </div>
+            {/* Module/page/action access now lives in the centralized Access
+                & Permissions module, not a tab here. */}
+            {user?.role?.toLowerCase() === 'admin' && (
+              <Link
+                to="/access-control"
+                className="mb-6 flex items-center justify-between gap-3 p-4 rounded-xl border bg-white hover:shadow-md transition-shadow duration-200"
+                style={{ borderColor: '#e9d5ff' }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-purple-100 p-2 rounded-lg">
+                    <ShieldCheck className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Access & Permissions</h3>
+                    <p className="text-sm text-gray-500">Manage users, roles, and Sales/Finance module access from one place</p>
+                  </div>
+                </div>
+                <span className="text-sm font-semibold text-purple-600">Open →</span>
+              </Link>
+            )}
 
             {/* Alert Messages */}
             {message && (
@@ -176,9 +168,7 @@ const AdminSettings = () => {
               </div>
             )}
 
-            {/* Account Tab Content */}
-            {activeTab === 'account' && (
-              <>
+            <>
                 {/* Current User Info Card */}
                 <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-xl shadow-lg mb-6 text-white">
                   <div className="flex items-center gap-4">
@@ -437,14 +427,6 @@ const AdminSettings = () => {
               <SlackAdminPanel />
             </div>
               </>
-            )}
-
-            {/* Modules Access Tab Content */}
-            {activeTab === 'modules' && (
-              <div className="bg-white p-6 rounded-xl shadow-md">
-                <ModuleAccessPanel />
-              </div>
-            )}
           </div>
       </main>
 

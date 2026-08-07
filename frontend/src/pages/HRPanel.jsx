@@ -14,32 +14,31 @@ import {
   Briefcase,
   User,
   ChevronDown,
-  ChevronRight,
   Loader2,
   Trash2,
-  FolderOpen,
-  ListChecks,
-  Lock
+  Ban
 } from 'lucide-react';
 import { HRPanelSkeleton } from '../components/LoadingSkeleton';
 import api from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import AuthContext from '../context/AuthContext';
 import useDepartmentStore from '../store/departmentStore';
-import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
+import UserAccessEditor from '../components/AccessControl/UserAccessEditor';
 
 // Memoized User Row Component for better performance
-const UserRow = memo(({ 
-  user, 
-  loadingStates, 
-  onVerify, 
-  onDecline, 
-  onAssign, 
+const UserRow = memo(({
+  user,
+  currentUserId,
+  loadingStates,
+  onVerify,
+  onDecline,
+  onAssign,
   onDelete,
   getRoleBadge,
   getStatusBadge
 }) => {
+  const isSelf = currentUserId && String(currentUserId) === String(user._id);
   return (
     <tr className="hover:bg-gray-50 transition-colors duration-150">
       <td className="px-6 py-4 whitespace-nowrap">
@@ -110,14 +109,24 @@ const UserRow = memo(({
           )}
           {user.isVerified && (
             <>
-              <button
-                onClick={() => onAssign(user)}
-                className="inline-flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200 font-semibold"
-              >
-                <UserCog className="w-4 h-4" />
-                Assign
-              </button>
-              {user.role !== 'admin' && (
+              {isSelf ? (
+                <span
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-400 rounded-lg font-semibold cursor-not-allowed"
+                  title="You cannot manage your own access"
+                >
+                  <Ban className="w-4 h-4" />
+                  That's you
+                </span>
+              ) : (
+                <button
+                  onClick={() => onAssign(user)}
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200 font-semibold"
+                >
+                  <UserCog className="w-4 h-4" />
+                  Assign
+                </button>
+              )}
+              {!isSelf && user.role !== 'admin' && (
                 <button
                   onClick={() => onDelete(user)}
                   className="inline-flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold"
@@ -137,24 +146,12 @@ UserRow.displayName = 'UserRow';
 
 const HRPanel = () => {
   const { user } = useContext(AuthContext);
+  const loggedInUserId = user?._id;
   const departmentStore = useDepartmentStore();
-  const { roles, loadRoles, changeUserRole } = useRoleStore();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [selectedDepartments, setSelectedDepartments] = useState([]);
-  const [selectedRole, setSelectedRole] = useState('');
-  const [roleLoading, setRoleLoading] = useState(false);
-  const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
-  // Access control state
-  const [accessType, setAccessType] = useState('full_department');
-  const [allowedProjects, setAllowedProjects] = useState([]);
-  const [departmentProjects, setDepartmentProjects] = useState([]);
-  const [projectSearch, setProjectSearch] = useState('');
-  const [projectsLoading, setProjectsLoading] = useState(false);
-  // Accordion open/close state for department groups in project picker
-  const [expandedDepts, setExpandedDepts] = useState({});
   const [filters, setFilters] = useState({
     role: '',
     department: '',
@@ -211,8 +208,7 @@ const HRPanel = () => {
       setLoading(true);
       await Promise.all([
         departmentStore.loadDepartments(),
-        departmentStore.loadUsers(),
-        loadRoles()
+        departmentStore.loadUsers()
       ]);
       // Load users for local state management
       const res = await api.get('/api/users');
@@ -269,32 +265,6 @@ const HRPanel = () => {
     }
   };
 
-  const handleAssignUser = async (userId, departmentIds) => {
-    try {
-      setRoleLoading(true);
-
-      // Change role if it differs from current
-      if (selectedUser && selectedRole && selectedRole !== selectedUser.role) {
-        await changeUserRole(userId, selectedRole);
-      }
-
-      await api.put(`/api/users/${userId}/assign`, {
-        departments: departmentIds,
-        team: null,
-        accessType,
-        allowedProjects: accessType === 'selected_projects' ? allowedProjects : []
-      });
-      loadData();
-      closeAssignModal();
-    } catch (error) {
-      console.error('Error assigning user:', error);
-      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to update user' });
-      setTimeout(() => setToast(null), 3000);
-    } finally {
-      setRoleLoading(false);
-    }
-  };
-
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
     const uid = userToDelete._id;
@@ -329,88 +299,13 @@ const HRPanel = () => {
 
   const closeAssignModal = () => {
     setShowModal(false);
-    setSelectedDepartments([]);
-    setSelectedRole('');
-    setAccessType('full_department');
-    setAllowedProjects([]);
-    setDepartmentProjects([]);
-    setProjectSearch('');
-    setShowDepartmentDropdown(false);
+    setSelectedUser(null);
   };
 
   const openAssignModal = (user) => {
     setSelectedUser(user);
-    const userDeptIds = user.department?.map(d => d._id) || [];
-    setSelectedDepartments(userDeptIds);
-    setSelectedRole(user.role || 'employee');
-    setAccessType(user.accessType || 'full_department');
-    setAllowedProjects(user.allowedProjects?.map(p => p._id || p) || []);
     setShowModal(true);
-    if (userDeptIds.length > 0) fetchProjectsForDepartments(userDeptIds);
   };
-
-  const fetchProjectsForDepartments = async (deptIds) => {
-    if (!deptIds || deptIds.length === 0) {
-      setDepartmentProjects([]);
-      return;
-    }
-    try {
-      setProjectsLoading(true);
-      const res = await api.get(`/api/boards?departmentIds=${deptIds.join(',')}`);
-      setDepartmentProjects(res.data.data || []);
-    } catch (err) {
-      console.error('Failed to load projects for departments:', err);
-      setDepartmentProjects([]);
-    } finally {
-      setProjectsLoading(false);
-    }
-  };
-
-  const toggleDepartment = (deptId) => {
-    setSelectedDepartments(prev => {
-      const next = prev.includes(deptId) ? prev.filter(id => id !== deptId) : [...prev, deptId];
-      fetchProjectsForDepartments(next);
-      return next;
-    });
-  };
-
-  const removeDepartment = (deptId) => {
-    setSelectedDepartments(prev => {
-      const next = prev.filter(id => id !== deptId);
-      fetchProjectsForDepartments(next);
-      return next;
-    });
-  };
-
-  const getAvailableDepartments = useCallback(() => {
-    return departmentStore.departments.filter(dept => !selectedDepartments.includes(dept._id));
-  }, [departmentStore.departments, selectedDepartments]);
-
-  const getSelectedDepartmentObjects = useCallback(() => {
-    return departmentStore.departments.filter(dept => selectedDepartments.includes(dept._id));
-  }, [departmentStore.departments, selectedDepartments]);
-
-  // Auto-enforce assignment scope for employees — they cannot have dept-wide access
-  useEffect(() => {
-    if (selectedRole === 'employee') {
-      setAccessType('assigned_tasks');
-      setAllowedProjects([]);
-    }
-  }, [selectedRole]);
-
-  // Group departmentProjects by department for the accordion picker
-  const groupedProjects = useMemo(() => {
-    const map = {};
-    for (const project of departmentProjects) {
-      const deptId = project.department?._id || project.department || 'unknown';
-      const deptName = project.department?.name || 'Unknown Department';
-      if (!map[deptId]) {
-        map[deptId] = { deptId, deptName, projects: [] };
-      }
-      map[deptId].projects.push(project);
-    }
-    return Object.values(map);
-  }, [departmentProjects]);
 
   // OPTIMIZED: Memoize filtered users to prevent recalculation on every render
   // Uses debouncedFilters to prevent filtering on every keystroke
@@ -648,11 +543,12 @@ const HRPanel = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredUsers.map((user, index) => (
+                  {filteredUsers.map((rowUser, index) => (
                     <UserRow
-                      key={user._id}
-                      user={user}
+                      key={rowUser._id}
+                      user={rowUser}
                       index={index}
+                      currentUserId={loggedInUserId}
                       loadingStates={loadingStates}
                       getRoleBadge={getRoleBadge}
                       getStatusBadge={getStatusBadge}
@@ -692,341 +588,16 @@ const HRPanel = () => {
                   </div>
                 </div>
 
-                {/* Modal Body */}
+                {/* Modal Body — role, department, access scope, and every
+                    module's resource overrides for this user, all from the
+                    centralized Access & Permissions module's editor. HRPanel
+                    only opens it; it doesn't implement its own copy. */}
                 <div className="p-6 max-h-[70vh] overflow-y-auto">
-                  <div className="space-y-5">
-                    {/* Role Selector */}
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        <div className="flex items-center gap-1.5">
-                          <Shield className="w-4 h-4 text-gray-500" />
-                          Role
-                        </div>
-                      </label>
-                      <div className="relative">
-                        <select
-                          value={selectedRole}
-                          onChange={(e) => setSelectedRole(e.target.value)}
-                          disabled={selectedUser?._id === user?._id}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {roles.filter(r => r.isActive !== false).map(r => (
-                            <option key={r._id} value={r.slug}>{r.name}</option>
-                          ))}
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                      </div>
-                      {selectedUser?.role !== selectedRole && (
-                        <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                          <Shield className="w-3 h-3" />
-                          Role will change from <span className="font-semibold">{selectedUser?.role}</span> to <span className="font-semibold">{selectedRole}</span>
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Department Selector */}
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Select Departments
-                      </label>
-                      <div className="relative">
-                        <button
-                          onClick={() => setShowDepartmentDropdown(!showDepartmentDropdown)}
-                          className="w-full px-4 py-3 text-left border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white hover:bg-gray-50 transition-colors duration-200 flex items-center justify-between"
-                        >
-                          <span className="text-gray-700">
-                            {getAvailableDepartments().length > 0
-                              ? 'Choose departments...'
-                              : 'All departments selected'}
-                          </span>
-                          <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${showDepartmentDropdown ? 'rotate-180' : ''}`} />
-                        </button>
-
-                        {showDepartmentDropdown && getAvailableDepartments().length > 0 && (
-                          <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                            {getAvailableDepartments().map((dept, index) => (
-                              <button
-                                key={`${dept._id}-${index}`}
-                                onClick={() => {
-                                  toggleDepartment(dept._id);
-                                  setShowDepartmentDropdown(false);
-                                }}
-                                className="w-full px-4 py-3 text-left hover:bg-blue-50 transition-colors duration-150 flex items-center gap-2 border-b border-gray-100 last:border-b-0"
-                              >
-                                <Building2 className="w-4 h-4 text-blue-600" />
-                                <span className="text-gray-700 font-medium">{dept.name}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Selected Department chips */}
-                    {selectedDepartments.length > 0 && (
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Selected Departments ({selectedDepartments.length})
-                        </label>
-                        <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 min-h-[60px]">
-                          {getSelectedDepartmentObjects().map((dept, index) => (
-                            <span
-                              key={`${dept._id}-${index}`}
-                              className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium shadow-sm hover:bg-blue-700 transition-colors duration-200"
-                            >
-                              <Building2 className="w-4 h-4" />
-                              {dept.name}
-                              <button
-                                onClick={() => removeDepartment(dept._id)}
-                                className="hover:bg-blue-800 rounded-full p-0.5 transition-colors duration-200"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ── Access Scope ── */}
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
-                        <Lock className="w-4 h-4 text-gray-500" />
-                        Access Scope
-                      </label>
-
-                      {selectedRole === 'employee' && (
-                        <div className="flex items-start gap-2 p-3 mb-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-                          <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                          <span>Employees automatically use <strong>assignment-based scope</strong> — they only see projects where they're assigned to tasks, subtasks, or nano-subtasks.</span>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-3 gap-2">
-                        {/* Full Department */}
-                        <button
-                          type="button"
-                          disabled={selectedRole === 'employee'}
-                          onClick={() => selectedRole !== 'employee' && setAccessType('full_department')}
-                          className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-center transition-all duration-200 ${
-                            selectedRole === 'employee'
-                              ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
-                              : accessType === 'full_department'
-                                ? 'border-blue-500 bg-blue-50 shadow-sm'
-                                : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40'
-                          }`}
-                        >
-                          <div className={`p-2 rounded-lg ${accessType === 'full_department' && selectedRole !== 'employee' ? 'bg-blue-100' : 'bg-gray-100'}`}>
-                            <Building2 className={`w-5 h-5 ${accessType === 'full_department' && selectedRole !== 'employee' ? 'text-blue-600' : 'text-gray-500'}`} />
-                          </div>
-                          <div>
-                            <p className={`text-xs font-semibold leading-tight ${accessType === 'full_department' && selectedRole !== 'employee' ? 'text-blue-700' : 'text-gray-700'}`}>Full Dept</p>
-                            <p className="text-[10px] text-gray-400 leading-tight mt-0.5">All projects</p>
-                          </div>
-                        </button>
-
-                        {/* Selected Projects */}
-                        <button
-                          type="button"
-                          disabled={selectedRole === 'employee'}
-                          onClick={() => selectedRole !== 'employee' && setAccessType('selected_projects')}
-                          className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-center transition-all duration-200 ${
-                            selectedRole === 'employee'
-                              ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
-                              : accessType === 'selected_projects'
-                                ? 'border-purple-500 bg-purple-50 shadow-sm'
-                                : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-purple-50/40'
-                          }`}
-                        >
-                          <div className={`p-2 rounded-lg ${accessType === 'selected_projects' && selectedRole !== 'employee' ? 'bg-purple-100' : 'bg-gray-100'}`}>
-                            <FolderOpen className={`w-5 h-5 ${accessType === 'selected_projects' && selectedRole !== 'employee' ? 'text-purple-600' : 'text-gray-500'}`} />
-                          </div>
-                          <div>
-                            <p className={`text-xs font-semibold leading-tight ${accessType === 'selected_projects' && selectedRole !== 'employee' ? 'text-purple-700' : 'text-gray-700'}`}>Selected</p>
-                            <p className="text-[10px] text-gray-400 leading-tight mt-0.5">Pick projects</p>
-                          </div>
-                        </button>
-
-                        {/* Assigned Tasks Only */}
-                        <button
-                          type="button"
-                          onClick={() => setAccessType('assigned_tasks')}
-                          className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-center transition-all duration-200 ${
-                            accessType === 'assigned_tasks'
-                              ? 'border-green-500 bg-green-50 shadow-sm'
-                              : 'border-gray-200 bg-white hover:border-green-300 hover:bg-green-50/40'
-                          }`}
-                        >
-                          <div className={`p-2 rounded-lg ${accessType === 'assigned_tasks' ? 'bg-green-100' : 'bg-gray-100'}`}>
-                            <ListChecks className={`w-5 h-5 ${accessType === 'assigned_tasks' ? 'text-green-600' : 'text-gray-500'}`} />
-                          </div>
-                          <div>
-                            <p className={`text-xs font-semibold leading-tight ${accessType === 'assigned_tasks' ? 'text-green-700' : 'text-gray-700'}`}>My Tasks</p>
-                            <p className="text-[10px] text-gray-400 leading-tight mt-0.5">Assigned only</p>
-                          </div>
-                        </button>
-                      </div>
-
-                      {/* Access type description */}
-                      <p className="text-xs text-gray-500 mt-2 px-1">
-                        {accessType === 'full_department' && 'User can access all projects within their assigned department(s).'}
-                        {accessType === 'selected_projects' && 'User can only access the specific projects you select below.'}
-                        {accessType === 'assigned_tasks' && 'User only sees projects where they are directly assigned to tasks, subtasks, or nano-subtasks.'}
-                      </p>
-                    </div>
-
-                    {/* ── Project Multi-select (only for selected_projects) ── */}
-                    {accessType === 'selected_projects' && (
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
-                          <FolderOpen className="w-4 h-4 text-purple-500" />
-                          Select Projects
-                          {allowedProjects.length > 0 && (
-                            <span className="ml-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">
-                              {allowedProjects.length} selected
-                            </span>
-                          )}
-                        </label>
-
-                        {selectedDepartments.length === 0 ? (
-                          <div className="flex items-center gap-2 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-                            <Building2 className="w-4 h-4 flex-shrink-0" />
-                            Select a department first to see its projects.
-                          </div>
-                        ) : projectsLoading ? (
-                          <div className="flex items-center justify-center p-6 bg-gray-50 rounded-lg border border-gray-200">
-                            <Loader2 className="w-5 h-5 text-purple-500 animate-spin mr-2" />
-                            <span className="text-sm text-gray-500">Loading projects...</span>
-                          </div>
-                        ) : (
-                          <>
-                            {/* Global search across all departments */}
-                            <div className="relative mb-3">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                              <input
-                                type="text"
-                                placeholder="Search projects..."
-                                value={projectSearch}
-                                onChange={(e) => setProjectSearch(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                              />
-                            </div>
-
-                            {/* Department-wise accordion groups */}
-                            <div className="border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-100">
-                              {groupedProjects.length === 0 ? (
-                                <div className="p-4 text-center text-sm text-gray-500">No projects found.</div>
-                              ) : (
-                                groupedProjects.map(({ deptId, deptName, projects }) => {
-                                  const filtered = projects.filter(p =>
-                                    p.name?.toLowerCase().includes(projectSearch.toLowerCase())
-                                  );
-                                  if (projectSearch && filtered.length === 0) return null;
-
-                                  const isExpanded = expandedDepts[deptId] !== false; // default open
-                                  const selectedInDept = filtered.filter(p => allowedProjects.includes(p._id)).length;
-
-                                  return (
-                                    <div key={deptId}>
-                                      {/* Department header — acts as accordion toggle */}
-                                      <button
-                                        type="button"
-                                        onClick={() => setExpandedDepts(prev => ({ ...prev, [deptId]: !isExpanded }))}
-                                        className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors duration-150"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          {isExpanded
-                                            ? <ChevronDown className="w-4 h-4 text-gray-500" />
-                                            : <ChevronRight className="w-4 h-4 text-gray-500" />
-                                          }
-                                          <Building2 className="w-4 h-4 text-blue-500" />
-                                          <span className="text-sm font-semibold text-gray-700">{deptName}</span>
-                                          <span className="text-xs text-gray-400 bg-white border border-gray-200 px-1.5 py-0.5 rounded-full">
-                                            {filtered.length}
-                                          </span>
-                                        </div>
-                                        {selectedInDept > 0 && (
-                                          <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">
-                                            {selectedInDept} selected
-                                          </span>
-                                        )}
-                                      </button>
-
-                                      {/* Projects within this department */}
-                                      {isExpanded && (
-                                        <div className="divide-y divide-gray-50">
-                                          {filtered.map(project => {
-                                            const isSelected = allowedProjects.includes(project._id);
-                                            return (
-                                              <label
-                                                key={project._id}
-                                                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors duration-150 ${
-                                                  isSelected ? 'bg-purple-50' : 'hover:bg-gray-50'
-                                                }`}
-                                              >
-                                                <input
-                                                  type="checkbox"
-                                                  checked={isSelected}
-                                                  onChange={() => {
-                                                    setAllowedProjects(prev =>
-                                                      isSelected
-                                                        ? prev.filter(id => id !== project._id)
-                                                        : [...prev, project._id]
-                                                    );
-                                                  }}
-                                                  className="w-4 h-4 rounded text-purple-600 border-gray-300 focus:ring-purple-400"
-                                                />
-                                                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-                                                  <span className="text-white text-xs font-bold">
-                                                    {project.name?.charAt(0).toUpperCase()}
-                                                  </span>
-                                                </div>
-                                                <span className={`text-sm font-medium truncate ${isSelected ? 'text-purple-700' : 'text-gray-700'}`}>
-                                                  {project.name}
-                                                </span>
-                                              </label>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })
-                              )}
-                            </div>
-
-                            {/* Sticky selected project chips summary */}
-                            {allowedProjects.length > 0 && (
-                              <div className="mt-3 p-3 bg-purple-50 border border-purple-100 rounded-lg">
-                                <p className="text-xs font-semibold text-purple-700 mb-2">
-                                  {allowedProjects.length} project{allowedProjects.length !== 1 ? 's' : ''} selected:
-                                </p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {departmentProjects
-                                    .filter(p => allowedProjects.includes(p._id))
-                                    .map(project => (
-                                      <span
-                                        key={project._id}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium"
-                                      >
-                                        {project.name}
-                                        <button
-                                          type="button"
-                                          onClick={() => setAllowedProjects(prev => prev.filter(id => id !== project._id))}
-                                          className="hover:text-purple-900"
-                                        >
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                      </span>
-                                    ))}
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <UserAccessEditor
+                    userId={selectedUser._id}
+                    currentUserId={user?._id}
+                    onUserUpdated={loadData}
+                  />
                 </div>
 
                 {/* Modal Footer */}
@@ -1035,21 +606,7 @@ const HRPanel = () => {
                     onClick={closeAssignModal}
                     className="px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors duration-200 font-semibold"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => handleAssignUser(selectedUser._id, selectedDepartments)}
-                    disabled={roleLoading}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-semibold shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {roleLoading ? (
-                      <span className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </span>
-                    ) : (
-                      'Save Changes'
-                    )}
+                    Close
                   </button>
                 </div>
               </div>

@@ -17,6 +17,9 @@ import {
   SALES_STANDARD_FIELD_KEYS,
   validateSalesRequired,
 } from '../config/salesFieldConfig.js';
+import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
+import { setResourceOverride } from '../modules/permissions/accessControlService.js';
+import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js';
 
 // Field label mapping — derived from single-source-of-truth config
 const fieldLabels = SALES_FIELD_LABELS;
@@ -1832,7 +1835,7 @@ export const updateCustomColumn = async (req, res) => {
 export const getUserPermissions = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     // Only allow admin or the user themselves
     if (req.user.role !== 'admin' && req.user._id.toString() !== userId) {
       return res.status(403).json({
@@ -1841,10 +1844,9 @@ export const getUserPermissions = async (req, res) => {
       });
     }
 
-    // Get user details to check role
     const User = (await import('../models/User.js')).default;
     const targetUser = await User.findById(userId).select('role');
-    
+
     if (!targetUser) {
       return res.status(404).json({
         success: false,
@@ -1852,50 +1854,15 @@ export const getUserPermissions = async (req, res) => {
       });
     }
 
-    const userRole = (targetUser.role || '').toLowerCase();
+    // Delegates to the centralized permission engine (resource: 'sales').
+    // Admin bypass, override lookup, and expiry handling all live there now.
+    const result = await resolveResourceAccess(targetUser, 'sales');
+    const permissions = toLegacyShape('sales', result.actions);
 
-    // Admin gets default full access
-    if (userRole === 'admin') {
-      const defaultPermissions = {
-        moduleVisible: true,
-        canCreate: true,
-        canUpdate: true,
-        canDelete: true,
-        canExport: true,
-        canImport: true,
-        canManageDropdowns: true, // Only admin can manage dropdowns
-        canViewActivityLog: true
-      };
-      
-      return res.json({
-        success: true,
-        data: defaultPermissions
-      });
-    }
-
-    // For other roles, get permissions or return with moduleVisible false
-    try {
-      const permissions = await SalesPermission.getUserPermissions(userId);
-      res.json({
-        success: true,
-        data: permissions
-      });
-    } catch (permError) {
-      // If no permission record, return default deny
-      res.json({
-        success: true,
-        data: {
-          moduleVisible: false,
-          canCreate: false,
-          canUpdate: false,
-          canDelete: false,
-          canExport: false,
-          canImport: false,
-          canManageDropdowns: false,
-          canViewActivityLog: false
-        }
-      });
-    }
+    res.json({
+      success: true,
+      data: permissions
+    });
   } catch (error) {
     console.error('Get user permissions error:', error);
     res.status(500).json({
@@ -1916,11 +1883,16 @@ export const updateUserPermissions = async (req, res) => {
     const { userId } = req.params;
     const adminId = req.user._id;
 
-    const existingPermission = await SalesPermission.findOne({ user: userId });
-    const previousModuleVisible = existingPermission?.moduleVisible === true;
-    const previousNotifiedAt = existingPermission?.moduleAccessNotifiedAt || null;
+    const User = (await import('../models/User.js')).default;
+    const targetUser = await User.findById(userId).select('role');
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
 
-    const payload = {
+    const previousResult = await resolveResourceAccess(targetUser, 'sales');
+    const previousModuleVisible = previousResult.actions?.view === true;
+
+    const actions = fromLegacyShape('sales', {
       moduleVisible: req.body.moduleVisible === true,
       canCreate: !!req.body.canCreate,
       canUpdate: !!req.body.canUpdate,
@@ -1928,44 +1900,36 @@ export const updateUserPermissions = async (req, res) => {
       canExport: !!req.body.canExport,
       canImport: !!req.body.canImport,
       canManageDropdowns: !!req.body.canManageDropdowns,
-      canViewActivityLog: req.body.canViewActivityLog !== undefined ? !!req.body.canViewActivityLog : true,
-      notes: req.body.notes || ''
-    };
+      canViewActivityLog: req.body.canViewActivityLog !== undefined ? !!req.body.canViewActivityLog : true
+    });
+
+    // Delegates to the centralized permission engine (resource: 'sales').
+    // This is the same function backing PUT /api/sales-permissions/:id and
+    // PUT /api/access-control/users/:userId/overrides/sales — previously
+    // this endpoint and salesPermissionController.setSalesPermission each
+    // independently re-implemented this exact payload/save logic.
+    const { legacyPermissions } = await setResourceOverride(
+      userId,
+      'sales',
+      { actions, effect: 'grant', reason: req.body.notes || '' },
+      req.user,
+      { ip: req.ip, userAgent: req.headers['user-agent'] }
+    );
 
     const shouldNotifyModuleAccess = shouldNotifyOnModuleGrant({
       previousAccess: previousModuleVisible,
-      nextAccess: payload.moduleVisible === true
+      nextAccess: legacyPermissions.moduleVisible === true
     });
-
-    if (payload.moduleVisible === true) {
-      payload.moduleAccessNotifiedAt = new Date();
-    } else if (previousModuleVisible && payload.moduleVisible === false) {
-      payload.moduleAccessNotifiedAt = null;
-    }
-    
-    const permission = await SalesPermission.findOneAndUpdate(
-      { user: userId },
-      {
-        ...payload,
-        grantedBy: adminId
-      },
-      {
-        new: true,
-        upsert: true,
-        runValidators: true
-      }
-    );
 
     res.json({
       success: true,
       message: 'Permissions updated successfully',
-      data: permission
+      data: legacyPermissions
     });
 
-    // Notify the specific user (if connected) about permission changes
+    // setResourceOverride already emitted 'sales:permissions:updated' to the
+    // user via socket — only the grant-notification side effects remain here.
     try {
-      emitToUser(userId, 'sales:permissions:updated', { userId, permissions: permission });
-      // If module access granted, create in-app notification and send Slack notification
       if (shouldNotifyModuleAccess) {
         try {
           // In-app notification
@@ -1989,7 +1953,7 @@ export const updateUserPermissions = async (req, res) => {
             type: 'module_access',
             moduleName: 'Sales',
             triggeredBy: { name: req.user.name, _id: adminId },
-            notes: permission.notes,
+            notes: req.body.notes || '',
             priority: 'high',
             forceImmediate: true
           }).catch(err => console.error('Slack notification error:', err));
@@ -2002,9 +1966,9 @@ export const updateUserPermissions = async (req, res) => {
     }
   } catch (error) {
     console.error('Update permissions error:', error);
-    res.status(400).json({
+    res.status(error.statusCode || 400).json({
       success: false,
-      message: 'Failed to update permissions',
+      message: error.statusCode ? error.message : 'Failed to update permissions',
       error: error.message
     });
   }

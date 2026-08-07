@@ -2,14 +2,15 @@ import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspens
 import { motion, AnimatePresence } from 'framer-motion';
 import { Building2, Shield, Users } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
+import useAccessControl from '../hooks/useAccessControl';
 import Database from '../services/database';
 import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
 import useThemeStore from '../store/themeStore';
+import { Link } from 'react-router-dom';
 import DepartmentList from '../components/TeamManagement/DepartmentList';
 import EmployeeAssignment from '../components/TeamManagement/EmployeeAssignment';
 import TeamStats from '../components/TeamManagement/TeamStats';
-import RoleManagementPanel from '../components/TeamManagement/RoleManagementPanel';
 import Toast from '../components/TeamManagement/Toast';
 import { TeamManagementSkeleton } from '../components/LoadingSkeleton';
 import ErrorBoundary from '../components/TeamManagement/ErrorBoundary';
@@ -20,8 +21,12 @@ import EditDepartmentModal from '../components/EditDepartmentModal';
 // Lazy load modals
 const CreateDepartmentModal = lazy(() => import('../components/TeamManagement/modals/CreateDepartmentModal'));
 const AddMemberModal = lazy(() => import('../components/TeamManagement/modals/AddMemberModal'));
+// CreateRoleModal stays here only as the "+ create a new role" shortcut
+// reachable from inside AddMemberModal's role dropdown. Full role management
+// (create/edit/delete, permission checklist, delegated access) now lives
+// exclusively in the centralized Access & Permissions module — see
+// pages/AccessControlPage.jsx — which this page links out to below.
 const CreateRoleModal = lazy(() => import('../components/TeamManagement/modals/CreateRoleModal'));
-const EditRoleModal = lazy(() => import('../components/TeamManagement/modals/EditRoleModal'));
 const ReassignModal = lazy(() => import('../components/TeamManagement/modals/ReassignModal'));
 const DeleteConfirmationModal = lazy(() => import('../components/TeamManagement/modals/DeleteConfirmationModal'));
 
@@ -54,20 +59,13 @@ const TeamManagement = () => {
     loading: departmentsLoading
   } = useDepartmentStore();
 
-  // Role store for custom roles management
-  const { roles, createRole, updateRole, deleteRole, loadRoles, initialized: rolesInitialized } = useRoleStore();
-  
-  // Create Role Modal state
+  // Role store — only used here for the "+ create a new role" shortcut from
+  // AddMemberModal. Full CRUD lives in the centralized module (AccessControlPage).
+  const { roles, createRole, loadRoles, initialized: rolesInitialized } = useRoleStore();
+
+  // Create Role Modal state (AddMemberModal bridge only)
   const [showCreateRoleModal, setShowCreateRoleModal] = useState(false);
   const [createRoleLoading, setCreateRoleLoading] = useState(false);
-
-  // Edit Role Modal state
-  const [showEditRoleModal, setShowEditRoleModal] = useState(false);
-  const [editRoleLoading, setEditRoleLoading] = useState(false);
-  const [roleToEdit, setRoleToEdit] = useState(null);
-
-  // Tab state for switching between Departments and Roles management
-  const [activeManagementTab, setActiveManagementTab] = useState('departments');
 
   // Consolidated state management with useReducer
   const [state, dispatch] = useReducer(teamManagementReducer, initialState);
@@ -527,45 +525,9 @@ const TeamManagement = () => {
     }
   }, [createRole, showToast]);
 
-  // Handle updating an existing role
-  const handleUpdateRole = useCallback(async (roleId, roleData) => {
-    setEditRoleLoading(true);
-    try {
-      await updateRole(roleId, roleData);
-      setShowEditRoleModal(false);
-      setRoleToEdit(null);
-      showToast(`Role "${roleData.name}" updated successfully!`, 'success');
-    } catch (error) {
-      console.error('Error updating role:', error);
-      showToast(error.response?.data?.message || 'Failed to update role', 'error');
-    } finally {
-      setEditRoleLoading(false);
-    }
-  }, [updateRole, showToast]);
-
-  // Handle deleting a role
-  const handleDeleteRole = useCallback(async (role) => {
-    if (!role) return;
-    try {
-      await deleteRole(role._id);
-      setShowEditRoleModal(false);
-      setRoleToEdit(null);
-      showToast(`Role "${role.name}" deleted successfully!`, 'success');
-    } catch (error) {
-      console.error('Error deleting role:', error);
-      showToast(error.response?.data?.message || 'Failed to delete role', 'error');
-    }
-  }, [deleteRole, showToast]);
-
   // Open Create Role modal from Add Member modal
   const handleOpenCreateRoleModal = useCallback(() => {
     setShowCreateRoleModal(true);
-  }, []);
-
-  // Open Edit Role Modal
-  const handleOpenEditRoleModal = useCallback((role) => {
-    setRoleToEdit(role);
-    setShowEditRoleModal(true);
   }, []);
 
   const handleDeleteDepartment = useCallback(async () => {
@@ -585,6 +547,15 @@ const TeamManagement = () => {
 
   const isAdminOrManager = user && (user.role === 'admin' || user.role === 'manager');
   const isAdmin = user && user.role === 'admin';
+  // Delegated administration (brief 3.6): an Admin can grant a specific
+  // Manager (or custom role) the access_control.manage permission, which
+  // then unlocks this same Roles & Permissions tab for them — without
+  // making every Manager an implicit role-editor the way `isAdmin` alone
+  // would. Server-side, POST/PUT/DELETE /api/roles already accept this via
+  // requireAccessControlManage; this just lets a delegated Manager reach
+  // the same UI an Admin uses instead of hitting a 403 with no visible path.
+  const { canManageAccessControl } = useAccessControl();
+  const canManageRolesUI = isAdmin || canManageAccessControl;
 
   if (departmentsLoading || state.isLoading) {
     return <TeamManagementSkeleton />;
@@ -636,37 +607,25 @@ const TeamManagement = () => {
                     </div>
                     <span>Team Management</span>
                   </h1>
-                  <p className={`text-sm sm:text-base ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} ml-10 sm:ml-11`}>Manage teams, departments, and roles</p>
+                  <p className={`text-sm sm:text-base ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} ml-10 sm:ml-11`}>Manage teams and departments</p>
                 </div>
-                
-                {/* Tab Navigation for Admin */}
-                {isAdmin && (
-                  <div className={`flex items-center gap-2 ${isDarkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-gray-100'} rounded-xl p-1 shadow-md border w-fit`}>
-                    <button
-                      onClick={() => setActiveManagementTab('departments')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
-                        activeManagementTab === 'departments'
-                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
-                          : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
-                      }`}
-                    >
-                      <Building2 size={18} />
-                      Departments
-                    </button>
-                    <button
-                      onClick={() => setActiveManagementTab('roles')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
-                        activeManagementTab === 'roles'
-                          ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-md'
-                          : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
-                      }`}
-                    >
-                      <Shield size={18} />
-                      Roles & Permissions
-                    </button>
-                  </div>
+
+                {/* Roles, permissions, and per-user access now live in the
+                    centralized Access & Permissions module, not a tab here. */}
+                {canManageRolesUI && (
+                  <Link
+                    to="/access-control"
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all w-fit shadow-md border ${
+                      isDarkMode
+                        ? 'bg-gray-800/80 border-gray-700 text-gray-200 hover:bg-gray-700'
+                        : 'bg-white border-gray-100 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Shield size={18} className="text-purple-500" />
+                    Manage Roles & Permissions
+                  </Link>
                 )}
-                
+
                 {/* Quick Stats - Hidden on mobile, visible on tablet+ */}
                 <div className="hidden md:block">
                   <TeamStats stats={stats} isLoading={state.isLoading} />
@@ -683,9 +642,9 @@ const TeamManagement = () => {
               <TeamStats stats={stats} isLoading={state.isLoading} />
             </motion.div>
 
-            {/* Content based on active tab */}
+            {/* Departments & team assignment content */}
             <AnimatePresence mode="wait">
-              {activeManagementTab === 'departments' ? (
+              {(
                 <motion.div
                   key="departments"
                   initial={{ opacity: 0, x: -20 }}
@@ -738,21 +697,6 @@ const TeamManagement = () => {
                     onItemsPerPageChange={(count) => dispatch({ type: ACTION_TYPES.SET_ITEMS_PER_PAGE, payload: count })}
                     />
                   </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="roles"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <RoleManagementPanel
-                    onCreateRole={handleOpenCreateRoleModal}
-                    onEditRole={handleOpenEditRoleModal}
-                    onDeleteRole={handleDeleteRole}
-                    isLoading={state.isLoading}
-                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -813,18 +757,6 @@ const TeamManagement = () => {
           onSubmit={handleCreateRole}
           onClose={() => setShowCreateRoleModal(false)}
           existingRoleNames={roles.map(r => r.name)}
-        />
-
-        <EditRoleModal
-          isOpen={showEditRoleModal}
-          isLoading={editRoleLoading}
-          role={roleToEdit}
-          onSubmit={handleUpdateRole}
-          onDelete={handleDeleteRole}
-          onClose={() => {
-            setShowEditRoleModal(false);
-            setRoleToEdit(null);
-          }}
         />
 
         <ReassignModal

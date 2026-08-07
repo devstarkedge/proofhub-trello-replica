@@ -12,6 +12,7 @@ import {
   initializeRoles
 } from '../controllers/roleController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
+import { requireAccessControlManage } from '../middleware/requireAccessControl.js';
 import { validate } from '../middleware/validation.js';
 
 const router = express.Router();
@@ -22,8 +23,8 @@ router.get('/my-permissions', protect, getMyPermissions);
 // Get all roles (authenticated users can see roles for dropdown)
 router.get('/', protect, getRoles);
 
-// Get permission definitions (admin only)
-router.get('/permissions/definitions', protect, authorize('admin'), getPermissionDefinitions);
+// Get permission definitions (admin, or anyone delegated access_control.manage)
+router.get('/permissions/definitions', protect, requireAccessControlManage, getPermissionDefinitions);
 
 // Get role by slug
 router.get('/slug/:slug', protect, getRoleBySlug);
@@ -31,8 +32,9 @@ router.get('/slug/:slug', protect, getRoleBySlug);
 // Get single role
 router.get('/:id', protect, getRole);
 
-// Admin-only routes
-router.post('/', protect, authorize('admin'), [
+// Admin, or anyone delegated access_control.manage (strict superset of the
+// old admin-only guard — see modules/permissions for how the delegation works).
+router.post('/', protect, requireAccessControlManage, [
   body('name')
     .trim()
     .notEmpty().withMessage('Role name is required')
@@ -47,7 +49,7 @@ router.post('/', protect, authorize('admin'), [
   validate
 ], createRole);
 
-router.put('/:id', protect, authorize('admin'), [
+router.put('/:id', protect, requireAccessControlManage, [
   body('name')
     .optional()
     .trim()
@@ -65,7 +67,7 @@ router.put('/:id', protect, authorize('admin'), [
   validate
 ], updateRole);
 
-router.delete('/:id', protect, authorize('admin'), deleteRole);
+router.delete('/:id', protect, requireAccessControlManage, deleteRole);
 
 // Initialize/seed default roles (admin only)
 router.post('/init', protect, authorize('admin'), initializeRoles);

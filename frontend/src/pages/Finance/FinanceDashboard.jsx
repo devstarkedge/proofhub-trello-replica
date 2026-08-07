@@ -9,13 +9,13 @@ import {
   AlertCircle,
   RefreshCw,
   Calendar,
-  ArrowRight
+  ArrowRight,
+  ShieldCheck
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import AuthContext from '../../context/AuthContext';
 import socketService from '../../services/socket';
-import FinanceAccessControl from '../../components/Finance/FinanceAccessControl';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 import { getBillingTypeLabel, getBillingTypeStyle } from '../../utils/billing';
 
@@ -749,12 +749,21 @@ const FinanceDashboard = () => {
             <Calendar className="w-4 h-4" />
             Weekly Report
           </button>
+          {user?.role?.toLowerCase() === 'admin' && (
+            <button
+              onClick={() => navigate('/access-control')}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-[1.02]"
+              style={{
+                backgroundColor: 'rgba(124, 58, 237, 0.12)',
+                color: '#7c3aed'
+              }}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Manage Finance Access
+            </button>
+          )}
         </div>
       </div>
-
-      {user?.role?.toLowerCase() === 'admin' && (
-        <FinanceAccessControl />
-      )}
     </div>
   );
 };

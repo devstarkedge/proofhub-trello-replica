@@ -1,10 +1,9 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp } from 'lucide-react';
+import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp, ShieldCheck } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
-import { getUserPermissions as getSalesPermissions } from '../services/salesApi';
-import { getUserPagePermissions } from '../services/userPermissionsApi';
+import useAccessControl from '../hooks/useAccessControl';
 import useThemeStore from '../store/themeStore';
 
 const MotionDiv = motion.div;
@@ -22,6 +21,7 @@ const iconColors = {
   '/pm-sheet': { color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' }, // Teal - PM Sheet
   '/finance': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Finance
   '/sales': { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }, // Purple - Sales
+  '/access-control': { color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.12)' }, // Violet - Access & Permissions
 };
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
@@ -31,8 +31,13 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   const [pmSheetExpanded, setPmSheetExpanded] = useState(false);
   const location = useLocation();
 
-  const [salesVisible, setSalesVisible] = useState(false);
-  const [financeVisible, setFinanceVisible] = useState(false);
+  // Single source of truth for "can this user see module X" — replaces two
+  // separate ad hoc fetches (Sales, Finance) that each called their own
+  // permission endpoint directly.
+  const { can, isAdmin: isAccessControlAdmin, canManageAccessControl } = useAccessControl();
+  const salesVisible = can('sales', 'view');
+  const financeVisible = can('finance', 'view');
+  const accessControlVisible = isAccessControlAdmin || canManageAccessControl;
 
   // Check if current path is under PM Sheet
   const isPMSheetActive = location.pathname.startsWith('/pm-sheet');
@@ -56,94 +61,9 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMobile, onClose]);
 
-  // Fetch current user's sales visibility and listen for permission updates
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchVisibility = async () => {
-      if (!user || !user._id) return;
-      try {
-        const res = await getSalesPermissions(user._id);
-        if (!mounted) return;
-        const perms = res.data || res;
-        setSalesVisible(Boolean(perms?.moduleVisible));
-      } catch {
-        setSalesVisible(false);
-      }
-    };
-
-    fetchVisibility();
-
-    const onUpdate = (e) => {
-      try {
-        const { userId, permissions } = e.detail || {};
-        if (!user) return;
-        if (userId === user._id) {
-          setSalesVisible(Boolean(permissions?.moduleVisible));
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    window.addEventListener('sales-permissions-updated', onUpdate);
-    window.addEventListener('socket-sales-permissions-updated', onUpdate);
-
-    return () => {
-      mounted = false;
-      window.removeEventListener('sales-permissions-updated', onUpdate);
-      window.removeEventListener('socket-sales-permissions-updated', onUpdate);
-    };
-  }, [user]);
-
-  // Fetch current user's Finance visibility and listen for permission updates
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchVisibility = async () => {
-      if (!user || !user._id) {
-        setFinanceVisible(false);
-        return;
-      }
-
-      const userRole = (user.role || '').toLowerCase();
-      if (userRole === 'admin') {
-        setFinanceVisible(true);
-        return;
-      }
-
-      try {
-        const data = await getUserPagePermissions(user._id);
-        if (!mounted) return;
-        setFinanceVisible(Boolean(data?.permissions?.hasAccess));
-      } catch {
-        if (mounted) setFinanceVisible(false);
-      }
-    };
-
-    fetchVisibility();
-
-    const onUpdate = (e) => {
-      try {
-        const { userId, permissions } = e.detail || {};
-        if (!user) return;
-        if (userId?.toString() === user._id?.toString()) {
-          setFinanceVisible((user.role || '').toLowerCase() === 'admin' || Boolean(permissions?.hasAccess));
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    window.addEventListener('finance-permissions-updated', onUpdate);
-    window.addEventListener('socket-finance-permissions-updated', onUpdate);
-
-    return () => {
-      mounted = false;
-      window.removeEventListener('finance-permissions-updated', onUpdate);
-      window.removeEventListener('socket-finance-permissions-updated', onUpdate);
-    };
-  }, [user]);
+  // Sales/Finance visibility now comes from useAccessControl() above, which
+  // already stays live via the shared socket-driven refresh — no per-module
+  // fetch/listener pair needed here anymore.
 
   // PM Sheet child pages
   const pmSheetChildren = [
@@ -197,6 +117,14 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     } else if (salesVisible) {
       // Non-admin user explicitly granted sales access — only show Sales link
       items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
+    }
+
+    // Admin, or anyone delegated access_control.manage — one nav item,
+    // regardless of role branch above, since this is a permission check,
+    // not a role check. (Admin already gets it via /admin/settings' sibling
+    // block above too, but this covers delegated non-admins.)
+    if (accessControlVisible && !items.some((item) => item.path === '/access-control')) {
+      items.push({ path: '/access-control', icon: ShieldCheck, label: 'Access & Permissions' });
     }
 
     return items;

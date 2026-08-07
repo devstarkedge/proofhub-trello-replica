@@ -1,30 +1,19 @@
-import SalesPermission from '../models/SalesPermission.js';
+import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
+import { toLegacyShape } from '../config/permissionRegistry.js';
 
 /**
- * Middleware to check if user has sales module permission
+ * Middleware to check if user has sales module permission.
+ *
+ * Delegates to the centralized permission engine (AccessOverride, resource
+ * 'sales') instead of reading the SalesPermission model directly. The
+ * req.salesPermissions shape is kept exactly as before (moduleVisible,
+ * canCreate, ...) so every downstream route/controller that reads it needs
+ * zero changes.
  */
 export const checkSalesPermission = async (req, res, next) => {
   try {
-    const userId = req.user._id;
-    const userRole = (req.user.role || '').toLowerCase();
-    
-    // Admin has full access by default
-    if (userRole === 'admin') {
-      req.salesPermissions = {
-        moduleVisible: true,
-        canCreate: true,
-        canUpdate: true,
-        canDelete: true,
-        canExport: true,
-        canImport: true,
-        canManageDropdowns: true, // Only admin can manage dropdowns
-        canViewActivityLog: true
-      };
-      return next();
-    }
-
-    // Get user permissions for other roles
-    const permissions = await SalesPermission.getUserPermissions(userId);
+    const result = await resolveResourceAccess(req.user, 'sales');
+    const permissions = toLegacyShape('sales', result.actions);
 
     if (!permissions.moduleVisible) {
       return res.status(403).json({
@@ -33,7 +22,6 @@ export const checkSalesPermission = async (req, res, next) => {
       });
     }
 
-    // Attach permissions to request for use in routes
     req.salesPermissions = permissions;
     next();
   } catch (error) {

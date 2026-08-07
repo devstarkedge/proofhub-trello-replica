@@ -1,20 +1,19 @@
-import UserPermission, {
-  FINANCE_PAGE_KEY,
-  FULL_FINANCE_PERMISSIONS,
-  normalizePermissionRole
-} from '../models/UserPermission.js';
+import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
+import { toLegacyShape } from '../config/permissionRegistry.js';
 
+/**
+ * Delegates to the centralized permission engine (AccessOverride, resource
+ * 'finance') instead of reading the UserPermission model directly. Keeps the
+ * req.financePermissions shape (hasAccess, revenueAnalytics, billingDetails,
+ * locked) unchanged so downstream code needs zero changes.
+ */
 export const checkFinanceAccess = async (req, res, next) => {
   try {
-    const userId = req.user?._id || req.user?.id;
-    const userRole = normalizePermissionRole(req.user?.role);
-
-    if (userRole === 'admin') {
-      req.financePermissions = { ...FULL_FINANCE_PERMISSIONS, locked: true };
-      return next();
-    }
-
-    const permissions = await UserPermission.getPagePermissions(userId, userRole, FINANCE_PAGE_KEY);
+    const result = await resolveResourceAccess(req.user, 'finance');
+    const permissions = {
+      ...toLegacyShape('finance', result.actions),
+      locked: result.source === 'admin'
+    };
 
     if (!permissions.hasAccess) {
       return res.status(403).json({

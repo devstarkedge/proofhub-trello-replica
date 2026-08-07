@@ -3,9 +3,9 @@ import Role from '../models/Role.js';
 import UserPermission, {
   FINANCE_PAGE_KEY,
   FULL_FINANCE_PERMISSIONS,
-  normalizePermissionRole,
-  serializePagePermission
+  normalizePermissionRole
 } from '../models/UserPermission.js';
+import AccessOverride from '../models/AccessOverride.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { sendVerificationEmail } from '../utils/email.js';
@@ -13,8 +13,18 @@ import notificationService from '../utils/notificationService.js';
 import { chatHooks } from '../utils/chatHooks.js';
 import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import { emitToUser } from '../realtime/index.js';
+import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
+import { setResourceOverride } from '../modules/permissions/accessControlService.js';
+import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js';
+import { recordAuditLog } from '../modules/permissions/auditLogService.js';
 
 const ROLE_OPTIONS_FOR_FINANCE_ACCESS = ['admin', 'manager', 'employee', 'hr'];
+
+const ACCESS_SCOPE_LABELS = {
+  full_department: 'Full Dept',
+  selected_projects: 'Selected',
+  assigned_tasks: 'My Tasks'
+};
 
 const normalizePageKey = (pageKey) => String(pageKey || FINANCE_PAGE_KEY).toLowerCase().trim();
 
@@ -103,8 +113,14 @@ export const getUserPagePermissions = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('User not found', 404));
   }
 
-  const permission = await UserPermission.findOne({ user: user._id, pageKey }).lean();
-  const permissions = serializePagePermission(permission, user.role, pageKey);
+  // Delegates to the centralized permission engine (resource: 'finance')
+  // instead of reading the UserPermission model directly.
+  const result = await resolveResourceAccess(user, FINANCE_PAGE_KEY);
+  const permissions = {
+    pageKey,
+    ...toLegacyShape(FINANCE_PAGE_KEY, result.actions),
+    locked: result.source === 'admin'
+  };
 
   res.status(200).json({
     success: true,
@@ -160,31 +176,28 @@ export const patchUserPagePermissions = asyncHandler(async (req, res, next) => {
     invalidateAuthCache(user._id);
   }
 
-  const permissionPayload = requestedRole === 'admin'
-    ? { ...FULL_FINANCE_PERMISSIONS }
-    : {
-        pageKey,
-        hasAccess: req.body.hasAccess === true,
-        revenueAnalytics: req.body.revenueAnalytics === true,
-        billingDetails: req.body.billingDetails === true
-      };
+  // Delegates to the centralized permission engine (resource: 'finance').
+  // Admin needs no override — the resolver already grants full access to
+  // any admin — so only write an override for non-admin target roles.
+  let permissions;
+  if (requestedRole === 'admin') {
+    permissions = { pageKey, ...FULL_FINANCE_PERMISSIONS, locked: true };
+  } else {
+    const actions = fromLegacyShape(FINANCE_PAGE_KEY, {
+      hasAccess: req.body.hasAccess === true,
+      revenueAnalytics: req.body.revenueAnalytics === true,
+      billingDetails: req.body.billingDetails === true
+    });
+    const { legacyPermissions } = await setResourceOverride(
+      user._id,
+      FINANCE_PAGE_KEY,
+      { actions, effect: 'grant' },
+      req.user,
+      { ip: req.ip, userAgent: req.headers['user-agent'] }
+    );
+    permissions = { pageKey, ...legacyPermissions, locked: false };
+  }
 
-  const permission = await UserPermission.findOneAndUpdate(
-    { user: user._id, pageKey },
-    {
-      ...permissionPayload,
-      user: user._id,
-      grantedBy: requesterId
-    },
-    {
-      new: true,
-      upsert: true,
-      runValidators: true,
-      setDefaultsOnInsert: true
-    }
-  ).lean();
-
-  const permissions = serializePagePermission(permission, requestedRole, pageKey);
   const responseUser = buildPermissionUserPayload(user);
 
   res.status(200).json({
@@ -196,22 +209,19 @@ export const patchUserPagePermissions = asyncHandler(async (req, res, next) => {
     }
   });
 
-  try {
-    emitToUser(user._id.toString(), 'finance:permissions:updated', {
-      userId: user._id,
-      permissions
-    });
-
-    if (roleChanged) {
+  // setResourceOverride already emitted 'finance:permissions:updated' for the
+  // non-admin case above — only the role-change event remains here.
+  if (roleChanged) {
+    try {
       emitToUser(user._id.toString(), 'user-role-changed', {
         userId: user._id,
         previousRole: currentRole,
         newRole: requestedRole,
         roleId: user.roleId
       });
+    } catch (emitErr) {
+      console.error('Error emitting role change update:', emitErr);
     }
-  } catch (emitErr) {
-    console.error('Error emitting finance permission update:', emitErr);
   }
 });
 
@@ -230,9 +240,20 @@ export const updateUser = asyncHandler(async (req, res, next) => {
   // Update fields
   if (name) user.name = name;
   if (email) user.email = email;
-  if (role && (req.user.role === 'admin' || req.user.role === 'manager')) {
+  // SECURITY: role changes must go through PUT /api/users/:id/role (changeUserRole),
+  // which is admin-only, validates the target role, and blocks self-promotion.
+  // This generic update endpoint is reachable by managers (ownerOrAdminManager),
+  // so it must never accept a role change — allowing it previously let any manager
+  // set their own (or anyone else's) role to 'admin' via this route.
+  if (role && role.toLowerCase() !== user.role && req.user.role !== 'admin') {
+    return next(new ErrorResponse('Only admins can change user roles. Use PUT /api/users/:id/role.', 403));
+  }
+  if (role && req.user.role === 'admin') {
+    if (user._id.toString() === req.user.id) {
+      return next(new ErrorResponse('Cannot change your own role', 403));
+    }
     user.role = role;
-    
+
     // Lookup roleId
     const Role = (await import('../models/Role.js')).default;
     const roleDoc = await Role.findOne({ slug: role.toLowerCase() });
@@ -248,6 +269,7 @@ export const updateUser = asyncHandler(async (req, res, next) => {
   if (isActive !== undefined && (req.user.role === 'admin' || req.user.role === 'manager')) user.isActive = isActive;
 
   await user.save();
+  invalidateAuthCache(user._id);
 
   res.status(200).json({
     success: true,
@@ -314,8 +336,11 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
   // Delete notifications involving the user
   await Notification.deleteMany({ $or: [{ user: req.params.id }, { sender: req.params.id }] });
 
-  // Delete page/module permissions owned by the user
+  // Delete page/module permissions owned by the user (legacy tables kept
+  // for historical record elsewhere, but per-user rows must go) and their
+  // centralized AccessOverride rows (Sales, Finance, any future module).
   await UserPermission.deleteMany({ user: req.params.id });
+  await AccessOverride.deleteMany({ user: req.params.id });
 
   // Delete activities by the user
   await Activity.deleteMany({ user: req.params.id });
@@ -619,11 +644,24 @@ export const declineUser = asyncHandler(async (req, res, next) => {
 export const assignUser = asyncHandler(async (req, res, next) => {
   const { departments, team, accessType, allowedProjects } = req.body;
 
+  // SECURITY: no one may change their own department/access-scope through
+  // this endpoint — including Admin. Mirrors the same rule enforced for
+  // role changes (below) and resource overrides (accessControlService).
+  if (req.user.id === req.params.id) {
+    return next(new ErrorResponse('You cannot modify your own access.', 403));
+  }
+
   const user = await User.findById(req.params.id);
 
   if (!user) {
     return next(new ErrorResponse('User not found', 404));
   }
+
+  const before = {
+    department: (user.department || []).map((d) => d.toString()),
+    accessType: user.accessType,
+    allowedProjects: (user.allowedProjects || []).map((p) => p.toString())
+  };
 
   if (departments !== undefined) {
     user.department = departments; // Assign the array of department IDs
@@ -687,6 +725,47 @@ export const assignUser = asyncHandler(async (req, res, next) => {
     departments: user.department
   });
 
+  (async () => {
+    const after = {
+      department: (user.department || []).map((d) => d.toString()),
+      accessType: user.accessType,
+      allowedProjects: (user.allowedProjects || []).map((p) => p.toString())
+    };
+
+    const changeDetails = [];
+    if (before.accessType !== after.accessType) {
+      changeDetails.push({ label: 'Access Scope', previous: ACCESS_SCOPE_LABELS[before.accessType] || before.accessType, next: ACCESS_SCOPE_LABELS[after.accessType] || after.accessType });
+    }
+    if (JSON.stringify([...before.department].sort()) !== JSON.stringify([...after.department].sort())) {
+      const Department = (await import('../models/Department.js')).default;
+      const deptIds = [...new Set([...before.department, ...after.department])];
+      const depts = await Department.find({ _id: { $in: deptIds } }).select('name').lean();
+      const nameOf = (id) => depts.find((d) => d._id.toString() === id)?.name || id;
+      changeDetails.push({
+        label: 'Departments',
+        previous: before.department.map(nameOf),
+        next: after.department.map(nameOf)
+      });
+    }
+
+    if (changeDetails.length === 0) return;
+
+    await recordAuditLog({
+      actor: req.user,
+      target: user,
+      action: 'ACCESS_SCOPE_UPDATED',
+      targetType: 'User',
+      targetId: user._id,
+      resourceKey: 'access_scope',
+      resourceLabel: 'Access Scope & Departments',
+      summary: `${req.user.name} updated access scope for ${user.name}`,
+      changeDetails,
+      before,
+      after,
+      meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+    });
+  })().catch((err) => console.error('Failed to record access-scope audit log:', err));
+
   res.status(200).json({
     success: true,
     data: user
@@ -722,6 +801,17 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Cannot change your own role', 403));
   }
 
+  // SECURITY: this route now also accepts a non-admin delegated via
+  // access_control.manage (allowRolesOrAccessControlManage in routes/users.js),
+  // so it can no longer assume every caller is a real Admin. Delegation is
+  // meant to let someone manage roles/permissions/users — not mint or edit
+  // Admins. Only a genuine Admin may promote a user to 'admin' or change an
+  // existing admin's role.
+  const requesterIsRealAdmin = req.user.role === 'admin';
+  if (!requesterIsRealAdmin && (normalizedRole === 'admin' || user.role === 'admin')) {
+    return next(new ErrorResponse('Only an Admin can grant or change Admin access', 403));
+  }
+
   const previousRole = user.role;
   if (previousRole === normalizedRole) {
     return res.status(200).json({ success: true, data: user, message: 'Role unchanged' });
@@ -750,6 +840,21 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
     success: true,
     data: user
   });
+
+  recordAuditLog({
+    actor: req.user,
+    target: user,
+    action: 'ROLE_CHANGED',
+    targetType: 'User',
+    targetId: user._id,
+    resourceKey: 'role_assignment',
+    resourceLabel: 'Role Assignment',
+    summary: `${req.user.name} changed ${user.name}'s role from "${previousRole}" to "${normalizedRole}"`,
+    changeDetails: [{ label: 'Role', previous: previousRole, next: normalizedRole }],
+    before: { role: previousRole },
+    after: { role: normalizedRole },
+    meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+  }).catch(() => {});
 
   // Emit real-time role change in background
   const { runBackground } = await import('../utils/backgroundTasks.js');

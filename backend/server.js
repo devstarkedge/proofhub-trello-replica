@@ -56,6 +56,7 @@ import salesPermissionsRoutes from './routes/salesPermissions.js';
 import salesTabRoutes from './modules/salesTabs/salesTab.routes.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
 import authzRoutes from './modules/authorization/routes/index.js';
+import accessControlRoutes from './routes/accessControl.js';
 import chatIntegrationRoutes from './routes/chatIntegration.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -203,6 +204,7 @@ app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/sales-tabs', salesTabRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 app.use('/api/authorization', authzRoutes);
+app.use('/api/access-control', accessControlRoutes);
 app.use('/api/chat-integration', chatIntegrationRoutes);
 
 // ─── SPA Fallback ─────────────────────────────────────────────────────────────
@@ -226,6 +228,7 @@ import seedAdmin from './utils/seed.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
 import { initQueues, shutdownQueues } from './queues/queueManager.js';
 import { startAnalyticsReportScheduler, stopAnalyticsReportScheduler } from './schedulers/analyticsReportScheduler.js';
+import runPermissionEngineMigration from './scripts/migratePermissionEngine.js';
 
 mongoose.connect(config.db.uri, {
   maxPoolSize: config.db.maxPoolSize,
@@ -239,7 +242,12 @@ mongoose.connect(config.db.uri, {
     const queuesActive = await initQueues();
     logger.info(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
 
-    seedAdmin();
+    await seedAdmin();
+    runPermissionEngineMigration().then((result) => {
+      logger.info('Permission engine migration result', result);
+    }).catch((err) => {
+      logger.error('Permission engine migration error (non-fatal)', { error: err.message });
+    });
     startAnalyticsReportScheduler();
 
     initializeSlackServices().then(() => {

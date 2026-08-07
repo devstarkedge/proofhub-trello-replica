@@ -1,6 +1,8 @@
-import SalesPermission from '../models/SalesPermission.js';
 import asyncHandler from '../middleware/asyncHandler.js';
-import { ErrorResponse } from '../middleware/errorHandler.js';
+import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
+import { setResourceOverride } from '../modules/permissions/accessControlService.js';
+import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js';
+import User from '../models/User.js';
 import slackNotificationService from '../services/slack/SlackNotificationService.js';
 import notificationService from '../utils/notificationService.js';
 import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards.js';
@@ -8,23 +10,36 @@ import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards
 // @desc    Get sales permission for a user
 // @route   GET /api/sales-permissions/:id
 // @access  Private/Admin
-export const getSalesPermission = asyncHandler(async (req, res, next) => {
+export const getSalesPermission = asyncHandler(async (req, res) => {
   const userId = req.params.id;
-  const perm = await SalesPermission.findOne({ user: userId }).lean();
+  const targetUser = await User.findById(userId).select('role');
 
-  if (!perm) {
+  if (!targetUser) {
     return res.status(200).json({ success: true, data: null });
   }
 
-  res.status(200).json({ success: true, data: perm });
+  // Delegates to the same engine as GET /api/sales/permissions/:userId and
+  // PUT /api/access-control/users/:userId/overrides/sales — one resolver,
+  // not a second parallel read path.
+  const result = await resolveResourceAccess(targetUser, 'sales');
+  res.status(200).json({ success: true, data: toLegacyShape('sales', result.actions) });
 });
 
 // @desc    Create or update sales permission for a user
 // @route   PUT /api/sales-permissions/:id
 // @access  Private/Admin
-export const setSalesPermission = asyncHandler(async (req, res, next) => {
+export const setSalesPermission = asyncHandler(async (req, res) => {
   const userId = req.params.id;
-  const payload = {
+  const targetUser = await User.findById(userId).select('role');
+
+  if (!targetUser) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const previousResult = await resolveResourceAccess(targetUser, 'sales');
+  const previousModuleVisible = previousResult.actions?.view === true;
+
+  const actions = fromLegacyShape('sales', {
     moduleVisible: req.body.moduleVisible === true,
     canCreate: !!req.body.canCreate,
     canUpdate: !!req.body.canUpdate,
@@ -32,35 +47,27 @@ export const setSalesPermission = asyncHandler(async (req, res, next) => {
     canExport: !!req.body.canExport,
     canImport: !!req.body.canImport,
     canManageDropdowns: !!req.body.canManageDropdowns,
-    canViewActivityLog: req.body.canViewActivityLog !== undefined ? !!req.body.canViewActivityLog : true,
-    notes: req.body.notes || ''
-  };
+    canViewActivityLog: req.body.canViewActivityLog !== undefined ? !!req.body.canViewActivityLog : true
+  });
 
-  let permission = await SalesPermission.findOne({ user: userId });
-  const previousModuleVisible = permission?.moduleVisible === true;
-  const previousNotifiedAt = permission?.moduleAccessNotifiedAt || null;
-
-  if (!permission) {
-    permission = new SalesPermission({ ...payload, user: userId, grantedBy: req.user._id });
-  } else {
-    Object.assign(permission, payload);
-    permission.grantedBy = req.user._id;
-  }
+  // Same write path as salesController.updateUserPermissions — this used to
+  // be an independently-maintained duplicate of that function's payload
+  // sanitization and save logic; both endpoints now call one function.
+  const { legacyPermissions } = await setResourceOverride(
+    userId,
+    'sales',
+    { actions, effect: 'grant', reason: req.body.notes || '' },
+    req.user,
+    { ip: req.ip, userAgent: req.headers['user-agent'] }
+  );
 
   const shouldNotifyModuleAccess = shouldNotifyOnModuleGrant({
     previousAccess: previousModuleVisible,
-    nextAccess: permission.moduleVisible === true
+    nextAccess: legacyPermissions.moduleVisible === true
   });
 
-  if (permission.moduleVisible === true) {
-    permission.moduleAccessNotifiedAt = new Date();
-  } else if (previousModuleVisible && permission.moduleVisible === false) {
-    permission.moduleAccessNotifiedAt = null;
-  }
+  res.status(200).json({ success: true, data: legacyPermissions });
 
-  await permission.save();
-
-  // If access granted, send Slack notification to the user (non-blocking)
   if (shouldNotifyModuleAccess) {
     try {
       slackNotificationService.sendNotification({
@@ -68,14 +75,13 @@ export const setSalesPermission = asyncHandler(async (req, res, next) => {
         type: 'module_access',
         moduleName: 'Sales',
         triggeredBy: { name: req.user.name, _id: req.user._id },
-        notes: permission.notes,
+        notes: req.body.notes || '',
         priority: 'high',
         forceImmediate: true
       }).catch(err => console.error('Slack notification error:', err));
     } catch (err) {
       console.error('Failed to enqueue Slack module access notification:', err);
     }
-    // Create in-app notification so user sees it in the app notification center
     try {
       await notificationService.createNotification({
         type: 'module_access',
@@ -90,8 +96,6 @@ export const setSalesPermission = asyncHandler(async (req, res, next) => {
       console.error('Failed to create in-app module access notification:', err);
     }
   }
-
-  res.status(200).json({ success: true, data: permission });
 });
 
 export default { getSalesPermission, setSalesPermission };

@@ -426,6 +426,13 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-sales-rows-imported', { detail: data }));
     });
     
+    // Unified access-control update (admin changed any resource override,
+    // via the centralized Access & Permissions engine)
+    this.socket.on('access-control:updated', (data) => {
+      console.log('Access control updated via socket:', data);
+      window.dispatchEvent(new CustomEvent('socket-access-control-updated', { detail: data }));
+    });
+
     // Sales permissions update (admin changed access for a user)
     this.socket.on('sales:permissions:updated', (data) => {
       console.log('Sales permissions updated via socket:', data);
