@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 export const MILESTONE_STATUSES = Object.freeze({
   PENDING: 'pending',
@@ -8,6 +9,7 @@ export const MILESTONE_STATUSES = Object.freeze({
 });
 
 const milestoneSchema = new mongoose.Schema({
+  workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true, index: true },
   board: { type: mongoose.Schema.Types.ObjectId, ref: 'Board', required: true, index: true },
   title: { type: String, required: true, trim: true, maxlength: 200 },
   amountCents: { type: Number, required: true, min: 1, max: Number.MAX_SAFE_INTEGER },
@@ -43,8 +45,10 @@ milestoneSchema.pre('validate', function validateApprovedAmount(next) {
   next();
 });
 
-milestoneSchema.index({ board: 1, order: 1 }, { unique: true });
-milestoneSchema.index({ board: 1, status: 1, paidAt: 1 });
-milestoneSchema.index({ revenueRecognizedAt: 1, board: 1 });
+milestoneSchema.index({ workspaceId: 1, board: 1, order: 1 }, { unique: true });
+milestoneSchema.index({ workspaceId: 1, board: 1, status: 1, paidAt: 1 });
+milestoneSchema.index({ workspaceId: 1, revenueRecognizedAt: 1, board: 1 });
+
+milestoneSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('Milestone', milestoneSchema);

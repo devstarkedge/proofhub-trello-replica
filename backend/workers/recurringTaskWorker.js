@@ -17,6 +17,7 @@ import Card from '../models/Card.js';
 import { emitToBoard } from '../realtime/index.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { scheduleNextOccurrence } from '../schedulers/recurringTaskScheduler.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 // ─── Subtask Generation (moved from recurrenceScheduler.js) ─────────────────
 
@@ -80,60 +81,67 @@ const JOB_HANDLERS = {
   async 'generate-task-instance'(job) {
     const { recurringTaskId } = job.data;
 
-    const recurringTask = await RecurringTask.findById(recurringTaskId);
+    // This worker runs outside any Express request, so there is no ambient
+    // workspace context — look the task up unscoped (its own _id already
+    // disambiguates it), then run everything else inside its workspace.
+    const recurringTask = await workspaceContext.runUnscoped(
+      async () => await RecurringTask.findById(recurringTaskId)
+    );
     if (!recurringTask || !recurringTask.isActive) {
       return { skipped: true, reason: 'inactive or not found' };
     }
 
-    // Check end conditions
-    if (recurringTask.shouldEnd()) {
-      recurringTask.isActive = false;
+    return workspaceContext.run({ workspaceId: recurringTask.workspaceId }, async () => {
+      // Check end conditions
+      if (recurringTask.shouldEnd()) {
+        recurringTask.isActive = false;
+        await recurringTask.save();
+        return { skipped: true, reason: 'end condition met' };
+      }
+
+      // Generate subtask
+      const subtask = await generateRecurringSubtask(recurringTask, recurringTask.createdBy);
+
+      // Update recurrence state
+      recurringTask.generatedSubtasks.push(subtask._id);
+      recurringTask.completedOccurrences += 1;
+      recurringTask.lastOccurrence = new Date();
+      recurringTask.nextOccurrence = recurringTask.calculateNextOccurrence();
+
+      // Check if should end after this occurrence
+      if (recurringTask.shouldEnd()) {
+        recurringTask.isActive = false;
+      }
+
       await recurringTask.save();
-      return { skipped: true, reason: 'end condition met' };
-    }
 
-    // Generate subtask
-    const subtask = await generateRecurringSubtask(recurringTask, recurringTask.createdBy);
+      // Refresh card hierarchy stats
+      await refreshCardHierarchyStats(recurringTask.card);
 
-    // Update recurrence state
-    recurringTask.generatedSubtasks.push(subtask._id);
-    recurringTask.completedOccurrences += 1;
-    recurringTask.lastOccurrence = new Date();
-    recurringTask.nextOccurrence = recurringTask.calculateNextOccurrence();
+      // Emit real-time updates
+      const boardId = recurringTask.board.toString();
+      emitToBoard(boardId, 'recurrence-triggered', {
+        cardId: recurringTask.card,
+        recurrence: recurringTask,
+        subtask,
+      });
 
-    // Check if should end after this occurrence
-    if (recurringTask.shouldEnd()) {
-      recurringTask.isActive = false;
-    }
+      emitToBoard(boardId, 'hierarchy-subtask-changed', {
+        type: 'created',
+        taskId: recurringTask.card,
+        subtask,
+      });
 
-    await recurringTask.save();
+      // Self-schedule next occurrence (only if still active & onSchedule)
+      if (recurringTask.isActive && recurringTask.nextOccurrence) {
+        await scheduleNextOccurrence(recurringTask);
+      }
 
-    // Refresh card hierarchy stats
-    await refreshCardHierarchyStats(recurringTask.card);
-
-    // Emit real-time updates
-    const boardId = recurringTask.board.toString();
-    emitToBoard(boardId, 'recurrence-triggered', {
-      cardId: recurringTask.card,
-      recurrence: recurringTask,
-      subtask,
+      console.log(
+        `[Worker:RecurringTask] generated subtask for ${recurringTaskId} (occurrence #${recurringTask.completedOccurrences})`
+      );
+      return { created: true, subtaskId: subtask._id.toString() };
     });
-
-    emitToBoard(boardId, 'hierarchy-subtask-changed', {
-      type: 'created',
-      taskId: recurringTask.card,
-      subtask,
-    });
-
-    // Self-schedule next occurrence (only if still active & onSchedule)
-    if (recurringTask.isActive && recurringTask.nextOccurrence) {
-      await scheduleNextOccurrence(recurringTask);
-    }
-
-    console.log(
-      `[Worker:RecurringTask] generated subtask for ${recurringTaskId} (occurrence #${recurringTask.completedOccurrences})`
-    );
-    return { created: true, subtaskId: subtask._id.toString() };
   },
 };
 

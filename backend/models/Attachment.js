@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const attachmentSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   // File information
   fileName: {
     type: String,
@@ -191,13 +198,15 @@ const attachmentSchema = new mongoose.Schema({
 });
 
 // Compound indexes for efficient querying
-attachmentSchema.index({ card: 1, isDeleted: 1, createdAt: -1 });
-attachmentSchema.index({ contextType: 1, contextRef: 1, isDeleted: 1 });
-attachmentSchema.index({ board: 1, isDeleted: 1, createdAt: -1 });
-attachmentSchema.index({ uploadedBy: 1, createdAt: -1 });
-attachmentSchema.index({ fileType: 1, createdAt: -1 });
-attachmentSchema.index({ board: 1, isDeleted: 1, deletedAt: -1 });
-attachmentSchema.index({ board: 1, deletedAt: -1, fileType: 1 });
+attachmentSchema.index({ workspaceId: 1, card: 1, isDeleted: 1, createdAt: -1 });
+attachmentSchema.index({ workspaceId: 1, contextType: 1, contextRef: 1, isDeleted: 1 });
+attachmentSchema.index({ workspaceId: 1, board: 1, isDeleted: 1, createdAt: -1 });
+attachmentSchema.index({ workspaceId: 1, uploadedBy: 1, createdAt: -1 });
+attachmentSchema.index({ workspaceId: 1, fileType: 1, createdAt: -1 });
+attachmentSchema.index({ workspaceId: 1, board: 1, isDeleted: 1, deletedAt: -1 });
+attachmentSchema.index({ workspaceId: 1, board: 1, deletedAt: -1, fileType: 1 });
+
+attachmentSchema.plugin(workspaceScopePlugin);
 
 // Virtual for formatted file size
 attachmentSchema.virtual('formattedSize').get(function() {

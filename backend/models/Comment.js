@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 // Reaction schema for emoji reactions
 const reactionSchema = new mongoose.Schema({
@@ -102,6 +103,12 @@ const attachmentSchema = new mongoose.Schema({
 }, { _id: true });
 
 const commentSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   text: {
     type: String,
     required: false,
@@ -229,13 +236,15 @@ function arrayLimit(val) {
 }
 
 // Indexes for optimal query performance
-commentSchema.index({ card: 1, createdAt: -1 });
-commentSchema.index({ contextRef: 1, createdAt: -1 });
-commentSchema.index({ user: 1 });
-commentSchema.index({ parentComment: 1, createdAt: 1 }); // For fetching thread replies
-commentSchema.index({ isPinned: -1, createdAt: -1 }); // For pinned comments first
+commentSchema.index({ workspaceId: 1, card: 1, createdAt: -1 });
+commentSchema.index({ workspaceId: 1, contextRef: 1, createdAt: -1 });
+commentSchema.index({ workspaceId: 1, user: 1 });
+commentSchema.index({ workspaceId: 1, parentComment: 1, createdAt: 1 }); // For fetching thread replies
+commentSchema.index({ workspaceId: 1, isPinned: -1, createdAt: -1 }); // For pinned comments first
 commentSchema.index({ 'mentions.targetId': 1 }); // For mention lookup
-commentSchema.index({ contextRef: 1, isPinned: -1, parentComment: 1, createdAt: -1 }); // Compound index for comment listing
+commentSchema.index({ workspaceId: 1, contextRef: 1, isPinned: -1, parentComment: 1, createdAt: -1 }); // Compound index for comment listing
+
+commentSchema.plugin(workspaceScopePlugin);
 
 // Virtual for checking if comment has replies
 commentSchema.virtual('hasReplies').get(function() {

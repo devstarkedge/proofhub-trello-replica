@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from "./context/AuthContext";
 import { MeProvider } from "./context/MeContext";
+import { WorkspaceProvider } from "./context/WorkspaceContext";
 import { TeamProvider } from "./context/DepartmentContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { ClientInfoProvider } from "./context/ClientInfoContext";
@@ -43,6 +44,8 @@ import AccessControlRouteGuard from "./components/AccessControlRouteGuard";
 import AccessControlPage from "./pages/AccessControlPage";
 import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
 import ProjectTrash from "./pages/ProjectTrash";
+import SelectWorkspacePage from "./pages/SelectWorkspacePage";
+import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
 
 // PM Sheet Pages
 import PMSheetDashboard from "./pages/PMSheetDashboard";
@@ -67,6 +70,7 @@ function App() {
   return (
     <AuthProvider>
       <MeProvider>
+        <WorkspaceProvider>
         <TeamProvider>
           <NotificationProvider>
             <ClientInfoProvider>
@@ -76,6 +80,7 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
               <Route path="/verify-pending" element={<VerifyPending />} />
+              <Route path="/select-workspace" element={<SelectWorkspacePage />} />
               <Route
                 element={
                   <PrivateRoute>
@@ -92,6 +97,7 @@ function App() {
                   }
                 />
                 <Route path="/my-shortcuts" element={<MyShortcutsPage />} />
+                <Route path="/workspace-settings" element={<WorkspaceSettingsPage />} />
                 <Route path="/workflow/:deptId/:projectId" element={<WorkFlow />} />
                 <Route path="/workflow/:deptId/:projectId/:taskId" element={<WorkFlow />} />
                 <Route path="/workflow/:deptId/:projectId/trash" element={<ProjectTrash />} />
@@ -226,6 +232,7 @@ function App() {
             <PermissionConfirmModal />
           </NotificationProvider>
         </TeamProvider>
+        </WorkspaceProvider>
       </MeProvider>
     </AuthProvider>
   );

@@ -3,8 +3,8 @@ import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileS
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
+import WorkspaceSwitcher from './Workspace/WorkspaceSwitcher';
 import useAccessControl from '../hooks/useAccessControl';
-import useThemeStore from '../store/themeStore';
 
 const MotionDiv = motion.div;
 const MotionAside = motion.aside;
@@ -26,7 +26,6 @@ const iconColors = {
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   const { user } = useContext(AuthContext);
-  const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const [hoveredItem, setHoveredItem] = useState(null);
   const [pmSheetExpanded, setPmSheetExpanded] = useState(false);
   const location = useLocation();
@@ -319,20 +318,11 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
           aria-hidden={isMobile}
         >
           <div>
-            <div 
+            <div
               className="px-4 py-2 border-b"
               style={{ borderColor: 'var(--color-border-default)' }}
             >
-              <div className="flex items-center">
-                <img 
-                  src={effectiveMode === 'dark' ? '/LogoDark.svg' : '/Logo.svg'}
-                  alt="FlowTask" 
-                  className="h-15 w-auto object-contain"
-                  style={{
-                    filter: effectiveMode === 'dark' ? 'brightness(1.1)' : 'none',
-                  }}
-                />
-              </div>
+              <WorkspaceSwitcher />
             </div>
 
             <nav className="mt-5 px-3 space-y-1">
@@ -397,15 +387,9 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
               className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b bg-inherit"
               style={{ borderColor: 'var(--color-border-default)', paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}
             >
-              <div className="flex items-center gap-2">
-                <img
-                  src={effectiveMode === 'dark' ? '/LogoDark.svg' : '/Logo.svg'}
-                  alt="FlowTask"
-                  className="h-9 w-auto object-contain"
-                />
-                <span className="text-sm font-semibold tracking-wide text-gray-700 dark:text-gray-200">Workspace</span>
+              <div className="flex-1 min-w-0">
+                <WorkspaceSwitcher compact onNavigate={onClose} />
               </div>
-
             </div>
 
             <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-1" style={{ WebkitOverflowScrolling: 'touch' }}>

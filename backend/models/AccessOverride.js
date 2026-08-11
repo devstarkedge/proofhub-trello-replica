@@ -14,11 +14,16 @@ import mongoose from 'mongoose';
  *   explicit deny > admin role > explicit grant > role default > deny-by-default
  */
 const accessOverrideSchema = new mongoose.Schema({
-  // Every row is workspace-scoped from day one so the future multi-tenant
-  // migration doesn't have to retrofit scoping onto permission data.
+  // Every row is workspace-scoped — the same (user, resource) pair can carry
+  // independent overrides in two different workspaces. Not subject to the
+  // generic workspaceScopePlugin (unlike most workspace-owned models): this
+  // table has exactly one read path (permissionEngine.js) and one write path
+  // (accessControlService.js), both already threading `workspace` through
+  // explicitly, so a blanket auto-filter would be redundant.
   workspace: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Workspace'
+    ref: 'Workspace',
+    required: true
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -78,8 +83,8 @@ const accessOverrideSchema = new mongoose.Schema({
   timestamps: true
 });
 
-accessOverrideSchema.index({ user: 1, resource: 1 }, { unique: true });
-accessOverrideSchema.index({ resource: 1, isActive: 1 });
+accessOverrideSchema.index({ workspace: 1, user: 1, resource: 1 }, { unique: true });
+accessOverrideSchema.index({ workspace: 1, resource: 1, isActive: 1 });
 accessOverrideSchema.index({ expiresAt: 1 }, { sparse: true });
 
 accessOverrideSchema.statics.isExpired = function (doc) {

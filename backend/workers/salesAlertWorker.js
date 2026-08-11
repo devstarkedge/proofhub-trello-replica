@@ -13,6 +13,7 @@ import {
   evaluateRowUpdate,
   evaluateOverdueAlerts,
 } from '../modules/salesTabs/salesTab.alert.service.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 const LOG = '[Worker:SalesAlert]';
 
@@ -24,21 +25,26 @@ export function startSalesAlertWorker() {
   _worker = new Worker(
     'flowtask.sales-alert',
     async (job) => {
+      // This worker runs outside any Express request — jobs for a specific
+      // row carry that row's own workspaceId (SalesRow is workspace-owned);
+      // the periodic overdue scan is a deliberate cross-tenant sweep.
       switch (job.name) {
         case 'evaluate-new-row': {
           const { row } = job.data;
-          await evaluateNewRow(row);
+          await workspaceContext.run({ workspaceId: row.workspaceId }, () => evaluateNewRow(row));
           break;
         }
 
         case 'evaluate-row-update': {
           const { oldRow, newRow } = job.data;
-          await evaluateRowUpdate(oldRow, newRow);
+          await workspaceContext.run({ workspaceId: newRow?.workspaceId || oldRow?.workspaceId }, () => (
+            evaluateRowUpdate(oldRow, newRow)
+          ));
           break;
         }
 
         case 'check-overdue-alerts': {
-          await evaluateOverdueAlerts();
+          await workspaceContext.runUnscoped(() => evaluateOverdueAlerts());
           break;
         }
 

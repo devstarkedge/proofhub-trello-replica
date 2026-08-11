@@ -1,16 +1,22 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const salesColumnSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   name: {
     type: String,
     required: [true, 'Column name is required'],
     trim: true,
     maxlength: [50, 'Column name cannot exceed 50 characters']
   },
+  // Uniqueness moved to the compound { workspaceId, key } index below.
   key: {
     type: String,
     required: [true, 'Column key is required'],
-    unique: true,
     trim: true,
     lowercase: true
   },
@@ -47,8 +53,11 @@ const salesColumnSchema = new mongoose.Schema({
 });
 
 // Index for faster queries
-salesColumnSchema.index({ displayOrder: 1 });
-salesColumnSchema.index({ isVisible: 1 });
+salesColumnSchema.index({ workspaceId: 1, key: 1 }, { unique: true });
+salesColumnSchema.index({ workspaceId: 1, displayOrder: 1 });
+salesColumnSchema.index({ workspaceId: 1, isVisible: 1 });
+
+salesColumnSchema.plugin(workspaceScopePlugin);
 
 // Pre-save hook to generate key from name if not provided
 salesColumnSchema.pre('save', function(next) {

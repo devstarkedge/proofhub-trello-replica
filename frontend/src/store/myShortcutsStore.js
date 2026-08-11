@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import Database from '../services/database';
+import { registerResettable } from './resetRegistry';
 
 /**
  * Zustand store for My Shortcuts module
@@ -242,5 +243,7 @@ const useMyShortcutsStore = create((set, get) => ({
     });
   }
 }));
+
+registerResettable(() => useMyShortcutsStore.getState().reset());
 
 export default useMyShortcutsStore;

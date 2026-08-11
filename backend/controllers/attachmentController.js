@@ -83,7 +83,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     resolvedBoardId = card.board;
     parentType = 'card';
     parentRefId = cardId;
-    folderPath = `flowtask/cards/${cardId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/cards/${cardId}/attachments`;
     cardForCover = cardId;
   } else if (subtaskId) {
     const subtask = await Subtask.findById(subtaskId).populate('task', 'board').lean();
@@ -91,7 +91,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     resolvedBoardId = subtask.task?.board;
     parentType = 'subtask';
     parentRefId = subtaskId;
-    folderPath = `flowtask/subtasks/${subtaskId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/subtasks/${subtaskId}/attachments`;
     cardForCover = null; // Subtasks don't have cover images
   } else if (nanoSubtaskId) {
     const nano = await SubtaskNano.findById(nanoSubtaskId).populate({ 
@@ -102,7 +102,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     resolvedBoardId = nano.subtask?.task?.board;
     parentType = 'nanoSubtask';
     parentRefId = nanoSubtaskId;
-    folderPath = `flowtask/nanos/${nanoSubtaskId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/nanos/${nanoSubtaskId}/attachments`;
     cardForCover = null; // Nanos don't have cover images
   } else if (projectId) {
     const board = await Board.findById(projectId).select('department').lean();
@@ -110,7 +110,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     parentType = 'board';
     parentRefId = projectId;
     resolvedBoardId = projectId;
-    folderPath = `flowtask/projects/${projectId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/projects/${projectId}/attachments`;
     cardForCover = null;
   }
 
@@ -337,7 +337,7 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
 
     try {
       const cloudinaryResult = await uploadToCloudinary(file.buffer, {
-        folder: `flowtask/cards/${cardId}/attachments`,
+        folder: `flowtask/workspaces/${req.workspaceId}/cards/${cardId}/attachments`,
         resourceType,
         context: {
           cardId,
@@ -945,14 +945,14 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
     boardId = card.board;
     parentType = 'card';
     parentRefId = cardId;
-    folderPath = `flowtask/cards/${cardId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/cards/${cardId}/attachments`;
   } else if (subtaskId) {
     const subtask = await Subtask.findById(subtaskId).populate('task', 'board').lean();
     if (!subtask) throw new ErrorResponse('Subtask not found', 404);
     boardId = subtask.task?.board;
     parentType = 'subtask';
     parentRefId = subtaskId;
-    folderPath = `flowtask/subtasks/${subtaskId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/subtasks/${subtaskId}/attachments`;
   } else if (nanoSubtaskId) {
     const nano = await SubtaskNano.findById(nanoSubtaskId).populate({ 
       path: 'subtask', 
@@ -962,7 +962,7 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
     boardId = nano.subtask?.task?.board;
     parentType = 'nanoSubtask';
     parentRefId = nanoSubtaskId;
-    folderPath = `flowtask/nanos/${nanoSubtaskId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/nanos/${nanoSubtaskId}/attachments`;
   }
 
   // Convert base64 to buffer
@@ -1100,14 +1100,14 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
     boardId = card.board;
     parentType = 'card';
     parentRefId = cardId;
-    folderPath = `flowtask/cards/${cardId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/cards/${cardId}/attachments`;
   } else if (subtaskId) {
     const subtask = await Subtask.findById(subtaskId).populate('task', 'board').lean();
     if (!subtask) throw new ErrorResponse('Subtask not found', 404);
     boardId = subtask.task?.board;
     parentType = 'subtask';
     parentRefId = subtaskId;
-    folderPath = `flowtask/subtasks/${subtaskId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/subtasks/${subtaskId}/attachments`;
   } else if (nanoSubtaskId) {
     const nano = await SubtaskNano.findById(nanoSubtaskId).populate({
       path: 'subtask',
@@ -1117,7 +1117,7 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
     boardId = nano.subtask?.task?.board;
     parentType = 'nanoSubtask';
     parentRefId = nanoSubtaskId;
-    folderPath = `flowtask/nanos/${nanoSubtaskId}/attachments`;
+    folderPath = `flowtask/workspaces/${req.workspaceId}/nanos/${nanoSubtaskId}/attachments`;
   }
 
   // Fetch file from Google Drive

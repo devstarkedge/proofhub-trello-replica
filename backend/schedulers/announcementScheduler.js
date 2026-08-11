@@ -13,6 +13,7 @@ import { announcementQueue } from '../queues/index.js';
 import { isQueueActive } from '../queues/queueManager.js';
 import Announcement from '../models/Announcement.js';
 import logger from '../utils/logger.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -141,24 +142,38 @@ export async function recoverAnnouncementSchedules() {
   const now = new Date();
   let recovered = 0;
 
-  // 1. Scheduled announcements not yet broadcasted
-  const pendingBroadcasts = await Announcement.find({
-    isScheduled: true,
-    scheduleBroadcasted: false,
-    scheduledFor: { $gt: now },
-  }).select('_id scheduledFor expiresAt').lean();
+  // Runs at boot, outside any request — a deliberate cross-tenant scan
+  // (recovering due jobs for every workspace), not a leak.
+  const [pendingBroadcasts, overdueBroadcasts, pendingArchives, overdueArchives] =
+    await workspaceContext.runUnscoped(() => Promise.all([
+      // 1. Scheduled announcements not yet broadcasted
+      Announcement.find({
+        isScheduled: true,
+        scheduleBroadcasted: false,
+        scheduledFor: { $gt: now },
+      }).select('_id scheduledFor expiresAt').lean(),
+      // 2. Overdue scheduled announcements (scheduledFor already passed, not yet broadcast)
+      Announcement.find({
+        isScheduled: true,
+        scheduleBroadcasted: false,
+        scheduledFor: { $lte: now },
+      }).select('_id scheduledFor expiresAt').lean(),
+      // 3. Non-archived announcements with future expiry
+      Announcement.find({
+        isArchived: false,
+        expiresAt: { $gt: now },
+      }).select('_id expiresAt').lean(),
+      // 4. Expired but not yet archived announcements
+      Announcement.find({
+        isArchived: false,
+        expiresAt: { $lte: now },
+      }).select('_id expiresAt').lean(),
+    ]));
 
   for (const ann of pendingBroadcasts) {
     await scheduleAnnouncementBroadcast(ann);
     recovered++;
   }
-
-  // 2. Overdue scheduled announcements (scheduledFor already passed, not yet broadcast)
-  const overdueBroadcasts = await Announcement.find({
-    isScheduled: true,
-    scheduleBroadcasted: false,
-    scheduledFor: { $lte: now },
-  }).select('_id scheduledFor expiresAt').lean();
 
   for (const ann of overdueBroadcasts) {
     // Schedule with delay=0 so they fire immediately
@@ -175,22 +190,10 @@ export async function recoverAnnouncementSchedules() {
     recovered++;
   }
 
-  // 3. Non-archived announcements with future expiry
-  const pendingArchives = await Announcement.find({
-    isArchived: false,
-    expiresAt: { $gt: now },
-  }).select('_id expiresAt').lean();
-
   for (const ann of pendingArchives) {
     await scheduleAnnouncementArchive(ann);
     recovered++;
   }
-
-  // 4. Expired but not yet archived announcements
-  const overdueArchives = await Announcement.find({
-    isArchived: false,
-    expiresAt: { $lte: now },
-  }).select('_id expiresAt').lean();
 
   for (const ann of overdueArchives) {
     await announcementQueue.add(

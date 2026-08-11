@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const notificationSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   type: {
     type: String,
     enum: [
@@ -167,12 +174,14 @@ const notificationSchema = new mongoose.Schema({
 });
 
 // Indexes for efficient queries
-notificationSchema.index({ user: 1, createdAt: -1 });
-notificationSchema.index({ user: 1, isRead: 1 });
-notificationSchema.index({ user: 1, isArchived: 1, createdAt: -1 });
-notificationSchema.index({ user: 1, priority: 1, createdAt: -1 });
-notificationSchema.index({ isRead: 1 });
-notificationSchema.index({ type: 1 });
-notificationSchema.index({ entityId: 1, entityType: 1 });
+notificationSchema.index({ workspaceId: 1, user: 1, createdAt: -1 });
+notificationSchema.index({ workspaceId: 1, user: 1, isRead: 1 });
+notificationSchema.index({ workspaceId: 1, user: 1, isArchived: 1, createdAt: -1 });
+notificationSchema.index({ workspaceId: 1, user: 1, priority: 1, createdAt: -1 });
+notificationSchema.index({ workspaceId: 1, isRead: 1 });
+notificationSchema.index({ workspaceId: 1, type: 1 });
+notificationSchema.index({ workspaceId: 1, entityId: 1, entityType: 1 });
+
+notificationSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('Notification', notificationSchema);

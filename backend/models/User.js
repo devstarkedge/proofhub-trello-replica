@@ -150,7 +150,13 @@ const userSchema = new mongoose.Schema({
     type: Date,
     select: false
   },
-  // SaaS project-level access control
+  // SaaS project-level access control. These four fields (role, roleId,
+  // accessType, allowedProjects — plus `department`/`team` above) are kept
+  // as the default-workspace mirror: a source WorkspaceMembership is seeded
+  // from at migration time, and a fallback for any code path not yet
+  // reading the per-workspace overlay. WorkspaceMembership (one per user
+  // per workspace) is the source of truth going forward — a user spans
+  // multiple workspaces, so this can no longer live only here.
   accessType: {
     type: String,
     enum: ['full_department', 'selected_projects', 'assigned_tasks'],
@@ -160,6 +166,14 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Board'
   }],
+  // UX convenience only (which workspace to preselect at next login) — not
+  // a membership record. See modules/permissions/workspaceService.js and
+  // routes/workspaces.js.
+  lastActiveWorkspace: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    default: null
+  },
   recentCopyMoveDestinations: [{
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
     departmentName: String,

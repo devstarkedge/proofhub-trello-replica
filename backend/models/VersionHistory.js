@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const versionHistorySchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   // What entity this version belongs to
   entityType: {
     type: String,
@@ -99,10 +106,12 @@ const versionHistorySchema = new mongoose.Schema({
 });
 
 // Compound indexes for efficient querying
-versionHistorySchema.index({ entityType: 1, entityId: 1, versionNumber: -1 });
-versionHistorySchema.index({ entityType: 1, entityId: 1, isDeleted: 1 });
-versionHistorySchema.index({ card: 1, entityType: 1, createdAt: -1 });
-versionHistorySchema.index({ editedBy: 1, createdAt: -1 });
+versionHistorySchema.index({ workspaceId: 1, entityType: 1, entityId: 1, versionNumber: -1 });
+versionHistorySchema.index({ workspaceId: 1, entityType: 1, entityId: 1, isDeleted: 1 });
+versionHistorySchema.index({ workspaceId: 1, card: 1, entityType: 1, createdAt: -1 });
+versionHistorySchema.index({ workspaceId: 1, editedBy: 1, createdAt: -1 });
+
+versionHistorySchema.plugin(workspaceScopePlugin);
 
 // Static method to get version history for an entity
 versionHistorySchema.statics.getVersionHistory = function(entityType, entityId, options = {}) {

@@ -116,7 +116,18 @@ export const getCards = asyncHandler(async (req, res, next) => {
         localField: 'assignees',
         foreignField: '_id',
         as: 'assignees',
-        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+        pipeline: [
+          { $project: { name: 1, email: 1, avatar: 1, department: 1 } },
+          {
+            $lookup: {
+              from: 'departments',
+              localField: 'department',
+              foreignField: '_id',
+              as: 'department',
+              pipeline: [{ $project: { name: 1 } }]
+            }
+          }
+        ]
       }
     },
     // Lookup members
@@ -253,7 +264,18 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
         localField: 'assignees',
         foreignField: '_id',
         as: 'assignees',
-        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+        pipeline: [
+          { $project: { name: 1, email: 1, avatar: 1, department: 1 } },
+          {
+            $lookup: {
+              from: 'departments',
+              localField: 'department',
+              foreignField: '_id',
+              as: 'department',
+              pipeline: [{ $project: { name: 1 } }]
+            }
+          }
+        ]
       }
     },
     // Lookup members
@@ -412,7 +434,18 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
         from: 'users',
         localField: 'assignees',
         foreignField: '_id',
-        as: 'assignees'
+        as: 'assignees',
+        pipeline: [
+          {
+            $lookup: {
+              from: 'departments',
+              localField: 'department',
+              foreignField: '_id',
+              as: 'department',
+              pipeline: [{ $project: { name: 1 } }]
+            }
+          }
+        ]
       }
     },
     {
@@ -502,7 +535,7 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
         priority: 1,
         dueDate: 1,
         position: 1,
-        assignees: { name: 1, email: 1, avatar: 1 },
+        assignees: { name: 1, email: 1, avatar: 1, department: 1 },
         members: { name: 1, email: 1, avatar: 1 },
         createdBy: { name: 1, email: 1, avatar: 1 },
         list: { title: 1 },
@@ -579,7 +612,18 @@ export const getCard = asyncHandler(async (req, res, next) => {
         localField: 'assignees',
         foreignField: '_id',
         as: 'assignees',
-        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+        pipeline: [
+          { $project: { name: 1, email: 1, avatar: 1, department: 1 } },
+          {
+            $lookup: {
+              from: 'departments',
+              localField: 'department',
+              foreignField: '_id',
+              as: 'department',
+              pipeline: [{ $project: { name: 1 } }]
+            }
+          }
+        ]
       }
     },
     // Lookup members
@@ -1856,7 +1900,18 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
         localField: 'assignees',
         foreignField: '_id',
         as: 'assignees',
-        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
+        pipeline: [
+          { $project: { name: 1, email: 1, avatar: 1, department: 1 } },
+          {
+            $lookup: {
+              from: 'departments',
+              localField: 'department',
+              foreignField: '_id',
+              as: 'department',
+              pipeline: [{ $project: { name: 1 } }]
+            }
+          }
+        ]
       }
     },
     // Lookup members

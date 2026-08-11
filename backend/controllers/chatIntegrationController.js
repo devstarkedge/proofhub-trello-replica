@@ -8,18 +8,22 @@ import Board from '../models/Board.js';
 import { getProjectMembershipSnapshot } from '../services/chat/projectMembershipService.js';
 import chatHooks from '../utils/chatHooks.js';
 
+/**
+ * The real FlowTask workspace id, always present once `protect` has run
+ * (routes/chatIntegration.js:16 mounts `router.use(protect)` on everything
+ * in this file) — previously this fell back to `req.user.department[0]`,
+ * a department id masquerading as a workspace id. The header/query
+ * fallbacks are kept only for defense-in-depth if this is ever called
+ * without `protect`, which doesn't happen today.
+ */
 function resolveWorkspaceIdFromRequest(req) {
+  if (req.workspaceId) return req.workspaceId.toString();
+
   const fromHeader = req.headers['x-workspace-id'];
   if (fromHeader) return fromHeader.toString();
 
   const fromQuery = req.query?.workspaceId;
   if (fromQuery) return fromQuery.toString();
-
-  const departments = req.user?.department;
-  if (Array.isArray(departments) && departments.length > 0) {
-    const first = departments[0];
-    return (first?._id || first)?.toString?.() || null;
-  }
 
   return null;
 }

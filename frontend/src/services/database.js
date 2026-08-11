@@ -3,14 +3,32 @@ import axios from 'axios';
 // API service for CRUD operations
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 
+// Shared header builder — mirrors the pattern already used by
+// attachmentService.js/trashService.js/versionService.js's own
+// getHeaders(). This file predates that convention (it builds ~150 raw
+// fetch() calls' headers inline instead), so every one of those call sites
+// was mechanically switched to call this instead of duplicating the same
+// token/workspaceId lookup.
+function buildHeaders(includeContentType = true) {
+  const headers = {};
+  const token = localStorage.getItem('token');
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const workspaceId = localStorage.getItem('workspaceId');
+  if (workspaceId) {
+    headers['x-workspace-id'] = workspaceId;
+  }
+  if (includeContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+}
+
 class DatabaseService {
   // Board CRUD operations
   async getBoards() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -19,11 +37,7 @@ class DatabaseService {
   }
 
   async getBoardsByDepartment(departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/department/${departmentId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -32,11 +46,7 @@ class DatabaseService {
   }
 
   async createBoard(name, description, team, department, members, background) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards`, {
       method: 'POST',
       headers,
@@ -53,11 +63,7 @@ class DatabaseService {
   }
 
   async updateBoard(boardId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/${boardId}`, {
       method: 'PATCH',
       headers,
@@ -67,11 +73,7 @@ class DatabaseService {
   }
 
   async deleteBoard(boardId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     await fetch(`${baseURL}/api/boards/${boardId}`, { 
       method: 'DELETE',
       headers
@@ -80,11 +82,7 @@ class DatabaseService {
 
   // Project-specific methods (Projects are boards)
   async createProject(projectData) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     // Check if projectData is FormData (for file uploads)
     const isFormData = projectData instanceof FormData;
     if (!isFormData) {
@@ -103,11 +101,7 @@ class DatabaseService {
   }
 
   async updateProject(projectId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/${projectId}`, {
       method: 'PUT',
       headers,
@@ -122,11 +116,7 @@ class DatabaseService {
 
   // Project dropdown options
   async getProjectDropdownOptions(type) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/project-options/${type}`, { headers });
     if (!res.ok) {
       const error = await res.json();
@@ -136,11 +126,7 @@ class DatabaseService {
   }
 
   async addProjectDropdownOption(type, label, value) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/project-options/${type}`, {
       method: 'POST',
       headers,
@@ -154,11 +140,7 @@ class DatabaseService {
   }
 
   async deleteProjectDropdownOption(type, optionId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     const res = await fetch(`${baseURL}/api/project-options/${type}/${optionId}`, {
       method: 'DELETE',
       headers
@@ -170,11 +152,7 @@ class DatabaseService {
     return await res.json();
   }
   async deleteProject(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     const res = await fetch(`${baseURL}/api/boards/${projectId}`, {
       method: 'DELETE',
       headers
@@ -187,11 +165,7 @@ class DatabaseService {
   }
 
   async bulkDeleteProjects(projectIds) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/bulk-delete`, {
       method: 'POST',
       headers,
@@ -207,11 +181,7 @@ class DatabaseService {
   }
 
   async undoBulkDeleteProjects(projectIds) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/undo-bulk-delete`, {
       method: 'POST',
       headers,
@@ -227,11 +197,7 @@ class DatabaseService {
   }
 
   async getProject(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/${projectId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -240,9 +206,7 @@ class DatabaseService {
   }
 
   async getProjectMilestones(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/projects/${projectId}/milestones`, { headers });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Failed to load project milestones');
@@ -250,12 +214,10 @@ class DatabaseService {
   }
 
   async approveProjectMilestone(projectId, milestoneId, payload, idempotencyKey) {
-    const token = localStorage.getItem('token');
     const headers = {
-      'Content-Type': 'application/json',
+      ...buildHeaders(),
       'Idempotency-Key': idempotencyKey
     };
-    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(`${baseURL}/api/projects/${projectId}/milestones/${milestoneId}/approvals`, {
       method: 'POST',
       headers,
@@ -267,7 +229,6 @@ class DatabaseService {
   }
 
   async uploadProjectAttachment(projectId, file, onUploadProgress) {
-    const token = localStorage.getItem('token');
     const formData = new FormData();
     formData.append('file', file);
     formData.append('boardId', projectId);
@@ -275,7 +236,7 @@ class DatabaseService {
 
     const response = await axios.post(`${baseURL}/api/attachments/upload`, formData, {
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...buildHeaders(false),
         'Content-Type': 'multipart/form-data'
       },
       onUploadProgress: (progressEvent) => {
@@ -292,11 +253,7 @@ class DatabaseService {
   }
 
   async getProjectAttachments(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/attachments/board/${projectId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -305,11 +262,7 @@ class DatabaseService {
   }
 
   async deleteAttachment(attachmentId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     const res = await fetch(`${baseURL}/api/attachments/${attachmentId}`, {
       method: 'DELETE',
       headers
@@ -322,11 +275,7 @@ class DatabaseService {
   }
 
   async getProjectActivity(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/${projectId}/activity`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -335,11 +284,7 @@ class DatabaseService {
   }
 
   async getWorkflowData(departmentId, projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/workflow/${departmentId}/${projectId}`, { headers });
     if (!res.ok) {
       const error = await res.json();
@@ -350,11 +295,7 @@ class DatabaseService {
 
   // OPTIMIZED: Get complete workflow data in single request (board + lists + cards)
   async getWorkflowComplete(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/${projectId}/workflow-complete`, { headers });
     if (!res.ok) {
       const error = await res.json();
@@ -365,11 +306,7 @@ class DatabaseService {
 
   // List CRUD operations
   async getLists(boardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/lists/board/${boardId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -378,11 +315,7 @@ class DatabaseService {
   }
 
   async createList(boardId, title, position = null) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     // Position will be handled by backend if not provided
     const res = await fetch(`${baseURL}/api/lists`, {
       method: 'POST',
@@ -393,11 +326,7 @@ class DatabaseService {
   }
 
   async updateList(listId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/lists/${listId}`, {
       method: 'PUT',
       headers,
@@ -407,21 +336,13 @@ class DatabaseService {
   }
 
   async deleteList(listId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     await fetch(`${baseURL}/api/lists/${listId}`, { method: 'DELETE', headers });
   }
 
   // Card CRUD operations
   async getCards(listId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/cards/list/${listId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -430,11 +351,7 @@ class DatabaseService {
   }
 
   async getCardsByBoard(boardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/cards/board/${boardId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -443,11 +360,7 @@ class DatabaseService {
   }
 
   async getCardsByDepartment(departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/cards/department/${departmentId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -456,21 +369,13 @@ class DatabaseService {
   }
 
   async getCard(cardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/cards/${cardId}`, { headers });
     return await res.json();
   }
 
   async createCard(listId, title, boardId, position = null) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     // Position will be handled by backend if not provided
     const res = await fetch(`${baseURL}/api/cards`, {
       method: 'POST',
@@ -481,11 +386,7 @@ class DatabaseService {
   }
 
   async updateCard(cardId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/cards/${cardId}`, {
       method: 'PUT',
       headers,
@@ -506,11 +407,7 @@ class DatabaseService {
   }
 
   async updateEstimationTime(cardId, hours, minutes) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/cards/${cardId}/estimation`, {
       method: 'PUT',
       headers,
@@ -524,11 +421,7 @@ class DatabaseService {
   }
 
   async addLoggedTime(cardId, time) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const { hours, minutes } = time;
     const res = await fetch(`${baseURL}/api/cards/${cardId}/log-time`, {
       method: 'POST',
@@ -543,11 +436,7 @@ class DatabaseService {
   }
 
   async updateLoggedTime(cardId, entryId, time) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const { hours, minutes } = time;
     const res = await fetch(`${baseURL}/api/cards/${cardId}/log-time/${entryId}`, {
       method: 'PUT',
@@ -562,11 +451,7 @@ class DatabaseService {
   }
 
   async deleteLoggedTime(cardId, entryId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/cards/${cardId}/log-time/${entryId}`, {
       method: 'DELETE',
       headers
@@ -579,19 +464,13 @@ class DatabaseService {
   }
 
   async deleteCard(cardId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     await fetch(`${baseURL}/api/cards/${cardId}`, { method: 'DELETE', headers });
   }
 
   // New independent time tracking methods for Card
   async addCardTimeEntry(cardId, type, entry) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/cards/${cardId}/time-tracking`, {
       method: 'POST',
@@ -603,9 +482,7 @@ class DatabaseService {
   }
 
   async updateCardTimeEntry(cardId, entryId, type, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/cards/${cardId}/time-tracking/${entryId}`, {
       method: 'PUT',
@@ -617,9 +494,7 @@ class DatabaseService {
   }
 
   async deleteCardTimeEntry(cardId, entryId, type) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/cards/${cardId}/time-tracking/${entryId}?type=${type}`, {
       method: 'DELETE',
@@ -630,11 +505,7 @@ class DatabaseService {
   }
 
   async moveCard(cardId, destinationListId, newPosition, newStatus) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     // First, update the card's position and list
     const moveRes = await fetch(`${baseURL}/api/cards/${cardId}/move`, {
@@ -664,9 +535,7 @@ class DatabaseService {
   // ========== COPY / MOVE TASK APIs ==========
 
   async copyCard(cardId, { destinationBoardId, destinationListId, options }) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/${cardId}/copy`, {
       method: 'POST',
@@ -681,9 +550,7 @@ class DatabaseService {
   }
 
   async crossMoveCard(cardId, { destinationBoardId, destinationListId, newPosition }) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/${cardId}/cross-move`, {
       method: 'PUT',
@@ -698,9 +565,7 @@ class DatabaseService {
   }
 
   async undoMoveCard(cardId, undoToken) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/${cardId}/undo-move`, {
       method: 'POST',
@@ -715,9 +580,7 @@ class DatabaseService {
   }
 
   async promoteSubtask(subtaskId, { destinationBoardId, destinationListId, options }) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/promote`, {
       method: 'POST',
@@ -732,9 +595,7 @@ class DatabaseService {
   }
 
   async getCopyMoveDepartments() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/copy-move/departments`, { headers });
     if (!res.ok) throw new Error('Failed to load departments');
@@ -742,9 +603,7 @@ class DatabaseService {
   }
 
   async getCopyMoveProjects(departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/copy-move/projects/${departmentId}`, { headers });
     if (!res.ok) throw new Error('Failed to load projects');
@@ -752,9 +611,7 @@ class DatabaseService {
   }
 
   async getCopyMoveLists(boardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/copy-move/lists/${boardId}`, { headers });
     if (!res.ok) throw new Error('Failed to load lists');
@@ -762,9 +619,7 @@ class DatabaseService {
   }
 
   async getRecentDestinations() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/copy-move/recent`, { headers });
     if (!res.ok) throw new Error('Failed to load recent destinations');
@@ -774,11 +629,7 @@ class DatabaseService {
   // ========== END COPY / MOVE TASK APIs ==========
 
   async archiveCard(cardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/${cardId}/archive`, {
       method: 'PUT',
@@ -793,11 +644,7 @@ class DatabaseService {
   }
 
   async restoreCard(cardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/cards/${cardId}/restore`, {
       method: 'PUT',
@@ -812,11 +659,7 @@ class DatabaseService {
   }
 
   async getArchivedCards(listId, boardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const url = new URL(`${baseURL}/api/cards/list/${listId}/archived`);
     if (boardId) {
@@ -834,11 +677,7 @@ class DatabaseService {
 
   // Subtask hierarchy operations
   async getSubtasks(taskId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtasks/task/${taskId}`, { headers });
     if (!res.ok) {
       throw new Error(`Failed to load subtasks (${res.status})`);
@@ -847,11 +686,7 @@ class DatabaseService {
   }
 
   async getSubtask(subtaskId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}`, { headers });
     if (!res.ok) {
       throw new Error(`Failed to load subtask (${res.status})`);
@@ -860,11 +695,7 @@ class DatabaseService {
   }
 
   async createSubtask(taskId, payload) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtasks/task/${taskId}`, {
       method: 'POST',
       headers,
@@ -878,11 +709,7 @@ class DatabaseService {
   }
 
   async updateSubtask(subtaskId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}`, {
       method: 'PUT',
       headers,
@@ -896,11 +723,7 @@ class DatabaseService {
   }
 
   async deleteSubtask(subtaskId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}`, {
       method: 'DELETE',
       headers
@@ -914,9 +737,7 @@ class DatabaseService {
 
   // New independent time tracking methods for Subtask
   async addSubtaskTimeEntry(subtaskId, type, entry) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/time-tracking`, {
       method: 'POST',
@@ -928,9 +749,7 @@ class DatabaseService {
   }
 
   async updateSubtaskTimeEntry(subtaskId, entryId, type, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/time-tracking/${entryId}`, {
       method: 'PUT',
@@ -942,9 +761,7 @@ class DatabaseService {
   }
 
   async deleteSubtaskTimeEntry(subtaskId, entryId, type) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/time-tracking/${entryId}?type=${type}`, {
       method: 'DELETE',
@@ -955,11 +772,7 @@ class DatabaseService {
   }
 
   async reorderSubtasks(taskId, orderedIds) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtasks/task/${taskId}/reorder`, {
       method: 'POST',
       headers,
@@ -973,11 +786,7 @@ class DatabaseService {
   }
 
   async getNanoSubtasks(subtaskId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtask-nanos/subtask/${subtaskId}`, { headers });
     if (!res.ok) {
       throw new Error(`Failed to load subtask-nanos (${res.status})`);
@@ -986,11 +795,7 @@ class DatabaseService {
   }
 
   async getNano(subtaskNanoId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtask-nanos/${subtaskNanoId}`, { headers });
     if (!res.ok) {
       throw new Error(`Failed to load subtask-nano (${res.status})`);
@@ -999,11 +804,7 @@ class DatabaseService {
   }
 
   async createNano(subtaskId, payload) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtask-nanos/subtask/${subtaskId}`, {
       method: 'POST',
       headers,
@@ -1017,11 +818,7 @@ class DatabaseService {
   }
 
   async updateNano(subtaskNanoId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtask-nanos/${subtaskNanoId}`, {
       method: 'PUT',
       headers,
@@ -1035,11 +832,7 @@ class DatabaseService {
   }
 
   async deleteNano(subtaskNanoId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     const res = await fetch(`${baseURL}/api/subtask-nanos/${subtaskNanoId}`, {
       method: 'DELETE',
       headers
@@ -1053,9 +846,7 @@ class DatabaseService {
 
   // New independent time tracking methods for Nano
   async addNanoTimeEntry(nanoId, type, entry) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/subtask-nanos/${nanoId}/time-tracking`, {
       method: 'POST',
@@ -1067,9 +858,7 @@ class DatabaseService {
   }
 
   async updateNanoTimeEntry(nanoId, entryId, type, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/subtask-nanos/${nanoId}/time-tracking/${entryId}`, {
       method: 'PUT',
@@ -1081,9 +870,7 @@ class DatabaseService {
   }
 
   async deleteNanoTimeEntry(nanoId, entryId, type) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = buildHeaders();
     
     const res = await fetch(`${baseURL}/api/subtask-nanos/${nanoId}/time-tracking/${entryId}?type=${type}`, {
       method: 'DELETE',
@@ -1094,11 +881,7 @@ class DatabaseService {
   }
 
   async reorderNanos(subtaskId, orderedIds) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtask-nanos/subtask/${subtaskId}/reorder`, {
       method: 'POST',
       headers,
@@ -1112,11 +895,7 @@ class DatabaseService {
   }
 
   async moveList(listId, newPosition) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/lists/${listId}/position`, {
       method: 'PUT',
       headers,
@@ -1127,11 +906,7 @@ class DatabaseService {
 
   // User operations
   async getUser(userId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/users/${userId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1140,22 +915,14 @@ class DatabaseService {
   }
 
   async getProfile() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/users/profile`, { headers });
     return await res.json();
   }
 
   // Department operations
   async getDepartments() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1164,11 +931,7 @@ class DatabaseService {
   }
 
   async getDepartmentsWithAssignments() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments/with-assignments`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1177,11 +940,7 @@ class DatabaseService {
   }
 
   async getDepartmentStats(departmentId = null) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const query = departmentId ? `?departmentId=${departmentId}` : '';
     const res = await fetch(`${baseURL}/api/departments/stats/summary${query}`, { headers });
     if (!res.ok) {
@@ -1191,11 +950,7 @@ class DatabaseService {
   }
 
   async createDepartment(name, description, managerIds) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments`, {
       method: 'POST',
       headers,
@@ -1205,11 +960,7 @@ class DatabaseService {
   }
 
   async updateDepartment(id, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments/${id}`, {
       method: 'PUT',
       headers,
@@ -1219,11 +970,7 @@ class DatabaseService {
   }
 
   async deleteDepartment(id) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     await fetch(`${baseURL}/api/departments/${id}`, {
       method: 'DELETE',
       headers
@@ -1231,11 +978,7 @@ class DatabaseService {
   }
 
   async addMemberToDepartment(deptId, userId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments/${deptId}/members`, {
       method: 'POST',
       headers,
@@ -1245,11 +988,7 @@ class DatabaseService {
   }
 
   async removeMemberFromDepartment(deptId, userId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     await fetch(`${baseURL}/api/departments/${deptId}/members/${userId}`, {
       method: 'DELETE',
       headers
@@ -1257,11 +996,7 @@ class DatabaseService {
   }
 
   async getMembersWithAssignments(deptId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments/${deptId}/members-with-assignments`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1270,11 +1005,7 @@ class DatabaseService {
   }
 
   async getProjectsWithMemberAssignments(deptId, memberId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments/${deptId}/projects-with-member/${memberId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1284,11 +1015,7 @@ class DatabaseService {
 
   // Get department filter options for header dropdown (optimized, role-aware)
   async getDepartmentFilterOptions() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments/filter-options`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1298,11 +1025,7 @@ class DatabaseService {
 
   // Team operations
   async getTeams(departmentId = null) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const url = departmentId ? `${baseURL}/api/teams?department=${departmentId}` : `${baseURL}/api/teams`;
     const res = await fetch(url, { headers });
     if (!res.ok) {
@@ -1312,11 +1035,7 @@ class DatabaseService {
   }
 
   async createTeam(name, department, description) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/teams`, {
       method: 'POST',
       headers,
@@ -1326,11 +1045,7 @@ class DatabaseService {
   }
 
   async updateTeam(id, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/teams/${id}`, {
       method: 'PUT',
       headers,
@@ -1340,11 +1055,7 @@ class DatabaseService {
   }
 
   async deleteTeam(id) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     await fetch(`${baseURL}/api/teams/${id}`, {
       method: 'DELETE',
       headers
@@ -1352,11 +1063,7 @@ class DatabaseService {
   }
 
   async addMemberToTeam(teamId, userId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/teams/${teamId}/members`, {
       method: 'POST',
       headers,
@@ -1366,11 +1073,7 @@ class DatabaseService {
   }
 
   async inviteUser(teamId, email) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/teams/${teamId}/invite`, {
       method: 'POST',
       headers,
@@ -1380,11 +1083,7 @@ class DatabaseService {
   }
 
   async joinTeam(token) {
-    const authToken = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/teams/join/${token}`, {
       method: 'POST',
       headers
@@ -1394,11 +1093,7 @@ class DatabaseService {
 
   // User assignment operations
   async assignUserToDepartment(userId, deptId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     // First, get the current user's data to see existing departments
     const userRes = await fetch(`${baseURL}/api/users/${userId}`, { headers });
@@ -1422,11 +1117,7 @@ class DatabaseService {
   }
 
   async unassignUserFromDepartment(userId, deptId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/departments/${deptId}/users/${userId}/unassign`, {
       method: 'PUT',
       headers
@@ -1435,11 +1126,7 @@ class DatabaseService {
   }
 
   async assignUserToTeam(userId, teamId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/users/${userId}/assign`, {
       method: 'PUT',
       headers,
@@ -1449,11 +1136,7 @@ class DatabaseService {
   }
 
   async getUsers(departmentId = null) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     let url = `${baseURL}/api/users`;
     if (departmentId) {
       url += `?department=${departmentId}`;
@@ -1466,11 +1149,7 @@ class DatabaseService {
   }
 
   async verifyUser(userId, role, department) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/users/${userId}/verify`, {
       method: 'PUT',
       headers,
@@ -1480,11 +1159,7 @@ class DatabaseService {
   }
 
   async declineUser(userId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     const res = await fetch(`${baseURL}/api/users/${userId}/decline`, {
       method: 'DELETE',
       headers
@@ -1494,11 +1169,7 @@ class DatabaseService {
 
   // Comment operations
   async getComments(cardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/card/${cardId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1508,11 +1179,7 @@ class DatabaseService {
   }
 
   async getSubtaskComments(subtaskId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/subtask/${subtaskId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1522,11 +1189,7 @@ class DatabaseService {
   }
 
   async getNanoComments(nanoId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/nano/${nanoId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1536,11 +1199,7 @@ class DatabaseService {
   }
 
   async createComment({ cardId, subtaskId, nanoId, htmlContent }) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     // Extract plain text from HTML for the text field
     const plainText = (htmlContent || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
     const payload = {
@@ -1562,11 +1221,7 @@ class DatabaseService {
   }
 
   async uploadImage(cardId, formData, type = 'general', setCover = false) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
 
     const url = new URL(`${baseURL}/api/uploads/image`);
     if (type) url.searchParams.append('type', type);
@@ -1588,11 +1243,7 @@ class DatabaseService {
   }
 
   async updateComment(commentId, htmlContent) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/${commentId}`, {
       method: 'PUT',
       headers,
@@ -1609,11 +1260,7 @@ class DatabaseService {
   }
 
   async deleteComment(commentId) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     const res = await fetch(`${baseURL}/api/comments/${commentId}`, { method: 'DELETE', headers });
     if (!res.ok) {
       const error = await res.json().catch(() => ({ message: 'Failed to delete comment' }));
@@ -1627,11 +1274,7 @@ class DatabaseService {
 
   // Get single comment by ID (for deep linking)
   async getComment(commentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/${commentId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1642,11 +1285,7 @@ class DatabaseService {
 
   // Create threaded reply
   async createReply(parentCommentId, htmlContent) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/${parentCommentId}/reply`, {
       method: 'POST',
       headers,
@@ -1661,11 +1300,7 @@ class DatabaseService {
 
   // Get replies for a comment (paginated)
   async getReplies(parentCommentId, page = 1, limit = 10) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(
       `${baseURL}/api/comments/${parentCommentId}/replies?page=${page}&limit=${limit}`,
       { headers }
@@ -1678,11 +1313,7 @@ class DatabaseService {
 
   // Add reaction to comment
   async addReaction(commentId, emoji) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/${commentId}/reactions`, {
       method: 'POST',
       headers,
@@ -1697,11 +1328,7 @@ class DatabaseService {
 
   // Remove reaction from comment
   async removeReaction(commentId, emoji) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
     const res = await fetch(`${baseURL}/api/comments/${commentId}/reactions/${encodeURIComponent(emoji)}`, {
       method: 'DELETE',
       headers
@@ -1715,11 +1342,7 @@ class DatabaseService {
 
   // Pin comment (admin/manager only)
   async pinComment(commentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/${commentId}/pin`, {
       method: 'PATCH',
       headers
@@ -1733,11 +1356,7 @@ class DatabaseService {
 
   // Unpin comment (admin/manager only)
   async unpinComment(commentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/comments/${commentId}/unpin`, {
       method: 'PATCH',
       headers
@@ -1751,11 +1370,7 @@ class DatabaseService {
 
   // Notification operations
   async getNotifications(params = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit);
@@ -1773,11 +1388,7 @@ class DatabaseService {
   }
 
   async getUnreadCount() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/notifications/unread-count`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -1786,11 +1397,7 @@ class DatabaseService {
   }
 
   async markNotificationAsRead(notificationId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/notifications/${notificationId}/read`, {
       method: 'PUT',
       headers
@@ -1802,11 +1409,7 @@ class DatabaseService {
   }
 
   async markAllNotificationsAsRead() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/notifications/read-all`, {
       method: 'PUT',
       headers
@@ -1818,11 +1421,7 @@ class DatabaseService {
   }
 
   async archiveNotification(notificationId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/notifications/${notificationId}/archive`, {
       method: 'PUT',
       headers
@@ -1834,11 +1433,7 @@ class DatabaseService {
   }
 
   async clearAllNotifications() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/notifications/clear-all`, {
       method: 'PUT',
       headers
@@ -1850,11 +1445,7 @@ class DatabaseService {
   }
 
   async deleteNotification(notificationId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/notifications/${notificationId}`, {
       method: 'DELETE',
       headers
@@ -1866,11 +1457,7 @@ class DatabaseService {
   }
 
   async getArchivedNotifications(params = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit);
@@ -1885,11 +1472,7 @@ class DatabaseService {
   }
 
   async restoreNotification(notificationId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/notifications/${notificationId}/restore`, {
       method: 'PUT',
       headers
@@ -1902,21 +1485,13 @@ class DatabaseService {
 
   // Search operations
   async search(query) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/search?q=${encodeURIComponent(query)}`, { headers });
     return await res.json();
   }
 
   async getSearchSuggestions(field, query, departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const params = new URLSearchParams({ field, q: query });
     if (departmentId) params.append('departmentId', departmentId);
     const res = await fetch(`${baseURL}/api/search/suggestions?${params}`, { headers });
@@ -1926,9 +1501,7 @@ class DatabaseService {
 
   // Analytics operations
   async getAnalyticsDashboard(params = {}, options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const headers = buildHeaders();
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') query.set(key, value);
@@ -1944,9 +1517,7 @@ class DatabaseService {
   }
 
   async getEmployeeAnalyticsTasks(employeeId, params = {}, options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const headers = buildHeaders();
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') query.set(key, value);
@@ -1962,9 +1533,7 @@ class DatabaseService {
   }
 
   async getAnalyticsTasks(params = {}, options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const headers = buildHeaders();
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') query.set(key, value);
@@ -1980,35 +1549,28 @@ class DatabaseService {
   }
 
   async getAnalyticsReportSchedules() {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`${baseURL}/api/analytics/reports/schedules`, { headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, cache: 'no-store' });
+    const res = await fetch(`${baseURL}/api/analytics/reports/schedules`, { headers: buildHeaders(), cache: 'no-store' });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(payload.message || 'Failed to load report schedules');
     return payload;
   }
 
   async createAnalyticsReportSchedule(body) {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`${baseURL}/api/analytics/reports/schedules`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+    const res = await fetch(`${baseURL}/api/analytics/reports/schedules`, { method: 'POST', headers: buildHeaders(), body: JSON.stringify(body) });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(payload.message || 'Failed to schedule report');
     return payload;
   }
 
   async deleteAnalyticsReportSchedule(id) {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`${baseURL}/api/analytics/reports/schedules/${id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+    const res = await fetch(`${baseURL}/api/analytics/reports/schedules/${id}`, { method: 'DELETE', headers: buildHeaders() });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(payload.message || 'Failed to delete report schedule');
     return payload;
   }
 
   async getDepartmentAnalytics(departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/analytics/department/${departmentId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2017,11 +1579,7 @@ class DatabaseService {
   }
 
   async getProjectsAnalytics(departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/analytics/projects/${departmentId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2031,11 +1589,7 @@ class DatabaseService {
 
   // Category operations
   async getCategoriesByDepartment(departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/categories/department/${departmentId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2044,11 +1598,7 @@ class DatabaseService {
   }
 
   async createCategory(name, description, departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/categories`, {
       method: 'POST',
       headers,
@@ -2062,11 +1612,7 @@ class DatabaseService {
   }
 
   async deleteCategory(categoryId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/categories/${categoryId}`, {
       method: 'DELETE',
       headers
@@ -2080,11 +1626,7 @@ class DatabaseService {
 
   // Card Activity operations
   async getCardActivity(cardId, limit = 100, page = 1) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/cards/${cardId}/activity?limit=${limit}&page=${page}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2094,11 +1636,7 @@ class DatabaseService {
 
   // Subtask Activity operations
   async getSubtaskActivity(subtaskId, limit = 100, page = 1) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtasks/${subtaskId}/activity?limit=${limit}&page=${page}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2108,11 +1646,7 @@ class DatabaseService {
 
   // Nano-Subtask Activity operations
   async getNanoActivity(nanoId, limit = 100, page = 1) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/subtask-nanos/${nanoId}/activity?limit=${limit}&page=${page}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2122,11 +1656,7 @@ class DatabaseService {
 
   // Recurring Task operations
   async createRecurrence(recurrenceData) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/recurrence`, {
       method: 'POST',
       headers,
@@ -2140,11 +1670,7 @@ class DatabaseService {
   }
 
   async getRecurrenceByCard(cardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/recurrence/card/${cardId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2153,11 +1679,7 @@ class DatabaseService {
   }
 
   async getRecurrenceById(recurrenceId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/recurrence/${recurrenceId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2166,11 +1688,7 @@ class DatabaseService {
   }
 
   async getAllRecurrences(boardId, includeInactive = false) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/recurrence/all/${boardId}?includeInactive=${includeInactive}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2179,11 +1697,7 @@ class DatabaseService {
   }
 
   async updateRecurrence(recurrenceId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/recurrence/${recurrenceId}`, {
       method: 'PATCH',
       headers,
@@ -2197,11 +1711,7 @@ class DatabaseService {
   }
 
   async deleteRecurrence(recurrenceId, hardDelete = false) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/recurrence/${recurrenceId}?hardDelete=${hardDelete}`, {
       method: 'DELETE',
       headers
@@ -2214,11 +1724,7 @@ class DatabaseService {
   }
 
   async triggerRecurrence(recurrenceId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/recurrence/${recurrenceId}/trigger`, {
       method: 'POST',
       headers
@@ -2233,11 +1739,7 @@ class DatabaseService {
   // ============= Reminder API Methods =============
 
   async createReminder(reminderData) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders`, {
       method: 'POST',
       headers,
@@ -2251,11 +1753,7 @@ class DatabaseService {
   }
 
   async getProjectReminders(projectId, options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const params = new URLSearchParams();
     if (options.status) params.append('status', options.status);
     if (options.page) params.append('page', options.page);
@@ -2269,11 +1767,7 @@ class DatabaseService {
   }
 
   async getProjectReminderStats(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/project/${projectId}/stats`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2282,11 +1776,7 @@ class DatabaseService {
   }
 
   async getReminder(reminderId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/${reminderId}`, { headers });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -2295,11 +1785,7 @@ class DatabaseService {
   }
 
   async updateReminder(reminderId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/${reminderId}`, {
       method: 'PUT',
       headers,
@@ -2313,11 +1799,7 @@ class DatabaseService {
   }
 
   async deleteReminder(reminderId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/${reminderId}`, {
       method: 'DELETE',
       headers
@@ -2330,11 +1812,7 @@ class DatabaseService {
   }
 
   async completeReminder(reminderId, notes = '') {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/${reminderId}/complete`, {
       method: 'POST',
       headers,
@@ -2348,11 +1826,7 @@ class DatabaseService {
   }
 
   async cancelReminder(reminderId, reason = '') {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/${reminderId}/cancel`, {
       method: 'POST',
       headers,
@@ -2366,11 +1840,7 @@ class DatabaseService {
   }
 
   async sendReminderNow(reminderId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/${reminderId}/send`, {
       method: 'POST',
       headers
@@ -2383,11 +1853,7 @@ class DatabaseService {
   }
 
   async syncReminderClientFromProject(reminderId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/${reminderId}/sync-client`, {
       method: 'POST',
       headers
@@ -2400,11 +1866,7 @@ class DatabaseService {
   }
 
   async updateReminderClient(reminderId, clientData) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/reminders/${reminderId}`, {
       method: 'PUT',
       headers,
@@ -2418,11 +1880,7 @@ class DatabaseService {
   }
 
   async getReminderDashboardStats(filters = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const params = new URLSearchParams();
     Object.keys(filters).forEach(key => {
       if (filters[key]) params.append(key, filters[key]);
@@ -2436,11 +1894,7 @@ class DatabaseService {
   }
 
   async getCalendarReminders(startDate, endDate, filters = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const params = new URLSearchParams();
     params.append('startDate', startDate);
     params.append('endDate', endDate);
@@ -2456,11 +1910,7 @@ class DatabaseService {
   }
 
   async getAllReminders(filters = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const params = new URLSearchParams();
     Object.keys(filters).forEach(key => {
       if (filters[key]) params.append(key, filters[key]);
@@ -2476,11 +1926,7 @@ class DatabaseService {
   // ========== LABELS API ==========
 
   async getLabelsByBoard(boardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/labels/board/${boardId}`, { 
       headers,
       cache: 'no-store'
@@ -2492,11 +1938,7 @@ class DatabaseService {
   }
 
   async createLabel(name, color, boardId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/labels`, {
       method: 'POST',
       headers,
@@ -2510,11 +1952,7 @@ class DatabaseService {
   }
 
   async updateLabel(labelId, updates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/labels/${labelId}`, {
       method: 'PUT',
       headers,
@@ -2528,11 +1966,7 @@ class DatabaseService {
   }
 
   async deleteLabel(labelId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/labels/${labelId}`, {
       method: 'DELETE',
       headers
@@ -2545,11 +1979,7 @@ class DatabaseService {
   }
 
   async syncLabels(entityType, entityId, labelIds) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/labels/sync`, {
       method: 'POST',
       headers,
@@ -2573,11 +2003,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Cover image data
    */
   async uploadProjectCoverImage(projectId, file) {
-    const token = localStorage.getItem('token');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders(false);
 
     const formData = new FormData();
     formData.append('coverImage', file);
@@ -2601,11 +2027,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Response with previous cover for undo
    */
   async removeProjectCoverImage(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/boards/${projectId}/cover`, {
       method: 'DELETE',
@@ -2626,11 +2048,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Updated cover image data
    */
   async restoreProjectCoverImage(projectId, versionIndex) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/boards/${projectId}/cover/restore/${versionIndex}`, {
       method: 'POST',
@@ -2654,11 +2072,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Team logged time data
    */
   async getTeamLoggedTime(params = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const queryParams = new URLSearchParams();
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
@@ -2680,11 +2094,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Smart insights data
    */
   async getTeamInsights(params = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const queryParams = new URLSearchParams();
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
@@ -2705,11 +2115,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Department team analytics data
    */
   async getTeamDepartmentAnalytics(params = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const queryParams = new URLSearchParams();
     if (params.startDate) queryParams.append('startDate', params.startDate);
@@ -2729,11 +2135,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Trends data
    */
   async getTeamTrends(params = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const queryParams = new URLSearchParams();
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
@@ -2755,11 +2157,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Personal summary data
    */
   async getMyLoggedTimeSummary(params = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const queryParams = new URLSearchParams();
     if (params.startDate) queryParams.append('startDate', params.startDate);
@@ -2780,11 +2178,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Hover preview data
    */
   async getDateHoverDetails(userId, date) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/team-analytics/date-hover/${userId}/${date}`, { headers });
     if (!res.ok) {
@@ -2801,11 +2195,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Full detail data with hierarchy
    */
   async getDateDetailedLogs(userId, date) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/team-analytics/date-details/${userId}/${date}`, { headers });
     if (!res.ok) {
@@ -2827,11 +2217,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Calendar tasks data
    */
   async getCalendarTasks(startDate, endDate, departmentId = null) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const queryParams = new URLSearchParams();
     queryParams.append('start', startDate);
@@ -2854,11 +2240,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Created task
    */
   async createCalendarTask(taskData) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/calendar/tasks`, {
       method: 'POST',
@@ -2879,11 +2261,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Updated task
    */
   async updateTaskDates(taskId, dates) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/calendar/tasks/${taskId}/dates`, {
       method: 'PATCH',
@@ -2903,11 +2281,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Projects list
    */
   async getCalendarProjects(departmentId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/calendar/projects/${departmentId}`, { headers });
     if (!res.ok) {
@@ -2923,11 +2297,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Lists/statuses
    */
   async getCalendarLists(projectId) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
 
     const res = await fetch(`${baseURL}/api/calendar/lists/${projectId}`, { headers });
     if (!res.ok) {
@@ -2944,11 +2314,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Dashboard summary with task count, logged time, activities, etc.
    */
   async getMyDashboardSummary() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/my-shortcuts/dashboard`, { headers });
     if (!res.ok) {
       const error = await res.json();
@@ -2963,11 +2329,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Activities with pagination
    */
   async getMyActivities(filters = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const params = new URLSearchParams();
     if (filters.page) params.append('page', filters.page);
     if (filters.limit) params.append('limit', filters.limit);
@@ -2989,11 +2351,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Tasks grouped by project with navigation context
    */
   async getMyTasksGrouped() {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/my-shortcuts/tasks`, { headers });
     if (!res.ok) {
       const error = await res.json();
@@ -3008,11 +2366,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Announcements with pagination
    */
   async getMyAnnouncements(options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const params = new URLSearchParams();
     if (options.page) params.append('page', options.page);
     if (options.limit) params.append('limit', options.limit);
@@ -3031,11 +2385,7 @@ class DatabaseService {
    * @returns {Promise<Object>} Projects with pagination
    */
   async getMyProjects(options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = buildHeaders();
     const params = new URLSearchParams();
     if (options.page) params.append('page', options.page);
     if (options.limit) params.append('limit', options.limit);

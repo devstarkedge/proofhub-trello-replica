@@ -1,6 +1,7 @@
 import Attachment from '../models/Attachment.js';
 import Activity from '../models/Activity.js';
 import { deleteMultipleFromCloudinary } from './cloudinary.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 30;
@@ -8,9 +9,12 @@ const DEFAULT_RETENTION_DAYS = 30;
 export const cleanupTrashedAttachments = async (retentionDays = DEFAULT_RETENTION_DAYS) => {
   const threshold = new Date(Date.now() - retentionDays * ONE_DAY_MS);
   try {
-    const candidates = await Attachment.find({ isDeleted: true, deletedAt: { $lte: threshold } })
-      .select('_id publicId resourceType board card subtask nanoSubtask fileName originalName')
-      .lean();
+    // Deliberate cross-tenant scan — runs on a schedule, outside any
+    // request. The explicit `await` inside this callback matters: see
+    // boardCleanup.js's cleanupSoftDeletedBoards for why.
+    const candidates = await workspaceContext.runUnscoped(async () => await Attachment.find({ isDeleted: true, deletedAt: { $lte: threshold } })
+      .select('_id publicId resourceType board card subtask nanoSubtask fileName originalName workspaceId')
+      .lean());
     if (!candidates.length) return;
 
     const imageIds = candidates.filter(a => a.resourceType === 'image').map(a => a.publicId);
@@ -24,12 +28,16 @@ export const cleanupTrashedAttachments = async (retentionDays = DEFAULT_RETENTIO
     }
 
     const ids = candidates.map(c => c._id);
-    await Attachment.deleteMany({ _id: { $in: ids } });
+    await workspaceContext.runUnscoped(async () => await Attachment.deleteMany({ _id: { $in: ids } }));
 
-    // Optional: create project-level activity summarizing cleanup
+    // Optional: create project-level activity summarizing cleanup. Each
+    // deleted attachment already carries its own workspaceId — scope the
+    // write to THAT (not runUnscoped's bypass), or the new Activity row
+    // would itself be created with no workspaceId at all.
     for (const a of candidates) {
+      if (!a.workspaceId) continue;
       try {
-        await Activity.create({
+        await workspaceContext.run({ workspaceId: a.workspaceId }, async () => await Activity.create({
           type: 'attachment_permanently_deleted',
           description: `Auto-cleanup permanently deleted: ${a.originalName || a.fileName}`,
           user: null,
@@ -38,7 +46,7 @@ export const cleanupTrashedAttachments = async (retentionDays = DEFAULT_RETENTIO
           subtask: a.subtask || undefined,
           nanoSubtask: a.nanoSubtask || undefined,
           contextType: 'card'
-        });
+        }));
       } catch (e) {
         // ignore
       }

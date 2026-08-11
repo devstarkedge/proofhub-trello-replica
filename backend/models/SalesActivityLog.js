@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const salesActivityLogSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   salesRow: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'SalesRow',
@@ -54,9 +60,11 @@ const salesActivityLogSchema = new mongoose.Schema({
 });
 
 // Compound indexes for efficient queries
-salesActivityLogSchema.index({ salesRow: 1, createdAt: -1 });
-salesActivityLogSchema.index({ user: 1, createdAt: -1 });
-salesActivityLogSchema.index({ action: 1, createdAt: -1 });
+salesActivityLogSchema.index({ workspaceId: 1, salesRow: 1, createdAt: -1 });
+salesActivityLogSchema.index({ workspaceId: 1, user: 1, createdAt: -1 });
+salesActivityLogSchema.index({ workspaceId: 1, action: 1, createdAt: -1 });
+
+salesActivityLogSchema.plugin(workspaceScopePlugin);
 
 // TTL index - automatically delete logs older than 1 year (optional, can be removed)
 // salesActivityLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 31536000 });

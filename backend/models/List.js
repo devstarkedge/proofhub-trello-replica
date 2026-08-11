@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const listSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   title: {
     type: String,
     required: [true, 'List title is required'],
@@ -34,7 +40,9 @@ const listSchema = new mongoose.Schema({
 });
 
 // Indexes
-listSchema.index({ board: 1, position: 1 });
-listSchema.index({ isArchived: 1 });
+listSchema.index({ workspaceId: 1, board: 1, position: 1 });
+listSchema.index({ workspaceId: 1, isArchived: 1 });
+
+listSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('List', listSchema);

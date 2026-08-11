@@ -16,6 +16,9 @@ import config from '../config/index.js';
 import logger from '../utils/logger.js';
 import { setIO } from './emitters.js';
 import { ROOM } from './events.js';
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
+import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 let _io = null;
 
@@ -48,7 +51,7 @@ function init(httpServer) {
   setIO(_io);
 
   // ─── Authentication Middleware ──────────────────────────────────────────
-  _io.use((socket, next) => {
+  _io.use(async (socket, next) => {
     try {
       const token = socket.handshake?.auth?.token;
       if (!token) {
@@ -61,7 +64,30 @@ function init(httpServer) {
         return next(new Error('Invalid token payload'));
       }
 
+      // The frontend sends its active workspace in the handshake auth
+      // payload (same value it sends as the x-workspace-id header for HTTP
+      // requests); fall back to the default workspace for older clients /
+      // single-workspace users who never set it.
+      const requestedWorkspaceId =
+        socket.handshake?.auth?.workspaceId ||
+        (await ensureDefaultWorkspace())?.toString();
+
+      if (!requestedWorkspaceId) {
+        return next(new Error('No workspace context available'));
+      }
+
+      const membership = await WorkspaceMembership.findOne({
+        user: userId,
+        workspace: requestedWorkspaceId,
+        status: 'active'
+      }).lean();
+
+      if (!membership) {
+        return next(new Error('Not a member of this workspace'));
+      }
+
       socket.data.user = decodedUser;
+      socket.data.workspaceId = requestedWorkspaceId;
       next();
     } catch (error) {
       next(new Error('Invalid or expired token'));
@@ -75,8 +101,9 @@ function init(httpServer) {
 
     const decodedUser = socket.data.user || {};
     const userId = decodedUser.id || decodedUser._id?.toString();
+    const socketWorkspaceId = socket.data.workspaceId;
 
-    if (!userId) {
+    if (!userId || !socketWorkspaceId) {
       socket.disconnect(true);
       return;
     }
@@ -111,10 +138,21 @@ function init(httpServer) {
     // ── Card rooms ──
     socket.on('join-card', async (cardId) => {
       try {
+        await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
         const Card = (await import('../models/Card.js')).default;
         const card = await Card.findById(cardId).lean();
         if (!card) {
           if (config.isDev) logger.debug(`join-card: card not found ${cardId}`);
+          return;
+        }
+
+        // A stale/switched socket must not join another workspace's room —
+        // the plugin already filtered the query above to this workspace,
+        // so a non-null result here is already guaranteed to match, but the
+        // explicit check documents the invariant and stays correct even if
+        // this query is ever changed to bypass the plugin.
+        if (card.workspaceId?.toString() !== socketWorkspaceId) {
+          if (config.isDev) logger.debug(`join-card: workspace mismatch for card ${cardId}`);
           return;
         }
 
@@ -162,6 +200,7 @@ function init(httpServer) {
         }
 
         if (config.isDev) logger.debug(`join-card: user ${userId} unauthorized for card ${cardId}`);
+        });
       } catch (error) {
         if (config.isDev) logger.error('join-card error', { error: error.message });
       }
@@ -174,10 +213,16 @@ function init(httpServer) {
     // ── Team rooms ──
     socket.on('join-team', async (teamId) => {
       try {
+        await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
         const Team = (await import('../models/Team.js')).default;
         const team = await Team.findById(teamId).lean();
         if (!team) {
           if (config.isDev) logger.debug(`join-team: team not found ${teamId}`);
+          return;
+        }
+
+        if (team.workspaceId?.toString() !== socketWorkspaceId) {
+          if (config.isDev) logger.debug(`join-team: workspace mismatch for team ${teamId}`);
           return;
         }
 
@@ -196,6 +241,7 @@ function init(httpServer) {
         }
 
         if (config.isDev) logger.debug(`join-team: user ${userId} unauthorized for team ${teamId}`);
+        });
       } catch (error) {
         if (config.isDev) logger.error('join-team error', { error: error.message });
       }
@@ -208,10 +254,16 @@ function init(httpServer) {
     // ── Board rooms ──
     socket.on('join-board', async (boardId) => {
       try {
+        await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
         const Board = (await import('../models/Board.js')).default;
         const board = await Board.findById(boardId).lean();
         if (!board) {
           if (config.isDev) logger.debug(`join-board: board not found ${boardId}`);
+          return;
+        }
+
+        if (board.workspaceId?.toString() !== socketWorkspaceId) {
+          if (config.isDev) logger.debug(`join-board: workspace mismatch for board ${boardId}`);
           return;
         }
 
@@ -240,6 +292,7 @@ function init(httpServer) {
         }
 
         if (config.isDev) logger.debug(`join-board: user ${userId} unauthorized for board ${boardId}`);
+        });
       } catch (error) {
         if (config.isDev) logger.error('join-board error', { error: error.message });
       }
@@ -277,11 +330,11 @@ function init(httpServer) {
 
     // ── Finance rooms ──
     socket.on('join-finance', () => {
-      socket.join(ROOM.finance);
+      socket.join(ROOM.finance(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} joined finance room`);
     });
     socket.on('leave-finance', () => {
-      socket.leave(ROOM.finance);
+      socket.leave(ROOM.finance(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left finance room`);
     });
 
@@ -297,11 +350,11 @@ function init(httpServer) {
 
     // ── Sales rooms ──
     socket.on('join-sales', () => {
-      socket.join(ROOM.sales);
+      socket.join(ROOM.sales(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} joined sales room`);
     });
     socket.on('leave-sales', () => {
-      socket.leave(ROOM.sales);
+      socket.leave(ROOM.sales(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left sales room`);
     });
 

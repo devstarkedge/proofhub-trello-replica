@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const analyticsReportScheduleSchema = new mongoose.Schema({
+  workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true, index: true },
   name: { type: String, required: true, trim: true, maxlength: 100 },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   recipients: [{ type: String, required: true, lowercase: true, trim: true }],
@@ -19,6 +21,9 @@ const analyticsReportScheduleSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 analyticsReportScheduleSchema.index({ active: 1, nextRunAt: 1, lockedUntil: 1 });
+analyticsReportScheduleSchema.index({ workspaceId: 1, active: 1 });
+
+analyticsReportScheduleSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('AnalyticsReportSchedule', analyticsReportScheduleSchema);
 

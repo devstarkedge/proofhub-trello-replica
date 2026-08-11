@@ -580,6 +580,7 @@ export const createBoard = asyncHandler(async (req, res, next) => {
         })), { session });
         await createMilestonesForProject({
           boardId: board._id,
+          workspaceId: board.workspaceId,
           schedule: milestoneSchedule,
           actorId: req.user.id,
           session,

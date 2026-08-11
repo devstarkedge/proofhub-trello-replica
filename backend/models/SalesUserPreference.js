@@ -1,12 +1,18 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
+import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 
 const salesUserPreferenceSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
+  // Uniqueness moved to the compound { workspaceId, user } index below.
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
-    unique: true,
-    index: true
+    required: true
   },
 
   // Last-used values per dropdown field
@@ -90,7 +96,7 @@ salesUserPreferenceSchema.statics.recordSelection = async function (userId, fiel
 
   await this.findOneAndUpdate(
     { user: userId },
-    { $set: update, $inc: inc },
+    { $set: update, $inc: inc, $setOnInsert: { workspaceId: getActiveWorkspaceId() } },
     { upsert: true, returnDocument: 'after' }
   );
 };
@@ -154,5 +160,9 @@ salesUserPreferenceSchema.statics.getSuggestions = async function (userId, targe
     .slice(0, 5)
     .map(([val]) => val);
 };
+
+salesUserPreferenceSchema.index({ workspaceId: 1, user: 1 }, { unique: true });
+
+salesUserPreferenceSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('SalesUserPreference', salesUserPreferenceSchema);

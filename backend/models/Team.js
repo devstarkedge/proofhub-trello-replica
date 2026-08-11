@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const teamSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   name: {
     type: String,
     required: [true, 'Team name is required'],
@@ -39,8 +45,10 @@ const teamSchema = new mongoose.Schema({
 });
 
 // Indexes
-teamSchema.index({ department: 1 });
-teamSchema.index({ owner: 1 });
-teamSchema.index({ members: 1 });
+teamSchema.index({ workspaceId: 1, department: 1 });
+teamSchema.index({ workspaceId: 1, owner: 1 });
+teamSchema.index({ workspaceId: 1, members: 1 });
+
+teamSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('Team', teamSchema);

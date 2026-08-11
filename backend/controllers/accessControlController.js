@@ -32,7 +32,7 @@ export const getMyEffectivePermissions = asyncHandler(async (req, res) => {
 // @route   GET /api/access-control/users/:userId/effective
 // @access  Private (requires access_control.manage)
 export const getUserEffectivePermissions = asyncHandler(async (req, res, next) => {
-  const effective = await getEffectivePermissionsForUser(req.params.userId);
+  const effective = await getEffectivePermissionsForUser(req.params.userId, req.workspaceId);
   if (!effective) {
     return next(new ErrorResponse('User not found', 404));
   }
@@ -62,7 +62,7 @@ export const putUserResourceOverride = asyncHandler(async (req, res, next) => {
       resource,
       { actions, effect, scope, scopedResourceIds, expiresAt, reason },
       req.user,
-      { ip: req.ip, userAgent: req.headers['user-agent'] }
+      { ip: req.ip, userAgent: req.headers['user-agent'], workspaceId: req.workspaceId }
     );
     res.status(200).json({ success: true, message: 'Permissions updated successfully', data: result });
   } catch (error) {
@@ -79,6 +79,7 @@ export const putUserResourceOverride = asyncHandler(async (req, res, next) => {
 export const getAuditLog = asyncHandler(async (req, res) => {
   const { cursor, limit, sort, startDate, endDate, targetId, actorId, resourceKey, action, search } = req.query;
   const result = await queryAuditLog({
+    workspaceId: req.workspaceId,
     cursor,
     limit: limit ? Number(limit) : undefined,
     sort,
@@ -118,7 +119,8 @@ export const deleteUserResourceOverride = asyncHandler(async (req, res, next) =>
   try {
     const result = await clearResourceOverride(userId, resource, req.user, {
       ip: req.ip,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
+      workspaceId: req.workspaceId
     });
     res.status(200).json({ success: true, message: 'Override cleared', data: result });
   } catch (error) {

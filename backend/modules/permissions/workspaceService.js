@@ -1,4 +1,4 @@
-import Workspace from '../authorization/models/Workspace.js';
+import Workspace from '../../models/Workspace.js';
 import User from '../../models/User.js';
 
 /**

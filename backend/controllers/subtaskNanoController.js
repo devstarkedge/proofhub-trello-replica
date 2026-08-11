@@ -14,7 +14,7 @@ import { emitFinanceDataRefresh } from '../realtime/index.js';
 import { chatHooks } from '../utils/chatHooks.js';
 
 const populateConfig = [
-  { path: 'assignees', select: 'name email avatar' },
+  { path: 'assignees', select: 'name email avatar department', populate: { path: 'department', select: 'name' } },
   { path: 'tags', select: 'name color' },
   { path: 'coverImage', select: 'url secureUrl publicId height width' },
   { path: 'estimationTime.user', select: 'name email avatar' },

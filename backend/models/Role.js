@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 /**
  * Permission Schema - Embedded in Role
@@ -46,13 +47,23 @@ const roleSchema = new mongoose.Schema({
     trim: true,
     maxlength: [50, 'Role name cannot exceed 50 characters']
   },
-  // Lowercase version for internal use and comparisons
+  // Lowercase version for internal use and comparisons. Uniqueness is
+  // enforced by the compound { workspaceId, slug } index below, not here —
+  // a workspace-scoped index is what lets two different workspaces each
+  // have their own "team-lead" custom role.
   slug: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true
+  },
+  // null = global system-role template (admin/manager/hr/employee), shared
+  // by every workspace. A real value = a custom role scoped to exactly that
+  // workspace. See modules/workspaces/workspaceScopePlugin.js.
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    default: null
   },
   description: {
     type: String,
@@ -85,11 +96,17 @@ const roleSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Indexes for efficient queries
-roleSchema.index({ slug: 1 });
+// Indexes for efficient queries. { workspaceId, slug } replaces the old
+// standalone-unique slug index — Mongo treats `null` as a normal value for
+// uniqueness, so this still guarantees exactly one global
+// { workspaceId: null, slug: 'admin' } template while allowing each
+// workspace its own custom slugs.
+roleSchema.index({ workspaceId: 1, slug: 1 }, { unique: true });
 roleSchema.index({ isSystem: 1 });
 roleSchema.index({ isActive: 1 });
 roleSchema.index({ createdAt: -1 });
+
+roleSchema.plugin(workspaceScopePlugin, { allowGlobal: true });
 
 // Pre-save hook to generate slug from name
 roleSchema.pre('save', function(next) {
@@ -98,6 +115,17 @@ roleSchema.pre('save', function(next) {
   }
   next();
 });
+
+// The one lookup every "resolve this acting user's role" call site should
+// use instead of a bare findOne({slug}) — matches either this workspace's
+// own custom role, or the global system-role template, by slug.
+roleSchema.statics.findResolvable = function (slug, workspaceId) {
+  return this.findOne({
+    slug,
+    isActive: true,
+    $or: [{ workspaceId: workspaceId || null }, { workspaceId: null, isSystem: true }]
+  });
+};
 
 // Static method to get default permissions for system roles
 roleSchema.statics.getDefaultPermissions = function(roleSlug) {

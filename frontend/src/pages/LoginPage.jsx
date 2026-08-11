@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { Eye, EyeOff, Mail, Lock, LogIn, AlertCircle, CheckCircle } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
 import useThemeStore from '../store/themeStore';
 import { validateForm, validateField } from '../utils/validationUtils';
 
@@ -14,6 +15,7 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState({});
   const { login } = useContext(AuthContext);
+  const { loadWorkspaces } = useContext(WorkspaceContext);
   const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const navigate = useNavigate();
 
@@ -65,8 +67,16 @@ const LoginPage = () => {
     setLoading(true);
     try {
       const { user } = await login(email, password);
+
+      // Resolve workspace membership before deciding where to land: a
+      // second workspace only ever shows the picker, it's never forced on
+      // the single-workspace case every existing user is in today.
+      const workspaces = (user.role === 'admin' || user.isVerified)
+        ? await loadWorkspaces()
+        : [];
+
       setLoading(false); // Stop loading immediately after response
-      
+
       toast.success('Login successful! Welcome back.', {
         icon: <CheckCircle className="text-green-500" size={20} />,
         autoClose: 2000
@@ -74,10 +84,12 @@ const LoginPage = () => {
 
       // Navigate after showing toast (delayed to let toast display)
       setTimeout(() => {
-        if (user.role === 'admin' || user.isVerified) {
-          navigate('/');
-        } else {
+        if (user.role !== 'admin' && !user.isVerified) {
           navigate('/verify-pending');
+        } else if (workspaces.length > 1) {
+          navigate('/select-workspace');
+        } else {
+          navigate('/');
         }
       }, 1500);
     } catch (err) {

@@ -17,6 +17,7 @@ import { resolveResourceAccess } from '../modules/permissions/permissionEngine.j
 import { setResourceOverride } from '../modules/permissions/accessControlService.js';
 import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js';
 import { recordAuditLog } from '../modules/permissions/auditLogService.js';
+import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
 
 const ROLE_OPTIONS_FOR_FINANCE_ACCESS = ['admin', 'manager', 'employee', 'hr'];
 
@@ -115,7 +116,7 @@ export const getUserPagePermissions = asyncHandler(async (req, res, next) => {
 
   // Delegates to the centralized permission engine (resource: 'finance')
   // instead of reading the UserPermission model directly.
-  const result = await resolveResourceAccess(user, FINANCE_PAGE_KEY);
+  const result = await resolveResourceAccess(user, FINANCE_PAGE_KEY, req.workspaceId);
   const permissions = {
     pageKey,
     ...toLegacyShape(FINANCE_PAGE_KEY, result.actions),
@@ -169,11 +170,11 @@ export const patchUserPagePermissions = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse('You cannot change your own role from the finance access modal', 403));
     }
 
-    const roleDoc = await Role.findOne({ slug: requestedRole, isActive: true });
+    const roleDoc = await Role.findResolvable(requestedRole, req.workspaceId);
     user.role = requestedRole;
     user.roleId = roleDoc?._id || null;
     await user.save();
-    invalidateAuthCache(user._id);
+    await syncMembershipFromUser(user._id, req.workspaceId);
   }
 
   // Delegates to the centralized permission engine (resource: 'finance').
@@ -193,7 +194,7 @@ export const patchUserPagePermissions = asyncHandler(async (req, res, next) => {
       FINANCE_PAGE_KEY,
       { actions, effect: 'grant' },
       req.user,
-      { ip: req.ip, userAgent: req.headers['user-agent'] }
+      { ip: req.ip, userAgent: req.headers['user-agent'], workspaceId: req.workspaceId }
     );
     permissions = { pageKey, ...legacyPermissions, locked: false };
   }
@@ -256,7 +257,7 @@ export const updateUser = asyncHandler(async (req, res, next) => {
 
     // Lookup roleId
     const Role = (await import('../models/Role.js')).default;
-    const roleDoc = await Role.findOne({ slug: role.toLowerCase() });
+    const roleDoc = await Role.findResolvable(role.toLowerCase(), req.workspaceId);
     if (roleDoc) {
       user.roleId = roleDoc._id;
     } else {
@@ -269,7 +270,7 @@ export const updateUser = asyncHandler(async (req, res, next) => {
   if (isActive !== undefined && (req.user.role === 'admin' || req.user.role === 'manager')) user.isActive = isActive;
 
   await user.save();
-  invalidateAuthCache(user._id);
+  await syncMembershipFromUser(user._id, req.workspaceId);
 
   res.status(200).json({
     success: true,
@@ -542,7 +543,7 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
     
     // Lookup roleId
     const Role = (await import('../models/Role.js')).default;
-    const roleDoc = await Role.findOne({ slug: role.toLowerCase() });
+    const roleDoc = await Role.findResolvable(role.toLowerCase(), req.workspaceId);
     if (roleDoc) {
       user.roleId = roleDoc._id;
     }
@@ -550,8 +551,8 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
   if (department !== undefined) user.department = department; // Allow null to remove department
 
   await user.save();
+  await syncMembershipFromUser(user._id, req.workspaceId);
 
-  // Caching mechanism removed 
   // Respond immediately for fast UI
   res.status(200).json({
     success: true,
@@ -714,9 +715,7 @@ export const assignUser = asyncHandler(async (req, res, next) => {
   }
 
   await user.save();
-
-  // Invalidate the auth LRU cache so new access type takes effect immediately
-  invalidateAuthCache(req.params.id);
+  await syncMembershipFromUser(user._id, req.workspaceId);
 
   // Emit real-time event to the affected user so their UI refreshes without reload
   emitToUser(req.params.id, 'user:access-updated', {
@@ -786,7 +785,7 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
 
   // Validate against known roles
   const Role = (await import('../models/Role.js')).default;
-  const roleDoc = await Role.findOne({ slug: normalizedRole, isActive: true });
+  const roleDoc = await Role.findResolvable(normalizedRole, req.workspaceId);
   if (!roleDoc) {
     return next(new ErrorResponse('Invalid role', 400));
   }
@@ -832,9 +831,7 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
   }
 
   await user.save();
-
-  // Invalidate auth cache so the new role + accessType take effect immediately
-  invalidateAuthCache(req.params.id);
+  await syncMembershipFromUser(user._id, req.workspaceId);
 
   res.status(200).json({
     success: true,
@@ -853,7 +850,7 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
     changeDetails: [{ label: 'Role', previous: previousRole, next: normalizedRole }],
     before: { role: previousRole },
     after: { role: normalizedRole },
-    meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+    meta: { ip: req.ip, userAgent: req.headers['user-agent'], workspaceId: req.workspaceId }
   }).catch(() => {});
 
   // Emit real-time role change in background

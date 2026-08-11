@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';
 import Database from '../services/database';
+import { registerResettable } from './resetRegistry';
 
 /**
  * Normalized Nano-Subtask (Neno) Store
@@ -332,11 +333,16 @@ const useNanoSubtaskStore = create(
 
           return { nanosById: newById, nanoIdsBySubtask: newIdsBySubtask };
         });
-      }
+      },
+
+      // Workspace-scoped — cleared on workspace switch/logout, see resetRegistry.
+      reset: () => set({ nanosById: {}, nanoIdsBySubtask: {}, loading: {}, error: {} })
     }),
     { name: 'nano-subtask-store' }
   )
 );
+
+registerResettable(() => useNanoSubtaskStore.getState().reset());
 
 // ============ HOOK SELECTORS (with shallow comparison) ============
 

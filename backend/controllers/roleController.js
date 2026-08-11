@@ -117,7 +117,7 @@ export const getRole = asyncHandler(async (req, res, next) => {
 // @route   GET /api/roles/slug/:slug
 // @access  Private
 export const getRoleBySlug = asyncHandler(async (req, res, next) => {
-  const role = await Role.findOne({ slug: req.params.slug.toLowerCase() })
+  const role = await Role.findResolvable(req.params.slug.toLowerCase(), req.workspaceId)
     .populate('createdBy', 'name email');
   
   if (!role) {
@@ -139,24 +139,26 @@ export const createRole = asyncHandler(async (req, res, next) => {
   // Generate slug from name
   const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   
-  // Check if slug already exists
-  const existingRole = await Role.findOne({ slug });
+  // Check if slug already exists — either as this workspace's own custom
+  // role, or as a global system-role template (workspaceId: null).
+  const existingRole = await Role.findOne({ slug, $or: [{ workspaceId: req.workspaceId }, { workspaceId: null }] });
   if (existingRole) {
     return next(new ErrorResponse('A role with this name already exists', 400));
   }
-  
+
   // Prevent creating roles with system role names
   const systemRoleSlugs = ['admin', 'manager', 'employee', 'hr'];
   if (systemRoleSlugs.includes(slug)) {
     return next(new ErrorResponse('Cannot create role with a reserved name', 400));
   }
-  
+
   const role = await Role.create({
     name,
     slug,
     description,
     permissions: permissions || {},
     isSystem: false,
+    workspaceId: req.workspaceId,
     createdBy: req.user.id
   });
 
@@ -204,7 +206,7 @@ export const updateRole = asyncHandler(async (req, res, next) => {
   // If name is changing, check for duplicate
   if (name && name !== role.name) {
     const newSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const existingRole = await Role.findOne({ slug: newSlug, _id: { $ne: role._id } });
+    const existingRole = await Role.findOne({ slug: newSlug, workspaceId: role.workspaceId, _id: { $ne: role._id } });
     if (existingRole) {
       return next(new ErrorResponse('A role with this name already exists', 400));
     }
@@ -310,9 +312,9 @@ export const getPermissionDefinitions = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const getMyPermissions = asyncHandler(async (req, res, next) => {
   const userRole = req.user.role.toLowerCase();
-  
+
   // Find the role in database
-  let role = await Role.findOne({ slug: userRole });
+  let role = await Role.findResolvable(userRole, req.workspaceId);
   
   // If role doesn't exist in DB (legacy data), use default permissions
   if (!role) {
@@ -376,7 +378,7 @@ export const initializeRoles = asyncHandler(async (req, res, next) => {
   const results = [];
   
   for (const roleData of systemRoles) {
-    const existingRole = await Role.findOne({ slug: roleData.slug });
+    const existingRole = await Role.findOne({ slug: roleData.slug, workspaceId: null });
     if (!existingRole) {
       const role = await Role.create(roleData);
       results.push({ role: roleData.name, status: 'created' });

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';
 import Database from '../services/database';
+import { registerResettable } from './resetRegistry';
 
 /**
  * Normalized Subtask Store
@@ -332,11 +333,16 @@ const useSubtaskStore = create(
 
           return { subtasksById: newById, subtaskIdsByTask: newIdsByTask };
         });
-      }
+      },
+
+      // Workspace-scoped — cleared on workspace switch/logout, see resetRegistry.
+      reset: () => set({ subtasksById: {}, subtaskIdsByTask: {}, loading: {}, error: {} })
     }),
     { name: 'subtask-store' }
   )
 );
+
+registerResettable(() => useSubtaskStore.getState().reset());
 
 // ============ HOOK SELECTORS (with shallow comparison) ============
 

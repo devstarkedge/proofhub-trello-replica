@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import trashService from '../services/trashService';
 import { toast } from 'react-toastify';
+import { registerResettable } from './resetRegistry';
 
 const useTrashStore = create(devtools((set, get) => ({
   itemsByProject: {}, // projectId -> items[]
@@ -163,7 +164,19 @@ const useTrashStore = create(devtools((set, get) => ({
       toast.error(e.message || 'Bulk permanent delete failed');
       return false;
     }
-  }
+  },
+
+  // Workspace-scoped — cleared on workspace switch/logout, see resetRegistry.
+  reset: () => set({
+    itemsByProject: {},
+    loadingByProject: {},
+    paginationByProject: {},
+    selected: [],
+    filtersByProject: {},
+    operationInProgress: {}
+  })
 })))
+
+registerResettable(() => useTrashStore.getState().reset());
 
 export default useTrashStore;

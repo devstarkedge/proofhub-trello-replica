@@ -623,12 +623,117 @@ export const uploadAvatarToCloudinary = async (fileBuffer, options = {}) => {
  */
 export const getAvatarUrl = (publicId, size = 256) => {
   if (!publicId) return null;
-  
+
   return cloudinary.url(publicId, {
     width: size,
     height: size,
     crop: 'fill',
     gravity: 'face',
+    quality: 'auto:good',
+    fetch_format: 'webp'
+  });
+};
+
+// =============================================
+// WORKSPACE ICON FUNCTIONS
+// =============================================
+
+/**
+ * Upload a workspace icon (logo). Unlike avatars, a logo must never be
+ * cropped or stretched — `crop: 'pad'` fits the source within a square
+ * canvas on a transparent background instead of cutting off any content.
+ * SVGs are uploaded untouched (already resolution-independent, and
+ * Cloudinary's raster transforms/format conversion would rasterize them).
+ */
+export const uploadWorkspaceIconToCloudinary = async (fileBuffer, options = {}) => {
+  configureCloudinary();
+
+  const { workspaceId, originalName, mimetype } = options;
+  const isSvg = mimetype === 'image/svg+xml' || originalName?.toLowerCase().endsWith('.svg');
+
+  const folder = `flowtask/workspaces/${workspaceId}/icon`;
+
+  const uploadOptions = {
+    folder,
+    resource_type: 'image',
+    use_filename: false,
+    unique_filename: true,
+    overwrite: true,
+    tags: ['workspace-icon'],
+    context: {
+      original_name: originalName,
+      workspace_id: workspaceId,
+      uploaded_at: new Date().toISOString()
+    }
+  };
+
+  if (!isSvg) {
+    uploadOptions.transformation = [
+      { width: 512, height: 512, crop: 'pad', background: 'transparent' },
+      { quality: 'auto:good' },
+      { fetch_format: 'webp' }
+    ];
+    // Pre-generate the sizes the UI actually renders (sidebar icon, retina
+    // 2x, switcher dropdown) so first paint never waits on an on-the-fly
+    // transform.
+    uploadOptions.eager = [
+      { width: 64, height: 64, crop: 'pad', background: 'transparent', quality: 'auto:good', format: 'webp' },
+      { width: 128, height: 128, crop: 'pad', background: 'transparent', quality: 'auto:good', format: 'webp' },
+      { width: 256, height: 256, crop: 'pad', background: 'transparent', quality: 'auto:good', format: 'webp' }
+    ];
+    uploadOptions.eager_async = false;
+  }
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      uploadOptions,
+      (error, result) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        const eagerByWidth = (width) => result.eager?.find((e) => e.width === width)?.secure_url;
+
+        resolve({
+          url: result.secure_url,
+          public_id: result.public_id,
+          format: result.format,
+          width: result.width,
+          height: result.height,
+          bytes: result.bytes,
+          isSvg,
+          // For SVGs every size is the same vector file — it scales
+          // perfectly at any resolution with no separate raster needed.
+          small_url: isSvg ? result.secure_url : (eagerByWidth(64) || result.secure_url),
+          medium_url: isSvg ? result.secure_url : (eagerByWidth(128) || result.secure_url),
+          large_url: isSvg ? result.secure_url : (eagerByWidth(256) || result.secure_url)
+        });
+      }
+    );
+
+    const readable = new Readable();
+    readable._read = () => {};
+    readable.push(fileBuffer);
+    readable.push(null);
+    readable.pipe(uploadStream);
+  });
+};
+
+/**
+ * Get a workspace icon URL at a specific size. SVGs ignore `size` entirely
+ * (already resolution-independent) — everything else gets padded to a
+ * square, never cropped.
+ */
+export const getWorkspaceIconUrl = (publicId, size = 128, isSvg = false) => {
+  if (!publicId) return null;
+  if (isSvg) return cloudinary.url(publicId, { resource_type: 'image' });
+
+  return cloudinary.url(publicId, {
+    width: size,
+    height: size,
+    crop: 'pad',
+    background: 'transparent',
     quality: 'auto:good',
     fetch_format: 'webp'
   });

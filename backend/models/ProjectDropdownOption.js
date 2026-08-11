@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const projectDropdownOptionSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   type: {
     type: String,
     required: [true, 'Option type is required'],
@@ -39,8 +45,10 @@ const projectDropdownOptionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-projectDropdownOptionSchema.index({ type: 1, value: 1 }, { unique: true });
-projectDropdownOptionSchema.index({ type: 1, displayOrder: 1 });
-projectDropdownOptionSchema.index({ type: 1, isActive: 1 });
+projectDropdownOptionSchema.index({ workspaceId: 1, type: 1, value: 1 }, { unique: true });
+projectDropdownOptionSchema.index({ workspaceId: 1, type: 1, displayOrder: 1 });
+projectDropdownOptionSchema.index({ workspaceId: 1, type: 1, isActive: 1 });
+
+projectDropdownOptionSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('ProjectDropdownOption', projectDropdownOptionSchema);

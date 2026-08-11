@@ -15,6 +15,7 @@ import { recurringTaskQueue } from '../queues/index.js';
 import { isQueueActive } from '../queues/queueManager.js';
 import RecurringTask from '../models/RecurringTask.js';
 import logger from '../utils/logger.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -145,26 +146,29 @@ export async function recoverRecurringSchedules() {
   const now = new Date();
   let recovered = 0;
 
-  // Active onSchedule tasks with future nextOccurrence
-  const futureTasks = await RecurringTask.find({
-    isActive: true,
-    recurBehavior: 'onSchedule',
-    nextOccurrence: { $gt: now },
-    scheduleType: { $ne: 'daysAfter' },
-  }).select('_id nextOccurrence recurBehavior').lean();
+  // Runs at boot, outside any request — this is a deliberate cross-tenant
+  // scan (recovering due jobs for every workspace), not a leak.
+  const [futureTasks, overdueTasks] = await workspaceContext.runUnscoped(async () => Promise.all([
+    // Active onSchedule tasks with future nextOccurrence
+    RecurringTask.find({
+      isActive: true,
+      recurBehavior: 'onSchedule',
+      nextOccurrence: { $gt: now },
+      scheduleType: { $ne: 'daysAfter' },
+    }).select('_id nextOccurrence recurBehavior').lean(),
+    // Overdue tasks (nextOccurrence already passed — fire immediately)
+    RecurringTask.find({
+      isActive: true,
+      recurBehavior: 'onSchedule',
+      nextOccurrence: { $lte: now },
+      scheduleType: { $ne: 'daysAfter' },
+    }).select('_id nextOccurrence recurBehavior').lean(),
+  ]));
 
   for (const task of futureTasks) {
     await scheduleNextOccurrence(task);
     recovered++;
   }
-
-  // Overdue tasks (nextOccurrence already passed — fire immediately)
-  const overdueTasks = await RecurringTask.find({
-    isActive: true,
-    recurBehavior: 'onSchedule',
-    nextOccurrence: { $lte: now },
-    scheduleType: { $ne: 'daysAfter' },
-  }).select('_id nextOccurrence recurBehavior').lean();
 
   for (const task of overdueTasks) {
     const id = task._id.toString();

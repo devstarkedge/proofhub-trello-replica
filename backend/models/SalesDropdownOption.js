@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const salesDropdownOptionSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   columnName: {
     type: String,
     required: [true, 'Column name is required'],
@@ -41,12 +47,14 @@ const salesDropdownOptionSchema = new mongoose.Schema({
 });
 
 // Compound unique index - same value cannot exist twice for the same column
-salesDropdownOptionSchema.index({ columnName: 1, value: 1 }, { unique: true });
+salesDropdownOptionSchema.index({ workspaceId: 1, columnName: 1, value: 1 }, { unique: true });
 
 // Index for ordering
-salesDropdownOptionSchema.index({ columnName: 1, displayOrder: 1 });
+salesDropdownOptionSchema.index({ workspaceId: 1, columnName: 1, displayOrder: 1 });
 
 // Index for active options
-salesDropdownOptionSchema.index({ columnName: 1, isActive: 1 });
+salesDropdownOptionSchema.index({ workspaceId: 1, columnName: 1, isActive: 1 });
+
+salesDropdownOptionSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('SalesDropdownOption', salesDropdownOptionSchema);

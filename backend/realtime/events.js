@@ -147,6 +147,12 @@ export const ROOM = {
   admin: 'admin',
   managers: 'managers',
   announcements: 'announcements',
-  finance: 'finance',
-  sales: 'sales',
+  // Namespaced by workspace: unlike ROOM.admin/managers (unreachable today
+  // regardless — the JWT carries no role claim, a pre-existing bug out of
+  // scope for this migration), join-finance/join-sales had NO membership
+  // check at all and were joinable by any authenticated socket — now that
+  // Finance/Sales data itself carries workspaceId, these must not leak
+  // across workspaces either.
+  finance: (workspaceId) => `finance-${workspaceId}`,
+  sales: (workspaceId) => `sales-${workspaceId}`,
 };

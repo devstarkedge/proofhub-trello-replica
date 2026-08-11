@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const recurringTaskSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   // Reference to the parent card/task
   card: {
     type: mongoose.Schema.Types.ObjectId,
@@ -234,10 +241,12 @@ const recurringTaskSchema = new mongoose.Schema({
 });
 
 // Indexes for efficient queries
-recurringTaskSchema.index({ board: 1, isActive: 1 });
-recurringTaskSchema.index({ card: 1, isActive: 1 });
-recurringTaskSchema.index({ nextOccurrence: 1, isActive: 1 });
-recurringTaskSchema.index({ createdBy: 1 });
+recurringTaskSchema.index({ workspaceId: 1, board: 1, isActive: 1 });
+recurringTaskSchema.index({ workspaceId: 1, card: 1, isActive: 1 });
+recurringTaskSchema.index({ workspaceId: 1, nextOccurrence: 1, isActive: 1 });
+recurringTaskSchema.index({ workspaceId: 1, createdBy: 1 });
+
+recurringTaskSchema.plugin(workspaceScopePlugin);
 
 // Calculate next occurrence based on schedule
 recurringTaskSchema.methods.calculateNextOccurrence = function(fromDate = new Date()) {

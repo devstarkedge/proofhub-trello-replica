@@ -23,7 +23,7 @@ import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../realtime/index.js';
 
 const basePopulate = [
-  { path: 'assignees', select: 'name email avatar' },
+  { path: 'assignees', select: 'name email avatar department', populate: { path: 'department', select: 'name' } },
   { path: 'watchers', select: 'name email avatar' },
   { path: 'tags', select: 'name color' },
   { path: 'coverImage', select: 'url secureUrl publicId height width' },

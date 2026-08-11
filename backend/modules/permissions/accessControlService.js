@@ -130,10 +130,10 @@ export async function setResourceOverride(targetUserId, resource, payload = {}, 
     throw new Error('Admin access cannot be overridden with a grant. Use effect: "deny" to suspend an admin.');
   }
 
-  const beforeAccess = await resolveResourceAccess(targetUser, key);
+  const workspace = meta.workspaceId || await ensureDefaultWorkspace();
+  const beforeAccess = await resolveResourceAccess(targetUser, key, workspace);
   const before = toLegacyShape(key, beforeAccess.actions);
 
-  const workspace = await ensureDefaultWorkspace();
   const {
     actions = {},
     scope = 'full',
@@ -143,7 +143,7 @@ export async function setResourceOverride(targetUserId, resource, payload = {}, 
   } = payload;
 
   await AccessOverride.findOneAndUpdate(
-    { user: targetUserId, resource: key },
+    { user: targetUserId, resource: key, workspace },
     {
       $set: {
         workspace,
@@ -163,7 +163,7 @@ export async function setResourceOverride(targetUserId, resource, payload = {}, 
 
   invalidateAuthCache(targetUserId);
 
-  const result = await emitAndReturnEffective(targetUserId, targetUser, key);
+  const result = await emitAndReturnEffective(targetUserId, targetUser, key, workspace);
 
   const described = describeResourceChange(
     key,
@@ -208,17 +208,18 @@ export async function clearResourceOverride(targetUserId, resource, actor, meta 
     throw new Error('User not found');
   }
 
-  const beforeAccess = await resolveResourceAccess(targetUser, key);
+  const workspace = meta.workspaceId || await ensureDefaultWorkspace();
+  const beforeAccess = await resolveResourceAccess(targetUser, key, workspace);
   const before = toLegacyShape(key, beforeAccess.actions);
 
   await AccessOverride.findOneAndUpdate(
-    { user: targetUserId, resource: key },
+    { user: targetUserId, resource: key, workspace },
     { $set: { isActive: false, grantedBy: actorId } }
   );
 
   invalidateAuthCache(targetUserId);
 
-  const result = await emitAndReturnEffective(targetUserId, targetUser, key);
+  const result = await emitAndReturnEffective(targetUserId, targetUser, key, workspace);
 
   const described = describeResourceChange(
     key,
@@ -249,8 +250,8 @@ export async function clearResourceOverride(targetUserId, resource, actor, meta 
   return result;
 }
 
-async function emitAndReturnEffective(targetUserId, targetUser, resourceKey) {
-  const effective = await resolveResourceAccess(targetUser, resourceKey);
+async function emitAndReturnEffective(targetUserId, targetUser, resourceKey, workspaceId) {
+  const effective = await resolveResourceAccess(targetUser, resourceKey, workspaceId);
   const legacyPermissions = toLegacyShape(resourceKey, effective.actions);
 
   try {
@@ -276,15 +277,16 @@ async function emitAndReturnEffective(targetUserId, targetUser, resourceKey) {
  * whether they can manage the Access & Permissions module. This is what
  * powers /api/access-control/my-permissions and the per-user admin view.
  */
-export async function resolveEffectivePermissions(user) {
+export async function resolveEffectivePermissions(user, workspaceId) {
+  const ws = workspaceId || user?.workspaceId || await ensureDefaultWorkspace();
   const resources = {};
   for (const key of RESOURCE_KEYS) {
-    const result = await resolveResourceAccess(user, key);
+    const result = await resolveResourceAccess(user, key, ws);
     resources[key] = result.actions;
   }
 
   const role = String(user.role || '').toLowerCase();
-  const roleDoc = await Role.findOne({ slug: role }).lean();
+  const roleDoc = await Role.findResolvable(role, ws);
 
   let roleChecklist;
   if (!roleDoc) {
@@ -304,12 +306,12 @@ export async function resolveEffectivePermissions(user) {
       type: user.accessType || 'full_department',
       allowedProjects: user.allowedProjects || []
     },
-    canManageAccessControl: await canManageAccessControl(user)
+    canManageAccessControl: await canManageAccessControl(user, ws)
   };
 }
 
-export async function getEffectivePermissionsForUser(targetUserId) {
+export async function getEffectivePermissionsForUser(targetUserId, workspaceId) {
   const targetUser = await User.findById(targetUserId).select('-password');
   if (!targetUser) return null;
-  return resolveEffectivePermissions(targetUser);
+  return resolveEffectivePermissions(targetUser, workspaceId);
 }

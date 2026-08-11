@@ -24,14 +24,9 @@ import React, {
   useState
 } from 'react';
 import {
-  Calendar,
   ChevronDown,
   ChevronUp,
   Clock,
-  Filter,
-  Minus,
-  Plus,
-  RefreshCw,
   Search,
   Shield,
   ShieldCheck,
@@ -207,6 +202,7 @@ const ChangeRow = ({ label, previous, next }) => {
   const fmt = (v) => {
     if (v === true)  return { text: 'Enabled',  color: '#16a34a' };
     if (v === false) return { text: 'Disabled', color: '#dc2626' };
+    if (Array.isArray(v)) return { text: v.length ? v.join(', ') : 'None', color: 'var(--color-text-secondary)' };
     return { text: String(v ?? '—'), color: 'var(--color-text-secondary)' };
   };
   const prev = fmt(previous);

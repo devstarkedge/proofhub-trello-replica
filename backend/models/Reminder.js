@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const reminderHistorySchema = new mongoose.Schema({
   action: {
@@ -27,6 +28,12 @@ const reminderHistorySchema = new mongoose.Schema({
 }, { _id: true });
 
 const reminderSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   project: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Board',
@@ -131,13 +138,15 @@ const reminderSchema = new mongoose.Schema({
 });
 
 // Compound indexes for optimized queries
-reminderSchema.index({ project: 1, status: 1 });
-reminderSchema.index({ department: 1, status: 1 });
-reminderSchema.index({ scheduledDate: 1, status: 1 });
-reminderSchema.index({ createdBy: 1, status: 1 });
-reminderSchema.index({ 'client.email': 1 });
-reminderSchema.index({ awaitingClientResponse: 1, department: 1 });
-reminderSchema.index({ createdAt: -1 });
+reminderSchema.index({ workspaceId: 1, project: 1, status: 1 });
+reminderSchema.index({ workspaceId: 1, department: 1, status: 1 });
+reminderSchema.index({ workspaceId: 1, scheduledDate: 1, status: 1 });
+reminderSchema.index({ workspaceId: 1, createdBy: 1, status: 1 });
+reminderSchema.index({ workspaceId: 1, 'client.email': 1 });
+reminderSchema.index({ workspaceId: 1, awaitingClientResponse: 1, department: 1 });
+reminderSchema.index({ workspaceId: 1, createdAt: -1 });
+
+reminderSchema.plugin(workspaceScopePlugin);
 
 // Virtual for checking if reminder is overdue
 reminderSchema.virtual('isOverdue').get(function() {

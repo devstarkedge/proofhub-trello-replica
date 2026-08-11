@@ -14,6 +14,10 @@ class AttachmentService {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    const workspaceId = localStorage.getItem('workspaceId');
+    if (workspaceId) {
+      headers['x-workspace-id'] = workspaceId;
+    }
     if (includeContentType) {
       headers['Content-Type'] = 'application/json';
     }

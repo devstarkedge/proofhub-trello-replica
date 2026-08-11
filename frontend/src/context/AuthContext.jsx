@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useCallback } from "react";
 import api from "../services/api";
 import socketService from "../services/socket";
 import useRoleStore from "../store/roleStore";
+import { resetAllOnWorkspaceSwitch } from "../store/resetRegistry";
 
 const AuthContext = createContext();
 
@@ -49,9 +50,10 @@ export const AuthProvider = ({ children }) => {
   const logoutUser = useCallback(() => {
     // Only remove token from localStorage
     localStorage.removeItem("token");
+    localStorage.removeItem("workspaceId");
     sessionStorage.removeItem("push_modal_dismissed");
     setToken(null);
-    
+
     setUser((prevUser) => {
       // Remove user's task preset if they have one
       if (prevUser && prevUser._id) {
@@ -59,14 +61,15 @@ export const AuthProvider = ({ children }) => {
       }
       return null;
     });
-    
+
     setIsAuthenticated(false);
 
     // Disconnect socket on logout
     socketService.disconnect();
-    
-    // Reset role store
-    useRoleStore.getState().reset();
+
+    // Clear every workspace-scoped store (roleStore + anything else that
+    // registered itself — see store/resetRegistry.js).
+    resetAllOnWorkspaceSwitch();
   }, []);
 
   const restoreSession = useCallback(async () => {

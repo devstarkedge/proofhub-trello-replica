@@ -17,8 +17,15 @@ import SalesPermission from '../models/SalesPermission.js';
 import UserPermission, { FINANCE_PAGE_KEY, serializePagePermission } from '../models/UserPermission.js';
 import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
 import { toLegacyShape } from '../config/permissionRegistry.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
+import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
 
 export async function verifyPermissionParity() {
+  return workspaceContext.runUnscoped(() => verifyPermissionParityUnscoped());
+}
+
+async function verifyPermissionParityUnscoped() {
+  const workspaceId = await ensureDefaultWorkspace();
   const users = await User.find({}).select('role accessType allowedProjects name email').lean();
   const mismatches = [];
 
@@ -26,7 +33,7 @@ export async function verifyPermissionParity() {
     const oldSales = user.role === 'admin'
       ? { moduleVisible: true, canCreate: true, canUpdate: true, canDelete: true, canExport: true, canImport: true, canManageDropdowns: true, canViewActivityLog: true }
       : await SalesPermission.getUserPermissions(user._id);
-    const newSalesResult = await resolveResourceAccess(user, 'sales');
+    const newSalesResult = await resolveResourceAccess(user, 'sales', workspaceId);
     const newSales = toLegacyShape('sales', newSalesResult.actions);
 
     for (const field of ['moduleVisible', 'canCreate', 'canUpdate', 'canDelete', 'canExport', 'canImport', 'canManageDropdowns', 'canViewActivityLog']) {
@@ -37,7 +44,7 @@ export async function verifyPermissionParity() {
 
     const financePerm = await UserPermission.findOne({ user: user._id, pageKey: FINANCE_PAGE_KEY }).lean();
     const oldFinance = serializePagePermission(financePerm, user.role, FINANCE_PAGE_KEY);
-    const newFinanceResult = await resolveResourceAccess(user, 'finance');
+    const newFinanceResult = await resolveResourceAccess(user, 'finance', workspaceId);
     const newFinance = toLegacyShape('finance', newFinanceResult.actions);
 
     for (const field of ['hasAccess', 'revenueAnalytics', 'billingDetails']) {

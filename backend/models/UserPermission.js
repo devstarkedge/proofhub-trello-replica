@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 export const FINANCE_PAGE_KEY = 'finance';
 
@@ -17,6 +18,11 @@ export const EMPTY_FINANCE_PERMISSIONS = Object.freeze({
 });
 
 const userPermissionSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -51,8 +57,10 @@ const userPermissionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-userPermissionSchema.index({ user: 1, pageKey: 1 }, { unique: true });
-userPermissionSchema.index({ pageKey: 1, hasAccess: 1 });
+userPermissionSchema.index({ workspaceId: 1, user: 1, pageKey: 1 }, { unique: true });
+userPermissionSchema.index({ workspaceId: 1, pageKey: 1, hasAccess: 1 });
+
+userPermissionSchema.plugin(workspaceScopePlugin);
 
 export const normalizePermissionRole = (role) => {
   const normalized = String(role || '').toLowerCase().trim();

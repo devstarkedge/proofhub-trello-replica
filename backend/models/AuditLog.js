@@ -2,13 +2,15 @@ import mongoose from 'mongoose';
 
 /**
  * Generic, reusable audit-trail collection — not owned by any one module.
- * Today only the Access & Permissions engine (backend/modules/permissions/)
- * writes to it, but the shape is deliberately module-agnostic (`category` +
- * `targetType` discriminate the writer) so a future module (milestones,
- * projects, tasks) can adopt the same `recordAuditLog()` helper instead of
- * building its own log, the way `services/milestone/milestoneService.js`
- * already does independently (writes `targetType: 'Milestone'`, no
- * `category` — pre-existing, untouched by this schema extension).
+ * The Access & Permissions engine (backend/modules/permissions/) and the
+ * milestone service (backend/services/milestone/milestoneService.js) both
+ * write to it independently; the shape is deliberately module-agnostic
+ * (`category` + `targetType` discriminate the writer).
+ *
+ * Relocated from modules/authorization/models/AuditLog.js as part of the
+ * workspace migration (that module's Role/PermissionGroup/Policy scaffold
+ * was deleted as dead code; this model and Workspace were the two live
+ * pieces worth keeping).
  *
  * Fields below `userAgent` were added for the centralized Access &
  * Permissions activity log: human-readable, list-cheap, expand-lazy.
@@ -21,7 +23,7 @@ const changeDetailSchema = new mongoose.Schema({
 
 const auditLogSchema = new mongoose.Schema({
   actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  workspace: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace' },
+  workspace: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
   action: { type: String, required: true }, // e.g., 'ROLE_UPDATED', 'PERMISSION_ADDED'
   targetType: { type: String, required: true }, // e.g., 'Role', 'WorkspaceMember'
   targetId: { type: mongoose.Schema.Types.ObjectId },
@@ -60,15 +62,18 @@ const auditLogSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ── Pagination & filtering indexes ──
+// workspace leads every compound index (this file's own category-first
+// convention, pre-dating the migration, is the exact precedent every other
+// workspace-owned model's indexes now follow — see workspaceScopePlugin.js).
 // _id-based keyset pagination (ObjectIds are monotonically increasing at
 // creation time, so sorting/filtering on _id alone is a correct, cheap
 // substitute for a createdAt+_id compound cursor).
-auditLogSchema.index({ category: 1, _id: -1 });
-auditLogSchema.index({ category: 1, targetId: 1, _id: -1 });
-auditLogSchema.index({ category: 1, actor: 1, _id: -1 });
-auditLogSchema.index({ category: 1, action: 1, _id: -1 });
-auditLogSchema.index({ category: 1, resourceKey: 1, _id: -1 });
-auditLogSchema.index({ category: 1, createdAt: 1 });
+auditLogSchema.index({ workspace: 1, category: 1, _id: -1 });
+auditLogSchema.index({ workspace: 1, category: 1, targetId: 1, _id: -1 });
+auditLogSchema.index({ workspace: 1, category: 1, actor: 1, _id: -1 });
+auditLogSchema.index({ workspace: 1, category: 1, action: 1, _id: -1 });
+auditLogSchema.index({ workspace: 1, category: 1, resourceKey: 1, _id: -1 });
+auditLogSchema.index({ workspace: 1, category: 1, createdAt: 1 });
 // Free-text search across denormalized names/labels/summary.
 auditLogSchema.index({ actorName: 'text', targetName: 'text', resourceLabel: 'text', summary: 'text' });
 

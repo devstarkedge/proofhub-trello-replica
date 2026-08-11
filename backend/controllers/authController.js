@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import User from '../models/User.js';
 import Department from '../models/Department.js';
+import Team from '../models/Team.js';
 import Notification from '../models/Notification.js';
 import Role from '../models/Role.js';
 import asyncHandler from '../middleware/asyncHandler.js';
@@ -16,6 +17,10 @@ import {
   createNotificationInBackground,
   notifyAdminsUserCreatedInBackground
 } from '../utils/backgroundTasks.js';
+import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
+import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -36,32 +41,47 @@ export const register = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Email already exists. Please use a different email address.', 400));
   }
 
-  // Validate department if provided
-  if (department) {
-    const deptExists = await Department.findById(department);
-    if (!deptExists) {
-      return next(new ErrorResponse('Invalid department selected', 400));
-    }
+  // Public registration happens before any workspace is selected — every
+  // self-registered user joins the single default workspace (consistent
+  // with the "Login Flow: Single Workspace" case; multi-workspace signup
+  // is a later-phase invitation flow, not this endpoint).
+  const defaultWorkspaceId = await ensureDefaultWorkspace();
+  if (!defaultWorkspaceId) {
+    return next(new ErrorResponse('No workspace available to register into', 500));
   }
 
-  // Determine roleId for default 'employee' role
-  const employeeRole = await Role.findOne({ slug: 'employee' });
+  const { user, employeeRole } = await workspaceContext.run({ workspaceId: defaultWorkspaceId }, async () => {
+    // Validate department if provided
+    if (department) {
+      const deptExists = await Department.findById(department);
+      if (!deptExists) {
+        throw new ErrorResponse('Invalid department selected', 400);
+      }
+    }
 
-  // Create user (default role is 'employee' unless admin creates)
-  const user = await User.create({
-    name,
-    email,
-    password,
-    role: 'employee',
-    roleId: employeeRole?._id,
-    department: department || undefined,
-    isVerified: false // Admin needs to verify
+    // Determine roleId for default 'employee' role — the global system
+    // template (workspaceId: null), never a workspace-custom role.
+    const role = await Role.findOne({ slug: 'employee', workspaceId: null });
+
+    const createdUser = await User.create({
+      name,
+      email,
+      password,
+      role: 'employee',
+      roleId: role?._id,
+      department: department || undefined,
+      isVerified: false // Admin needs to verify
+    });
+
+    return { user: createdUser, employeeRole: role };
   });
+
+  await syncMembershipFromUser(user._id, defaultWorkspaceId);
 
   // Get department name for notification
   let departmentName = 'No department selected';
   if (department) {
-    const dept = await Department.findById(department);
+    const dept = await workspaceContext.run({ workspaceId: defaultWorkspaceId }, async () => await Department.findById(department));
     departmentName = dept ? dept.name : 'Unknown department';
   }
 
@@ -81,11 +101,11 @@ export const register = asyncHandler(async (req, res, next) => {
   });
 
   // Run non-blocking background tasks: notify admins and send welcome email
-  runBackground(async () => {
+  runBackground(() => workspaceContext.run({ workspaceId: defaultWorkspaceId }, async () => {
     try {
-      const authorizedUsers = await User.find({ 
-        role: { $in: ['admin', 'manager'] }, 
-        isActive: true 
+      const authorizedUsers = await User.find({
+        role: { $in: ['admin', 'manager'] },
+        isActive: true
       }).select('_id');
       const authorizedIds = authorizedUsers.map(u => u._id);
 
@@ -116,7 +136,7 @@ export const register = asyncHandler(async (req, res, next) => {
     } catch (error) {
       console.error('Post-registration background failed:', error);
     }
-  });
+  }));
 });
 
 // @desc    Login user
@@ -178,13 +198,39 @@ export const login = asyncHandler(async (req, res, next) => {
 // @route   GET /api/auth/me
 // @access  Private
 export const getMe = asyncHandler(async (req, res, next) => {
-  const user = await User.findById(req.user.id)
-    .populate('department', 'name')
-    .populate('team', 'name');
+  const baseUser = await User.findById(req.user.id).select('-password').lean();
+
+  // req.user's role/department/team/accessType/allowedProjects are already
+  // the correct values for the *active* workspace (overlaid by `protect`
+  // from WorkspaceMembership) — re-populating from the raw User document
+  // here would silently show the default-workspace mirror instead once a
+  // user has switched workspaces, so populate department/team names from
+  // the overlay's ids, not the base document's.
+  const [departments, team, workspaces] = await Promise.all([
+    Department.find({ _id: { $in: req.user.department || [] } }).select('name').lean(),
+    req.user.team ? Team.findById(req.user.team).select('name').lean() : null,
+    WorkspaceMembership.find({ user: req.user.id, status: 'active' })
+      .populate('workspace', 'name slug')
+      .lean()
+  ]);
+
+  const user = {
+    ...baseUser,
+    role: req.user.role,
+    roleId: req.user.roleId,
+    department: departments,
+    team,
+    accessType: req.user.accessType,
+    allowedProjects: req.user.allowedProjects
+  };
 
   res.status(200).json({
     success: true,
-    data: user
+    data: user,
+    workspaces: workspaces
+      .filter((m) => m.workspace)
+      .map((m) => ({ _id: m.workspace._id, name: m.workspace.name, slug: m.workspace.slug, role: m.role })),
+    activeWorkspaceId: req.workspaceId
   });
 });
 
@@ -257,7 +303,7 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
   let roleId = null;
   
   // Find the role document to get its ID
-  const roleDoc = await Role.findOne({ slug: role.toLowerCase() });
+  const roleDoc = await Role.findResolvable(role.toLowerCase(), req.workspaceId);
   
   if (roleDoc) {
     isValidRole = true;
@@ -286,6 +332,10 @@ export const adminCreateUser = asyncHandler(async (req, res, next) => {
       $addToSet: { members: user._id }
     });
   }
+
+  // Admin-created users join the admin's own active workspace.
+  await syncMembershipFromUser(user._id, req.workspaceId);
+
   // Emit real-time update
   const { emitToTeam } = await import('../server.js');
   emitToTeam('admin', 'user-created', {

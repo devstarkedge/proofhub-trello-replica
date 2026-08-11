@@ -6,7 +6,7 @@ import SubtaskNano from '../../models/SubtaskNano.js';
 import Milestone, { MILESTONE_STATUSES } from '../../models/Milestone.js';
 import MilestoneApproval from '../../models/MilestoneApproval.js';
 import MilestoneRevenueRecognition from '../../models/MilestoneRevenueRecognition.js';
-import AuditLog from '../../modules/authorization/models/AuditLog.js';
+import AuditLog from '../../models/AuditLog.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { addCents, fromCents, toCents } from '../../utils/money.js';
 
@@ -124,8 +124,9 @@ export const serializeMilestone = (milestone, approvals = []) => {
   };
 };
 
-const auditEntry = ({ actorId, action, targetId, before, after, requestContext = {} }) => ({
+const auditEntry = ({ actorId, workspaceId, action, targetId, before, after, requestContext = {} }) => ({
   actor: actorId,
+  workspace: workspaceId,
   action,
   targetType: 'Milestone',
   targetId,
@@ -136,6 +137,7 @@ const auditEntry = ({ actorId, action, targetId, before, after, requestContext =
 
 export const createMilestonesForProject = async ({
   boardId,
+  workspaceId,
   schedule,
   actorId,
   session,
@@ -143,6 +145,7 @@ export const createMilestonesForProject = async ({
 }) => {
   const documents = schedule.milestones.map((milestone) => ({
     board: boardId,
+    workspaceId,
     title: milestone.title,
     amountCents: milestone.amountCents,
     approvedAmountCents: 0,
@@ -157,6 +160,7 @@ export const createMilestonesForProject = async ({
   if (created.length > 0) {
     await AuditLog.insertMany(created.map((milestone) => auditEntry({
       actorId,
+      workspaceId,
       action: 'MILESTONE_CREATED',
       targetId: milestone._id,
       before: null,
@@ -264,6 +268,7 @@ export const syncMilestoneSchedule = async ({
       await current.save({ session });
       audits.push(auditEntry({
         actorId,
+        workspaceId: board.workspaceId,
         action: 'MILESTONE_UPDATED',
         targetId: current._id,
         before,
@@ -273,6 +278,7 @@ export const syncMilestoneSchedule = async ({
     } else {
       const [created] = await Milestone.create([{
         board: board._id,
+        workspaceId: board.workspaceId,
         title: input.title,
         amountCents: input.amountCents,
         approvedAmountCents: 0,
@@ -284,6 +290,7 @@ export const syncMilestoneSchedule = async ({
       }], { session });
       audits.push(auditEntry({
         actorId,
+        workspaceId: board.workspaceId,
         action: 'MILESTONE_CREATED',
         targetId: created._id,
         before: null,
@@ -298,6 +305,7 @@ export const syncMilestoneSchedule = async ({
     await Milestone.deleteMany({ _id: { $in: removable.map((milestone) => milestone._id) } }).session(session);
     removable.forEach((milestone) => audits.push(auditEntry({
       actorId,
+      workspaceId: board.workspaceId,
       action: 'MILESTONE_DELETED',
       targetId: milestone._id,
       before: milestone.toObject(),
@@ -329,6 +337,7 @@ export const removeUnapprovedMilestoneSchedule = async ({
     await Milestone.deleteMany({ board: board._id }).session(session);
     await AuditLog.insertMany(milestones.map((milestone) => auditEntry({
       actorId,
+      workspaceId: board.workspaceId,
       action: 'MILESTONE_DELETED',
       targetId: milestone._id,
       before: milestone.toObject(),
@@ -405,7 +414,7 @@ export const approveMilestone = async ({
   let result;
   try {
     await session.withTransaction(async () => {
-      const board = await Board.findById(boardId).select('billingCycle milestoneWorkflow isDeleted').session(session);
+      const board = await Board.findById(boardId).select('billingCycle milestoneWorkflow isDeleted workspaceId').session(session);
       if (!board || board.isDeleted) throw new ErrorResponse('Project not found', 404);
       if (String(board.billingCycle).toLowerCase() !== MILESTONE_BILLING_TYPE) {
         throw new ErrorResponse('Approvals can only be recorded for Milestone projects', 400);
@@ -462,6 +471,7 @@ export const approveMilestone = async ({
 
       const [approval] = await MilestoneApproval.create([{
         board: boardId,
+        workspaceId: board.workspaceId,
         milestone: milestone._id,
         amountCents,
         approvedBy: actorId,
@@ -475,6 +485,7 @@ export const approveMilestone = async ({
 
       const audits = [auditEntry({
         actorId,
+        workspaceId: board.workspaceId,
         action: 'MILESTONE_APPROVAL_RECORDED',
         targetId: milestone._id,
         before: { approvedAmountCents: milestone.approvedAmountCents, status: milestone.status },
@@ -494,6 +505,7 @@ export const approveMilestone = async ({
       if (becomesPaid) {
         audits.push(auditEntry({
           actorId,
+          workspaceId: board.workspaceId,
           action: 'MILESTONE_PAID',
           targetId: milestone._id,
           before: { status: milestone.status },
@@ -520,6 +532,7 @@ export const approveMilestone = async ({
           if (activatedMilestone) {
             audits.push(auditEntry({
               actorId,
+              workspaceId: board.workspaceId,
               action: 'MILESTONE_ACTIVATED',
               targetId: activatedMilestone._id,
               before: { status: MILESTONE_STATUSES.PENDING },

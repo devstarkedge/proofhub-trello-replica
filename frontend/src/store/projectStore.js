@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import Database from '../services/database';
+import { registerResettable } from './resetRegistry';
 
 const useProjectStore = create(
   devtools(
@@ -211,12 +212,26 @@ const useProjectStore = create(
             return dept;
           })
         }));
-      }
+      },
+
+      // Workspace-scoped data (departments/projects belong to one
+      // workspace) — cleared on workspace switch/logout, see resetRegistry.
+      reset: () => set({
+        departments: [],
+        membersWithAssignments: {},
+        projectsWithMemberAssignments: {},
+        loading: false,
+        isFetching: false,
+        error: null,
+        lastUpdated: null
+      })
     }),
     {
       name: 'project-store'
     }
   )
 );
+
+registerResettable(() => useProjectStore.getState().reset());
 
 export default useProjectStore;

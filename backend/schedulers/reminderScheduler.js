@@ -14,6 +14,7 @@ import { notificationQueue } from '../queues/index.js';
 import { isQueueActive } from '../queues/queueManager.js';
 import Reminder from '../models/Reminder.js';
 import logger from '../utils/logger.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -110,10 +111,12 @@ export async function recoverReminderSchedules() {
   const now = new Date();
   let recovered = 0;
 
+  // Runs at boot, outside any request — a deliberate cross-tenant scan
+  // (recovering due jobs for every workspace), not a leak.
   // Pending reminders that haven't been notified yet
-  const pendingReminders = await Reminder.find({
+  const pendingReminders = await workspaceContext.runUnscoped(async () => await Reminder.find({
     status: 'pending',
-  }).select('_id scheduledDate').lean();
+  }).select('_id scheduledDate').lean());
 
   for (const reminder of pendingReminders) {
     await scheduleReminderJobs(reminder);

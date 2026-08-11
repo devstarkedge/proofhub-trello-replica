@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';
 import Database from '../services/database';
+import { registerResettable } from './resetRegistry';
 
 // Helper to build cardsById from cardsByList
 const buildCardsById = (cardsByList) => {
@@ -854,6 +855,23 @@ const useWorkflowStore = create(
         error: null,
         lastUpdated: null,
         currentProjectId: null
+      }),
+
+      // Workspace-scoped — cleared on workspace switch/logout, see
+      // resetRegistry.js. Reuses clearWorkflow's reset plus the prefetch
+      // cache, which clearWorkflow itself deliberately leaves alone
+      // (prefetching another project shouldn't wipe the currently-viewed
+      // one's cache) but does need to go on an actual workspace switch.
+      reset: () => set({
+        board: null,
+        lists: [],
+        cardsByList: {},
+        cardsById: {},
+        loading: true,
+        error: null,
+        lastUpdated: null,
+        currentProjectId: null,
+        prefetchedData: {}
       })
     }),
     {
@@ -861,6 +879,8 @@ const useWorkflowStore = create(
     }
   )
 );
+
+registerResettable(() => useWorkflowStore.getState().reset());
 
 // ============ SELECTOR HOOKS (with shallow comparison) ============
 

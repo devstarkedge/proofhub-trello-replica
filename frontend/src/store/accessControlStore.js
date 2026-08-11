@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as accessControlApi from '../services/accessControlApi';
+import { registerResettable } from './resetRegistry';
 
 /**
  * Zustand store for the centralized Access & Permissions engine.
@@ -65,5 +66,7 @@ const useAccessControlStore = create((set, get) => ({
 
   reset: () => set({ myPermissions: null, registry: null, loading: false, error: null })
 }));
+
+registerResettable(() => useAccessControlStore.getState().reset());
 
 export default useAccessControlStore;

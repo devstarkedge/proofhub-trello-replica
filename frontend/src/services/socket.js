@@ -10,10 +10,10 @@ class SocketService {
     this.maxReconnectAttempts = 10;
   }
 
-  connect(userId, token) {
+  connect(userId, token, workspaceId) {
     if (this.socket) {
       if (import.meta.env.DEV) console.log('Socket already initialized');
-      
+
       // If we're not connected but have a socket, we might want to ensure we're trying to connect
       if (!this.connected) {
         this.socket.connect();
@@ -22,11 +22,12 @@ class SocketService {
     }
 
     if (import.meta.env.DEV) console.log('Connecting to socket server...');
-    
+
     this.socket = io(baseURL, {
       auth: {
         userId,
-        token: token || localStorage.getItem('token')
+        token: token || localStorage.getItem('token'),
+        workspaceId: workspaceId || localStorage.getItem('workspaceId')
       },
       reconnection: true,
       reconnectionDelay: 1000,
@@ -36,6 +37,17 @@ class SocketService {
     });
 
     this.setupEventListeners();
+  }
+
+  /**
+   * connect() is a no-op if a socket already exists (see above) — a
+   * workspace switch needs an actual re-authentication with the new
+   * workspaceId, not another connect() call on the same socket, so this
+   * explicitly disconnects first.
+   */
+  switchWorkspace(userId, token, workspaceId) {
+    this.disconnect();
+    this.connect(userId, token, workspaceId);
   }
 
   setupEventListeners() {
@@ -304,6 +316,13 @@ class SocketService {
     this.socket.on('avatar-updated', (data) => {
       console.log('Avatar updated:', data);
       window.dispatchEvent(new CustomEvent('socket-avatar-updated', { detail: data }));
+    });
+
+    // Workspace icon update event — lets every member's switcher update
+    // live without a refresh, per the branding requirement.
+    this.socket.on('workspace-icon-updated', (data) => {
+      console.log('Workspace icon updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-workspace-icon-updated', { detail: data }));
     });
 
     // Finance page events - for real-time finance updates

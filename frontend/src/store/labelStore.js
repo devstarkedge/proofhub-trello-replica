@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import Database from '../services/database';
+import { registerResettable } from './resetRegistry';
 
 const useLabelStore = create(
   devtools(
@@ -79,10 +80,14 @@ const useLabelStore = create(
           console.error('Error syncing labels:', error);
           throw error;
         }
-      }
+      },
+
+      reset: () => set({ loading: false, error: null })
     }),
     { name: 'LabelStore' }
   )
 );
+
+registerResettable(() => useLabelStore.getState().reset());
 
 export default useLabelStore;

@@ -17,6 +17,7 @@ import { getIO } from '../realtime/index.js';
 import notificationService from '../utils/notificationService.js';
 import { scheduleAnnouncementArchive } from '../schedulers/announcementScheduler.js';
 import config from '../config/index.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 const JOB_HANDLERS = {
   /**
@@ -26,10 +27,12 @@ const JOB_HANDLERS = {
   async 'broadcast-announcement'(job) {
     const { announcementId } = job.data;
 
-    const announcement = await Announcement.findById(announcementId)
+    // No workspaceId travels on this job (enqueued by announcementScheduler.js,
+    // which only knows the announcementId) — look it up unscoped first.
+    const announcement = await workspaceContext.runUnscoped(async () => await Announcement.findById(announcementId)
       .populate('createdBy')
       .populate('subscribers.users')
-      .populate('subscribers.departments');
+      .populate('subscribers.departments'));
 
     if (!announcement) {
       return { skipped: true, reason: 'not found' };
@@ -40,6 +43,51 @@ const JOB_HANDLERS = {
       return { skipped: true, reason: 'already broadcasted' };
     }
 
+    return workspaceContext.run({ workspaceId: announcement.workspaceId }, () => broadcastAnnouncement(announcement, announcementId));
+  },
+
+  /**
+   * Archive a single expired announcement by ID.
+   * Idempotent: skips if already archived.
+   */
+  async 'archive-announcement'(job) {
+    const { announcementId } = job.data;
+
+    const announcement = await workspaceContext.runUnscoped(async () => await Announcement.findById(announcementId));
+
+    if (!announcement) {
+      return { skipped: true, reason: 'not found' };
+    }
+
+    // Idempotency: already archived
+    if (announcement.isArchived) {
+      return { skipped: true, reason: 'already archived' };
+    }
+
+    return workspaceContext.run({ workspaceId: announcement.workspaceId }, async () => {
+      announcement.isArchived = true;
+      announcement.archivedAt = new Date();
+
+      if (announcement.isPinned) {
+        announcement.isPinned = false;
+        announcement.pinPosition = undefined;
+      }
+
+      await announcement.save();
+
+      getIO().emit('announcement-archived', {
+        announcementId: announcement._id,
+        isArchived: true,
+        reason: 'expired',
+      });
+
+      console.log(`[Worker:Announcement] archive:${announcementId} completed`);
+      return { archived: true };
+    });
+  },
+};
+
+async function broadcastAnnouncement(announcement, announcementId) {
     let subscriberIds = [];
 
     if (announcement.subscribers.type === 'all') {
@@ -100,46 +148,7 @@ const JOB_HANDLERS = {
 
     console.log(`[Worker:Announcement] broadcast:${announcementId} → ${subscriberIds.length} users`);
     return { broadcasted: true, recipients: subscriberIds.length };
-  },
-
-  /**
-   * Archive a single expired announcement by ID.
-   * Idempotent: skips if already archived.
-   */
-  async 'archive-announcement'(job) {
-    const { announcementId } = job.data;
-
-    const announcement = await Announcement.findById(announcementId);
-
-    if (!announcement) {
-      return { skipped: true, reason: 'not found' };
-    }
-
-    // Idempotency: already archived
-    if (announcement.isArchived) {
-      return { skipped: true, reason: 'already archived' };
-    }
-
-    announcement.isArchived = true;
-    announcement.archivedAt = new Date();
-
-    if (announcement.isPinned) {
-      announcement.isPinned = false;
-      announcement.pinPosition = undefined;
-    }
-
-    await announcement.save();
-
-    getIO().emit('announcement-archived', {
-      announcementId: announcement._id,
-      isArchived: true,
-      reason: 'expired',
-    });
-
-    console.log(`[Worker:Announcement] archive:${announcementId} completed`);
-    return { archived: true };
-  },
-};
+}
 
 // ─── Worker Creation ──────────────────────────────────────────────────────────
 

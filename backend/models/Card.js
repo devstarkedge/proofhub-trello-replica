@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import mongoosePaginate from 'mongoose-paginate-v2';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 const mentionSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -53,6 +54,11 @@ const attachmentSchema = new mongoose.Schema({
 });
 
 const cardSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   title: {
     type: String,
     required: [true, 'Card title is required'],
@@ -182,45 +188,45 @@ const cardSchema = new mongoose.Schema({
 // See: https://www.mongodb.com/docs/manual/core/index-compound/#prefixes
 
 // Core position/list ordering
-cardSchema.index({ list: 1, position: 1 });
+cardSchema.index({ workspaceId: 1, list: 1, position: 1 });
 
 // Standalone fields only kept where no compound has them as prefix
-cardSchema.index({ status: 1 });            // Calendar/kanban queries filter on status alone
-cardSchema.index({ createdAt: -1 });
-cardSchema.index({ updatedAt: -1 });
-cardSchema.index({ startDate: 1 });
+cardSchema.index({ workspaceId: 1, status: 1 });            // Calendar/kanban queries filter on status alone
+cardSchema.index({ workspaceId: 1, createdAt: -1 });
+cardSchema.index({ workspaceId: 1, updatedAt: -1 });
+cardSchema.index({ workspaceId: 1, startDate: 1 });
 cardSchema.index({ 'estimationTime.user': 1 });
 cardSchema.index({ 'loggedTime.user': 1 });
 
 // Board-leading compounds (covers standalone { board: 1 })
-cardSchema.index({ board: 1, status: 1 });
-cardSchema.index({ board: 1, dueDate: 1 });
-cardSchema.index({ board: 1, priority: 1 });
-cardSchema.index({ board: 1, isArchived: 1 });
-cardSchema.index({ board: 1, list: 1, status: 1 });
-cardSchema.index({ board: 1, list: 1, position: 1 });
-cardSchema.index({ board: 1, assignees: 1 });
-cardSchema.index({ board: 1, members: 1 });
+cardSchema.index({ workspaceId: 1, board: 1, status: 1 });
+cardSchema.index({ workspaceId: 1, board: 1, dueDate: 1 });
+cardSchema.index({ workspaceId: 1, board: 1, priority: 1 });
+cardSchema.index({ workspaceId: 1, board: 1, isArchived: 1 });
+cardSchema.index({ workspaceId: 1, board: 1, list: 1, status: 1 });
+cardSchema.index({ workspaceId: 1, board: 1, list: 1, position: 1 });
+cardSchema.index({ workspaceId: 1, board: 1, assignees: 1 });
+cardSchema.index({ workspaceId: 1, board: 1, members: 1 });
 
 // Assignee-leading compounds (covers standalone { assignees: 1 })
-cardSchema.index({ assignees: 1, status: 1 });
-cardSchema.index({ assignees: 1, dueDate: 1 });
-cardSchema.index({ assignees: 1, priority: 1 });
-cardSchema.index({ assignees: 1, dueDate: 1, status: 1 });
+cardSchema.index({ workspaceId: 1, assignees: 1, status: 1 });
+cardSchema.index({ workspaceId: 1, assignees: 1, dueDate: 1 });
+cardSchema.index({ workspaceId: 1, assignees: 1, priority: 1 });
+cardSchema.index({ workspaceId: 1, assignees: 1, dueDate: 1, status: 1 });
 
 // Member compound (covers standalone { members: 1 })
-cardSchema.index({ members: 1, status: 1 });
+cardSchema.index({ workspaceId: 1, members: 1, status: 1 });
 
 // Date/priority compounds (covers standalone { dueDate: 1 }, { priority: 1 })
-cardSchema.index({ dueDate: 1, status: 1 });
-cardSchema.index({ priority: 1, dueDate: 1 });
+cardSchema.index({ workspaceId: 1, dueDate: 1, status: 1 });
+cardSchema.index({ workspaceId: 1, priority: 1, dueDate: 1 });
 
 // Creator + time compound (covers standalone { createdBy: 1 })
-cardSchema.index({ createdBy: 1, createdAt: -1 });
+cardSchema.index({ workspaceId: 1, createdBy: 1, createdAt: -1 });
 
 // Archive compound (covers standalone { isArchived: 1 })
-cardSchema.index({ isArchived: 1, autoDeleteAt: 1 });
-cardSchema.index({ list: 1, isArchived: 1, position: 1 });
+cardSchema.index({ workspaceId: 1, isArchived: 1, autoDeleteAt: 1 });
+cardSchema.index({ workspaceId: 1, list: 1, isArchived: 1, position: 1 });
 
 // Text index for search
 cardSchema.index({ title: 'text', description: 'text', labels: 'text' }, {
@@ -268,5 +274,6 @@ cardSchema.virtual('totalLoggedTime').get(function() {
 
 // Add pagination plugin
 cardSchema.plugin(mongoosePaginate);
+cardSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('Card', cardSchema);

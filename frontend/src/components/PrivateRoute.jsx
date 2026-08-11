@@ -1,9 +1,11 @@
 import React, { useContext } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
 
 const PrivateRoute = ({ children, requiredRole }) => {
   const { user, isAuthenticated, loading } = useContext(AuthContext);
+  const { workspaces, currentWorkspace, loading: workspacesLoading } = useContext(WorkspaceContext);
   const location = useLocation();
 
   if (loading) {
@@ -29,6 +31,14 @@ const PrivateRoute = ({ children, requiredRole }) => {
   // Check verification status (admin is always verified)
   if (user && !user.isVerified && user.role !== 'admin') {
     return <Navigate to="/verify-pending" replace />;
+  }
+
+  // Only ever shown to a user with 2+ workspaces and none active yet —
+  // single-workspace users (everyone today) are auto-selected in
+  // WorkspaceContext and never see this gate. Skipped while workspaces are
+  // still loading so this doesn't flash for a moment on every refresh.
+  if (!workspacesLoading && workspaces.length > 1 && !currentWorkspace) {
+    return <Navigate to="/select-workspace" replace />;
   }
 
   // Role-based access control

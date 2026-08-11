@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const salesRowSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   // Predefined columns
   date: {
     type: Date,
@@ -191,23 +197,25 @@ const salesRowSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Indexes for performance
-salesRowSchema.index({ date: -1 });
-salesRowSchema.index({ platform: 1, date: -1 });
-salesRowSchema.index({ technology: 1, date: -1 });
-salesRowSchema.index({ status: 1, date: -1 });
-salesRowSchema.index({ createdBy: 1 });
-salesRowSchema.index({ isDeleted: 1, date: -1 });
-salesRowSchema.index({ clientLocation: 1, date: -1 });
-salesRowSchema.index({ profile: 1, date: -1 });
+// Indexes for performance — workspaceId leads every compound.
+salesRowSchema.index({ workspaceId: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, platform: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, technology: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, status: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, createdBy: 1 });
+salesRowSchema.index({ workspaceId: 1, isDeleted: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, clientLocation: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, profile: 1, date: -1 });
 
 // Compound index for common queries
-salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, date: -1 });
-salesRowSchema.index({ isDeleted: 1, platform: 1, status: 1, technology: 1, date: -1 });
-salesRowSchema.index({ name: 1, date: -1 });
-salesRowSchema.index({ isDeleted: 1, name: 1, date: -1 });
-salesRowSchema.index({ 'bidLink.type': 1, date: -1 });
-salesRowSchema.index({ 'bidLink.isValid': 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, isDeleted: 1, platform: 1, status: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, isDeleted: 1, platform: 1, status: 1, technology: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, name: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, isDeleted: 1, name: 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, 'bidLink.type': 1, date: -1 });
+salesRowSchema.index({ workspaceId: 1, 'bidLink.isValid': 1, date: -1 });
+
+salesRowSchema.plugin(workspaceScopePlugin);
 
 // Pre-validate hook to auto-generate month name from date (must run before validation
 // so the required monthName field is set when date is present)

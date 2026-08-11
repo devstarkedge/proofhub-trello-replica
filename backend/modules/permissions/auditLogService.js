@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import AuditLog from '../authorization/models/AuditLog.js';
+import AuditLog from '../../models/AuditLog.js';
 import { ensureDefaultWorkspace } from './workspaceService.js';
 
 const ACCESS_CONTROL_CATEGORY = 'access_control';
@@ -35,7 +35,7 @@ export async function recordAuditLog({
   meta = {}
 }) {
   try {
-    const workspace = await ensureDefaultWorkspace();
+    const workspace = meta.workspaceId || await ensureDefaultWorkspace();
     await AuditLog.create({
       actor: actor?._id || actor?.id,
       workspace,
@@ -72,6 +72,7 @@ const LIST_PROJECTION = '-changeDetails -changes -ipAddress -userAgent -workspac
  * cursor, and it's covered by the indexes on the model.
  */
 export async function queryAuditLog({
+  workspaceId,
   category = ACCESS_CONTROL_CATEGORY,
   cursor,
   limit = 50,
@@ -84,7 +85,8 @@ export async function queryAuditLog({
   action,
   search
 } = {}) {
-  const filter = { category };
+  const workspace = workspaceId || await ensureDefaultWorkspace();
+  const filter = { workspace, category };
 
   if (targetId && mongoose.Types.ObjectId.isValid(targetId)) filter.targetId = targetId;
   if (actorId && mongoose.Types.ObjectId.isValid(actorId)) filter.actor = actorId;

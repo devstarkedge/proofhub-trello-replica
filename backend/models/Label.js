@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const labelSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   name: {
     type: String,
     required: [true, 'Label name is required'],
@@ -40,16 +46,18 @@ const labelSchema = new mongoose.Schema({
 });
 
 // Compound index for efficient lookup by board and name (to prevent duplicates)
-labelSchema.index({ board: 1, name: 1 }, { unique: true });
+labelSchema.index({ workspaceId: 1, board: 1, name: 1 }, { unique: true });
 
 // Index for fast retrieval by board
-labelSchema.index({ board: 1, createdAt: -1 });
+labelSchema.index({ workspaceId: 1, board: 1, createdAt: -1 });
 
 // Pre-save hook to update timestamp
 labelSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
+
+labelSchema.plugin(workspaceScopePlugin);
 
 const Label = mongoose.model('Label', labelSchema);
 

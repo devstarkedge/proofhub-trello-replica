@@ -65,6 +65,31 @@ const SubtaskDetailModal = ({
     }
     return [];
   });
+  // Authoritative, merge-only map of every assignee object seen fully
+  // populated — see CardDetailModal.jsx's assigneeDetailsById for the full
+  // rationale. `teamMembers` above stays dedicated to the add-assignee
+  // search dropdown only.
+  const [assigneeDetailsById, setAssigneeDetailsById] = useState(() => {
+    const map = {};
+    (initialData.assignees || []).forEach((a) => {
+      if (a && typeof a === 'object' && a._id) map[a._id] = a;
+    });
+    return map;
+  });
+  const mergeAssigneeDetails = useCallback((list) => {
+    if (!Array.isArray(list) || list.length === 0) return;
+    setAssigneeDetailsById(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const item of list) {
+        if (item && typeof item === 'object' && item._id) {
+          next[item._id] = item;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
   const [expandedDepartments, setExpandedDepartments] = useState({});
@@ -422,13 +447,7 @@ const SubtaskDetailModal = ({
       
       if (data.assignees && data.assignees.length > 0) {
         const populated = data.assignees.filter(a => typeof a === 'object' && a._id);
-        if (populated.length > 0) {
-          setTeamMembers(prev => {
-            const map = new Map(prev.map(m => [m._id, m]));
-            populated.forEach(p => map.set(p._id, p));
-            return Array.from(map.values());
-          });
-        }
+        mergeAssigneeDetails(populated);
       }
 
       setAssignees(data.assignees ? data.assignees.map(a => (typeof a === "object" ? a._id : a)).filter(Boolean) : []);
@@ -452,6 +471,7 @@ const SubtaskDetailModal = ({
     try {
       const users = await Database.getUsers();
       setTeamMembers(users.data || []);
+      mergeAssigneeDetails((users.data || []).filter(u => assignees.includes(u._id)));
     } catch (error) {
       console.error("Error loading team members:", error);
       setTeamMembers([]);
@@ -638,8 +658,10 @@ const SubtaskDetailModal = ({
     if (!memberId) return;
     if (!assignees.includes(memberId)) {
       setAssignees(prev => [...prev, memberId]);
+      const member = teamMembers.find(m => m._id === memberId);
+      if (member) mergeAssigneeDetails([member]);
     }
-  }, [assignees]);
+  }, [assignees, teamMembers, mergeAssigneeDetails]);
 
   const handleRemoveAssignee = useCallback((memberId) => {
     setAssignees(prev => prev.filter(id => id !== memberId));
@@ -1429,6 +1451,7 @@ const SubtaskDetailModal = ({
                         activities={activities}
                         loading={activitiesLoading}
                         teamMembers={teamMembers}
+                        assigneeDetailsById={assigneeDetailsById}
                         type="subtask"
                       />
                     )}
@@ -1441,6 +1464,7 @@ const SubtaskDetailModal = ({
                 onSave={handleSave}
                 assignees={assignees}
                 teamMembers={teamMembers}
+                assigneeDetailsById={assigneeDetailsById}
                 priority={priority}
                 status={status}
                 dueDate={dueDate}

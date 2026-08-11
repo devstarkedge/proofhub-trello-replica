@@ -11,6 +11,7 @@ import RecurringTask from '../models/RecurringTask.js';
 import Reminder from '../models/Reminder.js';
 import Department from '../models/Department.js';
 import Notification from '../models/Notification.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 // Default: permanently delete boards soft-deleted more than 30 seconds ago
 const CLEANUP_THRESHOLD_MS = 30 * 1000;
@@ -23,6 +24,15 @@ const CLEANUP_THRESHOLD_MS = 30 * 1000;
 export const permanentlyDeleteBoards = async (boardIds) => {
   if (!boardIds || boardIds.length === 0) return { deleted: 0 };
 
+  // A pure delete/cleanup sweep across whichever boards were passed in —
+  // never creates new documents, so the plugin's write-side auto-stamp
+  // never comes into play here. Runs outside any request (called from the
+  // cleanup worker), so it needs the explicit bypass like every other
+  // background job that touches workspace-scoped models.
+  return workspaceContext.runUnscoped(async () => await permanentlyDeleteBoardsUnscoped(boardIds));
+};
+
+const permanentlyDeleteBoardsUnscoped = async (boardIds) => {
   try {
     // 1. Fetch all boards to know their departments (for cleanup)
     const boards = await Board.find({ _id: { $in: boardIds } })
@@ -108,12 +118,19 @@ export const cleanupSoftDeletedBoards = async () => {
   const threshold = new Date(Date.now() - CLEANUP_THRESHOLD_MS);
 
   try {
-    const candidates = await Board.find({
+    // Deliberate cross-tenant scan — runs on a schedule, outside any request.
+    // The explicit `await` inside this callback matters: a bare `return
+    // Query` (even from an async function) hands back an un-awaited
+    // thenable whose actual exec() — and the pre-hook that reads the active
+    // context — only runs on a later microtask tick, by which point
+    // runUnscoped() has already reverted the context. See
+    // workspaceScopePlugin.js's callers for the same pattern.
+    const candidates = await workspaceContext.runUnscoped(async () => await Board.find({
       isDeleted: true,
       deletedAt: { $lte: threshold }
     })
       .select('_id')
-      .lean();
+      .lean());
 
     if (candidates.length === 0) return;
 

@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const categorySchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   name: {
     type: String,
     required: [true, 'Category name is required'],
@@ -35,9 +41,11 @@ const categorySchema = new mongoose.Schema({
 });
 
 // Indexes
-categorySchema.index({ department: 1, name: 1 }, { unique: true });
-categorySchema.index({ department: 1 });
-categorySchema.index({ createdBy: 1 });
-categorySchema.index({ isActive: 1 });
+categorySchema.index({ workspaceId: 1, department: 1, name: 1 }, { unique: true });
+categorySchema.index({ workspaceId: 1, department: 1 });
+categorySchema.index({ workspaceId: 1, createdBy: 1 });
+categorySchema.index({ workspaceId: 1, isActive: 1 });
+
+categorySchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('Category', categorySchema);

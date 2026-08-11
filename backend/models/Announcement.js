@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const reactionSchema = new mongoose.Schema({
   emoji: {
@@ -122,6 +123,12 @@ const attachmentSchema = new mongoose.Schema({
 });
 
 const announcementSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   title: {
     type: String,
     required: [true, 'Announcement title is required'],
@@ -283,19 +290,21 @@ const announcementSchema = new mongoose.Schema({
 });
 
 // Indexes for optimal query performance
-announcementSchema.index({ createdBy: 1, createdAt: -1 });
-announcementSchema.index({ 'subscribers.users': 1 });
-announcementSchema.index({ 'subscribers.departments': 1 });
-announcementSchema.index({ isPinned: 1, createdAt: -1 });
-announcementSchema.index({ isArchived: 1, expiresAt: 1 });
-announcementSchema.index({ isScheduled: 1, scheduledFor: 1 });
-announcementSchema.index({ category: 1, createdAt: -1 });
-announcementSchema.index({ expiresAt: 1 });
-announcementSchema.index({ createdAt: -1 });
+announcementSchema.index({ workspaceId: 1, createdBy: 1, createdAt: -1 });
+announcementSchema.index({ workspaceId: 1, 'subscribers.users': 1 });
+announcementSchema.index({ workspaceId: 1, 'subscribers.departments': 1 });
+announcementSchema.index({ workspaceId: 1, isPinned: 1, createdAt: -1 });
+announcementSchema.index({ workspaceId: 1, isArchived: 1, expiresAt: 1 });
+announcementSchema.index({ workspaceId: 1, isScheduled: 1, scheduledFor: 1 });
+announcementSchema.index({ workspaceId: 1, category: 1, createdAt: -1 });
+announcementSchema.index({ workspaceId: 1, expiresAt: 1 });
+announcementSchema.index({ workspaceId: 1, createdAt: -1 });
 // Indexes for seen/read tracking and unread count queries
 announcementSchema.index({ 'seenBy.userId': 1 });
 announcementSchema.index({ 'readBy.userId': 1 });
 announcementSchema.index({ 'acknowledgedBy.userId': 1 });
+
+announcementSchema.plugin(workspaceScopePlugin);
 
 // Virtual for calculating remaining time
 announcementSchema.virtual('remainingTime').get(function() {

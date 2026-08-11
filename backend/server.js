@@ -55,7 +55,7 @@ import salesRoutes from './routes/sales.js';
 import salesPermissionsRoutes from './routes/salesPermissions.js';
 import salesTabRoutes from './modules/salesTabs/salesTab.routes.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
-import authzRoutes from './modules/authorization/routes/index.js';
+import workspaceRoutes from './routes/workspaces.js';
 import accessControlRoutes from './routes/accessControl.js';
 import chatIntegrationRoutes from './routes/chatIntegration.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
@@ -91,7 +91,7 @@ const corsHandler = cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'x-workspace-id'],
 });
 
 // Explicit OPTIONS preflight handler must come BEFORE Helmet and all routes
@@ -203,7 +203,7 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/sales-tabs', salesTabRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
-app.use('/api/authorization', authzRoutes);
+app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/access-control', accessControlRoutes);
 app.use('/api/chat-integration', chatIntegrationRoutes);
 
@@ -229,6 +229,7 @@ import { initializeSlackServices, shutdownSlackServices } from './services/slack
 import { initQueues, shutdownQueues } from './queues/queueManager.js';
 import { startAnalyticsReportScheduler, stopAnalyticsReportScheduler } from './schedulers/analyticsReportScheduler.js';
 import runPermissionEngineMigration from './scripts/migratePermissionEngine.js';
+import * as workspaceContext from './modules/workspaces/workspaceContext.js';
 
 mongoose.connect(config.db.uri, {
   maxPoolSize: config.db.maxPoolSize,
@@ -238,16 +239,35 @@ mongoose.connect(config.db.uri, {
   .then(async () => {
     logger.info('Connected to MongoDB with connection pooling');
 
+    // Everything at boot runs with no ambient request/workspace context —
+    // wrap the whole sequence once so nothing below needs its own explicit
+    // bypass (seedAdmin/migrations/recovery scans already wrap themselves
+    // internally too; this is a defensive outer net, not a substitute).
+    await workspaceContext.runUnscoped(async () => {
+      // seedAdmin() must run before the permission-engine migration (it
+      // needs an admin user to exist).
+      //
+      // The one-time workspace migration/backfill (backend/scripts/
+      // migrateWorkspaces.js) intentionally does NOT run here — it already
+      // ran once against this database and is a manual, deliberate step
+      // (`node scripts/migrateWorkspaces.js`), not something that should
+      // fire on every dev restart/login. Run it by hand only when restoring
+      // an older backup or bootstrapping a fresh environment that predates
+      // the workspace feature.
+      await seedAdmin();
+
+      try {
+        const permissionResult = await runPermissionEngineMigration();
+        logger.info('Permission engine migration result', permissionResult);
+      } catch (err) {
+        logger.error('Permission engine migration error (non-fatal)', { error: err.message });
+      }
+    });
+
     // Initialize BullMQ queues (probes Redis, starts workers, recovery scans)
     const queuesActive = await initQueues();
     logger.info(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
 
-    await seedAdmin();
-    runPermissionEngineMigration().then((result) => {
-      logger.info('Permission engine migration result', result);
-    }).catch((err) => {
-      logger.error('Permission engine migration error (non-fatal)', { error: err.message });
-    });
     startAnalyticsReportScheduler();
 
     initializeSlackServices().then(() => {

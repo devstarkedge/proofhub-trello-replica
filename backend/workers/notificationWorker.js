@@ -17,6 +17,7 @@ import {
 } from '../utils/reminderScheduler.js';
 import Reminder from '../models/Reminder.js';
 import config from '../config/index.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 const JOB_HANDLERS = {
   /**
@@ -98,10 +99,13 @@ const JOB_HANDLERS = {
   async 'process-reminder-notification'(job) {
     const { reminderId } = job.data;
 
-    const reminder = await Reminder.findById(reminderId)
+    // No workspaceId travels on this job (enqueued by reminderScheduler.js,
+    // which only knows the reminderId) — look it up unscoped first, then run
+    // the rest inside its own workspace.
+    const reminder = await workspaceContext.runUnscoped(async () => await Reminder.findById(reminderId)
       .populate('project', 'name clientDetails')
       .populate('createdBy', 'name email')
-      .populate('department', 'name');
+      .populate('department', 'name'));
 
     if (!reminder || reminder.status !== 'pending') {
       return { skipped: true, reason: 'not pending or not found' };
@@ -112,8 +116,10 @@ const JOB_HANDLERS = {
       return { skipped: true, reason: 'already notified' };
     }
 
-    await sendReminderNotification(reminder);
-    return { notified: true, reminderId };
+    return workspaceContext.run({ workspaceId: reminder.workspaceId }, async () => {
+      await sendReminderNotification(reminder);
+      return { notified: true, reminderId };
+    });
   },
 
   /**
@@ -123,7 +129,7 @@ const JOB_HANDLERS = {
   async 'process-reminder-overdue'(job) {
     const { reminderId } = job.data;
 
-    const reminder = await Reminder.findById(reminderId);
+    const reminder = await workspaceContext.runUnscoped(async () => await Reminder.findById(reminderId));
     if (!reminder || reminder.status !== 'pending') {
       return { skipped: true, reason: 'not pending or not found' };
     }
@@ -134,16 +140,18 @@ const JOB_HANDLERS = {
       return { skipped: true, reason: 'not yet overdue' };
     }
 
-    reminder.status = 'missed';
-    reminder.history.push({
-      action: 'missed',
-      timestamp: new Date(),
-      notes: 'Automatically marked as missed (overdue by more than 24 hours)',
-    });
-    await reminder.save();
+    return workspaceContext.run({ workspaceId: reminder.workspaceId }, async () => {
+      reminder.status = 'missed';
+      reminder.history.push({
+        action: 'missed',
+        timestamp: new Date(),
+        notes: 'Automatically marked as missed (overdue by more than 24 hours)',
+      });
+      await reminder.save();
 
-    console.log(`[Worker:Notification] reminder ${reminderId} marked as missed`);
-    return { marked: 'missed' };
+      console.log(`[Worker:Notification] reminder ${reminderId} marked as missed`);
+      return { marked: 'missed' };
+    });
   },
 };
 
@@ -158,6 +166,14 @@ export function startNotificationWorker() {
       const handler = JOB_HANDLERS[job.name];
       if (!handler) {
         throw new Error(`Unknown notification job type: ${job.name}`);
+      }
+      // Jobs enqueued via backgroundTasks.js's withWorkspace() carry the
+      // originating request's workspace on job.data.workspaceId — re-enter
+      // it here since this worker has no ambient context of its own. The
+      // reminder handlers resolve their own context internally instead
+      // (they're enqueued with only a reminderId, no workspaceId).
+      if (job.data?.workspaceId) {
+        return workspaceContext.run({ workspaceId: job.data.workspaceId }, () => handler(job));
       }
       return handler(job);
     },

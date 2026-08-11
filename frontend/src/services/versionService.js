@@ -8,6 +8,10 @@ class VersionService {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    const workspaceId = localStorage.getItem('workspaceId');
+    if (workspaceId) {
+      headers['x-workspace-id'] = workspaceId;
+    }
     return headers;
   }
 

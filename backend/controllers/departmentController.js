@@ -11,6 +11,7 @@ import { runBackground, createNotificationInBackground } from '../utils/backgrou
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
 import { getAssignmentBasedBoardIds, getAssignmentBasedDepartmentIds, userHasCapability, CAPABILITIES } from '../services/permissionService.js';
 import { chatHooks } from '../utils/chatHooks.js';
+import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -578,6 +579,7 @@ export const createDepartment = asyncHandler(async (req, res, next) => {
       { _id: { $in: managers } },
       { $addToSet: { department: department._id } }
     );
+    await Promise.all(managers.map((managerId) => syncMembershipFromUser(managerId, req.workspaceId)));
   }
 
   // Dispatch chat webhook
@@ -645,6 +647,10 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
         { $pull: { department: department._id } }
       );
     }
+
+    await Promise.all(
+      [...managersToAdd, ...managersToRemove].map((managerId) => syncMembershipFromUser(managerId, req.workspaceId))
+    );
   }
 
   // Populate managers data before returning
@@ -737,9 +743,10 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
     $addToSet: { department: req.params.id }
   });
 
-  // Evict the manager's LRU auth cache so the next request fetches the updated
-  // department list from the database (no re-login required).
-  invalidateAuthCache(userId);
+  // Mirrors into the affected user's workspace membership (and busts their
+  // cache) so the next request fetches the updated department list from
+  // the database (no re-login required).
+  await syncMembershipFromUser(userId, req.workspaceId);
 
   // Emit socket event for real-time updates
   emitUserAssigned(userId, req.params.id);
@@ -794,8 +801,9 @@ export const removeMemberFromDepartment = asyncHandler(
       $unset: { department: 1 },
     });
 
-    // Evict the user's LRU auth cache so stale department data is not served.
-    invalidateAuthCache(req.params.userId);
+    // Mirrors into the membership row (and busts the cache) so stale
+    // department data is not served.
+    await syncMembershipFromUser(req.params.userId, req.workspaceId);
 
     // Emit socket event for real-time updates
     emitUserUnassigned(req.params.userId, req.params.id);
@@ -953,6 +961,7 @@ export const unassignUserFromDepartment = asyncHandler(
     // Remove department from user's department array
     user.department = user.department.filter(id => id.toString() !== deptId);
     await user.save();
+    await syncMembershipFromUser(user._id, req.workspaceId);
 
     // Remove user from department's members array
     department.members = department.members.filter(
@@ -1041,8 +1050,9 @@ export const bulkAssignUsersToDepartment = asyncHandler(async (req, res, next) =
       if (!deptExists) {
         user.department = [...deptArray, departmentId];
         await user.save();
-        // Evict stale auth cache so the user's next request sees the updated departments.
-        invalidateAuthCache(user._id.toString());
+        // Mirrors into the membership row (and busts the cache) so the
+        // user's next request sees the updated departments.
+        await syncMembershipFromUser(user._id, req.workspaceId);
       }
 
       // Add user to department's members array if not already present
@@ -1151,8 +1161,9 @@ export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, nex
       // Remove department from user's department array
       user.department = user.department.filter(id => id.toString() !== departmentId);
       await user.save();
-      // Evict stale auth cache so the user's next request sees the updated departments.
-      invalidateAuthCache(user._id.toString());
+      // Mirrors into the membership row (and busts the cache) so the
+      // user's next request sees the updated departments.
+      await syncMembershipFromUser(user._id, req.workspaceId);
 
       // Remove user from department's members array
       department.members = department.members.filter(

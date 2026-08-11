@@ -7,6 +7,7 @@
  */
 import mongoose from 'mongoose';
 import crypto from 'crypto';
+import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
 
 const { Schema, model, Types } = mongoose;
 
@@ -34,6 +35,12 @@ const alertRuleSchema = new Schema(
 // ─── Main Schema ────────────────────────────────────────────────────────────
 const salesTabSchema = new Schema(
   {
+    workspaceId: {
+      type: Types.ObjectId,
+      ref: 'Workspace',
+      required: true,
+      index: true
+    },
     name: {
       type: String,
       required: [true, 'Tab name is required'],
@@ -114,10 +121,12 @@ const salesTabSchema = new Schema(
 );
 
 // ─── Indexes ────────────────────────────────────────────────────────────────
-salesTabSchema.index({ ownerId: 1, name: 1 }, { unique: true });
-salesTabSchema.index({ ownerId: 1, visibility: 1, approvalStatus: 1 });
-salesTabSchema.index({ isWatchTab: 1, approvalStatus: 1 });
-salesTabSchema.index({ createdAt: -1 });
+salesTabSchema.index({ workspaceId: 1, ownerId: 1, name: 1 }, { unique: true });
+salesTabSchema.index({ workspaceId: 1, ownerId: 1, visibility: 1, approvalStatus: 1 });
+salesTabSchema.index({ workspaceId: 1, isWatchTab: 1, approvalStatus: 1 });
+salesTabSchema.index({ workspaceId: 1, createdAt: -1 });
+
+salesTabSchema.plugin(workspaceScopePlugin);
 
 // ─── Pre-save: auto-compute filterHash ──────────────────────────────────────
 salesTabSchema.pre('save', function (next) {

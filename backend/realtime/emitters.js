@@ -9,6 +9,7 @@
  */
 
 import { ROOM } from './events.js';
+import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 
 // The Socket.IO server instance — set by socketManager.init()
 let _io = null;
@@ -185,7 +186,13 @@ export const emitFinanceDataRefresh = (context = {}) => {
     ...context
   };
 
-  io.to(ROOM.finance).emit('finance:data:refresh', payload);
+  // workspaceId is read from ambient request context rather than requiring
+  // every one of this function's ~10 call sites to pass it explicitly —
+  // every caller today runs inside a request that already has it.
+  const workspaceId = context.workspaceId || getActiveWorkspaceId();
+  if (workspaceId) {
+    io.to(ROOM.finance(workspaceId)).emit('finance:data:refresh', payload);
+  }
   io.to(ROOM.admin).emit('finance:data:refresh', payload);
   io.to(ROOM.managers).emit('finance:data:refresh', payload);
 };
@@ -194,23 +201,25 @@ export const emitFinanceDataRefresh = (context = {}) => {
 
 /** Broadcast tab created to sales room */
 export const emitSalesTabCreated = (tab) => {
-  getIO().to(ROOM.sales).emit('sales:tab:created', { tab });
+  getIO().to(ROOM.sales(tab.workspaceId || getActiveWorkspaceId())).emit('sales:tab:created', { tab });
 };
 
 /** Broadcast tab updated to sales room */
 export const emitSalesTabUpdated = (tab) => {
-  getIO().to(ROOM.sales).emit('sales:tab:updated', { tab });
+  getIO().to(ROOM.sales(tab.workspaceId || getActiveWorkspaceId())).emit('sales:tab:updated', { tab });
 };
 
 /** Broadcast tab deleted to sales room */
 export const emitSalesTabDeleted = (tabId) => {
-  getIO().to(ROOM.sales).emit('sales:tab:deleted', { tabId });
+  const workspaceId = getActiveWorkspaceId();
+  if (!workspaceId) return;
+  getIO().to(ROOM.sales(workspaceId)).emit('sales:tab:deleted', { tabId });
 };
 
 /** Notify the tab owner that their tab was approved */
 export const emitSalesTabApproved = (tab) => {
   getIO().to(ROOM.user(tab.ownerId)).emit('sales:tab:approved', { tab });
-  getIO().to(ROOM.sales).emit('sales:tab:updated', { tab });
+  getIO().to(ROOM.sales(tab.workspaceId || getActiveWorkspaceId())).emit('sales:tab:updated', { tab });
 };
 
 /** Notify the tab owner that their tab was ignored */
@@ -225,7 +234,9 @@ export const emitSalesTabAlert = (userId, alertData) => {
 
 /** Broadcast unread badge count update to sales room */
 export const emitSalesTabUnreadUpdate = (tabId, unreadMatches) => {
-  getIO().to(ROOM.sales).emit('sales:tab:unread-update', { tabId, unreadMatches });
+  const workspaceId = getActiveWorkspaceId();
+  if (!workspaceId) return;
+  getIO().to(ROOM.sales(workspaceId)).emit('sales:tab:unread-update', { tabId, unreadMatches });
 };
 
 /** Notify admins of a pending shared/public tab */

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const attachmentSchema = new mongoose.Schema({
   filename: {
@@ -37,6 +38,12 @@ const attachmentSchema = new mongoose.Schema({
 }, { _id: false });
 
 const subtaskSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   task: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Card',
@@ -182,11 +189,13 @@ subtaskSchema.virtual('nanoSubtasks', {
   justOne: false
 });
 
-subtaskSchema.index({ task: 1, order: 1 });
-subtaskSchema.index({ board: 1, status: 1 });
-subtaskSchema.index({ assignees: 1, status: 1 });
-subtaskSchema.index({ dueDate: 1 });
-subtaskSchema.index({ isRecurring: 1, recurringTaskId: 1 });
+subtaskSchema.index({ workspaceId: 1, task: 1, order: 1 });
+subtaskSchema.index({ workspaceId: 1, board: 1, status: 1 });
+subtaskSchema.index({ workspaceId: 1, assignees: 1, status: 1 });
+subtaskSchema.index({ workspaceId: 1, dueDate: 1 });
+subtaskSchema.index({ workspaceId: 1, isRecurring: 1, recurringTaskId: 1 });
+
+subtaskSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('Subtask', subtaskSchema);
 

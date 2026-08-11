@@ -1,12 +1,19 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const salesPermissionSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
+  // Uniqueness moved to the compound { workspaceId, user } index below — a
+  // standalone unique here would block the same user having independent
+  // Sales access in two different workspaces.
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'User is required'],
-    unique: true,
-    index: true
+    required: [true, 'User is required']
   },
   moduleVisible: {
     type: Boolean,
@@ -60,7 +67,10 @@ const salesPermissionSchema = new mongoose.Schema({
 });
 
 // Index for fast permission checks
-salesPermissionSchema.index({ user: 1, moduleVisible: 1 });
+salesPermissionSchema.index({ workspaceId: 1, user: 1 }, { unique: true });
+salesPermissionSchema.index({ workspaceId: 1, user: 1, moduleVisible: 1 });
+
+salesPermissionSchema.plugin(workspaceScopePlugin);
 
 // Static method to check if user has permission
 salesPermissionSchema.statics.hasPermission = async function(userId, permissionName) {

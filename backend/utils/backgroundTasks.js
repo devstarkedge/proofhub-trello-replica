@@ -14,6 +14,7 @@ import notificationService from './notificationService.js';
 import { sendPushNotification } from './pushNotification.js';
 import User from '../models/User.js';
 import { isQueueActive } from '../queues/queueManager.js';
+import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 import {
   enqueueEmail,
   enqueueProjectEmails,
@@ -24,6 +25,14 @@ import {
   enqueuePush,
   enqueueActivity,
 } from '../queues/index.js';
+
+// BullMQ jobs are serialized through Redis to a separate worker execution —
+// unlike the setImmediate fallback below (which Node's AsyncLocalStorage
+// correctly follows, since it's a direct continuation of the same async
+// chain), the queued path has no ambient workspace context on the other
+// side. Every enqueue call stamps the *current* active workspace onto the
+// job payload so the worker can re-enter it explicitly.
+const withWorkspace = (data) => ({ ...data, workspaceId: getActiveWorkspaceId() });
 
 // ─── Generic setImmediate runner (fallback) ─────────────────────────────────
 
@@ -60,7 +69,7 @@ export const sendEmailInBackground = (emailOptions) => {
 
 export const createNotificationInBackground = (notificationData) => {
   if (isQueueActive()) {
-    enqueueNotification(notificationData).catch((err) =>
+    enqueueNotification(withWorkspace(notificationData)).catch((err) =>
       console.error('Failed to enqueue notification:', err.message)
     );
     return;
@@ -75,7 +84,7 @@ export const notifyProjectCreatedInBackground = (board, creatorId) => {
   if (isQueueActive()) {
     // Serialize board to plain object for Redis
     const boardData = board.toJSON ? board.toJSON() : board;
-    enqueueProjectCreatedNotification({ board: boardData, creatorId }).catch((err) =>
+    enqueueProjectCreatedNotification(withWorkspace({ board: boardData, creatorId })).catch((err) =>
       console.error('Failed to enqueue project-created notification:', err.message)
     );
     return;
@@ -123,7 +132,7 @@ export const sendProjectEmailsInBackground = (board, members) => {
 
 export const logProjectActivityInBackground = (activityData) => {
   if (isQueueActive()) {
-    enqueueActivity(activityData).catch((err) =>
+    enqueueActivity(withWorkspace(activityData)).catch((err) =>
       console.error('Failed to enqueue activity:', err.message)
     );
     return;
@@ -141,7 +150,7 @@ export const logProjectActivityInBackground = (activityData) => {
 export const notifyAdminsUserRegisteredInBackground = (user, adminIds) => {
   if (isQueueActive()) {
     const userData = user.toJSON ? user.toJSON() : user;
-    enqueueUserRegisteredNotification({ user: userData, adminIds }).catch((err) =>
+    enqueueUserRegisteredNotification(withWorkspace({ user: userData, adminIds })).catch((err) =>
       console.error('Failed to enqueue user-registered notification:', err.message)
     );
     return;
@@ -156,7 +165,7 @@ export const notifyAdminsUserCreatedInBackground = (user, admins, meta = {}) => 
   if (isQueueActive()) {
     const userData = user.toJSON ? user.toJSON() : user;
     const adminsData = admins.map((a) => (a.toJSON ? a.toJSON() : a));
-    enqueueUserCreatedNotification({ user: userData, admins: adminsData, meta }).catch((err) =>
+    enqueueUserCreatedNotification(withWorkspace({ user: userData, admins: adminsData, meta })).catch((err) =>
       console.error('Failed to enqueue user-created notification:', err.message)
     );
     return;

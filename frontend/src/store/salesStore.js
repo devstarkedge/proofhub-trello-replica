@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import * as salesApi from '../services/salesApi';
 import * as salesTabApi from '../services/salesTabApi';
+import { registerResettable } from './resetRegistry';
 
 const DEFAULT_FILTERS = {
   search: '',
@@ -991,6 +992,34 @@ const useSalesStore = create(
           ),
         }));
       },
+
+      // Workspace-scoped — saved filters/columns/tabs from one workspace
+      // must not bleed into another. Clearing via reset() (rather than a
+      // per-workspace persist key) is the simpler fix for this phase; the
+      // persist middleware re-serializes these defaults to localStorage
+      // ('sales-storage') on this same set() call.
+      reset: () => set({
+        rows: [],
+        selectedRows: new Set(),
+        filters: { ...DEFAULT_FILTERS },
+        sortBy: 'date',
+        sortOrder: 'desc',
+        pagination: { page: 1, limit: 50, total: 0, pages: 0 },
+        loading: false,
+        error: null,
+        dropdownOptions: {},
+        customColumns: [],
+        permissions: null,
+        lockedRows: {},
+        pendingDrafts: [],
+        nameTab: 'All',
+        uniqueNames: [],
+        columnFilters: {},
+        columnWidths: {},
+        savedTabs: [],
+        activeTabId: null,
+        tabsLoading: false,
+      }),
     }),
     {
       name: 'sales-storage',
@@ -1009,5 +1038,7 @@ const useSalesStore = create(
     }
   )
 );
+
+registerResettable(() => useSalesStore.getState().reset());
 
 export default useSalesStore;

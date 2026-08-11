@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const activitySchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   type: {
     type: String,
     enum: [
@@ -106,24 +113,31 @@ const activitySchema = new mongoose.Schema({
   },
   createdAt: {
     type: Date,
-    default: Date.now,
-    index: true
+    default: Date.now
+    // No field-level index: true here — it would register a second,
+    // conflicting index under the same auto-generated name as the
+    // explicit TTL index below (same {createdAt:1} key, different
+    // options), which is exactly the pre-existing conflict syncIndexes()
+    // surfaced during the workspace migration. The TTL index (and the
+    // workspaceId-led compounds below) already cover every createdAt query.
   }
 }, {
   timestamps: false
 });
 
 // Indexes for efficient filtering
-activitySchema.index({ board: 1, createdAt: -1 });
-activitySchema.index({ card: 1, createdAt: -1 });
-activitySchema.index({ subtask: 1, createdAt: -1 });
-activitySchema.index({ nanoSubtask: 1, createdAt: -1 });
-activitySchema.index({ contextType: 1, createdAt: -1 });
-activitySchema.index({ user: 1, createdAt: -1 });
-activitySchema.index({ card: 1, subtask: 1, createdAt: -1 });
-activitySchema.index({ subtask: 1, nanoSubtask: 1, createdAt: -1 });
+activitySchema.index({ workspaceId: 1, board: 1, createdAt: -1 });
+activitySchema.index({ workspaceId: 1, card: 1, createdAt: -1 });
+activitySchema.index({ workspaceId: 1, subtask: 1, createdAt: -1 });
+activitySchema.index({ workspaceId: 1, nanoSubtask: 1, createdAt: -1 });
+activitySchema.index({ workspaceId: 1, contextType: 1, createdAt: -1 });
+activitySchema.index({ workspaceId: 1, user: 1, createdAt: -1 });
+activitySchema.index({ workspaceId: 1, card: 1, subtask: 1, createdAt: -1 });
+activitySchema.index({ workspaceId: 1, subtask: 1, nanoSubtask: 1, createdAt: -1 });
 
 // TTL index - auto-delete activities older than 90 days
 activitySchema.index({ createdAt: 1 }, { expireAfterSeconds: 7776000 });
+
+activitySchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('Activity', activitySchema);

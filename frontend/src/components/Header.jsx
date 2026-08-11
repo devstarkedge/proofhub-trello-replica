@@ -2,7 +2,7 @@ import React, { useContext, useState, useRef, useEffect, lazy, Suspense } from '
 import {
   Bell, Menu, Settings, LogOut, User,
   ChevronDown, Kanban, List, Calendar, BarChart3,
-  Users, Building2, ArrowLeft,
+  Users, Building2, ArrowLeft, Briefcase, Plus,
   CreditCard, HelpCircle, Palette, Sparkles
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';

@@ -1,13 +1,14 @@
 import User from "../models/User.js";
 import Role from "../models/Role.js";
 import dotenv from "dotenv";
+import * as workspaceContext from "../modules/workspaces/workspaceContext.js";
 
 dotenv.config();
 
 /**
  * Seed default system roles
  */
-const seedRoles = async () => {
+const seedRoles = async () => workspaceContext.runUnscoped(async () => {
   try {
     const systemRoles = [
       {
@@ -80,7 +81,7 @@ const seedRoles = async () => {
     let existingCount = 0;
 
     for (const roleData of systemRoles) {
-      const existingRole = await Role.findOne({ slug: roleData.slug });
+      const existingRole = await Role.findOne({ slug: roleData.slug, workspaceId: null });
       if (!existingRole) {
         await Role.create(roleData);
         createdCount++;
@@ -99,7 +100,7 @@ const seedRoles = async () => {
   } catch (error) {
     console.error("Error seeding roles:", error);
   }
-};
+});
 
 const seedAdmin = async () => {
   try {

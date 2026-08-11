@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import api from "../services/api";
 import Database from "../services/database";
+import { registerResettable } from "./resetRegistry";
 
 const useDepartmentStore = create((set, get) => ({
   // State
@@ -574,6 +575,17 @@ const useDepartmentStore = create((set, get) => ({
       window.removeEventListener("socket-department-bulk-unassigned", handleBulkUsersUnassigned);
     };
   },
+
+  // Workspace-scoped — cleared on workspace switch/logout, see resetRegistry.
+  reset: () => set({
+    departments: [],
+    users: [],
+    currentDepartment: null,
+    loading: false,
+    error: null,
+  }),
 }));
+
+registerResettable(() => useDepartmentStore.getState().reset());
 
 export default useDepartmentStore;

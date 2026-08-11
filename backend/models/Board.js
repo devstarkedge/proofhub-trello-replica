@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const boardSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true
+  },
   name: {
     type: String,
     required: [true, 'Board name is required'],
@@ -227,33 +233,36 @@ boardSchema.pre('save', function(next) {
 });
 
 // ─── Indexes ────────────────────────────────────────────────────────────────
-// Redundant single-field indexes removed where compound prefix covers them.
+// workspaceId leads every compound (mirrors how department already led
+// these before the migration — see workspaceScopePlugin.js).
 
-boardSchema.index({ team: 1 });              // Team queries (no compound with team as prefix)
-boardSchema.index({ isArchived: 1 });         // Stand-alone archive filter across all depts
-boardSchema.index({ createdAt: -1 });         // Global timeline sort
-boardSchema.index({ status: 1 });             // Global status filter
-boardSchema.index({ priority: 1 });           // Global priority filter
-boardSchema.index({ dueDate: 1 });            // Global deadline queries
+boardSchema.index({ workspaceId: 1, team: 1 });
+boardSchema.index({ workspaceId: 1, isArchived: 1 });
+boardSchema.index({ workspaceId: 1, createdAt: -1 });
+boardSchema.index({ workspaceId: 1, status: 1 });
+boardSchema.index({ workspaceId: 1, priority: 1 });
+boardSchema.index({ workspaceId: 1, dueDate: 1 });
 
 // Department-leading compounds (covers standalone { department: 1 })
-boardSchema.index({ department: 1, isArchived: 1 });
-boardSchema.index({ department: 1, team: 1 });
-boardSchema.index({ department: 1, createdAt: -1 });
-boardSchema.index({ department: 1, status: 1 });
-boardSchema.index({ department: 1, priority: 1 });
+boardSchema.index({ workspaceId: 1, department: 1, isArchived: 1 });
+boardSchema.index({ workspaceId: 1, department: 1, team: 1 });
+boardSchema.index({ workspaceId: 1, department: 1, createdAt: -1 });
+boardSchema.index({ workspaceId: 1, department: 1, status: 1 });
+boardSchema.index({ workspaceId: 1, department: 1, priority: 1 });
 
 // Project type filter
-boardSchema.index({ department: 1, projectType: 1 });
-boardSchema.index({ department: 1, billingCycle: 1 });
+boardSchema.index({ workspaceId: 1, department: 1, projectType: 1 });
+boardSchema.index({ workspaceId: 1, department: 1, billingCycle: 1 });
 
 // Owner compound (covers standalone { owner: 1 })
-boardSchema.index({ owner: 1, createdAt: -1 });
+boardSchema.index({ workspaceId: 1, owner: 1, createdAt: -1 });
 
 // Members compound (covers standalone { members: 1 })
-boardSchema.index({ members: 1, updatedAt: -1 });
+boardSchema.index({ workspaceId: 1, members: 1, updatedAt: -1 });
 
 // Soft-delete cleanup
-boardSchema.index({ isDeleted: 1, deletedAt: 1 });
+boardSchema.index({ workspaceId: 1, isDeleted: 1, deletedAt: 1 });
+
+boardSchema.plugin(workspaceScopePlugin);
 
 export default mongoose.model('Board', boardSchema);

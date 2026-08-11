@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 /**
  * FinancePage Model
@@ -10,6 +11,12 @@ import mongoose from 'mongoose';
  * - Default filters
  */
 const financePageSchema = new mongoose.Schema({
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    required: true,
+    index: true
+  },
   // Page basic info
   name: {
     type: String,
@@ -92,9 +99,11 @@ const financePageSchema = new mongoose.Schema({
 });
 
 // Index for efficient queries
-financePageSchema.index({ createdBy: 1, isArchived: 1 });
-financePageSchema.index({ status: 1, isArchived: 1 });
-financePageSchema.index({ isPublic: 1, isArchived: 1 });
+financePageSchema.index({ workspaceId: 1, createdBy: 1, isArchived: 1 });
+financePageSchema.index({ workspaceId: 1, status: 1, isArchived: 1 });
+financePageSchema.index({ workspaceId: 1, isPublic: 1, isArchived: 1 });
+
+financePageSchema.plugin(workspaceScopePlugin);
 
 const FinancePage = mongoose.model('FinancePage', financePageSchema);
 

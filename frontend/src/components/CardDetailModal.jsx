@@ -73,7 +73,37 @@ const CardDetailModal = React.memo(({
   const [attachments, setAttachments] = useState(initialCard.attachments || []);
   const [coverImage, setCoverImage] = useState(initialCard.coverImage || null);
   const [coverImageOptimistic, setCoverImageOptimistic] = useState(null); // For optimistic UI
+  // `teamMembers` is the browsable/searchable pool for the "add assignee"
+  // dropdown only — it must never be the source of truth for rendering
+  // already-assigned chips (a platform-wide user list can be slow, partial,
+  // or simply out of sync with who's actually assigned). `assigneeDetailsById`
+  // is that source of truth: a merge-only map of every assignee object this
+  // component has ever seen fully populated (initial card data, refetches,
+  // socket updates, or a fresh pick from the dropdown), keyed by _id. It is
+  // never wholesale-replaced, so a slow/partial getUsers() response can only
+  // ever add coverage, never regress a chip that already renders correctly.
   const [teamMembers, setTeamMembers] = useState([]);
+  const [assigneeDetailsById, setAssigneeDetailsById] = useState(() => {
+    const map = {};
+    (initialCard.assignees || []).forEach((a) => {
+      if (a && typeof a === 'object' && a._id) map[a._id] = a;
+    });
+    return map;
+  });
+  const mergeAssigneeDetails = useCallback((list) => {
+    if (!Array.isArray(list) || list.length === 0) return;
+    setAssigneeDetailsById(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const item of list) {
+        if (item && typeof item === 'object' && item._id) {
+          next[item._id] = item;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredMembers, setFilteredMembers] = useState([]);
@@ -369,13 +399,7 @@ const CardDetailModal = React.memo(({
 
           if (freshCard.assignees && freshCard.assignees.length > 0) {
             const populated = freshCard.assignees.filter(a => typeof a === 'object' && a._id);
-            if (populated.length > 0) {
-              setTeamMembers(prev => {
-                const map = new Map(prev.map(m => [m._id, m]));
-                populated.forEach(p => map.set(p._id, p));
-                return Array.from(map.values());
-              });
-            }
+            mergeAssigneeDetails(populated);
           }
 
           setAssignees(freshCard.assignees ? freshCard.assignees.map((a) => (typeof a === 'object' ? a._id : a)).filter(Boolean) : []);
@@ -466,13 +490,7 @@ const CardDetailModal = React.memo(({
           // If incoming is Objects (populated)
           if (updates.assignees.length > 0 && typeof updates.assignees[0] === 'object') {
              const populated = updates.assignees.filter(a => typeof a === 'object' && a._id);
-             if (populated.length > 0) {
-               setTeamMembers(prev => {
-                 const map = new Map(prev.map(m => [m._id, m]));
-                 populated.forEach(p => map.set(p._id, p));
-                 return Array.from(map.values());
-               });
-             }
+             mergeAssigneeDetails(populated);
              setAssignees(updates.assignees.map(a => a._id).filter(Boolean));
           }
           // If incoming is IDs
@@ -673,8 +691,10 @@ const CardDetailModal = React.memo(({
     if (!memberId) return;
     if (!assignees.includes(memberId)) {
       setAssignees(prev => [...prev, memberId]);
+      const member = teamMembers.find(m => m._id === memberId);
+      if (member) mergeAssigneeDetails([member]);
     }
-  }, [assignees]);
+  }, [assignees, teamMembers, mergeAssigneeDetails]);
 
   const handleRemoveAssignee = useCallback((memberId) => {
     setAssignees(prev => prev.filter(id => id !== memberId));
@@ -780,6 +800,12 @@ const CardDetailModal = React.memo(({
     try {
       const users = await Database.getUsers();
       setTeamMembers(users.data || []);
+      // Defense-in-depth only — assigneeDetailsById is already kept current
+      // from the card's own fetch/socket updates; this just covers the
+      // (normally impossible) case where a real assignee was somehow never
+      // included in either. Bounded to current assignees so this doesn't
+      // grow into a full-roster cache.
+      mergeAssigneeDetails((users.data || []).filter(u => assignees.includes(u._id)));
     } catch (error) {
       console.error("Error loading team members:", error);
       setTeamMembers([]);
@@ -1256,12 +1282,13 @@ const CardDetailModal = React.memo(({
       // Convert labels to IDs for backend, but keep full objects for optimistic update
       const labelIds = labels.map(l => typeof l === 'object' ? l._id : l);
       
-      // Get full assignee objects from teamMembers for optimistic UI
+      // Get full assignee objects for optimistic UI — assigneeDetailsById is
+      // the authoritative, continuously-merged source (see its declaration);
+      // teamMembers is only a fallback for the rare case a very recently
+      // picked member hasn't made it into the map yet.
       const assigneeObjects = assignees.map(assigneeId => {
-        // Check if it's already an object
         if (typeof assigneeId === 'object' && assigneeId._id) return assigneeId;
-        // Find in team members
-        const member = teamMembers.find(m => m._id === assigneeId);
+        const member = assigneeDetailsById[assigneeId] || teamMembers.find(m => m._id === assigneeId);
         return member || { _id: assigneeId, name: 'Unknown', email: '' };
       });
       
@@ -2128,6 +2155,7 @@ const CardDetailModal = React.memo(({
                         activities={activities}
                         loading={activitiesLoading}
                         teamMembers={teamMembers}
+                        assigneeDetailsById={assigneeDetailsById}
                         type="task"
                       />
                     )}
@@ -2141,6 +2169,7 @@ const CardDetailModal = React.memo(({
                 onSave={handleSave}
                 assignees={assignees}
                 teamMembers={teamMembers}
+                assigneeDetailsById={assigneeDetailsById}
                 priority={priority}
                 status={status}
                 dueDate={dueDate}

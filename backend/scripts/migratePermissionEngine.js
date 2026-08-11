@@ -21,8 +21,10 @@ import UserPermission, { FINANCE_PAGE_KEY } from '../models/UserPermission.js';
 import AccessOverride from '../models/AccessOverride.js';
 import { fromLegacyShape } from '../config/permissionRegistry.js';
 import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 export async function runPermissionEngineMigration() {
+  return workspaceContext.runUnscoped(async () => {
   const workspace = await ensureDefaultWorkspace();
   if (!workspace) {
     return { skipped: true, reason: 'No admin user yet — nothing to migrate' };
@@ -74,6 +76,7 @@ export async function runPermissionEngineMigration() {
   }
 
   return { salesMigrated, financeMigrated };
+  });
 }
 
 export default runPermissionEngineMigration;

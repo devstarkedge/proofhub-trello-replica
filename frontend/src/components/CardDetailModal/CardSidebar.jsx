@@ -22,6 +22,7 @@ const CardSidebar = ({
   onSave,
   assignees,
   teamMembers,
+  assigneeDetailsById = {},
   priority,
   status,
   dueDate,
@@ -98,8 +99,12 @@ const CardSidebar = ({
               <div className="mb-3">
                 <div className="flex flex-wrap gap-2">
                   {assignees.map((assigneeId, idx) => {
-                    // Find assignee in team members
-                    const assignee = teamMembers.find(m => m._id === assigneeId);
+                    // Resolve from the entity's own merged assignee-detail
+                    // map first (always authoritative — see
+                    // CardDetailModal's assigneeDetailsById), falling back to
+                    // the platform-wide teamMembers list only if genuinely
+                    // not found there yet (e.g. still loading).
+                    const assignee = assigneeDetailsById[assigneeId] || teamMembers.find(m => m._id === assigneeId);
                     // Handle department as array (take first department name or 'Unassigned')
                     const departmentName = assignee?.department && Array.isArray(assignee.department) && assignee.department.length > 0
                       ? assignee.department[0].name || 'Unassigned'

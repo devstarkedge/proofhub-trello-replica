@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
-const ActivitySection = ({ activities, loading, teamMembers = [] }) => {
+const ActivitySection = ({ activities, loading, teamMembers = [], assigneeDetailsById = {} }) => {
   const [expandedActivities, setExpandedActivities] = useState({});
 
   const toggleExpanded = (activityId) => {
@@ -134,7 +134,7 @@ const ActivitySection = ({ activities, loading, teamMembers = [] }) => {
         switch (key) {
           case 'assignees':
             displayValue = value.map(assigneeId => {
-              const member = teamMembers.find(m => m._id === assigneeId);
+              const member = assigneeDetailsById[assigneeId] || teamMembers.find(m => m._id === assigneeId);
               return member ? member.name : assigneeId;
             }).join(', ');
             break;
