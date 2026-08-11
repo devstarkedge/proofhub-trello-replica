@@ -1,6 +1,7 @@
 import React, { useState, useEffect, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Crown, BadgeCheck } from 'lucide-react';
+import { getGradient } from '../utils/avatarGradient';
 
 /**
  * Avatar Component - Centralized avatar display for the entire application
@@ -23,27 +24,6 @@ const SIZES = {
   lg: { container: 'w-12 h-12', text: 'text-base', badge: 'w-6 h-6', badgeIcon: 14 },
   xl: { container: 'w-16 h-16', text: 'text-xl', badge: 'w-7 h-7', badgeIcon: 16 },
   '2xl': { container: 'w-24 h-24', text: 'text-3xl', badge: 'w-8 h-8', badgeIcon: 18 }
-};
-
-// Gradient backgrounds for fallback avatars (consistent based on name)
-const GRADIENTS = [
-  'from-blue-500 via-indigo-500 to-purple-600',
-  'from-green-400 via-emerald-500 to-teal-600',
-  'from-orange-400 via-red-500 to-pink-600',
-  'from-cyan-400 via-blue-500 to-indigo-600',
-  'from-violet-400 via-purple-500 to-fuchsia-600',
-  'from-amber-400 via-orange-500 to-red-600',
-  'from-teal-400 via-cyan-500 to-blue-600',
-  'from-rose-400 via-pink-500 to-purple-600'
-];
-
-/**
- * Get consistent gradient based on name
- */
-const getGradient = (name) => {
-  if (!name) return GRADIENTS[0];
-  const charCode = name.charCodeAt(0) + (name.length > 1 ? name.charCodeAt(1) : 0);
-  return GRADIENTS[charCode % GRADIENTS.length];
 };
 
 /**

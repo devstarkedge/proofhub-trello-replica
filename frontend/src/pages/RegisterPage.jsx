@@ -1,14 +1,20 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { Eye, EyeOff, Mail, Lock, User, Building, UserPlus, AlertCircle, CheckCircle, Check } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, Building, UserPlus, AlertCircle, CheckCircle, Check, Briefcase } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import api from '../services/api';
 import useThemeStore from '../store/themeStore';
+import { getInvitation } from '../services/invitationApi';
 import { validateForm, validateField, debouncedEmailCheck, validatePasswordMatch } from '../utils/validationUtils';
 
 const RegisterPage = () => {
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get('inviteToken') || '';
+  const [invitation, setInvitation] = useState(null);
+  const [invitationError, setInvitationError] = useState('');
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -24,9 +30,24 @@ const RegisterPage = () => {
   const [touched, setTouched] = useState({});
   const [emailAvailable, setEmailAvailable] = useState(null);
   const [checkingEmail, setCheckingEmail] = useState(false);
-  const { register } = useContext(AuthContext);
+  const { register, loginUser } = useContext(AuthContext);
   const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const navigate = useNavigate();
+
+  // Invite-token registration: the email is fixed to whoever was invited
+  // (see backend/controllers/authController.js's register — it rejects a
+  // mismatched email), so pre-fill and lock it once the invitation loads.
+  useEffect(() => {
+    if (!inviteToken) return;
+    getInvitation(inviteToken)
+      .then((data) => {
+        setInvitation(data);
+        setFormData((prev) => ({ ...prev, email: data.email }));
+      })
+      .catch((err) => {
+        setInvitationError(err.response?.data?.message || 'This invitation is invalid or has expired');
+      });
+  }, [inviteToken]);
 
   const { name, email, password, confirmPassword, department } = formData;
 
@@ -140,13 +161,8 @@ const RegisterPage = () => {
     setLoading(true);
 
     try {
-      await register(name, email, password, department);
+      const result = await register(name, email, password, department, inviteToken || undefined);
       setLoading(false); // Stop loading immediately after response
-      
-      toast.success('Registration successful! Please wait for an administrator to verify your account.', {
-        icon: <CheckCircle className="text-green-500" size={20} />,
-        autoClose: 3000
-      });
 
       // Clear form on success
       setFormData({
@@ -159,6 +175,34 @@ const RegisterPage = () => {
       setTouched({});
       setErrors({});
       setEmailAvailable(null);
+
+      if (inviteToken && result.user && result.token) {
+        // Invite-based signups are pre-approved by the inviting admin and
+        // already joined that workspace server-side — go straight to the
+        // dashboard instead of the normal "wait to be verified, sign in
+        // separately" path.
+        loginUser(result.user, result.token);
+        toast.success('Welcome! You have successfully joined the workspace.', {
+          icon: <CheckCircle className="text-green-500" size={20} />,
+          autoClose: 3000
+        });
+        navigate('/');
+        return;
+      }
+
+      // Landing page's "Create Workspace" CTA lands here first (an account
+      // is required before a workspace can be created) — carry that intent
+      // across the admin-verification gate + separate login step via
+      // sessionStorage, so WorkspaceSwitcher can auto-open the wizard once
+      // the user actually reaches the dashboard.
+      if (searchParams.get('intent') === 'create-workspace') {
+        sessionStorage.setItem('flowtask_pending_action', 'create-workspace');
+      }
+
+      toast.success('Registration successful! Please wait for an administrator to verify your account.', {
+        icon: <CheckCircle className="text-green-500" size={20} />,
+        autoClose: 3000
+      });
 
       // Navigate to login after shorter delay
       setTimeout(() => {
@@ -213,6 +257,21 @@ const RegisterPage = () => {
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Create Account</h2>
             <p className="text-white/70">Join your team and start collaborating</p>
           </motion.div>
+
+          {inviteToken && invitation && (
+            <div className="mb-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center gap-3">
+              <Briefcase className="text-emerald-300 flex-shrink-0" size={18} />
+              <p className="text-sm text-emerald-100">
+                You&apos;re joining <strong>{invitation.workspace?.name}</strong> as <strong>{invitation.email}</strong>
+              </p>
+            </div>
+          )}
+          {inviteToken && invitationError && (
+            <div className="mb-4 p-3 rounded-xl bg-red-500/15 border border-red-400/30 flex items-center gap-3">
+              <AlertCircle className="text-red-300 flex-shrink-0" size={18} />
+              <p className="text-sm text-red-100">{invitationError}</p>
+            </div>
+          )}
 
           <form onSubmit={onSubmit} className="space-y-3 sm:space-y-4" autoComplete="off">
             {/* 
@@ -292,8 +351,9 @@ const RegisterPage = () => {
                     e.target.readOnly = false;
                   }}
                   readOnly={true} // Start as readOnly to prevent autofill on load
+                  disabled={!!invitation} // Invite-based signup: email is fixed to whoever was invited
                   autoComplete="off" // Explicitly off for this field
-                  className={`w-full pl-12 pr-12 py-3 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent backdrop-blur-sm transition-all ${
+                  className={`w-full pl-12 pr-12 py-3 bg-white/10 border rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent backdrop-blur-sm transition-all disabled:opacity-70 disabled:cursor-not-allowed ${
                     errors.email ? 'border-red-400 bg-red-500/10' : 'border-white/20'
                   }`}
                   placeholder="Enter your email address"

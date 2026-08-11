@@ -1,12 +1,13 @@
 import React, { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Plus, Settings, Check, Loader } from 'lucide-react';
+import { ChevronDown, Plus, Settings, Check, Loader, LogIn } from 'lucide-react';
 import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import useThemeStore from '../../store/themeStore';
 
-const CreateWorkspaceModal = lazy(() => import('./CreateWorkspaceModal'));
+const CreateWorkspaceWizard = lazy(() => import('./CreateWorkspaceWizard/CreateWorkspaceWizard'));
+const WorkspaceOnboardingChecklist = lazy(() => import('./WorkspaceOnboardingChecklist'));
 
 /**
  * The one and only workspace switcher in the app — lives where the app
@@ -60,6 +61,7 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
   const [open, setOpen] = useState(false);
   const [switchingId, setSwitchingId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -71,6 +73,18 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
     if (open) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
+
+  // Landing page's "Create Workspace" CTA sends a brand-new visitor through
+  // register -> (verify-pending or login) before a workspace can exist at
+  // all — this flag (set by RegisterPage) picks the intent back up the
+  // first time the switcher actually mounts, so the wizard opens without
+  // the user having to find "Create Workspace" themselves.
+  useEffect(() => {
+    if (sessionStorage.getItem('flowtask_pending_action') === 'create-workspace') {
+      sessionStorage.removeItem('flowtask_pending_action');
+      setShowCreateModal(true);
+    }
+  }, []);
 
   const handleSwitch = async (workspace) => {
     if (workspace._id === currentWorkspace?._id) {
@@ -225,13 +239,26 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
                 <Plus size={16} />
                 Create Workspace
               </button>
+              <button
+                onClick={() => { setOpen(false); onNavigate(); navigate('/join'); }}
+                className="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors hover:bg-gray-500/10"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                <LogIn size={16} style={{ color: 'var(--color-text-muted)' }} />
+                Join Workspace
+              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       <Suspense fallback={null}>
-        <CreateWorkspaceModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
+        <CreateWorkspaceWizard
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={() => setShowOnboarding(true)}
+        />
+        <WorkspaceOnboardingChecklist isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
       </Suspense>
     </div>
   );

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { WORKSPACE_TYPES, INDUSTRY_OPTIONS, COMPANY_SIZE_OPTIONS } from '../utils/workspaceOptions.js';
 
 /**
  * Workspace — the top-level multi-tenant boundary. Every workspace-owned
@@ -18,6 +19,14 @@ const workspaceSchema = new mongoose.Schema({
   slug: { type: String, required: true, unique: true },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   isActive: { type: Boolean, default: true },
+  // Not schema-`required` — pre-migration workspaces have none of these
+  // until the boot-time backfill runs (see scripts/migrateWorkspaceTypeFields.js),
+  // and several existing controller call sites .save() a hydrated Workspace
+  // doc without ever touching these fields. "Must have a type" is enforced
+  // in workspaceController.createWorkspace for *new* workspaces only.
+  type: { type: String, enum: [...WORKSPACE_TYPES, null], default: null },
+  industry: { type: String, enum: [...INDUSTRY_OPTIONS, null], default: null },
+  companySize: { type: String, enum: [...COMPANY_SIZE_OPTIONS, null], default: null },
   settings: {
     restrictDomain: { type: String }, // e.g. "@acme.com" only
   },

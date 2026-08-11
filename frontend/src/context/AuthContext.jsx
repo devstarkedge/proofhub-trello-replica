@@ -191,14 +191,18 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (name, email, password, department) => {
-    const body = JSON.stringify({ name, email, password, department });
+  const register = async (name, email, password, department, inviteToken) => {
+    const body = JSON.stringify({ name, email, password, department, inviteToken });
 
     try {
-      await api.post("/api/auth/register", body);
-      return { success: true };
+      const res = await api.post("/api/auth/register", body);
+      // Returned so an invite-token registration can auto-login straight
+      // into the dashboard instead of the normal "go sign in" step — see
+      // RegisterPage.jsx. Plain registration ignores these extra fields,
+      // preserving its existing behavior exactly.
+      return { success: true, user: res.data.user, token: res.data.token };
     } catch (err) {
-      console.error(err.response.data);
+      console.error(err.response?.data);
       throw err;
     }
   };

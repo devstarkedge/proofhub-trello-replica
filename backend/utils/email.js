@@ -218,6 +218,67 @@ export const sendPasswordResetEmail = async (user, resetUrl) => {
   });
 };
 
+// Send a workspace invite to an email with no existing platform account.
+// No token/acceptance flow — this is a plain notification pointing at
+// registration; the inviting admin re-adds them as a member by hand once
+// they sign up (see workspaceController.inviteWorkspaceMembers).
+export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterName, token }) => {
+  const inviteUrl = `${process.env.FRONTEND_URL}/invite/${token}`;
+  const inviteHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>You've been invited to ${workspaceName} on FlowTask</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+          .header p { margin: 0; font-size: 16px; opacity: 0.9; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
+          .cta-wrapper { text-align: center; margin: 32px 0; }
+          .button { display: inline-block; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; padding: 16px 40px; text-decoration: none; border-radius: 12px; font-size: 16px; font-weight: 700; letter-spacing: 0.3px; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>You're invited!</h1>
+            <p>Join ${workspaceName} on FlowTask</p>
+          </div>
+          <div class="content">
+            <p class="message">Hi,</p>
+            <p class="message">
+              <strong>${inviterName || 'A workspace admin'}</strong> has invited you to join <strong>${workspaceName}</strong> on FlowTask.
+            </p>
+            <p class="message">
+              Click below to accept the invitation. If you don't have a FlowTask account yet, you'll be able to create one with this same email address — you'll land in this workspace automatically.
+            </p>
+            <div class="cta-wrapper">
+              <a href="${inviteUrl}" class="button">Accept invitation</a>
+            </div>
+            <p class="message" style="font-size: 13px; color: #94a3b8;">This invitation expires in 7 days.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This email was sent to ${email}. If you weren't expecting this, you can safely ignore it.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: email,
+    subject: `${inviterName || 'Someone'} invited you to join ${workspaceName} on FlowTask`,
+    html: inviteHtml
+  });
+};
+
 // Send Coming Soon Subscription Email
 export const sendComingSoonSubscriptionEmail = async (email, feature) => {
   const subscriptionHtml = `

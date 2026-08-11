@@ -102,8 +102,15 @@ export const WorkspaceProvider = ({ children }) => {
     }
   }, [isAuthenticated, user?._id, loadWorkspaces]);
 
-  const createWorkspace = useCallback(async (name) => {
-    const response = await api.post("/api/workspaces", { name });
+  /**
+   * Accepts the full creation payload (name, slug, type, industry,
+   * companySize, department) — see CreateWorkspaceWizard. Awaits
+   * loadWorkspaces() + switchWorkspace() fully before resolving so callers
+   * can safely fire follow-up requests (icon upload, invites) right after,
+   * knowing the x-workspace-id header already points at the new workspace.
+   */
+  const createWorkspace = useCallback(async (payload) => {
+    const response = await api.post("/api/workspaces", payload);
     const created = response.data.data;
     await loadWorkspaces();
     await switchWorkspace(created);
@@ -188,6 +195,17 @@ export const WorkspaceProvider = ({ children }) => {
     window.addEventListener('socket-workspace-icon-updated', handleIconUpdated);
     return () => window.removeEventListener('socket-workspace-icon-updated', handleIconUpdated);
   }, [applyWorkspaceIcon]);
+
+  // Another session just added/restored this user into a workspace (HR
+  // Panel, invite accept) — refresh the switcher's list live rather than
+  // requiring a logout or manual refresh to see it.
+  useEffect(() => {
+    const handleMembershipAdded = () => {
+      loadWorkspaces();
+    };
+    window.addEventListener('socket-workspace-membership-added', handleMembershipAdded);
+    return () => window.removeEventListener('socket-workspace-membership-added', handleMembershipAdded);
+  }, [loadWorkspaces]);
 
   return (
     <WorkspaceContext.Provider

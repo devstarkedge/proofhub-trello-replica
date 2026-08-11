@@ -1,23 +1,18 @@
 import React, { useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Briefcase, Users, UserPlus, Crown, Shield, LogOut, Trash2,
+  Briefcase, Users, Crown, Shield, LogOut, Trash2,
   Pencil, Check, X, Loader, AlertTriangle, ArrowLeftRight, Mail,
   ImagePlus, RotateCcw
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
-import useRoleStore from '../store/roleStore';
 import useThemeStore from '../store/themeStore';
 import Avatar from '../components/Avatar';
-import AddWorkspaceMemberModal from '../components/Workspace/AddWorkspaceMemberModal';
+import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
 import { validateWorkspaceIconFile } from '../utils/workspaceIcon';
-import {
-  getWorkspaceMembers,
-  updateWorkspaceMemberRole,
-  removeWorkspaceMember,
-} from '../services/workspaceMembersApi';
+import { getWorkspaceMembers } from '../services/workspaceMembersApi';
 
 const roleBadgeIcon = (role) => {
   if (role === 'admin') return Crown;
@@ -32,16 +27,12 @@ const WorkspaceSettingsPage = () => {
     deactivateWorkspace, transferOwnership, workspaces,
     uploadWorkspaceIcon, removeWorkspaceIcon,
   } = useContext(WorkspaceContext);
-  const { roles, loadRoles, initialized: rolesInitialized } = useRoleStore();
   const { effectiveMode } = useThemeStore();
   const isDarkMode = effectiveMode === 'dark';
 
   const [members, setMembers] = useState([]);
   const [ownerId, setOwnerId] = useState(null);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [savingRoleFor, setSavingRoleFor] = useState(null);
-  const [removingId, setRemovingId] = useState(null);
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -83,16 +74,9 @@ const WorkspaceSettingsPage = () => {
   }, [loadMembers]);
 
   useEffect(() => {
-    if (!rolesInitialized) {
-      loadRoles().catch(() => {});
-    }
-  }, [rolesInitialized, loadRoles]);
-
-  useEffect(() => {
     setNameInput(currentWorkspace?.name || '');
   }, [currentWorkspace?.name]);
 
-  const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
   const otherMembers = useMemo(() => members.filter((m) => m.user._id !== user?.id), [members, user?.id]);
 
   const handleSaveName = async () => {
@@ -144,34 +128,6 @@ const WorkspaceSettingsPage = () => {
       toast.error(error.response?.data?.message || 'Failed to remove icon');
     } finally {
       setRemovingIcon(false);
-    }
-  };
-
-  const handleRoleChange = async (member, newRole) => {
-    if (newRole === member.role) return;
-    setSavingRoleFor(member._id);
-    try {
-      await updateWorkspaceMemberRole(currentWorkspace._id, member.user._id, newRole);
-      setMembers((prev) => prev.map((m) => (m._id === member._id ? { ...m, role: newRole } : m)));
-      toast.success(`${member.user.name}'s role updated`);
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update role');
-    } finally {
-      setSavingRoleFor(null);
-    }
-  };
-
-  const handleRemove = async (member) => {
-    if (!window.confirm(`Remove ${member.user.name} from this workspace?`)) return;
-    setRemovingId(member._id);
-    try {
-      await removeWorkspaceMember(currentWorkspace._id, member.user._id);
-      setMembers((prev) => prev.filter((m) => m._id !== member._id));
-      toast.success(`${member.user.name} removed`);
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to remove member');
-    } finally {
-      setRemovingId(null);
     }
   };
 
@@ -322,6 +278,8 @@ const WorkspaceSettingsPage = () => {
           )}
         </motion.div>
 
+        <WorkspaceSetupBanner variant="full" />
+
         {/* Members */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -333,17 +291,14 @@ const WorkspaceSettingsPage = () => {
               <Users size={18} className="text-emerald-500" />
               Members
             </h2>
-            {isAdmin && (
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 transition-all"
-              >
-                <UserPlus size={16} />
-                Add Members
-              </button>
-            )}
+            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              Manage roles and membership from HR Panel
+            </span>
           </div>
 
+          {/* Read-only — role changes, removal, and adding members all live
+              in HR Panel now, so there's exactly one place to manage
+              workspace membership instead of two that could drift apart. */}
           <div className="p-2">
             {loadingMembers ? (
               <div className="flex justify-center py-10">
@@ -370,34 +325,10 @@ const WorkspaceSettingsPage = () => {
                       </div>
                     </div>
 
-                    {isAdmin && !isSelf && !m.isOwner ? (
-                      <select
-                        value={m.role}
-                        disabled={savingRoleFor === m._id}
-                        onChange={(e) => handleRoleChange(m, e.target.value)}
-                        className={`text-sm capitalize px-2.5 py-1.5 rounded-lg border outline-none disabled:opacity-60 ${isDarkMode ? 'bg-gray-900 border-gray-700 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-700'}`}
-                      >
-                        {activeRoles.map((r) => (
-                          <option key={r._id} value={r.slug}>{r.name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg capitalize" style={{ backgroundColor: 'var(--color-bg-muted)', color: 'var(--color-text-secondary)' }}>
-                        {BadgeIcon && <BadgeIcon size={12} />}
-                        {m.role}
-                      </span>
-                    )}
-
-                    {isAdmin && !isSelf && !m.isOwner && (
-                      <button
-                        onClick={() => handleRemove(m)}
-                        disabled={removingId === m._id}
-                        className="p-2 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                        title="Remove member"
-                      >
-                        {removingId === m._id ? <Loader size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                      </button>
-                    )}
+                    <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg capitalize" style={{ backgroundColor: 'var(--color-bg-muted)', color: 'var(--color-text-secondary)' }}>
+                      {BadgeIcon && <BadgeIcon size={12} />}
+                      {m.role}
+                    </span>
                   </div>
                 );
               })
@@ -517,14 +448,6 @@ const WorkspaceSettingsPage = () => {
           </div>
         </motion.div>
       </main>
-
-      <AddWorkspaceMemberModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        workspaceId={currentWorkspace._id}
-        roleOptions={activeRoles}
-        onMembersAdded={() => loadMembers()}
-      />
     </div>
   );
 };

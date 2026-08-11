@@ -56,6 +56,7 @@ import salesPermissionsRoutes from './routes/salesPermissions.js';
 import salesTabRoutes from './modules/salesTabs/salesTab.routes.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
 import workspaceRoutes from './routes/workspaces.js';
+import invitationRoutes from './routes/invitations.js';
 import accessControlRoutes from './routes/accessControl.js';
 import chatIntegrationRoutes from './routes/chatIntegration.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
@@ -204,6 +205,7 @@ app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/sales-tabs', salesTabRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 app.use('/api/workspaces', workspaceRoutes);
+app.use('/api/invitations', invitationRoutes);
 app.use('/api/access-control', accessControlRoutes);
 app.use('/api/chat-integration', chatIntegrationRoutes);
 
@@ -229,6 +231,7 @@ import { initializeSlackServices, shutdownSlackServices } from './services/slack
 import { initQueues, shutdownQueues } from './queues/queueManager.js';
 import { startAnalyticsReportScheduler, stopAnalyticsReportScheduler } from './schedulers/analyticsReportScheduler.js';
 import runPermissionEngineMigration from './scripts/migratePermissionEngine.js';
+import runWorkspaceTypeMigration from './scripts/migrateWorkspaceTypeFields.js';
 import * as workspaceContext from './modules/workspaces/workspaceContext.js';
 
 mongoose.connect(config.db.uri, {
@@ -261,6 +264,13 @@ mongoose.connect(config.db.uri, {
         logger.info('Permission engine migration result', permissionResult);
       } catch (err) {
         logger.error('Permission engine migration error (non-fatal)', { error: err.message });
+      }
+
+      try {
+        const workspaceTypeResult = await runWorkspaceTypeMigration();
+        logger.info('Workspace type migration result', workspaceTypeResult);
+      } catch (err) {
+        logger.error('Workspace type migration error (non-fatal)', { error: err.message });
       }
     });
 

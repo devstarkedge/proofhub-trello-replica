@@ -325,6 +325,14 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-workspace-icon-updated', { detail: data }));
     });
 
+    // Fired when this user is added/restored to a workspace from another
+    // session (HR Panel add-member, invite accept) — refreshes their
+    // switcher's workspace list live, no logout/refresh required.
+    this.socket.on('workspace-membership-added', (data) => {
+      console.log('Workspace membership added:', data);
+      window.dispatchEvent(new CustomEvent('socket-workspace-membership-added', { detail: data }));
+    });
+
     // Finance page events - for real-time finance updates
     this.socket.on('finance:page:pending', (data) => {
       console.log('Finance page pending approval:', data);

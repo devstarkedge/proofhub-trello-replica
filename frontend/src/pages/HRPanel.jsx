@@ -4,8 +4,9 @@ import {
   Filter,
   Search,
   UserCheck,
-  UserX,
   UserCog,
+  UserPlus,
+  UserMinus,
   X,
   CheckCircle,
   XCircle,
@@ -15,56 +16,84 @@ import {
   User,
   ChevronDown,
   Loader2,
-  Trash2,
   Ban
 } from 'lucide-react';
 import { HRPanelSkeleton } from '../components/LoadingSkeleton';
 import api from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
 import useDepartmentStore from '../store/departmentStore';
+import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
 import UserAccessEditor from '../components/AccessControl/UserAccessEditor';
+import AddWorkspaceMemberModal from '../components/Workspace/AddWorkspaceMemberModal';
+import { getWorkspaceMembers, removeWorkspaceMember } from '../services/workspaceMembersApi';
+
+// Membership rows from GET /api/workspaces/:id/members come shaped as
+// { _id: membershipId, user: {...}, role, department, isOwner, joinedAt } —
+// flattened here into one per-row object so the rest of this page (built
+// around a flat "user" shape) didn't need a wider rewrite.
+const flattenMember = (m) => ({
+  membershipId: m._id,
+  _id: m.user._id,
+  name: m.user.name,
+  email: m.user.email,
+  avatar: m.user.avatar,
+  isVerified: m.user.isVerified,
+  isActive: m.user.isActive,
+  role: m.role,
+  department: m.department || [],
+  isOwner: m.isOwner,
+});
 
 // Memoized User Row Component for better performance
 const UserRow = memo(({
-  user,
+  member,
   currentUserId,
   loadingStates,
   onVerify,
   onDecline,
   onAssign,
-  onDelete,
+  onRemove,
   getRoleBadge,
   getStatusBadge
 }) => {
-  const isSelf = currentUserId && String(currentUserId) === String(user._id);
+  const isSelf = currentUserId && String(currentUserId) === String(member._id);
+  const canManageMembership = !isSelf && !member.isOwner;
   return (
     <tr className="hover:bg-gray-50 transition-colors duration-150">
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="flex items-center">
-          <Avatar 
-            src={user.avatar} 
-            name={user.name} 
-            role={user.role}
-            isVerified={user.isVerified}
+          <Avatar
+            src={member.avatar}
+            name={member.name}
+            role={member.role}
+            isVerified={member.isVerified}
             size="md"
             showBadge={true}
           />
           <div className="ml-4">
-            <div className="text-sm font-semibold text-gray-900">{user.name}</div>
-            <div className="text-sm text-gray-500">{user.email}</div>
+            <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+              {member.name}
+              {member.isOwner && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700">
+                  Owner
+                </span>
+              )}
+            </div>
+            <div className="text-sm text-gray-500">{member.email}</div>
           </div>
         </div>
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
-        {getRoleBadge(user.role)}
+        {getRoleBadge(member.role)}
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
-        {user.department && user.department.length > 0 ? (
+        {member.department && member.department.length > 0 ? (
           <div className="flex flex-wrap gap-1">
-            {user.department.map((dept, index) => (
-              <span key={`${dept._id}-${index}`} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-medium">
+            {member.department.map((dept) => (
+              <span key={dept._id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-medium">
                 <Building2 className="w-3 h-3" />
                 {dept.name}
               </span>
@@ -75,39 +104,39 @@ const UserRow = memo(({
         )}
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
-        {getStatusBadge(user)}
+        {getStatusBadge(member)}
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
         <div className="flex items-center gap-2">
-          {!user.isVerified && user.role !== 'admin' && (
+          {!member.isVerified && member.role !== 'admin' && (
             <>
               <button
-                onClick={() => onVerify(user._id)}
-                disabled={loadingStates[user._id]}
+                onClick={() => onVerify(member._id)}
+                disabled={loadingStates[member._id]}
                 className="inline-flex items-center gap-1 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loadingStates[user._id] ? (
+                {loadingStates[member._id] ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <CheckCircle className="w-4 h-4" />
                 )}
-                {loadingStates[user._id] ? 'Verifying...' : 'Verify'}
+                {loadingStates[member._id] ? 'Verifying...' : 'Verify'}
               </button>
               <button
-                onClick={() => onDecline(user._id)}
-                disabled={loadingStates[user._id]}
+                onClick={() => onDecline(member._id)}
+                disabled={loadingStates[member._id]}
                 className="inline-flex items-center gap-1 px-3 py-2 bg-red-300 text-red-800 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loadingStates[user._id] ? (
+                {loadingStates[member._id] ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <XCircle className="w-4 h-4" />
                 )}
-                {loadingStates[user._id] ? 'Declining...' : 'Decline'}
+                {loadingStates[member._id] ? 'Declining...' : 'Decline'}
               </button>
             </>
           )}
-          {user.isVerified && (
+          {member.isVerified && (
             <>
               {isSelf ? (
                 <span
@@ -119,20 +148,21 @@ const UserRow = memo(({
                 </span>
               ) : (
                 <button
-                  onClick={() => onAssign(user)}
+                  onClick={() => onAssign(member)}
                   className="inline-flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200 font-semibold"
                 >
                   <UserCog className="w-4 h-4" />
                   Assign
                 </button>
               )}
-              {!isSelf && user.role !== 'admin' && (
+              {canManageMembership && (
                 <button
-                  onClick={() => onDelete(user)}
-                  className="inline-flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors duration-200 font-semibold"
+                  onClick={() => onRemove(member)}
+                  disabled={loadingStates[member._id]}
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
+                  <UserMinus className="w-4 h-4" />
+                  Remove
                 </button>
               )}
             </>
@@ -146,22 +176,46 @@ UserRow.displayName = 'UserRow';
 
 const HRPanel = () => {
   const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const loggedInUserId = user?._id;
   const departmentStore = useDepartmentStore();
-  const [users, setUsers] = useState([]);
+  const { roles, loadRoles, initialized: rolesInitialized } = useRoleStore();
+  const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [filters, setFilters] = useState({
     role: '',
     department: '',
     search: ''
   });
   const [debouncedFilters] = useDebounce(filters, 200);
-  const [userToDelete, setUserToDelete] = useState(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState(null);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [loadingStates, setLoadingStates] = useState({});
+
+  const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
+
+  const loadData = useCallback(async () => {
+    if (!currentWorkspace?._id) return;
+    try {
+      setLoading(true);
+      const [membersData] = await Promise.all([
+        getWorkspaceMembers(currentWorkspace._id),
+        departmentStore.loadDepartments(),
+      ]);
+      setMembers(membersData.map(flattenMember));
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+    // departmentStore is a stable zustand reference; only re-run when the
+    // active workspace actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWorkspace?._id]);
 
   useEffect(() => {
     loadData();
@@ -171,26 +225,14 @@ const HRPanel = () => {
 
     // Listen for real-time user verification updates
     const handleUserVerified = (event) => {
-      const { userId, isVerified, role, department } = event.detail;
-      setUsers(prevUsers =>
-        prevUsers.map(user =>
-          user._id === userId
-            ? { ...user, isVerified, role, department }
-            : user
-        )
-      );
+      const { userId, isVerified, role } = event.detail;
+      setMembers(prev => prev.map(m => (m._id === userId ? { ...m, isVerified, role } : m)));
     };
 
     // Listen for real-time role change updates
     const handleRoleChanged = (event) => {
       const { userId, newRole } = event.detail;
-      setUsers(prevUsers =>
-        prevUsers.map(user =>
-          user._id === userId
-            ? { ...user, role: newRole }
-            : user
-        )
-      );
+      setMembers(prev => prev.map(m => (m._id === userId ? { ...m, role: newRole } : m)));
     };
 
     window.addEventListener('socket-user-verified', handleUserVerified);
@@ -201,48 +243,31 @@ const HRPanel = () => {
       window.removeEventListener('socket-user-verified', handleUserVerified);
       window.removeEventListener('socket-user-role-changed', handleRoleChanged);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadData]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      await Promise.all([
-        departmentStore.loadDepartments(),
-        departmentStore.loadUsers()
-      ]);
-      // Load users for local state management
-      const res = await api.get('/api/users');
-      setUsers(res.data.data);
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!rolesInitialized) {
+      loadRoles().catch(() => {});
     }
+  }, [rolesInitialized, loadRoles]);
+
+  const showToast = (type, message) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 3000);
   };
-
-
 
   const handleVerifyUser = async (userId) => {
     setLoadingStates(prev => ({ ...prev, [userId]: true }));
-
     try {
       await api.put(`/api/users/${userId}/verify`, {
         role: 'employee',
         department: null
       });
-
-      // Update local state immediately for instant UI feedback
-      setUsers(prevUsers =>
-        prevUsers.map(user =>
-          user._id === userId
-            ? { ...user, isVerified: true, role: 'employee', department: [] }
-            : user
-        )
-      );
+      setMembers(prev => prev.map(m => (m._id === userId ? { ...m, isVerified: true, role: 'employee', department: [] } : m)));
     } catch (error) {
       console.error('Error verifying user:', error);
-      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to verify user' });
-      setTimeout(() => setToast(null), 3000);
+      showToast('error', error.response?.data?.message || 'Failed to verify user');
     } finally {
       setLoadingStates(prev => ({ ...prev, [userId]: false }));
     }
@@ -250,51 +275,38 @@ const HRPanel = () => {
 
   const handleDeclineUser = async (userId) => {
     setLoadingStates(prev => ({ ...prev, [userId]: true }));
-
     try {
       await api.delete(`/api/users/${userId}/decline`);
-
-      // Remove user from local state immediately
-      setUsers(prevUsers => prevUsers.filter(user => user._id !== userId));
+      setMembers(prev => prev.filter(m => m._id !== userId));
     } catch (error) {
       console.error('Error declining user:', error);
-      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to decline user' });
-      setTimeout(() => setToast(null), 3000);
+      showToast('error', error.response?.data?.message || 'Failed to decline user');
     } finally {
       setLoadingStates(prev => ({ ...prev, [userId]: false }));
     }
   };
 
-  const handleDeleteUser = async () => {
-    if (!userToDelete) return;
-    const uid = userToDelete._id;
-
-    // set loading state for this user to disable button and show spinner
-    setLoadingStates(prev => ({ ...prev, [uid]: true }));
-
-    try {
-      await api.delete(`/api/users/${userToDelete._id}`);
-      setUsers(prevUsers => prevUsers.filter(u => u._id !== uid));
-      setToast({ type: 'success', message: 'User deleted successfully' });
-      setTimeout(() => setToast(null), 3000);
-
-      // Close the modal on success and reset userToDelete
-      setShowDeleteModal(false);
-      setUserToDelete(null);
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      setToast({ type: 'error', message: error.response?.data?.message || 'Failed to delete user' });
-      setTimeout(() => setToast(null), 3000);
-      // Keep the modal open in case user wants to retry or cancel
-    } finally {
-      // reset loading state for this user
-      setLoadingStates(prev => ({ ...prev, [uid]: false }));
-    }
+  const openRemoveModal = (member) => {
+    setMemberToRemove(member);
+    setShowRemoveModal(true);
   };
 
-  const openDeleteModal = (user) => {
-    setUserToDelete(user);
-    setShowDeleteModal(true);
+  const handleRemoveMember = async () => {
+    if (!memberToRemove || !currentWorkspace?._id) return;
+    const uid = memberToRemove._id;
+    setLoadingStates(prev => ({ ...prev, [uid]: true }));
+    try {
+      await removeWorkspaceMember(currentWorkspace._id, uid);
+      setMembers(prev => prev.filter(m => m._id !== uid));
+      showToast('success', `${memberToRemove.name} removed from ${currentWorkspace.name}`);
+      setShowRemoveModal(false);
+      setMemberToRemove(null);
+    } catch (error) {
+      console.error('Error removing member:', error);
+      showToast('error', error.response?.data?.message || 'Failed to remove member');
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [uid]: false }));
+    }
   };
 
   const closeAssignModal = () => {
@@ -302,40 +314,39 @@ const HRPanel = () => {
     setSelectedUser(null);
   };
 
-  const openAssignModal = (user) => {
-    setSelectedUser(user);
+  const openAssignModal = (member) => {
+    setSelectedUser(member);
     setShowModal(true);
   };
 
-  // OPTIMIZED: Memoize filtered users to prevent recalculation on every render
+  // OPTIMIZED: Memoize filtered members to prevent recalculation on every render
   // Uses debouncedFilters to prevent filtering on every keystroke
-  const filteredUsers = useMemo(() => {
-    if (!users.length) return [];
-    
+  const filteredMembers = useMemo(() => {
+    if (!members.length) return [];
+
     const searchLower = debouncedFilters.search?.toLowerCase() || '';
-    
-    return users.filter(user => {
-      // Early returns for better performance
-      if (debouncedFilters.role && user.role !== debouncedFilters.role) return false;
-      
+
+    return members.filter(member => {
+      if (debouncedFilters.role && member.role !== debouncedFilters.role) return false;
+
       if (debouncedFilters.department) {
-        const hasDept = user.department?.some(d => d._id === debouncedFilters.department);
+        const hasDept = member.department?.some(d => d._id === debouncedFilters.department);
         if (!hasDept) return false;
       }
-      
+
       if (searchLower) {
-        const nameMatch = user.name.toLowerCase().includes(searchLower);
-        const emailMatch = user.email.toLowerCase().includes(searchLower);
+        const nameMatch = member.name.toLowerCase().includes(searchLower);
+        const emailMatch = member.email.toLowerCase().includes(searchLower);
         if (!nameMatch && !emailMatch) return false;
       }
-      
+
       return true;
     });
-  }, [users, debouncedFilters.role, debouncedFilters.department, debouncedFilters.search]);
+  }, [members, debouncedFilters.role, debouncedFilters.department, debouncedFilters.search]);
 
   // Memoize badge generators to prevent recreating functions
-  const getStatusBadge = useCallback((user) => {
-    if (!user.isVerified) {
+  const getStatusBadge = useCallback((member) => {
+    if (!member.isVerified) {
       return (
         <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">
           <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
@@ -343,7 +354,7 @@ const HRPanel = () => {
         </span>
       );
     }
-    if (!user.isActive) {
+    if (!member.isActive) {
       return (
         <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-red-100 text-red-800 rounded-full">
           <span className="w-2 h-2 bg-red-500 rounded-full"></span>
@@ -369,7 +380,7 @@ const HRPanel = () => {
     };
     const config = roleConfig[role] || roleConfig.employee;
     const Icon = config.icon;
-    
+
     return (
       <span className={`inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full ${config.color}`}>
         <Icon className="w-3 h-3" />
@@ -380,13 +391,13 @@ const HRPanel = () => {
 
   // Memoize stats to prevent recalculation
   const stats = useMemo(() => ({
-    total: users.length,
-    pending: users.filter(u => !u.isVerified).length,
-    active: users.filter(u => u.isVerified && u.isActive).length,
+    total: members.length,
+    pending: members.filter(m => !m.isVerified).length,
+    active: members.filter(m => m.isVerified && m.isActive).length,
     departments: departmentStore.departments.length
-  }), [users, departmentStore.departments.length]);
+  }), [members, departmentStore.departments.length]);
 
-  if (loading) {
+  if (loading || !currentWorkspace) {
     return <HRPanelSkeleton />;
   }
 
@@ -395,14 +406,23 @@ const HRPanel = () => {
       <main className="p-6">
           {/* Header */}
           <div className="mb-8 animate-fade-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="bg-blue-100 p-3 rounded-xl">
-                <Users className="w-8 h-8 text-blue-600" />
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="bg-blue-100 p-3 rounded-xl">
+                  <Users className="w-8 h-8 text-blue-600" />
+                </div>
+                <div>
+                  <h1 className="text-4xl font-bold text-gray-900">HR Management Panel</h1>
+                  <p className="text-gray-600 mt-1">Manage {currentWorkspace.name}&apos;s members, departments, and assignments</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-4xl font-bold text-gray-900">HR Management Panel</h1>
-                <p className="text-gray-600 mt-1">Manage users, departments, and assignments</p>
-              </div>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold shadow-md"
+              >
+                <UserPlus className="w-5 h-5" />
+                Add Member
+              </button>
             </div>
           </div>
 
@@ -419,7 +439,7 @@ const HRPanel = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
               <div className="flex items-center justify-between">
                 <div>
@@ -433,7 +453,7 @@ const HRPanel = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
               <div className="flex items-center justify-between">
                 <div>
@@ -447,7 +467,7 @@ const HRPanel = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
               <div className="flex items-center justify-between">
                 <div>
@@ -477,16 +497,15 @@ const HRPanel = () => {
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white transition-all duration-200"
                   >
                     <option value="">All Roles</option>
-                    <option value="admin">Admin</option>
-                    <option value="manager">Manager</option>
-                    <option value="hr">HR</option>
-                    <option value="employee">Employee</option>
+                    {activeRoles.map((r) => (
+                      <option key={r._id} value={r.slug}>{r.name}</option>
+                    ))}
                   </select>
                   <Shield className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                 </div>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Department</label>
                 <div className="relative">
@@ -504,7 +523,7 @@ const HRPanel = () => {
                   <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                 </div>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Search</label>
                 <div className="relative">
@@ -527,7 +546,7 @@ const HRPanel = () => {
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold text-gray-900">Users Directory</h2>
                 <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold">
-                  {filteredUsers.length} {filteredUsers.length === 1 ? 'User' : 'Users'}
+                  {filteredMembers.length} {filteredMembers.length === 1 ? 'User' : 'Users'}
                 </span>
               </div>
             </div>
@@ -543,19 +562,18 @@ const HRPanel = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredUsers.map((rowUser, index) => (
+                  {filteredMembers.map((member) => (
                     <UserRow
-                      key={rowUser._id}
-                      user={rowUser}
-                      index={index}
+                      key={member._id}
+                      member={member}
                       currentUserId={loggedInUserId}
                       loadingStates={loadingStates}
                       getRoleBadge={getRoleBadge}
                       getStatusBadge={getStatusBadge}
-                        onVerify={handleVerifyUser}
-                        onDecline={handleDeclineUser}
-                        onAssign={openAssignModal}
-                        onDelete={openDeleteModal}
+                      onVerify={handleVerifyUser}
+                      onDecline={handleDeclineUser}
+                      onAssign={openAssignModal}
+                      onRemove={openRemoveModal}
                     />
                   ))}
                 </tbody>
@@ -575,7 +593,7 @@ const HRPanel = () => {
                         <UserCog className="w-6 h-6" />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold">Assign Role & Access</h3>
+                        <h3 className="text-xl font-bold">Assign Department & Access</h3>
                         <p className="text-blue-100 text-sm">{selectedUser.name}</p>
                       </div>
                     </div>
@@ -588,10 +606,12 @@ const HRPanel = () => {
                   </div>
                 </div>
 
-                {/* Modal Body — role, department, access scope, and every
-                    module's resource overrides for this user, all from the
-                    centralized Access & Permissions module's editor. HRPanel
-                    only opens it; it doesn't implement its own copy. */}
+                {/* Modal Body — role, department, and access scope, plus
+                    every module's resource overrides for this user, all
+                    from the centralized Access & Permissions module's
+                    editor. HRPanel only opens it; it doesn't implement its
+                    own copy, and the Role column is read-only display only —
+                    this modal is the one place role changes happen. */}
                 <div className="p-6 max-h-[70vh] overflow-y-auto">
                   <UserAccessEditor
                     userId={selectedUser._id}
@@ -613,26 +633,29 @@ const HRPanel = () => {
             </div>
           )}
 
-          {/* Delete Confirmation Modal */}
-          {showDeleteModal && userToDelete && (
+          {/* Remove-from-Workspace Confirmation Modal — this only ever drops
+              the WorkspaceMembership row for the active workspace; it never
+              touches the global User account or the user's membership in
+              any other workspace. */}
+          {showRemoveModal && memberToRemove && (
             <div className="fixed inset-0 backdrop-blur-sm bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center animate-fade-in">
               <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 animate-slide-up">
                 {/* Modal Header */}
-                <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-6 rounded-t-2xl">
+                <div className="bg-gradient-to-r from-orange-500 to-red-600 text-white p-6 rounded-t-2xl">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="bg-white/20 p-2 rounded-lg">
-                        <Trash2 className="w-6 h-6" />
+                        <UserMinus className="w-6 h-6" />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold">Delete User</h3>
-                        <p className="text-red-100 text-sm">{userToDelete.name}</p>
+                        <h3 className="text-xl font-bold">Remove User from Workspace</h3>
+                        <p className="text-orange-100 text-sm">{memberToRemove.name}</p>
                       </div>
                     </div>
                     <button
                       onClick={() => {
-                        setShowDeleteModal(false);
-                        setUserToDelete(null);
+                        setShowRemoveModal(false);
+                        setMemberToRemove(null);
                       }}
                       className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-colors duration-200"
                     >
@@ -644,18 +667,15 @@ const HRPanel = () => {
                 {/* Modal Body */}
                 <div className="p-6">
                   <div className="text-center">
-                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
-                      <Trash2 className="h-6 w-6 text-red-600" />
+                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-orange-100 mb-4">
+                      <UserMinus className="h-6 w-6 text-orange-600" />
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Are you sure you want to delete this user?</h3>
-                    <p className="text-sm text-gray-600 mb-4">
-                      Are you sure you want to permanently delete <strong>{userToDelete.name}</strong>? This action cannot be undone.
+                    <p className="text-sm text-gray-700 mb-3">
+                      Are you sure you want to remove <strong>{memberToRemove.name}</strong> from Workspace: <strong>{currentWorkspace.name}</strong>?
                     </p>
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                      <p className="text-sm text-red-800">
-                        <strong>Warning:</strong> This will remove the user from all departments, teams, projects, and delete all associated data including comments, notifications, and activity logs.
-                      </p>
-                    </div>
+                    <p className="text-sm text-gray-500">
+                      The user will lose access to this workspace.
+                    </p>
                   </div>
                 </div>
 
@@ -663,34 +683,41 @@ const HRPanel = () => {
                 <div className="flex justify-end gap-3 p-6 bg-gray-50 rounded-b-2xl border-t border-gray-200">
                   <button
                     onClick={() => {
-                      setShowDeleteModal(false);
-                      setUserToDelete(null);
+                      setShowRemoveModal(false);
+                      setMemberToRemove(null);
                     }}
                     className="px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors duration-200 font-semibold"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={handleDeleteUser}
-                    disabled={loadingStates[userToDelete._id]}
-                    aria-disabled={loadingStates[userToDelete._id] ? 'true' : 'false'}
-                    aria-busy={loadingStates[userToDelete._id] ? 'true' : 'false'}
-                    className={`px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 font-semibold shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2`}
-                    title={loadingStates[userToDelete._id] ? 'Deleting...' : 'Delete Anyway'}
+                    onClick={handleRemoveMember}
+                    disabled={loadingStates[memberToRemove._id]}
+                    aria-disabled={loadingStates[memberToRemove._id] ? 'true' : 'false'}
+                    aria-busy={loadingStates[memberToRemove._id] ? 'true' : 'false'}
+                    className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-lg hover:from-orange-600 hover:to-red-700 transition-all duration-200 font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    {loadingStates[userToDelete._id] ? (
+                    {loadingStates[memberToRemove._id] ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Deleting...</span>
+                        <span>Removing...</span>
                       </>
                     ) : (
-                      'Delete Anyway'
+                      'Remove from Workspace'
                     )}
                   </button>
                 </div>
               </div>
             </div>
           )}
+
+          <AddWorkspaceMemberModal
+            isOpen={showAddModal}
+            onClose={() => setShowAddModal(false)}
+            workspaceId={currentWorkspace._id}
+            roleOptions={activeRoles}
+            onMembersAdded={() => loadData()}
+          />
 
           {/* Toast Notification */}
           {toast && (

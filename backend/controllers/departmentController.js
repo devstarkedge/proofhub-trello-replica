@@ -12,6 +12,7 @@ import { resolveDepartmentScope } from '../utils/departmentStats.js';
 import { getAssignmentBasedBoardIds, getAssignmentBasedDepartmentIds, userHasCapability, CAPABILITIES } from '../services/permissionService.js';
 import { chatHooks } from '../utils/chatHooks.js';
 import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
+import { createDepartmentCore } from '../modules/workspaces/departmentCreation.js';
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -560,27 +561,7 @@ export const getDepartment = asyncHandler(async (req, res, next) => {
 export const createDepartment = asyncHandler(async (req, res, next) => {
   const { name, description, managers } = req.body;
 
-  // Check if department exists
-  const existingDept = await Department.findOne({ name });
-  if (existingDept) {
-    return next(new ErrorResponse("Department already exists", 400));
-  }
-
-  const department = await Department.create({
-    name,
-    description,
-    managers: managers || [],
-    members: [],
-  });
-
-  // Update managers' department field to include this department
-  if (managers && managers.length > 0) {
-    await User.updateMany(
-      { _id: { $in: managers } },
-      { $addToSet: { department: department._id } }
-    );
-    await Promise.all(managers.map((managerId) => syncMembershipFromUser(managerId, req.workspaceId)));
-  }
+  const department = await createDepartmentCore({ name, description, managers, workspaceId: req.workspaceId });
 
   // Dispatch chat webhook
   chatHooks.onDepartmentCreated(department, req.user).catch(console.error);
@@ -675,6 +656,18 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
 
   if (!department) {
     return next(new ErrorResponse("Department not found", 404));
+  }
+
+  // Every workspace must have at least one department (Board.department is
+  // a hard schema requirement — a project can never exist without one).
+  // Without this guard, deleting the last department would silently violate
+  // that invariant and permanently block project creation in this workspace.
+  const departmentCount = await Department.countDocuments({});
+  if (departmentCount <= 1) {
+    return next(new ErrorResponse(
+      "Cannot delete the last department in a workspace — create another department first",
+      400
+    ));
   }
 
   // Remove department from users (use $pull for array field)

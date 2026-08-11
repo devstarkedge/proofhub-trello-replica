@@ -24,6 +24,7 @@ import DeletePopup from '../components/ui/DeletePopup';
 import BulkDeleteModal from '../components/ui/BulkDeleteModal';
 import BulkActionToolbar from '../components/BulkActionToolbar';
 import WelcomeHeader from '../components/WelcomeHeader';
+import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
 
 // Memoized modal loading fallback
 const ModalLoadingFallback = memo(() => (
@@ -488,6 +489,8 @@ const HomePage = () => {
       <main className="p-6 space-y-6">
           {/* Welcome Header */}
           <WelcomeHeader user={user} />
+
+          <WorkspaceSetupBanner variant="urgent" />
 
           {/* Controls Bar */}
           <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">

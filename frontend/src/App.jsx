@@ -45,6 +45,9 @@ import AccessControlPage from "./pages/AccessControlPage";
 import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
 import ProjectTrash from "./pages/ProjectTrash";
 import SelectWorkspacePage from "./pages/SelectWorkspacePage";
+import NoWorkspacePage from "./pages/NoWorkspacePage";
+import JoinWorkspacePage from "./pages/JoinWorkspacePage";
+import InvitePage from "./pages/InvitePage";
 import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
 
 // PM Sheet Pages
@@ -81,6 +84,9 @@ function App() {
               <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
               <Route path="/verify-pending" element={<VerifyPending />} />
               <Route path="/select-workspace" element={<SelectWorkspacePage />} />
+              <Route path="/no-workspace" element={<NoWorkspacePage />} />
+              <Route path="/join" element={<JoinWorkspacePage />} />
+              <Route path="/invite/:token" element={<InvitePage />} />
               <Route
                 element={
                   <PrivateRoute>

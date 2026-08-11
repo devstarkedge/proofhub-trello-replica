@@ -20,6 +20,7 @@ import {
 import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
+import { findValidInvitationByToken, acceptInvitation } from '../modules/workspaces/invitationService.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 
 // Generate JWT Token
@@ -29,11 +30,14 @@ const generateToken = (id) => {
   });
 };
 
-// @desc    Register user
+// @desc    Register user. An optional `inviteToken` joins the specific
+//          workspace that invited this exact email instead of the single
+//          default workspace, and skips the admin-verification gate (the
+//          invite itself is the approval — see invitationService.js).
 // @route   POST /api/auth/register
 // @access  Public
 export const register = asyncHandler(async (req, res, next) => {
-  const { name, email, password, department } = req.body;
+  const { name, email, password, department, inviteToken } = req.body;
 
   // Check if user exists
   const userExists = await User.findOne({ email });
@@ -41,16 +45,27 @@ export const register = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Email already exists. Please use a different email address.', 400));
   }
 
+  let invitation = null;
+  if (inviteToken) {
+    invitation = await findValidInvitationByToken(inviteToken);
+    if (!invitation) {
+      return next(new ErrorResponse('This invitation is invalid or has expired', 400));
+    }
+    if (invitation.email.toLowerCase() !== String(email || '').toLowerCase()) {
+      return next(new ErrorResponse('This invitation was sent to a different email address', 400));
+    }
+  }
+
   // Public registration happens before any workspace is selected — every
   // self-registered user joins the single default workspace (consistent
-  // with the "Login Flow: Single Workspace" case; multi-workspace signup
-  // is a later-phase invitation flow, not this endpoint).
-  const defaultWorkspaceId = await ensureDefaultWorkspace();
-  if (!defaultWorkspaceId) {
+  // with the "Login Flow: Single Workspace" case). An invite-token
+  // registration joins the invited workspace instead, and only that one.
+  const targetWorkspaceId = invitation ? invitation.workspace : await ensureDefaultWorkspace();
+  if (!targetWorkspaceId) {
     return next(new ErrorResponse('No workspace available to register into', 500));
   }
 
-  const { user, employeeRole } = await workspaceContext.run({ workspaceId: defaultWorkspaceId }, async () => {
+  const { user, employeeRole } = await workspaceContext.run({ workspaceId: targetWorkspaceId }, async () => {
     // Validate department if provided
     if (department) {
       const deptExists = await Department.findById(department);
@@ -70,18 +85,23 @@ export const register = asyncHandler(async (req, res, next) => {
       role: 'employee',
       roleId: role?._id,
       department: department || undefined,
-      isVerified: false // Admin needs to verify
+      isVerified: !!invitation // invited signups are pre-approved; public ones still need an admin to verify
     });
 
     return { user: createdUser, employeeRole: role };
   });
 
-  await syncMembershipFromUser(user._id, defaultWorkspaceId);
+  if (invitation) {
+    await acceptInvitation(invitation, user._id);
+  } else {
+    await syncMembershipFromUser(user._id, targetWorkspaceId);
+  }
+  await User.updateOne({ _id: user._id }, { $set: { lastActiveWorkspace: targetWorkspaceId } });
 
   // Get department name for notification
   let departmentName = 'No department selected';
   if (department) {
-    const dept = await workspaceContext.run({ workspaceId: defaultWorkspaceId }, async () => await Department.findById(department));
+    const dept = await workspaceContext.run({ workspaceId: targetWorkspaceId }, async () => await Department.findById(department));
     departmentName = dept ? dept.name : 'Unknown department';
   }
 
@@ -101,16 +121,18 @@ export const register = asyncHandler(async (req, res, next) => {
   });
 
   // Run non-blocking background tasks: notify admins and send welcome email
-  runBackground(() => workspaceContext.run({ workspaceId: defaultWorkspaceId }, async () => {
+  runBackground(() => workspaceContext.run({ workspaceId: targetWorkspaceId }, async () => {
     try {
-      const authorizedUsers = await User.find({
-        role: { $in: ['admin', 'manager'] },
-        isActive: true
-      }).select('_id');
-      const authorizedIds = authorizedUsers.map(u => u._id);
-
-      // Notify admins and managers about registration
-      await notificationService.notifyUserRegistered(user, authorizedIds);
+      // Nothing pending to verify for an invite-based signup — skip the
+      // "please review this new user" ping to admins/managers.
+      if (!invitation) {
+        const authorizedUsers = await User.find({
+          role: { $in: ['admin', 'manager'] },
+          isActive: true
+        }).select('_id');
+        const authorizedIds = authorizedUsers.map(u => u._id);
+        await notificationService.notifyUserRegistered(user, authorizedIds);
+      }
 
       // Dispatch chat webhook for user registration
       chatHooks.onUserRegistered(user).catch(console.error);
@@ -130,7 +152,7 @@ export const register = asyncHandler(async (req, res, next) => {
           <h1>Welcome ${name}!</h1>
           <p>Your account has been created successfully.</p>
           <p><strong>Department:</strong> ${deptName}</p>
-          <p>An administrator will verify your account shortly.</p>
+          ${invitation ? '' : '<p>An administrator will verify your account shortly.</p>'}
         `
       });
     } catch (error) {

@@ -55,9 +55,15 @@ const workspaceMembershipSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Board'
   }],
+  // 'removed' is a soft-delete: the row is kept (not deleted) so a later
+  // re-invite/re-add can *restore* it instead of hitting the unique
+  // {workspace,user} index as a duplicate-key error, and so history
+  // (joinedAt, invitedBy, prior role) isn't lost. Every query elsewhere in
+  // the codebase that lists/authorizes "current members" filters explicitly
+  // by status — see workspaceController.js for the full audit.
   status: {
     type: String,
-    enum: ['active', 'suspended'],
+    enum: ['active', 'suspended', 'removed'],
     default: 'active'
   },
   joinedAt: {

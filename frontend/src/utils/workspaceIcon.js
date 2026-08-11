@@ -1,6 +1,7 @@
-// Shared between CreateWorkspaceModal and WorkspaceSettingsPage so the two
-// upload entry points can never drift out of sync with the backend's own
-// ICON_ALLOWED_TYPES / ICON_MAX_FILE_SIZE (backend/controllers/workspaceController.js).
+// Shared between CreateWorkspaceWizard's StepBasics and WorkspaceSettingsPage
+// so the two upload entry points can never drift out of sync with the
+// backend's own ICON_ALLOWED_TYPES / ICON_MAX_FILE_SIZE
+// (backend/controllers/workspaceController.js).
 export const WORKSPACE_ICON_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'];
 export const WORKSPACE_ICON_MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 

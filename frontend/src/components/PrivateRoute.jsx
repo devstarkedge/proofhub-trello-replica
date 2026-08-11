@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
+import LandingPage from '../pages/LandingPage';
 
 const PrivateRoute = ({ children, requiredRole }) => {
   const { user, isAuthenticated, loading } = useContext(AuthContext);
@@ -20,6 +21,12 @@ const PrivateRoute = ({ children, requiredRole }) => {
   }
 
   if (!isAuthenticated) {
+    // "/" is the only route an unauthenticated visitor sees a public page
+    // for — every other protected path still redirects to /login exactly
+    // as before.
+    if (location.pathname === '/') {
+      return <LandingPage />;
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

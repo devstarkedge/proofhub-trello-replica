@@ -1,5 +1,5 @@
 import React, { useState, useContext } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { Eye, EyeOff, Mail, Lock, LogIn, AlertCircle, CheckCircle } from 'lucide-react';
@@ -18,6 +18,11 @@ const LoginPage = () => {
   const { loadWorkspaces } = useContext(WorkspaceContext);
   const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Only ever an internal path (e.g. back to /invite/:token after signing
+  // in) — never trust/redirect to an absolute or external URL here.
+  const returnTo = searchParams.get('returnTo');
+  const isSafeReturnTo = returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//');
 
   const { email, password } = formData;
 
@@ -86,6 +91,10 @@ const LoginPage = () => {
       setTimeout(() => {
         if (user.role !== 'admin' && !user.isVerified) {
           navigate('/verify-pending');
+        } else if (isSafeReturnTo) {
+          navigate(returnTo);
+        } else if (workspaces.length === 0) {
+          navigate('/no-workspace');
         } else if (workspaces.length > 1) {
           navigate('/select-workspace');
         } else {
