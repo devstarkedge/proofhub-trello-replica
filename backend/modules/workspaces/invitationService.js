@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
 import { createOrRestoreMembership } from './membershipCreation.js';
+import { createJoinRequestFromInvitation } from './joinRequestService.js';
+import { recordAuditLog } from '../permissions/auditLogService.js';
 
 const TOKEN_BYTES = 32;
 const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — long enough for a real invite to be acted on, unlike the 15-minute password-reset link
@@ -18,7 +20,10 @@ export const hashToken = (token) => crypto.createHash('sha256').update(token).di
  * Returns { invitation, plaintextToken } — plaintextToken only ever exists
  * in memory here and in the outgoing email; only its hash is persisted.
  */
-export async function createOrRefreshInvitation({ workspaceId, email, role, roleId, invitedBy }) {
+export async function createOrRefreshInvitation({
+  workspaceId, email, role, roleId, invitedBy,
+  department, personalMessage, requiresApproval = false
+}) {
   const plaintextToken = generateToken();
   const tokenHash = hashToken(plaintextToken);
   const expiresAt = new Date(Date.now() + EXPIRY_MS);
@@ -26,7 +31,11 @@ export async function createOrRefreshInvitation({ workspaceId, email, role, role
   const invitation = await WorkspaceInvitation.findOneAndUpdate(
     { workspace: workspaceId, email, status: 'pending' },
     {
-      $set: { role, roleId, invitedBy, tokenHash, expiresAt },
+      $set: {
+        role, roleId, invitedBy, tokenHash, expiresAt, requiresApproval,
+        requestedDepartment: department || [],
+        personalMessage: personalMessage || ''
+      },
       $setOnInsert: { workspace: workspaceId, email, status: 'pending' }
     },
     { upsert: true, new: true }
@@ -53,6 +62,18 @@ export async function findValidInvitationByToken(rawToken) {
   if (invitation.status === 'pending' && invitation.expiresAt < new Date()) {
     invitation.status = 'expired';
     await invitation.save();
+    await recordAuditLog({
+      actor: null,
+      actorEmail: invitation.email,
+      action: 'INVITATION_EXPIRED',
+      targetType: 'WorkspaceInvitation',
+      targetId: invitation._id,
+      resourceKey: 'workspace_member',
+      resourceLabel: 'Workspace Members',
+      summary: `Invitation to ${invitation.email} expired`,
+      category: 'workspace_member',
+      meta: { workspaceId: invitation.workspace }
+    });
     return null;
   }
 
@@ -69,12 +90,24 @@ export async function findValidInvitationByToken(rawToken) {
  * findValidInvitationByToken's status==='pending' check.
  */
 export async function acceptInvitation(invitation, userId) {
+  if (invitation.requiresApproval) {
+    const joinRequest = await createJoinRequestFromInvitation(invitation, userId);
+
+    invitation.status = 'accepted';
+    invitation.acceptedAt = new Date();
+    invitation.acceptedBy = userId;
+    await invitation.save();
+
+    return { outcome: 'pending_approval', joinRequest };
+  }
+
   const { outcome, membership } = await createOrRestoreMembership({
     workspaceId: invitation.workspace,
     userId,
     role: invitation.role,
     roleId: invitation.roleId,
-    invitedBy: invitation.invitedBy
+    invitedBy: invitation.invitedBy,
+    department: invitation.requestedDepartment || []
   });
 
   invitation.status = 'accepted';

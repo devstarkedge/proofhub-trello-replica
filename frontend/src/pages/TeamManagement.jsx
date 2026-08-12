@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspens
 import { motion, AnimatePresence } from 'framer-motion';
 import { Building2, Shield, Users } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
 import useAccessControl from '../hooks/useAccessControl';
 import Database from '../services/database';
 import useDepartmentStore from '../store/departmentStore';
@@ -15,12 +16,11 @@ import Toast from '../components/TeamManagement/Toast';
 import { TeamManagementSkeleton } from '../components/LoadingSkeleton';
 import ErrorBoundary from '../components/TeamManagement/ErrorBoundary';
 import { teamManagementReducer, initialState, ACTION_TYPES } from '../components/TeamManagement/teamManagementReducer';
-import { validateForm } from '../utils/validationUtils';
 import EditDepartmentModal from '../components/EditDepartmentModal';
+import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 
 // Lazy load modals
 const CreateDepartmentModal = lazy(() => import('../components/TeamManagement/modals/CreateDepartmentModal'));
-const AddMemberModal = lazy(() => import('../components/TeamManagement/modals/AddMemberModal'));
 // CreateRoleModal stays here only as the "+ create a new role" shortcut
 // reachable from inside AddMemberModal's role dropdown. Full role management
 // (create/edit/delete, permission checklist, delegated access) now lives
@@ -45,6 +45,7 @@ const DeleteConfirmationModal = lazy(() => import('../components/TeamManagement/
  */
 const TeamManagement = () => {
   const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const { effectiveMode } = useThemeStore();
   const isDarkMode = effectiveMode === 'dark';
   const {
@@ -66,6 +67,10 @@ const TeamManagement = () => {
   // Create Role Modal state (AddMemberModal bridge only)
   const [showCreateRoleModal, setShowCreateRoleModal] = useState(false);
   const [createRoleLoading, setCreateRoleLoading] = useState(false);
+
+  // Centralized Invite Member modal — replaces AddMemberModal below.
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
 
   // Consolidated state management with useReducer
   const [state, dispatch] = useReducer(teamManagementReducer, initialState);
@@ -423,79 +428,6 @@ const TeamManagement = () => {
     }
   }, [state.selectedUsers, state.currentDepartment, unassignUserFromDepartment, loadUsers, showToast]);
 
-  const handleAddMember = useCallback(async (e) => {
-    e.preventDefault();
-    const fieldsToValidate = ['name', 'email', 'password'];
-    const { isValid, errors: validationErrors } = validateForm(state.addMemberFormData, fieldsToValidate);
-
-    if (!isValid) {
-      dispatch({ type: ACTION_TYPES.SET_ADD_MEMBER_ERRORS, payload: validationErrors });
-      return;
-    }
-
-    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
-    try {
-      const userData = {
-        name: state.addMemberFormData.name,
-        email: state.addMemberFormData.email,
-        password: state.addMemberFormData.password,
-        role: state.addMemberFormData.role,
-        department: state.currentDepartment._id
-      };
-
-      const token = localStorage.getItem('token');
-      const createUserResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/admin-create-user`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
-        body: JSON.stringify(userData)
-      });
-
-      if (!createUserResponse.ok) {
-        const errorData = await createUserResponse.json();
-        dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false }); // Stop loading immediately on error
-        throw new Error(errorData.message || 'Failed to create user');
-      }
-
-      const newUser = await createUserResponse.json();
-      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false }); // Stop loading immediately after successful response
-      
-      // Close modal and reset form immediately
-      dispatch({ type: ACTION_TYPES.CLOSE_ADD_MEMBER_MODAL });
-      dispatch({ type: ACTION_TYPES.RESET_ADD_MEMBER_FORM });
-      dispatch({ type: ACTION_TYPES.SET_ADD_MEMBER_ERRORS, payload: {} });
-      
-      // Show success toast immediately
-      showToast('Member added successfully!', 'success');
-      
-      // Assign user and load users in background without blocking UI
-      try {
-        await assignUserToDepartment(newUser.user.id, state.currentDepartment._id);
-        await loadUsers();
-      } catch (backgroundError) {
-        console.error('Error during background operations:', backgroundError);
-      }
-    } catch (error) {
-      console.error('Error adding member:', error);
-      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false }); // Ensure loading is stopped
-      
-      // Provide user-friendly error messages
-      let errorMessage = 'Failed to add member. Please try again.';
-      
-      if (error.message?.includes('already exists')) {
-        errorMessage = 'Email already registered. Please use a different email.';
-      } else if (error.message?.includes('password')) {
-        errorMessage = 'Password must be at least 6 characters with uppercase, lowercase, and number.';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      showToast(errorMessage, 'error');
-    }
-  }, [state.addMemberFormData, state.currentDepartment, assignUserToDepartment, loadUsers, showToast]);
-
   const handleOpenEditModal = useCallback((dept) => {
     dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
     setCurrentDepartment(dept);
@@ -689,7 +621,7 @@ const TeamManagement = () => {
                     onSelectAll={handleSelectAll}
                     onSearchChange={handleSearchChange}
                     onTabChange={handleTabChange}
-                    onAddMemberClick={() => dispatch({ type: ACTION_TYPES.OPEN_ADD_MEMBER_MODAL })}
+                    onAddMemberClick={() => setShowInviteModal(true)}
                     onAssignClick={handleAssignUsers}
                     onUnassignClick={handleUnassignUsers}
                     onClearSelection={() => dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS })}
@@ -737,18 +669,14 @@ const TeamManagement = () => {
           isLoading={state.isLoading}
         />
 
-        <AddMemberModal
-          isOpen={state.showAddMemberModal}
-          isLoading={state.isLoading}
-          formData={state.addMemberFormData}
-          errors={state.addMemberErrors}
-          showPassword={state.showPassword}
-          onFormDataChange={(data) => dispatch({ type: ACTION_TYPES.UPDATE_ADD_MEMBER_FORM, payload: data })}
-          onShowPasswordToggle={() => dispatch({ type: ACTION_TYPES.TOGGLE_PASSWORD_VISIBILITY })}
-          onSubmit={handleAddMember}
-          onClose={() => dispatch({ type: ACTION_TYPES.CLOSE_ADD_MEMBER_MODAL })}
-          onAddNewRole={handleOpenCreateRoleModal}
-          currentUserRole={user?.role}
+        <InviteMemberModal
+          isOpen={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
+          workspaceId={currentWorkspace?._id}
+          departmentOptions={departments}
+          roleOptions={activeRoles}
+          defaultDepartmentId={state.currentDepartment?._id}
+          onInvited={() => loadUsers()}
         />
 
         <CreateRoleModal

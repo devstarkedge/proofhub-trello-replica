@@ -47,6 +47,9 @@ const notificationSchema = new mongoose.Schema({
       'user_verified',
       'user_approved',
       'user_declined',
+      'workspace_join_request_submitted',
+      'workspace_join_request_approved',
+      'workspace_join_request_rejected',
       'deadline_approaching',
       'status_change',
       'system_alert',
@@ -81,7 +84,7 @@ const notificationSchema = new mongoose.Schema({
   },
   entityType: {
     type: String,
-    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', null],
+    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', 'WorkspaceJoinRequest', null],
     default: null
   },
   action: {

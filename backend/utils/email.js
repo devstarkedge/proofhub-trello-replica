@@ -222,8 +222,11 @@ export const sendPasswordResetEmail = async (user, resetUrl) => {
 // No token/acceptance flow — this is a plain notification pointing at
 // registration; the inviting admin re-adds them as a member by hand once
 // they sign up (see workspaceController.inviteWorkspaceMembers).
-export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterName, token }) => {
+export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterName, token, personalMessage }) => {
   const inviteUrl = `${process.env.FRONTEND_URL}/invite/${token}`;
+  const messageBlock = personalMessage
+    ? `<div style="background:#f8fafc;border-left:4px solid #10b981;padding:12px 16px;border-radius:0 8px 8px 0;margin:20px 0;font-size:14px;color:#475569;font-style:italic;">"${personalMessage}"</div>`
+    : '';
   const inviteHtml = `
     <!DOCTYPE html>
     <html>
@@ -258,6 +261,7 @@ export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterNa
             <p class="message">
               Click below to accept the invitation. If you don't have a FlowTask account yet, you'll be able to create one with this same email address — you'll land in this workspace automatically.
             </p>
+            ${messageBlock}
             <div class="cta-wrapper">
               <a href="${inviteUrl}" class="button">Accept invitation</a>
             </div>
@@ -276,6 +280,226 @@ export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterNa
     to: email,
     subject: `${inviterName || 'Someone'} invited you to join ${workspaceName} on FlowTask`,
     html: inviteHtml
+  });
+};
+
+// Sent by the centralized Invite Member modal's Method A ("Create Account &
+// Send Login Access") when the invited email has no existing platform
+// account — contains the admin-set temporary password, so this is the one
+// email in this file that should never be logged/retried carelessly.
+export const sendDirectAddNewUserEmail = async (user, { workspaceName, temporaryPassword }) => {
+  const loginUrl = `${process.env.FRONTEND_URL}/login`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Welcome to ${workspaceName} on FlowTask</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
+          .credentials { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 24px 0; }
+          .credentials-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+          .credentials-label { color: #64748b; }
+          .credentials-value { color: #0f172a; font-weight: 600; font-family: monospace; }
+          .cta-wrapper { text-align: center; margin: 32px 0; }
+          .button { display: inline-block; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #ffffff; padding: 16px 40px; text-decoration: none; border-radius: 12px; font-size: 16px; font-weight: 700; letter-spacing: 0.3px; }
+          .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 24px 0; font-size: 14px; color: #92400e; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Welcome to ${workspaceName}</h1>
+            <p>Your account has been created</p>
+          </div>
+          <div class="content">
+            <p class="message">Hi <strong>${user.name}</strong>,</p>
+            <p class="message">An administrator has created your FlowTask account for <strong>${workspaceName}</strong>. Here are your login details:</p>
+            <div class="credentials">
+              <div class="credentials-row"><span class="credentials-label">Workspace</span><span class="credentials-value">${workspaceName}</span></div>
+              <div class="credentials-row"><span class="credentials-label">Email</span><span class="credentials-value">${user.email}</span></div>
+              <div class="credentials-row"><span class="credentials-label">Temporary Password</span><span class="credentials-value">${temporaryPassword}</span></div>
+            </div>
+            <div class="cta-wrapper">
+              <a href="${loginUrl}" class="button">Log in to FlowTask</a>
+            </div>
+            <div class="warning"><strong>Please change your password after your first login.</strong></div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This email was sent to ${user.email}.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: user.email,
+    subject: `Welcome to ${workspaceName} — your FlowTask account is ready`,
+    html
+  });
+};
+
+// Sent by Method A when the invited email already belongs to an existing
+// global User — no password to show, they log in with what they already have.
+export const sendDirectAddExistingUserEmail = async (user, { workspaceName }) => {
+  const loginUrl = `${process.env.FRONTEND_URL}/login`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>You've been added to ${workspaceName} on FlowTask</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
+          .cta-wrapper { text-align: center; margin: 32px 0; }
+          .button { display: inline-block; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; padding: 16px 40px; text-decoration: none; border-radius: 12px; font-size: 16px; font-weight: 700; letter-spacing: 0.3px; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>You're in!</h1>
+            <p>Added to ${workspaceName}</p>
+          </div>
+          <div class="content">
+            <p class="message">Hi <strong>${user.name}</strong>,</p>
+            <p class="message">You've been added to <strong>${workspaceName}</strong> on FlowTask. Log in with your existing FlowTask account to get started — no new password needed.</p>
+            <div class="cta-wrapper">
+              <a href="${loginUrl}" class="button">Log in to FlowTask</a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This email was sent to ${user.email}.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: user.email,
+    subject: `You've been added to ${workspaceName} on FlowTask`,
+    html
+  });
+};
+
+// Sent when a canApproveJoinRequests holder approves a pending
+// WorkspaceJoinRequest — the moment the requester's membership actually
+// becomes usable.
+export const sendJoinRequestApprovedEmail = async (user, { workspaceName }) => {
+  const loginUrl = `${process.env.FRONTEND_URL}/login`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>You're in! Welcome to ${workspaceName}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
+          .cta-wrapper { text-align: center; margin: 32px 0; }
+          .button { display: inline-block; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; padding: 16px 40px; text-decoration: none; border-radius: 12px; font-size: 16px; font-weight: 700; letter-spacing: 0.3px; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Congratulations!</h1>
+            <p>Your request has been approved</p>
+          </div>
+          <div class="content">
+            <p class="message">Hi <strong>${user.name}</strong>,</p>
+            <p class="message">Your request to join <strong>${workspaceName}</strong> has been approved. You now have access — welcome aboard.</p>
+            <div class="cta-wrapper">
+              <a href="${loginUrl}" class="button">Log in to FlowTask</a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This email was sent to ${user.email}.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: user.email,
+    subject: `You're in! Welcome to ${workspaceName}`,
+    html
+  });
+};
+
+// Sent when a canApproveJoinRequests holder rejects a pending
+// WorkspaceJoinRequest. No membership was ever created for this request.
+export const sendJoinRequestRejectedEmail = async (user, { workspaceName, reason }) => {
+  const reasonBlock = reason
+    ? `<div style="background:#f8fafc;border-left:4px solid #94a3b8;padding:12px 16px;border-radius:0 8px 8px 0;margin:20px 0;font-size:14px;color:#475569;">${reason}</div>`
+    : '';
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Update on your request to join ${workspaceName}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #64748b, #475569); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Request declined</h1>
+          </div>
+          <div class="content">
+            <p class="message">Hi <strong>${user.name}</strong>,</p>
+            <p class="message">Your request to join <strong>${workspaceName}</strong> was declined.</p>
+            ${reasonBlock}
+            <p class="message" style="font-size: 13px; color: #94a3b8;">If you believe this was a mistake, please reach out to whoever invited you.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This email was sent to ${user.email}.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: user.email,
+    subject: `Update on your request to join ${workspaceName}`,
+    html
   });
 };
 

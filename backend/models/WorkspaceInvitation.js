@@ -62,6 +62,35 @@ const workspaceInvitationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     default: null
+  },
+  // Hybrid invitation policy switch — see modules/workspaces/invitationService.js
+  // #acceptInvitation. false (default) preserves the original instant-join
+  // behavior used by the bulk workspace-bootstrap invite (wizard + onboarding
+  // checklist); true is set only by the centralized Invite Member modal's
+  // "Send Registration Invitation" method, and routes acceptance through a
+  // WorkspaceJoinRequest pending approval instead of an immediate membership.
+  requiresApproval: {
+    type: Boolean,
+    default: false
+  },
+  // "Department (Requested)" — Method B only, carried into the resulting
+  // WorkspaceJoinRequest on accept; ignored when requiresApproval is false.
+  requestedDepartment: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department'
+  }],
+  personalMessage: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: ''
+  },
+  // First-view timestamp, written at most once (see invitationController.js
+  // #getInvitationByToken) — backs the "invitation opened" audit event
+  // without logging every repeat view/page-refresh.
+  openedAt: {
+    type: Date,
+    default: null
   }
 }, { timestamps: true });
 

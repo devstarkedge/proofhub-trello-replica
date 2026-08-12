@@ -48,6 +48,12 @@ const PrivateRoute = ({ children, requiredRole }) => {
     return <Navigate to="/select-workspace" replace />;
   }
 
+  // Authenticated user with absolutely no workspace memberships — shown
+  // the "create or join" landing screen instead of crashing the dashboard.
+  if (!workspacesLoading && workspaces.length === 0) {
+    return <Navigate to="/no-workspace" replace />;
+  }
+
   // Role-based access control
   if (requiredRole && user) {
     const userRole = user.role.toLowerCase();

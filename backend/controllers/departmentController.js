@@ -13,6 +13,7 @@ import { getAssignmentBasedBoardIds, getAssignmentBasedDepartmentIds, userHasCap
 import { chatHooks } from '../utils/chatHooks.js';
 import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
 import { createDepartmentCore } from '../modules/workspaces/departmentCreation.js';
+import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 // @desc    Get all departments
 // @route   GET /api/departments
@@ -140,9 +141,11 @@ export const getDepartmentStats = asyncHandler(async (req, res, next) => {
 // @route   GET /api/departments/public
 // @access  Public
 export const getPublicDepartments = asyncHandler(async (req, res, next) => {
-  const departments = await Department.find({ isActive: true })
-    .select('name')
-    .sort('name');
+  const departments = await workspaceContext.runUnscoped(async () => {
+    return Department.find({ isActive: true })
+      .select('name')
+      .sort('name');
+  });
 
   res.status(200).json({
     success: true,

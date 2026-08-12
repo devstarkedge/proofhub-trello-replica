@@ -325,14 +325,9 @@ const LoginPage = () => {
             transition={{ delay: 0.6 }}
             className="text-center mt-8"
           >
-            <p className="text-white/70">
-              Don't have an account?{' '}
-              <Link
-                to="/register"
-                className="font-semibold text-purple-300 hover:text-purple-200 transition-colors"
-              >
-                Register here
-              </Link>
+            <p className="text-white/70 text-sm">
+              New here? <Link to="/create-workspace" className="font-semibold text-purple-300 hover:text-purple-200 transition-colors">Create a workspace</Link> to get started,
+              or ask your team's admin for an invite.
             </p>
           </motion.div>
         </div>

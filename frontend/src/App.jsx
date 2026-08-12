@@ -17,7 +17,6 @@ import "./App.css";
 // Direct imports for instant navigation (no lazy loading)
 import WorkFlow from "./pages/WorkFlow";
 import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import VerifyPending from "./pages/VerifyPending";
@@ -42,13 +41,15 @@ import PrivateRoute from "./components/PrivateRoute";
 import FinanceRouteGuard from "./components/FinanceRouteGuard";
 import AccessControlRouteGuard from "./components/AccessControlRouteGuard";
 import AccessControlPage from "./pages/AccessControlPage";
+import JoinRequestsRouteGuard from "./components/JoinRequestsRouteGuard";
+import JoinRequestsPage from "./pages/JoinRequestsPage";
 import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
 import ProjectTrash from "./pages/ProjectTrash";
 import SelectWorkspacePage from "./pages/SelectWorkspacePage";
 import NoWorkspacePage from "./pages/NoWorkspacePage";
-import JoinWorkspacePage from "./pages/JoinWorkspacePage";
 import InvitePage from "./pages/InvitePage";
 import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
+import CreateWorkspacePublicPage from './pages/CreateWorkspacePublicPage';
 
 // PM Sheet Pages
 import PMSheetDashboard from "./pages/PMSheetDashboard";
@@ -79,13 +80,12 @@ function App() {
             <ClientInfoProvider>
               <Routes>
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/create-workspace" element={<CreateWorkspacePublicPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
               <Route path="/verify-pending" element={<VerifyPending />} />
               <Route path="/select-workspace" element={<SelectWorkspacePage />} />
               <Route path="/no-workspace" element={<NoWorkspacePage />} />
-              <Route path="/join" element={<JoinWorkspacePage />} />
               <Route path="/invite/:token" element={<InvitePage />} />
               <Route
                 element={
@@ -149,6 +149,14 @@ function App() {
                     <AccessControlRouteGuard>
                       <AccessControlPage />
                     </AccessControlRouteGuard>
+                  }
+                />
+                <Route
+                  path="/join-requests"
+                  element={
+                    <JoinRequestsRouteGuard>
+                      <JoinRequestsPage />
+                    </JoinRequestsRouteGuard>
                   }
                 />
                 <Route path="/search" element={<Search />} />

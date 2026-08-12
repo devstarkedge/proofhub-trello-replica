@@ -9,8 +9,6 @@ import {
   updateWorkspace,
   switchWorkspace,
   getWorkspaceMembers,
-  getAvailableWorkspaceUsers,
-  addWorkspaceMember,
   updateWorkspaceMemberRole,
   removeWorkspaceMember,
   leaveWorkspace,
@@ -87,12 +85,9 @@ router.post('/:id/invite', rateLimiter({
 ], inviteWorkspaceMembers);
 
 router.get('/:id/members', getWorkspaceMembers);
-router.get('/:id/available-users', getAvailableWorkspaceUsers);
-router.post('/:id/members', [
-  body('userId').notEmpty().withMessage('userId is required'),
-  body('role').trim().notEmpty().withMessage('role is required'),
-  validate
-], addWorkspaceMember);
+// GET /:id/available-users and POST /:id/members (the old existing-user-
+// picker flow) were retired — adding a member now happens exclusively
+// through the centralized Invite Member system (routes/workspaceMembers.js).
 router.patch('/:id/members/:userId', [
   body('role').trim().notEmpty().withMessage('role is required'),
   validate

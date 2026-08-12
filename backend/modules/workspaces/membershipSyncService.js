@@ -11,8 +11,8 @@ import { invalidateAuthCache } from '../../middleware/authMiddleware.js';
  * that user's membership row here, or the change will appear not to take
  * effect for anyone past the first workspace.
  *
- * Call sites (verified, grep-audited): authController.register/
- * adminCreateUser, userController.patchUserPagePermissions/updateUser/
+ * Call sites (verified, grep-audited): authController.register,
+ * userController.patchUserPagePermissions/updateUser/
  * verifyUser/assignUser/changeUserRole, departmentController.
  * createDepartment/updateDepartment/addMemberToDepartment/
  * removeMemberFromDepartment/unassignUserFromDepartment/

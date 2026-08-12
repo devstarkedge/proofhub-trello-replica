@@ -70,7 +70,9 @@ export const PERMISSION_CATEGORIES = {
   member: {
     label: '👥 Member Permissions',
     permissions: [
-      { key: 'canAssignMembers', label: 'Assign members to tasks/projects/departments' }
+      { key: 'canAssignMembers', label: 'Assign members to tasks/projects/departments' },
+      { key: 'canInviteMembers', label: 'Invite new members to the workspace' },
+      { key: 'canApproveJoinRequests', label: 'Approve or reject workspace join requests' }
     ]
   },
   delete: {
@@ -144,7 +146,9 @@ export const SYSTEM_ROLE_PERMISSIONS = {
     canCreateAnnouncement: true,
     canAssignMembers: true,
     canEditPriority: true,
-    canEditDates: true
+    canEditDates: true,
+    canInviteMembers: true,
+    canApproveJoinRequests: true
   }
 };
 /**

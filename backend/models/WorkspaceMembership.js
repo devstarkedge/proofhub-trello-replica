@@ -70,6 +70,15 @@ const workspaceMembershipSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  // Workspace-scoped (not on User) — the same person can hold a different
+  // employee ID at a different employer/workspace. Set via the centralized
+  // Invite Member modal's Method A; optional everywhere else.
+  employeeId: {
+    type: String,
+    trim: true,
+    maxlength: 50,
+    default: ''
+  },
   // Unused in Phase 1 beyond being set to the creator on self-created
   // workspaces — present now so the deferred invitation phase doesn't need
   // a schema migration when it lands.

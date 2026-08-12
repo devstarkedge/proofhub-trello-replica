@@ -32,7 +32,17 @@ export async function recordAuditLog({
   changeDetails = [],
   before,
   after,
-  meta = {}
+  meta = {},
+  // Defaults to the access-control category so every pre-existing call site
+  // (none of which pass this) keeps writing exactly what it always has.
+  // The centralized Invite Member system passes 'workspace_member' so its
+  // trail stays queryable separately (see queryAuditLog's own category
+  // filter — already parameterized, this was the one-sided gap).
+  category = ACCESS_CONTROL_CATEGORY,
+  // The two actor-less Invite Member lifecycle events (invitation
+  // opened/expired) have no logged-in user — denormalize an email directly
+  // instead of via `actor`.
+  actorEmail
 }) {
   try {
     const workspace = meta.workspaceId || await ensureDefaultWorkspace();
@@ -40,7 +50,7 @@ export async function recordAuditLog({
       actor: actor?._id || actor?.id,
       workspace,
       action,
-      category: ACCESS_CONTROL_CATEGORY,
+      category,
       targetType,
       targetId,
       resourceKey,
@@ -49,7 +59,7 @@ export async function recordAuditLog({
       changeDetails,
       changes: { before, after },
       actorName: actor?.name,
-      actorEmail: actor?.email,
+      actorEmail: actor?.email || actorEmail,
       actorRole: actor?.role,
       targetName: target?.name,
       targetEmail: target?.email,

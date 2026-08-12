@@ -27,7 +27,8 @@ import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
 import UserAccessEditor from '../components/AccessControl/UserAccessEditor';
-import AddWorkspaceMemberModal from '../components/Workspace/AddWorkspaceMemberModal';
+import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
+import PermissionGate from '../components/PermissionGate';
 import { getWorkspaceMembers, removeWorkspaceMember } from '../services/workspaceMembersApi';
 
 // Membership rows from GET /api/workspaces/:id/members come shaped as
@@ -416,13 +417,15 @@ const HRPanel = () => {
                   <p className="text-gray-600 mt-1">Manage {currentWorkspace.name}&apos;s members, departments, and assignments</p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold shadow-md"
-              >
-                <UserPlus className="w-5 h-5" />
-                Add Member
-              </button>
+              <PermissionGate permission="canInviteMembers">
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold shadow-md"
+                >
+                  <UserPlus className="w-5 h-5" />
+                  Invite Member
+                </button>
+              </PermissionGate>
             </div>
           </div>
 
@@ -711,12 +714,13 @@ const HRPanel = () => {
             </div>
           )}
 
-          <AddWorkspaceMemberModal
+          <InviteMemberModal
             isOpen={showAddModal}
             onClose={() => setShowAddModal(false)}
             workspaceId={currentWorkspace._id}
+            departmentOptions={departmentStore.departments}
             roleOptions={activeRoles}
-            onMembersAdded={() => loadData()}
+            onInvited={() => loadData()}
           />
 
           {/* Toast Notification */}

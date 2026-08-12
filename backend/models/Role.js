@@ -15,7 +15,13 @@ const permissionSchema = new mongoose.Schema({
   
   // Member Permissions
   canAssignMembers: { type: Boolean, default: false },
-  
+  // Centralized Invite Member system — see modules/workspaces/workspacePermissions.js.
+  // Gates the "Invite Member" button/endpoint and the join-request approval
+  // dashboard respectively. Never check WorkspaceMembership.role for these —
+  // always resolve through hasWorkspacePermission().
+  canInviteMembers: { type: Boolean, default: false },
+  canApproveJoinRequests: { type: Boolean, default: false },
+
   // Delete Permissions
   canDeleteTasks: { type: Boolean, default: false },
   canDeleteProjects: { type: Boolean, default: false },
@@ -145,7 +151,9 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canManageRoles: true,
       canManageUsers: true,
       canManageSystem: true,
-      canManageAccessControl: true
+      canManageAccessControl: true,
+      canInviteMembers: true,
+      canApproveJoinRequests: true
     },
     manager: {
       canCreateDepartment: false,
@@ -159,7 +167,12 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canEditPriority: true,
       canEditDates: true,
       canManageAttachments: true,
-      canManageAccessControl: false
+      canManageAccessControl: false,
+      // Not granted by default — "Manager (if permission granted)" per the
+      // Invite Member spec. A workspace admin can flip these on for Manager
+      // (or any custom role) via the existing Edit Role checkboxes.
+      canInviteMembers: false,
+      canApproveJoinRequests: false
     },
     hr: {
       canCreateDepartment: true,
@@ -172,7 +185,9 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canDeleteProjects: false,
       canEditPriority: true,
       canEditDates: true,
-      canManageAttachments: false
+      canManageAttachments: false,
+      canInviteMembers: true,
+      canApproveJoinRequests: true
     },
     employee: {
       canCreateDepartment: false,
@@ -185,7 +200,9 @@ roleSchema.statics.getDefaultPermissions = function(roleSlug) {
       canDeleteProjects: false,
       canEditPriority: false,
       canEditDates: false,
-      canManageAttachments: false
+      canManageAttachments: false,
+      canInviteMembers: false,
+      canApproveJoinRequests: false
     }
   };
   

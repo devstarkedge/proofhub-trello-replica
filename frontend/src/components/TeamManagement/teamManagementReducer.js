@@ -24,35 +24,23 @@ export const initialState = {
   showCreateModal: false,
   showDeleteModal: false,
   showEditModal: false,
-  showAddMemberModal: false,
   showReassignModal: false,
-  
+
   // Form data
   formData: {
     name: '',
     description: '',
     managers: []
   },
-  addMemberFormData: {
-    name: '',
-    email: '',
-    password: '',
-    department: '',
-    role: 'employee'
-  },
-  addMemberErrors: {},
-  
+
   // Confirmation modals
   reassignData: null,
   departmentToDelete: null,
-  
+
   // Loading and error states
   isLoading: false,
   toast: null,
-  
-  // UI helpers
-  showPassword: false,
-  
+
   // Stats
   stats: {
     totalDepartments: 0,
@@ -89,8 +77,7 @@ export const ACTION_TYPES = {
   
   // Tab and UI actions
   SET_ACTIVE_TAB: 'SET_ACTIVE_TAB',
-  TOGGLE_PASSWORD_VISIBILITY: 'TOGGLE_PASSWORD_VISIBILITY',
-  
+
   // Modal actions
   OPEN_CREATE_MODAL: 'OPEN_CREATE_MODAL',
   CLOSE_CREATE_MODAL: 'CLOSE_CREATE_MODAL',
@@ -98,18 +85,13 @@ export const ACTION_TYPES = {
   CLOSE_DELETE_MODAL: 'CLOSE_DELETE_MODAL',
   OPEN_EDIT_MODAL: 'OPEN_EDIT_MODAL',
   CLOSE_EDIT_MODAL: 'CLOSE_EDIT_MODAL',
-  OPEN_ADD_MEMBER_MODAL: 'OPEN_ADD_MEMBER_MODAL',
-  CLOSE_ADD_MEMBER_MODAL: 'CLOSE_ADD_MEMBER_MODAL',
   OPEN_REASSIGN_MODAL: 'OPEN_REASSIGN_MODAL',
   CLOSE_REASSIGN_MODAL: 'CLOSE_REASSIGN_MODAL',
-  
+
   // Form actions
   UPDATE_FORM_DATA: 'UPDATE_FORM_DATA',
   RESET_FORM_DATA: 'RESET_FORM_DATA',
-  UPDATE_ADD_MEMBER_FORM: 'UPDATE_ADD_MEMBER_FORM',
-  RESET_ADD_MEMBER_FORM: 'RESET_ADD_MEMBER_FORM',
-  SET_ADD_MEMBER_ERRORS: 'SET_ADD_MEMBER_ERRORS',
-  
+
   // Confirmation data actions
   SET_REASSIGN_DATA: 'SET_REASSIGN_DATA',
   SET_DEPARTMENT_TO_DELETE: 'SET_DEPARTMENT_TO_DELETE',
@@ -173,8 +155,6 @@ export const teamManagementReducer = (state, action) => {
     // Tab and UI actions
     case ACTION_TYPES.SET_ACTIVE_TAB:
       return { ...state, activeTab: action.payload, selectedUsers: [] };
-    case ACTION_TYPES.TOGGLE_PASSWORD_VISIBILITY:
-      return { ...state, showPassword: !state.showPassword };
 
     // Modal actions
     case ACTION_TYPES.OPEN_CREATE_MODAL:
@@ -189,10 +169,6 @@ export const teamManagementReducer = (state, action) => {
       return { ...state, showEditModal: true };
     case ACTION_TYPES.CLOSE_EDIT_MODAL:
       return { ...state, showEditModal: false };
-    case ACTION_TYPES.OPEN_ADD_MEMBER_MODAL:
-      return { ...state, showAddMemberModal: true };
-    case ACTION_TYPES.CLOSE_ADD_MEMBER_MODAL:
-      return { ...state, showAddMemberModal: false };
     case ACTION_TYPES.OPEN_REASSIGN_MODAL:
       return { ...state, showReassignModal: true };
     case ACTION_TYPES.CLOSE_REASSIGN_MODAL:
@@ -213,24 +189,6 @@ export const teamManagementReducer = (state, action) => {
           managers: []
         }
       };
-    case ACTION_TYPES.UPDATE_ADD_MEMBER_FORM:
-      return {
-        ...state,
-        addMemberFormData: { ...state.addMemberFormData, ...action.payload }
-      };
-    case ACTION_TYPES.RESET_ADD_MEMBER_FORM:
-      return {
-        ...state,
-        addMemberFormData: {
-          name: '',
-          email: '',
-          password: '',
-          department: '',
-          role: 'employee'
-        }
-      };
-    case ACTION_TYPES.SET_ADD_MEMBER_ERRORS:
-      return { ...state, addMemberErrors: action.payload };
 
     // Confirmation data actions
     case ACTION_TYPES.SET_REASSIGN_DATA:

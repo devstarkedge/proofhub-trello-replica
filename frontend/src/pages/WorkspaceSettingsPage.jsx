@@ -3,14 +3,18 @@ import { motion } from 'framer-motion';
 import {
   Briefcase, Users, Crown, Shield, LogOut, Trash2,
   Pencil, Check, X, Loader, AlertTriangle, ArrowLeftRight, Mail,
-  ImagePlus, RotateCcw
+  ImagePlus, RotateCcw, UserPlus
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
 import useThemeStore from '../store/themeStore';
+import useDepartmentStore from '../store/departmentStore';
+import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
 import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
+import PermissionGate from '../components/PermissionGate';
+import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 import { validateWorkspaceIconFile } from '../utils/workspaceIcon';
 import { getWorkspaceMembers } from '../services/workspaceMembersApi';
 
@@ -33,6 +37,10 @@ const WorkspaceSettingsPage = () => {
   const [members, setMembers] = useState([]);
   const [ownerId, setOwnerId] = useState(null);
   const [loadingMembers, setLoadingMembers] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const departmentStore = useDepartmentStore();
+  const { roles, loadRoles } = useRoleStore();
+  const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -72,6 +80,15 @@ const WorkspaceSettingsPage = () => {
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
+
+  // Departments/roles for the Invite Member modal's dropdowns — this page
+  // never needed either before now.
+  useEffect(() => {
+    if (!currentWorkspace?._id) return;
+    departmentStore.loadDepartments();
+    loadRoles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWorkspace?._id]);
 
   useEffect(() => {
     setNameInput(currentWorkspace?.name || '');
@@ -291,14 +308,26 @@ const WorkspaceSettingsPage = () => {
               <Users size={18} className="text-emerald-500" />
               Members
             </h2>
-            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              Manage roles and membership from HR Panel
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs hidden sm:inline" style={{ color: 'var(--color-text-muted)' }}>
+                Role changes & removal: HR Panel
+              </span>
+              <PermissionGate permission="canInviteMembers">
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                >
+                  <UserPlus size={14} />
+                  Invite Member
+                </button>
+              </PermissionGate>
+            </div>
           </div>
 
-          {/* Read-only — role changes, removal, and adding members all live
-              in HR Panel now, so there's exactly one place to manage
-              workspace membership instead of two that could drift apart. */}
+          {/* Adding members is available here too now (see InviteMemberModal
+              above) — but role changes and removal still live exclusively
+              in HR Panel, so there's exactly one place for those instead of
+              two that could drift apart. */}
           <div className="p-2">
             {loadingMembers ? (
               <div className="flex justify-center py-10">
@@ -345,7 +374,7 @@ const WorkspaceSettingsPage = () => {
           <div className="p-5 border-b border-red-500/10">
             <h2 className="font-bold flex items-center gap-2 text-red-500">
               <AlertTriangle size={18} />
-              Danger Zone
+              Exit
             </h2>
           </div>
 
@@ -448,6 +477,15 @@ const WorkspaceSettingsPage = () => {
           </div>
         </motion.div>
       </main>
+
+      <InviteMemberModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        workspaceId={currentWorkspace?._id}
+        departmentOptions={departmentStore.departments}
+        roleOptions={activeRoles}
+        onInvited={() => loadMembers()}
+      />
     </div>
   );
 };

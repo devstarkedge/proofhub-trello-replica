@@ -56,6 +56,7 @@ import salesPermissionsRoutes from './routes/salesPermissions.js';
 import salesTabRoutes from './modules/salesTabs/salesTab.routes.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
 import workspaceRoutes from './routes/workspaces.js';
+import workspaceMemberRoutes from './routes/workspaceMembers.js';
 import invitationRoutes from './routes/invitations.js';
 import accessControlRoutes from './routes/accessControl.js';
 import chatIntegrationRoutes from './routes/chatIntegration.js';
@@ -205,6 +206,10 @@ app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/sales-tabs', salesTabRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 app.use('/api/workspaces', workspaceRoutes);
+// Second router at the same prefix — the centralized Invite Member system's
+// new endpoints, kept separable from the legacy ones above (see
+// routes/workspaceMembers.js).
+app.use('/api/workspaces', workspaceMemberRoutes);
 app.use('/api/invitations', invitationRoutes);
 app.use('/api/access-control', accessControlRoutes);
 app.use('/api/chat-integration', chatIntegrationRoutes);

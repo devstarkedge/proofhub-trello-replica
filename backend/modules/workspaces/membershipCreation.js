@@ -15,7 +15,9 @@ import WorkspaceMembership from '../../models/WorkspaceMembership.js';
  * Never throws for the "already a member" case — that's a normal, expected
  * outcome the caller decides how to report, not an error.
  */
-export async function createOrRestoreMembership({ workspaceId, userId, role, roleId, invitedBy }) {
+export async function createOrRestoreMembership({
+  workspaceId, userId, role, roleId, invitedBy, department = [], employeeId = ''
+}) {
   const existing = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId });
 
   if (existing && existing.status !== 'removed') {
@@ -26,7 +28,8 @@ export async function createOrRestoreMembership({ workspaceId, userId, role, rol
     existing.status = 'active';
     existing.role = role;
     existing.roleId = roleId;
-    existing.department = [];
+    existing.department = department;
+    existing.employeeId = employeeId;
     existing.accessType = 'full_department';
     existing.allowedProjects = [];
     existing.joinedAt = new Date();
@@ -40,7 +43,8 @@ export async function createOrRestoreMembership({ workspaceId, userId, role, rol
     user: userId,
     role,
     roleId,
-    department: [],
+    department,
+    employeeId,
     accessType: 'full_department',
     allowedProjects: [],
     status: 'active',

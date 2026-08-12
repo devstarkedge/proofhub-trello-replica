@@ -566,105 +566,12 @@ export const getWorkspaceMembers = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data, meta: { owner: workspace.owner, isActive: workspace.isActive } });
 });
 
-// @desc    List platform users not yet in this workspace, for the "add member" picker
-// @route   GET /api/workspaces/:id/available-users?search=
-// @access  Private (workspace admin only)
-export const getAvailableWorkspaceUsers = asyncHandler(async (req, res, next) => {
-  const callerMembership = await WorkspaceMembership.findOne({
-    workspace: req.params.id,
-    user: req.user.id,
-    status: 'active'
-  }).lean();
-  if (!callerMembership || callerMembership.role !== 'admin') {
-    return next(new ErrorResponse('Only a workspace admin can view invitable users', 403));
-  }
-
-  // Excludes only current (active/suspended) members — a 'removed' row must
-  // NOT exclude the user here, or they'd become permanently unable to be
-  // re-added through this picker (addWorkspaceMember restores that row
-  // rather than erroring on it — see below).
-  const existingMemberIds = await WorkspaceMembership.find({
-    workspace: req.params.id,
-    status: { $ne: 'removed' }
-  }).distinct('user');
-
-  const query = { _id: { $nin: existingMemberIds }, isActive: true };
-  const { search } = req.query;
-  if (search && String(search).trim()) {
-    const term = String(search).trim();
-    query.$or = [
-      { name: { $regex: term, $options: 'i' } },
-      { email: { $regex: term, $options: 'i' } }
-    ];
-  }
-
-  const users = await User.find(query).select('name email avatar').sort('name').limit(25);
-
-  res.status(200).json({ success: true, data: users });
-});
-
-// @desc    Add an existing platform user to this workspace
-// @route   POST /api/workspaces/:id/members
-// @access  Private (workspace admin only)
-export const addWorkspaceMember = asyncHandler(async (req, res, next) => {
-  const { userId, role } = req.body;
-  if (!userId || !role) {
-    return next(new ErrorResponse('userId and role are required', 400));
-  }
-
-  const callerMembership = await WorkspaceMembership.findOne({
-    workspace: req.params.id,
-    user: req.user.id,
-    status: 'active'
-  }).lean();
-  if (!callerMembership || callerMembership.role !== 'admin') {
-    return next(new ErrorResponse('Only a workspace admin can add members', 403));
-  }
-
-  const targetUser = await User.findById(userId).select('_id isActive').lean();
-  if (!targetUser || !targetUser.isActive) {
-    return next(new ErrorResponse('User not found', 404));
-  }
-
-  // Role is a plugin-scoped model — resolve it explicitly against the
-  // workspace being managed rather than the caller's ambient active
-  // workspace (req.workspaceId), which may differ if they're managing a
-  // workspace they haven't switched into.
-  const roleDoc = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
-    await Role.findResolvable(String(role).toLowerCase(), req.params.id)
-  ));
-  if (!roleDoc) {
-    return next(new ErrorResponse('Invalid role', 400));
-  }
-
-  const { outcome, membership } = await createOrRestoreMembership({
-    workspaceId: req.params.id,
-    userId,
-    role: roleDoc.slug,
-    roleId: roleDoc._id,
-    invitedBy: req.user.id
-  });
-  if (outcome === 'already_member') {
-    return next(new ErrorResponse('This user is already a member of this workspace.', 400));
-  }
-
-  notifyMembershipAdded(userId, req.params.id).catch((err) => (
-    console.error('Failed to emit membership-added event:', err)
-  ));
-
-  const populated = await WorkspaceMembership.findById(membership._id).populate('user', 'name email avatar').lean();
-
-  res.status(201).json({
-    success: true,
-    data: {
-      _id: populated._id,
-      user: populated.user,
-      role: populated.role,
-      isOwner: false,
-      joinedAt: populated.joinedAt
-    }
-  });
-});
+// getAvailableWorkspaceUsers (GET /:id/available-users) and addWorkspaceMember
+// (POST /:id/members) were retired — adding a member now happens exclusively
+// through the centralized Invite Member system's Method A
+// (memberInvitationController.js#inviteMember), which branches on
+// existing-vs-new-user server-side from a typed email instead of a search
+// picker. See routes/workspaceMembers.js.
 
 // @desc    Change a member's role within this workspace
 // @route   PATCH /api/workspaces/:id/members/:userId

@@ -22,7 +22,10 @@ const changeDetailSchema = new mongoose.Schema({
 }, { _id: false });
 
 const auditLogSchema = new mongoose.Schema({
-  actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  // Optional — the two actor-less Invite Member lifecycle events
+  // ('INVITATION_OPENED'/'INVITATION_EXPIRED', see memberInvitationController.js)
+  // have no logged-in user to attribute; they denormalize actorEmail instead.
+  actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   workspace: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
   action: { type: String, required: true }, // e.g., 'ROLE_UPDATED', 'PERMISSION_ADDED'
   targetType: { type: String, required: true }, // e.g., 'Role', 'WorkspaceMember'

@@ -1,7 +1,7 @@
 import React, { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Plus, Settings, Check, Loader, LogIn } from 'lucide-react';
+import { ChevronDown, Plus, Settings, Check, Loader } from 'lucide-react';
 import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import useThemeStore from '../../store/themeStore';
@@ -74,11 +74,9 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
-  // Landing page's "Create Workspace" CTA sends a brand-new visitor through
-  // register -> (verify-pending or login) before a workspace can exist at
-  // all — this flag (set by RegisterPage) picks the intent back up the
-  // first time the switcher actually mounts, so the wizard opens without
-  // the user having to find "Create Workspace" themselves.
+  // Authenticated users from the "Create Workspace" flow (e.g. from NoWorkspacePage
+  // or if redirected after login from somewhere that set this flag) auto-open the
+  // wizard once the switcher mounts without requiring the user to find it manually.
   useEffect(() => {
     if (sessionStorage.getItem('flowtask_pending_action') === 'create-workspace') {
       sessionStorage.removeItem('flowtask_pending_action');
@@ -238,14 +236,6 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
               >
                 <Plus size={16} />
                 Create Workspace
-              </button>
-              <button
-                onClick={() => { setOpen(false); onNavigate(); navigate('/join'); }}
-                className="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors hover:bg-gray-500/10"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                <LogIn size={16} style={{ color: 'var(--color-text-muted)' }} />
-                Join Workspace
               </button>
             </div>
           </motion.div>

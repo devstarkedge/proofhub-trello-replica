@@ -2,7 +2,23 @@ import React, { createContext, useState, useCallback, useContext, useEffect, use
 import api from "../services/api";
 import socketService from "../services/socket";
 import AuthContext from "./AuthContext";
+import useRoleStore from "../store/roleStore";
 import { resetAllOnWorkspaceSwitch } from "../store/resetRegistry";
+
+// Role/permission data is workspace-scoped, so it must only ever be fetched
+// AFTER the active workspace is resolved and persisted (x-workspace-id) —
+// never independently/in parallel with that resolution. Fetching it too
+// early (e.g. from AuthContext right after login, before this context has
+// had a chance to run) would use whatever workspace happened to be stale in
+// localStorage — a previous session's, or a different account's on a shared
+// browser — and since loadRoles()/loadMyPermissions() mark themselves
+// "initialized" on that first call, nothing would ever re-fetch the correct
+// data afterward. This was the actual cause of custom roles silently not
+// appearing in role dropdowns despite existing correctly in the database.
+const loadRoleAndPermissionData = () => Promise.all([
+  useRoleStore.getState().loadMyPermissions().catch((err) => console.error("Error loading permissions:", err)),
+  useRoleStore.getState().loadRoles().catch((err) => console.error("Error loading roles:", err)),
+]);
 
 const WorkspaceContext = createContext();
 
@@ -40,6 +56,13 @@ export const WorkspaceProvider = ({ children }) => {
       setCurrentWorkspace(resolved);
       persistActiveWorkspace(resolved);
 
+      // Now that the correct workspace is persisted (x-workspace-id), it's
+      // safe to fetch role/permission data — it'll resolve against the
+      // right workspace instead of racing ahead of this resolution.
+      if (resolved) {
+        loadRoleAndPermissionData();
+      }
+
       return list;
     } catch (error) {
       console.error("Error loading workspaces:", error);
@@ -76,6 +99,11 @@ export const WorkspaceProvider = ({ children }) => {
       }
 
       setUser((prev) => (prev ? { ...prev, ...membership } : prev));
+
+      // Immediately re-fetch for the new workspace — resetAllOnWorkspaceSwitch()
+      // just cleared roleStore, and nothing else is guaranteed to notice and
+      // re-fetch it on its own.
+      loadRoleAndPermissionData();
 
       return switchedWorkspace;
     } catch (error) {

@@ -98,13 +98,16 @@ export const AuthProvider = ({ children }) => {
       // Connect socket after session restore
       socketService.connect(normalizedUser._id, savedToken);
 
-      // Load user permissions after session restore
-      try {
-        await useRoleStore.getState().loadMyPermissions();
-        await useRoleStore.getState().loadRoles();
-      } catch (permErr) {
-        console.error("Error loading permissions:", permErr);
-      }
+      // Permissions/roles are NOT loaded here — they need the active
+      // workspace resolved first (x-workspace-id persisted to localStorage),
+      // which WorkspaceContext's loadWorkspaces() owns. Loading them here
+      // would race against that resolution and could fetch roles scoped to
+      // whatever workspace happened to be stale in localStorage (e.g. a
+      // previous session, or a different account on a shared browser) —
+      // confirmed as the actual cause of custom roles appearing to "not be
+      // dynamic": the fetch fires once, gets marked initialized, and nothing
+      // ever re-fetches it even after the correct workspace resolves a
+      // moment later. See WorkspaceContext.jsx's loadWorkspaces/switchWorkspace.
     } catch (error) {
       console.error("Session restore failed:", error);
       logoutUser();
@@ -175,15 +178,11 @@ export const AuthProvider = ({ children }) => {
       const res = await api.post("/api/auth/login", body);
       const { token, user } = res.data;
       loginUser(user, token);
-      
-      // Load user permissions after login
-      try {
-        await useRoleStore.getState().loadMyPermissions();
-        await useRoleStore.getState().loadRoles();
-      } catch (permErr) {
-        console.error("Error loading permissions:", permErr);
-      }
-      
+
+      // Permissions/roles load from WorkspaceContext once the active
+      // workspace is actually resolved — see restoreSession's comment above
+      // for why loading them here (before that resolution) is wrong.
+
       return { success: true, user };
     } catch (err) {
       console.error(err.response?.data);
@@ -196,11 +195,15 @@ export const AuthProvider = ({ children }) => {
 
     try {
       const res = await api.post("/api/auth/register", body);
-      // Returned so an invite-token registration can auto-login straight
-      // into the dashboard instead of the normal "go sign in" step — see
-      // RegisterPage.jsx. Plain registration ignores these extra fields,
-      // preserving its existing behavior exactly.
-      return { success: true, user: res.data.user, token: res.data.token };
+      // The backend requires a valid inviteToken — there is no public,
+      // standalone registration anymore (see authController.js's register).
+      // Returned so InvitePage.jsx can auto-login straight into the
+      // dashboard after an invite-based signup instead of a separate
+      // sign-in step. `outcome` is 'joined' (normal case) or
+      // 'pending_approval' (the invitation required approval — see
+      // invitationService.js#acceptInvitation) — InvitePage.jsx branches on
+      // it instead of unconditionally redirecting home.
+      return { success: true, user: res.data.user, token: res.data.token, outcome: res.data.outcome };
     } catch (err) {
       console.error(err.response?.data);
       throw err;

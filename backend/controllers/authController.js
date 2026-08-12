@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
+import Workspace from '../models/Workspace.js';
 import Department from '../models/Department.js';
 import Team from '../models/Team.js';
 import Notification from '../models/Notification.js';
@@ -14,14 +16,16 @@ import config from '../config/index.js';
 import {
   runBackground,
   sendEmailInBackground,
-  createNotificationInBackground,
-  notifyAdminsUserCreatedInBackground
+  createNotificationInBackground
 } from '../utils/backgroundTasks.js';
 import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
 import { findValidInvitationByToken, acceptInvitation } from '../modules/workspaces/invitationService.js';
+import { createDepartmentCore } from '../modules/workspaces/departmentCreation.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
+import { slugify, isReservedSlug, isValidSlugFormat } from '../utils/slug.js';
+import { isValidWorkspaceType, WORKSPACE_TYPE_RULES, isValidIndustry, isValidCompanySize } from '../utils/workspaceOptions.js';
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -30,14 +34,24 @@ const generateToken = (id) => {
   });
 };
 
-// @desc    Register user. An optional `inviteToken` joins the specific
-//          workspace that invited this exact email instead of the single
-//          default workspace, and skips the admin-verification gate (the
-//          invite itself is the approval — see invitationService.js).
+// @desc    Register user. Requires a valid `inviteToken` — public
+//          self-registration is not supported (enterprise B2B pattern:
+//          accounts only ever come from accepting a workspace invitation,
+//          or from /api/auth/register-workspace when starting a brand-new
+//          workspace). An invited registration joins the specific workspace
+//          that invited this exact email, and skips the admin-verification
+//          gate (the invite itself is the approval — see invitationService.js).
 // @route   POST /api/auth/register
-// @access  Public
+// @access  Public (invite-token only)
 export const register = asyncHandler(async (req, res, next) => {
   const { name, email, password, department, inviteToken } = req.body;
+
+  if (!inviteToken) {
+    return next(new ErrorResponse(
+      'Public self-registration is not available. You need an invitation to join a workspace, or you can create a new workspace instead.',
+      400
+    ));
+  }
 
   // Check if user exists
   const userExists = await User.findOne({ email });
@@ -91,12 +105,21 @@ export const register = asyncHandler(async (req, res, next) => {
     return { user: createdUser, employeeRole: role };
   });
 
+  let acceptOutcome = 'joined';
   if (invitation) {
-    await acceptInvitation(invitation, user._id);
+    const result = await acceptInvitation(invitation, user._id);
+    acceptOutcome = result.outcome === 'pending_approval' ? 'pending_approval' : 'joined';
   } else {
     await syncMembershipFromUser(user._id, targetWorkspaceId);
   }
-  await User.updateOne({ _id: user._id }, { $set: { lastActiveWorkspace: targetWorkspaceId } });
+
+  // Pending-approval: no membership exists yet for targetWorkspaceId — must
+  // NOT set it as lastActiveWorkspace, or protect (authMiddleware.js) would
+  // find no active membership on this user's very next request and 403 them
+  // before they can even see their own (empty) workspace list.
+  if (acceptOutcome !== 'pending_approval') {
+    await User.updateOne({ _id: user._id }, { $set: { lastActiveWorkspace: targetWorkspaceId } });
+  }
 
   // Get department name for notification
   let departmentName = 'No department selected';
@@ -110,6 +133,7 @@ export const register = asyncHandler(async (req, res, next) => {
   res.status(201).json({
     success: true,
     token,
+    outcome: acceptOutcome, // 'joined' | 'pending_approval' — see invitationService.js#acceptInvitation
     user: {
       id: user._id,
       name: user.name,
@@ -159,6 +183,175 @@ export const register = asyncHandler(async (req, res, next) => {
       console.error('Post-registration background failed:', error);
     }
   }));
+});
+
+// @desc    Register a new user AND create their first workspace in one atomic flow.
+//          The workspace owner is auto-verified (no admin gate — the invite itself
+//          is the approval, matching the spec: "Owner Account -> Status = Active").
+//          Returns a JWT so the client can immediately redirect to the dashboard.
+// @route   POST /api/auth/register-workspace
+// @access  Public
+export const registerAndCreateWorkspace = asyncHandler(async (req, res, next) => {
+  const {
+    name,        // owner's full name
+    email,       // owner's email
+    password,    // owner's password
+    workspaceName,
+    workspaceSlug,  // optional — auto-generated from workspaceName if absent
+    workspaceType,  // 'company' | 'team' | 'personal'
+    industry,       // required for 'company'
+    companySize,    // required for 'company'
+    departmentName, // required for 'company' and 'team'
+  } = req.body;
+
+  // Basic field validation
+  if (!name || !email || !password || !workspaceName || !workspaceType) {
+    return next(new ErrorResponse('Name, email, password, workspace name, and workspace type are required', 400));
+  }
+
+  if (!isValidWorkspaceType(workspaceType)) {
+    return next(new ErrorResponse('A valid workspace type is required', 400));
+  }
+
+  const rules = WORKSPACE_TYPE_RULES[workspaceType];
+  if (rules.requiresIndustry && !isValidIndustry(industry)) {
+    return next(new ErrorResponse('Industry is required for this workspace type', 400));
+  }
+  if (rules.requiresCompanySize && !isValidCompanySize(companySize)) {
+    return next(new ErrorResponse('Company size is required for this workspace type', 400));
+  }
+  const finalDeptName = rules.autoDepartmentName || String(departmentName || '').trim() || 'General';
+
+  // Check if user already exists
+  const userExists = await User.findOne({ email: String(email).toLowerCase().trim() });
+  if (userExists) {
+    return next(new ErrorResponse('An account with this email already exists. Please sign in instead.', 400));
+  }
+
+  const slugSource = (workspaceSlug && String(workspaceSlug).trim()) || workspaceName;
+  const normalizedSlug = slugify(slugSource);
+  if (!isValidSlugFormat(normalizedSlug)) {
+    return next(new ErrorResponse('Workspace URL must be at least 3 characters, using only lowercase letters, numbers, and hyphens', 400));
+  }
+  if (isReservedSlug(normalizedSlug)) {
+    return next(new ErrorResponse('This workspace URL is reserved — please choose another', 400));
+  }
+
+  const session = await mongoose.startSession();
+  let createdUser, workspace, department;
+
+  try {
+    await session.withTransaction(async () => {
+      await workspaceContext.runUnscoped(async () => {
+        // Slug uniqueness check inside transaction (closes TOCTOU race)
+        const slugTaken = await Workspace.findOne({ slug: normalizedSlug }).session(session);
+        if (slugTaken) throw new ErrorResponse('This workspace URL is already taken', 409);
+
+        const adminRole = await Role.findResolvable('admin', null);
+
+        // 1. Create the owner user — auto-verified (workspace owner needs no admin approval)
+        const [newUser] = await User.create([{
+          name: String(name).trim(),
+          email: String(email).toLowerCase().trim(),
+          password,
+          role: 'admin',
+          roleId: adminRole?._id,
+          isVerified: true,  // Workspace founders are self-verified
+        }], { session });
+        createdUser = newUser;
+
+        // 2. Create the workspace
+        const [newWorkspace] = await Workspace.create([{
+          name: String(workspaceName).trim(),
+          slug: normalizedSlug,
+          owner: newUser._id,
+          type: workspaceType,
+          industry: industry && isValidIndustry(industry) ? industry : null,
+          companySize: companySize && isValidCompanySize(companySize) ? companySize : null,
+        }], { session });
+        workspace = newWorkspace;
+
+        // 3. Create owner membership (admin, active immediately)
+        await WorkspaceMembership.create([{
+          workspace: workspace._id,
+          user: newUser._id,
+          role: 'admin',
+          roleId: adminRole?._id,
+          department: [],
+          accessType: 'full_department',
+          allowedProjects: [],
+          status: 'active',
+          invitedBy: newUser._id,
+        }], { session });
+
+        // 4. Update user's lastActiveWorkspace
+        await User.updateOne({ _id: newUser._id }, { $set: { lastActiveWorkspace: workspace._id } }, { session });
+      });
+
+      // 5. Create the first department INSIDE the same transaction — every
+      // workspace must have at least one department (Board.department is a
+      // hard schema requirement elsewhere in this app), so this can never
+      // be allowed to run after commit: a failure here must roll back the
+      // user/workspace/membership too, not leave them orphaned with zero
+      // departments. Department is workspace-scoped (workspaceScopePlugin),
+      // so this write needs an active context pinned to the workspace just
+      // created above.
+      await workspaceContext.run({ workspaceId: workspace._id }, async () => {
+        department = await createDepartmentCore({
+          name: finalDeptName,
+          description: '',
+          managers: [],
+          workspaceId: workspace._id,
+          session
+        });
+      });
+    });
+  } catch (err) {
+    return next(err);
+  } finally {
+    await session.endSession();
+  }
+
+  // Persist active workspace on user
+  await User.updateOne({ _id: createdUser._id }, { $set: { lastActiveWorkspace: workspace._id } });
+  // Client will persist workspaceId to localStorage after receiving the response
+
+  const token = generateToken(createdUser._id);
+
+  res.status(201).json({
+    success: true,
+    token,
+    user: {
+      id: createdUser._id,
+      name: createdUser.name,
+      email: createdUser.email,
+      role: 'admin',
+      isVerified: true,
+    },
+    workspace: {
+      _id: workspace._id,
+      name: workspace.name,
+      slug: workspace.slug,
+      role: 'admin',
+    },
+  });
+
+  // Background: send welcome email
+  runBackground(async () => {
+    try {
+      await sendEmail({
+        to: createdUser.email,
+        subject: `Welcome to ${workspace.name} on FlowTask!`,
+        html: `
+          <h1>Welcome ${createdUser.name}!</h1>
+          <p>Your workspace <strong>${workspace.name}</strong> has been created successfully.</p>
+          <p>You can now invite your team members and start managing your projects.</p>
+        `
+      });
+    } catch (e) {
+      console.error('Welcome email failed:', e);
+    }
+  });
 });
 
 // @desc    Login user
@@ -299,126 +492,11 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Admin create user
-// @route   POST /api/auth/admin-create-user
-// @access  Private (Admin only)
-export const adminCreateUser = asyncHandler(async (req, res, next) => {
-  const { name, email, password, department, role } = req.body;
-
-  // Check if user exists
-  const userExists = await User.findOne({ email });
-  if (userExists) {
-    return next(new ErrorResponse('Email already exists. Please use a different email address.', 400));
-  }
-
-  // Validate department if provided
-  if (department) {
-    const deptExists = await Department.findById(department);
-    if (!deptExists) {
-      return next(new ErrorResponse('Invalid department selected', 400));
-    }
-  }
-
-  // Validate role - check both system roles and custom roles from database
-  const systemRoles = ['admin', 'manager', 'hr', 'employee'];
-  let isValidRole = systemRoles.includes(role);
-  let roleId = null;
-  
-  // Find the role document to get its ID
-  const roleDoc = await Role.findResolvable(role.toLowerCase(), req.workspaceId);
-  
-  if (roleDoc) {
-    isValidRole = true;
-    roleId = roleDoc._id;
-  }
-  
-  if (!isValidRole) {
-    return next(new ErrorResponse('Invalid role selected', 400));
-  }
-
-  // Create user with admin-specified role and mark as verified
-  const user = await User.create({
-    name,
-    email,
-    password,
-    role,
-    roleId,
-    department: department ? [department] : [],
-    isVerified: true, // Admin-created users are automatically verified
-    isActive: true
-  });
-
-  // If department is specified, add user to department members
-  if (department) {
-    await Department.findByIdAndUpdate(department, {
-      $addToSet: { members: user._id }
-    });
-  }
-
-  // Admin-created users join the admin's own active workspace.
-  await syncMembershipFromUser(user._id, req.workspaceId);
-
-  // Emit real-time update
-  const { emitToTeam } = await import('../server.js');
-  emitToTeam('admin', 'user-created', {
-    userId: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    department: user.department
-  });
-
-  res.status(201).json({
-    success: true,
-    message: 'User created successfully',
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      department: user.department,
-      isVerified: user.isVerified
-    }
-  });
-
-  // Background tasks: send admin-specific welcome email and notifications
-  runBackground(async () => {
-    try {
-      // Send welcome email for admin-created users (different template)
-      const departmentName = department ? (await Department.findById(department)).name : 'No department assigned';
-      await sendEmail({
-        to: email,
-        subject: 'Welcome to FlowTask - Your Account is Ready',
-        html: `
-          <h1>Welcome to FlowTask, ${name}!</h1>
-          <p>Your account has been created by an administrator and is ready to use.</p>
-          <p><strong>Role:</strong> ${role}</p>
-          <p><strong>Department:</strong> ${departmentName}</p>
-          <p>You can now log in to your account and start collaborating with your team.</p>
-          <p>If you have any questions, please contact your administrator.</p>
-        `
-      });
-
-      // Create notification for the new user
-      await notificationService.createNotification({
-        type: 'account_created',
-        title: 'Welcome to FlowTask',
-        message: 'Your account has been created by an administrator. You can now log in with your credentials.',
-        user: user._id,
-        sender: req.user._id
-      });
-
-      // Notify all admins about the new user creation
-      const admins = await User.find({ role: 'admin', isActive: true });
-      await notifyAdminsUserCreatedInBackground(user, admins, { departmentName, creatorId: req.user._id });
-
-      // Dispatch chat webhook for admin-created user
-      chatHooks.onUserCreated(user).catch(console.error);
-    } catch (error) {
-      console.error('Post-admin-create background failed:', error);
-    }
-  });
-});
+// adminCreateUser (POST /api/auth/admin-create-user) was retired — superseded
+// by the centralized Invite Member system's Method A
+// (memberInvitationController.js#inviteMember, method:'direct'), which does
+// the same thing permission-gated (not hardcoded admin-only) and workspace-
+// aware. TeamManagement.jsx's "Invite Member" button now opens that instead.
 
 // @desc    Check email uniqueness
 // @route   POST /api/auth/check-email

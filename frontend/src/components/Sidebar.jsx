@@ -1,10 +1,11 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp, ShieldCheck } from 'lucide-react';
+import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp, ShieldCheck, ClipboardCheck } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
 import WorkspaceSwitcher from './Workspace/WorkspaceSwitcher';
 import useAccessControl from '../hooks/useAccessControl';
+import usePermissions from '../hooks/usePermissions';
 
 const MotionDiv = motion.div;
 const MotionAside = motion.aside;
@@ -22,6 +23,7 @@ const iconColors = {
   '/finance': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Finance
   '/sales': { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }, // Purple - Sales
   '/access-control': { color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.12)' }, // Violet - Access & Permissions
+  '/join-requests': { color: '#0891b2', bg: 'rgba(8, 145, 178, 0.12)' }, // Cyan - Join Requests
 };
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
@@ -37,6 +39,11 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   const salesVisible = can('sales', 'view');
   const financeVisible = can('finance', 'view');
   const accessControlVisible = isAccessControlAdmin || canManageAccessControl;
+  // Centralized Invite Member system's Approval Dashboard — permission
+  // check, not a role check, so a custom role granted canApproveJoinRequests
+  // sees this regardless of which role branch below applies to them.
+  const { can: canWorkspace } = usePermissions();
+  const joinRequestsVisible = canWorkspace('canApproveJoinRequests');
 
   // Check if current path is under PM Sheet
   const isPMSheetActive = location.pathname.startsWith('/pm-sheet');
@@ -124,6 +131,10 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     // block above too, but this covers delegated non-admins.)
     if (accessControlVisible && !items.some((item) => item.path === '/access-control')) {
       items.push({ path: '/access-control', icon: ShieldCheck, label: 'Access & Permissions' });
+    }
+
+    if (joinRequestsVisible && !items.some((item) => item.path === '/join-requests')) {
+      items.push({ path: '/join-requests', icon: ClipboardCheck, label: 'Join Requests' });
     }
 
     return items;

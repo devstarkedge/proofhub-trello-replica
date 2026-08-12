@@ -32,7 +32,9 @@ export const PERMISSION_DEFINITIONS = {
   member: {
     label: '🧑‍🤝‍🧑 Member Permissions',
     permissions: [
-      { key: 'canAssignMembers', label: 'Assign members to tasks/projects/departments' }
+      { key: 'canAssignMembers', label: 'Assign members to tasks/projects/departments' },
+      { key: 'canInviteMembers', label: 'Invite new members to the workspace' },
+      { key: 'canApproveJoinRequests', label: 'Approve or reject workspace join requests' }
     ]
   },
   delete: {

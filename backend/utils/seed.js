@@ -23,7 +23,9 @@ const seedRoles = async () => workspaceContext.runUnscoped(async () => {
           canCreateReminder: true,
           canAssignMembers: true,
           canDeleteTasks: true,
-          canDeleteProjects: true
+          canDeleteProjects: true,
+          canInviteMembers: true,
+          canApproveJoinRequests: true
         },
         isSystem: true
       },
@@ -39,7 +41,9 @@ const seedRoles = async () => workspaceContext.runUnscoped(async () => {
           canCreateReminder: true,
           canAssignMembers: true,
           canDeleteTasks: true,
-          canDeleteProjects: true
+          canDeleteProjects: true,
+          canInviteMembers: false,
+          canApproveJoinRequests: false
         },
         isSystem: true
       },
@@ -55,7 +59,9 @@ const seedRoles = async () => workspaceContext.runUnscoped(async () => {
           canCreateReminder: true,
           canAssignMembers: true,
           canDeleteTasks: false,
-          canDeleteProjects: false
+          canDeleteProjects: false,
+          canInviteMembers: true,
+          canApproveJoinRequests: true
         },
         isSystem: true
       },
@@ -71,7 +77,9 @@ const seedRoles = async () => workspaceContext.runUnscoped(async () => {
           canCreateReminder: true,
           canAssignMembers: false,
           canDeleteTasks: false,
-          canDeleteProjects: false
+          canDeleteProjects: false,
+          canInviteMembers: false,
+          canApproveJoinRequests: false
         },
         isSystem: true
       }

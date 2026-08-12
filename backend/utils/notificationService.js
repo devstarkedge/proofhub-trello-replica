@@ -812,6 +812,44 @@ class NotificationService {
     return this.createBulkNotifications(notifications);
   }
 
+  // Centralized Invite Member system — notify every canApproveJoinRequests
+  // holder (resolved by permission, never a role name) that a new join
+  // request needs review.
+  async notifyJoinRequestSubmitted(joinRequest, recipientIds, requestingUserName) {
+    const notifications = recipientIds.map((recipientId) => ({
+      type: 'workspace_join_request_submitted',
+      title: 'New Join Request',
+      message: `${requestingUserName} has requested to join your workspace`,
+      user: recipientId,
+      entityId: joinRequest._id,
+      entityType: 'WorkspaceJoinRequest'
+    }));
+
+    return this.createBulkNotifications(notifications);
+  }
+
+  async notifyJoinRequestApproved(joinRequest, requestingUserId, workspaceName) {
+    return this.createBulkNotifications([{
+      type: 'workspace_join_request_approved',
+      title: 'Join Request Approved',
+      message: `Your request to join ${workspaceName} has been approved`,
+      user: requestingUserId,
+      entityId: joinRequest._id,
+      entityType: 'WorkspaceJoinRequest'
+    }]);
+  }
+
+  async notifyJoinRequestRejected(joinRequest, requestingUserId, workspaceName) {
+    return this.createBulkNotifications([{
+      type: 'workspace_join_request_rejected',
+      title: 'Join Request Declined',
+      message: `Your request to join ${workspaceName} was declined`,
+      user: requestingUserId,
+      entityId: joinRequest._id,
+      entityType: 'WorkspaceJoinRequest'
+    }]);
+  }
+
   // Send announcement emails in background
   async sendAnnouncementEmails(announcement, subscriberIds) {
     try {

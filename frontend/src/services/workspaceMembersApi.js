@@ -13,17 +13,10 @@ export const getWorkspaceMembers = async (workspaceId) => {
   return data?.data || [];
 };
 
-export const getAvailableUsers = async (workspaceId, search = '') => {
-  const { data } = await api.get(`/api/workspaces/${workspaceId}/available-users`, {
-    params: search ? { search } : undefined,
-  });
-  return data?.data || [];
-};
-
-export const addWorkspaceMember = async (workspaceId, userId, role) => {
-  const { data } = await api.post(`/api/workspaces/${workspaceId}/members`, { userId, role });
-  return data?.data;
-};
+// Adding a member now happens exclusively through the centralized Invite
+// Member system (see memberInvitationApi.js) — getAvailableUsers/
+// addWorkspaceMember (the old existing-user-picker flow) were removed along
+// with AddWorkspaceMemberModal.jsx.
 
 export const updateWorkspaceMemberRole = async (workspaceId, userId, role) => {
   const { data } = await api.patch(`/api/workspaces/${workspaceId}/members/${userId}`, { role });
