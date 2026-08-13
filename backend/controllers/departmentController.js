@@ -11,7 +11,8 @@ import { runBackground, createNotificationInBackground } from '../utils/backgrou
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
 import { getAssignmentBasedBoardIds, getAssignmentBasedDepartmentIds, userHasCapability, CAPABILITIES } from '../services/permissionService.js';
 import { chatHooks } from '../utils/chatHooks.js';
-import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
+import { syncMembershipFromUser, isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import { createDepartmentCore } from '../modules/workspaces/departmentCreation.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
@@ -588,7 +589,32 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
   }
 
   const oldManagers = department.managers || [];
-  
+  let managersToAdd = [];
+  let managersToRemove = [];
+
+  if (managers !== undefined) {
+    const newManagers = managers || [];
+    managersToAdd = newManagers.filter(id => !oldManagers.includes(id));
+    managersToRemove = oldManagers.filter(id => !newManagers.includes(id));
+
+    // Every manager being added or removed must already be a member of this
+    // workspace — otherwise syncMembershipFromUser's upsert below would
+    // silently create a membership for a user from a different workspace.
+    const candidateIds = [...managersToAdd, ...managersToRemove];
+    if (candidateIds.length > 0) {
+      const validIds = await WorkspaceMembership.find({
+        workspace: req.workspaceId,
+        user: { $in: candidateIds },
+        status: 'active'
+      }).distinct('user');
+      const validSet = new Set(validIds.map(String));
+      const invalid = candidateIds.filter((id) => !validSet.has(String(id)));
+      if (invalid.length > 0) {
+        return next(new ErrorResponse('One or more managers are not members of this workspace', 403));
+      }
+    }
+  }
+
   // Track changes for webhook
   const changes = {};
 
@@ -612,10 +638,6 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
 
   // Update managers' department field
   if (managers !== undefined) {
-    const newManagers = managers || [];
-    const managersToAdd = newManagers.filter(id => !oldManagers.includes(id));
-    const managersToRemove = oldManagers.filter(id => !newManagers.includes(id));
-
     // Add department to new managers
     if (managersToAdd.length > 0) {
       await User.updateMany(
@@ -708,6 +730,10 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("User not found", 404));
   }
 
+  if (!(await isActiveWorkspaceMember(user._id, req.workspaceId))) {
+    return next(new ErrorResponse("User is not a member of this workspace", 403));
+  }
+
   // Check if user is already assigned to a DIFFERENT department.
   // user.department is an array (schema: [{ type: ObjectId }]).
   // Normalise defensively so the check is safe for empty arrays, null, or scalars.
@@ -785,6 +811,10 @@ export const removeMemberFromDepartment = asyncHandler(
 
     if (!department) {
       return next(new ErrorResponse("Department not found", 404));
+    }
+
+    if (!(await isActiveWorkspaceMember(req.params.userId, req.workspaceId))) {
+      return next(new ErrorResponse("User is not a member of this workspace", 403));
     }
 
     // Use $pull to remove from array
@@ -946,6 +976,10 @@ export const unassignUserFromDepartment = asyncHandler(
       return next(new ErrorResponse("Department not found", 404));
     }
 
+    if (!(await isActiveWorkspaceMember(user._id, req.workspaceId))) {
+      return next(new ErrorResponse("User is not a member of this workspace", 403));
+    }
+
     // Check if user is assigned to this department
     if (!user.department || !user.department.includes(deptId)) {
       return res.status(400).json({
@@ -1019,12 +1053,28 @@ export const bulkAssignUsersToDepartment = asyncHandler(async (req, res, next) =
     return next(new ErrorResponse("Some users not found", 404));
   }
 
+  // Members must already belong to this workspace — otherwise
+  // syncMembershipFromUser's upsert below would silently create a
+  // membership for a user from a different workspace.
+  const activeMemberIds = new Set(
+    (await WorkspaceMembership.find({ workspace: req.workspaceId, status: 'active' }).distinct('user')).map(String)
+  );
+
   const results = [];
   const errors = [];
 
   // Process each user assignment
   for (const user of users) {
     try {
+      if (!activeMemberIds.has(String(user._id))) {
+        errors.push({
+          userId: user._id,
+          name: user.name,
+          error: 'User is not a member of this workspace'
+        });
+        continue;
+      }
+
       // Check if user is already assigned to another department
       if (user.department && user.department.length > 0 &&
           !user.department.some(dept => (typeof dept === 'string' ? dept : dept._id || dept) === departmentId)) {
@@ -1138,12 +1188,28 @@ export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, nex
     return next(new ErrorResponse("Some users not found", 404));
   }
 
+  // Members must already belong to this workspace — otherwise
+  // syncMembershipFromUser's upsert below would silently create a
+  // membership for a user from a different workspace.
+  const activeMemberIds = new Set(
+    (await WorkspaceMembership.find({ workspace: req.workspaceId, status: 'active' }).distinct('user')).map(String)
+  );
+
   const results = [];
   const errors = [];
 
   // Process each user unassignment
   for (const user of users) {
     try {
+      if (!activeMemberIds.has(String(user._id))) {
+        errors.push({
+          userId: user._id,
+          name: user.name,
+          error: 'User is not a member of this workspace'
+        });
+        continue;
+      }
+
       // Check if user is assigned to this department
       if (!user.department || !user.department.includes(departmentId)) {
         errors.push({

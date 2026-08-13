@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useCallback, useContext, useEffect, useMemo, use
 import { toast } from 'react-toastify';
 import { Ban, Blocks, Clock, Loader2, Search, Shield, ShieldCheck, UserCog, Users, X } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
 import api from '../services/api';
 import useRoleStore from '../store/roleStore';
 import useAccessControl from '../hooks/useAccessControl';
@@ -83,6 +84,7 @@ const AccessControlPage = () => {
 // ─── Users tab — list every user, open UserAccessEditor for the selected one ──
 
 const UsersTab = ({ currentUserId }) => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -101,9 +103,13 @@ const UsersTab = ({ currentUserId }) => {
     }
   }, []);
 
+  // Re-fetch whenever the active workspace changes — otherwise the list
+  // fetched for the previous workspace would keep rendering until this tab
+  // unmounts/remounts.
   useEffect(() => {
+    setSelectedUser(null);
     loadUsers();
-  }, [loadUsers]);
+  }, [loadUsers, currentWorkspace?._id]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

@@ -187,37 +187,7 @@ const Header = ({ boardName }) => {
               <Menu size={20} />
             </motion.button>
 
-            {/* Back Button */}
-            {(location.pathname.startsWith('/list-view') || ['/calendar', '/analytics'].includes(location.pathname)) && (
-              <motion.button
-                whileHover={{ scale: 1.03, x: -2 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => {
-                  // Use browser history if available, otherwise fallback to home
-                  if (window.history.length > 1) {
-                    navigate(-1);
-                  } else {
-                    navigate('/');
-                  }
-                }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200"
-                style={{
-                  backgroundColor: 'var(--color-bg-muted)',
-                  color: 'var(--color-text-secondary)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-primary-subtle)';
-                  e.currentTarget.style.color = 'var(--color-primary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-bg-muted)';
-                  e.currentTarget.style.color = 'var(--color-text-secondary)';
-                }}
-              >
-                <ArrowLeft size={16} />
-                <span className="hidden sm:inline">Back</span>
-              </motion.button>
-            )}
+
 
             {/* View Navigation - Enhanced with colored icons */}
             <nav

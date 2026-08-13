@@ -17,6 +17,12 @@
  *      each — a query scoped to workspace A must never return workspace
  *      B's board, and a query with no active workspace context must throw
  *      rather than silently returning unscoped data.
+ *   5. WorkspaceMembership integrity: no duplicate active rows per
+ *      (user, workspace) pair (the unique index should prevent new ones,
+ *      but this catches any that pre-date it), and no rows whose `user` or
+ *      `workspace` reference no longer resolves.
+ *
+ * Read-only — reports findings, does not modify any data.
  */
 import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
@@ -27,6 +33,7 @@ import Workspace from '../models/Workspace.js';
 import Board from '../models/Board.js';
 import User from '../models/User.js';
 import Department from '../models/Department.js';
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { WORKSPACE_OWNED_MODELS } from './_workspaceOwnedModels.js';
 
@@ -120,10 +127,47 @@ async function checkCrossTenantIsolation() {
   return issues;
 }
 
+async function checkMembershipIntegrity() {
+  return workspaceContext.runUnscoped(async () => {
+    const issues = [];
+
+    const duplicates = await WorkspaceMembership.aggregate([
+      { $match: { status: 'active' } },
+      { $group: { _id: { user: '$user', workspace: '$workspace' }, count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } }
+    ]);
+    if (duplicates.length > 0) {
+      issues.push({
+        model: 'WorkspaceMembership',
+        check: 'duplicate active (user, workspace) pairs',
+        count: duplicates.length
+      });
+    }
+
+    const memberships = await WorkspaceMembership.find({}).select('user workspace').lean();
+    const userIds = [...new Set(memberships.map((m) => String(m.user)))];
+    const workspaceIds = [...new Set(memberships.map((m) => String(m.workspace)))];
+    const existingUserIds = new Set((await User.find({ _id: { $in: userIds } }).select('_id').lean()).map((u) => String(u._id)));
+    const existingWorkspaceIds = new Set((await Workspace.find({ _id: { $in: workspaceIds } }).select('_id').lean()).map((w) => String(w._id)));
+
+    const orphanedUser = memberships.filter((m) => !existingUserIds.has(String(m.user))).length;
+    if (orphanedUser > 0) {
+      issues.push({ model: 'WorkspaceMembership', check: 'references a non-existent user', count: orphanedUser });
+    }
+    const orphanedWorkspace = memberships.filter((m) => !existingWorkspaceIds.has(String(m.workspace))).length;
+    if (orphanedWorkspace > 0) {
+      issues.push({ model: 'WorkspaceMembership', check: 'references a non-existent workspace', count: orphanedWorkspace });
+    }
+
+    return issues;
+  });
+}
+
 export async function verifyWorkspaceScoping() {
   const missingIssues = await checkMissingWorkspaceId();
   const isolationIssues = await checkCrossTenantIsolation();
-  const issues = [...missingIssues, ...isolationIssues];
+  const membershipIssues = await checkMembershipIntegrity();
+  const issues = [...missingIssues, ...isolationIssues, ...membershipIssues];
   return { totalIssues: issues.length, issues };
 }
 

@@ -1,4 +1,5 @@
 import User from '../models/User.js';
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import Role from '../models/Role.js';
 import UserPermission, {
   FINANCE_PAGE_KEY,
@@ -17,7 +18,7 @@ import { resolveResourceAccess } from '../modules/permissions/permissionEngine.j
 import { setResourceOverride } from '../modules/permissions/accessControlService.js';
 import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js';
 import { recordAuditLog } from '../modules/permissions/auditLogService.js';
-import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';
+import { syncMembershipFromUser, isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
 
 const ROLE_OPTIONS_FOR_FINANCE_ACCESS = ['admin', 'manager', 'employee', 'hr'];
 
@@ -43,13 +44,24 @@ const buildPermissionUserPayload = (user) => ({
   avatar: user.avatar
 });
 
-// @desc    Get all users
+// @desc    Get all users belonging to the active workspace
 // @route   GET /api/users
 // @access  Private/Admin
 export const getUsers = asyncHandler(async (req, res, next) => {
   const { department, team, role, search } = req.query;
 
-  let query = {};
+  // Scope to the caller's active workspace via WorkspaceMembership — User
+  // itself is shared across every workspace a person belongs to, so it
+  // carries no workspaceId to filter on directly. See
+  // modules/workspaces/workspaceScopePlugin.js's doc comment for why User
+  // is deliberately excluded from that plugin.
+  const memberships = await WorkspaceMembership.find({ workspace: req.workspaceId, status: 'active' })
+    .select('user role')
+    .lean();
+  const memberUserIds = memberships.map((m) => m.user);
+  const roleByUser = new Map(memberships.map((m) => [String(m.user), m.role]));
+
+  let query = { _id: { $in: memberUserIds } };
 
   if (department) query.department = department;
   if (team) query.team = team;
@@ -67,9 +79,19 @@ export const getUsers = asyncHandler(async (req, res, next) => {
     .select('-password')
     .sort('name');
 
+  // Overlay each user's workspace-specific role — User.role is only the
+  // default-workspace mirror, and role assignments must be independent
+  // per workspace (see WorkspaceMembership.role, kept in sync via
+  // syncMembershipFromUser).
+  const data = users.map((u) => {
+    const obj = u.toObject();
+    obj.role = roleByUser.get(String(u._id)) || obj.role;
+    return obj;
+  });
+
   res.status(200).json({
     success: true,
-    data: users
+    data
   });
 });
 
@@ -154,6 +176,10 @@ export const patchUserPagePermissions = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('User not found', 404));
   }
 
+  if (!(await isActiveWorkspaceMember(user._id, req.workspaceId))) {
+    return next(new ErrorResponse('User is not a member of this workspace', 403));
+  }
+
   const currentRole = normalizePermissionRole(user.role);
   const requestedRole = req.body.role !== undefined
     ? normalizePermissionRole(req.body.role)
@@ -236,6 +262,10 @@ export const updateUser = asyncHandler(async (req, res, next) => {
 
   if (!user) {
     return next(new ErrorResponse('User not found', 404));
+  }
+
+  if (!(await isActiveWorkspaceMember(user._id, req.workspaceId))) {
+    return next(new ErrorResponse('User is not a member of this workspace', 403));
   }
 
   // Update fields
@@ -412,7 +442,10 @@ export const updateProfile = asyncHandler(async (req, res, next) => {
 // @route   GET /api/users/verified
 // @access  Private/Admin
 export const getVerifiedUsers = asyncHandler(async (req, res, next) => {
+  const memberUserIds = await WorkspaceMembership.find({ workspace: req.workspaceId, status: 'active' }).distinct('user');
+
   const users = await User.find({
+    _id: { $in: memberUserIds },
     isVerified: true,
     isActive: true
   })
@@ -437,8 +470,10 @@ export const getUsersByDepartments = asyncHandler(async (req, res, next) => {
   }
 
   const departmentIds = Array.isArray(departments) ? departments : departments.split(',');
+  const memberUserIds = await WorkspaceMembership.find({ workspace: req.workspaceId, status: 'active' }).distinct('user');
 
   const users = await User.find({
+    _id: { $in: memberUserIds },
     department: { $in: departmentIds },
     isVerified: true,
     isActive: true
@@ -457,7 +492,10 @@ export const getUsersByDepartments = asyncHandler(async (req, res, next) => {
 // @route   GET /api/users/managers
 // @access  Private/Admin
 export const getManagerUsers = asyncHandler(async (req, res, next) => {
+  const memberUserIds = await WorkspaceMembership.find({ workspace: req.workspaceId, status: 'active' }).distinct('user');
+
   const users = await User.find({
+    _id: { $in: memberUserIds },
     role: { $in: ['admin', 'manager'] },
     isVerified: true,
     isActive: true
@@ -658,6 +696,10 @@ export const assignUser = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('User not found', 404));
   }
 
+  if (!(await isActiveWorkspaceMember(user._id, req.workspaceId))) {
+    return next(new ErrorResponse('User is not a member of this workspace', 403));
+  }
+
   const before = {
     department: (user.department || []).map((d) => d.toString()),
     accessType: user.accessType,
@@ -793,6 +835,10 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
   const user = await User.findById(req.params.id);
   if (!user) {
     return next(new ErrorResponse('User not found', 404));
+  }
+
+  if (!(await isActiveWorkspaceMember(user._id, req.workspaceId))) {
+    return next(new ErrorResponse('User is not a member of this workspace', 403));
   }
 
   // Prevent changing own role

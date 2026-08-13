@@ -43,7 +43,7 @@ const ListViewLayout = () => {
         <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-indigo-400/10 rounded-full blur-3xl animate-float-slow"></div>
       </div>
 
-      <main className="max-w-screen-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8 relative z-10">
+      <main className="w-full py-8 px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Header Section */}
         <div className="mb-8 animate-fade-in">
           <div className="flex items-center justify-between mb-6">

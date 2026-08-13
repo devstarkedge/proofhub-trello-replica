@@ -15,7 +15,7 @@
   font-feature-settings: "tnum" 1, "cv02" 1;
 }
 
-.analytics-content { max-width: 1540px; margin: 0 auto; padding: 28px 30px 56px; }
+.analytics-content { width: 100%; padding: 28px 32px 56px; }
 .analytics-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 22px; }
 .analytics-eyebrow { display: flex; align-items: center; gap: 8px; color: var(--an-blue); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .analytics-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #16a36a; box-shadow: 0 0 0 4px rgba(22,163,106,.12); }

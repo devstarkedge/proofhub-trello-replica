@@ -6,6 +6,7 @@ import * as accessControlApi from '../../services/accessControlApi';
 import useAccessControl from '../../hooks/useAccessControl';
 import useConfirmPermissionChange from '../../hooks/useConfirmPermissionChange';
 import AuthContext from '../../context/AuthContext';
+import WorkspaceContext from '../../context/WorkspaceContext';
 import Avatar from '../Avatar';
 import ResourceActionToggleGrid, { applyViewCascade, verbForToggle } from './ResourceActionToggleGrid';
 
@@ -31,6 +32,7 @@ const ResourceAccessPanel = ({
   userFilter = () => true
 }) => {
   const { user: currentUser } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const { registry, refresh: refreshMyPermissions } = useAccessControl();
   const confirmChange = useConfirmPermissionChange();
   const [users, setUsers] = useState([]);
@@ -79,8 +81,11 @@ const ResourceAccessPanel = ({
     return () => {
       mounted = false;
     };
+    // Re-fetch on workspace switch too — otherwise the previous workspace's
+    // user list (and their permission toggles) would keep rendering until
+    // this panel unmounts/remounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resource]);
+  }, [resource, currentWorkspace?._id]);
 
   const handleToggle = async (targetUser, actionKey, nextValue, viewKey) => {
     const userId = targetUser._id;
