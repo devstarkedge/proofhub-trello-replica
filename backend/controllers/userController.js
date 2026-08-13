@@ -19,6 +19,7 @@ import { setResourceOverride } from '../modules/permissions/accessControlService
 import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js';
 import { recordAuditLog } from '../modules/permissions/auditLogService.js';
 import { syncMembershipFromUser, isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
+import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
 
 const ROLE_OPTIONS_FOR_FINANCE_ACCESS = ['admin', 'manager', 'employee', 'hr'];
 
@@ -287,16 +288,19 @@ export const updateUser = asyncHandler(async (req, res, next) => {
     if (user._id.toString() === req.user.id) {
       return next(new ErrorResponse('Cannot change your own role', 403));
     }
-    user.role = role;
 
     // Lookup roleId
     const Role = (await import('../models/Role.js')).default;
     const roleDoc = await Role.findResolvable(role.toLowerCase(), req.workspaceId);
-    if (roleDoc) {
-      user.roleId = roleDoc._id;
-    } else {
-      user.roleId = null;
+
+    // Only a genuine role change needs the Team-workspace custom-role check
+    // — grandfathers a no-op resave of a role the user already holds.
+    if (role.toLowerCase() !== user.role.toLowerCase()) {
+      await assertCustomRoleAssignable(req.workspaceId, roleDoc);
     }
+
+    user.role = role;
+    user.roleId = roleDoc ? roleDoc._id : null;
   }
   if (department !== undefined) user.department = department;
   if (team !== undefined) user.team = team;
@@ -581,11 +585,15 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
   // Update verification status and role/department if provided
   user.isVerified = true;
   if (role) {
-    user.role = role;
-    
     // Lookup roleId
     const Role = (await import('../models/Role.js')).default;
     const roleDoc = await Role.findResolvable(role.toLowerCase(), req.workspaceId);
+
+    if (role.toLowerCase() !== user.role.toLowerCase()) {
+      await assertCustomRoleAssignable(req.workspaceId, roleDoc);
+    }
+
+    user.role = role;
     if (roleDoc) {
       user.roleId = roleDoc._id;
     }
@@ -872,6 +880,8 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
   if (previousRole === normalizedRole) {
     return res.status(200).json({ success: true, data: user, message: 'Role unchanged' });
   }
+
+  await assertCustomRoleAssignable(req.workspaceId, roleDoc);
 
   user.role = normalizedRole;
   user.roleId = roleDoc._id;

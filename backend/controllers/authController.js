@@ -198,7 +198,7 @@ export const registerAndCreateWorkspace = asyncHandler(async (req, res, next) =>
     password,    // owner's password
     workspaceName,
     workspaceSlug,  // optional — auto-generated from workspaceName if absent
-    workspaceType,  // 'company' | 'team' | 'personal'
+    workspaceType,  // 'company' | 'team'
     industry,       // required for 'company'
     companySize,    // required for 'company'
     departmentName, // required for 'company' and 'team'

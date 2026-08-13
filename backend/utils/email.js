@@ -89,7 +89,7 @@ export const sendWelcomeEmail = async (user) => {
               <li>Customize your notification preferences</li>
             </ul>
             <div style="text-align: center;">
-              <a href="${process.env.FRONTEND_URL }/" class="button">Get Started</a>
+              <a href="${process.env.FRONTEND_URL }/" class="button" target="_blank" rel="noopener noreferrer">Get Started</a>
             </div>
             <p>If you have any questions, feel free to reach out to our support team.</p>
           </div>
@@ -140,7 +140,7 @@ export const sendVerificationEmail = async (user) => {
               <li>Receive real-time notifications</li>
             </ul>
             <div style="text-align: center;">
-              <a href="${process.env.FRONTEND_URL}/" class="button">Start Exploring</a>
+              <a href="${process.env.FRONTEND_URL}/" class="button" target="_blank" rel="noopener noreferrer">Start Exploring</a>
             </div>
           </div>
         </div>
@@ -168,8 +168,8 @@ export const sendPasswordResetEmail = async (user, resetUrl) => {
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
           .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
           .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
-          .header h1 { margin: 0 0 8px 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
-          .header p { margin: 0; font-size: 16px; opacity: 0.9; }
+          .header h1 { margin: 0 0 8px 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 16px; color: #ffffff; font-weight: 500; }
           .content { padding: 40px 30px; }
           .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
           .cta-wrapper { text-align: center; margin: 32px 0; }
@@ -193,7 +193,7 @@ export const sendPasswordResetEmail = async (user, resetUrl) => {
               We received a request to reset the password for your FlowTask account. Click the button below to set a new password:
             </p>
             <div class="cta-wrapper">
-              <a href="${resetUrl}" class="button">Reset Password</a>
+              <a href="${resetUrl}" class="button" target="_blank" rel="noopener noreferrer">Reset Password</a>
             </div>
             <div class="warning">
               <strong>⏱ This link expires in 15 minutes.</strong> After that, you'll need to request a new password reset.
@@ -238,8 +238,8 @@ export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterNa
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
           .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
           .header { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 40px 30px; text-align: center; }
-          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
-          .header p { margin: 0; font-size: 16px; opacity: 0.9; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 16px; color: #ffffff; font-weight: 500; }
           .content { padding: 40px 30px; }
           .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
           .cta-wrapper { text-align: center; margin: 32px 0; }
@@ -263,7 +263,7 @@ export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterNa
             </p>
             ${messageBlock}
             <div class="cta-wrapper">
-              <a href="${inviteUrl}" class="button">Accept invitation</a>
+              <a href="${inviteUrl}" class="button" target="_blank" rel="noopener noreferrer">Accept invitation</a>
             </div>
             <p class="message" style="font-size: 13px; color: #94a3b8;">This invitation expires in 7 days.</p>
           </div>
@@ -300,7 +300,8 @@ export const sendDirectAddNewUserEmail = async (user, { workspaceName, temporary
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
           .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
           .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
-          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 15px; color: #ffffff; font-weight: 500; }
           .content { padding: 40px 30px; }
           .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
           .credentials { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 24px 0; }
@@ -316,8 +317,8 @@ export const sendDirectAddNewUserEmail = async (user, { workspaceName, temporary
       <body>
         <div class="container">
           <div class="header">
-            <h1>Welcome to ${workspaceName}</h1>
-            <p>Your account has been created</p>
+            <h1 style="color: #ffffff; margin: 0 0 8px 0;">Welcome to ${workspaceName}</h1>
+            <p style="color: #ffffff; margin: 0; font-size: 15px; font-weight: 500;">Your account has been created</p>
           </div>
           <div class="content">
             <p class="message">Hi <strong>${user.name}</strong>,</p>
@@ -328,7 +329,7 @@ export const sendDirectAddNewUserEmail = async (user, { workspaceName, temporary
               <div class="credentials-row"><span class="credentials-label">Temporary Password</span><span class="credentials-value">${temporaryPassword}</span></div>
             </div>
             <div class="cta-wrapper">
-              <a href="${loginUrl}" class="button">Log in to FlowTask</a>
+              <a href="${loginUrl}" class="button" target="_blank" rel="noopener noreferrer">Log in to FlowTask</a>
             </div>
             <div class="warning"><strong>Please change your password after your first login.</strong></div>
           </div>
@@ -363,7 +364,8 @@ export const sendDirectAddExistingUserEmail = async (user, { workspaceName }) =>
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
           .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
           .header { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 40px 30px; text-align: center; }
-          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 15px; color: #ffffff; font-weight: 500; }
           .content { padding: 40px 30px; }
           .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
           .cta-wrapper { text-align: center; margin: 32px 0; }
@@ -374,14 +376,14 @@ export const sendDirectAddExistingUserEmail = async (user, { workspaceName }) =>
       <body>
         <div class="container">
           <div class="header">
-            <h1>You're in!</h1>
-            <p>Added to ${workspaceName}</p>
+            <h1 style="color: #ffffff; margin: 0 0 8px 0;">You're in!</h1>
+            <p style="color: #ffffff; margin: 0; font-size: 15px; font-weight: 500;">Added to ${workspaceName}</p>
           </div>
           <div class="content">
             <p class="message">Hi <strong>${user.name}</strong>,</p>
             <p class="message">You've been added to <strong>${workspaceName}</strong> on FlowTask. Log in with your existing FlowTask account to get started — no new password needed.</p>
             <div class="cta-wrapper">
-              <a href="${loginUrl}" class="button">Log in to FlowTask</a>
+              <a href="${loginUrl}" class="button" target="_blank" rel="noopener noreferrer">Log in to FlowTask</a>
             </div>
           </div>
           <div class="footer">
@@ -416,7 +418,8 @@ export const sendJoinRequestApprovedEmail = async (user, { workspaceName }) => {
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
           .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
           .header { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 40px 30px; text-align: center; }
-          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 15px; color: #ffffff; font-weight: 500; }
           .content { padding: 40px 30px; }
           .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
           .cta-wrapper { text-align: center; margin: 32px 0; }
@@ -427,14 +430,14 @@ export const sendJoinRequestApprovedEmail = async (user, { workspaceName }) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>Congratulations!</h1>
-            <p>Your request has been approved</p>
+            <h1 style="color: #ffffff; margin: 0 0 8px 0;">Congratulations!</h1>
+            <p style="color: #ffffff; margin: 0; font-size: 15px; font-weight: 500;">Your request has been approved</p>
           </div>
           <div class="content">
             <p class="message">Hi <strong>${user.name}</strong>,</p>
             <p class="message">Your request to join <strong>${workspaceName}</strong> has been approved. You now have access — welcome aboard.</p>
             <div class="cta-wrapper">
-              <a href="${loginUrl}" class="button">Log in to FlowTask</a>
+              <a href="${loginUrl}" class="button" target="_blank" rel="noopener noreferrer">Log in to FlowTask</a>
             </div>
           </div>
           <div class="footer">
@@ -541,7 +544,7 @@ export const sendComingSoonSubscriptionEmail = async (email, feature) => {
               Our team is working hard to bring this feature to life. We've added <strong>${email}</strong> to our notification list, and you'll be the first to know as soon as it's ready for launch.
             </p>
             <div style="text-align: center; margin-top: 32px;">
-              <a href="${process.env.FRONTEND_URL}/" class="button">Back to Dashboard</a>
+              <a href="${process.env.FRONTEND_URL}/" class="button" target="_blank" rel="noopener noreferrer">Back to Dashboard</a>
             </div>
           </div>
           <div class="footer">

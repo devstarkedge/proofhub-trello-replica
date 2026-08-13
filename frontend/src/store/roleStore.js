@@ -361,18 +361,21 @@ const useRoleStore = create((set, get) => ({
   /**
    * Get roles for dropdown (excludes admin for non-admin users)
    */
-  getRolesForDropdown: () => {
+  getRolesForDropdown: (workspaceType) => {
     const { roles, myRole } = get();
-    
+    // Team workspaces don't support custom roles — existing holders are
+    // grandfathered, but a custom role must not be offered as a new
+    // assignment option.
+    const customRolesAllowed = workspaceType !== 'team';
+    const base = roles.filter(role => role.isActive !== false && (customRolesAllowed || role.isSystem));
+
     // Admin can see all roles
     if (myRole === 'admin') {
-      return roles.filter(role => role.isActive !== false);
+      return base;
     }
-    
+
     // Non-admin users can't assign admin role
-    return roles.filter(role => 
-      role.slug !== 'admin' && role.isActive !== false
-    );
+    return base.filter(role => role.slug !== 'admin');
   },
 
   /**

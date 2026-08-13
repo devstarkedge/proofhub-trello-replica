@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Ban, Building2, ChevronDown, Loader2, Save, Shield, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
@@ -6,6 +6,7 @@ import * as accessControlApi from '../../services/accessControlApi';
 import useRoleStore from '../../store/roleStore';
 import useDepartmentStore from '../../store/departmentStore';
 import useAccessControl from '../../hooks/useAccessControl';
+import WorkspaceContext from '../../context/WorkspaceContext';
 import useConfirmPermissionChange from '../../hooks/useConfirmPermissionChange';
 import AccessScopePicker from './AccessScopePicker';
 import ResourceActionToggleGrid, { applyViewCascade, verbForToggle } from './ResourceActionToggleGrid';
@@ -31,10 +32,12 @@ const ACCESS_SCOPE_LABELS = {
  */
 const UserAccessEditor = ({ userId, currentUserId, onUserUpdated }) => {
   const { loadRoles, changeUserRole, getRolesForDropdown } = useRoleStore();
+  const { currentWorkspace } = useContext(WorkspaceContext);
   // Admin can assign any role, including Admin. A delegated non-admin editor
   // (access_control.manage without actually being Admin) must not see or be
   // able to pick "Admin" — matches the server-side check in changeUserRole.
-  const roles = getRolesForDropdown();
+  // Team workspaces don't support custom roles, so those are filtered out too.
+  const roles = getRolesForDropdown(currentWorkspace?.type);
   const departmentStore = useDepartmentStore();
   const { registry, refresh: refreshMyPermissions } = useAccessControl();
   const confirmChange = useConfirmPermissionChange();

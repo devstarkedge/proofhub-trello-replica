@@ -839,6 +839,18 @@ class NotificationService {
     }]);
   }
 
+  // Instant-join path (direct invite accept, no approval step) — notifies
+  // the inviter that the person they invited has joined.
+  async notifyMemberJoined(newMember, inviterId, workspaceName) {
+    return this.createBulkNotifications([{
+      type: 'workspace_member_joined',
+      title: 'New Member Joined',
+      message: `${newMember.name} accepted your invitation and joined ${workspaceName}`,
+      user: inviterId,
+      sender: newMember._id
+    }]);
+  }
+
   async notifyJoinRequestRejected(joinRequest, requestingUserId, workspaceName) {
     return this.createBulkNotifications([{
       type: 'workspace_join_request_rejected',

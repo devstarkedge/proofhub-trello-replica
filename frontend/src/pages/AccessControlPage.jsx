@@ -238,6 +238,7 @@ const UsersTab = ({ currentUserId }) => {
 // ─── Roles & Permissions tab — moved wholesale out of Team Management ──
 
 const RolesTab = ({ isAdmin }) => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const { createRole, updateRole, deleteRole, roles } = useRoleStore();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -294,6 +295,7 @@ const RolesTab = ({ isAdmin }) => {
         }}
         onDeleteRole={handleDeleteRole}
         isLoading={false}
+        workspaceType={currentWorkspace?.type}
       />
 
       {/* Delegated administration: grant a specific user — not just a whole

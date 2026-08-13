@@ -70,7 +70,14 @@ const TeamManagement = () => {
 
   // Centralized Invite Member modal — replaces AddMemberModal below.
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
+  // Team workspaces don't support custom roles — existing holders are
+  // grandfathered (still counted/valid elsewhere), but they must not be
+  // offered as an assignment option for a different member going forward.
+  const customRolesAllowed = currentWorkspace?.type !== 'team';
+  const activeRoles = useMemo(
+    () => (roles || []).filter((r) => r.isActive !== false && (customRolesAllowed || r.isSystem)),
+    [roles, customRolesAllowed]
+  );
 
   // Consolidated state management with useReducer
   const [state, dispatch] = useReducer(teamManagementReducer, initialState);
@@ -680,7 +687,7 @@ const TeamManagement = () => {
         />
 
         <CreateRoleModal
-          isOpen={showCreateRoleModal}
+          isOpen={showCreateRoleModal && customRolesAllowed}
           isLoading={createRoleLoading}
           onSubmit={handleCreateRole}
           onClose={() => setShowCreateRoleModal(false)}

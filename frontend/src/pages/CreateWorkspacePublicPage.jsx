@@ -11,12 +11,12 @@ import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
 import useThemeStore from '../store/themeStore';
+import { validateField } from '../utils/validationUtils';
 
 // Workspace type options
 const WORKSPACE_TYPES = [
-  { value: 'company', label: 'Company', description: 'For businesses and organizations', icon: '🏢' },
-  { value: 'team', label: 'Team', description: 'For a group or department', icon: '👥' },
-  { value: 'personal', label: 'Personal', description: 'For individual use', icon: '👤' },
+  { value: 'company', label: 'Company', description: 'For businesses and organizations', icon: Building2 },
+  { value: 'team', label: 'Team', description: 'For a group or department', icon: Users },
 ];
 
 const INDUSTRY_OPTIONS = [
@@ -158,8 +158,8 @@ const CreateWorkspacePublicPage = () => {
     const errors = {};
     if (!ownerName.trim() || ownerName.trim().length < 2) errors.ownerName = 'Full name must be at least 2 characters';
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Please enter a valid email address';
-    if (!password || password.length < 6) errors.password = 'Password must be at least 6 characters';
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) errors.password = 'Password must contain uppercase, lowercase, and a number';
+    const passwordError = validateField('password', password);
+    if (passwordError) errors.password = passwordError;
     if (password !== confirmPassword) errors.confirmPassword = 'Passwords do not match';
     setStep2Errors(errors);
     return Object.keys(errors).length === 0;
@@ -330,26 +330,56 @@ const CreateWorkspacePublicPage = () => {
 
                   {/* Workspace Type */}
                   <Field label="Workspace Type" required error={step1Errors.workspaceType}>
-                    <div className="grid grid-cols-3 gap-2">
-                      {WORKSPACE_TYPES.map((type) => (
-                        <button
-                          key={type.value}
-                          type="button"
-                          onClick={() => setWorkspaceType(type.value)}
-                          className={`p-3 rounded-xl border text-center transition-all ${
-                            workspaceType === type.value
-                              ? 'bg-emerald-500/20 border-emerald-400/60 text-white'
-                              : 'bg-white/5 border-white/15 text-white/70 hover:bg-white/10 hover:border-white/30'
-                          }`}
-                        >
-                          <div className="text-xl mb-1">{type.icon}</div>
-                          <div className="text-xs font-semibold">{type.label}</div>
-                          <div className="text-[10px] text-white/50 mt-0.5 leading-tight">{type.description}</div>
-                          {workspaceType === type.value && (
-                            <Check size={12} className="text-emerald-400 mx-auto mt-1" />
-                          )}
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                      {WORKSPACE_TYPES.map((type) => {
+                        const Icon = type.icon;
+                        const isSelected = workspaceType === type.value;
+                        return (
+                          <button
+                            key={type.value}
+                            type="button"
+                            onClick={() => setWorkspaceType(type.value)}
+                            className={`p-4 rounded-2xl border-2 text-left transition-all duration-200 relative group overflow-hidden flex flex-col justify-between ${
+                              isSelected
+                                ? 'bg-emerald-500/20 border-emerald-400 text-white shadow-lg shadow-emerald-500/10'
+                                : 'bg-white/10 border-white/20 text-white/80 hover:bg-white/15 hover:border-white/40'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between w-full mb-3">
+                              <div
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                                  isSelected
+                                    ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30 scale-105'
+                                    : 'bg-white/15 text-white/90 group-hover:bg-white/25'
+                                }`}
+                              >
+                                <Icon size={20} />
+                              </div>
+                              <div
+                                className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+                                  isSelected
+                                    ? 'bg-emerald-400 text-slate-900 scale-100 opacity-100'
+                                    : 'border-2 border-white/30 opacity-40 group-hover:opacity-70'
+                                }`}
+                              >
+                                {isSelected && <Check size={12} strokeWidth={3} />}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-sm font-bold text-white mb-1 flex items-center gap-1.5">
+                                {type.label}
+                              </div>
+                              <div
+                                className={`text-xs leading-normal transition-colors ${
+                                  isSelected ? 'text-emerald-100 font-medium' : 'text-white/70'
+                                }`}
+                              >
+                                {type.description}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </Field>
 
@@ -569,9 +599,9 @@ const CreateWorkspacePublicPage = () => {
 
           {/* Footer */}
           <div className="px-6 pb-6 text-center">
-            <p className="text-white/50 text-xs">
+            <p className="text-white/70 text-sm sm:text-base font-medium">
               Already have an account?{' '}
-              <Link to="/login" className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors">
+              <Link to="/login" className="text-emerald-400 hover:text-emerald-300 font-bold underline decoration-2 underline-offset-4 hover:underline-offset-2 transition-all">
                 Sign in
               </Link>
             </p>

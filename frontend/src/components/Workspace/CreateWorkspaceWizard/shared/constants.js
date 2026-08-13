@@ -2,7 +2,7 @@
 // package repo, no shared module linking). The backend re-validates every
 // value independently; this copy only drives which fields render and what
 // they're labeled.
-import { Building2, Users, User } from 'lucide-react';
+import { Building2, Users } from 'lucide-react';
 
 export const WORKSPACE_TYPES = [
   {
@@ -16,12 +16,6 @@ export const WORKSPACE_TYPES = [
     label: 'Team',
     description: 'A focused team working on projects together',
     icon: Users
-  },
-  {
-    value: 'personal',
-    label: 'Personal',
-    description: 'Just for you — minimal setup, one default space for your work',
-    icon: User
   }
 ];
 
@@ -57,6 +51,9 @@ export const COMPANY_SIZE_OPTIONS = [
 // what Step 2 renders and marks as required.
 export const WORKSPACE_TYPE_RULES = {
   company: { requiresIndustry: true, requiresCompanySize: true, requiresDepartment: true, autoDepartmentName: null },
-  team: { requiresIndustry: false, requiresCompanySize: false, requiresDepartment: true, autoDepartmentName: null },
-  personal: { requiresIndustry: false, requiresCompanySize: false, requiresDepartment: false, autoDepartmentName: 'General' }
+  team: { requiresIndustry: false, requiresCompanySize: false, requiresDepartment: true, autoDepartmentName: null }
 };
+
+// Company workspaces support custom roles; Team workspaces do not.
+// Mirrored at backend/utils/workspaceOptions.js.
+export const isCustomRoleCreationAllowed = (workspaceType) => workspaceType === 'company';

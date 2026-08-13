@@ -1511,6 +1511,11 @@ hr {
   display: none;
 }
 
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 /* Description collapsed state - very small image previews */
 .description-collapsed img {
   max-width: 50px !important;

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { toast } from 'react-toastify';
-import { ArrowLeft, Loader, UserPlus } from 'lucide-react';
+import { ArrowLeft, Loader, UserPlus, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
 import { inviteMemberDirect } from '../../../services/memberInvitationApi';
+import { validateField } from '../../../utils/validationUtils';
 
 const inputClass = 'w-full px-3 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-emerald-500/30';
 const inputStyle = {
@@ -22,6 +23,7 @@ const StepDirectAdd = ({ workspaceId, departmentOptions, roleOptions, defaultDep
   const [sendWelcomeEmail, setSendWelcomeEmail] = useState(true);
   const [requirePasswordChange, setRequirePasswordChange] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,8 +31,9 @@ const StepDirectAdd = ({ workspaceId, departmentOptions, roleOptions, defaultDep
       toast.warning('Full name, email, department, role, and a temporary password are required');
       return;
     }
-    if (temporaryPassword.length < 6) {
-      toast.warning('Temporary password must be at least 6 characters');
+    const passwordError = validateField('password', temporaryPassword);
+    if (passwordError) {
+      toast.warning(passwordError);
       return;
     }
     if (temporaryPassword !== confirmPassword) {
@@ -104,11 +107,74 @@ const StepDirectAdd = ({ workspaceId, departmentOptions, roleOptions, defaultDep
         </div>
         <div>
           <label className={labelClass} style={{ color: 'var(--color-text-secondary)' }}>Temporary Password *</label>
-          <input type="password" className={inputClass} style={inputStyle} value={temporaryPassword} onChange={(e) => setTemporaryPassword(e.target.value)} placeholder="At least 6 characters" />
+          <div className="relative">
+            <input 
+              type={showPassword ? 'text' : 'password'} 
+              className={`${inputClass} ${temporaryPassword.length > 0 ? 'pr-9' : ''}`} 
+              style={inputStyle} 
+              value={temporaryPassword} 
+              onChange={(e) => setTemporaryPassword(e.target.value)} 
+              placeholder="Min 6 chars, upper/lower/number" 
+            />
+            {temporaryPassword.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg bg-transparent border-none hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center outline-none"
+              >
+                {showPassword ? <EyeOff size={16} className="text-gray-500" /> : <Eye size={16} className="text-gray-500" />}
+              </button>
+            )}
+          </div>
+          {temporaryPassword && (
+            <div className="mt-1.5">
+              {validateField('password', temporaryPassword) ? (
+                <span className="text-[11px] text-amber-500 flex items-start gap-1.5 leading-tight">
+                  <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                  {validateField('password', temporaryPassword)}
+                </span>
+              ) : (
+                <span className="text-[11px] text-emerald-500 flex items-center gap-1.5">
+                  <CheckCircle size={13} /> Password looks good
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div>
           <label className={labelClass} style={{ color: 'var(--color-text-secondary)' }}>Confirm Password *</label>
-          <input type="password" className={inputClass} style={inputStyle} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repeat password" />
+          <div className="relative">
+            <input 
+              type={showPassword ? 'text' : 'password'} 
+              className={`${inputClass} ${confirmPassword.length > 0 ? 'pr-9' : ''}`} 
+              style={inputStyle} 
+              value={confirmPassword} 
+              onChange={(e) => setConfirmPassword(e.target.value)} 
+              placeholder="Repeat password" 
+            />
+            {confirmPassword.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg bg-transparent border-none hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center outline-none"
+              >
+                {showPassword ? <EyeOff size={16} className="text-gray-500" /> : <Eye size={16} className="text-gray-500" />}
+              </button>
+            )}
+          </div>
+          {confirmPassword && (
+            <div className="mt-1.5">
+              {temporaryPassword !== confirmPassword ? (
+                <span className="text-[11px] text-amber-500 flex items-center gap-1.5">
+                  <AlertCircle size={13} /> Passwords do not match
+                </span>
+              ) : (
+                <span className="text-[11px] text-emerald-500 flex items-center gap-1.5">
+                  <CheckCircle size={13} /> Passwords match
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

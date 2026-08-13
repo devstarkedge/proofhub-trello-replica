@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { recordAuditLog } from '../modules/permissions/auditLogService.js';
+import { assertCustomRolesAllowed } from '../modules/workspaces/roleTypeGuard.js';
 
 let permissionLabelByKeyCache = null;
 const permissionLabelByKey = (key) => {
@@ -137,7 +138,9 @@ export const getRoleBySlug = asyncHandler(async (req, res, next) => {
 // @access  Private/Admin
 export const createRole = asyncHandler(async (req, res, next) => {
   const { name, description, permissions } = req.body;
-  
+
+  await assertCustomRolesAllowed(req.workspaceId);
+
   // Generate slug from name
   const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   
@@ -204,7 +207,9 @@ export const updateRole = asyncHandler(async (req, res, next) => {
   if (role.isSystem) {
     return next(new ErrorResponse('System roles cannot be modified', 403));
   }
-  
+
+  await assertCustomRolesAllowed(req.workspaceId);
+
   // If name is changing, check for duplicate
   if (name && name !== role.name) {
     const newSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');

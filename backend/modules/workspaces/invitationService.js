@@ -1,8 +1,12 @@
 import crypto from 'crypto';
 import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
+import User from '../../models/User.js';
+import Workspace from '../../models/Workspace.js';
 import { createOrRestoreMembership } from './membershipCreation.js';
 import { createJoinRequestFromInvitation } from './joinRequestService.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
+import * as workspaceContext from './workspaceContext.js';
+import notificationService from '../../utils/notificationService.js';
 
 const TOKEN_BYTES = 32;
 const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — long enough for a real invite to be acted on, unlike the 15-minute password-reset link
@@ -114,6 +118,29 @@ export async function acceptInvitation(invitation, userId) {
   invitation.acceptedAt = new Date();
   invitation.acceptedBy = userId;
   await invitation.save();
+
+  // Notify the inviter — only for a genuine new/returning join, never for
+  // the already-a-member case (avoids a duplicate notification if this
+  // token is ever raced/double-submitted). Notification.create needs
+  // ambient workspace context that isn't guaranteed at every caller of this
+  // function (authController's register() runs it from a public,
+  // unauthenticated route with no ambient context at all) — re-establish it
+  // here, same as joinRequestService.js#createJoinRequestFromInvitation.
+  if (invitation.invitedBy && outcome !== 'already_member') {
+    try {
+      await workspaceContext.run({ workspaceId: invitation.workspace }, async () => {
+        const [newMember, workspace] = await Promise.all([
+          User.findById(userId).select('name').lean(),
+          workspaceContext.runUnscoped(() => Workspace.findById(invitation.workspace).select('name').lean())
+        ]);
+        if (newMember) {
+          await notificationService.notifyMemberJoined(newMember, invitation.invitedBy, workspace?.name || 'the workspace');
+        }
+      });
+    } catch (err) {
+      console.error('Failed to notify inviter of accepted invitation:', err);
+    }
+  }
 
   return { outcome, membership };
 }

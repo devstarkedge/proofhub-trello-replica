@@ -43,6 +43,17 @@ export const validationRules = {
     }
   },
 
+  // Login only ever checks an existing credential, not a new one — it must
+  // never apply the password-creation complexity pattern above, or a
+  // pre-existing user whose real password doesn't match that pattern (e.g.
+  // set before this rule existed) would be blocked from ever logging in.
+  loginPassword: {
+    required: true,
+    messages: {
+      required: 'Password is required'
+    }
+  },
+
   currentPassword: {
     required: true,
     messages: {

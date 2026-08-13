@@ -6,7 +6,11 @@ import { Eye, EyeOff, Mail, Lock, LogIn, AlertCircle, CheckCircle } from 'lucide
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
 import useThemeStore from '../store/themeStore';
-import { validateForm, validateField } from '../utils/validationUtils';
+import { validateForm, validateField, validationRules } from '../utils/validationUtils';
+
+// Login checks an existing credential, not a new one — swap in the
+// no-complexity-check rule for the password field only.
+const loginValidationRules = { ...validationRules, password: validationRules.loginPassword };
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
@@ -44,19 +48,19 @@ const LoginPage = () => {
 
     // Real-time validation
     if (touched[name]) {
-      const error = validateField(name, value);
+      const error = validateField(name, value, loginValidationRules);
       setErrors(prev => ({ ...prev, [name]: error }));
     }
   };
 
   const handleBlur = (field) => {
     setTouched(prev => ({ ...prev, [field]: true }));
-    const error = validateField(field, formData[field]);
+    const error = validateField(field, formData[field], loginValidationRules);
     setErrors(prev => ({ ...prev, [field]: error }));
   };
 
   const validateFormData = () => {
-    const { isValid, errors: validationErrors } = validateForm(formData, ['email', 'password']);
+    const { isValid, errors: validationErrors } = validateForm(formData, ['email', 'password'], loginValidationRules);
     setErrors(validationErrors);
     setTouched({ email: true, password: true });
     return isValid;

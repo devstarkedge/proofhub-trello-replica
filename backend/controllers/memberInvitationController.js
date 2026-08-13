@@ -11,6 +11,7 @@ import { createOrRefreshInvitation } from '../modules/workspaces/invitationServi
 import { addUserToDepartmentRoster } from '../modules/workspaces/departmentRosterSync.js';
 import * as joinRequestService from '../modules/workspaces/joinRequestService.js';
 import { hasWorkspacePermission } from '../modules/workspaces/workspacePermissions.js';
+import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
 import { recordAuditLog, queryAuditLog } from '../modules/permissions/auditLogService.js';
 import { sendDirectAddNewUserEmail, sendDirectAddExistingUserEmail, sendWorkspaceInviteEmail } from '../utils/email.js';
 
@@ -56,6 +57,8 @@ async function inviteMemberDirect(req, res, next, workspace) {
   if (!roleDoc) {
     return next(new ErrorResponse('Invalid role', 400));
   }
+
+  await assertCustomRoleAssignable(req.params.id, roleDoc);
 
   // A non-admin holding only canInviteMembers must not be able to mint new
   // admins through this modal — mirrors userController.js's "only a genuine

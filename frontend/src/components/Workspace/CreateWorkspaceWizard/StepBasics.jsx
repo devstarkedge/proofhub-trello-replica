@@ -101,7 +101,7 @@ const StepBasics = ({ formData, updateField, logoPreviewUrl, onLogoFileChange, o
         <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-primary)' }}>
           Workspace type
         </label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {WORKSPACE_TYPES.map((typeOption) => {
             const { value, label, description } = typeOption;
             const Icon = typeOption.icon;
@@ -111,15 +111,27 @@ const StepBasics = ({ formData, updateField, logoPreviewUrl, onLogoFileChange, o
                 key={value}
                 type="button"
                 onClick={() => updateField('type', value)}
-                className="text-left p-3 rounded-xl border-2 transition-colors"
+                className="text-left p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between"
                 style={{
                   borderColor: isSelected ? '#10b981' : 'var(--color-border-default)',
                   backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.08)' : 'var(--color-bg-muted)',
                 }}
               >
-                <Icon size={18} style={{ color: isSelected ? '#10b981' : 'var(--color-text-muted)' }} />
-                <p className="text-sm font-semibold mt-1.5" style={{ color: 'var(--color-text-primary)' }}>{label}</p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{description}</p>
+                <div className="flex items-center justify-between w-full mb-2">
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                    style={{
+                      backgroundColor: isSelected ? '#10b981' : 'var(--color-bg-tertiary)',
+                      color: isSelected ? '#ffffff' : 'var(--color-text-muted)'
+                    }}
+                  >
+                    <Icon size={18} />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{label}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{description}</p>
+                </div>
               </button>
             );
           })}

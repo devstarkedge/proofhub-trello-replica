@@ -7,6 +7,7 @@ import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import { requireWorkspacePermission } from '../middleware/requireWorkspacePermission.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
+import { passwordValidator } from '../utils/passwordPolicy.js';
 
 // Second router mounted at the same /api/workspaces prefix as
 // routes/workspaces.js — kept in its own file so the centralized Invite
@@ -24,7 +25,7 @@ router.post('/:id/invite-member', rateLimiter({
   body('method').isIn(['direct', 'self_register']).withMessage('method must be "direct" or "self_register"'),
   body('email').isEmail().withMessage('A valid email is required'),
   body('temporaryPassword').if(body('method').equals('direct'))
-    .isLength({ min: 6 }).withMessage('Temporary password must be at least 6 characters'),
+    .custom(passwordValidator()),
   validate
 ], inviteMember);
 

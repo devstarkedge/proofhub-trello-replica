@@ -4,13 +4,14 @@ import { register, login, getMe, updateDetails, updatePassword, refreshToken, ch
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
+import { passwordValidator } from '../utils/passwordPolicy.js';
 
 const router = express.Router();
 
 router.post('/register', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 5, message: 'Too many registration attempts. Please try again later.' }), [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('password').custom(passwordValidator()),
   validate
 ], register);
 
@@ -18,7 +19,7 @@ router.post('/register', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 5,
 router.post('/register-workspace', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 5, message: 'Too many workspace creation requests. Please try again later.' }), [
   body('name').trim().notEmpty().withMessage('Full name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('password').custom(passwordValidator()),
   body('workspaceName').trim().notEmpty().withMessage('Workspace name is required'),
   body('workspaceType').trim().notEmpty().withMessage('Workspace type is required'),
   validate
@@ -47,7 +48,7 @@ router.get('/verify-reset-token/:token', rateLimiter({ windowMs: 15 * 60 * 1000,
 
 // Reset password (public)
 router.post('/reset-password/:token', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 10, message: 'Too many requests. Please try again later.' }), [
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('password').custom(passwordValidator()),
   validate
 ], resetPassword);
 

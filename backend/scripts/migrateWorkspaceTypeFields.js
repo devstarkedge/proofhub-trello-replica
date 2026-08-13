@@ -24,7 +24,20 @@ export async function runWorkspaceTypeMigration() {
       { type: { $exists: false } },
       { $set: { type: 'team', industry: null, companySize: null } }
     );
-    return { modifiedCount: result.modifiedCount };
+
+    // The 'personal' workspace type has been retired — convert any
+    // pre-existing personal workspaces to 'team' (the least presumptuous
+    // remaining type, matching this function's own backfill rationale
+    // above). Uses the raw driver (bypasses Mongoose validation) so this is
+    // safe to ship in the same deploy as the tightened `type` enum: this
+    // runs at boot, before the server accepts requests, so no document can
+    // ever be read or written as 'personal' afterward.
+    const personalResult = await Workspace.collection.updateMany(
+      { type: 'personal' },
+      { $set: { type: 'team' } }
+    );
+
+    return { modifiedCount: result.modifiedCount, personalToTeamCount: personalResult.modifiedCount };
   });
 }
 

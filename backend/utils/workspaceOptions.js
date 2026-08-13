@@ -1,6 +1,6 @@
 // Mirrored at frontend/src/components/Workspace/CreateWorkspaceWizard/shared/constants.js
 // — keep both lists in sync (two-package repo, no shared module linking).
-export const WORKSPACE_TYPES = ['company', 'team', 'personal'];
+export const WORKSPACE_TYPES = ['company', 'team'];
 
 export const INDUSTRY_OPTIONS = [
   'technology', 'finance', 'healthcare', 'education', 'retail_ecommerce',
@@ -15,10 +15,13 @@ export const COMPANY_SIZE_OPTIONS = ['solo', '2-10', '11-50', '51-200', '201-500
 // this copy is the one that actually gates creation.
 export const WORKSPACE_TYPE_RULES = {
   company: { requiresIndustry: true, requiresCompanySize: true, requiresDepartment: true, autoDepartmentName: null },
-  team: { requiresIndustry: false, requiresCompanySize: false, requiresDepartment: true, autoDepartmentName: null },
-  personal: { requiresIndustry: false, requiresCompanySize: false, requiresDepartment: false, autoDepartmentName: 'General' }
+  team: { requiresIndustry: false, requiresCompanySize: false, requiresDepartment: true, autoDepartmentName: null }
 };
 
 export const isValidWorkspaceType = (type) => WORKSPACE_TYPES.includes(type);
 export const isValidIndustry = (industry) => INDUSTRY_OPTIONS.includes(industry);
 export const isValidCompanySize = (size) => COMPANY_SIZE_OPTIONS.includes(size);
+
+// Company workspaces support custom roles; Team workspaces do not.
+// Mirrored at frontend/src/components/Workspace/CreateWorkspaceWizard/shared/constants.js.
+export const isCustomRoleCreationAllowed = (workspaceType) => workspaceType === 'company';

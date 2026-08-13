@@ -9,6 +9,7 @@ import { recordAuditLog } from '../permissions/auditLogService.js';
 import { listWorkspaceMembersWithPermission } from './workspacePermissions.js';
 import * as workspaceContext from './workspaceContext.js';
 import { createOrRestoreMembership } from './membershipCreation.js';
+import { assertCustomRoleAssignable } from './roleTypeGuard.js';
 import { addUserToDepartmentRoster } from './departmentRosterSync.js';
 import notificationService from '../../utils/notificationService.js';
 import { sendJoinRequestApprovedEmail, sendJoinRequestRejectedEmail } from '../../utils/email.js';
@@ -107,6 +108,7 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverId,
     if (!roleDoc) {
       throw new ErrorResponse('Invalid role override', 400);
     }
+    await assertCustomRoleAssignable(workspaceId, roleDoc);
     roleSlug = roleDoc.slug;
     roleId = roleDoc._id;
   }

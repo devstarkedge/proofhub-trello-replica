@@ -10,7 +10,6 @@ import EmailInviteInput from '../EmailInviteInput';
  */
 const StepSetup = ({ formData, updateField, onValidityChange }) => {
   const rules = WORKSPACE_TYPE_RULES[formData.type] || WORKSPACE_TYPE_RULES.team;
-  const showCompanyFields = formData.type !== 'personal';
 
   useEffect(() => {
     const industryValid = !rules.requiresIndustry || !!formData.industry;
@@ -47,43 +46,39 @@ const StepSetup = ({ formData, updateField, onValidityChange }) => {
         </div>
       )}
 
-      {showCompanyFields && (
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-primary)' }}>
-            Industry {rules.requiresIndustry && <span className="text-red-500">*</span>}
-          </label>
-          <select
-            value={formData.industry}
-            onChange={(e) => updateField('industry', e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none transition-colors focus:ring-2 focus:ring-emerald-500/30"
-            style={{ backgroundColor: 'var(--color-bg-muted)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
-          >
-            <option value="">Select an industry</option>
-            {INDUSTRY_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div>
+        <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-primary)' }}>
+          Industry {rules.requiresIndustry && <span className="text-red-500">*</span>}
+        </label>
+        <select
+          value={formData.industry}
+          onChange={(e) => updateField('industry', e.target.value)}
+          className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none transition-colors focus:ring-2 focus:ring-emerald-500/30"
+          style={{ backgroundColor: 'var(--color-bg-muted)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
+        >
+          <option value="">Select an industry</option>
+          {INDUSTRY_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
 
-      {showCompanyFields && (
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-primary)' }}>
-            Company size {rules.requiresCompanySize && <span className="text-red-500">*</span>}
-          </label>
-          <select
-            value={formData.companySize}
-            onChange={(e) => updateField('companySize', e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none transition-colors focus:ring-2 focus:ring-emerald-500/30"
-            style={{ backgroundColor: 'var(--color-bg-muted)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
-          >
-            <option value="">Select company size</option>
-            {COMPANY_SIZE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div>
+        <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-primary)' }}>
+          Company size {rules.requiresCompanySize && <span className="text-red-500">*</span>}
+        </label>
+        <select
+          value={formData.companySize}
+          onChange={(e) => updateField('companySize', e.target.value)}
+          className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none transition-colors focus:ring-2 focus:ring-emerald-500/30"
+          style={{ backgroundColor: 'var(--color-bg-muted)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
+        >
+          <option value="">Select company size</option>
+          {COMPANY_SIZE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
 
       <div>
         <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-primary)' }}>

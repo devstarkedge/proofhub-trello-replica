@@ -25,10 +25,14 @@ const RoleManagementPanel = memo(({
   onCreateRole,
   onEditRole,
   onDeleteRole,
-  isLoading
+  isLoading,
+  workspaceType
 }) => {
   const { effectiveMode } = useThemeStore();
   const isDarkMode = effectiveMode === 'dark';
+  // Team workspaces don't support custom roles — enforced server-side too,
+  // this just keeps the UI from offering an action that will 403.
+  const customRolesAllowed = workspaceType !== 'team';
 
   // Use reactive selectors for proper re-rendering
   const roles = useRoleStore((state) => state.roles);
@@ -106,14 +110,16 @@ const RoleManagementPanel = memo(({
             >
               <RefreshCw size={20} className={rolesLoading ? 'animate-spin' : ''} />
             </button>
-            <button
-              onClick={onCreateRole}
-              disabled={isLoading}
-              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg shadow-purple-500/30 font-semibold flex items-center gap-2 disabled:opacity-50"
-            >
-              <Plus size={18} />
-              Create Role
-            </button>
+            {customRolesAllowed && (
+              <button
+                onClick={onCreateRole}
+                disabled={isLoading}
+                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg shadow-purple-500/30 font-semibold flex items-center gap-2 disabled:opacity-50"
+              >
+                <Plus size={18} />
+                Create Role
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -157,14 +163,20 @@ const RoleManagementPanel = memo(({
             <div className={`text-center py-12 ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-50'} rounded-xl border-2 border-dashed ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`}>
               <Shield size={48} className={`mx-auto mb-3 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'}`} />
               <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'} font-medium`}>No custom roles yet</p>
-              <p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-500'} mt-1`}>Create a new role to define custom permissions</p>
-              <button
-                onClick={onCreateRole}
-                className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium inline-flex items-center gap-2"
-              >
-                <Plus size={16} />
-                Create First Role
-              </button>
+              {customRolesAllowed ? (
+                <>
+                  <p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-500'} mt-1`}>Create a new role to define custom permissions</p>
+                  <button
+                    onClick={onCreateRole}
+                    className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium inline-flex items-center gap-2"
+                  >
+                    <Plus size={16} />
+                    Create First Role
+                  </button>
+                </>
+              ) : (
+                <p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-500'} mt-1`}>Custom roles are only available for Company workspaces</p>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -179,6 +191,7 @@ const RoleManagementPanel = memo(({
                   getRoleBadgeColor={getRoleBadgeColor}
                   countPermissions={countPermissions}
                   isDarkMode={isDarkMode}
+                  canEdit={customRolesAllowed}
                 />
               ))}
             </div>
@@ -201,7 +214,8 @@ const RoleCard = memo(({
   onDelete,
   getRoleBadgeColor,
   countPermissions,
-  isDarkMode = false
+  isDarkMode = false,
+  canEdit = true
 }) => {
   const { enabled, total } = countPermissions(role.permissions);
   const permissionPercentage = total > 0 ? Math.round((enabled / total) * 100) : 0;
@@ -312,16 +326,18 @@ const RoleCard = memo(({
               {/* Action Buttons */}
               {!role.isSystem && (
                 <div className={`flex items-center gap-2 mt-4 pt-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEdit();
-                    }}
-                    className={`flex-1 px-4 py-2 ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'} rounded-lg transition-colors font-medium flex items-center justify-center gap-2`}
-                  >
-                    <Edit2 size={16} />
-                    Edit Role
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit();
+                      }}
+                      className={`flex-1 px-4 py-2 ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'} rounded-lg transition-colors font-medium flex items-center justify-center gap-2`}
+                    >
+                      <Edit2 size={16} />
+                      Edit Role
+                    </button>
+                  )}
                   {onDelete && (
                     <button
                       onClick={(e) => {

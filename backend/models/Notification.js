@@ -50,6 +50,7 @@ const notificationSchema = new mongoose.Schema({
       'workspace_join_request_submitted',
       'workspace_join_request_approved',
       'workspace_join_request_rejected',
+      'workspace_member_joined',
       'deadline_approaching',
       'status_change',
       'system_alert',

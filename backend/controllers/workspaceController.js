@@ -9,6 +9,7 @@ import Role from '../models/Role.js';
 import User from '../models/User.js';
 import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
+import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
 import { uploadWorkspaceIconToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 import { createDepartmentCore } from '../modules/workspaces/departmentCreation.js';
 import { createOrRestoreMembership, notifyMembershipAdded } from '../modules/workspaces/membershipCreation.js';
@@ -25,7 +26,7 @@ const ICON_MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB — a logo, not a photo
 // @access  Private
 export const getMyWorkspaces = asyncHandler(async (req, res) => {
   const memberships = await WorkspaceMembership.find({ user: req.user.id, status: 'active' })
-    .populate('workspace', 'name slug isActive icon')
+    .populate('workspace', 'name slug isActive icon type')
     .lean();
 
   const workspaces = memberships
@@ -34,6 +35,7 @@ export const getMyWorkspaces = asyncHandler(async (req, res) => {
       _id: m.workspace._id,
       name: m.workspace.name,
       slug: m.workspace.slug,
+      type: m.workspace.type,
       role: m.role,
       icon: m.workspace.icon || null,
       isActive: String(m.workspace._id) === String(req.workspaceId)
@@ -320,15 +322,12 @@ export const getWorkspaceSetupStatus = asyncHandler(async (req, res, next) => {
   );
 
   const hasIcon = !!workspace.icon?.url;
-  const type = workspace.type || 'team';
 
   const checklist = [
     { key: 'department', label: 'Create your first department', completed: departmentCount > 0 },
     { key: 'project', label: 'Create your first project', completed: projectCount > 0 },
-    ...(type !== 'personal' ? [
-      { key: 'invite', label: 'Invite your team', completed: memberCount > 1 },
-      { key: 'branding', label: 'Add a workspace logo', completed: hasIcon }
-    ] : [])
+    { key: 'invite', label: 'Invite your team', completed: memberCount > 1 },
+    { key: 'branding', label: 'Add a workspace logo', completed: hasIcon }
   ];
 
   const completionPercent = Math.round(
@@ -619,6 +618,12 @@ export const updateWorkspaceMemberRole = asyncHandler(async (req, res, next) => 
     return next(new ErrorResponse('Invalid role', 400));
   }
 
+  // Only a genuine role change needs the Team-workspace custom-role check —
+  // grandfathers a no-op resave of a role the member already holds.
+  if (target.role !== roleDoc.slug) {
+    await assertCustomRoleAssignable(req.params.id, roleDoc);
+  }
+
   target.role = roleDoc.slug;
   target.roleId = roleDoc._id;
   await target.save();
@@ -832,7 +837,7 @@ export const switchWorkspace = asyncHandler(async (req, res, next) => {
     workspace: req.params.id,
     user: req.user.id,
     status: 'active'
-  }).populate('workspace', 'name slug icon').lean();
+  }).populate('workspace', 'name slug icon type').lean();
 
   if (!membership || !membership.workspace) {
     return next(new ErrorResponse('You are not a member of this workspace', 403));
