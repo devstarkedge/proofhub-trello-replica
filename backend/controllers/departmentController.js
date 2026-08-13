@@ -615,6 +615,21 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // Same validation as managers above, applied to members — this array was
+  // previously overwritten with zero membership checking at all.
+  if (members) {
+    const validMemberIds = await WorkspaceMembership.find({
+      workspace: req.workspaceId,
+      user: { $in: members },
+      status: 'active'
+    }).distinct('user');
+    const validMemberSet = new Set(validMemberIds.map(String));
+    const invalidMembers = members.filter((id) => !validMemberSet.has(String(id)));
+    if (invalidMembers.length > 0) {
+      return next(new ErrorResponse('One or more members are not members of this workspace', 403));
+    }
+  }
+
   // Track changes for webhook
   const changes = {};
 

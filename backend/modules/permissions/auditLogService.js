@@ -141,9 +141,10 @@ export async function queryAuditLog({
  * present, the raw `changes.before/after` blobs. Fetched only when a log
  * row is expanded, never as part of the list.
  */
-export async function getAuditLogDetail(id) {
+export async function getAuditLogDetail(id, workspaceId) {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
-  return AuditLog.findById(id)
+  const workspace = workspaceId || await ensureDefaultWorkspace();
+  return AuditLog.findOne({ _id: id, workspace })
     .select('action summary resourceLabel changeDetails changes actorName targetName createdAt')
     .lean();
 }

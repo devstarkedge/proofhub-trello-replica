@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Ban, Blocks, Clock, Loader2, Search, Shield, ShieldCheck, UserCog, Users, X } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
@@ -90,16 +90,29 @@ const UsersTab = ({ currentUserId }) => {
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
 
+  // Monotonically-increasing request id — the same "only the latest request
+  // may apply its response" guard as ResourceAccessPanel.jsx's `mounted`
+  // flag, but usable from a function that (unlike that component's fetch)
+  // must also stay externally callable as onUserUpdated below. Any call to
+  // loadUsers — from the workspace-switch effect below, or from
+  // UserAccessEditor after an edit — bumps the counter, so a slower,
+  // superseded response can never overwrite a newer one (which is exactly
+  // what let a previous workspace's user list linger after a fast switch).
+  const usersRequestIdRef = useRef(0);
+
   const loadUsers = useCallback(async () => {
+    const requestId = ++usersRequestIdRef.current;
     try {
       setLoading(true);
       const res = await api.get('/api/users');
+      if (usersRequestIdRef.current !== requestId) return;
       setUsers(res.data?.data || []);
     } catch (error) {
+      if (usersRequestIdRef.current !== requestId) return;
       console.error('Failed to load users:', error);
       toast.error('Failed to load users');
     } finally {
-      setLoading(false);
+      if (usersRequestIdRef.current === requestId) setLoading(false);
     }
   }, []);
 

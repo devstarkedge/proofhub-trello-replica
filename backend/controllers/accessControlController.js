@@ -9,6 +9,7 @@ import {
   clearResourceOverride
 } from '../modules/permissions/accessControlService.js';
 import { queryAuditLog, getAuditLogDetail } from '../modules/permissions/auditLogService.js';
+import { isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
 
 // @desc    Get the permission registry (resources + actions) for UI rendering
 // @route   GET /api/access-control/registry
@@ -32,6 +33,11 @@ export const getMyEffectivePermissions = asyncHandler(async (req, res) => {
 // @route   GET /api/access-control/users/:userId/effective
 // @access  Private (requires access_control.manage)
 export const getUserEffectivePermissions = asyncHandler(async (req, res, next) => {
+  // No separate isActiveWorkspaceMember check here — getEffectivePermissionsForUser
+  // (accessControlService.js) resolves the target's WorkspaceMembership itself
+  // (needed anyway, to overlay their workspace-specific role — see Fix 4) and
+  // returns null for a non-member, which this 404 already covers. Checking
+  // twice would just be a redundant query.
   const effective = await getEffectivePermissionsForUser(req.params.userId, req.workspaceId);
   if (!effective) {
     return next(new ErrorResponse('User not found', 404));
@@ -54,6 +60,10 @@ export const putUserResourceOverride = asyncHandler(async (req, res, next) => {
   const targetUser = await User.findById(userId).select('_id');
   if (!targetUser) {
     return next(new ErrorResponse('User not found', 404));
+  }
+
+  if (!(await isActiveWorkspaceMember(userId, req.workspaceId))) {
+    return next(new ErrorResponse('User is not a member of this workspace', 403));
   }
 
   try {
@@ -99,7 +109,7 @@ export const getAuditLog = asyncHandler(async (req, res) => {
 // @route   GET /api/access-control/audit-log/:id
 // @access  Private (requires access_control.manage)
 export const getAuditLogEntryDetail = asyncHandler(async (req, res, next) => {
-  const entry = await getAuditLogDetail(req.params.id);
+  const entry = await getAuditLogDetail(req.params.id, req.workspaceId);
   if (!entry) {
     return next(new ErrorResponse('Activity log entry not found', 404));
   }
@@ -114,6 +124,15 @@ export const deleteUserResourceOverride = asyncHandler(async (req, res, next) =>
 
   if (!RESOURCES[String(resource).toLowerCase()]) {
     return next(new ErrorResponse(`Unknown permission resource: ${resource}`, 400));
+  }
+
+  const targetUser = await User.findById(userId).select('_id');
+  if (!targetUser) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  if (!(await isActiveWorkspaceMember(userId, req.workspaceId))) {
+    return next(new ErrorResponse('User is not a member of this workspace', 403));
   }
 
   try {

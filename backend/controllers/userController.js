@@ -108,6 +108,10 @@ export const getUser = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('User not found', 404));
   }
 
+  if (!(await isActiveWorkspaceMember(user._id, req.workspaceId))) {
+    return next(new ErrorResponse('User is not a member of this workspace', 403));
+  }
+
   res.status(200).json({
     success: true,
     data: user
@@ -633,10 +637,17 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
       // Send verification email
       await sendVerificationEmail(user);
 
-      // Notify admins and managers about new user verification
-      const authorizedUsers = await User.find({ 
-        role: { $in: ['admin', 'manager'] }, 
-        isActive: true 
+      // Notify admins and managers about new user verification — scoped to
+      // THIS workspace's admins/managers only (was previously every
+      // workspace's, via an unscoped global User.role query).
+      const authorizedMemberships = await WorkspaceMembership.find({
+        workspace: req.workspaceId,
+        role: { $in: ['admin', 'manager'] },
+        status: 'active'
+      }).select('user').lean();
+      const authorizedUsers = await User.find({
+        _id: { $in: authorizedMemberships.map((m) => m.user) },
+        isActive: true
       }).select('_id');
       const authorizedIds = authorizedUsers.map(u => u._id);
       await notificationService.notifyUserVerified(user, authorizedIds);

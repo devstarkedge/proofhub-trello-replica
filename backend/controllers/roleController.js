@@ -184,7 +184,7 @@ export const createRole = asyncHandler(async (req, res, next) => {
     changeDetails: grantedKeys.map((label) => ({ label, previous: false, next: true })),
     before: null,
     after: { name: role.name, permissions: role.permissions },
-    meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+    meta: { ip: req.ip, userAgent: req.headers['user-agent'], workspaceId: req.workspaceId }
   }).catch(() => {});
 });
 
@@ -251,7 +251,7 @@ export const updateRole = asyncHandler(async (req, res, next) => {
       changeDetails,
       before: { name: role.name, permissions: beforePermissions },
       after: { name: role.name, permissions: afterPermissions },
-      meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+      meta: { ip: req.ip, userAgent: req.headers['user-agent'], workspaceId: req.workspaceId }
     }).catch(() => {});
   }
 });
@@ -295,7 +295,7 @@ export const deleteRole = asyncHandler(async (req, res, next) => {
     changeDetails: [{ label: 'Role', previous: role.name, next: 'Deleted' }],
     before: { name: role.name, permissions: role.permissions },
     after: null,
-    meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+    meta: { ip: req.ip, userAgent: req.headers['user-agent'], workspaceId: req.workspaceId }
   }).catch(() => {});
 });
 

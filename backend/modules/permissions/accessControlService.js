@@ -1,6 +1,7 @@
 import User from '../../models/User.js';
 import AccessOverride from '../../models/AccessOverride.js';
 import Role from '../../models/Role.js';
+import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { RESOURCES, RESOURCE_KEYS, toLegacyShape } from '../../config/permissionRegistry.js';
 import { resolveResourceAccess, canManageAccessControl } from './permissionEngine.js';
 import { ensureDefaultWorkspace } from './workspaceService.js';
@@ -313,5 +314,26 @@ export async function resolveEffectivePermissions(user, workspaceId) {
 export async function getEffectivePermissionsForUser(targetUserId, workspaceId) {
   const targetUser = await User.findById(targetUserId).select('-password');
   if (!targetUser) return null;
-  return resolveEffectivePermissions(targetUser, workspaceId);
+
+  // Resolve against the target's role IN THIS WORKSPACE, not their global
+  // User.role — a user can hold a different role in each workspace they
+  // belong to (e.g. Manager here, Employee elsewhere), and WorkspaceMembership
+  // is the source of truth for that, same as userController.js#getUsers'
+  // own overlay and protect's per-request req.user overlay. Returning null
+  // for a non-member also covers the workspace-membership check this
+  // function's callers need (see accessControlController.js).
+  const membership = await WorkspaceMembership.findOne({
+    user: targetUserId, workspace: workspaceId, status: 'active'
+  }).lean();
+  if (!membership) return null;
+
+  const scopedUser = {
+    ...targetUser.toObject(),
+    role: membership.role,
+    roleId: membership.roleId,
+    accessType: membership.accessType,
+    allowedProjects: membership.allowedProjects
+  };
+
+  return resolveEffectivePermissions(scopedUser, workspaceId);
 }
