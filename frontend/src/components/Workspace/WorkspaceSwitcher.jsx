@@ -134,7 +134,7 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
           <img
             src={effectiveMode === 'dark' ? '/LogoDark.svg' : '/Logo.svg'}
             alt="FlowTask"
-            className={compact ? 'h-9 w-auto object-contain' : 'h-14 w-auto object-contain'}
+            className={compact ? 'h-9 w-auto object-contain' : 'h-10 w-auto object-contain'}
             style={{ filter: effectiveMode === 'dark' ? 'brightness(1.1)' : 'none' }}
           />
         )}
@@ -156,7 +156,7 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full left-0 mt-2 w-72 rounded-2xl shadow-2xl z-[60] overflow-hidden border"
+            className={`absolute top-full left-0 mt-2 ${compact ? 'w-56' : 'w-72'} rounded-2xl shadow-2xl z-[60] overflow-hidden border`}
             style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}
           >
             {/* Current workspace */}

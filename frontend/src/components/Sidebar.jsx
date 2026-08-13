@@ -324,13 +324,13 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       {/* Desktop sidebar (hidden on small screens) */}
       {!isMobile && (
         <aside 
-          className="hidden lg:flex w-64 h-screen fixed left-0 top-0 overflow-y-auto flex-col justify-between border-r"
+          className="hidden lg:flex w-[var(--sidebar-width)] h-screen fixed left-0 top-0 overflow-y-auto flex-col justify-between border-r"
           style={sidebarStyles}
           aria-hidden={isMobile}
         >
           <div>
             <div
-              className="px-4 py-2 border-b"
+              className="px-4 h-[var(--header-height)] flex items-center border-b"
               style={{ borderColor: 'var(--color-border-default)' }}
             >
               <WorkspaceSwitcher />
@@ -395,10 +395,10 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
             style={{ ...sidebarStyles, transform: 'translateZ(0)' }}
           >
             <div
-              className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b bg-inherit"
-              style={{ borderColor: 'var(--color-border-default)', paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}
+              className="sticky top-0 z-10 flex items-center justify-between px-4 h-[var(--header-height)] border-b bg-inherit"
+              style={{ borderColor: 'var(--color-border-default)', paddingTop: 'env(safe-area-inset-top)' }}
             >
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 flex items-center h-full">
                 <WorkspaceSwitcher compact onNavigate={onClose} />
               </div>
             </div>

@@ -21,7 +21,7 @@ const MainLayout = () => {
       <Sidebar />
 
       {/* Main Content Area - Shifted right on desktop */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden lg:ml-64 transition-all duration-300">
+      <div className="flex-1 flex flex-col h-full overflow-hidden lg:ml-[var(--sidebar-width)] transition-all duration-300">
         {/* Sticky Header */}
         <Header />
 

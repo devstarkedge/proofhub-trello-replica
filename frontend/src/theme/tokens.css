@@ -32,6 +32,10 @@
   --white: #ffffff;
   --black: #000000;
 
+  /* === LAYOUT TOKENS === */
+  --header-height: 64px;
+  --sidebar-width: 256px;
+
   /* === SPACING SCALE === */
   --space-0: 0;
   --space-px: 1px;

@@ -3,7 +3,7 @@ import {
   Bell, Menu, Settings, LogOut, User,
   ChevronDown, Kanban, List, Calendar, BarChart3,
   Users, Building2, ArrowLeft, Briefcase, Plus,
-  CreditCard, HelpCircle, Palette, Sparkles
+  CreditCard, HelpCircle, Palette, Sparkles, LayoutGrid
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -73,6 +73,7 @@ const Header = ({ boardName }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
   const [showDepartmentSelector, setShowDepartmentSelector] = useState(false);
+  const [showViewSwitcher, setShowViewSwitcher] = useState(false);
   const [showAppearanceModal, setShowAppearanceModal] = useState(false);
   const [hoveredNav, setHoveredNav] = useState(null);
   const [hoveredMenuItem, setHoveredMenuItem] = useState(null);
@@ -81,6 +82,7 @@ const Header = ({ boardName }) => {
   const userMenuRef = useRef(null);
   const teamRef = useRef(null);
   const deptRef = useRef(null);
+  const viewSwitcherRef = useRef(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -96,6 +98,9 @@ const Header = ({ boardName }) => {
       }
       if (deptRef.current && !deptRef.current.contains(event.target)) {
         setShowDepartmentSelector(false);
+      }
+      if (viewSwitcherRef.current && !viewSwitcherRef.current.contains(event.target)) {
+        setShowViewSwitcher(false);
       }
     };
 
@@ -136,20 +141,29 @@ const Header = ({ boardName }) => {
   // Get icon config for nav items
   const getNavIconConfig = (path) => navIconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
 
+  // Currently active view (Board/Task-List/Calendar/Analytics), if any —
+  // drives the compact view-switcher trigger shown below `lg`. Falls back to
+  // a neutral "Views" state on the many routes outside these 4 paths (e.g.
+  // /profile, /teams, /hr-panel), mirroring how the full desktop nav already
+  // shows all 4 pills unhighlighted on those same pages today.
+  const activeNavItem = navItems.find(({ path }) => isActive(path));
+  const activeNavIconConfig = activeNavItem ? getNavIconConfig(activeNavItem.path) : null;
+  const ActiveViewIcon = activeNavItem?.icon || LayoutGrid;
+
   return (
     <>
     <header 
-      className="sticky top-0 z-40 border-b backdrop-blur-md"
+      className="sticky top-0 z-40 border-b backdrop-blur-md h-[var(--header-height)]"
       style={{
         backgroundColor: 'var(--color-header-bg)',
         borderColor: 'var(--color-header-border)',
         boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)',
       }}
     >
-      <div className="px-4 lg:px-6 py-3">
-        <div className="flex items-center justify-between gap-4">
+      <div className="px-4 lg:px-6 h-full flex items-center">
+        <div className="flex items-center justify-between gap-4 w-full">
           {/* Left Section */}
-          <div className="flex items-center gap-3 flex-1">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             {/* Mobile menu button */}
             <motion.button
               whileHover={{ scale: 1.05 }}
@@ -206,8 +220,8 @@ const Header = ({ boardName }) => {
             )}
 
             {/* View Navigation - Enhanced with colored icons */}
-            <nav 
-              className="hidden lg:flex items-center gap-1 p-1.5 rounded-xl"
+            <nav
+              className="hidden lg:flex items-center gap-1 p-1.5 rounded-xl overflow-x-auto scrollbar-hide min-w-0"
               style={{ backgroundColor: 'var(--color-bg-muted)' }}
             >
               {navItems.map(({ path, icon: Icon, label }) => {
@@ -223,7 +237,7 @@ const Header = ({ boardName }) => {
                     onClick={() => navigate(path)}
                     onMouseEnter={() => setHoveredNav(path)}
                     onMouseLeave={() => setHoveredNav(null)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 relative overflow-hidden"
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 relative overflow-hidden flex-shrink-0"
                     style={{
                       backgroundColor: active ? 'var(--color-card-bg)' : 'transparent',
                       color: active ? iconConfig.color : hovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
@@ -260,6 +274,88 @@ const Header = ({ boardName }) => {
                 );
               })}
             </nav>
+
+            {/* Compact View Switcher — lg:hidden counterpart to the <nav>
+                above (exactly one of the two ever renders). Reuses navItems /
+                isActive / getNavIconConfig verbatim, no separate data. */}
+            <div ref={viewSwitcherRef} className="relative lg:hidden flex-shrink-0">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowViewSwitcher((v) => !v)}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200"
+                style={{ backgroundColor: 'var(--color-bg-muted)' }}
+                aria-haspopup="true"
+                aria-expanded={showViewSwitcher}
+                aria-label="Switch view"
+              >
+                <div
+                  className="flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0"
+                  style={{ backgroundColor: activeNavIconConfig ? activeNavIconConfig.bg : 'transparent' }}
+                >
+                  <ActiveViewIcon
+                    size={16}
+                    style={{
+                      color: activeNavIconConfig ? activeNavIconConfig.color : 'var(--color-text-muted)',
+                      strokeWidth: activeNavItem ? 2.5 : 2,
+                    }}
+                  />
+                </div>
+                <span
+                  className="hidden sm:inline truncate max-w-[100px]"
+                  style={{ color: activeNavIconConfig ? activeNavIconConfig.color : 'var(--color-text-secondary)' }}
+                >
+                  {activeNavItem ? activeNavItem.label : 'Views'}
+                </span>
+                <ChevronDown
+                  size={14}
+                  className="flex-shrink-0"
+                  style={{
+                    color: 'var(--color-text-muted)',
+                    transform: showViewSwitcher ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 200ms ease',
+                  }}
+                />
+              </motion.button>
+
+              <AnimatePresence>
+                {showViewSwitcher && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-full left-0 mt-2 w-56 rounded-2xl shadow-2xl z-50 overflow-hidden border p-2"
+                    style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}
+                  >
+                    {navItems.map(({ path, icon: Icon, label }) => {
+                      const iconConfig = getNavIconConfig(path);
+                      const active = isActive(path);
+                      return (
+                        <button
+                          key={path}
+                          onClick={() => { navigate(path); setShowViewSwitcher(false); }}
+                          className="w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all duration-200 flex items-center gap-3"
+                          style={{
+                            backgroundColor: active ? iconConfig.bg : 'transparent',
+                            color: active ? iconConfig.color : 'var(--color-text-primary)',
+                            fontWeight: active ? 600 : 400,
+                          }}
+                        >
+                          <div
+                            className="flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0"
+                            style={{ backgroundColor: active ? iconConfig.bg : 'var(--color-bg-muted)' }}
+                          >
+                            <Icon size={16} style={{ color: active ? iconConfig.color : 'var(--color-text-muted)', strokeWidth: active ? 2.5 : 2 }} />
+                          </div>
+                          <span className="truncate">{label}</span>
+                        </button>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* Department Selector - Enhanced */}
             {shouldShowDepartmentSelector && (
