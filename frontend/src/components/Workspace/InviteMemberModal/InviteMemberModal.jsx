@@ -14,7 +14,7 @@ import StepRegistrationInvite from './StepRegistrationInvite';
  * memberInvitationController.js for the two methods' exact backend logic.
  */
 const InviteMemberModal = ({
-  isOpen, onClose, workspaceId, departmentOptions = [], roleOptions = [], defaultDepartmentId, onInvited,
+  isOpen, onClose, workspaceId, departmentOptions = [], roleOptions = [], defaultDepartmentId, onInvited, onBulkInvite,
 }) => {
   const [step, setStep] = useState(1);
   const [method, setMethod] = useState('direct');
@@ -28,6 +28,14 @@ const InviteMemberModal = ({
 
   const handleClose = () => onClose();
   const handleMethodChosen = (chosen) => {
+    // Bulk invite is a separate, dedicated UI (per spec: don't overload this
+    // modal with bulk functionality) — close this one and let the parent
+    // open BulkInviteModal instead of advancing to a step-2 form here.
+    if (chosen === 'bulk') {
+      handleClose();
+      onBulkInvite?.();
+      return;
+    }
     setMethod(chosen);
     setStep(2);
   };

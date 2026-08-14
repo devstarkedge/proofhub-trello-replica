@@ -4,12 +4,17 @@ import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import User from '../../models/User.js';
 import Workspace from '../../models/Workspace.js';
+import Role from '../../models/Role.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { createOrRestoreMembership } from './membershipCreation.js';
 import { createJoinRequestRow, notifyAndAuditJoinRequestSubmitted } from './joinRequestService.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import * as workspaceContext from './workspaceContext.js';
 import notificationService from '../../utils/notificationService.js';
+import { sendEmail } from '../../utils/email.js';
+import { isQueueActive } from '../../queues/queueManager.js';
+import { enqueueEmail } from '../../queues/index.js';
+import logger from '../../utils/logger.js';
 
 const TOKEN_BYTES = 32;
 const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — long enough for a real invite to be acted on, unlike the 15-minute password-reset link
@@ -124,10 +129,40 @@ export async function acceptInvitation(invitationId, userId) {
 
       if (!claimed) return; // lost the race, or already used — resolved outside the transaction below
 
+      // The workspace this invitation targets may have been deactivated in
+      // the days between it being sent and accepted (invitations live up to
+      // 7 days) — reject cleanly rather than create a membership pointing
+      // at a dead workspace. runUnscoped matches this file's existing
+      // convention for Workspace lookups (see e.g. the notify block below).
+      const workspaceDoc = await workspaceContext.runUnscoped(() => (
+        Workspace.findById(claimed.workspace).select('isActive').session(session).lean()
+      ));
+      if (!workspaceDoc || workspaceDoc.isActive === false) {
+        throw new ErrorResponse('This workspace is no longer available.', 410);
+      }
+
       if (claimed.requiresApproval) {
         joinRequest = await createJoinRequestRow(claimed, userId, session);
         outcome = 'pending_approval';
         return;
+      }
+
+      // The role was validated once at invite-creation time, but could have
+      // been deleted or deactivated since — re-confirm it still exists
+      // before creating a membership that would otherwise point at a
+      // dangling roleId (the requiresApproval branch doesn't need this: its
+      // role gets re-validated again anyway, against the CURRENT approver,
+      // inside approveJoinRequest). Role.js's workspaceScopePlugin needs an
+      // explicit context here — this runs from authController.js's
+      // register(), a public route with no ambient context of its own.
+      const roleStillValid = await workspaceContext.run({ workspaceId: claimed.workspace }, () => (
+        Role.findOne({ _id: claimed.roleId, isActive: true }).session(session).lean()
+      ));
+      if (!roleStillValid) {
+        throw new ErrorResponse(
+          'The role for this invitation is no longer available. Please ask an admin to resend the invitation.',
+          409
+        );
       }
 
       ({ outcome, membership } = await createOrRestoreMembership({
@@ -186,7 +221,9 @@ export async function acceptInvitation(invitationId, userId) {
         }
       });
     } catch (err) {
-      console.error('Failed to notify inviter of accepted invitation:', err);
+      logger.error('Failed to notify inviter of accepted invitation', {
+        error: err.message, invitationId: String(claimed._id), workspaceId: String(claimed.workspace)
+      });
     }
 
     await recordAuditLog({
@@ -355,8 +392,39 @@ export async function recordEmailDispatchOutcome(invitationId, error = null) {
       );
     }
   } catch (err) {
-    console.error('Failed to record invitation email dispatch outcome:', err);
+    logger.error('Failed to record invitation email dispatch outcome', {
+      error: err.message, invitationId: String(invitationId)
+    });
   }
+}
+
+/**
+ * Sends an already-built { to, subject, html } invite email without
+ * blocking the caller, and records the outcome on the invitation row for
+ * the Manage Invitations UI. Routes through the BullMQ email queue when
+ * Redis is available (rate-limited, retried on transient failure — see
+ * backend/workers/emailWorker.js, which reports back to
+ * recordEmailDispatchOutcome via its completed/failed handlers when the
+ * job carries this invitationId) or falls back to a direct fire-and-forget
+ * send otherwise, mirroring backend/utils/backgroundTasks.js's own
+ * isQueueActive() dual-mode pattern.
+ */
+export function dispatchInvitationEmail(invitationId, emailPayload) {
+  if (isQueueActive()) {
+    enqueueEmail({ ...emailPayload, invitationId: String(invitationId) }).catch((err) => {
+      logger.error('Failed to enqueue invitation email', { error: err.message, invitationId: String(invitationId), to: emailPayload?.to });
+      recordEmailDispatchOutcome(invitationId, err);
+    });
+    return;
+  }
+
+  sendEmail(emailPayload).then(
+    () => recordEmailDispatchOutcome(invitationId),
+    (err) => {
+      logger.error('Failed to send invitation email', { error: err.message, invitationId: String(invitationId), to: emailPayload?.to });
+      recordEmailDispatchOutcome(invitationId, err);
+    }
+  );
 }
 
 export default {
@@ -368,5 +436,6 @@ export default {
   listInvitations,
   resendInvitation,
   revokeInvitation,
-  recordEmailDispatchOutcome
+  recordEmailDispatchOutcome,
+  dispatchInvitationEmail
 };

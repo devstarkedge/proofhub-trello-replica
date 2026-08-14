@@ -1,4 +1,5 @@
 import { hasWorkspacePermission } from '../modules/workspaces/workspacePermissions.js';
+import logger from '../utils/logger.js';
 
 /**
  * Gate for the centralized Invite Member system's routes — resolves through
@@ -10,6 +11,9 @@ export const requireWorkspacePermission = (permissionKey) => async (req, res, ne
   try {
     const allowed = await hasWorkspacePermission(req.user.id, req.params.id, permissionKey);
     if (!allowed) {
+      logger.warn('Workspace permission denied', {
+        userId: req.user.id, workspaceId: req.params.id, permissionKey, path: req.originalUrl
+      });
       return res.status(403).json({
         success: false,
         message: `Missing permission: ${permissionKey}`
@@ -17,7 +21,9 @@ export const requireWorkspacePermission = (permissionKey) => async (req, res, ne
     }
     next();
   } catch (error) {
-    console.error('requireWorkspacePermission error:', error);
+    logger.error('requireWorkspacePermission error', {
+      error: error.message, userId: req.user?.id, workspaceId: req.params?.id, permissionKey
+    });
     res.status(500).json({ success: false, message: 'Failed to verify workspace permission' });
   }
 };

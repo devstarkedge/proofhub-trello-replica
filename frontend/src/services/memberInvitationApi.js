@@ -23,6 +23,19 @@ export const inviteMemberSelfRegister = async (workspaceId, payload) => {
   return data?.data;
 };
 
+// payload: { emails: string[], role?: string, department?: string }. Every
+// row is invited (or added, if already a platform user) as the given role
+// (default 'employee') and department (default none) — a common set of
+// attributes for the whole batch, not per-row selection. Returns one
+// { email, outcome, newUser? } entry per row for the results summary.
+export const inviteMemberBulkSimple = async (workspaceId, payload) => {
+  const { data } = await api.post(`/api/workspaces/${workspaceId}/invite-member`, {
+    method: 'bulk_simple',
+    ...payload,
+  });
+  return data?.data || [];
+};
+
 export const listJoinRequests = async (workspaceId, status = 'pending') => {
   const { data } = await api.get(`/api/workspaces/${workspaceId}/join-requests`, { params: { status } });
   return data?.data || [];

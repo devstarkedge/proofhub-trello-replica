@@ -2,6 +2,7 @@ import WorkspaceJoinRequest from '../../models/WorkspaceJoinRequest.js';
 import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
 import User from '../../models/User.js';
 import Workspace from '../../models/Workspace.js';
+import Department from '../../models/Department.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { invalidateAuthCache } from '../../middleware/authMiddleware.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
@@ -12,6 +13,7 @@ import { resolveAssignableRole } from './roleTypeGuard.js';
 import { addUserToDepartmentRoster } from './departmentRosterSync.js';
 import notificationService from '../../utils/notificationService.js';
 import { sendJoinRequestApprovedEmail, sendJoinRequestRejectedEmail } from '../../utils/email.js';
+import logger from '../../utils/logger.js';
 
 const CATEGORY = 'workspace_member';
 
@@ -129,9 +131,21 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverUse
 
   const roleDoc = await resolveAssignableRole({ roleSlug, workspaceId, actingUser: approverUser });
 
-  const department = overrides.department
-    ? [overrides.department]
-    : (joinRequest.requestedDepartment || []);
+  // overrides.department is fresh client input at approval time (unlike
+  // joinRequest.requestedDepartment, which — for invitations created after
+  // the self_register department check landed — was already validated at
+  // invite-creation time) — never trust it without confirming the
+  // department actually belongs to this workspace first.
+  let department = joinRequest.requestedDepartment || [];
+  if (overrides.department) {
+    const departmentDoc = await workspaceContext.run({ workspaceId }, async () => (
+      await Department.findById(overrides.department).select('_id').lean()
+    ));
+    if (!departmentDoc) {
+      throw new ErrorResponse('Invalid department override', 400);
+    }
+    department = [overrides.department];
+  }
 
   const sourceInvitation = await WorkspaceInvitation.findById(joinRequest.sourceInvitation)
     .select('invitedBy').lean();
@@ -170,7 +184,7 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverUse
 
   if (requestingUser) {
     sendJoinRequestApprovedEmail(requestingUser, { workspaceName: workspace?.name || 'your workspace' }).catch((err) => (
-      console.error('Failed to send join-request-approved email:', err.message)
+      logger.error('Failed to send join-request-approved email', { error: err.message, userId: String(joinRequest.user), workspaceId })
     ));
     // Notification.create needs ambient workspace context matching THIS
     // workspace specifically — the approver's own ambient context (set by
@@ -217,7 +231,7 @@ export async function rejectJoinRequest(joinRequestId, workspaceId, rejecterId, 
 
   if (requestingUser) {
     sendJoinRequestRejectedEmail(requestingUser, { workspaceName: workspace?.name || 'the workspace', reason }).catch((err) => (
-      console.error('Failed to send join-request-rejected email:', err.message)
+      logger.error('Failed to send join-request-rejected email', { error: err.message, userId: String(joinRequest.user), workspaceId })
     ));
     await workspaceContext.run({ workspaceId }, async () => (
       notificationService.notifyJoinRequestRejected(joinRequest, joinRequest.user, workspace?.name || 'the workspace')

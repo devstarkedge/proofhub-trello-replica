@@ -11,14 +11,15 @@ import {
   listInvitations,
   resendInvitation,
   revokeInvitation,
-  recordEmailDispatchOutcome
+  dispatchInvitationEmail
 } from '../modules/workspaces/invitationService.js';
 import { addUserToDepartmentRoster } from '../modules/workspaces/departmentRosterSync.js';
 import * as joinRequestService from '../modules/workspaces/joinRequestService.js';
 import { hasWorkspacePermission } from '../modules/workspaces/workspacePermissions.js';
 import { resolveAssignableRole } from '../modules/workspaces/roleTypeGuard.js';
 import { recordAuditLog, queryAuditLog } from '../modules/permissions/auditLogService.js';
-import { sendDirectAddNewUserEmail, sendDirectAddExistingUserEmail, sendWorkspaceInviteEmail } from '../utils/email.js';
+import logger from '../utils/logger.js';
+import { sendDirectAddNewUserEmail, sendDirectAddExistingUserEmail, buildWorkspaceInviteEmail } from '../utils/email.js';
 
 // @desc    Centralized Invite Member entry point — branches on `method`.
 //          "direct": admin provisions the account/membership immediately
@@ -99,11 +100,11 @@ async function inviteMemberDirect(req, res, next, workspace) {
 
     await addUserToDepartmentRoster(req.params.id, departmentId, existingUser._id, roleDoc.slug);
     notifyMembershipAdded(existingUser._id, req.params.id).catch((err) => (
-      console.error('Failed to emit membership-added event:', err)
+      logger.error('Failed to emit membership-added event', { error: err.message, userId: String(existingUser._id), workspaceId: req.params.id })
     ));
 
     sendDirectAddExistingUserEmail(existingUser, { workspaceName: workspace.name }).catch((err) => (
-      console.error('Failed to send direct-add existing-user email:', err.message)
+      logger.error('Failed to send direct-add existing-user email', { error: err.message, userId: String(existingUser._id), workspaceId: req.params.id })
     ));
 
     await recordAuditLog({
@@ -153,12 +154,12 @@ async function inviteMemberDirect(req, res, next, workspace) {
 
   await addUserToDepartmentRoster(req.params.id, departmentId, newUser._id, roleDoc.slug);
   notifyMembershipAdded(newUser._id, req.params.id).catch((err) => (
-    console.error('Failed to emit membership-added event:', err)
+    logger.error('Failed to emit membership-added event', { error: err.message, userId: String(newUser._id), workspaceId: req.params.id })
   ));
 
   if (sendWelcomeEmail !== false) {
     sendDirectAddNewUserEmail(newUser, { workspaceName: workspace.name, temporaryPassword }).catch((err) => (
-      console.error('Failed to send direct-add new-user email:', err.message)
+      logger.error('Failed to send direct-add new-user email', { error: err.message, userId: String(newUser._id), workspaceId: req.params.id })
     ));
   }
 
@@ -195,6 +196,22 @@ async function inviteMemberSelfRegister(req, res, next, workspace) {
     return next(err);
   }
 
+  // Mirrors inviteMemberDirect's own department check — this method used to
+  // store whatever department id was submitted with no existence/ownership
+  // check at all, which the workspaceScopePlugin can't catch on its own
+  // since nothing ever queried it: a raw findById here is what actually
+  // triggers the plugin's automatic workspaceId filter, turning a
+  // cross-workspace id into a clean 400 instead of a silently-stored
+  // dangling reference on the resulting WorkspaceJoinRequest/membership.
+  if (department) {
+    const departmentDoc = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
+      await Department.findById(department).select('_id').lean()
+    ));
+    if (!departmentDoc) {
+      return next(new ErrorResponse('Invalid department', 400));
+    }
+  }
+
   // Mirrors inviteMemberDirect's existing-membership guard — this method
   // used to skip it entirely, so it would "invite" someone already active
   // in the workspace instead of telling the inviter that up front.
@@ -219,22 +236,17 @@ async function inviteMemberSelfRegister(req, res, next, workspace) {
     requiresApproval: true
   });
 
-  // Fire-and-forget, matching inviteMemberDirect's own email dispatch — the
-  // invitation row (not the email send) is the source of truth, so an SMTP
-  // hiccup must not fail a request that already committed. The outcome is
-  // recorded on the invitation for the Manage Invitations UI to surface.
-  sendWorkspaceInviteEmail(email, {
+  // Queued when Redis is available (durable, retried, rate-limited),
+  // fire-and-forget otherwise — either way the invitation row (not the
+  // email send) is the source of truth, so an SMTP hiccup must not fail a
+  // request that already committed. The outcome is recorded on the
+  // invitation for the Manage Invitations UI to surface.
+  dispatchInvitationEmail(invitation._id, buildWorkspaceInviteEmail(email, {
     workspaceName: workspace.name,
     inviterName: req.user.name,
     token: plaintextToken,
     personalMessage: personalMessage || ''
-  }).then(
-    () => recordEmailDispatchOutcome(invitation._id),
-    (err) => {
-      console.error('Failed to send workspace invite email:', err.message);
-      recordEmailDispatchOutcome(invitation._id, err);
-    }
-  );
+  }));
 
   await recordAuditLog({
     actor: req.user,
@@ -262,16 +274,38 @@ async function inviteMemberSelfRegister(req, res, next, workspace) {
 // @route   POST /api/workspaces/:id/invite-member  { method: 'bulk_simple' }
 // @access  Private (requires canInviteMembers)
 async function inviteMemberBulkSimple(req, res, next, workspace) {
-  const { emails } = req.body;
+  const { emails, role, department: departmentId } = req.body;
   if (!Array.isArray(emails) || emails.length === 0) {
     return next(new ErrorResponse('emails must be a non-empty array', 400));
   }
 
-  const roleDoc = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
-    await resolveAssignableRole({ roleSlug: 'employee', workspaceId: req.params.id, actingUser: req.user })
-  ));
+  let roleDoc;
+  try {
+    roleDoc = await resolveAssignableRole({
+      roleSlug: role ? String(role).toLowerCase() : 'employee',
+      workspaceId: req.params.id,
+      actingUser: req.user
+    });
+  } catch (err) {
+    return next(err);
+  }
+
+  // Optional — a common department applied to every row in this batch (the
+  // spec's "allowed common attributes" for bulk invite). Validated once,
+  // same as inviteMemberDirect's single-department check.
+  let department = [];
+  if (departmentId) {
+    const departmentDoc = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
+      await Department.findById(departmentId).select('_id').lean()
+    ));
+    if (!departmentDoc) {
+      return next(new ErrorResponse('Invalid department', 400));
+    }
+    department = [departmentId];
+  }
 
   const results = [];
+  const seen = new Set();
 
   for (const rawEmail of emails) {
     const email = String(rawEmail || '').trim().toLowerCase();
@@ -279,6 +313,11 @@ async function inviteMemberBulkSimple(req, res, next, workspace) {
       results.push({ email: rawEmail, outcome: 'invalid' });
       continue;
     }
+    if (seen.has(email)) {
+      results.push({ email, outcome: 'duplicate' });
+      continue;
+    }
+    seen.add(email);
 
     const existingUser = await User.findOne({ email }).select('_id name').lean();
 
@@ -297,14 +336,17 @@ async function inviteMemberBulkSimple(req, res, next, workspace) {
         role: roleDoc.slug,
         roleId: roleDoc._id,
         invitedBy: req.user.id,
-        department: []
+        department
       });
 
+      if (department[0]) {
+        await addUserToDepartmentRoster(req.params.id, department[0], existingUser._id, roleDoc.slug);
+      }
       notifyMembershipAdded(existingUser._id, req.params.id).catch((err) => (
-        console.error('Failed to emit membership-added event:', err)
+        logger.error('Failed to emit membership-added event', { error: err.message, userId: String(existingUser._id), workspaceId: req.params.id, source: 'bulk_simple' })
       ));
       sendDirectAddExistingUserEmail(existingUser, { workspaceName: workspace.name }).catch((err) => (
-        console.error('Failed to send direct-add existing-user email:', err.message)
+        logger.error('Failed to send direct-add existing-user email', { error: err.message, userId: String(existingUser._id), workspaceId: req.params.id, source: 'bulk_simple' })
       ));
 
       await recordAuditLog({
@@ -329,22 +371,21 @@ async function inviteMemberBulkSimple(req, res, next, workspace) {
       role: roleDoc.slug,
       roleId: roleDoc._id,
       invitedBy: req.user.id,
-      department: [],
+      department,
       requiresApproval: false
     });
 
-    sendWorkspaceInviteEmail(email, {
+    // Queued when Redis is available — bulk sends are exactly what the
+    // "must not block the UI while sending large volumes of email" spec
+    // requirement is about; the rate-limited BullMQ worker (20/10s) also
+    // protects the SMTP account from a burst this loop would otherwise
+    // produce if every send were awaited inline.
+    dispatchInvitationEmail(invitation._id, buildWorkspaceInviteEmail(email, {
       workspaceName: workspace.name,
       inviterName: req.user.name,
       token: plaintextToken,
       personalMessage: ''
-    }).then(
-      () => recordEmailDispatchOutcome(invitation._id),
-      (err) => {
-        console.error('Failed to send workspace invite email:', err.message);
-        recordEmailDispatchOutcome(invitation._id, err);
-      }
-    );
+    }));
 
     await recordAuditLog({
       actor: req.user,
@@ -384,7 +425,7 @@ export const approveJoinRequestHandler = asyncHandler(async (req, res) => {
   );
 
   notifyMembershipAdded(joinRequest.user, req.params.id).catch((err) => (
-    console.error('Failed to emit membership-added event:', err)
+    logger.error('Failed to emit membership-added event', { error: err.message, userId: String(joinRequest.user), workspaceId: req.params.id, source: 'approveJoinRequest' })
   ));
 
   res.status(200).json({ success: true, data: { membership, joinRequest } });
@@ -453,18 +494,12 @@ export const resendInvitationHandler = asyncHandler(async (req, res) => {
     Workspace.findById(req.params.id).select('name').lean()
   ));
 
-  sendWorkspaceInviteEmail(invitation.email, {
+  dispatchInvitationEmail(invitation._id, buildWorkspaceInviteEmail(invitation.email, {
     workspaceName: workspace?.name || 'the workspace',
     inviterName: req.user.name,
     token: plaintextToken,
     personalMessage: invitation.personalMessage || ''
-  }).then(
-    () => recordEmailDispatchOutcome(invitation._id),
-    (err) => {
-      console.error('Failed to send workspace invite email:', err.message);
-      recordEmailDispatchOutcome(invitation._id, err);
-    }
-  );
+  }));
 
   res.status(200).json({
     success: true,

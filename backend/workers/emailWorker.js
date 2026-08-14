@@ -9,6 +9,7 @@ import { getWorkerConnection } from '../queues/connection.js';
 import { sendEmail } from '../utils/email.js';
 import User from '../models/User.js';
 import config from '../config/index.js';
+import logger from '../utils/logger.js';
 
 const JOB_HANDLERS = {
   /**
@@ -79,6 +80,27 @@ const JOB_HANDLERS = {
 
 // ─── Worker Creation ──────────────────────────────────────────────────────────
 
+// A 'send-email' job that carries an invitationId (bulk invite — see
+// modules/workspaces/invitationService.js#dispatchInvitationEmail) reports
+// its delivery outcome back onto that invitation row for the Manage
+// Invitations UI. Dynamic import avoids a static cycle: invitationService.js
+// imports queueManager.js (for isQueueActive), which imports THIS file to
+// start the worker — a static import back to invitationService.js here
+// would complete that cycle. Same workaround already used elsewhere in this
+// codebase (see membershipCreation.js#notifyMembershipAdded).
+async function reportInvitationEmailOutcome(job, err = null) {
+  const invitationId = job?.data?.invitationId;
+  if (!invitationId) return;
+  try {
+    const { recordEmailDispatchOutcome } = await import('../modules/workspaces/invitationService.js');
+    await recordEmailDispatchOutcome(invitationId, err);
+  } catch (reportErr) {
+    logger.error('[Worker:Email] Failed to record invitation email outcome', {
+      error: reportErr.message, invitationId: String(invitationId)
+    });
+  }
+}
+
 let emailWorker = null;
 
 export function startEmailWorker() {
@@ -103,10 +125,12 @@ export function startEmailWorker() {
 
   emailWorker.on('completed', (job, result) => {
     if (config.isDev) console.log(`[Worker:Email] ${job.name}:${job.id} completed:`, result);
+    reportInvitationEmailOutcome(job);
   });
 
   emailWorker.on('failed', (job, err) => {
     console.error(`[Worker:Email] ${job?.name}:${job?.id} failed:`, err.message);
+    reportInvitationEmailOutcome(job, err);
   });
 
   console.log('[Worker:Email] started');

@@ -29,6 +29,7 @@ import Avatar from '../components/Avatar';
 import UserAccessEditor from '../components/AccessControl/UserAccessEditor';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
+import BulkInviteModal from '../components/Workspace/BulkInviteModal/BulkInviteModal';
 import PermissionGate from '../components/PermissionGate';
 import { getWorkspaceMembers, removeWorkspaceMember } from '../services/workspaceMembersApi';
 
@@ -188,6 +189,7 @@ const HRPanel = () => {
   const [showModal, setShowModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showManageInvitations, setShowManageInvitations] = useState(false);
+  const [showBulkInvite, setShowBulkInvite] = useState(false);
   const [filters, setFilters] = useState({
     role: '',
     department: '',
@@ -731,12 +733,22 @@ const HRPanel = () => {
             departmentOptions={departmentStore.departments}
             roleOptions={activeRoles}
             onInvited={() => loadData()}
+            onBulkInvite={() => setShowBulkInvite(true)}
           />
 
           <ManageInvitationsModal
             isOpen={showManageInvitations}
             onClose={() => setShowManageInvitations(false)}
             workspaceId={currentWorkspace._id}
+          />
+
+          <BulkInviteModal
+            isOpen={showBulkInvite}
+            onClose={() => setShowBulkInvite(false)}
+            workspaceId={currentWorkspace._id}
+            departmentOptions={departmentStore.departments}
+            roleOptions={activeRoles}
+            onInvited={() => loadData()}
           />
 
           {/* Toast Notification */}

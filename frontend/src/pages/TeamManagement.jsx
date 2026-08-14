@@ -20,6 +20,7 @@ import { teamManagementReducer, initialState, ACTION_TYPES } from '../components
 import EditDepartmentModal from '../components/EditDepartmentModal';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
+import BulkInviteModal from '../components/Workspace/BulkInviteModal/BulkInviteModal';
 
 // Lazy load modals
 const CreateDepartmentModal = lazy(() => import('../components/TeamManagement/modals/CreateDepartmentModal'));
@@ -73,6 +74,7 @@ const TeamManagement = () => {
   // Centralized Invite Member modal — replaces AddMemberModal below.
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showManageInvitations, setShowManageInvitations] = useState(false);
+  const [showBulkInvite, setShowBulkInvite] = useState(false);
   // Team workspaces don't support custom roles — existing holders are
   // grandfathered (still counted/valid elsewhere), but they must not be
   // offered as an assignment option for a different member going forward.
@@ -701,12 +703,23 @@ const TeamManagement = () => {
           roleOptions={activeRoles}
           defaultDepartmentId={state.currentDepartment?._id}
           onInvited={() => loadUsers()}
+          onBulkInvite={() => setShowBulkInvite(true)}
         />
 
         <ManageInvitationsModal
           isOpen={showManageInvitations}
           onClose={() => setShowManageInvitations(false)}
           workspaceId={currentWorkspace?._id}
+        />
+
+        <BulkInviteModal
+          isOpen={showBulkInvite}
+          onClose={() => setShowBulkInvite(false)}
+          workspaceId={currentWorkspace?._id}
+          departmentOptions={departments}
+          roleOptions={activeRoles}
+          defaultDepartmentId={state.currentDepartment?._id}
+          onInvited={() => loadUsers()}
         />
 
         <CreateRoleModal

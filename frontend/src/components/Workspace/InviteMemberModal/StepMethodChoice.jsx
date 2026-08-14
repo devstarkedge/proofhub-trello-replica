@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserCog, Mail, ChevronRight } from 'lucide-react';
+import { UserCog, Mail, ChevronRight, Users } from 'lucide-react';
 
 const METHODS = [
   {
@@ -16,6 +16,9 @@ const METHODS = [
   },
 ];
 
+// "bulk" is handled specially by InviteMemberModal — choosing it closes this
+// modal and opens the separate BulkInviteModal instead of advancing to a
+// step-2 form here, per the "don't overload the single-invite modal" split.
 const StepMethodChoice = ({ onChoose }) => (
   <div className="p-6 space-y-3">
     <p className="text-sm mb-2" style={{ color: 'var(--color-text-secondary)' }}>
@@ -39,6 +42,22 @@ const StepMethodChoice = ({ onChoose }) => (
         <ChevronRight size={18} className="flex-shrink-0 mt-1" style={{ color: 'var(--color-text-muted)' }} />
       </button>
     ))}
+
+    <div className="flex items-center gap-3 pt-1">
+      <div className="flex-1 h-px" style={{ backgroundColor: 'var(--color-border-subtle)' }} />
+      <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--color-text-muted)' }}>or</span>
+      <div className="flex-1 h-px" style={{ backgroundColor: 'var(--color-border-subtle)' }} />
+    </div>
+
+    <button
+      type="button"
+      onClick={() => onChoose('bulk')}
+      className="w-full flex items-center justify-center gap-2 p-3.5 rounded-xl border border-dashed text-sm font-semibold transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/5"
+      style={{ borderColor: 'var(--color-border-default)', color: 'var(--color-text-secondary)' }}
+    >
+      <Users size={16} />
+      Bulk Invite Multiple Members
+    </button>
   </div>
 );
 

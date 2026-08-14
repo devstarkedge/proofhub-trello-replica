@@ -222,7 +222,11 @@ export const sendPasswordResetEmail = async (user, resetUrl) => {
 // No token/acceptance flow — this is a plain notification pointing at
 // registration; the inviting admin re-adds them as a member by hand once
 // they sign up (see workspaceController.inviteWorkspaceMembers).
-export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterName, token, personalMessage }) => {
+// Builds the { to, subject, html } payload without sending it — the bulk
+// invite path needs this shape to hand off to the BullMQ email queue
+// (see modules/workspaces/invitationService.js#dispatchInvitationEmail)
+// instead of awaiting a direct SMTP send per row.
+export const buildWorkspaceInviteEmail = (email, { workspaceName, inviterName, token, personalMessage }) => {
   const inviteUrl = `${process.env.FRONTEND_URL}/invite/${token}`;
   const messageBlock = personalMessage
     ? `<div style="background:#f8fafc;border-left:4px solid #10b981;padding:12px 16px;border-radius:0 8px 8px 0;margin:20px 0;font-size:14px;color:#475569;font-style:italic;">"${personalMessage}"</div>`
@@ -276,11 +280,15 @@ export const sendWorkspaceInviteEmail = async (email, { workspaceName, inviterNa
     </html>
   `;
 
-  await sendEmail({
+  return {
     to: email,
     subject: `${inviterName || 'Someone'} invited you to join ${workspaceName} on FlowTask`,
     html: inviteHtml
-  });
+  };
+};
+
+export const sendWorkspaceInviteEmail = async (email, opts) => {
+  await sendEmail(buildWorkspaceInviteEmail(email, opts));
 };
 
 // Sent by the centralized Invite Member modal's Method A ("Create Account &

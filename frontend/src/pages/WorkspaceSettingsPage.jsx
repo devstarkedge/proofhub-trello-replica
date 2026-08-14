@@ -16,6 +16,7 @@ import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
 import PermissionGate from '../components/PermissionGate';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
+import BulkInviteModal from '../components/Workspace/BulkInviteModal/BulkInviteModal';
 import { validateWorkspaceIconFile } from '../utils/workspaceIcon';
 import { getWorkspaceMembers } from '../services/workspaceMembersApi';
 
@@ -40,6 +41,7 @@ const WorkspaceSettingsPage = () => {
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showManageInvitations, setShowManageInvitations] = useState(false);
+  const [showBulkInvite, setShowBulkInvite] = useState(false);
   const departmentStore = useDepartmentStore();
   const { roles, loadRoles } = useRoleStore();
   const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
@@ -496,12 +498,22 @@ const WorkspaceSettingsPage = () => {
         departmentOptions={departmentStore.departments}
         roleOptions={activeRoles}
         onInvited={() => loadMembers()}
+        onBulkInvite={() => setShowBulkInvite(true)}
       />
 
       <ManageInvitationsModal
         isOpen={showManageInvitations}
         onClose={() => setShowManageInvitations(false)}
         workspaceId={currentWorkspace?._id}
+      />
+
+      <BulkInviteModal
+        isOpen={showBulkInvite}
+        onClose={() => setShowBulkInvite(false)}
+        workspaceId={currentWorkspace?._id}
+        departmentOptions={departmentStore.departments}
+        roleOptions={activeRoles}
+        onInvited={() => loadMembers()}
       />
     </div>
   );

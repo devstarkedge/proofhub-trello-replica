@@ -126,10 +126,17 @@ const workspaceInvitationSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// One live invite per (workspace, email) — re-inviting refreshes the
-// existing pending row (see workspaceController.inviteWorkspaceMembers)
-// rather than accumulating duplicates that could confuse "duplicate
-// invitation" checks or list multiple valid links for the same address.
+// One live invite per (workspace, email) — a DATABASE-level backstop to
+// createOrRefreshInvitation's upsert (which already behaves as if this
+// constraint holds), matching the exact partialFilterExpression pattern
+// WorkspaceJoinRequest already uses for the equivalent "one active row"
+// rule. Terminal statuses (accepted/expired/cancelled/revoked) are
+// deliberately excluded from the filter, so invitation history can
+// accumulate freely — only one row may ever be 'pending' at a time.
+workspaceInvitationSchema.index(
+  { workspace: 1, email: 1 },
+  { unique: true, partialFilterExpression: { status: 'pending' } }
+);
 workspaceInvitationSchema.index({ workspace: 1, email: 1, status: 1 });
 workspaceInvitationSchema.index({ tokenHash: 1 });
 workspaceInvitationSchema.index({ expiresAt: 1 });

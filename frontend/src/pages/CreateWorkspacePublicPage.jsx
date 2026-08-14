@@ -227,16 +227,32 @@ const CreateWorkspacePublicPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 relative overflow-hidden">
       {/* Animated background blobs */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-pulse" />
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-15 animate-pulse" style={{ animationDelay: '2s' }} />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-pulse" style={{ animationDelay: '4s' }} />
       </div>
 
+      {/* Decorative Corner Images */}
+      <div className="hidden lg:block absolute bottom-0 left-0 w-[600px] max-w-[30vw] pointer-events-none z-0">
+        <img 
+          src="/Asset 1.svg" 
+          alt="" 
+          className="w-full h-auto object-contain"
+        />
+      </div>
+      <div className="hidden lg:block absolute bottom-0 right-0 w-[600px] max-w-[30vw] pointer-events-none z-0">
+        <img 
+          src="/Asset 2.svg" 
+          alt="" 
+          className="w-full h-auto object-contain"
+        />
+      </div>
+
       {/* Back to landing */}
-      <div className="relative w-full max-w-lg mb-6 flex items-center justify-between">
+      <div className="relative w-full max-w-lg mb-6 flex items-center justify-between z-10">
         <Link to="/" className="flex items-center gap-2 text-white/60 hover:text-white/90 transition-colors text-sm">
           <ArrowLeft size={16} />
           Back to home
@@ -253,7 +269,7 @@ const CreateWorkspacePublicPage = () => {
         initial={{ opacity: 0, y: 24, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.5 }}
-        className="relative w-full max-w-lg"
+        className="relative w-full max-w-lg z-10"
       >
         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl shadow-2xl overflow-hidden">
           {/* Header */}
