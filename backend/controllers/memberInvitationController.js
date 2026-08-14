@@ -3,15 +3,20 @@ import { ErrorResponse } from '../middleware/errorHandler.js';
 import Workspace from '../models/Workspace.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import Department from '../models/Department.js';
-import Role from '../models/Role.js';
 import User from '../models/User.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { createOrRestoreMembership, notifyMembershipAdded } from '../modules/workspaces/membershipCreation.js';
-import { createOrRefreshInvitation } from '../modules/workspaces/invitationService.js';
+import {
+  createOrRefreshInvitation,
+  listInvitations,
+  resendInvitation,
+  revokeInvitation,
+  recordEmailDispatchOutcome
+} from '../modules/workspaces/invitationService.js';
 import { addUserToDepartmentRoster } from '../modules/workspaces/departmentRosterSync.js';
 import * as joinRequestService from '../modules/workspaces/joinRequestService.js';
 import { hasWorkspacePermission } from '../modules/workspaces/workspacePermissions.js';
-import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
+import { resolveAssignableRole } from '../modules/workspaces/roleTypeGuard.js';
 import { recordAuditLog, queryAuditLog } from '../modules/permissions/auditLogService.js';
 import { sendDirectAddNewUserEmail, sendDirectAddExistingUserEmail, sendWorkspaceInviteEmail } from '../utils/email.js';
 
@@ -37,6 +42,9 @@ export const inviteMember = asyncHandler(async (req, res, next) => {
   if (method === 'self_register') {
     return inviteMemberSelfRegister(req, res, next, workspace);
   }
+  if (method === 'bulk_simple') {
+    return inviteMemberBulkSimple(req, res, next, workspace);
+  }
   return next(new ErrorResponse('Unsupported invite method', 400));
 });
 
@@ -51,20 +59,15 @@ async function inviteMemberDirect(req, res, next, workspace) {
     return next(new ErrorResponse('fullName, email, department, role and temporaryPassword are required', 400));
   }
 
-  const roleDoc = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
-    await Role.findResolvable(String(role).toLowerCase(), req.params.id)
-  ));
-  if (!roleDoc) {
-    return next(new ErrorResponse('Invalid role', 400));
-  }
-
-  await assertCustomRoleAssignable(req.params.id, roleDoc);
-
-  // A non-admin holding only canInviteMembers must not be able to mint new
-  // admins through this modal — mirrors userController.js's "only a genuine
-  // Admin may grant Admin access" rule.
-  if (roleDoc.slug === 'admin' && req.user.role !== 'admin') {
-    return next(new ErrorResponse('Only an Admin can grant Admin access', 403));
+  let roleDoc;
+  try {
+    roleDoc = await resolveAssignableRole({
+      roleSlug: String(role).toLowerCase(),
+      workspaceId: req.params.id,
+      actingUser: req.user
+    });
+  } catch (err) {
+    return next(err);
   }
 
   const departmentDoc = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
@@ -185,11 +188,24 @@ async function inviteMemberSelfRegister(req, res, next, workspace) {
   }
 
   const roleSlug = role ? String(role).toLowerCase() : 'employee';
-  const roleDoc = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
-    await Role.findResolvable(roleSlug, req.params.id)
-  ));
-  if (!roleDoc) {
-    return next(new ErrorResponse('Invalid role', 400));
+  let roleDoc;
+  try {
+    roleDoc = await resolveAssignableRole({ roleSlug, workspaceId: req.params.id, actingUser: req.user });
+  } catch (err) {
+    return next(err);
+  }
+
+  // Mirrors inviteMemberDirect's existing-membership guard — this method
+  // used to skip it entirely, so it would "invite" someone already active
+  // in the workspace instead of telling the inviter that up front.
+  const existingUser = await User.findOne({ email }).select('_id').lean();
+  if (existingUser) {
+    const activeMembership = await WorkspaceMembership.findOne({
+      workspace: req.params.id, user: existingUser._id, status: 'active'
+    }).lean();
+    if (activeMembership) {
+      return next(new ErrorResponse('User already belongs to this workspace.', 400));
+    }
   }
 
   const { invitation, plaintextToken } = await createOrRefreshInvitation({
@@ -203,12 +219,22 @@ async function inviteMemberSelfRegister(req, res, next, workspace) {
     requiresApproval: true
   });
 
-  await sendWorkspaceInviteEmail(email, {
+  // Fire-and-forget, matching inviteMemberDirect's own email dispatch — the
+  // invitation row (not the email send) is the source of truth, so an SMTP
+  // hiccup must not fail a request that already committed. The outcome is
+  // recorded on the invitation for the Manage Invitations UI to surface.
+  sendWorkspaceInviteEmail(email, {
     workspaceName: workspace.name,
     inviterName: req.user.name,
     token: plaintextToken,
     personalMessage: personalMessage || ''
-  });
+  }).then(
+    () => recordEmailDispatchOutcome(invitation._id),
+    (err) => {
+      console.error('Failed to send workspace invite email:', err.message);
+      recordEmailDispatchOutcome(invitation._id, err);
+    }
+  );
 
   await recordAuditLog({
     actor: req.user,
@@ -223,6 +249,119 @@ async function inviteMemberSelfRegister(req, res, next, workspace) {
   });
 
   return res.status(200).json({ success: true, data: { email, status: 'invited' } });
+}
+
+// @desc    Bulk, role-less invite — the centralized-service replacement for
+//          the retired legacy POST /api/workspaces/:id/invite endpoint.
+//          Every email is invited (or added, if already a platform user) as
+//          'employee', with no department. Existing callers (workspace
+//          creation wizard, onboarding checklist) only ever collect email
+//          addresses, so this exists to give them a centralized, audited,
+//          permission-checked home rather than force a role/department
+//          picker onto UI that was never designed to collect one.
+// @route   POST /api/workspaces/:id/invite-member  { method: 'bulk_simple' }
+// @access  Private (requires canInviteMembers)
+async function inviteMemberBulkSimple(req, res, next, workspace) {
+  const { emails } = req.body;
+  if (!Array.isArray(emails) || emails.length === 0) {
+    return next(new ErrorResponse('emails must be a non-empty array', 400));
+  }
+
+  const roleDoc = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
+    await resolveAssignableRole({ roleSlug: 'employee', workspaceId: req.params.id, actingUser: req.user })
+  ));
+
+  const results = [];
+
+  for (const rawEmail of emails) {
+    const email = String(rawEmail || '').trim().toLowerCase();
+    if (!email) {
+      results.push({ email: rawEmail, outcome: 'invalid' });
+      continue;
+    }
+
+    const existingUser = await User.findOne({ email }).select('_id name').lean();
+
+    if (existingUser) {
+      const activeMembership = await WorkspaceMembership.findOne({
+        workspace: req.params.id, user: existingUser._id, status: 'active'
+      }).lean();
+      if (activeMembership) {
+        results.push({ email, outcome: 'already_member' });
+        continue;
+      }
+
+      const { outcome, membership } = await createOrRestoreMembership({
+        workspaceId: req.params.id,
+        userId: existingUser._id,
+        role: roleDoc.slug,
+        roleId: roleDoc._id,
+        invitedBy: req.user.id,
+        department: []
+      });
+
+      notifyMembershipAdded(existingUser._id, req.params.id).catch((err) => (
+        console.error('Failed to emit membership-added event:', err)
+      ));
+      sendDirectAddExistingUserEmail(existingUser, { workspaceName: workspace.name }).catch((err) => (
+        console.error('Failed to send direct-add existing-user email:', err.message)
+      ));
+
+      await recordAuditLog({
+        actor: req.user,
+        action: 'MEMBER_ADDED_DIRECT',
+        targetType: 'WorkspaceMembership',
+        targetId: membership._id,
+        resourceKey: 'workspace_member',
+        resourceLabel: 'Workspace Members',
+        summary: `${req.user.name} added ${existingUser.name} to ${workspace.name}`,
+        category: 'workspace_member',
+        meta: { workspaceId: req.params.id }
+      });
+
+      results.push({ email, outcome, newUser: false });
+      continue;
+    }
+
+    const { invitation, plaintextToken } = await createOrRefreshInvitation({
+      workspaceId: req.params.id,
+      email,
+      role: roleDoc.slug,
+      roleId: roleDoc._id,
+      invitedBy: req.user.id,
+      department: [],
+      requiresApproval: false
+    });
+
+    sendWorkspaceInviteEmail(email, {
+      workspaceName: workspace.name,
+      inviterName: req.user.name,
+      token: plaintextToken,
+      personalMessage: ''
+    }).then(
+      () => recordEmailDispatchOutcome(invitation._id),
+      (err) => {
+        console.error('Failed to send workspace invite email:', err.message);
+        recordEmailDispatchOutcome(invitation._id, err);
+      }
+    );
+
+    await recordAuditLog({
+      actor: req.user,
+      action: 'INVITATION_CREATED',
+      targetType: 'WorkspaceInvitation',
+      targetId: invitation._id,
+      resourceKey: 'workspace_member',
+      resourceLabel: 'Workspace Members',
+      summary: `${req.user.name} invited ${email} to ${workspace.name}`,
+      category: 'workspace_member',
+      meta: { workspaceId: req.params.id }
+    });
+
+    results.push({ email, outcome: 'invited', newUser: true });
+  }
+
+  return res.status(200).json({ success: true, data: results });
 }
 
 // @desc    List pending (or filtered-status) join requests for the Approval Dashboard.
@@ -241,7 +380,7 @@ export const listJoinRequests = asyncHandler(async (req, res) => {
 export const approveJoinRequestHandler = asyncHandler(async (req, res) => {
   const { department, role } = req.body;
   const { membership, joinRequest } = await joinRequestService.approveJoinRequest(
-    req.params.requestId, req.params.id, req.user.id, { department, role }
+    req.params.requestId, req.params.id, req.user, { department, role }
   );
 
   notifyMembershipAdded(joinRequest.user, req.params.id).catch((err) => (
@@ -287,4 +426,62 @@ export const getMemberActivityLog = asyncHandler(async (req, res, next) => {
   });
 
   res.status(200).json({ success: true, ...result });
+});
+
+// @desc    List invitations for the Manage Invitations UI — workspace-scoped,
+//          cursor-paginated, defaults to the Pending tab.
+// @route   GET /api/workspaces/:id/invitations?status=pending&cursor=&limit=&search=&sort=
+// @access  Private (requires canInviteMembers)
+export const listInvitationsHandler = asyncHandler(async (req, res) => {
+  const { status, cursor, limit, search, sort } = req.query;
+  const result = await listInvitations({ workspaceId: req.params.id, status, cursor, limit, search, sort });
+  res.status(200).json({ success: true, ...result });
+});
+
+// @desc    Reissue a pending/expired invitation with a fresh token and
+//          expiry, and re-send the email.
+// @route   PATCH /api/workspaces/:id/invitations/:invitationId/resend
+// @access  Private (requires canInviteMembers)
+export const resendInvitationHandler = asyncHandler(async (req, res) => {
+  const { invitation, plaintextToken } = await resendInvitation({
+    invitationId: req.params.invitationId,
+    workspaceId: req.params.id,
+    actor: req.user
+  });
+
+  const workspace = await workspaceContext.runUnscoped(async () => (
+    Workspace.findById(req.params.id).select('name').lean()
+  ));
+
+  sendWorkspaceInviteEmail(invitation.email, {
+    workspaceName: workspace?.name || 'the workspace',
+    inviterName: req.user.name,
+    token: plaintextToken,
+    personalMessage: invitation.personalMessage || ''
+  }).then(
+    () => recordEmailDispatchOutcome(invitation._id),
+    (err) => {
+      console.error('Failed to send workspace invite email:', err.message);
+      recordEmailDispatchOutcome(invitation._id, err);
+    }
+  );
+
+  res.status(200).json({
+    success: true,
+    data: { email: invitation.email, status: invitation.status, expiresAt: invitation.expiresAt }
+  });
+});
+
+// @desc    Revoke a pending/expired invitation — its link stops working
+//          immediately.
+// @route   PATCH /api/workspaces/:id/invitations/:invitationId/revoke
+// @access  Private (requires canInviteMembers)
+export const revokeInvitationHandler = asyncHandler(async (req, res) => {
+  const { invitation } = await revokeInvitation({
+    invitationId: req.params.invitationId,
+    workspaceId: req.params.id,
+    actor: req.user
+  });
+
+  res.status(200).json({ success: true, data: { email: invitation.email, status: invitation.status } });
 });

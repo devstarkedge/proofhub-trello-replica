@@ -1,7 +1,6 @@
 import WorkspaceJoinRequest from '../../models/WorkspaceJoinRequest.js';
 import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
 import User from '../../models/User.js';
-import Role from '../../models/Role.js';
 import Workspace from '../../models/Workspace.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { invalidateAuthCache } from '../../middleware/authMiddleware.js';
@@ -9,7 +8,7 @@ import { recordAuditLog } from '../permissions/auditLogService.js';
 import { listWorkspaceMembersWithPermission } from './workspacePermissions.js';
 import * as workspaceContext from './workspaceContext.js';
 import { createOrRestoreMembership } from './membershipCreation.js';
-import { assertCustomRoleAssignable } from './roleTypeGuard.js';
+import { resolveAssignableRole } from './roleTypeGuard.js';
 import { addUserToDepartmentRoster } from './departmentRosterSync.js';
 import notificationService from '../../utils/notificationService.js';
 import { sendJoinRequestApprovedEmail, sendJoinRequestRejectedEmail } from '../../utils/email.js';
@@ -17,15 +16,15 @@ import { sendJoinRequestApprovedEmail, sendJoinRequestRejectedEmail } from '../.
 const CATEGORY = 'workspace_member';
 
 /**
- * Redeems a `requiresApproval` invitation into a pending WorkspaceJoinRequest
- * instead of an immediate membership — see invitationService.js
- * #acceptInvitation. No WorkspaceMembership exists until an
- * canApproveJoinRequests holder later approves it (approveJoinRequest below).
+ * Just the row write half of redeeming a `requiresApproval` invitation into
+ * a pending WorkspaceJoinRequest (see invitationService.js#acceptInvitation,
+ * which calls this inside its accept transaction). Split from the
+ * notify/audit side effects below so it can run inside a session/transaction
+ * without those effects firing before the transaction actually commits.
  */
-export async function createJoinRequestFromInvitation(invitation, userId) {
-  let joinRequest;
+export async function createJoinRequestRow(invitation, userId, session = null) {
   try {
-    joinRequest = await WorkspaceJoinRequest.create({
+    const [joinRequest] = await WorkspaceJoinRequest.create([{
       workspace: invitation.workspace,
       user: userId,
       sourceInvitation: invitation._id,
@@ -33,20 +32,27 @@ export async function createJoinRequestFromInvitation(invitation, userId) {
       requestedRole: invitation.role,
       requestedRoleId: invitation.roleId,
       message: invitation.personalMessage || ''
-    });
+    }], { session });
+    return joinRequest;
   } catch (err) {
     if (err.code === 11000) {
       throw new ErrorResponse('You already have a pending request to join this workspace.', 409);
     }
     throw err;
   }
+}
 
-  // Notification.create needs ambient workspace context (workspaceScopePlugin)
-  // that isn't guaranteed at every caller of this function — authController's
-  // register() runs this from a public, unauthenticated route with no
-  // ambient context at all. Re-establish it here rather than trust the caller.
+/**
+ * Notify approvers + record the audit event for a just-created join request.
+ * Called after the transaction that created it has committed. Notification.
+ * create needs ambient workspace context (workspaceScopePlugin) that isn't
+ * guaranteed at every caller — authController's register() runs the whole
+ * accept flow from a public, unauthenticated route with no ambient context
+ * at all. Re-establish it here rather than trust the caller.
+ */
+export async function notifyAndAuditJoinRequestSubmitted(joinRequest, invitation) {
   await workspaceContext.run({ workspaceId: invitation.workspace }, async () => {
-    const requestingUser = await User.findById(userId).select('name email').lean();
+    const requestingUser = await User.findById(joinRequest.user).select('name email').lean();
     const approverIds = await listWorkspaceMembersWithPermission(invitation.workspace, 'canApproveJoinRequests');
 
     if (approverIds.length > 0) {
@@ -56,7 +62,7 @@ export async function createJoinRequestFromInvitation(invitation, userId) {
     }
 
     await recordAuditLog({
-      actor: requestingUser ? { _id: userId, name: requestingUser.name, email: requestingUser.email } : null,
+      actor: requestingUser ? { _id: joinRequest.user, name: requestingUser.name, email: requestingUser.email } : null,
       action: 'JOIN_REQUEST_SUBMITTED',
       targetType: 'WorkspaceJoinRequest',
       targetId: joinRequest._id,
@@ -67,7 +73,15 @@ export async function createJoinRequestFromInvitation(invitation, userId) {
       meta: { workspaceId: invitation.workspace }
     });
   });
+}
 
+/**
+ * Composing wrapper kept for any caller that just wants "create + notify +
+ * audit" as one step, outside of accept's own transaction.
+ */
+export async function createJoinRequestFromInvitation(invitation, userId) {
+  const joinRequest = await createJoinRequestRow(invitation, userId);
+  await notifyAndAuditJoinRequestSubmitted(joinRequest, invitation);
   return joinRequest;
 }
 
@@ -90,8 +104,17 @@ export async function listJoinRequests(workspaceId, { status = 'pending' } = {})
  * overriding the requested department/role first, then closes out the
  * request. Mirrors Method A's Department-roster dual-write so the new
  * member shows up in older UI immediately, same as a direct add.
+ *
+ * Takes the approver's user object (not just an id) because the role —
+ * whether overridden here or simply the originally-requested one — is
+ * ALWAYS re-validated through resolveAssignableRole, which needs the
+ * approver's own .role for its "only an Admin can grant Admin" check. This
+ * used to only run when the approver supplied an explicit override, so
+ * approving a self-register invite as-requested skipped both that check and
+ * the Team-workspace custom-role guard — closing that gap is the point of
+ * this change, not a refactor detail.
  */
-export async function approveJoinRequest(joinRequestId, workspaceId, approverId, overrides = {}) {
+export async function approveJoinRequest(joinRequestId, workspaceId, approverUser, overrides = {}) {
   const joinRequest = await WorkspaceJoinRequest.findOne({
     _id: joinRequestId, workspace: workspaceId, status: 'pending'
   });
@@ -99,19 +122,12 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverId,
     throw new ErrorResponse('Join request not found or already reviewed', 404);
   }
 
-  let roleSlug = joinRequest.requestedRole || 'employee';
-  let roleId = joinRequest.requestedRoleId;
-  if (overrides.role) {
-    const roleDoc = await workspaceContext.run({ workspaceId }, async () => (
-      await Role.findResolvable(String(overrides.role).toLowerCase(), workspaceId)
-    ));
-    if (!roleDoc) {
-      throw new ErrorResponse('Invalid role override', 400);
-    }
-    await assertCustomRoleAssignable(workspaceId, roleDoc);
-    roleSlug = roleDoc.slug;
-    roleId = roleDoc._id;
-  }
+  const approverId = approverUser?._id || approverUser?.id;
+  const roleSlug = overrides.role
+    ? String(overrides.role).toLowerCase()
+    : (joinRequest.requestedRole || 'employee');
+
+  const roleDoc = await resolveAssignableRole({ roleSlug, workspaceId, actingUser: approverUser });
 
   const department = overrides.department
     ? [overrides.department]
@@ -123,14 +139,14 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverId,
   const { membership } = await createOrRestoreMembership({
     workspaceId,
     userId: joinRequest.user,
-    role: roleSlug,
-    roleId,
+    role: roleDoc.slug,
+    roleId: roleDoc._id,
     invitedBy: sourceInvitation?.invitedBy || approverId,
     department
   });
 
   if (department[0]) {
-    await addUserToDepartmentRoster(workspaceId, department[0], joinRequest.user, roleSlug);
+    await addUserToDepartmentRoster(workspaceId, department[0], joinRequest.user, roleDoc.slug);
   }
 
   joinRequest.status = 'approved';

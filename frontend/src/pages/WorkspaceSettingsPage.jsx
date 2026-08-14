@@ -15,6 +15,7 @@ import Avatar from '../components/Avatar';
 import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
 import PermissionGate from '../components/PermissionGate';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
+import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
 import { validateWorkspaceIconFile } from '../utils/workspaceIcon';
 import { getWorkspaceMembers } from '../services/workspaceMembersApi';
 
@@ -38,6 +39,7 @@ const WorkspaceSettingsPage = () => {
   const [ownerId, setOwnerId] = useState(null);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showManageInvitations, setShowManageInvitations] = useState(false);
   const departmentStore = useDepartmentStore();
   const { roles, loadRoles } = useRoleStore();
   const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
@@ -313,13 +315,22 @@ const WorkspaceSettingsPage = () => {
                 Role changes & removal: HR Panel
               </span>
               <PermissionGate permission="canInviteMembers">
-                <button
-                  onClick={() => setShowInviteModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg bg-emerald-600 hover:bg-emerald-700 transition-colors"
-                >
-                  <UserPlus size={14} />
-                  Invite Member
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowManageInvitations(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors"
+                    style={{ borderColor: 'var(--color-border-default)', color: 'var(--color-text-secondary)' }}
+                  >
+                    Manage Invitations
+                  </button>
+                  <button
+                    onClick={() => setShowInviteModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                  >
+                    <UserPlus size={14} />
+                    Invite Member
+                  </button>
+                </div>
               </PermissionGate>
             </div>
           </div>
@@ -485,6 +496,12 @@ const WorkspaceSettingsPage = () => {
         departmentOptions={departmentStore.departments}
         roleOptions={activeRoles}
         onInvited={() => loadMembers()}
+      />
+
+      <ManageInvitationsModal
+        isOpen={showManageInvitations}
+        onClose={() => setShowManageInvitations(false)}
+        workspaceId={currentWorkspace?._id}
       />
     </div>
   );

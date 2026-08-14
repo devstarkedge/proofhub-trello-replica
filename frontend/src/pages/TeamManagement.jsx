@@ -4,6 +4,7 @@ import { Building2, Shield, Users } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
 import useAccessControl from '../hooks/useAccessControl';
+import usePermissions from '../hooks/usePermissions';
 import Database from '../services/database';
 import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
@@ -18,6 +19,7 @@ import ErrorBoundary from '../components/TeamManagement/ErrorBoundary';
 import { teamManagementReducer, initialState, ACTION_TYPES } from '../components/TeamManagement/teamManagementReducer';
 import EditDepartmentModal from '../components/EditDepartmentModal';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
+import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
 
 // Lazy load modals
 const CreateDepartmentModal = lazy(() => import('../components/TeamManagement/modals/CreateDepartmentModal'));
@@ -70,6 +72,7 @@ const TeamManagement = () => {
 
   // Centralized Invite Member modal — replaces AddMemberModal below.
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showManageInvitations, setShowManageInvitations] = useState(false);
   // Team workspaces don't support custom roles — existing holders are
   // grandfathered (still counted/valid elsewhere), but they must not be
   // offered as an assignment option for a different member going forward.
@@ -484,8 +487,21 @@ const TeamManagement = () => {
     }
   }, [state.departmentToDelete, deleteDepartment, showToast]);
 
-  const isAdminOrManager = user && (user.role === 'admin' || user.role === 'manager');
   const isAdmin = user && user.role === 'admin';
+  // Permission-driven, not role-name-driven — this page's own route guard
+  // (App.jsx) already lets Manager/Admin/HR through, but this internal gate
+  // used to hardcode admin/manager only, silently excluding HR (despite the
+  // route allowing it) and any custom role granted these permissions. Any
+  // one of this page's actual features (inviting, assigning members,
+  // approving join requests, creating departments) is enough to get in;
+  // each feature's own control is separately permission-gated underneath
+  // (e.g. the Invite button's existing <PermissionGate permission=
+  // "canInviteMembers">), so this is just the outer "does this person have
+  // ANY business being on this page at all" check.
+  const { canAny, loading: permissionsLoading } = usePermissions();
+  const canAccessTeamManagement = canAny(
+    'canInviteMembers', 'canAssignMembers', 'canApproveJoinRequests', 'canCreateDepartment'
+  );
   // Delegated administration (brief 3.6): an Admin can grant a specific
   // Manager (or custom role) the access_control.manage permission, which
   // then unlocks this same Roles & Permissions tab for them — without
@@ -496,11 +512,11 @@ const TeamManagement = () => {
   const { canManageAccessControl } = useAccessControl();
   const canManageRolesUI = isAdmin || canManageAccessControl;
 
-  if (departmentsLoading || state.isLoading) {
+  if (departmentsLoading || state.isLoading || permissionsLoading) {
     return <TeamManagementSkeleton />;
   }
 
-  if (!isAdminOrManager) {
+  if (!canAccessTeamManagement) {
     return (
       <div className={`min-h-full ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
           <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
@@ -629,6 +645,7 @@ const TeamManagement = () => {
                     onSearchChange={handleSearchChange}
                     onTabChange={handleTabChange}
                     onAddMemberClick={() => setShowInviteModal(true)}
+                    onManageInvitationsClick={() => setShowManageInvitations(true)}
                     onAssignClick={handleAssignUsers}
                     onUnassignClick={handleUnassignUsers}
                     onClearSelection={() => dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS })}
@@ -684,6 +701,12 @@ const TeamManagement = () => {
           roleOptions={activeRoles}
           defaultDepartmentId={state.currentDepartment?._id}
           onInvited={() => loadUsers()}
+        />
+
+        <ManageInvitationsModal
+          isOpen={showManageInvitations}
+          onClose={() => setShowManageInvitations(false)}
+          workspaceId={currentWorkspace?._id}
         />
 
         <CreateRoleModal

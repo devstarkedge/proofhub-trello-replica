@@ -12,8 +12,17 @@ export const checkSlugAvailability = async (slug) => {
   return data?.data;
 };
 
+// Routes through the centralized Invite Member service's role-less bulk
+// method — the standalone POST /:id/invite endpoint this used to call was
+// retired (hardcoded admin-only check, no audit logging). Same signature
+// and return shape as before; neither caller (CreateWorkspaceWizard,
+// WorkspaceOnboardingChecklist) inspects individual result items, so no
+// changes were needed there.
 export const inviteWorkspaceMembers = async (workspaceId, emails) => {
-  const { data } = await api.post(`/api/workspaces/${workspaceId}/invite`, { emails });
+  const { data } = await api.post(`/api/workspaces/${workspaceId}/invite-member`, {
+    method: 'bulk_simple',
+    emails
+  });
   return data?.data || [];
 };
 

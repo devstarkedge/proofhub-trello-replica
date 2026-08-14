@@ -37,6 +37,7 @@ const EmployeeAssignment = memo(({
   onSearchChange,
   onTabChange,
   onAddMemberClick,
+  onManageInvitationsClick,
   onAssignClick,
   onUnassignClick,
   onClearSelection,
@@ -123,13 +124,21 @@ const EmployeeAssignment = memo(({
                 own permission, not the general "can assign to tasks/projects"
                 one this used to borrow. */}
             <PermissionGate permission="canInviteMembers">
-              <button
-                onClick={onAddMemberClick}
-                className="px-3 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg sm:rounded-xl hover:from-green-700 hover:to-blue-700 transition-all shadow-md sm:shadow-lg shadow-green-500/30 font-semibold flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base justify-center"
-              >
-                <UserPlus size={16} className="flex-shrink-0" />
-                <span>Invite Member</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onManageInvitationsClick}
+                  className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base justify-center border transition-colors ${isDarkMode ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                >
+                  <span>Manage Invitations</span>
+                </button>
+                <button
+                  onClick={onAddMemberClick}
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg sm:rounded-xl hover:from-green-700 hover:to-blue-700 transition-all shadow-md sm:shadow-lg shadow-green-500/30 font-semibold flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base justify-center"
+                >
+                  <UserPlus size={16} className="flex-shrink-0" />
+                  <span>Invite Member</span>
+                </button>
+              </div>
             </PermissionGate>
           </div>
         </div>

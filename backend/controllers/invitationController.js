@@ -81,7 +81,7 @@ export const acceptWorkspaceInvitation = asyncHandler(async (req, res, next) => 
     ));
   }
 
-  const result = await acceptInvitation(invitation, req.user.id);
+  const result = await acceptInvitation(invitation._id, req.user.id);
 
   const workspace = await workspaceContext.runUnscoped(async () => (
     Workspace.findById(invitation.workspace).select('name slug icon').lean()

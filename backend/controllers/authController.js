@@ -107,7 +107,7 @@ export const register = asyncHandler(async (req, res, next) => {
 
   let acceptOutcome = 'joined';
   if (invitation) {
-    const result = await acceptInvitation(invitation, user._id);
+    const result = await acceptInvitation(invitation._id, user._id);
     acceptOutcome = result.outcome === 'pending_approval' ? 'pending_approval' : 'joined';
   } else {
     await syncMembershipFromUser(user._id, targetWorkspaceId);

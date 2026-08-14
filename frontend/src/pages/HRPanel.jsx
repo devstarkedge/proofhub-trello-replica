@@ -28,6 +28,7 @@ import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
 import UserAccessEditor from '../components/AccessControl/UserAccessEditor';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
+import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
 import PermissionGate from '../components/PermissionGate';
 import { getWorkspaceMembers, removeWorkspaceMember } from '../services/workspaceMembersApi';
 
@@ -186,6 +187,7 @@ const HRPanel = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showManageInvitations, setShowManageInvitations] = useState(false);
   const [filters, setFilters] = useState({
     role: '',
     department: '',
@@ -418,13 +420,21 @@ const HRPanel = () => {
                 </div>
               </div>
               <PermissionGate permission="canInviteMembers">
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold shadow-md"
-                >
-                  <UserPlus className="w-5 h-5" />
-                  Invite Member
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowManageInvitations(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors duration-200 font-semibold shadow-sm"
+                  >
+                    Manage Invitations
+                  </button>
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold shadow-md"
+                  >
+                    <UserPlus className="w-5 h-5" />
+                    Invite Member
+                  </button>
+                </div>
               </PermissionGate>
             </div>
           </div>
@@ -721,6 +731,12 @@ const HRPanel = () => {
             departmentOptions={departmentStore.departments}
             roleOptions={activeRoles}
             onInvited={() => loadData()}
+          />
+
+          <ManageInvitationsModal
+            isOpen={showManageInvitations}
+            onClose={() => setShowManageInvitations(false)}
+            workspaceId={currentWorkspace._id}
           />
 
           {/* Toast Notification */}

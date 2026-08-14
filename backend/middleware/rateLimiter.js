@@ -2,7 +2,13 @@ export const rateLimiter = (options = {}) => {
   const {
     windowMs = 15 * 60 * 1000, // 15 minutes
     maxRequests = 100,
-    message = 'Too many requests, please try again later'
+    message = 'Too many requests, please try again later',
+    // Defaults to the existing per-IP behavior — every call site before this
+    // option existed keeps working unmodified. Pass e.g.
+    // (req) => `ws:${req.params.id}` or (req) => req.user?.id to bound a
+    // single account/workspace across many IPs instead of (or in addition
+    // to, via a second rateLimiter instance) per-IP.
+    keyFn = (req) => req.ip || req.connection.remoteAddress
   } = options;
 
   // One Map per rateLimiter(...) call, not one shared module-level Map —
@@ -25,7 +31,7 @@ export const rateLimiter = (options = {}) => {
   }, 60 * 1000); // Clean up every minute
 
   return (req, res, next) => {
-    const key = req.ip || req.connection.remoteAddress;
+    const key = keyFn(req);
     const now = Date.now();
 
     if (!rateLimitStore.has(key)) {

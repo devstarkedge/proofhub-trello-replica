@@ -51,7 +51,7 @@ const workspaceInvitationSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'accepted', 'expired', 'cancelled'],
+    enum: ['pending', 'accepted', 'expired', 'cancelled', 'revoked'],
     default: 'pending'
   },
   acceptedAt: {
@@ -61,6 +61,38 @@ const workspaceInvitationSchema = new mongoose.Schema({
   acceptedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
+    default: null
+  },
+  revokedAt: {
+    type: Date,
+    default: null
+  },
+  revokedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  cancelledAt: {
+    type: Date,
+    default: null
+  },
+  cancelledBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  // Best-effort email dispatch outcome — deliberately separate from `status`
+  // (see modules/workspaces/invitationService.js): this is delivery-attempt
+  // metadata, not an authorization-relevant state. emailSentAt stays null
+  // until a send genuinely succeeds; lastEmailError holds the most recent
+  // failure message so Resend/Manage Invitations can surface it without the
+  // request that created/refreshed the invite having to fail synchronously.
+  emailSentAt: {
+    type: Date,
+    default: null
+  },
+  lastEmailError: {
+    type: String,
     default: null
   },
   // Hybrid invitation policy switch — see modules/workspaces/invitationService.js
@@ -101,5 +133,8 @@ const workspaceInvitationSchema = new mongoose.Schema({
 workspaceInvitationSchema.index({ workspace: 1, email: 1, status: 1 });
 workspaceInvitationSchema.index({ tokenHash: 1 });
 workspaceInvitationSchema.index({ expiresAt: 1 });
+// Keyset pagination for the Manage Invitations list (mirrors AuditLog.js's
+// own {workspace,category,_id} convention).
+workspaceInvitationSchema.index({ workspace: 1, status: 1, _id: -1 });
 
 export default mongoose.model('WorkspaceInvitation', workspaceInvitationSchema);

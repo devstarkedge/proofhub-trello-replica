@@ -10,13 +10,11 @@ import User from '../models/User.js';
 import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
+
 import { uploadWorkspaceIconToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 import { createDepartmentCore } from '../modules/workspaces/departmentCreation.js';
-import { createOrRestoreMembership, notifyMembershipAdded } from '../modules/workspaces/membershipCreation.js';
-import { createOrRefreshInvitation } from '../modules/workspaces/invitationService.js';
 import { slugify, isReservedSlug, isValidSlugFormat } from '../utils/slug.js';
 import { WORKSPACE_TYPE_RULES, isValidWorkspaceType, isValidIndustry, isValidCompanySize } from '../utils/workspaceOptions.js';
-import { sendWorkspaceInviteEmail } from '../utils/email.js';
 
 const ICON_ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml'];
 const ICON_MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB — a logo, not a photo
@@ -199,96 +197,6 @@ export const checkWorkspaceSlug = asyncHandler(async (req, res) => {
     success: true,
     data: { normalizedSlug, available: !taken, reason: taken ? 'taken' : null }
   });
-});
-
-// @desc    Invite people to this workspace by email. Emails matching an
-//          existing platform user are added (or restored, if they were
-//          previously removed) immediately; unknown emails get a real,
-//          token-based WorkspaceInvitation (7-day expiry) emailed as an
-//          /invite/:token link — they automatically join this workspace the
-//          moment they register or sign in with a matching email.
-// @route   POST /api/workspaces/:id/invite
-// @access  Private (workspace admin only)
-export const inviteWorkspaceMembers = asyncHandler(async (req, res, next) => {
-  const { emails } = req.body;
-  if (!Array.isArray(emails) || emails.length === 0 || emails.length > 20) {
-    return next(new ErrorResponse('Provide between 1 and 20 email addresses', 400));
-  }
-
-  const callerMembership = await WorkspaceMembership.findOne({
-    workspace: req.params.id,
-    user: req.user.id,
-    status: 'active'
-  }).lean();
-  if (!callerMembership || callerMembership.role !== 'admin') {
-    return next(new ErrorResponse('Only a workspace admin can invite members', 403));
-  }
-
-  const workspace = await workspaceContext.runUnscoped(async () => Workspace.findById(req.params.id).lean());
-  if (!workspace) {
-    return next(new ErrorResponse('Workspace not found', 404));
-  }
-
-  const employeeRole = await workspaceContext.run({ workspaceId: req.params.id }, async () => (
-    await Role.findResolvable('employee', req.params.id)
-  ));
-
-  const results = [];
-  const seen = new Set();
-
-  for (const rawEmail of emails) {
-    const email = String(rawEmail || '').trim().toLowerCase();
-    if (!email) continue;
-    if (seen.has(email)) {
-      results.push({ email, status: 'failed', reason: 'Duplicate email in this request' });
-      continue;
-    }
-    seen.add(email);
-
-    try {
-      const existingUser = await User.findOne({ email }).select('_id isActive').lean();
-
-      if (existingUser) {
-        const { outcome } = await createOrRestoreMembership({
-          workspaceId: req.params.id,
-          userId: existingUser._id,
-          role: employeeRole?.slug || 'employee',
-          roleId: employeeRole?._id,
-          invitedBy: req.user.id
-        });
-        if (outcome === 'already_member') {
-          results.push({ email, status: 'already_member' });
-          continue;
-        }
-        notifyMembershipAdded(existingUser._id, req.params.id).catch((err) => (
-          console.error('Failed to emit membership-added event:', err)
-        ));
-        results.push({ email, status: 'added' });
-      } else {
-        // Re-inviting an email that already has a pending invite refreshes
-        // that same row (new token/expiry) instead of creating a second
-        // one — a resend, not a duplicate.
-        const { plaintextToken } = await createOrRefreshInvitation({
-          workspaceId: req.params.id,
-          email,
-          role: employeeRole?.slug || 'employee',
-          roleId: employeeRole?._id,
-          invitedBy: req.user.id
-        });
-        await sendWorkspaceInviteEmail(email, {
-          workspaceName: workspace.name,
-          inviterName: req.user.name,
-          token: plaintextToken
-        });
-        results.push({ email, status: 'invited' });
-      }
-    } catch (err) {
-      console.error(`Failed to process workspace invite for ${email}:`, err.message);
-      results.push({ email, status: 'failed', reason: 'Could not process this invite' });
-    }
-  }
-
-  res.status(200).json({ success: true, data: results });
 });
 
 // @desc    This workspace's setup/onboarding completeness, computed live

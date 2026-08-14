@@ -16,7 +16,6 @@ import {
   deactivateWorkspace,
   uploadWorkspaceIcon,
   removeWorkspaceIcon,
-  inviteWorkspaceMembers,
   getWorkspaceSetupStatus
 } from '../controllers/workspaceController.js';
 import { protect } from '../middleware/authMiddleware.js';
@@ -74,15 +73,10 @@ router.patch('/:id/owner', [
 ], transferWorkspaceOwnership);
 
 router.get('/:id/setup-status', getWorkspaceSetupStatus);
-router.post('/:id/invite', rateLimiter({
-  windowMs: 60 * 60 * 1000,
-  maxRequests: 10,
-  message: 'Too many invite requests — please try again later'
-}), [
-  body('emails').isArray({ min: 1, max: 20 }).withMessage('Provide between 1 and 20 email addresses'),
-  body('emails.*').isEmail().withMessage('One or more email addresses are invalid'),
-  validate
-], inviteWorkspaceMembers);
+// POST /:id/invite (bulk, admin-only, hardcoded role check) was retired —
+// bulk email-only invites now go through the centralized Invite Member
+// system's `bulk_simple` method (routes/workspaceMembers.js), which the
+// frontend's workspaceSetupApi.js#inviteWorkspaceMembers already targets.
 
 router.get('/:id/members', getWorkspaceMembers);
 // GET /:id/available-users and POST /:id/members (the old existing-user-
