@@ -4,6 +4,7 @@ import socketService from "../services/socket";
 import AuthContext from "./AuthContext";
 import useRoleStore from "../store/roleStore";
 import { resetAllOnWorkspaceSwitch } from "../store/resetRegistry";
+import logger from "../utils/logger";
 
 // Role/permission data is workspace-scoped, so it must only ever be fetched
 // AFTER the active workspace is resolved and persisted (x-workspace-id) —
@@ -27,7 +28,13 @@ export const WorkspaceProvider = ({ children }) => {
   const [workspaces, setWorkspaces] = useState([]);
   const [currentWorkspace, setCurrentWorkspace] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Explicit resolution status, distinct from `loading`: `loading` is reused
+  // by every async op (switch/create/leave/etc.), so it can't by itself
+  // distinguish "haven't fetched yet" from "confirmed empty" for the very
+  // first bootstrap fetch — see loadWorkspaces()'s isInitialLoad handling.
+  const [status, setStatus] = useState("idle"); // 'idle' | 'loading' | 'resolved' | 'no-workspace' | 'error'
   const loadedForUserId = useRef(null);
+  const hasResolvedOnceRef = useRef(false);
 
   const persistActiveWorkspace = useCallback((ws) => {
     if (ws?._id) {
@@ -45,9 +52,31 @@ export const WorkspaceProvider = ({ children }) => {
    * a second round-trip.
    */
   const loadWorkspaces = useCallback(async () => {
+    // Only the very first resolution attempt is allowed to move `status`
+    // into the transient 'loading'/'error' states. loadWorkspaces() is also
+    // called by createWorkspace/leaveWorkspace/deactivateWorkspace and by the
+    // socket-workspace-membership-added listener, all of which can fire mid-
+    // session on an already-working screen — those must silently refresh
+    // workspaces/currentWorkspace without ever blanking the UI to a spinner
+    // or error state. See utils/workspaceGate.js's getWorkspaceGateDecision()
+    // for the consumer side of this contract.
+    const isInitialLoad = !hasResolvedOnceRef.current;
+    logger.debug("WORKSPACE_RESOLUTION_START", { isInitialLoad });
+    if (isInitialLoad) setStatus("loading");
     setLoading(true);
     try {
       const response = await api.get("/api/workspaces");
+
+      // services/api.js's response interceptor RESOLVES (not rejects) a
+      // request that fails mid-flight while offline, returning
+      // { data: { offline: true } } so it can queue it for replay. Without
+      // this check that shape falls through to `list = []` below and gets
+      // misreported as a confirmed-empty workspace list instead of a
+      // connectivity failure.
+      if (response?.data?.offline) {
+        throw new Error("Request queued: offline");
+      }
+
       const list = response?.data?.data || [];
       setWorkspaces(list);
 
@@ -63,9 +92,16 @@ export const WorkspaceProvider = ({ children }) => {
         loadRoleAndPermissionData();
       }
 
+      hasResolvedOnceRef.current = true;
+      const nextStatus = list.length > 0 ? "resolved" : "no-workspace";
+      setStatus(nextStatus);
+      logger.debug("WORKSPACE_RESOLUTION_COMPLETE", { status: nextStatus, count: list.length });
+
       return list;
     } catch (error) {
       console.error("Error loading workspaces:", error);
+      logger.debug("WORKSPACE_RESOLUTION_FAILED", { message: error?.message, isInitialLoad });
+      if (isInitialLoad) setStatus("error");
       return [];
     } finally {
       setLoading(false);
@@ -125,8 +161,10 @@ export const WorkspaceProvider = ({ children }) => {
     }
     if (!isAuthenticated) {
       loadedForUserId.current = null;
+      hasResolvedOnceRef.current = false;
       setWorkspaces([]);
       setCurrentWorkspace(null);
+      setStatus("idle");
     }
   }, [isAuthenticated, user?._id, loadWorkspaces]);
 
@@ -163,12 +201,21 @@ export const WorkspaceProvider = ({ children }) => {
    * caller can no longer use.
    */
   const dropWorkspaceFromState = useCallback((workspaceId) => {
-    setWorkspaces((prev) => prev.filter((ws) => ws._id !== workspaceId));
+    const next = workspaces.filter((ws) => ws._id !== workspaceId);
+    setWorkspaces(next);
+    // leaveWorkspace/deactivateWorkspace both follow this with an awaited
+    // loadWorkspaces() that will settle `status` from the server's fresh
+    // answer regardless — this just closes the one-render window where
+    // `workspaces` would otherwise already be empty while `status` still
+    // reads its previous 'resolved' value (dropping your last workspace).
+    if (next.length === 0) {
+      setStatus("no-workspace");
+    }
     if (currentWorkspace?._id === workspaceId) {
       persistActiveWorkspace(null);
       setCurrentWorkspace(null);
     }
-  }, [currentWorkspace, persistActiveWorkspace]);
+  }, [workspaces, currentWorkspace, persistActiveWorkspace]);
 
   const leaveWorkspace = useCallback(async (workspaceId) => {
     await api.post(`/api/workspaces/${workspaceId}/leave`);
@@ -241,6 +288,7 @@ export const WorkspaceProvider = ({ children }) => {
         workspaces,
         currentWorkspace,
         loading,
+        status,
         loadWorkspaces,
         switchWorkspace,
         createWorkspace,

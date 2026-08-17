@@ -12,6 +12,18 @@ function computeSignature(payload) {
   return crypto.createHmac('sha256', WEBHOOK_SECRET).update(payload).digest('hex');
 }
 
+// Connection failures to "localhost" (e.g. the target service isn't running)
+// surface as a Node AggregateError whose top-level .message is empty — the
+// real reason (ECONNREFUSED, etc.) lives in .errors[]. Without this, retry
+// logs show error: "" and give no clue what actually failed.
+function describeError(err) {
+  if (err?.message) return err.message;
+  if (Array.isArray(err?.errors) && err.errors.length) {
+    return err.errors.map((e) => e?.message || e?.code || String(e)).join('; ');
+  }
+  return err?.code || String(err);
+}
+
 let _worker = null;
 
 export function startChatWebhookWorker(options = { concurrency: 5 }) {
@@ -55,11 +67,11 @@ export function startChatWebhookWorker(options = { concurrency: 5 }) {
       const status = err.response?.status;
       if (status && status >= 400 && status < 500) {
         // Non-retryable client error — log and do not retry
-        logger.error('chatWebhookWorker: non-retryable failure', { jobId: job.id, status, eventName, error: err.message });
+        logger.error('chatWebhookWorker: non-retryable failure', { jobId: job.id, status, eventName, error: describeError(err) });
         throw new UnrecoverableError(`ChatApp rejected ${eventName} with HTTP ${status}`);
       }
       // For network/5xx errors, throw to allow BullMQ to retry
-      logger.warn('chatWebhookWorker: retryable failure, will throw to retry', { jobId: job.id, eventName, error: err.message });
+      logger.warn('chatWebhookWorker: retryable failure, will throw to retry', { jobId: job.id, eventName, error: describeError(err) });
       throw err;
     }
   }, {
@@ -68,7 +80,7 @@ export function startChatWebhookWorker(options = { concurrency: 5 }) {
   });
 
   _worker.on('failed', (job, err) => {
-    logger.error('chatWebhookWorker job failed', { jobId: job.id, name: job.name, attemptsMade: job.attemptsMade, err: err.message });
+    logger.error('chatWebhookWorker job failed', { jobId: job.id, name: job.name, attemptsMade: job.attemptsMade, err: describeError(err) });
   });
 
   return _worker;

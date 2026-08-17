@@ -3,6 +3,7 @@ import { devtools } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';
 import Database from '../services/database';
 import { registerResettable } from './resetRegistry';
+import logger from '../utils/logger';
 
 // Helper to build cardsById from cardsByList
 const buildCardsById = (cardsByList) => {
@@ -76,6 +77,7 @@ const useWorkflowStore = create(
       },
       initializeWorkflow: async (projectId) => {
         const requestId = ++currentRequestId;
+        logger.debug('PROJECT_RESOLUTION_START', { projectId, requestId });
         const state = get();
         
         // Check if we already have data for this project
@@ -96,16 +98,17 @@ const useWorkflowStore = create(
              console.log('Using prefetched data for', projectId);
              const { board, lists, cardsByList } = prefetched.data;
              const cardsById = buildCardsById(cardsByList);
-             set({ 
-                board, 
-                lists: lists || [], 
-                cardsByList: cardsByList || {}, 
+             set({
+                board,
+                lists: lists || [],
+                cardsByList: cardsByList || {},
                 cardsById,
                 loading: false,
                 lastUpdated: Date.now(),
                 error: null,
                 currentProjectId: projectId
              });
+             logger.debug('PROJECT_RESOLUTION_COMPLETE', { projectId, boardId: board?._id, source: 'prefetch' });
              // Clear used prefetch to free memory? Optional. keeping it for now.
              return;
           }
@@ -150,21 +153,23 @@ const useWorkflowStore = create(
           
           // Set all data at once with normalized cardsById
           const cardsById = buildCardsById(cardsByList);
-          set({ 
-            board, 
-            lists: lists || [], 
-            cardsByList: cardsByList || {}, 
+          set({
+            board,
+            lists: lists || [],
+            cardsByList: cardsByList || {},
             cardsById,
             lastUpdated: Date.now(),
-            loading: false 
+            loading: false
           });
+          logger.debug('PROJECT_RESOLUTION_COMPLETE', { projectId, boardId: board?._id, source: 'network' });
         } catch (error) {
           if (requestId !== currentRequestId) return;
-          
+
           console.error('Error initializing workflow:', error);
-          set({ 
+          logger.debug('PROJECT_CONTEXT_INVALID', { projectId, requestId, message: error.message });
+          set({
             error: error.message || 'Failed to load workflow',
-            loading: false 
+            loading: false
           });
         }
       },

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import logger from '../../utils/logger';
 
 export const buildProjectWorkflowPath = (departmentId, projectId) => {
   if (!departmentId || !projectId) return null;
@@ -50,6 +51,8 @@ const ProjectWorkflowLink = ({
   }
 
   const handleClick = (event) => {
+    logger.debug('FINANCE_PROJECT_CLICK', { departmentId, projectId, openInNewTab });
+
     if (stopPropagation) {
       event.stopPropagation();
     }

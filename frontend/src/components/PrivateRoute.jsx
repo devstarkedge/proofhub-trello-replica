@@ -3,10 +3,12 @@ import { Navigate, useLocation } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
 import LandingPage from '../pages/LandingPage';
+import logger from '../utils/logger';
+import { getWorkspaceGateDecision } from '../utils/workspaceGate';
 
 const PrivateRoute = ({ children, requiredRole }) => {
   const { user, isAuthenticated, loading } = useContext(AuthContext);
-  const { workspaces, currentWorkspace, loading: workspacesLoading } = useContext(WorkspaceContext);
+  const { workspaces, currentWorkspace, status: workspaceStatus, loadWorkspaces } = useContext(WorkspaceContext);
   const location = useLocation();
 
   if (loading) {
@@ -40,17 +42,60 @@ const PrivateRoute = ({ children, requiredRole }) => {
     return <Navigate to="/verify-pending" replace />;
   }
 
+  // Single canonical decision for what a workspace-gated route should do —
+  // see getWorkspaceGateDecision() in WorkspaceContext.jsx. Critically,
+  // 'pending' covers BOTH "haven't started fetching yet" and "fetch in
+  // flight" so this never mistakes a not-yet-resolved workspace list for a
+  // confirmed-empty one, which is what a plain `loading` flag (false until
+  // the first fetch actually starts) can't distinguish on the very first
+  // render after auth resolves.
+  const workspaceGate = getWorkspaceGateDecision({ status: workspaceStatus, workspaces, currentWorkspace });
+
+  if (workspaceGate === 'pending') {
+    logger.debug('WORKSPACE_GATE', { decision: 'pending', path: location.pathname });
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-800 to-pink-400 flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+          <div className="text-white text-xl">Loading your workspace...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (workspaceGate === 'error') {
+    logger.debug('WORKSPACE_GATE', { decision: 'error', path: location.pathname });
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-800 to-pink-400 flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4 text-center px-4">
+          <div className="text-white text-xl">Couldn't load your workspace</div>
+          <p className="text-white/70 text-sm max-w-sm">Check your connection and try again.</p>
+          <button
+            type="button"
+            onClick={() => loadWorkspaces()}
+            className="px-5 py-2.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Only ever shown to a user with 2+ workspaces and none active yet —
   // single-workspace users (everyone today) are auto-selected in
-  // WorkspaceContext and never see this gate. Skipped while workspaces are
-  // still loading so this doesn't flash for a moment on every refresh.
-  if (!workspacesLoading && workspaces.length > 1 && !currentWorkspace) {
+  // WorkspaceContext and never see this gate.
+  if (workspaceGate === 'select-required') {
+    logger.debug('WORKSPACE_GATE', { decision: 'select-required', path: location.pathname });
     return <Navigate to="/select-workspace" replace />;
   }
 
   // Authenticated user with absolutely no workspace memberships — shown
   // the "create or join" landing screen instead of crashing the dashboard.
-  if (!workspacesLoading && workspaces.length === 0) {
+  // Reached only once resolution has genuinely completed with an empty
+  // result, never as a stand-in for "still loading".
+  if (workspaceGate === 'no-workspace') {
+    logger.debug('WORKSPACE_GATE', { decision: 'no-workspace', path: location.pathname });
     return <Navigate to="/no-workspace" replace />;
   }
 

@@ -25,6 +25,7 @@ import ShowFieldsPanel from '../components/workflow/ShowFieldsPanel';
 import FilterPanel from '../components/workflow/FilterPanel';
 import FilterChipsBar from '../components/workflow/FilterChipsBar';
 import { generateWorkflowCSV } from '../utils/csvExport';
+import logger from '../utils/logger';
 
 const WorkFlow = memo(() => {
   const { deptId, projectId, taskId, subtaskId, nenoId } = useParams();
@@ -151,9 +152,18 @@ const WorkFlow = memo(() => {
 
   useEffect(() => {
     if (projectId && !teamLoading) {
+      logger.debug('WORKFLOW_ROUTE_REQUEST', { deptId, projectId });
       loadData();
     }
   }, [deptId, projectId, teamLoading]);
+
+  // Fires once real board data is in — keyed on the id (not the whole board
+  // object) so it doesn't refire on every optimistic field update.
+  useEffect(() => {
+    if (board?._id) {
+      logger.debug('WORKFLOW_RENDER', { boardId: board._id, projectId, deptId });
+    }
+  }, [board?._id, projectId, deptId]);
 
   // Redirect to correct URL if deptId is invalid (e.g. "undefined" from legacy Slack links)
   useEffect(() => {

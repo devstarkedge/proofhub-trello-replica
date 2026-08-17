@@ -234,18 +234,29 @@ const flattenRow = (row) => {
   // flattenMaps: true ensures Map types are converted to plain objects
   const obj = row.toObject ? row.toObject({ getters: true, virtuals: true, flattenMaps: true }) : row;
   const { customFields, ...rest } = obj;
-  return { ...rest, ...(customFields || {}) };
+  // rest must win: a custom field sharing a name with a real schema field
+  // (e.g. an imported "workspaceId" column) must never shadow the real one.
+  return { ...(customFields || {}), ...rest };
 };
+
+// Reserved schema keys that must never be routed into customFields — beyond
+// the obvious audit fields, workspaceId/isDeleted/deletedAt/deletedBy are
+// tenant/soft-delete plumbing (workspaceScopePlugin.js) that a same-named
+// import column or request field could otherwise silently shadow.
+const RESERVED_ROW_FIELDS = [
+  '_id', 'createdAt', 'updatedAt', '__v', 'createdBy', 'updatedBy',
+  'lockedBy', 'lockedAt', 'workspaceId', 'isDeleted', 'deletedAt', 'deletedBy',
+];
 
 // Helper to separate standard and custom fields for save
 const prepareRowForSave = (data) => {
   const standard = {};
   const custom = {};
-  
+
   Object.keys(data).forEach(key => {
     if (STANDARD_FIELDS.includes(key)) {
       standard[key] = data[key];
-    } else if (!['_id', 'createdAt', 'updatedAt', '__v', 'createdBy', 'updatedBy', 'lockedBy', 'lockedAt'].includes(key)) {
+    } else if (!RESERVED_ROW_FIELDS.includes(key)) {
       custom[key] = data[key];
     }
   });
