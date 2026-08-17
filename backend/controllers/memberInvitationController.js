@@ -319,7 +319,7 @@ async function inviteMemberBulkSimple(req, res, next, workspace) {
     }
     seen.add(email);
 
-    const existingUser = await User.findOne({ email }).select('_id name').lean();
+    const existingUser = await User.findOne({ email }).select('_id name email').lean();
 
     if (existingUser) {
       const activeMembership = await WorkspaceMembership.findOne({

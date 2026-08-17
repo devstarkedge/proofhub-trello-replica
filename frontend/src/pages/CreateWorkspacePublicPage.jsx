@@ -76,7 +76,7 @@ const Field = ({ label, required, error, children, hint }) => (
 );
 
 const inputCls = (hasError) =>
-  `w-full pl-11 pr-4 py-3 bg-white/10 border rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent backdrop-blur-sm transition-all text-sm ${
+  `w-full pl-12 pr-4 py-3 sm:py-3.5 bg-white/10 border rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent backdrop-blur-sm transition-all text-sm ${
     hasError ? 'border-red-400/60 bg-red-500/10' : 'border-white/20 hover:border-white/30'
   }`;
 
@@ -90,7 +90,7 @@ const CreateWorkspacePublicPage = () => {
   const navigate = useNavigate();
   const { isAuthenticated, loginUser } = useContext(AuthContext);
   const { loadWorkspaces } = useContext(WorkspaceContext);
-  const { effectiveMode } = useThemeStore();
+  const effectiveMode = useThemeStore((state) => state.effectiveMode);
 
   // This page registers a brand-new owner account — an already-logged-in
   // visitor landing here (bookmark, stray link) would otherwise be able to
@@ -310,8 +310,12 @@ const CreateWorkspacePublicPage = () => {
                 >
                   <Field label="Workspace Name" required error={step1Errors.workspaceName}>
                     <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Building2 size={16} className="text-white/50" />
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                        <Building2
+                          size={20}
+                          className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                          style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                        />
                       </div>
                       <input
                         type="text"
@@ -331,8 +335,12 @@ const CreateWorkspacePublicPage = () => {
                     hint="This is your workspace's unique URL identifier"
                   >
                     <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Globe size={16} className="text-white/50" />
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                        <Globe
+                          size={20}
+                          className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                          style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                        />
                       </div>
                       <input
                         type="text"
@@ -405,20 +413,24 @@ const CreateWorkspacePublicPage = () => {
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
                         <Field label="Industry" required error={step1Errors.industry}>
                           <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <Briefcase size={16} className="text-white/50" />
+                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                              <Briefcase
+                                size={20}
+                                className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                                style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                              />
                             </div>
                             <select
                               value={industry}
                               onChange={(e) => setIndustry(e.target.value)}
-                              className={`${inputCls(!!step1Errors.industry)} appearance-none`}
+                              className={`${inputCls(!!step1Errors.industry)} appearance-none pr-10`}
                             >
                               <option value="" className="bg-slate-800">Select industry...</option>
                               {INDUSTRY_OPTIONS.map((opt) => (
                                 <option key={opt.value} value={opt.value} className="bg-slate-800">{opt.label}</option>
                               ))}
                             </select>
-                            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none" />
+                            <ChevronDown size={18} className={`absolute right-4 top-1/2 -translate-y-1/2 ${effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} pointer-events-none z-10`} />
                           </div>
                         </Field>
                       </motion.div>
@@ -431,20 +443,24 @@ const CreateWorkspacePublicPage = () => {
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
                         <Field label="Company Size" required error={step1Errors.companySize}>
                           <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <Users size={16} className="text-white/50" />
+                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                              <Users
+                                size={20}
+                                className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                                style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                              />
                             </div>
                             <select
                               value={companySize}
                               onChange={(e) => setCompanySize(e.target.value)}
-                              className={`${inputCls(!!step1Errors.companySize)} appearance-none`}
+                              className={`${inputCls(!!step1Errors.companySize)} appearance-none pr-10`}
                             >
                               <option value="" className="bg-slate-800">Select team size...</option>
                               {COMPANY_SIZE_OPTIONS.map((opt) => (
                                 <option key={opt.value} value={opt.value} className="bg-slate-800">{opt.label}</option>
                               ))}
                             </select>
-                            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none" />
+                            <ChevronDown size={18} className={`absolute right-4 top-1/2 -translate-y-1/2 ${effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} pointer-events-none z-10`} />
                           </div>
                         </Field>
                       </motion.div>
@@ -462,8 +478,12 @@ const CreateWorkspacePublicPage = () => {
                           hint="You can add more departments after setup"
                         >
                           <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <Users size={16} className="text-white/50" />
+                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                              <Users
+                                size={20}
+                                className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                                style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                              />
                             </div>
                             <input
                               type="text"
@@ -504,8 +524,12 @@ const CreateWorkspacePublicPage = () => {
 
                     <Field label="Full Name" required error={step2Errors.ownerName}>
                       <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <User size={16} className="text-white/50" />
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                          <User
+                            size={20}
+                            className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                            style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                          />
                         </div>
                         <input
                           type="text"
@@ -520,8 +544,12 @@ const CreateWorkspacePublicPage = () => {
 
                     <Field label="Email Address" required error={step2Errors.email}>
                       <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Mail size={16} className="text-white/50" />
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                          <Mail
+                            size={20}
+                            className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                            style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                          />
                         </div>
                         <input
                           type="email"
@@ -536,46 +564,62 @@ const CreateWorkspacePublicPage = () => {
 
                     <Field label="Password" required error={step2Errors.password} hint="Min 6 chars with uppercase, lowercase, and number">
                       <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Lock size={16} className="text-white/50" />
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                          <Lock
+                            size={20}
+                            className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                            style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                          />
                         </div>
                         <input
                           type={showPassword ? 'text' : 'password'}
                           value={password}
                           onChange={(e) => setPassword(e.target.value.replace(/\s/g, ''))}
-                          className={`${inputCls(!!step2Errors.password)} pr-11`}
+                          className={`${inputCls(!!step2Errors.password)} !pr-12`}
                           placeholder="Create a strong password"
                           autoComplete="new-password"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/40 hover:text-white/70 transition-colors"
+                          className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/50 hover:text-white/70 transition-colors z-10"
                         >
-                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          {showPassword ? (
+                            <EyeOff size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} />
+                          ) : (
+                            <Eye size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} />
+                          )}
                         </button>
                       </div>
                     </Field>
 
                     <Field label="Confirm Password" required error={step2Errors.confirmPassword}>
                       <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Lock size={16} className="text-white/50" />
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
+                          <Lock
+                            size={20}
+                            className={effectiveMode === 'dark' ? "text-white" : "text-gray-500"}
+                            style={{ filter: effectiveMode === 'dark' ? 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))' : 'none' }}
+                          />
                         </div>
                         <input
                           type={showConfirmPassword ? 'text' : 'password'}
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value.replace(/\s/g, ''))}
-                          className={`${inputCls(!!step2Errors.confirmPassword)} pr-11`}
+                          className={`${inputCls(!!step2Errors.confirmPassword)} !pr-12`}
                           placeholder="Confirm your password"
                           autoComplete="new-password"
                         />
                         <button
                           type="button"
                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/40 hover:text-white/70 transition-colors"
+                          className="absolute inset-y-0 right-0 pr-4 flex items-center text-white/50 hover:text-white/70 transition-colors z-10"
                         >
-                          {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          {showConfirmPassword ? (
+                            <EyeOff size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} />
+                          ) : (
+                            <Eye size={20} className={effectiveMode === 'dark' ? "text-white/50" : "text-gray-500"} />
+                          )}
                         </button>
                       </div>
                     </Field>

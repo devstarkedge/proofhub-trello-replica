@@ -155,8 +155,8 @@ export async function acceptInvitation(invitationId, userId) {
       // inside approveJoinRequest). Role.js's workspaceScopePlugin needs an
       // explicit context here — this runs from authController.js's
       // register(), a public route with no ambient context of its own.
-      const roleStillValid = await workspaceContext.run({ workspaceId: claimed.workspace }, () => (
-        Role.findOne({ _id: claimed.roleId, isActive: true }).session(session).lean()
+      const roleStillValid = await workspaceContext.run({ workspaceId: claimed.workspace }, async () => (
+        await Role.findOne({ _id: claimed.roleId, isActive: true }).session(session).lean()
       ));
       if (!roleStillValid) {
         throw new ErrorResponse(

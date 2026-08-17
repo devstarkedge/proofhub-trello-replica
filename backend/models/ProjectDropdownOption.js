@@ -2,10 +2,13 @@ import mongoose from 'mongoose';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const projectDropdownOptionSchema = new mongoose.Schema({
+  // null = global system option (e.g. Hourly Rate, Milestone), shared by
+  // every workspace. A real value = a custom option scoped to exactly that
+  // workspace. See modules/workspaces/workspaceScopePlugin.js's allowGlobal.
   workspaceId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Workspace',
-    required: true
+    default: null
   },
   type: {
     type: String,
@@ -49,6 +52,6 @@ projectDropdownOptionSchema.index({ workspaceId: 1, type: 1, value: 1 }, { uniqu
 projectDropdownOptionSchema.index({ workspaceId: 1, type: 1, displayOrder: 1 });
 projectDropdownOptionSchema.index({ workspaceId: 1, type: 1, isActive: 1 });
 
-projectDropdownOptionSchema.plugin(workspaceScopePlugin);
+projectDropdownOptionSchema.plugin(workspaceScopePlugin, { allowGlobal: true });
 
 export default mongoose.model('ProjectDropdownOption', projectDropdownOptionSchema);

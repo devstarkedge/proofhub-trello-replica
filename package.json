@@ -6,6 +6,8 @@
   "scripts": {
     "build": "cd frontend && npm install && npm run build",
     "start": "node backend/server.js",
+    "migrate": "cd backend && npm run migrate",
+    "migrate:status": "cd backend && npm run migrate:status",
     "install:all": "npm install --prefix frontend && npm install --prefix backend"
   }
 }

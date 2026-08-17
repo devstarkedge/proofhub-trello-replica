@@ -8,10 +8,12 @@ const DEFAULT_OPTIONS = {
     { value: 'Upwork', label: 'Upwork' },
     { value: 'Contra', label: 'Contra' }
   ],
+  // 'hr' and 'milestone' are NOT listed here — they're global system
+  // options (workspaceId: null, isSystem: true), seeded once by
+  // scripts/migrateBillingTypeOptions.js, not lazily per-workspace. Only
+  // Fixed Price is a genuine per-workspace custom default.
   billingType: [
-    { value: 'hr', label: 'Hourly Rate' },
-    { value: 'fixed', label: 'Fixed Price' },
-    { value: 'milestone', label: 'Milestone' }
+    { value: 'fixed', label: 'Fixed Price' }
   ]
 };
 
@@ -40,7 +42,7 @@ const ensureDefaults = async (type, userId) => {
           createdBy: userId,
           isActive: true
         },
-        $set: { isSystem: type === 'billingType' }
+        $set: { isSystem: false }
       },
       upsert: true
     }

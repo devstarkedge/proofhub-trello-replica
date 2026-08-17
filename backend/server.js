@@ -235,9 +235,8 @@ import seedAdmin from './utils/seed.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
 import { initQueues, shutdownQueues } from './queues/queueManager.js';
 import { startAnalyticsReportScheduler, stopAnalyticsReportScheduler } from './schedulers/analyticsReportScheduler.js';
-import runPermissionEngineMigration from './scripts/migratePermissionEngine.js';
-import runWorkspaceTypeMigration from './scripts/migrateWorkspaceTypeFields.js';
 import * as workspaceContext from './modules/workspaces/workspaceContext.js';
+import { hasPendingMigrations } from './scripts/migrationRegistry.js';
 
 mongoose.connect(config.db.uri, {
   maxPoolSize: config.db.maxPoolSize,
@@ -247,37 +246,27 @@ mongoose.connect(config.db.uri, {
   .then(async () => {
     logger.info('Connected to MongoDB with connection pooling');
 
-    // Everything at boot runs with no ambient request/workspace context —
-    // wrap the whole sequence once so nothing below needs its own explicit
-    // bypass (seedAdmin/migrations/recovery scans already wrap themselves
-    // internally too; this is a defensive outer net, not a substitute).
+    // Seed admin user and system roles (app initialization, not migration).
+    // Runs inside unscoped context — no ambient request/workspace context
+    // at boot time. seedAdmin() already wraps itself internally too.
     await workspaceContext.runUnscoped(async () => {
-      // seedAdmin() must run before the permission-engine migration (it
-      // needs an admin user to exist).
-      //
-      // The one-time workspace migration/backfill (backend/scripts/
-      // migrateWorkspaces.js) intentionally does NOT run here — it already
-      // ran once against this database and is a manual, deliberate step
-      // (`node scripts/migrateWorkspaces.js`), not something that should
-      // fire on every dev restart/login. Run it by hand only when restoring
-      // an older backup or bootstrapping a fresh environment that predates
-      // the workspace feature.
       await seedAdmin();
-
-      try {
-        const permissionResult = await runPermissionEngineMigration();
-        logger.info('Permission engine migration result', permissionResult);
-      } catch (err) {
-        logger.error('Permission engine migration error (non-fatal)', { error: err.message });
-      }
-
-      try {
-        const workspaceTypeResult = await runWorkspaceTypeMigration();
-        logger.info('Workspace type migration result', workspaceTypeResult);
-      } catch (err) {
-        logger.error('Workspace type migration error (non-fatal)', { error: err.message });
-      }
     });
+
+    // Warn operators if database migrations haven't been run yet.
+    // Non-blocking — the server starts normally regardless. Migrations
+    // are applied separately via: npm run migrate
+    try {
+      const pending = await hasPendingMigrations();
+      if (pending.length > 0) {
+        logger.warn(
+          `${pending.length} pending database migration(s) detected. Run: npm run migrate`,
+          { pending: pending.map((m) => m.name) }
+        );
+      }
+    } catch (err) {
+      logger.error('Failed to check pending migrations', { error: err.message });
+    }
 
     // Initialize BullMQ queues (probes Redis, starts workers, recovery scans)
     const queuesActive = await initQueues();

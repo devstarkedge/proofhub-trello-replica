@@ -18,9 +18,18 @@ const errorHandler = (err, req, res, next) => {
     error = new ErrorResponse(message, 404);
   }
 
-  // Mongoose duplicate key
+  // Mongoose duplicate key. Compound unique indexes in this codebase are
+  // conventionally shaped {tenant/scope ObjectId(s)..., meaningful field},
+  // e.g. { workspaceId, department, name } — reporting the first key
+  // (almost always a scoping ObjectId) produces a confusing message like
+  // "WorkspaceId already exists" for what's actually a duplicate name.
+  // Prefer whichever key's value is a string (the real business
+  // identifier — scope/FK fields are always ObjectIds), falling back to
+  // the last key in the pattern.
   if (err.code === 11000) {
-    const field = Object.keys(err.keyPattern)[0];
+    const keys = Object.keys(err.keyPattern || {});
+    const stringField = keys.find((key) => typeof err.keyValue?.[key] === 'string');
+    const field = stringField || keys[keys.length - 1] || keys[0] || 'value';
     const message = `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`;
     error = new ErrorResponse(message, 400);
   }

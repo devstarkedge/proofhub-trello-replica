@@ -73,8 +73,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const [touched, setTouched] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [newCategoryDescription, setNewCategoryDescription] = useState("");
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const [projectUrlValid, setProjectUrlValid] = useState(true);
   const [countrySearchQuery, setCountrySearchQuery] = useState("");
@@ -259,26 +257,33 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     setProjectTypeDropdownOpen(false);
   }, []);
 
-  const handleCreateCategory = useCallback(async () => {
-    if (!newCategoryName.trim()) {
+  // Takes name/description as direct arguments — not from state — since the
+  // actual input fields live in ProjectDetailsSection.jsx's own local state.
+  // Reading from parent-level state here (set via setState just before this
+  // was called) previously validated against stale, previous-render values,
+  // since React state updates aren't applied synchronously.
+  const handleCreateCategory = useCallback(async (name, description) => {
+    const trimmedName = (name || "").trim();
+    if (!trimmedName) {
       toast.error("Category name is required");
-      return;
+      return false;
     }
     try {
-      const response = await Database.createCategory(newCategoryName.trim(), newCategoryDescription.trim(), departmentId);
+      const response = await Database.createCategory(trimmedName, (description || "").trim(), departmentId);
       if (response.success) {
         const newCategory = response.data;
         setCategories((prev) => [...prev, newCategory]);
         setFormData((prev) => ({ ...prev, projectCategory: newCategory.name }));
         setShowAddCategory(false);
-        setNewCategoryName("");
-        setNewCategoryDescription("");
         toast.success("Category created!");
+        return true;
       }
+      return false;
     } catch (error) {
       toast.error(error.message || "Failed to create category");
+      return false;
     }
-  }, [newCategoryName, newCategoryDescription, departmentId]);
+  }, [departmentId]);
 
   const handleDeleteCategory = useCallback(async (categoryId, categoryName, e) => {
     e.stopPropagation(); // Prevent dropdown from closing
@@ -849,11 +854,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         handleWorkflowChange={(milestoneWorkflow) => setFormData(prev => ({ ...prev, milestoneWorkflow }))}
                         handleCategoryChange={(category) => setFormData(prev => ({ ...prev, projectCategory: category }))}
                         handleDeleteCategory={handleDeleteCategory}
-                        handleCreateCategory={(name, description) => {
-                          setNewCategoryName(name);
-                          setNewCategoryDescription(description);
-                          handleCreateCategory();
-                        }}
+                        handleCreateCategory={handleCreateCategory}
                       />
                     )}
 

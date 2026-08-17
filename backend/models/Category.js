@@ -41,7 +41,13 @@ const categorySchema = new mongoose.Schema({
 });
 
 // Indexes
-categorySchema.index({ workspaceId: 1, department: 1, name: 1 }, { unique: true });
+// Partial: only active categories are constrained, so a soft-deleted
+// category's name doesn't permanently block reuse in the same department
+// (deleteCategory sets isActive:false rather than removing the document).
+categorySchema.index(
+  { workspaceId: 1, department: 1, name: 1 },
+  { unique: true, partialFilterExpression: { isActive: true } }
+);
 categorySchema.index({ workspaceId: 1, department: 1 });
 categorySchema.index({ workspaceId: 1, createdBy: 1 });
 categorySchema.index({ workspaceId: 1, isActive: 1 });

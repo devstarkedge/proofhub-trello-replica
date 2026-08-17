@@ -46,11 +46,15 @@ const ProjectDetailsSection = memo(({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [categoryDropdownOpen]);
 
-  const onCategoryCreate = () => {
-    handleCreateCategory(newCategoryName, newCategoryDescription);
-    setNewCategoryName("");
-    setNewCategoryDescription("");
-    setShowAddCategory(false);
+  const onCategoryCreate = async () => {
+    // Only clear/close on success — otherwise a failed create (e.g. a real
+    // duplicate name) silently discards what the user typed.
+    const created = await handleCreateCategory(newCategoryName, newCategoryDescription);
+    if (created) {
+      setNewCategoryName("");
+      setNewCategoryDescription("");
+      setShowAddCategory(false);
+    }
   };
 
   return (
