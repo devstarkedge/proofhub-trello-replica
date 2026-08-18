@@ -12,7 +12,12 @@ export const RESERVED_SLUGS = [
   'sales', 'admin', 'hr-panel', 'access-control', 'search', 'list-view', 'calendar',
   'gantt', 'analytics', 'profile', 'settings', 'announcements', 'reminders',
   'reminder-calendar', 'pm-sheet', 'finance', 'workflow', 'invite', 'join', 'no-workspace',
-  'api', 'app', 'www', 'static', 'assets', 'workspace', 'workspaces', 'new', 'create', 'edit', 'delete'
+  'api', 'app', 'www', 'static', 'assets', 'workspace', 'workspaces', 'new', 'create', 'edit', 'delete',
+  // Platform administration lives at /super-admin — a genuinely separate
+  // context from any tenant, never a workspace itself (see
+  // middleware/requireSuperAdmin.js). Reserved here so a workspace can never
+  // collide with that route again, the way one already did once by accident.
+  'super-admin', 'superadmin', 'platform-admin', 'platform'
 ];
 
 const MIN_SLUG_LENGTH = 3;

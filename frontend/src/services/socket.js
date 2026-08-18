@@ -539,6 +539,19 @@ class SocketService {
       console.log('Announcement pin toggled:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-pin-toggled', { detail: data }));
     });
+
+    // Super Admin Dashboard events — "core events" real-time scope only
+    // (workspace status changes + the platform audit log). Only ever fire
+    // for a socket the server itself verified as isSuperAdmin; a non-super-admin
+    // socket simply never joins the platform-admin room, so these listeners
+    // are inert no-ops for everyone else.
+    this.socket.on('super-admin:workspace:status-changed', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-super-admin-workspace-status-changed', { detail: data }));
+    });
+
+    this.socket.on('super-admin:audit-log:created', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-super-admin-audit-log-created', { detail: data }));
+    });
   }
 
   disconnect() {
@@ -621,6 +634,21 @@ class SocketService {
     if (this.socket && this.connected) {
       console.log('Leaving announcements room');
       this.socket.emit('leave-announcements');
+    }
+  }
+
+  // Super Admin room management
+  joinSuperAdmin() {
+    if (this.socket && this.connected) {
+      console.log('Joining super-admin room');
+      this.socket.emit('join-super-admin');
+    }
+  }
+
+  leaveSuperAdmin() {
+    if (this.socket && this.connected) {
+      console.log('Leaving super-admin room');
+      this.socket.emit('leave-super-admin');
     }
   }
 

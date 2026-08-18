@@ -32,6 +32,8 @@ export {
   emitFinancePageUpdated,
   emitFinancePageDeleted,
   emitFinanceDataRefresh,
+  emitSuperAdminWorkspaceStatusChanged,
+  emitSuperAdminAuditLogCreated,
   getIO,
   setIO,
 } from './emitters.js';

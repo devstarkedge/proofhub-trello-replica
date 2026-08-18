@@ -23,6 +23,8 @@ import { runPermissionEngineMigration } from './migratePermissionEngine.js';
 import { runWorkspaceTypeMigration } from './migrateWorkspaceTypeFields.js';
 import { runBillingTypeOptionsMigration } from './migrateBillingTypeOptions.js';
 import { runCategoryIndexMigration } from './migrateCategoryIndex.js';
+import { runWorkspaceStatusMigration } from './migrateWorkspaceStatusField.js';
+import { runWorkspaceSubscriptionsMigration } from './migrateWorkspaceSubscriptions.js';
 
 // ─── Migration definitions ──────────────────────────────────────────────────
 // Order matters: migrations run in the order listed here.
@@ -56,6 +58,18 @@ const MIGRATIONS = [
     version: '20250604',
     description: 'Replace plain unique index with partial unique index on categories',
     run: runCategoryIndexMigration,
+  },
+  {
+    name: 'workspace_status_field',
+    version: '20260818',
+    description: 'Backfill Workspace.status from isActive (Super Admin Dashboard)',
+    run: runWorkspaceStatusMigration,
+  },
+  {
+    name: 'workspace_subscriptions_backfill',
+    version: '20260818',
+    description: 'Create a Legacy-plan WorkspaceSubscription for every pre-existing workspace (Super Admin Dashboard)',
+    run: runWorkspaceSubscriptionsMigration,
   },
 ];
 

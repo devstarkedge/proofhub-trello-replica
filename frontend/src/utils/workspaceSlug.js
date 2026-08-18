@@ -7,7 +7,8 @@ export const RESERVED_SLUGS = [
   'sales', 'admin', 'hr-panel', 'access-control', 'search', 'list-view', 'calendar',
   'gantt', 'analytics', 'profile', 'settings', 'announcements', 'reminders',
   'reminder-calendar', 'pm-sheet', 'finance', 'workflow', 'invite', 'join', 'no-workspace',
-  'api', 'app', 'www', 'static', 'assets', 'workspace', 'workspaces', 'new', 'create', 'edit', 'delete'
+  'api', 'app', 'www', 'static', 'assets', 'workspace', 'workspaces', 'new', 'create', 'edit', 'delete',
+  'super-admin', 'superadmin', 'platform-admin', 'platform'
 ];
 
 const MIN_SLUG_LENGTH = 3;

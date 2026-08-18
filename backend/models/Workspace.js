@@ -19,6 +19,17 @@ const workspaceSchema = new mongoose.Schema({
   slug: { type: String, required: true, unique: true },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   isActive: { type: Boolean, default: true },
+  // Platform-level lifecycle (Super Admin Dashboard). `status` is the
+  // authoritative field going forward; `isActive` is kept in sync by the
+  // pre('validate') hook below purely so the ~15 pre-existing call sites
+  // that already read `isActive` (protect's membership gate, getMyWorkspaces,
+  // the Slack integration) keep working unmodified. Lowercase values to match
+  // every other status enum in this codebase (WorkspaceMembership.status,
+  // WorkspaceInvitation.status, Board.status).
+  status: { type: String, enum: ['active', 'suspended', 'archived'], default: 'active' },
+  statusReason: { type: String, trim: true, default: null },
+  statusChangedAt: { type: Date, default: null },
+  statusChangedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   // Not schema-`required` — pre-migration workspaces have none of these
   // until the boot-time backfill runs (see scripts/migrateWorkspaceTypeFields.js),
   // and several existing controller call sites .save() a hydrated Workspace
@@ -48,5 +59,22 @@ const workspaceSchema = new mongoose.Schema({
 
 workspaceSchema.index({ owner: 1 });
 workspaceSchema.index({ isActive: 1 });
+workspaceSchema.index({ status: 1 });
+// Backs Super Admin's server-side workspace search (name/slug) — see
+// modules/superAdmin/workspaceStatsService.js.
+workspaceSchema.index({ name: 'text', slug: 'text' });
+
+// Keeps `status` and the legacy `isActive` boolean in sync in both
+// directions so every existing `isActive` read site (and the one existing
+// write site, workspaceController.deactivateWorkspace) keeps working
+// unmodified while `status` becomes the authoritative lifecycle field.
+workspaceSchema.pre('validate', function (next) {
+  if (this.isModified('status') && !this.isModified('isActive')) {
+    this.isActive = this.status === 'active';
+  } else if (this.isModified('isActive') && !this.isModified('status')) {
+    this.status = this.isActive ? 'active' : 'suspended';
+  }
+  next();
+});
 
 export default mongoose.model('Workspace', workspaceSchema);

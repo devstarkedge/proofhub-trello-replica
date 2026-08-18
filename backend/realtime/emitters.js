@@ -8,7 +8,7 @@
  * Usage: import { emitters } from './realtime/emitters.js';
  */
 
-import { ROOM } from './events.js';
+import { ROOM, SUPER_ADMIN_WORKSPACE_STATUS_CHANGED, SUPER_ADMIN_AUDIT_LOG_CREATED } from './events.js';
 import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 
 // The Socket.IO server instance — set by socketManager.init()
@@ -245,4 +245,16 @@ export const emitSalesTabApprovalPending = (tab) => {
     tab,
     message: `New shared Sales ${tab.isWatchTab ? 'Watch ' : ''}Tab "${tab.name}" from ${tab.ownerName} — pending approval`,
   });
+};
+
+// ─── Super Admin Dashboard Emitters ─────────────────────────────────────────
+// "Core events" scope only — see the Super Admin Dashboard plan for why the
+// rest of the dashboard's statistics refetch on demand instead of over sockets.
+
+export const emitSuperAdminWorkspaceStatusChanged = (payload) => {
+  getIO().to(ROOM.platformAdmin).emit(SUPER_ADMIN_WORKSPACE_STATUS_CHANGED, payload);
+};
+
+export const emitSuperAdminAuditLogCreated = (entry) => {
+  getIO().to(ROOM.platformAdmin).emit(SUPER_ADMIN_AUDIT_LOG_CREATED, entry);
 };

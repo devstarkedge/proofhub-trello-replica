@@ -7,7 +7,7 @@ import {
   X, Plus, AlertCircle, Loader, Calendar, Users, DollarSign,
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
   CheckCircle2, ChevronDown, ChevronLeft, Shield, User, Crown, Search, Image,
-  Maximize2, Minimize2, Info, Paperclip, ArrowRight, Trash2
+  Maximize2, Minimize2, Info, Paperclip, ArrowRight, Trash2, Building2
 } from "lucide-react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./ui/select";
 import { Badge } from "./ui/badge";
@@ -27,6 +27,7 @@ import ProjectDetailsSection from './ProjectModals/sections/ProjectDetailsSectio
 import ClientSection from './ProjectModals/sections/ClientSection';
 import FilesTab from './ProjectModals/tabs/FilesTab';
 import TeamTab from './ProjectModals/tabs/TeamTab';
+import useProjectStore from '../store/projectStore';
 
 import { TabNavigation as Tab } from './ProjectModals/shared/TabNavigation';
 import { COUNTRY_CODES, EMAIL_REGEX, PROJECT_URL_REGEX } from './ProjectModals/shared/constants';
@@ -36,8 +37,12 @@ import { useFileUploadSimulation } from './ProjectModals/shared/useFileUploadSim
 
 const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, departmentManagers = [] }) => {
   const { user } = useContext(AuthContext);
+  const { departments } = useProjectStore();
   const [activeTab, setActiveTab] = useState('details');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState(departmentId || "");
+  const [departmentDropdownOpen, setDepartmentDropdownOpen] = useState(false);
+  const departmentDropdownRef = useRef(null);
 
   const initialFormData = useMemo(() => ({
     title: "",
@@ -65,7 +70,10 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   }), []);
 
   const [formData, setFormData] = useState(initialFormData);
-  const managers = useMemo(() => departmentManagers || [], [departmentManagers]);
+  const managers = useMemo(() => {
+    const dept = departments.find(d => d._id === selectedDepartmentId);
+    return dept ? (dept.managers || dept.members || []) : (departmentManagers || []);
+  }, [selectedDepartmentId, departments, departmentManagers]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [categoryLoading, setCategoryLoading] = useState(false);
@@ -126,14 +134,17 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
 
   // Draft key
   const draftKey = useMemo(() => (
-    departmentId ? `projectDraft:add:${departmentId}` : 'projectDraft:add:global'
-  ), [departmentId]);
+    selectedDepartmentId ? `projectDraft:add:${selectedDepartmentId}` : 'projectDraft:add:global'
+  ), [selectedDepartmentId]);
 
   // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (countryDropdownOpen && countryDropdownRef.current && !countryDropdownRef.current.contains(event.target)) {
         setCountryDropdownOpen(false);
+      }
+      if (departmentDropdownOpen && departmentDropdownRef.current && !departmentDropdownRef.current.contains(event.target)) {
+        setDepartmentDropdownOpen(false);
       }
       if (categoryDropdownOpen && categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) {
         setCategoryDropdownOpen(false);
@@ -147,12 +158,25 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [countryDropdownOpen, categoryDropdownOpen, projectTypeDropdownOpen]);
+  }, [countryDropdownOpen, departmentDropdownOpen, categoryDropdownOpen, projectTypeDropdownOpen]);
 
   // Fetch categories
   useEffect(() => {
-    if (isOpen && departmentId) fetchCategories();
-  }, [isOpen, departmentId]);
+    if (isOpen && selectedDepartmentId) fetchCategories();
+  }, [isOpen, selectedDepartmentId]);
+
+  // Sync selectedDepartmentId when modal opens or departmentId prop changes
+  useEffect(() => {
+    if (isOpen) {
+      if (departmentId) {
+        setSelectedDepartmentId(departmentId);
+      } else if (departments && departments.length === 1) {
+        setSelectedDepartmentId(departments[0]._id);
+      } else {
+        setSelectedDepartmentId("");
+      }
+    }
+  }, [isOpen, departmentId, departments]);
 
   // Reset form on close
   useEffect(() => {
@@ -211,10 +235,10 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   }, [isOpen, draftKey]);
 
   const fetchCategories = useCallback(async () => {
-    if (!departmentId) return;
+    if (!selectedDepartmentId) return;
     setCategoryLoading(true);
     try {
-      const response = await Database.getCategoriesByDepartment(departmentId);
+      const response = await Database.getCategoriesByDepartment(selectedDepartmentId);
       if (response.success) {
         setCategories(response.data);
       }
@@ -223,7 +247,16 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     } finally {
       setCategoryLoading(false);
     }
-  }, [departmentId]);
+  }, [selectedDepartmentId]);
+
+  const handleDepartmentChange = useCallback((newDeptId) => {
+    setSelectedDepartmentId(newDeptId);
+    setDepartmentDropdownOpen(false);
+    setFormData((prev) => ({ ...prev, projectCategory: "", assignees: [] }));
+    if (errors.department) {
+      setErrors((prev) => ({ ...prev, department: "" }));
+    }
+  }, [errors]);
 
   const handleCategoryChange = useCallback((value) => {
     if (value === "add-new") {
@@ -269,7 +302,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       return false;
     }
     try {
-      const response = await Database.createCategory(trimmedName, (description || "").trim(), departmentId);
+      const response = await Database.createCategory(trimmedName, (description || "").trim(), selectedDepartmentId);
       if (response.success) {
         const newCategory = response.data;
         setCategories((prev) => [...prev, newCategory]);
@@ -315,11 +348,11 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const fetchDepartmentTeams = useCallback(async () => {
     try {
       const response = await Database.getTeams();
-      return response.data.filter((team) => team.department && team.department._id === departmentId);
+      return response.data.filter((team) => team.department && team.department._id === selectedDepartmentId);
     } catch (error) {
       return [];
     }
-  }, [departmentId]);
+  }, [selectedDepartmentId]);
 
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -402,6 +435,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
 
   const validateForm = useCallback(() => {
     const newErrors = {};
+    if (!selectedDepartmentId) newErrors.department = "Department is required";
     if (!formData.title.trim()) newErrors.title = "Title is required";
     else if (formData.title.length < 3) newErrors.title = "Title must be at least 3 characters";
     if (!formData.startDate) newErrors.startDate = "Start date is required";
@@ -460,6 +494,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       startDate: formData.startDate,
       dueDate: formData.dueDate,
       members: formData.assignees,
+      department: selectedDepartmentId,
       visibility: formData.visibility,
       isOptimistic: true,
       createdAt: new Date().toISOString()
@@ -481,7 +516,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         name: formData.title,
         description: formData.description,
         team: defaultTeam || "",
-        department: departmentId,
+        department: selectedDepartmentId,
         members: formData.assignees,
         background: "#6366f1",
         startDate: formData.startDate,
@@ -568,7 +603,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
           }
         }
 
-        onProjectAdded(createdProject, optimisticProject._id);
+        onProjectAdded(createdProject, optimisticProject._id, false, selectedDepartmentId);
         setFormData(initialFormData);
         setCoverImageFile(null);
         setCoverImagePreview(null);
@@ -576,16 +611,16 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         localStorage.removeItem(draftKey);
         toast.success("Project created successfully!");
       } else {
-        onProjectAdded(null, optimisticProject._id, true);
+        onProjectAdded(null, optimisticProject._id, true, selectedDepartmentId);
         throw new Error(response.message || "Failed to create project");
       }
     } catch (error) {
-      onProjectAdded(null, optimisticProject._id, true);
+      onProjectAdded(null, optimisticProject._id, true, selectedDepartmentId);
       toast.error(error.message || "Failed to create project");
     } finally {
       setIsSaving(false);
     }
-  }, [formData, validateForm, fetchDepartmentTeams, departmentId, onProjectAdded, onClose, initialFormData, projectUrlValid, coverImageFile, pendingFiles, updatePendingFile, draftKey]);
+  }, [formData, validateForm, fetchDepartmentTeams, selectedDepartmentId, onProjectAdded, onClose, initialFormData, projectUrlValid, coverImageFile, pendingFiles, updatePendingFile, draftKey]);
 
   const selectedEmployees = useMemo(() =>
     formData.assignees.map(assigneeId => managers.find(mgr => mgr._id === assigneeId)).filter(Boolean),
@@ -791,6 +826,65 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                           }
                         }}
                       />
+                    </section>
+
+                    {/* Department Selection */}
+                    <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200 mb-6">
+                      <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <Building2 size={16} className="text-blue-600" />
+                        Department
+                      </h3>
+                      <FormField label="Select Department" icon={Building2} required error={errors?.department}>
+                        <div className="relative" ref={departmentDropdownRef}>
+                          <button
+                            type="button"
+                            onClick={() => setDepartmentDropdownOpen(!departmentDropdownOpen)}
+                            className={`w-full px-4 py-3 bg-white border rounded-xl flex items-center justify-between transition-all ${
+                              errors?.department ? 'border-red-500 bg-red-50' : 'border-gray-300 hover:border-blue-300'
+                            }`}
+                          >
+                            <span className={selectedDepartmentId ? 'text-gray-900' : 'text-gray-400'}>
+                              {departments.find(d => d._id === selectedDepartmentId)?.name || 'Select a department'}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 ${departmentDropdownOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          <AnimatePresence>
+                            {departmentDropdownOpen && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="absolute left-0 right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-[60]"
+                              >
+                                <div className="max-h-60 overflow-y-auto p-2">
+                                  {departments.length === 0 ? (
+                                    <div className="p-4 text-center text-sm text-gray-500">
+                                      No departments found
+                                    </div>
+                                  ) : (
+                                    departments.map(dept => (
+                                      <button
+                                        key={dept._id}
+                                        type="button"
+                                        onClick={() => handleDepartmentChange(dept._id)}
+                                        className={`w-full text-left px-4 py-3 rounded-lg text-sm transition-colors flex items-center justify-between ${
+                                          selectedDepartmentId === dept._id
+                                            ? 'bg-blue-50 text-blue-700 font-medium'
+                                            : 'text-gray-700 hover:bg-gray-50'
+                                        }`}
+                                      >
+                                        <span>{dept.name}</span>
+                                        {selectedDepartmentId === dept._id && <CheckCircle2 size={16} className="text-blue-600" />}
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </FormField>
                     </section>
 
                     {/* Basic Info */}

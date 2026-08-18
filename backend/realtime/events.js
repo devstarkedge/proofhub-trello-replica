@@ -26,6 +26,8 @@ export const JOIN_MY_SHORTCUTS = 'join-my-shortcuts';
 export const LEAVE_MY_SHORTCUTS = 'leave-my-shortcuts';
 export const JOIN_SALES = 'join-sales';
 export const LEAVE_SALES = 'leave-sales';
+export const JOIN_SUPER_ADMIN = 'join-super-admin';
+export const LEAVE_SUPER_ADMIN = 'leave-super-admin';
 
 // ─── Client → Server actions ────────────────────────────────────────────────
 export const UPDATE_CARD = 'update-card';
@@ -124,6 +126,11 @@ export const SALES_TAB_ALERT = 'sales:tab:alert';
 export const SALES_TAB_UNREAD_UPDATE = 'sales:tab:unread-update';
 export const SALES_TAB_APPROVAL_PENDING = 'sales:tab:approval-pending';
 
+// Super Admin Dashboard events — "core events" scope only (workspace status
+// changes + the platform audit log), per the Super Admin Dashboard plan.
+export const SUPER_ADMIN_WORKSPACE_STATUS_CHANGED = 'super-admin:workspace:status-changed';
+export const SUPER_ADMIN_AUDIT_LOG_CREATED = 'super-admin:audit-log:created';
+
 // Announcement events
 export const ANNOUNCEMENT_CREATED = 'announcement-created';
 export const ANNOUNCEMENT_UPDATED = 'announcement-updated';
@@ -155,4 +162,10 @@ export const ROOM = {
   // across workspaces either.
   finance: (workspaceId) => `finance-${workspaceId}`,
   sales: (workspaceId) => `sales-${workspaceId}`,
+  // Joined only by sockets the server itself verified as isSuperAdmin (see
+  // socketManager.js's handshake) — never inferred from a client-sent flag
+  // or a JWT claim, matching the same lesson ROOM.admin/managers's own dead
+  // code (a few lines above) teaches: the JWT carries no role claim, so
+  // trusting one at connection time silently never fires.
+  platformAdmin: 'platform-admin',
 };

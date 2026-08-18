@@ -10,6 +10,7 @@ import User from '../models/User.js';
 import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
+import { createDefaultSubscription } from '../modules/superAdmin/subscriptionService.js';
 
 import { uploadWorkspaceIconToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 import { createDepartmentCore } from '../modules/workspaces/departmentCreation.js';
@@ -158,6 +159,15 @@ export const createWorkspace = asyncHandler(async (req, res, next) => {
   // Only after commit — an aborted transaction must never bust the cache
   // into pointing at a workspace that doesn't exist.
   invalidateAuthCache(req.user.id);
+
+  // Best-effort, non-blocking — a Super Admin Dashboard billing record must
+  // never be able to fail workspace creation itself. If this doesn't run
+  // (e.g. the Free plan isn't seeded yet on a fresh deploy), the workspace
+  // is simply picked up by the idempotent migrateWorkspaceSubscriptions.js
+  // backfill later.
+  createDefaultSubscription(workspace._id).catch((err) => {
+    console.error('Failed to create default subscription for new workspace:', { workspaceId: workspace._id, error: err.message });
+  });
 
   res.status(201).json({
     success: true,

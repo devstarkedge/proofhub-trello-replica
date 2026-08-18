@@ -496,6 +496,21 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     );
   }
 
+  if (!mongoose.Types.ObjectId.isValid(projectDepartment)) {
+    return next(new ErrorResponse("Invalid department ID", 400));
+  }
+
+  // Validate department exists in active workspace
+  const targetDept = await Department.findById(projectDepartment);
+  if (!targetDept) {
+    return next(
+      new ErrorResponse(
+        "Department not found in the active workspace",
+        404
+      )
+    );
+  }
+
   // Managers can only create boards for their own department(s).
   // req.user.department is an array of ObjectIds (User schema: department: [{ type: ObjectId }]).
   // Always normalise to an array of strings for safe comparison.

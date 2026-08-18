@@ -174,6 +174,24 @@ const userSchema = new mongoose.Schema({
     ref: 'Workspace',
     default: null
   },
+  // Platform-level authority — orthogonal to `role`/`roleId` above, which are
+  // always workspace-relative (see WorkspaceMembership). Never set by any
+  // workspace-scoped code path; only by middleware/requireSuperAdmin.js's two
+  // bootstrap mechanisms (utils/seed.js#grantSuperAdminFromEnv and
+  // scripts/grantSuperAdmin.js). Checked independently of `protect`/`authorize`
+  // — see middleware/requireSuperAdmin.js.
+  isSuperAdmin: {
+    type: Boolean,
+    default: false
+  },
+  superAdminGrantedAt: {
+    type: Date,
+    default: null
+  },
+  superAdminGrantedBy: {
+    type: String,
+    default: null
+  },
   recentCopyMoveDestinations: [{
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
     departmentName: String,
@@ -201,6 +219,9 @@ userSchema.index({ role: 1 });
 userSchema.index({ isVerified: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ createdAt: -1 });
+// Partial — stays tiny since almost every user is false. Mirrors the
+// partial-index idiom already used on WorkspaceInvitation.
+userSchema.index({ isSuperAdmin: 1 }, { partialFilterExpression: { isSuperAdmin: true } });
 userSchema.index({ resetPasswordToken: 1, resetPasswordExpires: 1 });
 
 // Hash password before saving

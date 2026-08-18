@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check, Circle, Loader, PartyPopper } from 'lucide-react';
@@ -16,6 +17,7 @@ import EmailInviteInput from './EmailInviteInput';
  * always reflects real, current workspace state.
  */
 const WorkspaceOnboardingChecklist = ({ isOpen, onClose, onUpdate }) => {
+  const navigate = useNavigate();
   const { currentWorkspace } = useContext(WorkspaceContext);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -156,6 +158,21 @@ const WorkspaceOnboardingChecklist = ({ isOpen, onClose, onUpdate }) => {
                                 Invite people →
                               </button>
                             )}
+                          </div>
+                        )}
+
+                        {!item.completed && item.key === 'project' && (
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                navigate('/?openModal=add-project');
+                              }}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                            >
+                              Create project
+                            </button>
                           </div>
                         )}
                       </div>

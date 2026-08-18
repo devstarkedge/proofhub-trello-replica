@@ -26,6 +26,9 @@ import { createDepartmentCore } from '../modules/workspaces/departmentCreation.j
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import { slugify, isReservedSlug, isValidSlugFormat } from '../utils/slug.js';
 import { isValidWorkspaceType, WORKSPACE_TYPE_RULES, isValidIndustry, isValidCompanySize } from '../utils/workspaceOptions.js';
+import { createDefaultSubscription } from '../modules/superAdmin/subscriptionService.js';
+import { isSuperAdminEmailAllowed } from '../middleware/requireSuperAdmin.js';
+import { recordSuperAdminAuditLog } from '../modules/superAdmin/superAdminAuditService.js';
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -316,6 +319,12 @@ export const registerAndCreateWorkspace = asyncHandler(async (req, res, next) =>
   await User.updateOne({ _id: createdUser._id }, { $set: { lastActiveWorkspace: workspace._id } });
   // Client will persist workspaceId to localStorage after receiving the response
 
+  // Best-effort, non-blocking — see workspaceController.createWorkspace's
+  // identical call for why this must never fail registration itself.
+  createDefaultSubscription(workspace._id).catch((err) => {
+    console.error('Failed to create default subscription for new workspace:', { workspaceId: workspace._id, error: err.message });
+  });
+
   const token = generateToken(createdUser._id);
 
   res.status(201).json({
@@ -391,6 +400,26 @@ export const login = asyncHandler(async (req, res, next) => {
   // Generate token
   const token = generateToken(user._id);
 
+  // Effective, not raw: both the DB role AND the current SUPER_ADMIN_EMAILS
+  // allowlist must hold (see requireSuperAdmin.js) — returning the raw DB
+  // flag here would let the frontend redirect/gate someone into the
+  // /super-admin shell whose every API call then 403s, since the backend
+  // enforces both checks. This is the one value the frontend ever reads.
+  const isSuperAdminEffective = user.isSuperAdmin === true && isSuperAdminEmailAllowed(user.email);
+
+  if (isSuperAdminEffective) {
+    recordSuperAdminAuditLog({
+      actor: user,
+      action: 'SUPER_ADMIN_LOGIN',
+      targetType: 'User',
+      targetId: user._id,
+      targetName: user.name,
+      targetEmail: user.email,
+      summary: `${user.name || user.email} logged in as Super Admin`,
+      meta: { ip: req.ip, userAgent: req.headers['user-agent'] }
+    }).catch(() => {}); // never let audit logging affect the login response
+  }
+
   res.status(200).json({
     success: true,
     token,
@@ -404,7 +433,11 @@ export const login = asyncHandler(async (req, res, next) => {
       team: user.team,
       avatar: user.avatar,
       isVerified: user.isVerified,
-      forcePasswordChange: user.forcePasswordChange
+      forcePasswordChange: user.forcePasswordChange,
+      // Platform-level, not workspace-scoped — see models/User.js. Included
+      // here (not just in getMe/verify) so a freshly-granted Super Admin's
+      // very next login already reflects it without a second round-trip.
+      isSuperAdmin: isSuperAdminEffective
     }
   });
 });
@@ -421,13 +454,24 @@ export const getMe = asyncHandler(async (req, res, next) => {
   // here would silently show the default-workspace mirror instead once a
   // user has switched workspaces, so populate department/team names from
   // the overlay's ids, not the base document's.
-  const [departments, team, workspaces] = await Promise.all([
-    Department.find({ _id: { $in: req.user.department || [] } }).select('name').lean(),
-    req.user.team ? Team.findById(req.user.team).select('name').lean() : null,
-    WorkspaceMembership.find({ user: req.user.id, status: 'active' })
-      .populate('workspace', 'name slug')
-      .lean()
-  ]);
+  //
+  // Department is workspace-scoped (workspaceScopePlugin) — querying it
+  // requires an active context. req.workspaceId is null for the one
+  // legitimate no-workspace case, a Super Admin account with no usable
+  // workspace (see authMiddleware.js's protect — it deliberately doesn't
+  // open a context for that request at all, so a workspace-scoped query
+  // here would throw). There's nothing to fetch in that case anyway
+  // (req.user.department is already [] for it), so skip straight to empty
+  // instead of querying.
+  const [departments, team, workspaces] = req.workspaceId
+    ? await Promise.all([
+        Department.find({ _id: { $in: req.user.department || [] } }).select('name').lean(),
+        req.user.team ? Team.findById(req.user.team).select('name').lean() : null,
+        WorkspaceMembership.find({ user: req.user.id, status: 'active' })
+          .populate('workspace', 'name slug')
+          .lean()
+      ])
+    : [[], null, await WorkspaceMembership.find({ user: req.user.id, status: 'active' }).populate('workspace', 'name slug').lean()];
 
   const user = {
     ...baseUser,
@@ -436,7 +480,10 @@ export const getMe = asyncHandler(async (req, res, next) => {
     department: departments,
     team,
     accessType: req.user.accessType,
-    allowedProjects: req.user.allowedProjects
+    allowedProjects: req.user.allowedProjects,
+    // Override the raw DB flag from ...baseUser with the effective value —
+    // see the identical computation/comment in login() above.
+    isSuperAdmin: baseUser?.isSuperAdmin === true && isSuperAdminEmailAllowed(baseUser.email)
   };
 
   res.status(200).json({

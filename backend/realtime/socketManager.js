@@ -17,6 +17,7 @@ import logger from '../utils/logger.js';
 import { setIO } from './emitters.js';
 import { ROOM } from './events.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
+import User from '../models/User.js';
 import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
@@ -83,6 +84,23 @@ function init(httpServer) {
       }).lean();
 
       if (!membership) {
+        // Not a member of the requested/default workspace — before
+        // rejecting, check whether this is a Super Admin (User is exempt
+        // from workspaceScopePlugin, so no context is needed for this
+        // lookup). A platform-level account may have no workspace
+        // membership at all, so it must still be able to connect — just
+        // without joining any workspace-scoped room. This is a
+        // server-verified DB lookup, not a claim trusted off the JWT
+        // payload — the JWT here carries only {id}, and trusting a
+        // decodedUser.role-style claim is exactly the mistake that already
+        // left ROOM.admin/ROOM.managers unreachable elsewhere in this file.
+        const dbUser = await User.findById(userId).select('isSuperAdmin').lean();
+        if (dbUser?.isSuperAdmin === true) {
+          socket.data.user = decodedUser;
+          socket.data.workspaceId = null;
+          socket.data.isSuperAdmin = true;
+          return next();
+        }
         return next(new Error('Not a member of this workspace'));
       }
 
@@ -102,8 +120,9 @@ function init(httpServer) {
     const decodedUser = socket.data.user || {};
     const userId = decodedUser.id || decodedUser._id?.toString();
     const socketWorkspaceId = socket.data.workspaceId;
+    const isSuperAdmin = socket.data.isSuperAdmin === true;
 
-    if (!userId || !socketWorkspaceId) {
+    if (!userId || (!socketWorkspaceId && !isSuperAdmin)) {
       socket.disconnect(true);
       return;
     }
@@ -356,6 +375,21 @@ function init(httpServer) {
     socket.on('leave-sales', () => {
       socket.leave(ROOM.sales(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left sales room`);
+    });
+
+    // ── Super Admin room ── (explicit join-on-mount, matching Finance/Sales
+    // below rather than auto-joining at connection — the dashboard is the
+    // only consumer, so an idle Super Admin browsing the rest of the app
+    // shouldn't receive platform events on every tab.)
+    socket.on('join-super-admin', () => {
+      if (isSuperAdmin) {
+        socket.join(ROOM.platformAdmin);
+        if (config.isDev) logger.debug(`User ${userId} joined platform-admin room`);
+      }
+    });
+    socket.on('leave-super-admin', () => {
+      socket.leave(ROOM.platformAdmin);
+      if (config.isDev) logger.debug(`User ${userId} left platform-admin room`);
     });
 
     // ── Push notification subscription ──

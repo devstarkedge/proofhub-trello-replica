@@ -144,31 +144,44 @@ export async function recoverAnnouncementSchedules() {
 
   // Runs at boot, outside any request — a deliberate cross-tenant scan
   // (recovering due jobs for every workspace), not a leak.
+  //
+  // Must await the Promise.all FROM INSIDE the runUnscoped callback, not
+  // just return it: Mongoose's .find() returns a lazy, un-executed query —
+  // the pre('find') hook that reads the active workspaceContext only fires
+  // once a query is actually resolved. A bare `() => Promise.all([...])`
+  // relies on exactly when each query's internal exec() gets scheduled
+  // relative to when the ALS context is still considered active — fragile
+  // and implementation-dependent. Wrapping in `async () => { return await
+  // ...; }` removes the ambiguity entirely (same fix already applied,
+  // confirmed necessary by empirical testing, in
+  // modules/superAdmin/workspaceStatsService.js).
   const [pendingBroadcasts, overdueBroadcasts, pendingArchives, overdueArchives] =
-    await workspaceContext.runUnscoped(() => Promise.all([
-      // 1. Scheduled announcements not yet broadcasted
-      Announcement.find({
-        isScheduled: true,
-        scheduleBroadcasted: false,
-        scheduledFor: { $gt: now },
-      }).select('_id scheduledFor expiresAt').lean(),
-      // 2. Overdue scheduled announcements (scheduledFor already passed, not yet broadcast)
-      Announcement.find({
-        isScheduled: true,
-        scheduleBroadcasted: false,
-        scheduledFor: { $lte: now },
-      }).select('_id scheduledFor expiresAt').lean(),
-      // 3. Non-archived announcements with future expiry
-      Announcement.find({
-        isArchived: false,
-        expiresAt: { $gt: now },
-      }).select('_id expiresAt').lean(),
-      // 4. Expired but not yet archived announcements
-      Announcement.find({
-        isArchived: false,
-        expiresAt: { $lte: now },
-      }).select('_id expiresAt').lean(),
-    ]));
+    await workspaceContext.runUnscoped(async () => {
+      return await Promise.all([
+        // 1. Scheduled announcements not yet broadcasted
+        Announcement.find({
+          isScheduled: true,
+          scheduleBroadcasted: false,
+          scheduledFor: { $gt: now },
+        }).select('_id scheduledFor expiresAt').lean(),
+        // 2. Overdue scheduled announcements (scheduledFor already passed, not yet broadcast)
+        Announcement.find({
+          isScheduled: true,
+          scheduleBroadcasted: false,
+          scheduledFor: { $lte: now },
+        }).select('_id scheduledFor expiresAt').lean(),
+        // 3. Non-archived announcements with future expiry
+        Announcement.find({
+          isArchived: false,
+          expiresAt: { $gt: now },
+        }).select('_id expiresAt').lean(),
+        // 4. Expired but not yet archived announcements
+        Announcement.find({
+          isArchived: false,
+          expiresAt: { $lte: now },
+        }).select('_id expiresAt').lean(),
+      ]);
+    });
 
   for (const ann of pendingBroadcasts) {
     await scheduleAnnouncementBroadcast(ann);

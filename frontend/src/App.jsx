@@ -70,6 +70,15 @@ import ViewFinancePage from "./pages/Finance/ViewFinancePage";
 import MyShortcutsPage from "./pages/MyShortcutsPage";
 import SalesPage from "./pages/SalesPage";
 
+// Super Admin Dashboard — platform-level context, deliberately NOT nested
+// inside MainLayout/PrivateRoute's workspace-scoped tree (see SuperAdminRouteGuard).
+import SuperAdminRouteGuard from "./components/SuperAdminRouteGuard";
+import SuperAdminLayout from "./pages/SuperAdmin/SuperAdminLayout";
+import SuperAdminOverviewPage from "./pages/SuperAdmin/SuperAdminOverviewPage";
+import SuperAdminWorkspacesPage from "./pages/SuperAdmin/SuperAdminWorkspacesPage";
+import SuperAdminWorkspaceDetailPage from "./pages/SuperAdmin/SuperAdminWorkspaceDetailPage";
+import SuperAdminAuditLogPage from "./pages/SuperAdmin/SuperAdminAuditLogPage";
+
 function App() {
   return (
     <AuthProvider>
@@ -224,6 +233,24 @@ function App() {
                   <Route path="pages/:id/edit" element={<CreateFinancePage />} />
                 </Route>
               </Route>
+
+              {/* Super Admin Dashboard — platform-level, sibling to the
+                  workspace-scoped tree above (not nested in MainLayout), so
+                  it never inherits or touches the active workspace context. */}
+              <Route
+                path="/super-admin"
+                element={
+                  <SuperAdminRouteGuard>
+                    <SuperAdminLayout />
+                  </SuperAdminRouteGuard>
+                }
+              >
+                <Route index element={<SuperAdminOverviewPage />} />
+                <Route path="workspaces" element={<SuperAdminWorkspacesPage />} />
+                <Route path="workspaces/:workspaceId" element={<SuperAdminWorkspaceDetailPage />} />
+                <Route path="audit-log" element={<SuperAdminAuditLogPage />} />
+              </Route>
+
               <Route path="*" element={<GlobalFallback type="404" />} />
               </Routes>
             </ClientInfoProvider>

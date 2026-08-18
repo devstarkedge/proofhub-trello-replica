@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, startTransition, useLayoutEffect } from 'react';
-import { useNavigationType } from 'react-router-dom';
+import { useNavigationType, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Eye, EyeOff, Building2, FolderKanban,
@@ -38,6 +38,8 @@ const ModalLoadingFallback = memo(() => (
 ModalLoadingFallback.displayName = 'ModalLoadingFallback';
 
 const HomePage = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   // Store state
   const { 
     departments, 
@@ -181,15 +183,26 @@ const HomePage = () => {
     setModalOpen(true);
   }, []);
 
+  // Handle URL query parameters to open specific modals (like from WorkspaceOnboardingChecklist)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('openModal') === 'add-project') {
+      handleAddProject(null);
+      // Clean up the URL without triggering a full reload
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search, location.pathname, navigate, handleAddProject]);
+
   // Use store action for optimistic update
-  const handleProjectAdded = useCallback((newProject, tempId = null, revert = false) => {
+  const handleProjectAdded = useCallback((newProject, tempId = null, revert = false, targetDepartmentId = null) => {
     if (revert) {
         // Handle revert if needed - for now fetchDepartments is safest on error or specific rollback logic
         // But since we are using store, we can just fetch fresh.
         fetchDepartments(true);
     } else if (newProject) {
         // Optimistic add or replace
-        projectAdded(selectedDepartment, newProject, tempId);
+        const deptId = targetDepartmentId || newProject.department?._id || newProject.department || selectedDepartment;
+        projectAdded(deptId, newProject, tempId);
     }
   }, [selectedDepartment, projectAdded, fetchDepartments]);
 

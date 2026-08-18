@@ -77,6 +77,20 @@ const LoginPage = () => {
     try {
       const { user } = await login(email, password);
 
+      // A Super Admin is a platform-level identity, not tied to any
+      // workspace — resolving/loading workspace memberships (and the
+      // picker that can come with it) simply doesn't apply, so this is
+      // checked before any of that runs, not layered on top of it.
+      if (user.isSuperAdmin) {
+        setLoading(false);
+        toast.success('Login successful! Welcome back.', {
+          icon: <CheckCircle className="text-green-500" size={20} />,
+          autoClose: 2000
+        });
+        setTimeout(() => navigate('/super-admin'), 1500);
+        return;
+      }
+
       // Resolve workspace membership before deciding where to land: a
       // second workspace only ever shows the picker, it's never forced on
       // the single-workspace case every existing user is in today.
@@ -346,7 +360,7 @@ const LoginPage = () => {
             className="text-center mt-8"
           >
             <p className="text-white/70 text-sm">
-              New here? <Link to="/create-workspace" className="font-semibold text-purple-300 hover:text-purple-200 transition-colors">Create a workspace</Link> to get started,
+              New here? <Link to="/create-workspace" className="font-bold text-white underline underline-offset-2 decoration-orange-400 hover:text-orange-300 transition-colors">Create a workspace</Link> to get started,
               or ask your team's admin for an invite.
             </p>
           </motion.div>

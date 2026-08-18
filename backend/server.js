@@ -60,6 +60,7 @@ import workspaceMemberRoutes from './routes/workspaceMembers.js';
 import invitationRoutes from './routes/invitations.js';
 import accessControlRoutes from './routes/accessControl.js';
 import chatIntegrationRoutes from './routes/chatIntegration.js';
+import superAdminRoutes from './routes/superAdmin.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -213,6 +214,9 @@ app.use('/api/workspaces', workspaceMemberRoutes);
 app.use('/api/invitations', invitationRoutes);
 app.use('/api/access-control', accessControlRoutes);
 app.use('/api/chat-integration', chatIntegrationRoutes);
+// Platform-level — independent of the workspace-scoped routes above, see
+// middleware/requireSuperAdmin.js.
+app.use('/api/super-admin', superAdminRoutes);
 
 // ─── SPA Fallback ─────────────────────────────────────────────────────────────
 // Must come AFTER all API routes. Serves index.html for every non-API GET so
@@ -231,7 +235,7 @@ app.get('*', (req, res, next) => {
 });
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
-import seedAdmin from './utils/seed.js';
+import seedAdmin, { seedPlans, bootstrapSuperAdmin } from './utils/seed.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
 import { initQueues, shutdownQueues } from './queues/queueManager.js';
 import { startAnalyticsReportScheduler, stopAnalyticsReportScheduler } from './schedulers/analyticsReportScheduler.js';
@@ -251,6 +255,8 @@ mongoose.connect(config.db.uri, {
     // at boot time. seedAdmin() already wraps itself internally too.
     await workspaceContext.runUnscoped(async () => {
       await seedAdmin();
+      await seedPlans();
+      await bootstrapSuperAdmin();
     });
 
     // Warn operators if database migrations haven't been run yet.

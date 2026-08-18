@@ -152,18 +152,42 @@ export const protect = async (req, res, next) => {
         userObj.lastActiveWorkspace?.toString() ||
         (await ensureDefaultWorkspace())?.toString();
 
-      if (!requestedWorkspaceId) {
-        return res.status(401).json({
-          success: false,
-          message: 'No workspace context available'
-        });
-      }
+      const membership = requestedWorkspaceId ? await getMembership(userId, requestedWorkspaceId) : null;
 
-      const membership = await getMembership(userId, requestedWorkspaceId);
       if (!membership) {
-        return res.status(403).json({
+        // A platform-level Super Admin account can legitimately have no
+        // usable workspace at all (none, or a stale x-workspace-id/
+        // lastActiveWorkspace left over after a Super Admin Dashboard
+        // action removed one — the browser's localStorage.workspaceId is
+        // never touched by that flow, see SuperAdminRouteGuard). Without
+        // this, a hard refresh 403s /api/auth/verify, and AuthContext's
+        // restoreSession() treats ANY verify failure as "log the user
+        // out" — so a Super Admin with no workspace would be logged out
+        // on every page reload. This grants no permissions (role/workspace
+        // stay null, so every workspace-scoped authorization check still
+        // correctly denies); it only lets identity resolve. Deliberately
+        // NOT wrapped in workspaceContext.run() below — any workspace-
+        // scoped query a request like this happens to reach still throws
+        // loudly (the plugin's existing fail-closed design), rather than
+        // silently running against a stale/deleted workspaceId.
+        if (userObj.isSuperAdmin === true) {
+          req.user = {
+            ...userObj,
+            role: null,
+            roleId: null,
+            department: [],
+            team: null,
+            accessType: null,
+            allowedProjects: [],
+            workspaceId: null
+          };
+          req.workspaceId = null;
+          return next();
+        }
+
+        return res.status(requestedWorkspaceId ? 403 : 401).json({
           success: false,
-          message: 'Not a member of this workspace'
+          message: requestedWorkspaceId ? 'Not a member of this workspace' : 'No workspace context available'
         });
       }
 
