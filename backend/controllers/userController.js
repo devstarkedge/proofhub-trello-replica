@@ -385,7 +385,7 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
   await Activity.deleteMany({ user: req.params.id });
 
   // Finally, delete the user
-  chatHooks.onUserDeactivated(user).catch(console.error);
+  chatHooks.onUserDeactivated(user, req.workspaceId).catch(console.error);
   await user.deleteOne();
 
   res.status(200).json({
@@ -661,7 +661,7 @@ export const verifyUser = asyncHandler(async (req, res, next) => {
       await notificationService.notifyUserVerified(user, authorizedIds);
 
       // Dispatch chat webhook for user verification
-      chatHooks.onUserVerified(user).catch(console.error);
+      chatHooks.onUserVerified(user, req.workspaceId).catch(console.error);
     } catch (error) {
       console.error('Background verification tasks failed:', error);
     }
@@ -940,7 +940,7 @@ export const changeUserRole = asyncHandler(async (req, res, next) => {
       emitToTeam('admin', 'user-role-changed', payload);
 
       // Sync role change to Chat App
-      chatHooks.onUserUpdated(user, { role: { old: previousRole, new: normalizedRole } }, req.user).catch(console.error);
+      chatHooks.onUserUpdated(user, { role: { old: previousRole, new: normalizedRole } }, req.user, req.workspaceId).catch(console.error);
     } catch (err) {
       console.error('Error emitting role change socket event:', err);
     }

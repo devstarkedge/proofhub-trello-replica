@@ -162,7 +162,7 @@ export const register = asyncHandler(async (req, res, next) => {
       }
 
       // Dispatch chat webhook for user registration
-      chatHooks.onUserRegistered(user).catch(console.error);
+      chatHooks.onUserRegistered(user, targetWorkspaceId).catch(console.error);
 
       // Compute department name inside background task to avoid blocking response
       let deptName = 'No department selected';

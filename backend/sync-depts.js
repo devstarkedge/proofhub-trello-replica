@@ -31,10 +31,15 @@ async function run() {
       console.log(`Dispatching DEPARTMENT_CREATED for ${dept.name}`);
       const payload = buildDepartmentPayload(dept, 'DEPARTMENT_CREATED', null);
       
+      if (!payload.workspaceId) {
+        console.error(`  -> Skipping ${dept.name}: no workspaceId on payload — refusing to send with a fallback that would land in the wrong ChatApp workspace.`);
+        continue;
+      }
+
       const deliveryId = crypto.randomUUID();
       const timestamp = Math.floor(Date.now() / 1000).toString();
-      const workspaceId = payload.workspaceId || 'flowtask';
-      
+      const workspaceId = payload.workspaceId;
+
       const body = JSON.stringify(payload);
       const signaturePayload = `${timestamp}.${body}`;
       const signature = computeSignature(signaturePayload);

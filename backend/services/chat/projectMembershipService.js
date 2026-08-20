@@ -64,7 +64,7 @@ export async function getProjectMembershipSnapshot(
     : Board.findOne({ _id: boardId, isDeleted: { $ne: true } });
 
   const board = await boardQuery
-    .select('name description department owner members visibility isArchived chatMembershipVersion updatedAt')
+    .select('name description department owner members visibility isArchived chatMembershipVersion updatedAt workspaceId')
     .lean();
 
   if (!board) return null;
@@ -110,6 +110,7 @@ export async function getProjectMembershipSnapshot(
   return {
     project: {
       id: board._id.toString(),
+      workspaceId: board.workspaceId?.toString() || null,
       name: board.name,
       description: board.description || '',
       department: toId(board.department),

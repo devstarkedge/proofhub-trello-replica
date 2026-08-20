@@ -389,6 +389,14 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
           req.user,
           'subtask_assignees_changed',
         ).catch(console.error);
+
+        const newlyAddedIds = newIds.filter((id) => !oldIds.includes(id));
+        if (newlyAddedIds.length > 0) {
+          const parentTask = await Card.findById(taskId).populate('board', 'name department');
+          if (parentTask) {
+            chatHooks.onSubtaskAssigned(subtask, newlyAddedIds, parentTask, parentTask.board, req.user).catch(console.error);
+          }
+        }
       }
       if (JSON.stringify(oldSubtask.loggedTime) !== JSON.stringify(subtask.loggedTime)) {
         activities.push({

@@ -15,7 +15,11 @@ import crypto from 'crypto';
 import axios from 'axios';
 import logger from '../../utils/logger.js';
 import chatWebhookQueue from '../../queues/chatWebhookQueue.js';
+import Workspace from '../../models/Workspace.js';
 
+// WEBHOOK_SECRET stays a single, deployment-wide value by design (the
+// user's explicit "shared platform secret, no per-workspace rotation"
+// decision) — only the URL/enablement below become per-workspace.
 const CHAT_ENABLED = process.env.CHAT_ENABLED === 'true';
 const CHAT_WEBHOOK_URL = process.env.CHAT_WEBHOOK_URL;
 const WEBHOOK_SECRET = process.env.FLOWTASK_WEBHOOK_SECRET;
@@ -23,6 +27,29 @@ const WEBHOOK_SECRET = process.env.FLOWTASK_WEBHOOK_SECRET;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 5000, 30000]; // Exponential backoff
 const TIMEOUT_MS = 10000;
+
+/**
+ * Resolve {enabled, webhookUrl} for the workspace that triggered an event.
+ * Falls back to the deployment-wide env vars ONLY when this workspace has
+ * never called chatIntegrationController#connect — detected via
+ * `connectedAt` (not `enabled`, since Mongoose subdocuments apply schema
+ * defaults like `enabled: false` even for workspaces that never touched
+ * this setting at all, which would otherwise be indistinguishable from an
+ * explicit disconnect). This preserves existing single-tenant/env-var-only
+ * deployments unchanged while making explicitly-connected-per-workspace
+ * deployments correct — see Workspace.js's `settings.chatIntegration`.
+ */
+async function resolveWorkspaceChatSettings(workspaceId) {
+  if (!workspaceId) return { enabled: CHAT_ENABLED, webhookUrl: CHAT_WEBHOOK_URL };
+
+  const ws = await Workspace.findById(workspaceId).select('settings.chatIntegration').lean();
+  const ci = ws?.settings?.chatIntegration;
+
+  if (!ci?.connectedAt) {
+    return { enabled: CHAT_ENABLED, webhookUrl: CHAT_WEBHOOK_URL };
+  }
+  return { enabled: !!ci.enabled, webhookUrl: ci.webhookUrl || CHAT_WEBHOOK_URL };
+}
 
 /**
  * Generate a UUID v4 delivery ID.
@@ -51,22 +78,24 @@ function computeSignature(payload) {
  * @returns {Promise<void>}
  */
 async function dispatch(eventName, payload) {
-  // Guard: disabled or not configured
-  if (!CHAT_ENABLED) return;
-
-  if (!CHAT_WEBHOOK_URL || !WEBHOOK_SECRET) {
-    logger.debug('ChatWebhook: skipping dispatch — missing CHAT_WEBHOOK_URL or FLOWTASK_WEBHOOK_SECRET');
-    return;
-  }
-
   if (!payload?.workspaceId) {
     logger.warn('ChatWebhook: skipping dispatch — workspaceId is required', { eventName });
     return;
   }
 
+  const workspaceId = payload.workspaceId;
+  const { enabled, webhookUrl } = await resolveWorkspaceChatSettings(workspaceId);
+
+  if (!enabled || !webhookUrl || !WEBHOOK_SECRET) {
+    logger.debug('ChatWebhook: skipping dispatch — chat integration not enabled/configured for this workspace', {
+      eventName,
+      workspaceId,
+    });
+    return;
+  }
+
   const deliveryId = generateDeliveryId();
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const workspaceId = payload?.workspaceId || null;
   const jobId = payload?.eventId
     ? crypto
         .createHash('sha256')
@@ -89,7 +118,7 @@ async function dispatch(eventName, payload) {
   // Prefer enqueuing webhook dispatch to a Redis-backed queue for reliability
   try {
     if (chatWebhookQueue) {
-      await chatWebhookQueue.add('dispatch', { eventName, payload, deliveryId: jobId }, {
+      await chatWebhookQueue.add('dispatch', { eventName, payload, deliveryId: jobId, webhookUrl }, {
         jobId,
         attempts: 5,
         backoff: { type: 'exponential', delay: 1000 },
@@ -107,7 +136,7 @@ async function dispatch(eventName, payload) {
   // Fallback: inline HTTP dispatch (legacy behavior)
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await axios.post(CHAT_WEBHOOK_URL, body, {
+      const response = await axios.post(webhookUrl, body, {
         headers,
         timeout: TIMEOUT_MS,
         // Send raw string body to match signature
@@ -163,11 +192,27 @@ async function dispatch(eventName, payload) {
 }
 
 /**
- * Check if chat webhook dispatching is enabled.
+ * Check if chat webhook dispatching is enabled at the deployment level
+ * (env-var fallback state only — does NOT reflect any specific workspace's
+ * per-workspace connect/disconnect setting). Kept for any remaining
+ * deployment-wide-only checks; prefer isEnabledForWorkspace for anything
+ * workspace-scoped.
  * @returns {boolean}
  */
 function isEnabled() {
   return CHAT_ENABLED && !!CHAT_WEBHOOK_URL && !!WEBHOOK_SECRET;
 }
 
-export default { dispatch, isEnabled };
+/**
+ * Check if chat webhook dispatching is enabled for a specific workspace —
+ * respects that workspace's own connect/disconnect state once it has ever
+ * called connect, falling back to the deployment env vars otherwise.
+ * @param {string} workspaceId
+ * @returns {Promise<boolean>}
+ */
+async function isEnabledForWorkspace(workspaceId) {
+  const { enabled, webhookUrl } = await resolveWorkspaceChatSettings(workspaceId);
+  return enabled && !!webhookUrl && !!WEBHOOK_SECRET;
+}
+
+export default { dispatch, isEnabled, isEnabledForWorkspace };

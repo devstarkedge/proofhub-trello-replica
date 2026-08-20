@@ -355,6 +355,15 @@ export const updateNano = asyncHandler(async (req, res, next) => {
           req.user,
           'nano_assignees_changed',
         ).catch(console.error);
+
+        const newlyAddedIds = newIds.filter((id) => !oldIds.includes(id));
+        if (newlyAddedIds.length > 0) {
+          const parentSubtask = await Subtask.findById(subtaskId);
+          const parentCard = await Card.findById(taskId).populate('board', 'name department');
+          if (parentSubtask && parentCard) {
+            chatHooks.onNanoAssigned(nano, newlyAddedIds, parentSubtask, parentCard, parentCard.board, req.user).catch(console.error);
+          }
+        }
       }
       if (JSON.stringify(oldNano.loggedTime) !== JSON.stringify(nano.loggedTime)) {
         activities.push({

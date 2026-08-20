@@ -11,9 +11,11 @@ import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
 import { createDefaultSubscription } from '../modules/superAdmin/subscriptionService.js';
+import workspaceChatSyncService from '../services/chat/workspaceChatSyncService.js';
+import chatHooks from '../utils/chatHooks.js';
 
 import { uploadWorkspaceIconToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
-import { createDepartmentCore } from '../modules/workspaces/departmentCreation.js';
+import { createWorkspaceCore } from '../modules/workspaces/workspaceCreation.js';
 import { slugify, isReservedSlug, isValidSlugFormat } from '../utils/slug.js';
 import { WORKSPACE_TYPE_RULES, isValidWorkspaceType, isValidIndustry, isValidCompanySize } from '../utils/workspaceOptions.js';
 
@@ -91,64 +93,16 @@ export const createWorkspace = asyncHandler(async (req, res, next) => {
 
   try {
     await session.withTransaction(async () => {
-      // A brand-new workspace has no "active workspace" yet — this is
-      // exactly the deliberate, explicit bypass case
-      // workspaceContext.runUnscoped() exists for. Re-checks slug
-      // uniqueness inside the transaction (closing the TOCTOU race against
-      // the live-availability endpoint) before writing anything.
-      await workspaceContext.runUnscoped(async () => {
-        const slugTaken = await Workspace.findOne({ slug: normalizedSlug }).session(session);
-        if (slugTaken) {
-          throw new ErrorResponse('This workspace URL is already taken', 409);
-        }
-
-        const [createdWorkspace] = await Workspace.create([{
-          name: String(name).trim(),
-          slug: normalizedSlug,
-          owner: req.user.id,
-          type,
-          industry: industry && isValidIndustry(industry) ? industry : null,
-          companySize: companySize && isValidCompanySize(companySize) ? companySize : null
-        }], { session });
-        workspace = createdWorkspace;
-
-        // Every workspace shares the same global 'admin' system-role
-        // template (workspaceId: null, isSystem: true) — see Role.js.
-        const adminRole = await Role.findResolvable('admin', null);
-
-        await WorkspaceMembership.create([{
-          workspace: workspace._id,
-          user: req.user.id,
-          role: 'admin',
-          roleId: adminRole?._id,
-          department: [],
-          accessType: 'full_department',
-          allowedProjects: [],
-          status: 'active',
-          invitedBy: req.user.id
-        }], { session });
-      });
-
-      // Department is a workspace-scoped model (workspaceScopePlugin) — its
-      // pre('validate') hook stamps workspaceId from the active ALS
-      // context, so this write must run inside a context pointed at the
-      // workspace just created above, not whatever workspace (if any) the
-      // caller was already active in.
-      await workspaceContext.run({ workspaceId: workspace._id }, async () => {
-        department = await createDepartmentCore({
-          name: finalDepartmentName,
-          description: '',
-          managers: [],
-          workspaceId: workspace._id,
-          session
-        });
-      });
-
-      await User.updateOne(
-        { _id: req.user.id },
-        { $set: { lastActiveWorkspace: workspace._id } },
-        { session }
-      );
+      ({ workspace, department } = await createWorkspaceCore({
+        name: String(name).trim(),
+        slug: normalizedSlug,
+        type,
+        industry: industry && isValidIndustry(industry) ? industry : null,
+        companySize: companySize && isValidCompanySize(companySize) ? companySize : null,
+        departmentName: finalDepartmentName,
+        ownerId: req.user.id,
+        session,
+      }));
     });
   } catch (err) {
     return next(err);
@@ -168,6 +122,18 @@ export const createWorkspace = asyncHandler(async (req, res, next) => {
   createDefaultSubscription(workspace._id).catch((err) => {
     console.error('Failed to create default subscription for new workspace:', { workspaceId: workspace._id, error: err.message });
   });
+
+  // Eagerly provision the ChatApp counterpart now, rather than waiting for
+  // the owner to click "Open Chat" — see workspaceChatSyncService.js. Never
+  // calls chatHooks/webhookDispatcher (no forward "workspace created" event
+  // exists, deliberately — this uses the SSO-login mechanism directly), and
+  // never throws out of this request; a failure here just means the
+  // workspace falls back to the pre-existing lazy Open-Chat sync.
+  try {
+    await workspaceChatSyncService.syncWorkspaceToChatApp({ workspace, owner: req.user });
+  } catch (err) {
+    console.error('Eager ChatApp workspace sync threw unexpectedly — workspace creation unaffected:', err.message);
+  }
 
   res.status(201).json({
     success: true,
@@ -300,11 +266,26 @@ export const updateWorkspace = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('No valid fields to update', 400));
   }
 
+  // Captured before the update so the chat-sync hook below can report what
+  // actually changed — slug/plan aren't updatable here (see `updates`
+  // above), so name is the only field that can ever need re-syncing.
+  const previous = await workspaceContext.runUnscoped(async () => (
+    await Workspace.findById(req.params.id).select('name').lean()
+  ));
+
   const workspace = await workspaceContext.runUnscoped(async () => (
     await Workspace.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true })
   ));
   if (!workspace) {
     return next(new ErrorResponse('Workspace not found', 404));
+  }
+
+  if (updates.name && previous && previous.name !== updates.name) {
+    chatHooks.onWorkspaceUpdated(
+      workspace,
+      { name: { old: previous.name, new: updates.name } },
+      req.user,
+    ).catch(console.error);
   }
 
   res.status(200).json({ success: true, data: workspace });

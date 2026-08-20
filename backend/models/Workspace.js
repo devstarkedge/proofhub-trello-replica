@@ -40,6 +40,21 @@ const workspaceSchema = new mongoose.Schema({
   companySize: { type: String, enum: [...COMPANY_SIZE_OPTIONS, null], default: null },
   settings: {
     restrictDomain: { type: String }, // e.g. "@acme.com" only
+    // Per-workspace ChatApp connection — replaces the old process-global
+    // config.chat.* mutation in chatIntegrationController.js, where any
+    // workspace admin could reconfigure/break chat for every other
+    // workspace on the deployment and the setting didn't survive a
+    // restart. No secret field here — the shared FLOWTASK_WEBHOOK_SECRET
+    // env var remains the single signing/verification secret for every
+    // workspace (see webhookDispatcher.js / webhookVerifier.js on the
+    // ChatApp side).
+    chatIntegration: {
+      enabled: { type: Boolean, default: false },
+      webhookUrl: { type: String, default: '' },
+      chatAppUrl: { type: String, default: '' },
+      connectedAt: { type: Date, default: null },
+      connectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    },
   },
   // Custom branding (icon today; the shape leaves room for future
   // additions — theme colors, favicon, banner, login branding — without

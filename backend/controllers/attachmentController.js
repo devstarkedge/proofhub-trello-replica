@@ -695,6 +695,13 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
   // Soft delete only (do not remove from Cloudinary here)
   await attachment.softDelete(req.user.id);
 
+  if (cardId) {
+    const parentCard = await Card.findById(cardId).populate('board', 'name department');
+    if (parentCard?.board) {
+      chatHooks.onAttachmentDeleted(attachment, parentCard, parentCard.board, req.user).catch(console.error);
+    }
+  }
+
   // Auto-promote next description image to cover if deleted attachment was cover
   let newCoverAttachment = null;
   if (wasCover && cardId) {

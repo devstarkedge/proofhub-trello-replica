@@ -31,16 +31,23 @@ import {
   buildUserUpdatedPayload,
   buildAnnouncementPayload,
   buildSubtaskEventPayload,
+  buildSubtaskAssignedPayload,
   buildNanoEventPayload,
+  buildNanoAssignedPayload,
   buildAttachmentEventPayload,
+  buildAttachmentDeletedPayload,
   buildDepartmentPayload,
   buildDepartmentUpdatedPayload,
   buildProjectMembershipPayload,
+  buildCommentUpdatedPayload,
+  buildCommentDeletedPayload,
+  buildWorkspaceUpdatedPayload,
 } from './chatWebhookPayloads.js';
 import { getProjectMembershipSnapshot } from '../services/chat/projectMembershipService.js';
 
 // ─── Event Constants (must match ChatApp's FLOWTASK_EVENTS) ──────────────────
 const EVENTS = {
+  WORKSPACE_UPDATED: 'WORKSPACE_UPDATED',
   PROJECT_CREATED: 'PROJECT_CREATED',
   PROJECT_UPDATED: 'PROJECT_UPDATED',
   PROJECT_DELETED: 'PROJECT_DELETED',
@@ -81,13 +88,35 @@ const EVENTS = {
   NANO_CREATED: 'NANO_CREATED',
   NANO_COMPLETED: 'NANO_COMPLETED',
   NANO_DELETED: 'NANO_DELETED',
+  SUBTASK_ASSIGNED: 'SUBTASK_ASSIGNED',
+  NANO_ASSIGNED: 'NANO_ASSIGNED',
   ATTACHMENT_ADDED: 'ATTACHMENT_ADDED',
+  ATTACHMENT_DELETED: 'ATTACHMENT_DELETED',
   DEPARTMENT_CREATED: 'DEPARTMENT_CREATED',
   DEPARTMENT_UPDATED: 'DEPARTMENT_UPDATED',
   DEPARTMENT_DELETED: 'DEPARTMENT_DELETED',
+  COMMENT_UPDATED: 'COMMENT_UPDATED',
+  COMMENT_DELETED: 'COMMENT_DELETED',
 };
 
 export const chatHooks = {
+  // ─── Workspace Hooks ─────────────────────────────────────────────────────
+
+  /**
+   * Trigger when a workspace's own metadata changes (currently: name — the
+   * only field updateWorkspace exposes; slug/plan aren't mutable on
+   * FlowTask's side post-creation, so there's nothing else to keep in sync
+   * after the initial eager-sync at creation).
+   * @param {object} workspace - Workspace Mongoose document (post-update)
+   * @param {object} changes - What changed
+   * @param {object} actor - req.user
+   */
+  async onWorkspaceUpdated(workspace, changes, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildWorkspaceUpdatedPayload(workspace, changes, actor);
+    await webhookDispatcher.dispatch(EVENTS.WORKSPACE_UPDATED, payload);
+  },
+
   // ─── Project / Board Hooks ───────────────────────────────────────────────
 
   /**
@@ -362,6 +391,18 @@ export const chatHooks = {
     await webhookDispatcher.dispatch(EVENTS.TASK_COMMENT_ADDED, payload);
   },
 
+  async onCommentUpdated(comment, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildCommentUpdatedPayload(comment, card, board, actor);
+    await webhookDispatcher.dispatch(EVENTS.COMMENT_UPDATED, payload);
+  },
+
+  async onCommentDeleted(comment, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildCommentDeletedPayload(comment, card, board, actor);
+    await webhookDispatcher.dispatch(EVENTS.COMMENT_DELETED, payload);
+  },
+
   // ─── Time Entry Hooks ──────────────────────────────────────────────────
 
   /**
@@ -427,31 +468,36 @@ export const chatHooks = {
 
   /**
    * Trigger when a user registers.
+   * User carries no workspaceId of its own (global model) — the caller must
+   * pass the workspace the registration happened in.
    * @param {object} user - User document
+   * @param {string} workspaceId
    */
-  async onUserRegistered(user) {
+  async onUserRegistered(user, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserPayload(user, 'USER_REGISTERED');
+    const payload = buildUserPayload(user, 'USER_REGISTERED', workspaceId);
     await webhookDispatcher.dispatch(EVENTS.USER_REGISTERED, payload);
   },
 
   /**
    * Trigger when a user is verified by admin.
    * @param {object} user - User document
+   * @param {string} workspaceId
    */
-  async onUserVerified(user) {
+  async onUserVerified(user, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserPayload(user, 'USER_VERIFIED');
+    const payload = buildUserPayload(user, 'USER_VERIFIED', workspaceId);
     await webhookDispatcher.dispatch(EVENTS.USER_VERIFIED, payload);
   },
 
   /**
    * Trigger when a admin creates a user.
    * @param {object} user - User document
+   * @param {string} workspaceId
    */
-  async onUserCreated(user) {
+  async onUserCreated(user, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserPayload(user, 'USER_CREATED');
+    const payload = buildUserPayload(user, 'USER_CREATED', workspaceId);
     await webhookDispatcher.dispatch(EVENTS.USER_CREATED, payload);
   },
 
@@ -460,20 +506,22 @@ export const chatHooks = {
    * @param {object} user - Updated user document
    * @param {object} changes - What changed
    * @param {object} [actor] - Who made the change (admin/self)
+   * @param {string} workspaceId
    */
-  async onUserUpdated(user, changes, actor) {
+  async onUserUpdated(user, changes, actor, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserUpdatedPayload(user, changes, actor);
+    const payload = buildUserUpdatedPayload(user, changes, actor, workspaceId);
     await webhookDispatcher.dispatch(EVENTS.USER_UPDATED, payload);
   },
 
   /**
    * Trigger when a user is deactivated/deleted.
    * @param {object} user - User document
+   * @param {string} workspaceId
    */
-  async onUserDeactivated(user) {
+  async onUserDeactivated(user, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserPayload(user, 'USER_DEACTIVATED');
+    const payload = buildUserPayload(user, 'USER_DEACTIVATED', workspaceId);
     await webhookDispatcher.dispatch(EVENTS.USER_DEACTIVATED, payload);
   },
 
@@ -586,6 +634,12 @@ export const chatHooks = {
     );
   },
 
+  async onSubtaskAssigned(subtask, newAssigneeIds, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildSubtaskAssignedPayload(subtask, newAssigneeIds, card, board, actor);
+    await webhookDispatcher.dispatch(EVENTS.SUBTASK_ASSIGNED, payload);
+  },
+
   // ─── Nano Subtask Hooks ────────────────────────────────────────────────
 
   async onNanoCreated(nano, subtask, card, board, actor) {
@@ -618,6 +672,12 @@ export const chatHooks = {
     );
   },
 
+  async onNanoAssigned(nano, newAssigneeIds, subtask, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildNanoAssignedPayload(nano, newAssigneeIds, subtask, card, board, actor);
+    await webhookDispatcher.dispatch(EVENTS.NANO_ASSIGNED, payload);
+  },
+
   // ─── Attachment Hooks ──────────────────────────────────────────────────
 
   async onAttachmentAdded(attachment, card, board, actor) {
@@ -633,6 +693,12 @@ export const chatHooks = {
     } catch (e) {}
     const payload = buildAttachmentEventPayload(attachment, card, board, actor);
     await webhookDispatcher.dispatch(EVENTS.ATTACHMENT_ADDED, payload);
+  },
+
+  async onAttachmentDeleted(attachment, card, board, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildAttachmentDeletedPayload(attachment, card, board, actor);
+    await webhookDispatcher.dispatch(EVENTS.ATTACHMENT_DELETED, payload);
   },
 
   // ─── Department Hooks ────────────────────────────────────────────────────

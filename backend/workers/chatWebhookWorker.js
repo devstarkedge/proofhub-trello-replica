@@ -4,6 +4,11 @@ import axios from 'axios';
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
 
+// Deployment-wide fallback only — the per-workspace URL is denormalized
+// onto job.data.webhookUrl at enqueue time (webhookDispatcher.js) so this
+// worker doesn't need its own DB round-trip per job. This fallback covers
+// jobs enqueued before that change shipped, and single-tenant/env-var-only
+// deployments that never call chatIntegrationController#connect.
 const CHAT_WEBHOOK_URL = process.env.CHAT_WEBHOOK_URL;
 const WEBHOOK_SECRET = process.env.FLOWTASK_WEBHOOK_SECRET;
 const TIMEOUT_MS = 10000;
@@ -30,9 +35,10 @@ export function startChatWebhookWorker(options = { concurrency: 5 }) {
   if (_worker) return _worker;
 
   _worker = new Worker('chat-webhooks', async (job) => {
-    const { eventName, payload, deliveryId = job.id.toString() } = job.data;
+    const { eventName, payload, deliveryId = job.id.toString(), webhookUrl: jobWebhookUrl } = job.data;
+    const webhookUrl = jobWebhookUrl || CHAT_WEBHOOK_URL;
 
-    if (!CHAT_WEBHOOK_URL || !WEBHOOK_SECRET) {
+    if (!webhookUrl || !WEBHOOK_SECRET) {
       logger.warn('chatWebhookWorker: missing config; skipping job', { jobId: job.id });
       return;
     }
@@ -56,7 +62,7 @@ export function startChatWebhookWorker(options = { concurrency: 5 }) {
     };
 
     try {
-      const resp = await axios.post(CHAT_WEBHOOK_URL, body, {
+      const resp = await axios.post(webhookUrl, body, {
         headers,
         timeout: TIMEOUT_MS,
         transformRequest: [(data) => data],

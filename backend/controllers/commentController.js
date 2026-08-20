@@ -623,6 +623,15 @@ export const updateComment = asyncHandler(async (req, res) => {
   comment.editedAt = new Date();
   await comment.save();
 
+  // comment.card is populated (the Card doc), but comment.card.board is
+  // just an ObjectId — fetch display fields the payload builder needs
+  // (resolveWorkspaceId itself is already satisfied by comment.workspaceId,
+  // a workspace-owned field stamped on the Comment doc directly).
+  if (comment.card?.board) {
+    const commentBoard = await Board.findById(comment.card.board).select('name department').lean();
+    chatHooks.onCommentUpdated(comment, comment.card, commentBoard, req.user).catch(console.error);
+  }
+
   // Get version count for the response
   const versionCount = await VersionHistory.getVersionCount('comment', comment._id);
 
@@ -734,6 +743,13 @@ export const deleteComment = asyncHandler(async (req, res) => {
       contextRef: comment.contextRef,
       parentCommentId: comment.parentComment,
     });
+  }
+
+  // comment/comment.card were captured before Comment.findByIdAndDelete ran
+  // above — still valid in-memory JS objects, just no longer in the DB.
+  if (boardId) {
+    const commentBoard = await Board.findById(boardId).select('name department').lean();
+    chatHooks.onCommentDeleted(comment, comment.card, commentBoard, req.user).catch(console.error);
   }
 
   res.status(200).json({

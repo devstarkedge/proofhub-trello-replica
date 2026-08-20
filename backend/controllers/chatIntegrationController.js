@@ -1,45 +1,45 @@
-import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import config from '../config/index.js';
 import webhookDispatcher from '../services/chat/webhookDispatcher.js';
 import Board from '../models/Board.js';
+import Workspace from '../models/Workspace.js';
+import WorkspaceIntegrationMapping from '../models/WorkspaceIntegrationMapping.js';
 import { getProjectMembershipSnapshot } from '../services/chat/projectMembershipService.js';
 import chatHooks from '../utils/chatHooks.js';
+import { resolveWorkspaceIdFromRequest } from '../services/chat/workspaceMappingService.js';
 
 /**
- * The real FlowTask workspace id, always present once `protect` has run
- * (routes/chatIntegration.js:16 mounts `router.use(protect)` on everything
- * in this file) — previously this fell back to `req.user.department[0]`,
- * a department id masquerading as a workspace id. The header/query
- * fallbacks are kept only for defense-in-depth if this is ever called
- * without `protect`, which doesn't happen today.
- */
-function resolveWorkspaceIdFromRequest(req) {
-  if (req.workspaceId) return req.workspaceId.toString();
-
-  const fromHeader = req.headers['x-workspace-id'];
-  if (fromHeader) return fromHeader.toString();
-
-  const fromQuery = req.query?.workspaceId;
-  if (fromQuery) return fromQuery.toString();
-
-  return null;
-}
-
-/**
- * @desc    Get current chat integration status
+ * @desc    Get current chat integration status for the active workspace
  * @route   GET /api/chat-integration/status
  * @access  Private (Admin)
  */
 export const getStatus = asyncHandler(async (req, res) => {
-  const isConnected = webhookDispatcher.isEnabled();
+  const workspaceId = resolveWorkspaceIdFromRequest(req);
+  if (!workspaceId) {
+    return res.json({ success: true, data: { connected: false, chatUrl: null, lastSyncAt: null } });
+  }
 
-  // Prefer an explicitly configured Chat frontend URL for display (CHATAPP_URL).
-  // Fallback to the origin of the webhookUrl (stripping /api/*) if frontend URL isn't set.
+  const [workspace, mapping] = await Promise.all([
+    Workspace.findById(workspaceId).select('settings.chatIntegration').lean(),
+    WorkspaceIntegrationMapping.findOne({ flowTaskWorkspaceId: workspaceId, status: 'active' }).lean(),
+  ]);
+  const ci = workspace?.settings?.chatIntegration;
+  // "Connected" reflects whether this workspace actually HAS a linked
+  // ChatApp counterpart — WorkspaceIntegrationMapping is the source of
+  // truth (populated by eager sync at creation, the one-time migration
+  // script for the original pre-existing workspace, or the lazy Open Chat
+  // path), not just the chatIntegration.enabled toggle, which older/
+  // migrated workspaces may never have had set even though they ARE
+  // genuinely linked. An explicit disconnect() still overrides this.
+  const isConnected = !!mapping && ci?.enabled !== false;
+
+  // Prefer this workspace's own configured ChatApp frontend URL for display,
+  // falling back to the deployment-wide one if this workspace's own setting
+  // was never populated (e.g. linked only via the one-time migration).
   const displayChatUrl = isConnected
-    ? (config.chat.chatAppUrl?.replace(/\/+$/, '') || config.chat.webhookUrl?.replace(/\/api\/.*$/, ''))
+    ? (ci?.chatAppUrl?.replace(/\/+$/, '') || ci?.webhookUrl?.replace(/\/api\/.*$/, '') || config.chat.chatAppUrl?.replace(/\/+$/, ''))
     : null;
 
   res.json({
@@ -47,21 +47,27 @@ export const getStatus = asyncHandler(async (req, res) => {
     data: {
       connected: isConnected,
       chatUrl: displayChatUrl,
-      lastSyncAt: null, // Could be stored in DB if tracking
+      lastSyncAt: mapping?.linkedAt || null,
     },
   });
 });
 
 /**
- * @desc    Connect ChatApp integration — generates a webhook secret and
- *          stores the ChatApp URL. The admin provides the ChatApp base URL,
- *          and we return the webhook secret they need to configure on ChatApp side.
+ * @desc    Connect ChatApp integration for the active workspace only —
+ *          stores the ChatApp URL on this Workspace's own settings.
+ *          Signing/verification still uses the single, deployment-wide
+ *          FLOWTASK_WEBHOOK_SECRET (shared-secret model) — there is no
+ *          per-workspace secret to generate or copy.
  * @route   POST /api/chat-integration/connect
  * @access  Private (Admin)
  */
 export const connect = asyncHandler(async (req, res, next) => {
   const { chatAppUrl, chatFrontendUrl } = req.body;
+  const workspaceId = resolveWorkspaceIdFromRequest(req);
 
+  if (!workspaceId) {
+    return next(new ErrorResponse('Workspace context is required to connect chat integration', 400));
+  }
   if (!chatAppUrl) {
     return next(new ErrorResponse('chatAppUrl is required', 400));
   }
@@ -77,59 +83,59 @@ export const connect = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Invalid chatAppUrl — must be a valid HTTP(S) URL', 400));
   }
 
-  // Generate a new webhook secret
-  const webhookSecret = crypto.randomBytes(32).toString('hex');
-
-  // Build the webhook endpoint URL
   const webhookUrl = new URL('/api/chat/webhooks/flowtask', parsedUrl.origin).toString();
 
-  // Update runtime config (for this process)
-  config.chat.enabled = true;
-  config.chat.webhookUrl = webhookUrl;
-  config.chat.webhookSecret = webhookSecret;
-
-  // If admin provided an explicit frontend URL for ChatApp, use it for redirects/display.
+  let chatAppDisplayUrl = parsedUrl.origin;
   if (chatFrontendUrl) {
     try {
       const parsedFrontend = new URL(chatFrontendUrl);
-      config.chat.chatAppUrl = parsedFrontend.origin.replace(/\/+$/, '');
+      chatAppDisplayUrl = parsedFrontend.origin.replace(/\/+$/, '');
     } catch (e) {
       // ignore invalid frontend URL — we still have the webhookUrl configured
     }
   }
 
-  // Note: In production, these should be persisted to a settings collection
-  // or written to env management. For now, we set them at runtime and
-  // the admin must also update the .env for persistence across restarts.
+  await Workspace.findByIdAndUpdate(workspaceId, {
+    $set: {
+      'settings.chatIntegration.enabled': true,
+      'settings.chatIntegration.webhookUrl': webhookUrl,
+      'settings.chatIntegration.chatAppUrl': chatAppDisplayUrl,
+      'settings.chatIntegration.connectedAt': new Date(),
+      'settings.chatIntegration.connectedBy': req.user._id,
+    },
+  });
 
   res.json({
     success: true,
     data: {
       connected: true,
       webhookUrl,
-      webhookSecret,
-      // Provide a display chat URL to the client (prefer configured frontend URL)
-      chatUrl: config.chat.chatAppUrl?.replace(/\/+$/, '') || parsedUrl.origin,
-      message: 'Chat integration connected. Save the webhookSecret — configure it in ChatApp as FLOWTASK_WEBHOOK_SECRET.',
+      chatUrl: chatAppDisplayUrl,
+      message: 'Chat integration connected for this workspace. ChatApp verifies incoming events using the shared FLOWTASK_WEBHOOK_SECRET already configured on this deployment — there is no per-workspace secret to copy.',
     },
   });
 });
 
 /**
- * @desc    Disconnect ChatApp integration
+ * @desc    Disconnect ChatApp integration for the active workspace only
  * @route   POST /api/chat-integration/disconnect
  * @access  Private (Admin)
  */
-export const disconnect = asyncHandler(async (req, res) => {
-  config.chat.enabled = false;
-  config.chat.webhookUrl = '';
-  config.chat.webhookSecret = '';
+export const disconnect = asyncHandler(async (req, res, next) => {
+  const workspaceId = resolveWorkspaceIdFromRequest(req);
+  if (!workspaceId) {
+    return next(new ErrorResponse('Workspace context is required to disconnect chat integration', 400));
+  }
+
+  await Workspace.findByIdAndUpdate(workspaceId, {
+    $set: { 'settings.chatIntegration.enabled': false },
+  });
 
   res.json({
     success: true,
     data: {
       connected: false,
-      message: 'Chat integration disconnected.',
+      message: 'Chat integration disconnected for this workspace.',
     },
   });
 });
@@ -140,13 +146,12 @@ export const disconnect = asyncHandler(async (req, res) => {
  * @access  Private (Admin)
  */
 export const testConnection = asyncHandler(async (req, res, next) => {
-  if (!webhookDispatcher.isEnabled()) {
-    return next(new ErrorResponse('Chat integration is not connected', 400));
-  }
-
   const workspaceId = resolveWorkspaceIdFromRequest(req);
   if (!workspaceId) {
     return next(new ErrorResponse('Workspace context is required to test chat integration', 400));
+  }
+  if (!(await webhookDispatcher.isEnabledForWorkspace(workspaceId))) {
+    return next(new ErrorResponse('Chat integration is not connected for this workspace', 400));
   }
 
   try {
@@ -187,6 +192,17 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Chat JWT secret is not configured. Set CHAT_JWT_SECRET in environment.', 400));
   }
 
+  // Workspace name/slug are display-only hints for ChatApp to name a
+  // brand-new workspace on first login — not workspace-owned data, safe to
+  // query without an ambient workspace context.
+  let workspaceName = null;
+  let workspaceSlug = null;
+  if (workspaceId) {
+    const ws = await Workspace.findById(workspaceId).select('name slug').lean();
+    workspaceName = ws?.name || null;
+    workspaceSlug = ws?.slug || null;
+  }
+
   // Generate a short-lived JWT (5 minutes) with user identity
   const payload = {
     id: req.user._id || req.user.id,
@@ -195,6 +211,8 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     role: req.user.role,
     avatar: req.user.avatar || req.user.profileImage || '',
     workspaceId,
+    workspaceName,
+    workspaceSlug,
     source: 'flowtask',
   };
 
@@ -218,13 +236,12 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
  * @access  Private (Admin)
  */
 export const triggerSync = asyncHandler(async (req, res, next) => {
-  if (!webhookDispatcher.isEnabled()) {
-    return next(new ErrorResponse('Chat integration is not connected', 400));
-  }
-
   const workspaceId = resolveWorkspaceIdFromRequest(req);
   if (!workspaceId) {
     return next(new ErrorResponse('Workspace context is required to trigger chat sync', 400));
+  }
+  if (!(await webhookDispatcher.isEnabledForWorkspace(workspaceId))) {
+    return next(new ErrorResponse('Chat integration is not connected for this workspace', 400));
   }
 
   // Dispatch a SYNC_REQUESTED event — ChatApp's webhook handler

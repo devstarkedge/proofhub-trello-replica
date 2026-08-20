@@ -60,6 +60,7 @@ import workspaceMemberRoutes from './routes/workspaceMembers.js';
 import invitationRoutes from './routes/invitations.js';
 import accessControlRoutes from './routes/accessControl.js';
 import chatIntegrationRoutes from './routes/chatIntegration.js';
+import chatInboundRoutes from './routes/chatInbound.js';
 import superAdminRoutes from './routes/superAdmin.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -119,6 +120,10 @@ app.use((req, res, next) => {
 // Slack signature verification requires raw body (before JSON parsing)
 app.use('/api/slack', express.json({ verify: captureRawBody }));
 app.use('/api/slack', express.urlencoded({ extended: true, verify: captureRawBody }));
+
+// Reverse-sync inbound (ChatApp -> FlowTask) HMAC verification also needs
+// the raw body — same pattern as /api/slack above.
+app.use('/api/chat-integration/inbound', express.json({ verify: captureRawBody }));
 
 app.use(express.json({ limit: config.http.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }));
@@ -213,6 +218,15 @@ app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/workspaces', workspaceMemberRoutes);
 app.use('/api/invitations', invitationRoutes);
 app.use('/api/access-control', accessControlRoutes);
+// Reverse-sync inbound receiver (ChatApp -> FlowTask) — server-to-server,
+// HMAC-authenticated (see chatInboundVerifier), not behind `protect`.
+// Mounted BEFORE the plain /api/chat-integration router: Express matches
+// by path prefix, and chatIntegrationRoutes applies `protect` to its
+// entire prefix via `router.use(protect)` — if that router were reached
+// first, every request under /api/chat-integration/inbound/* would be
+// rejected for lacking a FlowTask user session before ever reaching this
+// HMAC-authenticated route.
+app.use('/api/chat-integration/inbound', chatInboundRoutes);
 app.use('/api/chat-integration', chatIntegrationRoutes);
 // Platform-level — independent of the workspace-scoped routes above, see
 // middleware/requireSuperAdmin.js.

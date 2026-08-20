@@ -2,7 +2,7 @@
  * Chat Webhook Payload Builders
  *
  * Transforms FlowTask Mongoose documents into the JSON payload schemas
- * defined in FLOWTASK_CHAT_INTEGRATION.md Â§3.
+ * defined in FLOWTASK_CHAT_INTEGRATION.md §3.
  *
  * Each builder produces a plain object safe for JSON serialization.
  */
@@ -48,17 +48,32 @@ function buildTimeEntryValue(entry, entryType) {
 }
 
 /**
- * Resolve the ChatApp workspace identifier for webhook payloads.
- * Returns the configured ChatApp workspace slug (NOT a FlowTask department ID).
- * ChatApp is a single-workspace setup â€” all FlowTask departments map to one workspace.
+ * Resolve the real FlowTask workspace id for a webhook payload by reading it
+ * directly off whichever workspace-owned entity is available (most-specific
+ * first). Every workspace-owned model (Board, Card, Announcement, etc. — see
+ * scripts/_workspaceOwnedModels.js) already carries a real `workspaceId`,
+ * stamped and enforced by workspaceScopePlugin — there is no lookup to get
+ * wrong here, no cache to go stale.
+ *
+ * ChatApp resolves this id to its own workspace via its local mapping table
+ * on receipt (see webhook.controller.js#resolveWebhookWorkspace on the
+ * ChatApp side) — FlowTask never translates to ChatApp's id.
+ *
+ * Throws rather than ever falling back to a placeholder/default value —
+ * an unroutable event must fail loudly, not silently land in the wrong
+ * (or a default) workspace.
  */
-const CHAT_WORKSPACE_SLUG = process.env.CHAT_WORKSPACE_SLUG || 'flowtask';
-
-function resolveWorkspaceId() {
-  return CHAT_WORKSPACE_SLUG;
+function resolveWorkspaceId(...entities) {
+  for (const entity of entities) {
+    const id = entity?.workspaceId;
+    if (id) return id.toString();
+  }
+  throw new Error(
+    'chatWebhookPayloads: none of the provided entities carry a workspaceId — refusing to build an unroutable payload.',
+  );
 }
 
-// â”€â”€â”€ Actor Payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Actor Payload ──────────────────────────────────────────────────────────
 
 /**
  * Build actor object from a FlowTask user (req.user or populated user doc).
@@ -74,10 +89,29 @@ export function buildActor(user) {
   };
 }
 
-// â”€â”€â”€ Project / Board Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Workspace Payloads ──────────────────────────────────────────────────────
+// Workspace is the tenant root, not a workspace-OWNED entity — it has no
+// `.workspaceId` field of its own, so unlike every other builder in this
+// file it can't go through the generic resolveWorkspaceId(entity) helper.
+// Its own `_id` IS the workspace id.
+
+export function buildWorkspaceUpdatedPayload(workspace, changes, actor) {
+  return {
+    workspaceId: workspace._id.toString(),
+    workspace: {
+      id: workspace._id.toString(),
+      name: workspace.name,
+      slug: workspace.slug,
+    },
+    changes: changes || {},
+    actor: buildActor(actor),
+  };
+}
+
+// ─── Project / Board Payloads ───────────────────────────────────────────────
 
 export function buildProjectCreatedPayload(board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(board);
   const projectData = {
     id: board._id?.toString(),
     name: board.name,
@@ -121,7 +155,7 @@ export function buildProjectCreatedPayload(board, actor) {
 export function buildProjectMembershipPayload(snapshot, actor, reason = 'reconcile') {
   return {
     eventId: `project-membership:${snapshot.project.id}:${snapshot.membershipVersion}`,
-    workspaceId: resolveWorkspaceId(),
+    workspaceId: resolveWorkspaceId(snapshot.project),
     project: snapshot.project,
     board: {
       _id: snapshot.project.id,
@@ -145,7 +179,7 @@ export function buildProjectMembershipPayload(snapshot, actor, reason = 'reconci
 }
 
 export function buildProjectUpdatedPayload(board, changes, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(board);
   const projectId = board._id?.toString();
   return {
     workspaceId,
@@ -162,7 +196,7 @@ export function buildProjectUpdatedPayload(board, changes, actor) {
 }
 
 export function buildProjectDeletedPayload(board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(board);
   const projectId = board._id?.toString();
   return {
     workspaceId,
@@ -178,7 +212,7 @@ export function buildProjectDeletedPayload(board, actor) {
 }
 
 export function buildProjectMemberPayload(board, memberId, role, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(board);
   const memberUserId = (memberId?._id || memberId)?.toString();
   const currentMemberIds = (board.members || []).map((m) => (m._id || m).toString());
   const ownerId = board.owner?._id?.toString?.() || board.owner?.toString?.() || null;
@@ -208,10 +242,10 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
   };
 }
 
-// â”€â”€â”€ Task / Card Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Task / Card Payloads ────────────────────────────────────────────────────
 
 export function buildTaskCreatedPayload(card, board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(card, board);
   const taskData = {
     id: card._id?.toString(),
     title: card.title,
@@ -238,7 +272,7 @@ export function buildTaskCreatedPayload(card, board, actor) {
 }
 
 export function buildTaskUpdatedPayload(card, changes, board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(card, board);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -261,7 +295,7 @@ export function buildTaskUpdatedPayload(card, changes, board, actor) {
 }
 
 export function buildTaskDeletedPayload(card, board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(card, board);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -284,7 +318,7 @@ export function buildTaskDeletedPayload(card, board, actor) {
 }
 
 export function buildTaskAssignedPayload(card, assignees, board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(card, board);
   const boardId = (card.board || board?._id)?.toString();
   const assigneeList = (assignees || []).map((a) => ({
     userId: (a._id || a).toString(),
@@ -314,7 +348,7 @@ export function buildTaskAssignedPayload(card, assignees, board, actor) {
 }
 
 export function buildTaskUnassignedPayload(card, removedUserIds, board, actor, activeTaskFlags) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(card, board);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -341,7 +375,7 @@ export function buildTaskUnassignedPayload(card, removedUserIds, board, actor, a
 }
 
 export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(card, board);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -365,7 +399,7 @@ export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board,
 }
 
 export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(card, board);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -388,10 +422,10 @@ export function buildTaskDueDateChangedPayload(card, oldDate, newDate, board, ac
   };
 }
 
-// â”€â”€â”€ Comment Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Comment Payloads ────────────────────────────────────────────────────────
 
 export function buildCommentAddedPayload(comment, card, board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(comment, card, board);
   const boardId = (card?.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -417,7 +451,64 @@ export function buildCommentAddedPayload(comment, card, board, actor) {
   };
 }
 
-// â”€â”€â”€ Time Entry Payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export function buildCommentUpdatedPayload(comment, card, board, actor) {
+  const workspaceId = resolveWorkspaceId(comment, card, board);
+  const boardId = (card?.board || board?._id)?.toString();
+  const commentId = comment._id?.toString();
+  return {
+    workspaceId,
+    commentId,
+    comment: {
+      id: commentId,
+      text: (comment.text || comment.htmlContent || '').substring(0, 300),
+      cardId: (comment.card || card?._id)?.toString(),
+    },
+    task: {
+      id: card?._id?.toString(),
+      title: card?.title || '',
+      boardId,
+    },
+    card: { _id: card?._id?.toString(), title: card?.title || '' },
+    boardId,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    actor: buildActor(actor),
+  };
+}
+
+export function buildCommentDeletedPayload(comment, card, board, actor) {
+  const workspaceId = resolveWorkspaceId(comment, card, board);
+  const boardId = (card?.board || board?._id)?.toString();
+  const commentId = comment._id?.toString();
+  return {
+    workspaceId,
+    commentId,
+    comment: {
+      id: commentId,
+      cardId: (comment.card || card?._id)?.toString(),
+    },
+    task: {
+      id: card?._id?.toString(),
+      title: card?.title || '',
+      boardId,
+    },
+    card: { _id: card?._id?.toString(), title: card?.title || '' },
+    boardId,
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    actor: buildActor(actor),
+  };
+}
+
+// ─── Time Entry Payload ──────────────────────────────────────────────────────
 
 export function buildTimeEntryPayload(arg1, arg2, arg3, arg4) {
   const legacyArgsProvided = arg2 !== undefined || arg3 !== undefined || arg4 !== undefined;
@@ -450,8 +541,8 @@ export function buildTimeEntryPayload(arg1, arg2, arg3, arg4) {
     timestamp = new Date().toISOString(),
   } = context;
 
-  const workspaceId = resolveWorkspaceId();
   const taskDoc = task || entity;
+  const workspaceId = resolveWorkspaceId(entity, taskDoc, board);
   const boardId = toId(taskDoc?.board || board);
   const eventTimestamp = toIsoTimestamp(timestamp) || new Date().toISOString();
   const currentValue = buildTimeEntryValue(currentEntry, entryType);
@@ -532,12 +623,19 @@ export function buildTimeEntryPayload(arg1, arg2, arg3, arg4) {
   };
 }
 
-// â”€â”€â”€ User Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── User Payloads ────────────────────────────────────────────────────────────
+// User is FlowTask's one global, non-workspace-owned model (a user's
+// role/department is per-workspace via WorkspaceMembership, but the User
+// document itself carries no workspaceId) — these builders require the
+// caller to thread through the real request/workspace-context workspaceId
+// explicitly rather than reading it off the entity.
 
-export function buildUserPayload(user, event) {
-  const workspaceId = resolveWorkspaceId();
+export function buildUserPayload(user, event, workspaceId) {
+  if (!workspaceId) {
+    throw new Error('buildUserPayload: workspaceId is required (User has no workspaceId field of its own).');
+  }
   return {
-    workspaceId,
+    workspaceId: workspaceId.toString(),
     user: {
       id: (user._id || user.id)?.toString(),
       name: user.name || '',
@@ -556,10 +654,12 @@ export function buildUserPayload(user, event) {
   };
 }
 
-export function buildUserUpdatedPayload(user, changes, actor) {
-  const workspaceId = resolveWorkspaceId();
+export function buildUserUpdatedPayload(user, changes, actor, workspaceId) {
+  if (!workspaceId) {
+    throw new Error('buildUserUpdatedPayload: workspaceId is required (User has no workspaceId field of its own).');
+  }
   return {
-    workspaceId,
+    workspaceId: workspaceId.toString(),
     user: {
       _id: (user._id || user.id)?.toString(),
       id: (user._id || user.id)?.toString(),
@@ -580,10 +680,10 @@ export function buildUserUpdatedPayload(user, changes, actor) {
   };
 }
 
-//  Announcement Payloads 
+//  Announcement Payloads
 
 export function buildAnnouncementPayload(announcement, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(announcement);
   return {
     workspaceId,
     announcement: {
@@ -602,7 +702,7 @@ export function buildAnnouncementPayload(announcement, actor) {
 // ─── Department Payloads ───────────────────────────────────────────────────
 
 export function buildDepartmentPayload(department, event, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(department);
   return {
     workspaceId,
     event,
@@ -632,7 +732,7 @@ export function buildDepartmentUpdatedPayload(department, changes, actor) {
 // ─── Project / Board Payloads ──────────────────────────────────────────────────
 
 export function buildSubtaskEventPayload(subtask, card, board, actor, eventType) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(subtask, card, board);
   return {
     workspaceId,
     eventType,
@@ -658,10 +758,40 @@ export function buildSubtaskEventPayload(subtask, card, board, actor, eventType)
   };
 }
 
+export function buildSubtaskAssignedPayload(subtask, newAssigneeIds, card, board, actor) {
+  const workspaceId = resolveWorkspaceId(subtask, card, board);
+  const boardId = (card.board || board?._id)?.toString();
+  const assigneeList = (newAssigneeIds || []).map((id) => (id._id || id).toString());
+  return {
+    workspaceId,
+    authoritativeSnapshotFollows: true,
+    subtask: {
+      id: (subtask._id || subtask.id)?.toString(),
+      title: subtask.title || '',
+    },
+    task: {
+      id: card._id?.toString(),
+      title: card.title || '',
+      boardId,
+    },
+    card: { _id: card._id?.toString(), title: card.title || '' },
+    boardId,
+    assigneeIds: assigneeList,
+    assigneeId: assigneeList[0] || null,
+    assignerId: actor ? (actor._id || actor.id)?.toString() : null,
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    actor: buildActor(actor),
+  };
+}
+
 // ─── Nano Subtask Event Payloads ─────────────────────────────────────────────
 
 export function buildNanoEventPayload(nano, subtask, card, board, actor, eventType) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(nano, subtask, card, board);
   return {
     workspaceId,
     eventType,
@@ -691,10 +821,44 @@ export function buildNanoEventPayload(nano, subtask, card, board, actor, eventTy
   };
 }
 
+export function buildNanoAssignedPayload(nano, newAssigneeIds, subtask, card, board, actor) {
+  const workspaceId = resolveWorkspaceId(nano, subtask, card, board);
+  const boardId = (card.board || board?._id)?.toString();
+  const assigneeList = (newAssigneeIds || []).map((id) => (id._id || id).toString());
+  return {
+    workspaceId,
+    authoritativeSnapshotFollows: true,
+    nano: {
+      id: (nano._id || nano.id)?.toString(),
+      title: nano.title || '',
+    },
+    subtask: {
+      id: (subtask._id || subtask.id)?.toString(),
+      title: subtask.title || '',
+    },
+    task: {
+      id: card._id?.toString(),
+      title: card.title || '',
+      boardId,
+    },
+    card: { _id: card._id?.toString(), title: card.title || '' },
+    boardId,
+    assigneeIds: assigneeList,
+    assigneeId: assigneeList[0] || null,
+    assignerId: actor ? (actor._id || actor.id)?.toString() : null,
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    actor: buildActor(actor),
+  };
+}
+
 // ─── Attachment Event Payloads ───────────────────────────────────────────────
 
 export function buildAttachmentEventPayload(attachment, card, board, actor) {
-  const workspaceId = resolveWorkspaceId();
+  const workspaceId = resolveWorkspaceId(attachment, card, board);
   return {
     workspaceId,
     eventType: 'ATTACHMENT_ADDED',
@@ -703,6 +867,34 @@ export function buildAttachmentEventPayload(attachment, card, board, actor) {
       fileName: attachment.fileName || attachment.originalName || attachment.name || 'file',
       mimeType: attachment.mimeType || attachment.type || null,
       fileSize: attachment.fileSize || attachment.size || null,
+    },
+    task: {
+      id: card._id?.toString(),
+      title: card.title || '',
+      boardId: (card.board || board?._id)?.toString(),
+    },
+    boardId: (card.board || board?._id)?.toString(),
+    project: {
+      id: board?._id?.toString(),
+      name: board?.name || '',
+      departmentId: board?.department?.toString() || null,
+    },
+    userId: actor ? (actor._id || actor.id)?.toString() : null,
+    actor: buildActor(actor),
+  };
+}
+
+export function buildAttachmentDeletedPayload(attachment, card, board, actor) {
+  const workspaceId = resolveWorkspaceId(attachment, card, board);
+  const attachmentId = (attachment._id || attachment.id)?.toString();
+  return {
+    workspaceId,
+    eventType: 'ATTACHMENT_DELETED',
+    attachmentId,
+    fileName: attachment.fileName || attachment.originalName || attachment.name || 'file',
+    attachment: {
+      id: attachmentId,
+      fileName: attachment.fileName || attachment.originalName || attachment.name || 'file',
     },
     task: {
       id: card._id?.toString(),
