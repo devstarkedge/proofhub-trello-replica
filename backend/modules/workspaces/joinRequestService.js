@@ -16,6 +16,16 @@ import { addUserToDepartmentRoster } from './departmentRosterSync.js';
 import notificationService from '../../utils/notificationService.js';
 import { sendJoinRequestApprovedEmail, sendJoinRequestRejectedEmail } from '../../utils/email.js';
 import logger from '../../utils/logger.js';
+import {
+  emitJoinRequestCreated,
+  emitJoinRequestApproved,
+  emitJoinRequestRejected,
+} from '../../realtime/emitters.js';
+
+/** Pending count for the badge/list — recomputed fresh at every emit so it can never drift from what listJoinRequests would return. */
+async function countPending(workspaceId) {
+  return WorkspaceJoinRequest.countDocuments({ workspace: workspaceId, status: 'pending' });
+}
 
 const CATEGORY = 'workspace_member';
 
@@ -63,6 +73,21 @@ export async function notifyAndAuditJoinRequestSubmitted(joinRequest, invitation
       await notificationService.notifyJoinRequestSubmitted(
         joinRequest, approverIds, requestingUser?.name || 'Someone'
       );
+
+      // Populate fresh from the DB (not the session-bound doc this function
+      // received) so the Approval Dashboard's live list gets the exact same
+      // shape listJoinRequests() returns on initial load.
+      const populatedRequest = await WorkspaceJoinRequest.findById(joinRequest._id)
+        .populate('user', 'name email avatar')
+        .populate('requestedDepartment', 'name')
+        .populate('requestedRoleId', 'name slug')
+        .lean();
+
+      emitJoinRequestCreated(approverIds, {
+        workspaceId: String(invitation.workspace),
+        request: populatedRequest,
+        pendingCount: await countPending(invitation.workspace),
+      });
     }
 
     await recordAuditLog({
@@ -225,6 +250,15 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverUse
     meta: { workspaceId }
   });
 
+  const approverIds = await listWorkspaceMembersWithPermission(workspaceId, 'canApproveJoinRequests');
+  if (approverIds.length > 0) {
+    emitJoinRequestApproved(approverIds, {
+      workspaceId: String(workspaceId),
+      requestId: String(joinRequest._id),
+      pendingCount: await countPending(workspaceId),
+    });
+  }
+
   return { membership, joinRequest };
 }
 
@@ -268,6 +302,15 @@ export async function rejectJoinRequest(joinRequestId, workspaceId, rejecterId, 
     category: CATEGORY,
     meta: { workspaceId }
   });
+
+  const approverIds = await listWorkspaceMembersWithPermission(workspaceId, 'canApproveJoinRequests');
+  if (approverIds.length > 0) {
+    emitJoinRequestRejected(approverIds, {
+      workspaceId: String(workspaceId),
+      requestId: String(joinRequest._id),
+      pendingCount: await countPending(workspaceId),
+    });
+  }
 
   return { joinRequest };
 }

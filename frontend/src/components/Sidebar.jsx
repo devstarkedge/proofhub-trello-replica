@@ -6,6 +6,7 @@ import AuthContext from '../context/AuthContext';
 import WorkspaceSwitcher from './Workspace/WorkspaceSwitcher';
 import useAccessControl from '../hooks/useAccessControl';
 import usePermissions from '../hooks/usePermissions';
+import useJoinRequestsLive from '../hooks/useJoinRequestsLive';
 
 const MotionDiv = motion.div;
 const MotionAside = motion.aside;
@@ -44,6 +45,10 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   // sees this regardless of which role branch below applies to them.
   const { can: canWorkspace } = usePermissions();
   const joinRequestsVisible = canWorkspace('canApproveJoinRequests');
+  // Live pending count for the currently active workspace — the hook itself
+  // re-gates on canApproveJoinRequests and re-fetches on workspace switch,
+  // so this always matches exactly what joinRequestsVisible above governs.
+  const { pendingCount: joinRequestsPendingCount } = useJoinRequestsLive();
 
   // Check if current path is under PM Sheet
   const isPMSheetActive = location.pathname.startsWith('/pm-sheet');
@@ -134,7 +139,12 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     }
 
     if (joinRequestsVisible && !items.some((item) => item.path === '/join-requests')) {
-      items.push({ path: '/join-requests', icon: ClipboardCheck, label: 'Join Requests' });
+      items.push({
+        path: '/join-requests',
+        icon: ClipboardCheck,
+        label: 'Join Requests',
+        badge: joinRequestsPendingCount > 0 ? joinRequestsPendingCount : null,
+      });
     }
 
     return items;
@@ -254,7 +264,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       return renderPMSheetItem(item, isDesktop);
     }
 
-    const { path, icon: Icon, label } = item;
+    const { path, icon: Icon, label, badge } = item;
     const iconConfig = getIconConfig(path);
     const isHovered = hoveredItem === path;
 
@@ -297,11 +307,21 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
             </div>
             
             {/* Label */}
-            <span className="transition-all duration-200" style={{
+            <span className="transition-all duration-200 flex-1" style={{
               fontWeight: isActive ? 600 : 500,
             }}>
               {label}
             </span>
+
+            {/* Live pending count (e.g. Join Requests) */}
+            {!!badge && (
+              <span
+                className="ml-2 text-white text-xs rounded-full h-5 min-w-[20px] px-1.5 flex items-center justify-center font-bold flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #ef4444, #ec4899)' }}
+              >
+                {badge > 99 ? '99+' : badge}
+              </span>
+            )}
 
             {/* Hover glow effect */}
             {isHovered && !isActive && (

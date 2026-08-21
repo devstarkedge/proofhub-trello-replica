@@ -548,6 +548,24 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-announcement-pin-toggled', { detail: data }));
     });
 
+    // Join Request events — Approval Dashboard. The server only ever emits
+    // these to the personal room of a socket it has already verified holds
+    // canApproveJoinRequests in the request's workspace (see
+    // realtime/emitters.js#emitJoinRequestCreated/Approved/Rejected), so
+    // every socket that receives one is already authorized for it — no
+    // additional client-side permission check is needed before dispatching.
+    this.socket.on('join-request:created', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-join-request-created', { detail: data }));
+    });
+
+    this.socket.on('join-request:approved', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-join-request-approved', { detail: data }));
+    });
+
+    this.socket.on('join-request:rejected', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-join-request-rejected', { detail: data }));
+    });
+
     // Super Admin Dashboard events — "core events" real-time scope only
     // (workspace status changes + the platform audit log). Only ever fire
     // for a socket the server itself verified as isSuperAdmin; a non-super-admin

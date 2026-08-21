@@ -8,7 +8,14 @@
  * Usage: import { emitters } from './realtime/emitters.js';
  */
 
-import { ROOM, SUPER_ADMIN_WORKSPACE_STATUS_CHANGED, SUPER_ADMIN_AUDIT_LOG_CREATED } from './events.js';
+import {
+  ROOM,
+  SUPER_ADMIN_WORKSPACE_STATUS_CHANGED,
+  SUPER_ADMIN_AUDIT_LOG_CREATED,
+  JOIN_REQUEST_CREATED,
+  JOIN_REQUEST_APPROVED,
+  JOIN_REQUEST_REJECTED,
+} from './events.js';
 import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 
 // The Socket.IO server instance — set by socketManager.init()
@@ -68,6 +75,17 @@ export const emitToUserShortcuts = (userId, event, data) => {
 /** Emit any event to a department room */
 export const emitToDepartment = (departmentId, event, data) => {
   getIO().to(ROOM.department(departmentId)).emit(event, data);
+};
+
+/**
+ * Emit any event to a set of users' personal rooms. Used where the
+ * recipient set is a computed, per-call authorization list (e.g. "everyone
+ * who currently holds permission X in this workspace") rather than a fixed
+ * room — see Join Request emitters below.
+ */
+export const emitToUsers = (userIds, event, data) => {
+  const io = getIO();
+  (userIds || []).forEach((userId) => io.to(ROOM.user(userId)).emit(event, data));
 };
 
 // ─── Card Emitters ──────────────────────────────────────────────────────────
@@ -245,6 +263,26 @@ export const emitSalesTabApprovalPending = (tab) => {
     tab,
     message: `New shared Sales ${tab.isWatchTab ? 'Watch ' : ''}Tab "${tab.name}" from ${tab.ownerName} — pending approval`,
   });
+};
+
+// ─── Join Request Emitters ──────────────────────────────────────────────────
+// Recipients are always the workspace's CURRENT canApproveJoinRequests
+// holders (Workspace Owner/Admin via the admin bypass in
+// workspacePermissions.js, plus any custom-role grant), recomputed by the
+// caller at emit time and passed in as approverIds — never a shared
+// workspace room, so this can never leak to a member who lacks the
+// permission or belongs to a different workspace.
+
+export const emitJoinRequestCreated = (approverIds, payload) => {
+  emitToUsers(approverIds, JOIN_REQUEST_CREATED, payload);
+};
+
+export const emitJoinRequestApproved = (approverIds, payload) => {
+  emitToUsers(approverIds, JOIN_REQUEST_APPROVED, payload);
+};
+
+export const emitJoinRequestRejected = (approverIds, payload) => {
+  emitToUsers(approverIds, JOIN_REQUEST_REJECTED, payload);
 };
 
 // ─── Super Admin Dashboard Emitters ─────────────────────────────────────────

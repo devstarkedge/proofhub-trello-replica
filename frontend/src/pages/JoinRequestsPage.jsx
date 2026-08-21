@@ -1,11 +1,12 @@
-import React, { useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { ClipboardCheck, Check, X, Loader, ChevronDown, Clock } from 'lucide-react';
 import WorkspaceContext from '../context/WorkspaceContext';
 import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
-import { listJoinRequests, approveJoinRequest, rejectJoinRequest } from '../services/memberInvitationApi';
+import { approveJoinRequest, rejectJoinRequest } from '../services/memberInvitationApi';
+import useJoinRequestsLive from '../hooks/useJoinRequestsLive';
 
 const formatDate = (d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -21,8 +22,9 @@ const JoinRequestsPage = () => {
   const { roles, loadRoles } = useRoleStore();
   const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
 
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Shared with the Sidebar badge — one fetch, one set of JOIN_REQUEST_*
+  // socket handlers, so the list here and the count there never disagree.
+  const { requests, loading, removeRequest } = useJoinRequestsLive();
   const [expandedId, setExpandedId] = useState(null);
   const [overrideDept, setOverrideDept] = useState('');
   const [overrideRole, setOverrideRole] = useState('');
@@ -30,21 +32,7 @@ const JoinRequestsPage = () => {
   const [rejectReason, setRejectReason] = useState('');
   const [busyId, setBusyId] = useState(null);
 
-  const load = useCallback(async () => {
-    if (!currentWorkspace?._id) return;
-    setLoading(true);
-    try {
-      const data = await listJoinRequests(currentWorkspace._id, 'pending');
-      setRequests(data);
-    } catch (error) {
-      toast.error('Failed to load join requests');
-    } finally {
-      setLoading(false);
-    }
-  }, [currentWorkspace?._id]);
-
   useEffect(() => {
-    load();
     departmentStore.loadDepartments();
     loadRoles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,7 +57,7 @@ const JoinRequestsPage = () => {
       });
       toast.success(`${req.user.name} has been approved`);
       setExpandedId(null);
-      setRequests((prev) => prev.filter((r) => r._id !== req._id));
+      removeRequest(req._id);
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Failed to approve this request');
     } finally {
@@ -84,7 +72,7 @@ const JoinRequestsPage = () => {
       toast.success(`${req.user.name}'s request was declined`);
       setRejectingId(null);
       setRejectReason('');
-      setRequests((prev) => prev.filter((r) => r._id !== req._id));
+      removeRequest(req._id);
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Failed to reject this request');
     } finally {

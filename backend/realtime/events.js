@@ -131,6 +131,15 @@ export const SALES_TAB_APPROVAL_PENDING = 'sales:tab:approval-pending';
 export const SUPER_ADMIN_WORKSPACE_STATUS_CHANGED = 'super-admin:workspace:status-changed';
 export const SUPER_ADMIN_AUDIT_LOG_CREATED = 'super-admin:audit-log:created';
 
+// Join Request events — Approval Dashboard (Workspace Owner/Admin + anyone
+// granted canApproveJoinRequests). Always emitted directly to each
+// authorized approver's personal room (ROOM.user), never a shared
+// workspace-wide room — a member without the permission must never be able
+// to receive these regardless of what room their socket has joined.
+export const JOIN_REQUEST_CREATED = 'join-request:created';
+export const JOIN_REQUEST_APPROVED = 'join-request:approved';
+export const JOIN_REQUEST_REJECTED = 'join-request:rejected';
+
 // Announcement events
 export const ANNOUNCEMENT_CREATED = 'announcement-created';
 export const ANNOUNCEMENT_UPDATED = 'announcement-updated';
