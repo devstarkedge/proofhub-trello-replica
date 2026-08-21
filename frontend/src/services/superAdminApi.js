@@ -67,8 +67,8 @@ export const getWorkspaceBilling = async (workspaceId) => {
   return data?.data;
 };
 
-export const updateWorkspaceBilling = async (workspaceId, { planId, billingCycle, status, notes }) => {
-  const { data } = await api.patch(`/api/super-admin/workspaces/${workspaceId}/billing`, { planId, billingCycle, status, notes });
+export const updateWorkspaceBilling = async (workspaceId, { planId, billingCycle, status, notes, customMemberLimit }) => {
+  const { data } = await api.patch(`/api/super-admin/workspaces/${workspaceId}/billing`, { planId, billingCycle, status, notes, customMemberLimit });
   return data?.data;
 };
 

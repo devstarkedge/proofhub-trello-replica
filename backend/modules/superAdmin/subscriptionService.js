@@ -83,11 +83,19 @@ export async function createSubscriptionForNewWorkspace(workspaceId, { planSlug 
  * broadcast. Mirrors the same findOneAndUpdate-on-a-precondition idiom
  * already used for WorkspaceInvitation's accept/resend/revoke.
  */
-export async function changeSubscription({ workspaceId, planId, billingCycle, status, notes, actor, expectedCurrentPlanId }) {
+export async function changeSubscription({ workspaceId, planId, billingCycle, status, notes, actor, expectedCurrentPlanId, customMemberLimit }) {
   const plan = await Plan.findById(planId);
   if (!plan) {
     throw new ErrorResponse('Plan not found', 404);
   }
+
+  // Only Enterprise has a per-workspace member cap (WorkspaceSubscription
+  // .customMemberLimit) — every other plan uses its shared, global
+  // Plan.memberLimit instead, so the field is meaningless (and cleared) for
+  // them. Caller (superAdminPlanController.js) is responsible for requiring
+  // and validating a positive integer whenever `plan.slug === 'enterprise'`;
+  // this function just persists whatever resolved value it's handed.
+  const resolvedCustomMemberLimit = plan.slug === 'enterprise' ? (customMemberLimit ?? null) : null;
 
   let subscription;
   let before;
@@ -101,6 +109,7 @@ export async function changeSubscription({ workspaceId, planId, billingCycle, st
           ...(billingCycle && { billingCycle }),
           ...(status && { status }),
           ...(notes !== undefined && { notes }),
+          customMemberLimit: resolvedCustomMemberLimit,
           changedBy: actor.id,
         },
       },
@@ -116,11 +125,17 @@ export async function changeSubscription({ workspaceId, planId, billingCycle, st
     }
 
     subscription = preImage; // pre-image: still carries the OLD plan/status/etc, used as `before`
-    before = { plan: subscription.plan, status: subscription.status, billingCycle: subscription.billingCycle, notes: subscription.notes };
+    before = {
+      plan: subscription.plan, status: subscription.status, billingCycle: subscription.billingCycle,
+      notes: subscription.notes, customMemberLimit: subscription.customMemberLimit,
+    };
   } else {
     subscription = await WorkspaceSubscription.findOne({ workspace: workspaceId });
     before = subscription
-      ? { plan: subscription.plan, status: subscription.status, billingCycle: subscription.billingCycle, notes: subscription.notes }
+      ? {
+          plan: subscription.plan, status: subscription.status, billingCycle: subscription.billingCycle,
+          notes: subscription.notes, customMemberLimit: subscription.customMemberLimit,
+        }
       : null;
 
     if (!subscription) {
@@ -131,6 +146,7 @@ export async function changeSubscription({ workspaceId, planId, billingCycle, st
     if (billingCycle) subscription.billingCycle = billingCycle;
     if (status) subscription.status = status;
     if (notes !== undefined) subscription.notes = notes;
+    subscription.customMemberLimit = resolvedCustomMemberLimit;
     subscription.changedBy = actor.id;
     await subscription.save();
   }
@@ -144,6 +160,13 @@ export async function changeSubscription({ workspaceId, planId, billingCycle, st
   if (status && before?.status !== status) {
     changeDetails.push({ label: 'Subscription Status', previous: before?.status || 'active', next: status });
   }
+  if (before?.customMemberLimit !== resolvedCustomMemberLimit) {
+    changeDetails.push({
+      label: 'Member Limit',
+      previous: before?.customMemberLimit ?? 'Not configured',
+      next: resolvedCustomMemberLimit ?? 'Not configured',
+    });
+  }
 
   // Computed explicitly from the same fallback rules applied above, rather
   // than read back off `subscription` — in the CAS branch `subscription` is
@@ -155,6 +178,7 @@ export async function changeSubscription({ workspaceId, planId, billingCycle, st
     status: status || before?.status || 'active',
     billingCycle: billingCycle || before?.billingCycle || 'monthly',
     notes: notes !== undefined ? notes : before?.notes,
+    customMemberLimit: resolvedCustomMemberLimit,
   };
 
   await recordSuperAdminAuditLog({
@@ -183,7 +207,12 @@ export async function changeSubscription({ workspaceId, planId, billingCycle, st
   // Super Admin path both funnel through changeSubscription).
   const workspaceDoc = await Workspace.findById(workspaceId).select('name slug').lean();
   if (workspaceDoc) {
-    const entitlementPayload = { planSlug: plan.slug, planName: plan.name, memberLimit: plan.memberLimit };
+    // Resolved (not raw plan.memberLimit) so Enterprise's per-workspace cap
+    // reaches ChatApp/realtime listeners correctly — see resolveMemberLimit.
+    const entitlementPayload = {
+      planSlug: plan.slug, planName: plan.name,
+      memberLimit: entitlementService.resolveMemberLimit(plan, { customMemberLimit: resolvedCustomMemberLimit }),
+    };
     chatHooks.onWorkspacePlanChanged(workspaceDoc, entitlementPayload, actor).catch((err) => {
       logger.error('Failed to dispatch workspace plan-changed webhook', { error: err.message, workspaceId: String(workspaceId) });
     });

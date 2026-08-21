@@ -5,6 +5,28 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
 import logger from '../../utils/logger.js';
 
 /**
+ * Single place that decides "what is this workspace's actual member cap",
+ * given its plan + subscription row — the one function every screen and
+ * every enforcement check reads through, so the number is always the same
+ * everywhere (Super Admin table, workspace details, Usage, Plan & Billing,
+ * invite/add-member validation).
+ *
+ * Free/Pro always use the shared, global Plan.memberLimit (10/20) — every
+ * workspace on that tier has the same cap, no per-workspace override.
+ * Enterprise has NO global limit; each Enterprise workspace's cap is
+ * whatever the Super Admin configured for THAT workspace specifically
+ * (WorkspaceSubscription.customMemberLimit) — two Enterprise workspaces can
+ * have completely different limits. Returns null only when an Enterprise
+ * workspace genuinely has not been configured yet — this must never be
+ * displayed or treated as "Unlimited", only as "not configured".
+ */
+export function resolveMemberLimit(plan, subscription) {
+  if (!plan) return 10; // no subscription row at all — fail closed to Free's limit
+  if (plan.slug === 'enterprise') return subscription?.customMemberLimit ?? null;
+  return plan.memberLimit;
+}
+
+/**
  * Single source of truth for "what can this workspace do on its current
  * plan" — every member-limit check and every Open Chat gate reads through
  * here instead of re-deriving Plan/WorkspaceSubscription logic inline.
@@ -29,7 +51,7 @@ export async function getEntitlements(workspaceId, { session } = {}) {
   return {
     planSlug,
     planName: subscription.plan.name,
-    memberLimit: subscription.plan.memberLimit,
+    memberLimit: resolveMemberLimit(subscription.plan, subscription),
     chatEnabled: planSlug !== 'free',
     subscription,
   };
@@ -182,6 +204,47 @@ export async function clearLimitNotificationIfUnderLimit(workspaceId) {
 }
 
 /**
+ * Reusable "does this workspace's current member count fit inside the
+ * target plan's limit" guard — used wherever a plan CHANGE (not creation)
+ * needs downgrade protection. `targetPlan` must be a Plan document/lean
+ * object with at least `{name, slug, memberLimit}`.
+ *
+ * `actionVerb` only changes the wording, never the logic, so each call
+ * site can phrase the rejection appropriately (Super Admin's arbitrary
+ * "change this workspace to X" vs. a more specific "downgrade to X")
+ * without duplicating the count-and-compare logic itself.
+ *
+ * `targetMemberLimit`, when explicitly passed (including `null`), is used
+ * INSTEAD of `targetPlan.memberLimit` — required for Enterprise, whose real
+ * cap lives on the destination WorkspaceSubscription.customMemberLimit, not
+ * on the shared Plan document (see resolveMemberLimit above). Omit it for
+ * Free/Pro, where `targetPlan.memberLimit` is already correct.
+ */
+export async function assertMemberCountFitsPlan(workspaceId, targetPlan, { actionVerb = 'change this workspace to', targetMemberLimit } = {}) {
+  const limit = targetMemberLimit !== undefined ? targetMemberLimit : targetPlan.memberLimit;
+  if (limit == null) return; // no configured cap — always fits (Enterprise not yet configured, or genuinely unlimited)
+
+  const currentCount = await WorkspaceMembership.countDocuments({
+    workspace: workspaceId,
+    status: { $ne: 'removed' },
+  });
+
+  if (currentCount > limit) {
+    const err = new ErrorResponse(
+      `Cannot ${actionVerb} ${targetPlan.name} because it currently has ${currentCount} members. The ${targetPlan.name} plan supports a maximum of ${limit} members.`,
+      400
+    );
+    err.entitlementViolation = {
+      type: 'member_limit_exceeded',
+      targetPlanSlug: targetPlan.slug,
+      memberLimit: limit,
+      currentCount,
+    };
+    throw err;
+  }
+}
+
+/**
  * Fans a plan change out to every active member's personal Socket.IO room —
  * mirrors workspaceController.js#emitWorkspaceIconUpdated's exact shape, so
  * a workspace owner sees "Open Chat" appear the instant they upgrade,
@@ -202,9 +265,11 @@ export async function notifyWorkspacePlanUpdated(workspaceId, { planSlug, planNa
 }
 
 export default {
+  resolveMemberLimit,
   getEntitlements,
   assertOwnerCanCreateWorkspace,
   assertCanAddMembers,
+  assertMemberCountFitsPlan,
   notifyFreeLimitReachedIfNeeded,
   clearLimitNotificationIfUnderLimit,
   notifyWorkspacePlanUpdated,

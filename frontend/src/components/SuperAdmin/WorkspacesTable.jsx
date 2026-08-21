@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Search, Loader2, AlertCircle, Building2, MoreVertical, PauseCircle, PlayCircle, Archive, RotateCcw, X } from 'lucide-react';
 import WorkspaceStatusBadge from './WorkspaceStatusBadge';
+import PlanBadge from './PlanBadge';
 import WorkspaceStatusConfirmModal from './WorkspaceStatusConfirmModal';
 import { useSuperAdminWorkspaces, useSuperAdminPlans, useUpdateWorkspaceStatus } from '../../hooks/useSuperAdminQueries';
 
@@ -256,8 +257,10 @@ const WorkspacesTable = () => {
                   <p className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>{w.owner?.email}</p>
                 </td>
                 <td className="px-4 py-3"><WorkspaceStatusBadge status={w.status} /></td>
-                <td className="px-4 py-3" style={{ color: 'var(--color-text-secondary)' }}>{w.plan?.name || '—'}</td>
-                <td className="px-4 py-3" style={{ color: 'var(--color-text-secondary)' }}>{w.activeMemberCount} / {w.memberCount}</td>
+                <td className="px-4 py-3"><PlanBadge slug={w.plan?.slug} name={w.plan?.name} /></td>
+                <td className="px-4 py-3" style={{ color: 'var(--color-text-secondary)' }}>
+                  {w.memberCount} / {w.memberLimit ?? 'Not configured'}
+                </td>
                 <td className="px-4 py-3" style={{ color: 'var(--color-text-secondary)' }}>{w.projectCount}</td>
                 <td className="px-4 py-3" style={{ color: 'var(--color-text-secondary)' }}>
                   <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 font-medium text-xs">

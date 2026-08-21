@@ -22,6 +22,14 @@ const workspaceSubscriptionSchema = new mongoose.Schema({
   startedAt: { type: Date, default: Date.now },
   renewsAt: { type: Date, default: null },
   canceledAt: { type: Date, default: null },
+  // Only meaningful when `plan` resolves to a slug with no shared/global
+  // limit (Enterprise) — this one workspace's admin-configured member cap,
+  // set at Change Plan time. Free/Pro ignore this field entirely (they
+  // always use their fixed global Plan.memberLimit instead), so it stays
+  // null for them. null also means "Enterprise, not yet configured" — never
+  // silently read as unlimited. See entitlementService.js#resolveMemberLimit,
+  // the one place this is read.
+  customMemberLimit: { type: Number, default: null, min: 1 },
   notes: { type: String, trim: true, default: '' },
   changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
 }, { timestamps: true });

@@ -13,7 +13,6 @@ const PLAN_META = {
   free: { name: 'Free', price: '$0', color: '#64748b' },
   pro: { name: 'Pro', price: '$19/mo', color: '#10b981' },
   enterprise: { name: 'Enterprise', price: 'Custom', color: '#8b5cf6' },
-  legacy: { name: 'Legacy', price: 'Grandfathered', color: '#f59e0b' },
 };
 
 // Free's numbers are a fixed platform constant (see backend's
@@ -246,7 +245,7 @@ const WorkspacePlanSettings = ({ workspaceId, isDarkMode }) => {
             </>
           )}
 
-          {(plan.planSlug === 'enterprise' || plan.planSlug === 'legacy') && (
+          {plan.planSlug === 'enterprise' && (
             <button
               onClick={() => navigate('/contact-sales')}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border transition-colors"
@@ -266,7 +265,7 @@ const WorkspacePlanSettings = ({ workspaceId, isDarkMode }) => {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
           {COMPARISON.map((c) => {
-            const isActive = plan.planSlug === c.slug || (plan.planSlug === 'legacy' && c.slug === 'enterprise');
+            const isActive = plan.planSlug === c.slug;
             return (
               <div
                 key={c.slug}

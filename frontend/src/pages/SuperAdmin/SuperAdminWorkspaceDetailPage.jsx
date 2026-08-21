@@ -173,7 +173,12 @@ const SuperAdminWorkspaceDetailPage = () => {
       {activeTab === 'projects' && <ProjectsTab workspaceId={workspaceId} active={activeTab === 'projects'} />}
       {activeTab === 'usage' && <UsageTab workspaceId={workspaceId} active={activeTab === 'usage'} />}
       {activeTab === 'billing' && (
-        <BillingTab workspaceId={workspaceId} active={activeTab === 'billing'} onChangePlan={() => setShowPlanModal(true)} />
+        <BillingTab
+          workspaceId={workspaceId}
+          active={activeTab === 'billing'}
+          currentMemberCount={memberCount}
+          onChangePlan={() => setShowPlanModal(true)}
+        />
       )}
       {activeTab === 'activity' && <ActivityTab workspaceId={workspaceId} active={activeTab === 'activity'} />}
 
@@ -186,7 +191,13 @@ const SuperAdminWorkspaceDetailPage = () => {
         onCancel={() => setConfirmState(null)}
       />
 
-      <PlanModalHost workspaceId={workspaceId} workspace={workspace} isOpen={showPlanModal} onClose={() => setShowPlanModal(false)} />
+      <PlanModalHost
+        workspaceId={workspaceId}
+        workspace={workspace}
+        currentMemberCount={memberCount}
+        isOpen={showPlanModal}
+        onClose={() => setShowPlanModal(false)}
+      />
     </div>
   );
 };
@@ -368,7 +379,10 @@ const UsageBar = ({ label, current, limit, formatValue = (v) => v }) => {
       <div className="flex items-center justify-between text-sm mb-1.5">
         <span style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
         <span style={{ color: 'var(--color-text-primary)' }}>
-          {formatValue(current)} {limit !== null && limit !== undefined ? `/ ${formatValue(limit)}` : '(unlimited)'}
+          {/* Enterprise is the only active plan with limit:null — "Custom"
+              (individually configured/negotiated) reads more accurately
+              than "unlimited" as a platform-wide claim. */}
+          {formatValue(current)} {limit !== null && limit !== undefined ? `/ ${formatValue(limit)}` : '(Custom)'}
         </span>
       </div>
       <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-muted)' }}>
@@ -399,7 +413,7 @@ const UsageTab = ({ workspaceId, active }) => {
 
 // ─── Billing tab ────────────────────────────────────────────────────────────
 
-const BillingTab = ({ workspaceId, active, onChangePlan }) => {
+const BillingTab = ({ workspaceId, active, currentMemberCount, onChangePlan }) => {
   const { data, isLoading, isError } = useSuperAdminWorkspaceBilling(workspaceId, { enabled: active });
 
   if (isLoading) return <TabLoading label="Loading plan & billing…" />;
@@ -416,6 +430,14 @@ const BillingTab = ({ workspaceId, active, onChangePlan }) => {
     );
   }
 
+  const chatEnabled = data.plan?.slug !== 'free';
+  // Enterprise has no shared/global limit — its cap is this specific
+  // workspace's own configured customMemberLimit, which may genuinely not
+  // be set yet (never displayed as "Unlimited" in that case).
+  const isEnterprise = data.plan?.slug === 'enterprise';
+  const memberLimit = isEnterprise ? data.customMemberLimit ?? null : data.plan?.memberLimit ?? null;
+  const memberLimitLabel = memberLimit ?? (isEnterprise ? 'Not configured' : 'Custom');
+
   return (
     <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: 'var(--color-bg-secondary)' }}>
       <div className="flex items-center justify-between">
@@ -427,12 +449,20 @@ const BillingTab = ({ workspaceId, active, onChangePlan }) => {
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <StatBlock label="Current Plan" value={data.plan?.name} />
         <StatBlock label="Plan Status" value={data.status} />
-        <StatBlock label="Billing Cycle" value={data.billingCycle} />
+        <StatBlock label="Member Usage" value={`${currentMemberCount ?? 0} / ${memberLimitLabel}`} />
+        <StatBlock label="Member Limit" value={memberLimitLabel} />
+        <StatBlock
+          label="ChatApp Access"
+          value={<span style={{ color: chatEnabled ? '#10b981' : 'var(--color-text-muted)' }}>{chatEnabled ? 'Enabled' : 'Disabled'}</span>}
+        />
+        <StatBlock label="Storage Limit" value={data.plan?.storageLimitBytes ? formatBytes(data.plan.storageLimitBytes) : 'Custom'} />
+        <StatBlock label="Project Limit" value={data.plan?.projectLimit ?? 'Custom'} />
         <StatBlock label="Plan Started" value={data.startedAt ? new Date(data.startedAt).toLocaleDateString() : '—'} />
-        <StatBlock label="Renews" value={data.renewsAt ? new Date(data.renewsAt).toLocaleDateString() : 'Not set'} />
-        <StatBlock label="Member Limit" value={data.plan?.memberLimit ?? 'Unlimited'} />
-        <StatBlock label="Storage Limit" value={data.plan?.storageLimitBytes ? formatBytes(data.plan.storageLimitBytes) : 'Unlimited'} />
-        <StatBlock label="Project Limit" value={data.plan?.projectLimit ?? 'Unlimited'} />
+        {/* No payment gateway exists in either app (see subscriptionService.js)
+            — a real "Renews" date would be fabricated, so this is stated
+            plainly rather than showing a fake billing-cycle countdown. */}
+        <StatBlock label="Billing Mode" value="Manual / Not configured" />
+        <StatBlock label="Last Plan Change" value={data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '—'} />
       </div>
       {data.notes && (
         <div className="text-sm pt-2 border-t" style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}>
@@ -443,7 +473,7 @@ const BillingTab = ({ workspaceId, active, onChangePlan }) => {
   );
 };
 
-const PlanModalHost = ({ workspaceId, workspace, isOpen, onClose }) => {
+const PlanModalHost = ({ workspaceId, workspace, currentMemberCount, isOpen, onClose }) => {
   const { data: subscription } = useSuperAdminWorkspaceBilling(workspaceId, { enabled: isOpen });
   const updateBilling = useUpdateWorkspaceBilling();
 
@@ -462,6 +492,7 @@ const PlanModalHost = ({ workspaceId, workspace, isOpen, onClose }) => {
       isOpen={isOpen}
       workspace={workspace}
       currentSubscription={subscription}
+      currentMemberCount={currentMemberCount}
       isLoading={updateBilling.isPending}
       onConfirm={handleConfirm}
       onCancel={onClose}

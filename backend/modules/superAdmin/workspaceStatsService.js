@@ -9,6 +9,7 @@ import Board from '../../models/Board.js';
 import Attachment from '../../models/Attachment.js';
 import Activity from '../../models/Activity.js';
 import * as workspaceContext from '../workspaces/workspaceContext.js';
+import { resolveMemberLimit } from '../plans/entitlementService.js';
 
 /**
  * Aggregation/query layer backing the Super Admin Dashboard. Centralized
@@ -147,8 +148,9 @@ export async function listWorkspaces({ cursor, limit = 50, search, status, planS
       $project: {
         name: 1, slug: 1, status: 1, type: 1, isActive: 1, createdAt: 1, icon: 1,
         owner: { _id: '$ownerDoc._id', name: '$ownerDoc.name', email: '$ownerDoc.email' },
-        plan: { _id: '$plan._id', name: '$plan.name', slug: '$plan.slug' },
-        subscriptionStatus: '$subscription.status'
+        plan: { _id: '$plan._id', name: '$plan.name', slug: '$plan.slug', memberLimit: '$plan.memberLimit' },
+        subscriptionStatus: '$subscription.status',
+        subscriptionCustomMemberLimit: '$subscription.customMemberLimit'
       }
     }
   );
@@ -192,13 +194,20 @@ export async function listWorkspaces({ cursor, limit = 50, search, status, planS
   const projectMap = new Map(projectCounts.map((r) => [String(r._id), r.count]));
   const storageMap = new Map(storageCounts.map((r) => [String(r._id), r.totalBytes]));
 
-  const data = page.map((w) => ({
-    ...w,
-    memberCount: memberMap.get(String(w._id)) || 0,
-    activeMemberCount: activeMemberMap.get(String(w._id)) || 0,
-    projectCount: projectMap.get(String(w._id)) || 0,
-    storageBytes: storageMap.get(String(w._id)) || 0
-  }));
+  const data = page.map((w) => {
+    const { subscriptionCustomMemberLimit, ...rest } = w;
+    return {
+      ...rest,
+      memberCount: memberMap.get(String(w._id)) || 0,
+      activeMemberCount: activeMemberMap.get(String(w._id)) || 0,
+      projectCount: projectMap.get(String(w._id)) || 0,
+      storageBytes: storageMap.get(String(w._id)) || 0,
+      // Free/Pro's shared Plan.memberLimit, or this specific workspace's own
+      // configured Enterprise cap — never the member count itself. See
+      // entitlementService.js#resolveMemberLimit.
+      memberLimit: resolveMemberLimit(w.plan?.slug ? w.plan : null, { customMemberLimit: subscriptionCustomMemberLimit })
+    };
+  });
 
   return { data, nextCursor, hasMore };
 }
@@ -353,7 +362,12 @@ export async function getWorkspaceUsage(workspaceId) {
   const plan = subscription?.plan || null;
 
   return {
-    members: { current: activeMemberCount, total: memberCount, limit: plan?.memberLimit ?? null },
+    // "current" is the count actual limit-enforcement compares against
+    // (active + suspended, i.e. everyone not removed) — see
+    // entitlementService.js#assertCanAddMembers/assertMemberCountFitsPlan,
+    // which both count the same way. "total" duplicates it for backward
+    // compatibility with any existing caller.
+    members: { current: memberCount, total: memberCount, limit: resolveMemberLimit(plan, subscription) },
     projects: { current: projectCount, limit: plan?.projectLimit ?? null },
     storage: {
       attachmentBytes,
