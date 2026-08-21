@@ -10,7 +10,7 @@ import { getProjectMembershipSnapshot } from '../services/chat/projectMembership
 import chatHooks from '../utils/chatHooks.js';
 import { resolveWorkspaceIdFromRequest } from '../services/chat/workspaceMappingService.js';
 import * as entitlementService from '../modules/plans/entitlementService.js';
-import { buildFlowTaskAccessSnapshot } from '../services/chat/flowTaskAccessService.js';
+import { resolveFlowTaskAccessSnapshot } from '../services/chat/flowTaskAccessService.js';
 
 /**
  * @desc    Get current chat integration status for the active workspace
@@ -223,6 +223,15 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
   }
 
   // Generate a short-lived JWT (5 minutes) with user identity
+  const flowTaskAccess = await resolveFlowTaskAccessSnapshot(
+    req.user._id || req.user.id,
+    workspaceId,
+    req.user,
+  );
+  if (!flowTaskAccess.role) {
+    return next(new ErrorResponse('Unable to resolve your role for this workspace.', 403));
+  }
+
   const payload = {
     id: req.user._id || req.user.id,
     email: req.user.email,
@@ -236,7 +245,7 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     // req.user was overlaid from the active FlowTask WorkspaceMembership by
     // protect(). Keep this scoped snapshot inside the signed redirect token so
     // ChatApp never reuses a role/dept from this person's other workspaces.
-    flowTaskAccess: buildFlowTaskAccessSnapshot(req.user),
+    flowTaskAccess,
     source: 'flowtask',
   };
 
