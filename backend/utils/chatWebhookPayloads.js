@@ -141,6 +141,7 @@ export function buildProjectCreatedPayload(board, actor) {
     description: board.description || '',
     department: board.department?.toString() || null,
     departmentName: board.department?.name || null,
+    team: board.team?.toString() || null,
     owner: board.owner?.toString(),
     members: (board.members || []).map((m) => (m._id || m).toString()),
     sourceVisibility: board.visibility || 'public',
@@ -163,6 +164,7 @@ export function buildProjectCreatedPayload(board, actor) {
       department: projectData.departmentName
         ? { _id: projectData.department, name: projectData.departmentName }
         : projectData.department,
+      team: projectData.team,
       owner: projectData.owner,
       members: projectData.members,
       visibility: projectData.visibility,
@@ -187,6 +189,7 @@ export function buildProjectMembershipPayload(snapshot, actor, reason = 'reconci
       title: snapshot.project.name,
       description: snapshot.project.description,
       department: snapshot.project.department,
+      team: snapshot.project.team || null,
       owner: snapshot.project.owner,
       visibility: 'private',
       sourceVisibility: snapshot.project.sourceVisibility,
@@ -204,16 +207,39 @@ export function buildProjectMembershipPayload(snapshot, actor, reason = 'reconci
 export function buildProjectUpdatedPayload(board, changes, actor) {
   const workspaceId = resolveWorkspaceId(board);
   const projectId = board._id?.toString();
+  const departmentId = toId(board.department);
+  const departmentName = typeof board.department === 'object'
+    ? board.department?.name || null
+    : null;
+  const teamId = toId(board.team);
+  const sourceVisibility = board.visibility || 'public';
+  const normalizedChanges = changes?.changes || changes || {};
   return {
     workspaceId,
     project: {
       id: projectId,
       name: board.name,
-      department: board.department?.toString() || null,
+      description: board.description || '',
+      department: departmentId,
+      departmentName,
+      team: teamId,
+      sourceVisibility,
+      isArchived: !!board.isArchived,
     },
-    board: { _id: projectId, title: board.name, name: board.name },
+    board: {
+      _id: projectId,
+      title: board.name,
+      name: board.name,
+      description: board.description || '',
+      department: departmentName
+        ? { _id: departmentId, name: departmentName }
+        : departmentId,
+      team: teamId,
+      sourceVisibility,
+      isArchived: !!board.isArchived,
+    },
     userId: actor ? (actor._id || actor.id)?.toString() : null,
-    changes: changes || {},
+    changes: normalizedChanges,
     actor: buildActor(actor),
   };
 }
@@ -653,7 +679,7 @@ export function buildTimeEntryPayload(arg1, arg2, arg3, arg4) {
 // caller to thread through the real request/workspace-context workspaceId
 // explicitly rather than reading it off the entity.
 
-export function buildUserPayload(user, event, workspaceId) {
+export function buildUserPayload(user, event, workspaceId, workspaceAccess = null) {
   if (!workspaceId) {
     throw new Error('buildUserPayload: workspaceId is required (User has no workspaceId field of its own).');
   }
@@ -663,21 +689,22 @@ export function buildUserPayload(user, event, workspaceId) {
       id: (user._id || user.id)?.toString(),
       name: user.name || '',
       email: user.email || '',
-      role: user.role || 'employee',
-      department: Array.isArray(user.department)
+      role: workspaceAccess?.role || user.role || 'employee',
+      department: workspaceAccess?.departmentIds || (Array.isArray(user.department)
         ? user.department.map((d) => (d._id || d).toString())
         : user.department
           ? [user.department.toString()]
-          : [],
+          : []),
       avatar: user.avatar || null,
       isActive: user.isActive !== false,
       isVerified: user.isVerified !== false,
     },
+    access: workspaceAccess,
     event,
   };
 }
 
-export function buildUserUpdatedPayload(user, changes, actor, workspaceId) {
+export function buildUserUpdatedPayload(user, changes, actor, workspaceId, workspaceAccess = null) {
   if (!workspaceId) {
     throw new Error('buildUserUpdatedPayload: workspaceId is required (User has no workspaceId field of its own).');
   }
@@ -688,16 +715,17 @@ export function buildUserUpdatedPayload(user, changes, actor, workspaceId) {
       id: (user._id || user.id)?.toString(),
       name: user.name || '',
       email: user.email || '',
-      role: user.role || 'employee',
-      department: Array.isArray(user.department)
+      role: workspaceAccess?.role || user.role || 'employee',
+      department: workspaceAccess?.departmentIds || (Array.isArray(user.department)
         ? user.department.map((d) => (d._id || d).toString())
         : user.department
           ? [user.department.toString()]
-          : [],
+          : []),
       avatar: user.avatar || null,
       isActive: user.isActive !== false,
       isVerified: user.isVerified !== false,
     },
+    access: workspaceAccess,
     changes: changes || {},
     actor: buildActor(actor),
   };

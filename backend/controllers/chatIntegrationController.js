@@ -10,6 +10,7 @@ import { getProjectMembershipSnapshot } from '../services/chat/projectMembership
 import chatHooks from '../utils/chatHooks.js';
 import { resolveWorkspaceIdFromRequest } from '../services/chat/workspaceMappingService.js';
 import * as entitlementService from '../modules/plans/entitlementService.js';
+import { buildFlowTaskAccessSnapshot } from '../services/chat/flowTaskAccessService.js';
 
 /**
  * @desc    Get current chat integration status for the active workspace
@@ -232,6 +233,10 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     workspaceName,
     workspaceSlug,
     plan: planSlug,
+    // req.user was overlaid from the active FlowTask WorkspaceMembership by
+    // protect(). Keep this scoped snapshot inside the signed redirect token so
+    // ChatApp never reuses a role/dept from this person's other workspaces.
+    flowTaskAccess: buildFlowTaskAccessSnapshot(req.user),
     source: 'flowtask',
   };
 
@@ -267,6 +272,7 @@ export const triggerSync = asyncHandler(async (req, res, next) => {
   // will orchestrate the actual sync using its sync.service.js
   let dispatchedProjects = 0;
   const cursor = Board.find({
+    workspaceId,
     visibility: 'public',
     isArchived: { $ne: true },
     isDeleted: { $ne: true },

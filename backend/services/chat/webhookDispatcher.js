@@ -200,7 +200,9 @@ async function dispatch(eventName, payload) {
  * @returns {boolean}
  */
 function isEnabled() {
-  return CHAT_ENABLED && !!CHAT_WEBHOOK_URL && !!WEBHOOK_SECRET;
+  // Hooks must always reach dispatch: it resolves the exact workspace's
+  // connection setting and safely no-ops when that workspace is disabled.
+  return true;
 }
 
 /**

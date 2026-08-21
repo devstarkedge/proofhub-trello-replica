@@ -45,6 +45,7 @@ import {
   buildWorkspacePlanChangedPayload,
 } from './chatWebhookPayloads.js';
 import { getProjectMembershipSnapshot } from '../services/chat/projectMembershipService.js';
+import { resolveFlowTaskAccessSnapshot } from '../services/chat/flowTaskAccessService.js';
 
 // ─── Event Constants (must match ChatApp's FLOWTASK_EVENTS) ──────────────────
 const EVENTS = {
@@ -495,7 +496,8 @@ export const chatHooks = {
    */
   async onUserRegistered(user, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserPayload(user, 'USER_REGISTERED', workspaceId);
+    const access = await resolveFlowTaskAccessSnapshot(user._id || user.id, workspaceId, user);
+    const payload = buildUserPayload(user, 'USER_REGISTERED', workspaceId, access);
     await webhookDispatcher.dispatch(EVENTS.USER_REGISTERED, payload);
   },
 
@@ -506,7 +508,8 @@ export const chatHooks = {
    */
   async onUserVerified(user, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserPayload(user, 'USER_VERIFIED', workspaceId);
+    const access = await resolveFlowTaskAccessSnapshot(user._id || user.id, workspaceId, user);
+    const payload = buildUserPayload(user, 'USER_VERIFIED', workspaceId, access);
     await webhookDispatcher.dispatch(EVENTS.USER_VERIFIED, payload);
   },
 
@@ -517,7 +520,8 @@ export const chatHooks = {
    */
   async onUserCreated(user, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserPayload(user, 'USER_CREATED', workspaceId);
+    const access = await resolveFlowTaskAccessSnapshot(user._id || user.id, workspaceId, user);
+    const payload = buildUserPayload(user, 'USER_CREATED', workspaceId, access);
     await webhookDispatcher.dispatch(EVENTS.USER_CREATED, payload);
   },
 
@@ -530,7 +534,8 @@ export const chatHooks = {
    */
   async onUserUpdated(user, changes, actor, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserUpdatedPayload(user, changes, actor, workspaceId);
+    const access = await resolveFlowTaskAccessSnapshot(user._id || user.id, workspaceId, user);
+    const payload = buildUserUpdatedPayload(user, changes, actor, workspaceId, access);
     await webhookDispatcher.dispatch(EVENTS.USER_UPDATED, payload);
   },
 
@@ -541,7 +546,8 @@ export const chatHooks = {
    */
   async onUserDeactivated(user, workspaceId) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildUserPayload(user, 'USER_DEACTIVATED', workspaceId);
+    const access = await resolveFlowTaskAccessSnapshot(user._id || user.id, workspaceId, user);
+    const payload = buildUserPayload(user, 'USER_DEACTIVATED', workspaceId, access);
     await webhookDispatcher.dispatch(EVENTS.USER_DEACTIVATED, payload);
   },
 
