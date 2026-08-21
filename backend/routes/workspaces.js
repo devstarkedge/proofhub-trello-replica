@@ -18,6 +18,7 @@ import {
   removeWorkspaceIcon,
   getWorkspaceSetupStatus
 } from '../controllers/workspaceController.js';
+import { getWorkspacePlan, upgradeToPro, downgradeToFree } from '../controllers/workspacePlanController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
@@ -73,6 +74,18 @@ router.patch('/:id/owner', [
 ], transferWorkspaceOwnership);
 
 router.get('/:id/setup-status', getWorkspaceSetupStatus);
+
+router.get('/:id/plan', getWorkspacePlan);
+router.post('/:id/plan/upgrade-to-pro', rateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 5,
+  message: 'Too many plan-change attempts — please slow down'
+}), upgradeToPro);
+router.post('/:id/plan/downgrade-to-free', rateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 5,
+  message: 'Too many plan-change attempts — please slow down'
+}), downgradeToFree);
 // POST /:id/invite (bulk, admin-only, hardcoded role check) was retired —
 // bulk email-only invites now go through the centralized Invite Member
 // system's `bulk_simple` method (routes/workspaceMembers.js), which the

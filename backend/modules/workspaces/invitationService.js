@@ -8,6 +8,7 @@ import Role from '../../models/Role.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { createOrRestoreMembership } from './membershipCreation.js';
 import { createJoinRequestRow, notifyAndAuditJoinRequestSubmitted } from './joinRequestService.js';
+import * as entitlementService from '../plans/entitlementService.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import * as workspaceContext from './workspaceContext.js';
 import notificationService from '../../utils/notificationService.js';
@@ -165,6 +166,10 @@ export async function acceptInvitation(invitationId, userId) {
         );
       }
 
+      // Race-safe plan/member-limit check — see entitlementService.js's doc
+      // comment for why this must run inside this same transaction.
+      await entitlementService.assertCanAddMembers(claimed.workspace, { session });
+
       ({ outcome, membership } = await createOrRestoreMembership({
         workspaceId: claimed.workspace,
         userId,
@@ -175,6 +180,16 @@ export async function acceptInvitation(invitationId, userId) {
         session
       }));
     });
+  } catch (err) {
+    // The transaction (including the invitation-claim write) has already
+    // rolled back at this point, so nothing durable was left half-done —
+    // safe to fire the idempotent limit-reached notification here, using
+    // the in-memory `claimed` reference (rollback only undoes DB writes,
+    // not local JS state) rather than re-deriving the workspace.
+    if (claimed) {
+      entitlementService.notifyFreeLimitReachedIfNeeded(claimed.workspace, err).catch(() => {});
+    }
+    throw err;
   } finally {
     await session.endSession();
   }

@@ -133,6 +133,14 @@ const config = {
     password: process.env.ADMIN_PASSWORD || 'Admin@1234',
   },
 
+  // Sales / Enterprise inquiry recipient — "configured, not hardcoded" per
+  // the Enterprise Contact Sales flow. Falls back to ADMIN_EMAIL rather than
+  // a second hardcoded address so a deployment that hasn't set SALES_EMAIL
+  // yet still routes inquiries somewhere a human reads.
+  sales: {
+    email: process.env.SALES_EMAIL || process.env.ADMIN_EMAIL || 'dev@starkedge.com',
+  },
+
   // Rate Limiting
   rateLimit: {
     global: {

@@ -177,21 +177,21 @@ export const seedPlans = async () => {
     const plans = [
       {
         name: 'Free', slug: 'free', description: 'For small teams getting started',
-        memberLimit: 5, storageLimitBytes: 1 * 1024 * 1024 * 1024, projectLimit: 3,
+        memberLimit: 10, storageLimitBytes: 1 * 1024 * 1024 * 1024, projectLimit: 3,
         priceCents: 0, isDefault: true, sortOrder: 0
       },
       {
-        name: 'Pro', slug: 'pro', description: 'For growing teams',
-        memberLimit: 25, storageLimitBytes: 25 * 1024 * 1024 * 1024, projectLimit: 25,
+        name: 'Pro', slug: 'pro', description: 'For growing teams — includes ChatApp',
+        memberLimit: 20, storageLimitBytes: 25 * 1024 * 1024 * 1024, projectLimit: 25,
         priceCents: 1900, sortOrder: 1
       },
+      // 'Business' (100 members, $49) was retired in favor of a flat
+      // Free/Pro/Enterprise catalog — see scripts/migratePlanCatalogV2.js,
+      // which reassigns any workspace still on it to Enterprise and marks
+      // this slug inactive rather than deleting the row (preserves audit
+      // history, same precedent as Legacy below).
       {
-        name: 'Business', slug: 'business', description: 'For scaling organizations',
-        memberLimit: 100, storageLimitBytes: 100 * 1024 * 1024 * 1024, projectLimit: null,
-        priceCents: 4900, sortOrder: 2
-      },
-      {
-        name: 'Enterprise', slug: 'enterprise', description: 'Unlimited scale with custom terms',
+        name: 'Enterprise', slug: 'enterprise', description: 'Unlimited scale with custom terms — Contact Sales only',
         memberLimit: null, storageLimitBytes: null, projectLimit: null,
         priceCents: 0, isCustomPricing: true, sortOrder: 3
       },

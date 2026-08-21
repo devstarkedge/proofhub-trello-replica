@@ -50,6 +50,7 @@ import NoWorkspacePage from "./pages/NoWorkspacePage";
 import InvitePage from "./pages/InvitePage";
 import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
 import CreateWorkspacePublicPage from './pages/CreateWorkspacePublicPage';
+import ContactSalesPage from './pages/ContactSalesPage';
 
 // PM Sheet Pages
 import PMSheetDashboard from "./pages/PMSheetDashboard";
@@ -90,6 +91,7 @@ function App() {
               <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/create-workspace" element={<CreateWorkspacePublicPage />} />
+              <Route path="/contact-sales" element={<ContactSalesPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
               <Route path="/verify-pending" element={<VerifyPending />} />

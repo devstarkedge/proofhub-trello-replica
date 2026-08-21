@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import WorkspaceJoinRequest from '../../models/WorkspaceJoinRequest.js';
 import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
 import User from '../../models/User.js';
@@ -9,6 +10,7 @@ import { recordAuditLog } from '../permissions/auditLogService.js';
 import { listWorkspaceMembersWithPermission } from './workspacePermissions.js';
 import * as workspaceContext from './workspaceContext.js';
 import { createOrRestoreMembership } from './membershipCreation.js';
+import * as entitlementService from '../plans/entitlementService.js';
 import { resolveAssignableRole } from './roleTypeGuard.js';
 import { addUserToDepartmentRoster } from './departmentRosterSync.js';
 import notificationService from '../../utils/notificationService.js';
@@ -150,14 +152,31 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverUse
   const sourceInvitation = await WorkspaceInvitation.findById(joinRequest.sourceInvitation)
     .select('invitedBy').lean();
 
-  const { membership } = await createOrRestoreMembership({
-    workspaceId,
-    userId: joinRequest.user,
-    role: roleDoc.slug,
-    roleId: roleDoc._id,
-    invitedBy: sourceInvitation?.invitedBy || approverId,
-    department
-  });
+  // Capacity-check + membership creation run inside a transaction together
+  // (see entitlementService.js's doc comment for why the check itself must
+  // be transactional) — joinRequest.save()/email/audit below stay outside,
+  // after commit, unchanged from before this check existed.
+  const session = await mongoose.startSession();
+  let membership;
+  try {
+    await session.withTransaction(async () => {
+      await entitlementService.assertCanAddMembers(workspaceId, { session });
+      ({ membership } = await createOrRestoreMembership({
+        workspaceId,
+        userId: joinRequest.user,
+        role: roleDoc.slug,
+        roleId: roleDoc._id,
+        invitedBy: sourceInvitation?.invitedBy || approverId,
+        department,
+        session
+      }));
+    });
+  } catch (err) {
+    entitlementService.notifyFreeLimitReachedIfNeeded(workspaceId, err).catch(() => {});
+    throw err;
+  } finally {
+    await session.endSession();
+  }
 
   if (department[0]) {
     await addUserToDepartmentRoster(workspaceId, department[0], joinRequest.user, roleDoc.slug);

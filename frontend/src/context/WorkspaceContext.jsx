@@ -282,6 +282,31 @@ export const WorkspaceProvider = ({ children }) => {
     return () => window.removeEventListener('socket-workspace-membership-added', handleMembershipAdded);
   }, [loadWorkspaces]);
 
+  /**
+   * Patches plan/entitlement fields in place — used both for the actor's
+   * own optimistic update right after a self-serve upgrade/downgrade call,
+   * and for the workspace-plan-updated socket event (see
+   * entitlementService.js#notifyWorkspacePlanUpdated on the backend) so
+   * every other tab/member sees Open Chat become available without a
+   * logout/login.
+   */
+  const applyWorkspacePlan = useCallback((workspaceId, planFields) => {
+    setWorkspaces((prev) => prev.map((ws) => (ws._id === workspaceId ? { ...ws, ...planFields } : ws)));
+    setCurrentWorkspace((prev) => (prev?._id === workspaceId ? { ...prev, ...planFields } : prev));
+  }, []);
+
+  // Live plan sync — fires on self-serve upgrade/downgrade and on a Super
+  // Admin billing change, from any tab/session.
+  useEffect(() => {
+    const handlePlanUpdated = (event) => {
+      const { workspaceId, planSlug, planName, memberLimit, chatEnabled } = event.detail || {};
+      if (!workspaceId) return;
+      applyWorkspacePlan(workspaceId, { planSlug, planName, memberLimit, chatEnabled });
+    };
+    window.addEventListener('socket-workspace-plan-updated', handlePlanUpdated);
+    return () => window.removeEventListener('socket-workspace-plan-updated', handlePlanUpdated);
+  }, [applyWorkspacePlan]);
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -298,6 +323,7 @@ export const WorkspaceProvider = ({ children }) => {
         transferOwnership,
         uploadWorkspaceIcon,
         removeWorkspaceIcon,
+        applyWorkspacePlan,
       }}
     >
       {children}

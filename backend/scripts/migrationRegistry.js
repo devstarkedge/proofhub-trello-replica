@@ -25,6 +25,7 @@ import { runBillingTypeOptionsMigration } from './migrateBillingTypeOptions.js';
 import { runCategoryIndexMigration } from './migrateCategoryIndex.js';
 import { runWorkspaceStatusMigration } from './migrateWorkspaceStatusField.js';
 import { runWorkspaceSubscriptionsMigration } from './migrateWorkspaceSubscriptions.js';
+import { runPlanCatalogV2Migration } from './migratePlanCatalogV2.js';
 
 // ─── Migration definitions ──────────────────────────────────────────────────
 // Order matters: migrations run in the order listed here.
@@ -70,6 +71,12 @@ const MIGRATIONS = [
     version: '20260818',
     description: 'Create a Legacy-plan WorkspaceSubscription for every pre-existing workspace (Super Admin Dashboard)',
     run: runWorkspaceSubscriptionsMigration,
+  },
+  {
+    name: 'plan_catalog_v2_remove_business',
+    version: '20260820',
+    description: 'Retire the Business plan (workspaces reassigned to Enterprise); set Free memberLimit=10, Pro memberLimit=20',
+    run: runPlanCatalogV2Migration,
   },
 ];
 

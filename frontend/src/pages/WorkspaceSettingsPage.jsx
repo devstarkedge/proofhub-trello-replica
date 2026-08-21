@@ -13,6 +13,7 @@ import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
 import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
+import WorkspacePlanSettings from '../components/Workspace/WorkspacePlanSettings';
 import PermissionGate from '../components/PermissionGate';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
@@ -300,6 +301,14 @@ const WorkspaceSettingsPage = () => {
         </motion.div>
 
         <WorkspaceSetupBanner variant="full" />
+
+        {/* Plan & Billing is sensitive plan-management data — server-side
+            owner-only (workspacePlanController.js returns 403 for anyone
+            else), and this render gate means a non-owner never even issues
+            the request. Don't rely on this alone; the 403 is the real gate. */}
+        {isOwner && (
+          <WorkspacePlanSettings workspaceId={currentWorkspace._id} isDarkMode={isDarkMode} />
+        )}
 
         {/* Members */}
         <motion.div

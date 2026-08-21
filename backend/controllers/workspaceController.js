@@ -3,6 +3,7 @@ import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import Workspace from '../models/Workspace.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
+import WorkspaceSubscription from '../models/WorkspaceSubscription.js';
 import Department from '../models/Department.js';
 import Board from '../models/Board.js';
 import Role from '../models/Role.js';
@@ -10,9 +11,10 @@ import User from '../models/User.js';
 import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
-import { createDefaultSubscription } from '../modules/superAdmin/subscriptionService.js';
+import { createSubscriptionForNewWorkspace } from '../modules/superAdmin/subscriptionService.js';
 import workspaceChatSyncService from '../services/chat/workspaceChatSyncService.js';
 import chatHooks from '../utils/chatHooks.js';
+import * as entitlementService from '../modules/plans/entitlementService.js';
 
 import { uploadWorkspaceIconToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 import { createWorkspaceCore } from '../modules/workspaces/workspaceCreation.js';
@@ -30,17 +32,33 @@ export const getMyWorkspaces = asyncHandler(async (req, res) => {
     .populate('workspace', 'name slug isActive icon type')
     .lean();
 
-  const workspaces = memberships
-    .filter((m) => m.workspace && m.workspace.isActive)
-    .map((m) => ({
+  const activeMemberships = memberships.filter((m) => m.workspace && m.workspace.isActive);
+
+  // Batch-fetch plan data for every workspace in the switcher in one query
+  // — the frontend needs planSlug/chatEnabled per workspace to hide/show
+  // Open Chat without a round trip per workspace (server-side gating on the
+  // actual Open Chat request is still the authority — this is UX only).
+  const subscriptions = await WorkspaceSubscription.find({
+    workspace: { $in: activeMemberships.map((m) => m.workspace._id) }
+  }).populate('plan', 'slug memberLimit').lean();
+  const planByWorkspaceId = new Map(subscriptions.map((s) => [String(s.workspace), s.plan]));
+
+  const workspaces = activeMemberships.map((m) => {
+    const plan = planByWorkspaceId.get(String(m.workspace._id));
+    const planSlug = plan?.slug || 'free';
+    return {
       _id: m.workspace._id,
       name: m.workspace.name,
       slug: m.workspace.slug,
       type: m.workspace.type,
       role: m.role,
       icon: m.workspace.icon || null,
-      isActive: String(m.workspace._id) === String(req.workspaceId)
-    }));
+      isActive: String(m.workspace._id) === String(req.workspaceId),
+      planSlug,
+      memberLimit: plan?.memberLimit ?? null,
+      chatEnabled: planSlug !== 'free'
+    };
+  });
 
   res.status(200).json({ success: true, data: workspaces });
 });
@@ -55,7 +73,7 @@ export const getMyWorkspaces = asyncHandler(async (req, res) => {
 // @route   POST /api/workspaces
 // @access  Private
 export const createWorkspace = asyncHandler(async (req, res, next) => {
-  const { name, type, industry, companySize } = req.body;
+  const { name, type, industry, companySize, plan } = req.body;
   const departmentName = req.body.department?.name;
 
   if (!name || !String(name).trim()) {
@@ -64,6 +82,18 @@ export const createWorkspace = asyncHandler(async (req, res, next) => {
   if (!isValidWorkspaceType(type)) {
     return next(new ErrorResponse('A valid workspace type is required', 400));
   }
+
+  // Fast, friendly pre-transaction check — "1 user can own only 1
+  // workspace". createWorkspaceCore rechecks this again inside the
+  // transaction itself to close the double-submit race window; this early
+  // check just avoids making a user wait through slug validation etc. only
+  // to be rejected at the very end.
+  await entitlementService.assertOwnerCanCreateWorkspace(req.user.id);
+
+  // Enterprise is never created through this flow — the frontend routes an
+  // Enterprise selection to the Contact Sales page instead of calling this
+  // endpoint at all, so only Free/Pro are ever valid here.
+  const requestedPlanSlug = plan === 'pro' ? 'pro' : 'free';
 
   const rules = WORKSPACE_TYPE_RULES[type];
 
@@ -114,14 +144,20 @@ export const createWorkspace = asyncHandler(async (req, res, next) => {
   // into pointing at a workspace that doesn't exist.
   invalidateAuthCache(req.user.id);
 
-  // Best-effort, non-blocking — a Super Admin Dashboard billing record must
-  // never be able to fail workspace creation itself. If this doesn't run
-  // (e.g. the Free plan isn't seeded yet on a fresh deploy), the workspace
-  // is simply picked up by the idempotent migrateWorkspaceSubscriptions.js
-  // backfill later.
-  createDefaultSubscription(workspace._id).catch((err) => {
-    console.error('Failed to create default subscription for new workspace:', { workspaceId: workspace._id, error: err.message });
-  });
+  // Must be AWAITED (not fire-and-forget like the old createDefaultSubscription
+  // call this replaces) — the eager ChatApp sync right below reads this
+  // workspace's plan to tell ChatApp what to provision. Firing it
+  // unawaited let the sync race ahead of the subscription actually being
+  // persisted, so a brand-new Pro workspace could get eagerly synced to
+  // ChatApp as (incorrectly) Free. A Super Admin Dashboard billing record
+  // must still never be able to fail workspace creation itself — errors
+  // here are caught, not propagated — the workspace is simply picked up by
+  // the idempotent migrateWorkspaceSubscriptions.js backfill later.
+  try {
+    await createSubscriptionForNewWorkspace(workspace._id, { planSlug: requestedPlanSlug });
+  } catch (err) {
+    console.error('Failed to create subscription for new workspace:', { workspaceId: workspace._id, error: err.message });
+  }
 
   // Eagerly provision the ChatApp counterpart now, rather than waiting for
   // the owner to click "Open Chat" — see workspaceChatSyncService.js. Never
@@ -238,9 +274,11 @@ export const getWorkspace = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Workspace not found', 404));
   }
 
+  const { planSlug, planName, memberLimit, chatEnabled } = await entitlementService.getEntitlements(req.params.id);
+
   res.status(200).json({
     success: true,
-    data: { ...membership.workspace, role: membership.role }
+    data: { ...membership.workspace, role: membership.role, planSlug, planName, memberLimit, chatEnabled }
   });
 });
 
@@ -580,6 +618,7 @@ export const removeWorkspaceMember = asyncHandler(async (req, res, next) => {
   target.status = 'removed';
   await target.save();
   invalidateAuthCache(req.params.userId);
+  entitlementService.clearLimitNotificationIfUnderLimit(req.params.id).catch(() => {});
 
   // If the removed user's active workspace pointed here, fall back to
   // another membership they hold so their next request doesn't 403.
@@ -638,6 +677,7 @@ export const leaveWorkspace = asyncHandler(async (req, res, next) => {
   membership.status = 'removed';
   await membership.save();
   invalidateAuthCache(req.user.id);
+  entitlementService.clearLimitNotificationIfUnderLimit(req.params.id).catch(() => {});
 
   const user = await User.findById(req.user.id).select('lastActiveWorkspace').lean();
   if (user && String(user.lastActiveWorkspace) === String(req.params.id)) {

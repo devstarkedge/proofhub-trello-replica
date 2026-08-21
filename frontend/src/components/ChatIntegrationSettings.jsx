@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import {
   MessageSquare, Link2, Unlink, CheckCircle, XCircle,
-  Loader2, RefreshCw, Send, Shield, ExternalLink,
+  Loader2, RefreshCw, Send, Shield, ExternalLink, Lock, Sparkles,
 } from 'lucide-react';
 import chatIntegrationService from '../services/chatIntegrationService';
+import workspacePlanService from '../services/workspacePlanService';
+import WorkspaceContext from '../context/WorkspaceContext';
 
 const ChatIntegrationSettings = ({ userRole }) => {
   const [loading, setLoading] = useState(true);
@@ -15,8 +17,17 @@ const ChatIntegrationSettings = ({ userRole }) => {
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
 
   const isAdmin = userRole === 'admin' || userRole === 'Admin';
+
+  // Server-side gating (chatIntegrationController.js#getChatRedirectUrl) is
+  // the actual authority — this is purely UX so a Free workspace never even
+  // sees an Open Chat button to click. Defaults to enabled while the
+  // workspace hasn't reported plan data yet (older cached workspace rows) —
+  // the server-side check still catches the false-positive case.
+  const { currentWorkspace, applyWorkspacePlan } = useContext(WorkspaceContext) || {};
+  const chatEnabled = currentWorkspace?.chatEnabled !== false;
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -105,6 +116,47 @@ const ChatIntegrationSettings = ({ userRole }) => {
     }
   };
 
+  // Self-serve, instant — no payment gateway exists, so this is a direct
+  // plan switch (see workspacePlanController.js#upgradeToPro). Optimistic
+  // local update in addition to the realtime workspace-plan-updated socket
+  // event, so this panel reflects the change immediately even if the
+  // socket round-trip lags.
+  const handleUpgradeToPro = async () => {
+    if (!currentWorkspace?._id) return;
+    try {
+      setUpgrading(true);
+      await workspacePlanService.upgradeToPro(currentWorkspace._id);
+      applyWorkspacePlan?.(currentWorkspace._id, { planSlug: 'pro', chatEnabled: true });
+      toast.success('Upgraded to Pro — ChatApp is now unlocked!');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to upgrade');
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const UpgradeToUnlockChat = () => (
+    <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50 p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <Lock className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+        <div>
+          <p className="text-sm font-medium text-blue-900">ChatApp isn't included in the Free plan</p>
+          <p className="text-sm text-blue-600 mt-0.5">Upgrade to Pro to unlock team chat for everyone in this workspace.</p>
+        </div>
+      </div>
+      {isAdmin && (
+        <button
+          onClick={handleUpgradeToPro}
+          disabled={upgrading}
+          className="flex items-center justify-center gap-2 w-full px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-lg hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-colors"
+        >
+          {upgrading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          {upgrading ? 'Upgrading...' : 'Upgrade to Pro'}
+        </button>
+      )}
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -168,19 +220,25 @@ const ChatIntegrationSettings = ({ userRole }) => {
               </div>
             </div>
 
-            {/* Open Chat — Primary Action */}
-            <button
-              onClick={handleOpenChat}
-              disabled={openingChat}
-              className="flex items-center justify-center gap-2 w-full px-6 py-3 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {openingChat ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ExternalLink className="w-4 h-4" />
-              )}
-              Open Chat
-            </button>
+            {/* Open Chat — Primary Action. Hidden on Free (spec: "Open Chat
+                button must not appear for Free workspaces") — the server
+                still rejects a direct API call regardless of this check. */}
+            {chatEnabled ? (
+              <button
+                onClick={handleOpenChat}
+                disabled={openingChat}
+                className="flex items-center justify-center gap-2 w-full px-6 py-3 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {openingChat ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ExternalLink className="w-4 h-4" />
+                )}
+                Open Chat
+              </button>
+            ) : (
+              <UpgradeToUnlockChat />
+            )}
 
             {/* Admin-only: Test, Sync, Disconnect */}
             {isAdmin && (
@@ -221,19 +279,23 @@ const ChatIntegrationSettings = ({ userRole }) => {
             exit={{ opacity: 0, y: -10 }}
             className="space-y-4"
           >
-            {/* Open Chat — available even without webhook connection */}
-            <button
-              onClick={handleOpenChat}
-              disabled={openingChat}
-              className="flex items-center justify-center gap-2 w-full px-6 py-3 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {openingChat ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ExternalLink className="w-4 h-4" />
-              )}
-              Open Chat
-            </button>
+            {/* Open Chat — available even without webhook connection, hidden on Free */}
+            {chatEnabled ? (
+              <button
+                onClick={handleOpenChat}
+                disabled={openingChat}
+                className="flex items-center justify-center gap-2 w-full px-6 py-3 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {openingChat ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ExternalLink className="w-4 h-4" />
+                )}
+                Open Chat
+              </button>
+            ) : (
+              <UpgradeToUnlockChat />
+            )}
 
             {isAdmin && (
               <>

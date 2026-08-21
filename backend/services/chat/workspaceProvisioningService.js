@@ -40,6 +40,26 @@ export async function provisionFromChatApp({ ownerId, chatWorkspaceId, chatWorks
     return { flowTaskWorkspaceId: existing.flowTaskWorkspaceId.toString(), created: false };
   }
 
+  // "1 user can CREATE only 1 workspace" applies here too — a FlowTask user
+  // who already owns a workspace and then creates a SEPARATE workspace
+  // natively inside ChatApp must not get a second FlowTask workspace out of
+  // it. We deliberately do NOT silently attach the new ChatApp workspace to
+  // their existing FlowTask workspace either — it's a distinct entity with
+  // different members/data, and WorkspaceIntegrationMapping's
+  // flowTaskWorkspaceId is uniquely indexed so the existing workspace may
+  // already be mapped to a different ChatApp workspace. The ChatApp
+  // workspace is left as a standalone `source:'independent'` workspace,
+  // which ChatApp already fully supports — it just never gets a FlowTask
+  // counterpart. There's no reconciliation UI for a user to link it later;
+  // that's a known, accepted gap, not an oversight.
+  const alreadyOwnsWorkspace = await Workspace.findOne({ owner: ownerId }).lean();
+  if (alreadyOwnsWorkspace) {
+    logger.warn('Skipping ChatApp-inbound workspace provisioning — owner already owns a FlowTask workspace', {
+      ownerId, existingWorkspaceId: alreadyOwnsWorkspace._id.toString(), chatWorkspaceId,
+    });
+    return { flowTaskWorkspaceId: null, created: false, skipped: true, reason: 'owner_already_has_workspace' };
+  }
+
   const name = chatWorkspaceName || 'ChatApp Workspace';
   let slug = slugify(chatWorkspaceSlug || chatWorkspaceName || 'chatapp-workspace') || 'chatapp-workspace';
 

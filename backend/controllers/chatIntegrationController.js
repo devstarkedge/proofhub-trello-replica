@@ -9,6 +9,7 @@ import WorkspaceIntegrationMapping from '../models/WorkspaceIntegrationMapping.j
 import { getProjectMembershipSnapshot } from '../services/chat/projectMembershipService.js';
 import chatHooks from '../utils/chatHooks.js';
 import { resolveWorkspaceIdFromRequest } from '../services/chat/workspaceMappingService.js';
+import * as entitlementService from '../modules/plans/entitlementService.js';
 
 /**
  * @desc    Get current chat integration status for the active workspace
@@ -192,6 +193,23 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Chat JWT secret is not configured. Set CHAT_JWT_SECRET in environment.', 400));
   }
 
+  // Server-side plan gate — authenticated + workspace-member is already
+  // guaranteed by `protect` (it's what set req.workspaceId), so this is the
+  // remaining "workspace plan allows chat" check spec item 8 requires
+  // before Open Chat can proceed. Applies even to a direct API call that
+  // skips the frontend's own hidden-button UX entirely.
+  let planSlug = null;
+  if (workspaceId) {
+    const entitlements = await entitlementService.getEntitlements(workspaceId);
+    planSlug = entitlements.planSlug;
+    if (!entitlements.chatEnabled) {
+      return next(new ErrorResponse(
+        "Your Free workspace doesn't include ChatApp. Upgrade to Pro to unlock team chat.",
+        403
+      ));
+    }
+  }
+
   // Workspace name/slug are display-only hints for ChatApp to name a
   // brand-new workspace on first login — not workspace-owned data, safe to
   // query without an ambient workspace context.
@@ -213,6 +231,7 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     workspaceId,
     workspaceName,
     workspaceSlug,
+    plan: planSlug,
     source: 'flowtask',
   };
 

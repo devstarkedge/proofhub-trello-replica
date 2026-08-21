@@ -6,6 +6,9 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
 import * as workspaceContext from './workspaceContext.js';
 import { createDepartmentCore } from './departmentCreation.js';
 
+const ALREADY_OWNS_WORKSPACE_MESSAGE =
+  'You already own a workspace. You can join other workspaces, but each account can create only one workspace.';
+
 /**
  * Shared transactional core for workspace creation — extracted from
  * workspaceController.js#createWorkspace (the human HTTP path, which now
@@ -51,6 +54,19 @@ export async function createWorkspaceCore({ name, slug, type, industry = null, c
     const slugTaken = await Workspace.findOne({ slug }).session(session);
     if (slugTaken) {
       throw new ErrorResponse('This workspace URL is already taken', 409);
+    }
+
+    // In-transaction recheck of "1 user can own only 1 workspace" — every
+    // caller (workspaceController.createWorkspace, the ChatApp-inbound
+    // provisioning path) already does a fast pre-transaction check of its
+    // own for a quick friendly 409, but that check has a TOCTOU race window
+    // against a double-submit. Doing it again here, inside the same
+    // transaction as the actual Workspace.create below, closes that window
+    // for every current and future caller of this shared core uniformly —
+    // the same reason the slug check above is re-verified here too.
+    const alreadyOwnsWorkspace = await Workspace.findOne({ owner: ownerId }).session(session);
+    if (alreadyOwnsWorkspace) {
+      throw new ErrorResponse(ALREADY_OWNS_WORKSPACE_MESSAGE, 409);
     }
 
     const [createdWorkspace] = await Workspace.create([{

@@ -9,7 +9,8 @@
     "dev": "nodemon server.js",
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js --status",
-    "test": "node --test"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -43,6 +44,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "mongodb-memory-server": "^8.16.1",
+    "nodemon": "^3.0.1",
+    "vitest": "^3.2.7"
   }
 }

@@ -333,6 +333,14 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-workspace-membership-added', { detail: data }));
     });
 
+    // Fired on a self-serve upgrade/downgrade or a Super Admin billing
+    // change (entitlementService.js#notifyWorkspacePlanUpdated) — lets
+    // Open Chat become available/hidden live, no logout/login required.
+    this.socket.on('workspace-plan-updated', (data) => {
+      console.log('Workspace plan updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-workspace-plan-updated', { detail: data }));
+    });
+
     // Finance page events - for real-time finance updates
     this.socket.on('finance:page:pending', (data) => {
       console.log('Finance page pending approval:', data);

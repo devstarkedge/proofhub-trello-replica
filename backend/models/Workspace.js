@@ -56,6 +56,19 @@ const workspaceSchema = new mongoose.Schema({
       connectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     },
   },
+  // Pure concurrency fence for entitlementService.js#assertCanAddMembers —
+  // incremented once per membership-add transaction purely to force a
+  // MongoDB write-conflict between two concurrent membership-add
+  // transactions on the SAME workspace (snapshot isolation alone doesn't
+  // catch this: two adds that insert two *different* WorkspaceMembership
+  // documents never naturally collide). Never read for its numeric value.
+  membershipOpLock: { type: Number, default: 0 },
+  // Idempotency flag for the Free-plan member-limit-reached owner email
+  // (entitlementService.js#notifyFreeLimitReachedIfNeeded) — set the first
+  // time a rejection fires the email, cleared on any plan change or once
+  // the active member count drops back under the plan's limit, so the next
+  // genuine limit-hit can notify again without spamming in between.
+  planLimitNotifiedAt: { type: Date, default: null },
   // Custom branding (icon today; the shape leaves room for future
   // additions — theme colors, favicon, banner, login branding — without
   // another migration, per the workspace branding roadmap).

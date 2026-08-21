@@ -1,6 +1,8 @@
+import mongoose from 'mongoose';
 import User from '../../models/User.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { invalidateAuthCache } from '../../middleware/authMiddleware.js';
+import * as entitlementService from '../plans/entitlementService.js';
 
 /**
  * The overlay in `protect` (backend/middleware/authMiddleware.js) reads
@@ -27,6 +29,27 @@ export async function syncMembershipFromUser(userId, workspaceId) {
 
   const user = await User.findById(userId).lean();
   if (!user) return;
+
+  const alreadyMember = await WorkspaceMembership.exists({ user: userId, workspace: workspaceId });
+  if (!alreadyMember) {
+    // Defensive guard, not a fix for an active gap — this function's only
+    // membership-CREATING call site today (authController.js#register's
+    // `else` branch) is unreachable dead code, since register() always
+    // takes the `if (invitation)` branch instead. Guarding here anyway so a
+    // future reachable call site can't bypass the plan's member limit via
+    // this upsert.
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await entitlementService.assertCanAddMembers(workspaceId, { session });
+      });
+    } catch (err) {
+      entitlementService.notifyFreeLimitReachedIfNeeded(workspaceId, err).catch(() => {});
+      throw err;
+    } finally {
+      await session.endSession();
+    }
+  }
 
   await WorkspaceMembership.findOneAndUpdate(
     { user: userId, workspace: workspaceId },

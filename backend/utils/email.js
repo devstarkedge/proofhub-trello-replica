@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import config from '../config/index.js';
 
 let transporter;
 
@@ -568,5 +569,188 @@ export const sendComingSoonSubscriptionEmail = async (email, feature) => {
     to: email,
     subject: `You're on the list! ✨ ${feature ? '- ' + feature : ''}`,
     html: subscriptionHtml
+  });
+};
+
+// Sent to a Free workspace's owner the first time it hits the 10-member
+// cap — entitlementService.js#notifyFreeLimitReachedIfNeeded guarantees
+// this fires at most once per limit-hit (idempotent via
+// Workspace.planLimitNotifiedAt), so this function itself never needs to
+// worry about being called repeatedly for the same still-over-limit state.
+export const sendFreeLimitReachedEmail = async (owner, { workspaceName, currentCount, limit }) => {
+  const upgradeUrl = `${process.env.FRONTEND_URL}/settings?tab=plan`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${workspaceName} has reached its Free plan member limit</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 15px; color: #ffffff; font-weight: 500; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
+          .stat-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 24px 0; text-align: center; }
+          .stat-value { font-size: 32px; font-weight: 800; color: #d97706; }
+          .stat-label { font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+          .cta-wrapper { text-align: center; margin: 32px 0; }
+          .button { display: inline-block; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #ffffff; padding: 16px 40px; text-decoration: none; border-radius: 12px; font-size: 16px; font-weight: 700; letter-spacing: 0.3px; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>You've reached your member limit</h1>
+            <p>${workspaceName} is on the Free plan</p>
+          </div>
+          <div class="content">
+            <p class="message">Hi <strong>${owner.name}</strong>,</p>
+            <p class="message">
+              Your workspace <strong>${workspaceName}</strong> has reached the Free plan's member limit,
+              so new invitations and additions can't go through until you upgrade or free up a seat.
+            </p>
+            <div class="stat-box">
+              <div class="stat-value">${currentCount} / ${limit}</div>
+              <div class="stat-label">Members on the Free plan</div>
+            </div>
+            <p class="message">
+              Upgrade to Pro to raise your limit to 20 members and unlock ChatApp for your whole team.
+            </p>
+            <div class="cta-wrapper">
+              <a href="${upgradeUrl}" class="button" target="_blank" rel="noopener noreferrer">Upgrade to Pro</a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This email was sent to ${owner.email} because you own this workspace.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: owner.email,
+    subject: `${workspaceName} has reached its Free plan member limit`,
+    html
+  });
+};
+
+// Sent to the configured sales/support address (config.sales.email) when an
+// Enterprise Contact Sales form is submitted — see
+// enterpriseInquiryController.js, which guarantees this fires at most once
+// per inquiry via EnterpriseInquiry's idempotencyKey + status fields.
+export const sendEnterpriseInquirySalesEmail = async (inquiry) => {
+  const submittedAt = new Date(inquiry.createdAt || Date.now()).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const row = (label, value) => `
+    <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #e2e8f0;">
+      <span style="color:#64748b;font-size:14px;">${label}</span>
+      <span style="color:#0f172a;font-size:14px;font-weight:600;text-align:right;max-width:60%;">${value}</span>
+    </div>`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>New Enterprise inquiry from ${inquiry.name}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #0f172a, #1e293b); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 15px; color: #cbd5e1; font-weight: 500; }
+          .content { padding: 40px 30px; }
+          .details { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 20px; margin: 8px 0 24px; }
+          .message-block { background: #f8fafc; border-left: 4px solid #6366f1; padding: 16px; border-radius: 0 8px 8px 0; margin: 20px 0; font-size: 14px; color: #475569; white-space: pre-wrap; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>New Enterprise inquiry</h1>
+            <p>Submitted ${submittedAt}</p>
+          </div>
+          <div class="content">
+            <div class="details">
+              ${row('Name', inquiry.name)}
+              ${row('Email', `<a href="mailto:${inquiry.email}" style="color:#6366f1;">${inquiry.email}</a>`)}
+              ${row('Members in Team', inquiry.membersInTeam)}
+              ${row('Company Type', inquiry.companyType)}
+              ${row('Location', inquiry.location)}
+            </div>
+            ${inquiry.message ? `<p style="font-size:14px;color:#64748b;margin:0 0 6px;font-weight:600;">Requirements / message</p><div class="message-block">${inquiry.message}</div>` : ''}
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. Enterprise Contact Sales submission.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: config.sales.email,
+    subject: `New Enterprise inquiry from ${inquiry.name} (${inquiry.companyType})`,
+    html
+  });
+};
+
+// Polished confirmation sent back to the person who submitted the
+// Enterprise Contact Sales form — see enterpriseInquiryController.js.
+export const sendEnterpriseInquiryConfirmationEmail = async (inquiry) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Thanks for contacting FlowTask Sales</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 15px; color: #ffffff; font-weight: 500; }
+          .content { padding: 40px 30px; }
+          .message { font-size: 16px; color: #475569; margin-bottom: 16px; }
+          .tagline { text-align: center; font-size: 15px; font-weight: 600; color: #6366f1; margin: 24px 0; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Thanks for reaching out!</h1>
+            <p>We've received your Enterprise inquiry</p>
+          </div>
+          <div class="content">
+            <p class="message">Hi <strong>${inquiry.name}</strong>,</p>
+            <p class="message">
+              Thanks for contacting us about the Enterprise plan. Built for teams that need more flexibility,
+              scale, and support — our sales team is available 24/7 to help you find the right setup.
+              We've received your requirements and will get in touch with you shortly.
+            </p>
+            <p class="tagline">Scale without limits. We'll build the right plan with you.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This email was sent to ${inquiry.email}.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmail({
+    to: inquiry.email,
+    subject: 'Thanks for contacting FlowTask Sales — we\'ll be in touch shortly',
+    html
   });
 };

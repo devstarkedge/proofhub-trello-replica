@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import Workspace from '../models/Workspace.js';
@@ -6,6 +7,7 @@ import Department from '../models/Department.js';
 import User from '../models/User.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { createOrRestoreMembership, notifyMembershipAdded } from '../modules/workspaces/membershipCreation.js';
+import * as entitlementService from '../modules/plans/entitlementService.js';
 import {
   createOrRefreshInvitation,
   listInvitations,
@@ -88,15 +90,28 @@ async function inviteMemberDirect(req, res, next, workspace) {
       return next(new ErrorResponse('User already belongs to this workspace.', 400));
     }
 
-    const { outcome, membership } = await createOrRestoreMembership({
-      workspaceId: req.params.id,
-      userId: existingUser._id,
-      role: roleDoc.slug,
-      roleId: roleDoc._id,
-      invitedBy: req.user.id,
-      department: [departmentId],
-      employeeId: employeeId || ''
-    });
+    let outcome, membership;
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await entitlementService.assertCanAddMembers(req.params.id, { session });
+        ({ outcome, membership } = await createOrRestoreMembership({
+          workspaceId: req.params.id,
+          userId: existingUser._id,
+          role: roleDoc.slug,
+          roleId: roleDoc._id,
+          invitedBy: req.user.id,
+          department: [departmentId],
+          employeeId: employeeId || '',
+          session
+        }));
+      });
+    } catch (err) {
+      entitlementService.notifyFreeLimitReachedIfNeeded(req.params.id, err).catch(() => {});
+      return next(err);
+    } finally {
+      await session.endSession();
+    }
 
     await addUserToDepartmentRoster(req.params.id, departmentId, existingUser._id, roleDoc.slug);
     notifyMembershipAdded(existingUser._id, req.params.id).catch((err) => (
@@ -142,15 +157,30 @@ async function inviteMemberDirect(req, res, next, workspace) {
     lastActiveWorkspace: req.params.id
   });
 
-  const { outcome, membership } = await createOrRestoreMembership({
-    workspaceId: req.params.id,
-    userId: newUser._id,
-    role: roleDoc.slug,
-    roleId: roleDoc._id,
-    invitedBy: req.user.id,
-    department: [departmentId],
-    employeeId: employeeId || ''
-  });
+  let outcome, membership;
+  {
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await entitlementService.assertCanAddMembers(req.params.id, { session });
+        ({ outcome, membership } = await createOrRestoreMembership({
+          workspaceId: req.params.id,
+          userId: newUser._id,
+          role: roleDoc.slug,
+          roleId: roleDoc._id,
+          invitedBy: req.user.id,
+          department: [departmentId],
+          employeeId: employeeId || '',
+          session
+        }));
+      });
+    } catch (err) {
+      entitlementService.notifyFreeLimitReachedIfNeeded(req.params.id, err).catch(() => {});
+      return next(err);
+    } finally {
+      await session.endSession();
+    }
+  }
 
   await addUserToDepartmentRoster(req.params.id, departmentId, newUser._id, roleDoc.slug);
   notifyMembershipAdded(newUser._id, req.params.id).catch((err) => (
@@ -330,14 +360,33 @@ async function inviteMemberBulkSimple(req, res, next, workspace) {
         continue;
       }
 
-      const { outcome, membership } = await createOrRestoreMembership({
-        workspaceId: req.params.id,
-        userId: existingUser._id,
-        role: roleDoc.slug,
-        roleId: roleDoc._id,
-        invitedBy: req.user.id,
-        department
-      });
+      let outcome, membership;
+      {
+        const session = await mongoose.startSession();
+        try {
+          await session.withTransaction(async () => {
+            await entitlementService.assertCanAddMembers(req.params.id, { session });
+            ({ outcome, membership } = await createOrRestoreMembership({
+              workspaceId: req.params.id,
+              userId: existingUser._id,
+              role: roleDoc.slug,
+              roleId: roleDoc._id,
+              invitedBy: req.user.id,
+              department,
+              session
+            }));
+          });
+        } catch (err) {
+          entitlementService.notifyFreeLimitReachedIfNeeded(req.params.id, err).catch(() => {});
+          // Report per-email rather than aborting the rest of the batch —
+          // a bulk send of up to 200 emails must not let one over-the-limit
+          // row fail everyone still under it.
+          results.push({ email, outcome: 'limit_reached' });
+          continue;
+        } finally {
+          await session.endSession();
+        }
+      }
 
       if (department[0]) {
         await addUserToDepartmentRoster(req.params.id, department[0], existingUser._id, roleDoc.slug);

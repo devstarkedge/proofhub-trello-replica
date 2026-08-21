@@ -62,6 +62,7 @@ import accessControlRoutes from './routes/accessControl.js';
 import chatIntegrationRoutes from './routes/chatIntegration.js';
 import chatInboundRoutes from './routes/chatInbound.js';
 import superAdminRoutes from './routes/superAdmin.js';
+import enterpriseInquiryRoutes from './routes/enterpriseInquiry.js';
 import { captureRawBody } from './middleware/slackMiddleware.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -216,6 +217,10 @@ app.use('/api/workspaces', workspaceRoutes);
 // new endpoints, kept separable from the legacy ones above (see
 // routes/workspaceMembers.js).
 app.use('/api/workspaces', workspaceMemberRoutes);
+// Public — the Enterprise "Contact Sales" flow must work for a signed-out
+// marketing-page visitor, not just an authenticated user (see
+// routes/enterpriseInquiry.js). Never creates a workspace.
+app.use('/api/enterprise-inquiries', enterpriseInquiryRoutes);
 app.use('/api/invitations', invitationRoutes);
 app.use('/api/access-control', accessControlRoutes);
 // Reverse-sync inbound receiver (ChatApp -> FlowTask) — server-to-server,

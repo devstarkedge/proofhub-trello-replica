@@ -4,6 +4,7 @@ import config from '../../config/index.js';
 import logger from '../../utils/logger.js';
 import Workspace from '../../models/Workspace.js';
 import { createMapping } from './workspaceMappingService.js';
+import * as entitlementService from '../../modules/plans/entitlementService.js';
 
 const TIMEOUT_MS = 10000;
 
@@ -36,6 +37,13 @@ export async function syncWorkspaceToChatApp({ workspace, owner }) {
   const chatJwtSecret = config.chat.jwtSecret;
   if (!chatAppUrl || !chatJwtSecret || !owner) return null;
 
+  // Read live, not passed in by the caller — the entitlement is the source
+  // of truth for what ChatApp should provision this workspace as. The
+  // caller (workspaceController.js#createWorkspace) awaits subscription
+  // creation before calling this, so the real requested plan (not a
+  // fallback default) is already persisted by the time we read it here.
+  const { planSlug } = await entitlementService.getEntitlements(workspace._id);
+
   const payload = {
     id: (owner._id || owner.id)?.toString(),
     email: owner.email,
@@ -45,6 +53,7 @@ export async function syncWorkspaceToChatApp({ workspace, owner }) {
     workspaceId: workspace._id.toString(),
     workspaceName: workspace.name,
     workspaceSlug: workspace.slug,
+    plan: planSlug,
     source: 'flowtask',
   };
   const token = jwt.sign(payload, chatJwtSecret, { expiresIn: '10m' });

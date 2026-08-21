@@ -1,5 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Briefcase, Loader, ChevronLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -8,22 +9,28 @@ import { inviteWorkspaceMembers } from '../../../services/workspaceSetupApi';
 import WizardStepper from './shared/WizardStepper';
 import WizardExitConfirm from './shared/WizardExitConfirm';
 import StepBasics from './StepBasics';
+import StepPlan from './StepPlan';
 import StepSetup from './StepSetup';
 
 const INITIAL_FORM = {
-  name: '', slug: '', type: '', industry: '', companySize: '', departmentName: '', inviteEmails: []
+  name: '', slug: '', type: '', industry: '', companySize: '', departmentName: '', inviteEmails: [], plan: ''
 };
 
 /**
- * 2-step enterprise workspace creation wizard (Basics -> Setup), replacing
+ * 3-step workspace creation wizard (Basics -> Plan -> Setup), replacing
  * the single-field CreateWorkspaceModal. Owns the submission sequencing
  * that closes the x-workspace-id header race: icon upload and invite
  * follow-up calls only ever fire after the full createWorkspace() promise
  * chain (which internally awaits switchWorkspace(), the thing that actually
  * persists the new active-workspace header) has resolved.
+ *
+ * Enterprise is never created through this wizard — selecting it on the
+ * Plan step exits the wizard entirely and hands off to /contact-sales
+ * instead of advancing to Setup (see handleSelectEnterprise).
  */
 const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
   const { createWorkspace, uploadWorkspaceIcon } = useContext(WorkspaceContext);
+  const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState(INITIAL_FORM);
@@ -31,7 +38,8 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
   const [logoPreviewUrl, setLogoPreviewUrl] = useState(null);
   const [logoError, setLogoError] = useState('');
   const [step1Valid, setStep1Valid] = useState(false);
-  const [step2Valid, setStep2Valid] = useState(false);
+  const [planValid, setPlanValid] = useState(false);
+  const [setupValid, setSetupValid] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [showExitConfirm, setShowExitConfirm] = useState(false);
@@ -74,13 +82,14 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
     setLogoError('');
     setError('');
     setStep1Valid(false);
-    setStep2Valid(false);
+    setPlanValid(false);
+    setSetupValid(false);
   };
 
   const hasEnteredData = !!(
     formData.name.trim() || formData.slug || formData.type || logoFile ||
     formData.industry || formData.companySize || formData.departmentName.trim() ||
-    formData.inviteEmails.length > 0
+    formData.inviteEmails.length > 0 || formData.plan
   );
 
   const handleCloseAttempt = () => {
@@ -99,8 +108,16 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
     onClose();
   };
 
+  // Enterprise is never created through this wizard — hand off to Contact
+  // Sales instead of ever calling POST /api/workspaces.
+  const handleSelectEnterprise = () => {
+    resetState();
+    onClose();
+    navigate('/contact-sales');
+  };
+
   const handleCreate = async () => {
-    if (saving || !step2Valid) return;
+    if (saving || !setupValid) return;
     setSaving(true);
     setError('');
 
@@ -111,7 +128,8 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
         type: formData.type,
         industry: formData.industry || undefined,
         companySize: formData.companySize || undefined,
-        department: { name: formData.departmentName.trim() || undefined }
+        department: { name: formData.departmentName.trim() || undefined },
+        plan: formData.plan === 'pro' ? 'pro' : 'free'
       };
 
       // Awaits the FULL chain (create -> loadWorkspaces -> switchWorkspace)
@@ -193,11 +211,11 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
             </div>
 
             <div className="border-b flex-shrink-0" style={{ borderColor: 'var(--color-border-subtle)' }}>
-              <WizardStepper steps={['Basics', 'Setup']} currentStep={step} />
+              <WizardStepper steps={['Basics', 'Plan', 'Setup']} currentStep={step} />
             </div>
 
             <div className="p-6 overflow-y-auto flex-1">
-              {step === 1 ? (
+              {step === 1 && (
                 <StepBasics
                   formData={formData}
                   updateField={updateField}
@@ -207,11 +225,20 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
                   logoError={logoError}
                   onValidityChange={setStep1Valid}
                 />
-              ) : (
+              )}
+              {step === 2 && (
+                <StepPlan
+                  formData={formData}
+                  updateField={updateField}
+                  onValidityChange={setPlanValid}
+                  onSelectEnterprise={handleSelectEnterprise}
+                />
+              )}
+              {step === 3 && (
                 <StepSetup
                   formData={formData}
                   updateField={updateField}
-                  onValidityChange={setStep2Valid}
+                  onValidityChange={setSetupValid}
                 />
               )}
               {error && <p className="text-sm text-red-500 mt-4">{error}</p>}
@@ -230,7 +257,7 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setStep(1)}
+                  onClick={() => setStep(step - 1)}
                   disabled={saving}
                   className="flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-xl border transition-colors disabled:opacity-50"
                   style={{ borderColor: 'var(--color-border-default)', color: 'var(--color-text-secondary)' }}
@@ -239,7 +266,7 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
                 </button>
               )}
 
-              {step === 1 ? (
+              {step === 1 && (
                 <button
                   type="button"
                   onClick={() => step1Valid && setStep(2)}
@@ -248,11 +275,22 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
                 >
                   Continue
                 </button>
-              ) : (
+              )}
+              {step === 2 && (
+                <button
+                  type="button"
+                  onClick={() => planValid && setStep(3)}
+                  disabled={!planValid}
+                  className="px-5 py-2 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  Continue
+                </button>
+              )}
+              {step === 3 && (
                 <button
                   type="button"
                   onClick={handleCreate}
-                  disabled={saving || !step2Valid}
+                  disabled={saving || !setupValid}
                   className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-60 transition-all"
                 >
                   {saving ? <Loader size={16} className="animate-spin" /> : <Briefcase size={16} />}

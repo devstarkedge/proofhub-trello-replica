@@ -42,12 +42,14 @@ import {
   buildCommentUpdatedPayload,
   buildCommentDeletedPayload,
   buildWorkspaceUpdatedPayload,
+  buildWorkspacePlanChangedPayload,
 } from './chatWebhookPayloads.js';
 import { getProjectMembershipSnapshot } from '../services/chat/projectMembershipService.js';
 
 // ─── Event Constants (must match ChatApp's FLOWTASK_EVENTS) ──────────────────
 const EVENTS = {
   WORKSPACE_UPDATED: 'WORKSPACE_UPDATED',
+  WORKSPACE_PLAN_CHANGED: 'WORKSPACE_PLAN_CHANGED',
   PROJECT_CREATED: 'PROJECT_CREATED',
   PROJECT_UPDATED: 'PROJECT_UPDATED',
   PROJECT_DELETED: 'PROJECT_DELETED',
@@ -115,6 +117,24 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildWorkspaceUpdatedPayload(workspace, changes, actor);
     await webhookDispatcher.dispatch(EVENTS.WORKSPACE_UPDATED, payload);
+  },
+
+  /**
+   * Trigger whenever a workspace's plan/subscription changes — self-serve
+   * upgrade/downgrade or a Super Admin billing change
+   * (modules/superAdmin/subscriptionService.js#changeSubscription is the
+   * one call site for both). Delivery is best-effort/fire-and-forget like
+   * every other hook here: if this workspace has never been "connected"
+   * (no eager sync yet, no prior Open Chat click), webhookDispatcher silently
+   * no-ops — that's fine, because ChatApp's findOrCreateFlowTaskWorkspace
+   * independently reconciles the plan fresh from the SSO JWT's `plan` claim
+   * on the next real login, so this webhook is the fast/real-time path, not
+   * the only path.
+   */
+  async onWorkspacePlanChanged(workspace, { planSlug, planName, memberLimit }, actor) {
+    if (!webhookDispatcher.isEnabled()) return;
+    const payload = buildWorkspacePlanChangedPayload(workspace, { planSlug, planName, memberLimit }, actor);
+    await webhookDispatcher.dispatch(EVENTS.WORKSPACE_PLAN_CHANGED, payload);
   },
 
   // ─── Project / Board Hooks ───────────────────────────────────────────────

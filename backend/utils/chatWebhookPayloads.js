@@ -108,6 +108,29 @@ export function buildWorkspaceUpdatedPayload(workspace, changes, actor) {
   };
 }
 
+/**
+ * Plan/subscription changes for a workspace — separate from
+ * buildWorkspaceUpdatedPayload since it's driven by
+ * subscriptionService.js#changeSubscription (a WorkspaceSubscription write),
+ * not workspaceController.js#updateWorkspace (a Workspace document write).
+ */
+export function buildWorkspacePlanChangedPayload(workspace, { planSlug, planName, memberLimit }, actor) {
+  return {
+    workspaceId: workspace._id.toString(),
+    workspace: {
+      id: workspace._id.toString(),
+      name: workspace.name,
+      slug: workspace.slug,
+    },
+    plan: {
+      slug: planSlug,
+      name: planName,
+      memberLimit: memberLimit ?? null,
+    },
+    actor: buildActor(actor),
+  };
+}
+
 // ─── Project / Board Payloads ───────────────────────────────────────────────
 
 export function buildProjectCreatedPayload(board, actor) {
