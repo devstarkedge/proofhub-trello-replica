@@ -294,7 +294,7 @@ export function buildProjectMemberPayload(board, memberId, role, actor) {
 // ─── Task / Card Payloads ────────────────────────────────────────────────────
 
 export function buildTaskCreatedPayload(card, board, actor) {
-  const workspaceId = resolveWorkspaceId(card, board);
+     const workspaceId = resolveWorkspaceId(card, board, actor);
   const taskData = {
     id: card._id?.toString(),
     title: card.title,
@@ -321,7 +321,7 @@ export function buildTaskCreatedPayload(card, board, actor) {
 }
 
 export function buildTaskUpdatedPayload(card, changes, board, actor) {
-  const workspaceId = resolveWorkspaceId(card, board);
+  const workspaceId = resolveWorkspaceId(card, board, actor);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -344,7 +344,7 @@ export function buildTaskUpdatedPayload(card, changes, board, actor) {
 }
 
 export function buildTaskDeletedPayload(card, board, actor) {
-  const workspaceId = resolveWorkspaceId(card, board);
+  const workspaceId = resolveWorkspaceId(card, board, actor);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -367,7 +367,7 @@ export function buildTaskDeletedPayload(card, board, actor) {
 }
 
 export function buildTaskAssignedPayload(card, assignees, board, actor) {
-  const workspaceId = resolveWorkspaceId(card, board);
+  const workspaceId = resolveWorkspaceId(card, board, actor);
   const boardId = (card.board || board?._id)?.toString();
   const assigneeList = (assignees || []).map((a) => ({
     userId: (a._id || a).toString(),
@@ -397,7 +397,7 @@ export function buildTaskAssignedPayload(card, assignees, board, actor) {
 }
 
 export function buildTaskUnassignedPayload(card, removedUserIds, board, actor, activeTaskFlags) {
-  const workspaceId = resolveWorkspaceId(card, board);
+  const workspaceId = resolveWorkspaceId(card, board, actor);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
@@ -424,7 +424,7 @@ export function buildTaskUnassignedPayload(card, removedUserIds, board, actor, a
 }
 
 export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor) {
-  const workspaceId = resolveWorkspaceId(card, board);
+  const workspaceId = resolveWorkspaceId(card, board, actor);
   const boardId = (card.board || board?._id)?.toString();
   return {
     workspaceId,
