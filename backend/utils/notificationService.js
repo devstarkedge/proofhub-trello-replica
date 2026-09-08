@@ -5,6 +5,7 @@ import Board from '../models/Board.js';
 import { emitNotification } from '../realtime/index.js';
 import { sendEmail } from './email.js';
 import { getUserPushSubscriptions, sendPushNotification } from './pushNotification.js';
+import { userCanAccessEntity } from './entityAccess.js';
 
 class NotificationService {
   constructor() {
@@ -126,9 +127,12 @@ class NotificationService {
     const notificationPreferences = {
       task_assigned: notificationSettings.taskAssigned,
       task_updated: notificationSettings.taskUpdated,
+      task_completed: notificationSettings.taskCompleted,
+      status_change: notificationSettings.statusChanges,
       task_deleted: notificationSettings.taskDeleted,
       comment_mention: notificationSettings.commentMention,
       project_updates: notificationSettings.projectUpdates,
+      announcement_created: notificationSettings.announcements,
       user_registered: notificationSettings.userCreated,
       user_verified: notificationSettings.userCreated,
       account_created: true, // Always send account creation notifications
@@ -137,6 +141,13 @@ class NotificationService {
       user_unassigned: true, // Always send unassignment notifications
       sales_tab_approval: true, // Always send to admins
       sales_tab_result: true, // Always send tab result to creator
+      // No dedicated User-level toggle exists for these yet — proxy onto
+      // the closest existing equivalent rather than defaulting to
+      // always-send, so the corresponding Slack-side toggle's semantics
+      // are at least mirrored on the in-app channel.
+      subtask_updated: notificationSettings.taskUpdated,
+      subtask_completed: notificationSettings.taskCompleted,
+      team_member_added: true, // Always send membership-change notifications
     };
 
     return notificationPreferences[type] !== undefined ? notificationPreferences[type] : true;
@@ -361,8 +372,20 @@ class NotificationService {
             message = `"${card.title}" has been updated (${changes.changedFields?.length || 'multiple'} fields changed)`;
           }
 
+          // Type used for notification-preference filtering (Task
+          // Completions / Status Changes / Task Updates are independently
+          // toggleable) — computed separately from the human-readable
+          // title/message above so multi-field-change wording ("N fields
+          // changed") is preserved even when status is one of those fields.
+          let notifType = 'task_updated';
+          if (changes.status === 'done' || changes.special === 'done') {
+            notifType = 'task_completed';
+          } else if (changes.status) {
+            notifType = 'status_change';
+          }
+
           notifications.push({
-            type: 'task_updated',
+            type: notifType,
             title,
             message,
             user: assigneeId,
@@ -383,6 +406,58 @@ class NotificationService {
         }
       });
     }
+
+    return this.createBulkNotifications(notifications);
+  }
+
+  // Subtask update notifications — notifies the SUBTASK's own assignees
+  // (not the parent task's), since that's the correct source of truth for
+  // who should hear about a subtask change.
+  async notifySubtaskUpdated(subtask, task, updaterId, changes = {}) {
+    const notifications = [];
+
+    let board = null;
+    const boardId = task?.board?._id || task?.board;
+    if (boardId) {
+      board = await Board.findById(boardId).select('department').lean();
+    }
+    const departmentId = board?.department || null;
+    const projectId = boardId || null;
+    const taskId = task?._id || null;
+
+    const isCompleted = changes.status === 'done' || changes.status === 'closed';
+    const type = isCompleted ? 'subtask_completed' : 'subtask_updated';
+    const title = isCompleted ? 'Subtask Completed' : 'Subtask Updated';
+    const message = isCompleted
+      ? `Subtask "${subtask.title}" on "${task?.title || 'a task'}" was completed`
+      : `Subtask "${subtask.title}" on "${task?.title || 'a task'}" was updated`;
+
+    (subtask.assignees || []).forEach(assigneeId => {
+      const idStr = (assigneeId._id || assigneeId).toString();
+      if (idStr !== updaterId?.toString()) {
+        notifications.push({
+          type,
+          title,
+          message,
+          user: idStr,
+          sender: updaterId,
+          relatedCard: taskId,
+          relatedBoard: projectId,
+          entityId: subtask._id,
+          entityType: 'Subtask',
+          departmentId,
+          projectId,
+          taskId,
+          metadata: {
+            departmentId,
+            projectId,
+            taskId,
+            changedFields: changes.changedFields || [],
+            url: departmentId && projectId && taskId ? `/workflow/${departmentId}/${projectId}/${taskId}` : null
+          }
+        });
+      }
+    });
 
     return this.createBulkNotifications(notifications);
   }
@@ -523,6 +598,13 @@ class NotificationService {
     // Process user mentions
     for (const mentionedId of userMentions) {
       if (mentionedId !== senderId) {
+        // Verify the mentioned user actually has access to this board before
+        // notifying them — mention resolution is text-based (data-id
+        // attributes), with no prior guarantee the mentioned user can see
+        // the entity they were mentioned in.
+        if (boardId && !(await userCanAccessEntity({ userId: mentionedId, entityType: 'Board', entityId: boardId }))) {
+          continue;
+        }
         notifications.push({
           type: 'comment_mention',
           title: 'You were mentioned',
@@ -564,6 +646,9 @@ class NotificationService {
           const usersWithRole = await User.find({ roleRef: roleId, isVerified: true }).select('_id');
           for (const user of usersWithRole) {
             if (user._id.toString() !== senderId) {
+              if (boardId && !(await userCanAccessEntity({ userId: user._id, entityType: 'Board', entityId: boardId }))) {
+                continue;
+              }
               notifications.push({
                 type: 'role_mention',
                 title: `@${role.name} mentioned`,
@@ -609,6 +694,9 @@ class NotificationService {
         if (team && team.members) {
           for (const member of team.members) {
             if (member._id.toString() !== senderId) {
+              if (boardId && !(await userCanAccessEntity({ userId: member._id, entityType: 'Board', entityId: boardId }))) {
+                continue;
+              }
               notifications.push({
                 type: 'team_mention',
                 title: `@${team.name} mentioned`,

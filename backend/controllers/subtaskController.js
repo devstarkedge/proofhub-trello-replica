@@ -18,6 +18,7 @@ import { handleTaskCompletion } from '../utils/recurrenceScheduler.js';
 import { batchCreateActivities, executeBackgroundTasks } from '../utils/activityLogger.js';
 import { slackHooks } from '../utils/slackHooks.js';
 import { chatHooks } from '../utils/chatHooks.js';
+import notificationService from '../utils/notificationService.js';
 import { emitTimeEntryDiffs, emitTimeEntryWebhook } from '../utils/chatTimeTracking.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../realtime/index.js';
@@ -408,6 +409,14 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
 
       if (activities.length > 0) {
         await batchCreateActivities(activities);
+
+        const parentTaskForNotify = await Card.findById(taskId).select('board title');
+        if (parentTaskForNotify) {
+          notificationService.notifySubtaskUpdated(subtask, parentTaskForNotify, req.user.id, {
+            status: oldSubtask.status !== subtask.status ? subtask.status : undefined,
+            changedFields: activities.map(a => a.type)
+          }).catch(console.error);
+        }
       }
     },
 

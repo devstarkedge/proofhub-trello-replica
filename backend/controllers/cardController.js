@@ -19,6 +19,7 @@ import { emitToBoard, emitNotification, emitToDepartment, emitToUser } from "../
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
+import { scheduleDueDateJobs, cancelDueDateJobs } from "../schedulers/cardDueDateScheduler.js";
 import { emitTimeEntryDiffs, emitTimeEntryWebhook } from "../utils/chatTimeTracking.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
 import { emitFinanceDataRefresh } from "../realtime/index.js";
@@ -951,6 +952,10 @@ export const createCard = asyncHandler(async (req, res, next) => {
     .populate("createdBy", "name email avatar")
     .lean();
 
+  if (card.dueDate) {
+    scheduleDueDateJobs(card).catch(console.error);
+  }
+
   res.status(201).json({
     success: true,
     data: populatedCard,
@@ -1440,6 +1445,13 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   if (newDueDateMs !== undefined && oldDueDateMs !== newDueDateMs) {
     const dateStr = req.body.dueDate ? new Date(req.body.dueDate).toLocaleDateString() : 'removed';
     changedFields.push({ field: 'dueDate', message: `Due date ${req.body.dueDate ? 'changed to ' + dateStr : 'removed'} for "${card.title}"` });
+
+    // Reset overdue/due-soon dedup state and reschedule — this is what
+    // makes "due date pushed to the future, then becomes overdue again"
+    // correctly eligible for a fresh notification.
+    card.notificationState = { dueSoonNotifiedAt: null, overdueNotifiedAt: null };
+    await Card.updateOne({ _id: card._id }, { $set: { notificationState: card.notificationState } });
+    scheduleDueDateJobs(card).catch(console.error);
   }
   
   // Check start date change
@@ -1459,25 +1471,38 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 
   if (statusChange) {
     changedFields.push(statusChange);
+    if (statusChange.special === 'done') {
+      cancelDueDateJobs(card._id).catch(console.error);
+    }
   }
-  
+
   // Send notifications based on changes (only if card has assignees to notify)
   if (changedFields.length > 0 && card.assignees && card.assignees.length > 0) {
     // Exclude assignee changes from this count (they're handled separately above)
     const notificationChanges = changedFields;
     
+    // Real status value + "done" flag, when a status change is among the
+    // changed fields — needed so notifyTaskUpdated can tell a completion
+    // apart from a generic status change apart from an unrelated field
+    // edit (previously this call site always passed `status: true`, a
+    // boolean that could never match the 'done' string check).
+    const statusFieldChange = notificationChanges.find(c => c.field === 'status');
+
     if (notificationChanges.length === 1) {
       // Single field changed - send specific notification
       const change = notificationChanges[0];
-      await notificationService.notifyTaskUpdated(card, req.user.id, { 
-        [change.field]: true,
-        message: change.message 
+      await notificationService.notifyTaskUpdated(card, req.user.id, {
+        [change.field]: change.field === 'status' ? req.body.status : true,
+        special: change.special,
+        message: change.message
       });
     } else if (notificationChanges.length > 1) {
       // Multiple fields changed - send generic "Task Updated" notification
-      await notificationService.notifyTaskUpdated(card, req.user.id, { 
+      await notificationService.notifyTaskUpdated(card, req.user.id, {
         multipleChanges: true,
-        changedFields: notificationChanges.map(c => c.field)
+        changedFields: notificationChanges.map(c => c.field),
+        status: statusFieldChange ? req.body.status : undefined,
+        special: statusFieldChange?.special
       });
     }
     
@@ -1604,6 +1629,10 @@ export const moveCard = asyncHandler(async (req, res, next) => {
     board: card.board,
   });
 
+  if (statusChange?.special === 'done') {
+    cancelDueDateJobs(card._id).catch(console.error);
+  }
+
   // OPTIMIZATION: Send response immediately to make UI feel instant
   // Run side effects (Activity, Notifications, Sockets, Cache) in background
   res.status(200).json({
@@ -1713,6 +1742,8 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   });
 
   await Card.findByIdAndDelete(card._id);
+
+  cancelDueDateJobs(card._id).catch(console.error);
 
   res.status(200).json({
     success: true,
@@ -2654,6 +2685,10 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
     actor: req.user,
     board: destBoard,
   });
+
+  if (statusChange?.special === 'done') {
+    cancelDueDateJobs(card._id).catch(console.error);
+  }
 
   // Update child entities if cross-board
   if (isCrossBoard) {

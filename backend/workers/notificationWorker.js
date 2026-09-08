@@ -16,8 +16,11 @@ import {
   scheduleNextReminder,
 } from '../utils/reminderScheduler.js';
 import Reminder from '../models/Reminder.js';
+import Card from '../models/Card.js';
 import config from '../config/index.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
+import { isDoneStatus } from '../schedulers/cardDueDateScheduler.js';
+import { evaluateAndDeliverBulk } from '../services/notifications/NotificationDecisionEngine.js';
 
 const JOB_HANDLERS = {
   /**
@@ -151,6 +154,84 @@ const JOB_HANDLERS = {
 
       console.log(`[Worker:Notification] reminder ${reminderId} marked as missed`);
       return { marked: 'missed' };
+    });
+  },
+
+  /**
+   * Due-soon alert for a card's due date (fires 24h before due).
+   * Data: { cardId }
+   */
+  async 'process-card-due-soon'(job) {
+    const { cardId } = job.data;
+
+    const card = await workspaceContext.runUnscoped(async () => Card.findById(cardId)
+      .populate('board', 'name department workspaceId')
+      .populate('assignees', '_id'));
+
+    if (!card || card.isArchived || isDoneStatus(card.status) || !card.dueDate) {
+      return { skipped: true, reason: 'not_eligible' };
+    }
+    if (card.notificationState?.dueSoonNotifiedAt) {
+      return { skipped: true, reason: 'already_notified' };
+    }
+    if (new Date(card.dueDate).getTime() <= Date.now()) {
+      return { skipped: true, reason: 'already_overdue' };
+    }
+
+    return workspaceContext.run({ workspaceId: card.workspaceId }, async () => {
+      await evaluateAndDeliverBulk(card.assignees, {
+        type: 'task_due_soon',
+        workspaceId: card.workspaceId,
+        entity: { type: 'Card', id: card._id },
+        title: 'Task Due Soon',
+        message: `"${card.title}" is due soon`,
+        slackPayload: { task: card, board: card.board, priority: card.priority },
+      });
+
+      card.notificationState = card.notificationState || {};
+      card.notificationState.dueSoonNotifiedAt = new Date();
+      await card.save();
+
+      return { notified: true, cardId };
+    });
+  },
+
+  /**
+   * Overdue alert for a card's due date (fires at the due date/time).
+   * Data: { cardId }
+   */
+  async 'process-card-overdue'(job) {
+    const { cardId } = job.data;
+
+    const card = await workspaceContext.runUnscoped(async () => Card.findById(cardId)
+      .populate('board', 'name department workspaceId')
+      .populate('assignees', '_id'));
+
+    if (!card || card.isArchived || isDoneStatus(card.status) || !card.dueDate) {
+      return { skipped: true, reason: 'not_eligible' };
+    }
+    if (card.notificationState?.overdueNotifiedAt) {
+      return { skipped: true, reason: 'already_notified' };
+    }
+    if (new Date(card.dueDate).getTime() > Date.now()) {
+      return { skipped: true, reason: 'not_yet_overdue' };
+    }
+
+    return workspaceContext.run({ workspaceId: card.workspaceId }, async () => {
+      await evaluateAndDeliverBulk(card.assignees, {
+        type: 'task_overdue',
+        workspaceId: card.workspaceId,
+        entity: { type: 'Card', id: card._id },
+        title: 'Task Overdue',
+        message: `"${card.title}" is overdue`,
+        slackPayload: { task: card, board: card.board, priority: card.priority, forceImmediate: true },
+      });
+
+      card.notificationState = card.notificationState || {};
+      card.notificationState.overdueNotifiedAt = new Date();
+      await card.save();
+
+      return { notified: true, cardId };
     });
   },
 };

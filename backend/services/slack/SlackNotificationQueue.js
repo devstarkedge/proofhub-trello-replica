@@ -163,6 +163,7 @@ async function processBatch(job) {
     // Create notification record for batch
     await SlackNotification.create({
       workspace: workspace._id,
+      workspaceId: slackUser.workspaceId,
       slackUser: slackUser._id,
       user: slackUser.user,
       type: 'batch_notification',
@@ -283,6 +284,7 @@ async function processDigest(job) {
     // Create notification record
     await SlackNotification.create({
       workspace: workspace._id,
+      workspaceId: slackUser.workspaceId,
       slackUser: slackUser._id,
       user: slackUser.user._id,
       type: `digest_${period}`,
@@ -554,6 +556,7 @@ async function processQueue(queueName, processor, concurrency = 5) {
 async function queueNotification(notificationData) {
   const {
     workspace,
+    workspaceId, // FlowTask Workspace._id (not the SlackWorkspace doc)
     slackUser,
     user,
     type,
@@ -572,6 +575,7 @@ async function queueNotification(notificationData) {
   // Create notification record
   const notification = await SlackNotification.create({
     workspace: workspace._id || workspace,
+    workspaceId,
     slackUser: slackUser?._id || slackUser,
     user: user?._id || user,
     type,
@@ -805,6 +809,14 @@ export {
   queueAppHomeUpdate,
   processPendingBatches,
   processScheduledDigests,
+  // Exposed so the durable BullMQ-backed slackWorker.js (schedulers/
+  // slackBatchScheduler.js, slackDigestScheduler.js) can invoke the actual
+  // processing logic directly instead of going through the in-memory
+  // setTimeout-based queues above, which don't survive a process restart.
+  processNotification,
+  processBatch,
+  processDigest,
+  processAppHomeUpdate,
   getQueueStats,
   cleanupQueues,
   shutdown

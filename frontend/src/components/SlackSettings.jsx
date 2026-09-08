@@ -14,6 +14,7 @@ import {
   Volume2, VolumeX, Calendar, Layers, Activity
 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
 import slackService from '../services/slackService';
 
 // Slack Logo SVG Component
@@ -34,6 +35,7 @@ const SlackLogo = ({ size = 24, className = '' }) => (
 
 const SlackSettings = () => {
   const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -67,8 +69,14 @@ const SlackSettings = () => {
   }, []);
 
   useEffect(() => {
+    // Clear stale state from the previous workspace immediately so its
+    // connection status/preferences never flash while the new workspace's
+    // status is loading (mirrors useWorkspacePreferences.js's re-keying on
+    // workspace switch).
+    setConnectionStatus(null);
+    setPreferences({});
     fetchStatus();
-    
+
     // Check for OAuth callback
     const params = new URLSearchParams(window.location.search);
     if (params.get('success') === 'true') {
@@ -79,7 +87,7 @@ const SlackSettings = () => {
       toast.error(`Slack connection failed: ${params.get('error')}`);
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, currentWorkspace?._id]);
 
   // Connect to Slack
   const handleConnect = async () => {
@@ -259,10 +267,12 @@ const SlackSettings = () => {
               <SlackLogo size={40} />
             </div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              Connect to Slack
+              {connectionStatus?.workspaceConnected ? "Link Your Slack Account" : "Connect to Slack"}
             </h3>
             <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
-              Receive task notifications, manage tasks, and collaborate with your team directly in Slack.
+              {connectionStatus?.workspaceConnected
+                ? "We couldn't find your Slack account for this workspace. Link it to start receiving notifications."
+                : "Slack is not connected for this workspace. Receive task notifications, manage tasks, and collaborate with your team directly in Slack."}
             </p>
             <button
               type="button"
@@ -270,7 +280,7 @@ const SlackSettings = () => {
               className="inline-flex items-center gap-2 px-6 py-3 bg-[#4A154B] hover:bg-[#611f69] text-white font-medium rounded-xl transition-all cursor-pointer shadow-md hover:shadow-lg focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
             >
               <SlackLogo size={20} className="brightness-0 invert" />
-              Add to Slack
+              {connectionStatus?.workspaceConnected ? "Link Slack Account" : "Add to Slack"}
             </button>
           </div>
         )}

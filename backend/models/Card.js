@@ -120,6 +120,14 @@ const cardSchema = new mongoose.Schema({
   startDate: {
     type: Date
   },
+  // Dedup state for the overdue/due-soon notification scheduler
+  // (schedulers/cardDueDateScheduler.js). Reset to nulls whenever dueDate
+  // changes, so a task that goes overdue, gets pushed to the future, and
+  // becomes overdue again is correctly eligible for a fresh notification.
+  notificationState: {
+    dueSoonNotifiedAt: { type: Date, default: null },
+    overdueNotifiedAt: { type: Date, default: null }
+  },
   subtaskStats: {
     total: { type: Number, default: 0 },
     completed: { type: Number, default: 0 },

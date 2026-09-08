@@ -48,9 +48,9 @@ class SlackOAuthHandler {
   /**
    * Generate OAuth authorization URL
    */
-  generateAuthUrl(userId, state = null) {
-    const stateToken = state || this.generateStateToken(userId);
-    
+  generateAuthUrl(userId, workspaceId, state = null) {
+    const stateToken = state || this.generateStateToken(userId, workspaceId);
+
     const params = new URLSearchParams({
       client_id: SLACK_CLIENT_ID,
       scope: BOT_SCOPES,
@@ -68,13 +68,14 @@ class SlackOAuthHandler {
   /**
    * Generate state token for CSRF protection
    */
-  generateStateToken(userId) {
+  generateStateToken(userId, workspaceId) {
     const payload = {
       userId,
+      workspaceId: workspaceId?.toString(),
       timestamp: Date.now(),
       nonce: crypto.randomBytes(16).toString('hex')
     };
-    
+
     const signature = crypto
       .createHmac('sha256', SLACK_SIGNING_SECRET)
       .update(JSON.stringify(payload))
@@ -89,24 +90,24 @@ class SlackOAuthHandler {
   verifyStateToken(stateToken) {
     try {
       const decoded = JSON.parse(Buffer.from(stateToken, 'base64url').toString());
-      const { userId, timestamp, nonce, signature } = decoded;
-      
+      const { userId, workspaceId, timestamp, nonce, signature } = decoded;
+
       // Check timestamp (valid for 10 minutes)
       if (Date.now() - timestamp > 10 * 60 * 1000) {
         return { valid: false, error: 'State token expired' };
       }
-      
+
       // Verify signature
       const expectedSignature = crypto
         .createHmac('sha256', SLACK_SIGNING_SECRET)
-        .update(JSON.stringify({ userId, timestamp, nonce }))
+        .update(JSON.stringify({ userId, workspaceId, timestamp, nonce }))
         .digest('hex');
-      
+
       if (signature !== expectedSignature) {
         return { valid: false, error: 'Invalid state signature' };
       }
-      
-      return { valid: true, userId };
+
+      return { valid: true, userId, workspaceId };
     } catch (error) {
       return { valid: false, error: 'Invalid state token format' };
     }
@@ -147,9 +148,17 @@ class SlackOAuthHandler {
     if (!stateVerification.valid) {
       throw new Error(stateVerification.error);
     }
-    
+
     const userId = stateVerification.userId;
-    
+    // The FlowTask workspace the user initiated OAuth from — this route
+    // has no `protect` middleware (Slack redirects the raw browser here
+    // with no JWT/workspace header), so workspaceId can only travel
+    // through the signed state token, not req.workspaceId.
+    const workspaceId = stateVerification.workspaceId;
+    if (!workspaceId) {
+      throw new Error('Missing workspace context — please reconnect Slack from within a FlowTask workspace');
+    }
+
     // Exchange code for token
     const tokenData = await this.exchangeCodeForToken(code);
     
@@ -167,9 +176,20 @@ class SlackOAuthHandler {
 
     // Check if workspace already exists
     let workspace = await SlackWorkspace.findOne({ teamId: team.id });
-    
+
     if (workspace) {
+      // A Slack team may only ever be linked to one FlowTask workspace.
+      // A null workspaceId means this doc predates the workspace-scoping
+      // migration (or was left ambiguous by it) — adopt the connecting
+      // workspace now. Otherwise, reject re-pointing an already-claimed
+      // Slack team to a different FlowTask workspace instead of silently
+      // overwriting installedBy/the bot token (the previous behavior).
+      if (workspace.workspaceId && workspace.workspaceId.toString() !== workspaceId.toString()) {
+        throw new Error(`This Slack workspace ("${workspace.teamName}") is already connected to a different FlowTask workspace.`);
+      }
+
       // Update existing workspace
+      workspace.workspaceId = workspaceId;
       workspace.setBotAccessToken(botAccessToken);
       workspace.botUserId = botUserId;
       workspace.scope = scope;
@@ -180,6 +200,7 @@ class SlackOAuthHandler {
     } else {
       // Create new workspace
       workspace = new SlackWorkspace({
+        workspaceId,
         teamId: team.id,
         teamName: team.name,
         botUserId,
@@ -192,12 +213,12 @@ class SlackOAuthHandler {
       });
       workspace.setBotAccessToken(botAccessToken);
     }
-    
+
     await workspace.save();
 
     // Link the installing user
     if (authed_user?.id) {
-      await this.linkSlackUser(workspace, authed_user.id, userId);
+      await this.linkSlackUser(workspace, authed_user.id, userId, workspaceId);
     }
 
     return {
@@ -211,10 +232,12 @@ class SlackOAuthHandler {
   /**
    * Link a Slack user to a FlowTask user
    */
-  async linkSlackUser(workspace, slackUserId, flowTaskUserId) {
+  async linkSlackUser(workspace, slackUserId, flowTaskUserId, workspaceId) {
     // Get Slack user info
     const userInfo = await this.getSlackUserInfo(workspace, slackUserId);
-    
+
+    const resolvedWorkspaceId = workspaceId || workspace.workspaceId;
+
     // Check if already linked
     let slackUser = await SlackUser.findOne({
       slackUserId,
@@ -224,6 +247,7 @@ class SlackOAuthHandler {
     if (slackUser) {
       // Update existing link
       slackUser.user = flowTaskUserId;
+      slackUser.workspaceId = resolvedWorkspaceId;
       slackUser.slackUsername = userInfo?.name;
       slackUser.slackDisplayName = userInfo?.profile?.display_name || userInfo?.profile?.real_name;
       slackUser.slackEmail = userInfo?.profile?.email;
@@ -237,6 +261,7 @@ class SlackOAuthHandler {
       slackUser = new SlackUser({
         user: flowTaskUserId,
         workspace: workspace._id,
+        workspaceId: resolvedWorkspaceId,
         slackUserId,
         slackUsername: userInfo?.name,
         slackDisplayName: userInfo?.profile?.display_name || userInfo?.profile?.real_name,

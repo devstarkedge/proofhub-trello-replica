@@ -31,6 +31,29 @@ function decrypt(text) {
 }
 
 const slackWorkspaceSchema = new mongoose.Schema({
+  // FlowTask tenant this Slack team install belongs to. One FlowTask
+  // workspace <-> exactly one Slack team (teamId is already globally
+  // unique, and every per-team setting below — departments/teams channel
+  // routing, settings.*, bot token — is inherently per-Slack-team, so
+  // sharing one doc across multiple FlowTask workspaces would require
+  // splitting all of that too). `sparse` so legacy pre-migration docs with
+  // no workspaceId yet don't collide on the unique index.
+  //
+  // Deliberately NOT workspaceScopePlugin'd: this model is read from
+  // FlowTask-authenticated routes (which have ambient workspace context)
+  // AND from public, signature-validated Slack webhooks (events/interactive/
+  // commands/options) and the OAuth callback, none of which have any
+  // workspaceContext at all. Adding the plugin would require threading
+  // workspaceContext.run() through every one of those webhook handlers.
+  // Every access site is filtered by workspaceId explicitly by hand instead.
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    index: true,
+    unique: true,
+    sparse: true
+  },
+
   // Slack workspace identifiers
   teamId: {
     type: String,

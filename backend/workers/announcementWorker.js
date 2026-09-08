@@ -111,18 +111,20 @@ async function broadcastAnnouncement(announcement, announcementId) {
       subscriberIds = users.map((u) => u._id);
     }
 
-    // Create notifications
+    // Create notifications — routed through notificationService (not a
+    // direct insertMany) so each recipient's settings.notifications.announcements
+    // toggle is actually honored.
     const notifications = subscriberIds.map((userId) => ({
       type: 'announcement_created',
       title: 'New Announcement',
       message: `${announcement.createdBy.name} posted: ${announcement.title}`,
       user: userId,
       sender: announcement.createdBy._id,
-      relatedAnnouncement: announcement._id,
-      isRead: false,
+      entityId: announcement._id,
+      entityType: 'Announcement',
     }));
 
-    await Notification.insertMany(notifications);
+    await notificationService.createBulkNotifications(notifications);
 
     // Emit real-time
     const io = getIO();

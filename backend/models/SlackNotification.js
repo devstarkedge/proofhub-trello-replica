@@ -9,6 +9,16 @@ const slackNotificationSchema = new mongoose.Schema({
     index: true
   },
 
+  // FlowTask workspace this delivery belongs to (denormalized for audit
+  // queries — see SlackWorkspace.workspaceId for why this isn't
+  // workspaceScopePlugin'd). Additive/optional: older rows created before
+  // this field existed simply won't have it.
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
+    index: true
+  },
+
   // Reference to Slack user (recipient)
   slackUser: {
     type: mongoose.Schema.Types.ObjectId,

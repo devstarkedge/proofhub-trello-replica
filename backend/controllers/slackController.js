@@ -18,6 +18,7 @@ import {
   getQueueStats,
   slackHealthCheck
 } from '../services/slack/index.js';
+import { scheduleDigestJob, cancelDigestJob } from '../schedulers/slackDigestScheduler.js';
 
 // ==================== OAuth Endpoints ====================
 
@@ -27,8 +28,13 @@ import {
  * @access  Private
  */
 export const getOAuthUrl = asyncHandler(async (req, res) => {
-  const { url, state } = slackOAuthHandler.generateAuthUrl(req.user._id.toString());
-  
+  if (!req.workspaceId) {
+    return res.status(403).json({ success: false, message: 'No active workspace' });
+  }
+
+  const { url, state } = slackOAuthHandler.generateAuthUrl(req.user._id.toString(), req.workspaceId.toString());
+
+
   res.json({
     success: true,
     data: {
@@ -71,17 +77,49 @@ export const handleOAuthCallback = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getConnectionStatus = asyncHandler(async (req, res) => {
+  if (!req.workspaceId) {
+    return res.status(403).json({ success: false, message: 'No active workspace' });
+  }
+
+  const workspace = await SlackWorkspace.findOne({ workspaceId: req.workspaceId, isActive: true });
+
+  if (!workspace) {
+    return res.json({
+      success: true,
+      data: {
+        connected: false,
+        workspaceConnected: false,
+        userLinked: false,
+        reason: 'workspace_not_connected',
+        workspace: null,
+        slackUser: null,
+        preferences: null
+      }
+    });
+  }
+
   const slackUser = await SlackUser.findOne({
     user: req.user._id,
+    workspaceId: req.workspaceId,
     isActive: true
-  }).populate('workspace', 'teamName teamId isActive healthStatus');
+  });
 
   if (!slackUser) {
     return res.json({
       success: true,
       data: {
         connected: false,
-        workspace: null
+        workspaceConnected: true,
+        userLinked: false,
+        reason: 'user_not_linked',
+        workspace: {
+          teamName: workspace.teamName,
+          teamId: workspace.teamId,
+          isActive: workspace.isActive,
+          healthStatus: workspace.healthStatus
+        },
+        slackUser: null,
+        preferences: null
       }
     });
   }
@@ -90,11 +128,14 @@ export const getConnectionStatus = asyncHandler(async (req, res) => {
     success: true,
     data: {
       connected: true,
+      workspaceConnected: true,
+      userLinked: true,
+      reason: null,
       workspace: {
-        teamName: slackUser.workspace.teamName,
-        teamId: slackUser.workspace.teamId,
-        isActive: slackUser.workspace.isActive,
-        healthStatus: slackUser.workspace.healthStatus
+        teamName: workspace.teamName,
+        teamId: workspace.teamId,
+        isActive: workspace.isActive,
+        healthStatus: workspace.healthStatus
       },
       slackUser: {
         slackUserId: slackUser.slackUserId,
@@ -113,8 +154,13 @@ export const getConnectionStatus = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const disconnectSlack = asyncHandler(async (req, res) => {
+  if (!req.workspaceId) {
+    return res.status(403).json({ success: false, message: 'No active workspace' });
+  }
+
   const slackUser = await SlackUser.findOne({
     user: req.user._id,
+    workspaceId: req.workspaceId,
     isActive: true
   });
 
@@ -125,6 +171,8 @@ export const disconnectSlack = asyncHandler(async (req, res) => {
   slackUser.isActive = false;
   slackUser.unlinkedAt = new Date();
   await slackUser.save();
+
+  await cancelDigestJob(slackUser._id, req.workspaceId);
 
   res.json({
     success: true,
@@ -138,8 +186,13 @@ export const disconnectSlack = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const updatePreferences = asyncHandler(async (req, res) => {
+  if (!req.workspaceId) {
+    return res.status(403).json({ success: false, message: 'No active workspace' });
+  }
+
   const slackUser = await SlackUser.findOne({
     user: req.user._id,
+    workspaceId: req.workspaceId,
     isActive: true
   });
 
@@ -167,10 +220,19 @@ export const updatePreferences = asyncHandler(async (req, res) => {
   }
 
   const updatedUser = await SlackUser.findByIdAndUpdate(
-    slackUser._id, 
+    slackUser._id,
     { $set: updates },
     { returnDocument: 'after' }
   );
+
+  // Re-evaluate the digest schedule whenever a digest-related preference
+  // changed, so a disabled/rescheduled digest takes effect immediately
+  // rather than waiting for the next server restart's recovery scan.
+  if (['digestEnabled', 'digestFrequency', 'digestTime', 'digestDay'].some(key => req.body[key] !== undefined)) {
+    scheduleDigestJob(updatedUser._id, req.workspaceId).catch(err =>
+      console.error('[Slack] Failed to (re)schedule digest job:', err.message)
+    );
+  }
 
   res.json({
     success: true,
@@ -369,7 +431,7 @@ export const handleOptions = asyncHandler(async (req, res) => {
  */
 export const getWorkspaceSettings = asyncHandler(async (req, res) => {
   const workspace = await SlackWorkspace.findOne({
-    installedBy: req.user._id
+    workspaceId: req.workspaceId
   }).populate('installedBy', 'name email');
 
   if (!workspace) {
@@ -397,7 +459,7 @@ export const getWorkspaceSettings = asyncHandler(async (req, res) => {
  */
 export const updateWorkspaceSettings = asyncHandler(async (req, res) => {
   const workspace = await SlackWorkspace.findOne({
-    installedBy: req.user._id
+    workspaceId: req.workspaceId
   });
 
   if (!workspace) {
@@ -436,7 +498,7 @@ export const updateWorkspaceSettings = asyncHandler(async (req, res) => {
  */
 export const getWorkspaceUsers = asyncHandler(async (req, res) => {
   const workspace = await SlackWorkspace.findOne({
-    installedBy: req.user._id
+    workspaceId: req.workspaceId
   });
 
   if (!workspace) {
@@ -476,7 +538,7 @@ export const getWorkspaceUsers = asyncHandler(async (req, res) => {
  */
 export const getAnalytics = asyncHandler(async (req, res) => {
   const workspace = await SlackWorkspace.findOne({
-    installedBy: req.user._id
+    workspaceId: req.workspaceId
   });
 
   if (!workspace) {
@@ -594,8 +656,13 @@ export const getAnalytics = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getNotificationHistory = asyncHandler(async (req, res) => {
+  if (!req.workspaceId) {
+    return res.status(403).json({ success: false, message: 'No active workspace' });
+  }
+
   const slackUser = await SlackUser.findOne({
     user: req.user._id,
+    workspaceId: req.workspaceId,
     isActive: true
   });
 
@@ -665,8 +732,13 @@ export const getQueueStatistics = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const testNotification = asyncHandler(async (req, res) => {
+  if (!req.workspaceId) {
+    return res.status(403).json({ success: false, message: 'No active workspace' });
+  }
+
   const slackUser = await SlackUser.findOne({
     user: req.user._id,
+    workspaceId: req.workspaceId,
     isActive: true
   }).populate('workspace');
 
@@ -679,6 +751,7 @@ export const testNotification = asyncHandler(async (req, res) => {
   const fakeBoardId = new mongoose.Types.ObjectId();
   const result = await slackNotificationService.sendNotification({
     userId: req.user._id,
+    workspaceId: req.workspaceId,
     type: 'task_assigned',
     task: {
       _id: fakeTaskId,
@@ -719,7 +792,7 @@ export const setDefaultChannel = asyncHandler(async (req, res) => {
   const { channelId, channelName } = req.body;
 
   const workspace = await SlackWorkspace.findOne({
-    installedBy: req.user._id
+    workspaceId: req.workspaceId
   });
 
   if (!workspace) {
@@ -749,7 +822,7 @@ export const linkDepartmentChannel = asyncHandler(async (req, res) => {
   const { departmentId, channelId, channelName } = req.body;
 
   const workspace = await SlackWorkspace.findOne({
-    installedBy: req.user._id
+    workspaceId: req.workspaceId
   });
 
   if (!workspace) {
@@ -790,7 +863,7 @@ export const linkTeamChannel = asyncHandler(async (req, res) => {
   const { teamId, channelId, channelName } = req.body;
 
   const workspace = await SlackWorkspace.findOne({
-    installedBy: req.user._id
+    workspaceId: req.workspaceId
   });
 
   if (!workspace) {

@@ -15,6 +15,9 @@ import {
   queueAppHomeUpdate
 } from './SlackNotificationQueue.js';
 import User from '../../models/User.js';
+import WorkspaceMembership from '../../models/WorkspaceMembership.js';
+import { isCriticalType } from '../../utils/notificationTypeRegistry.js';
+import { scheduleQuietHoursFlush, scheduleBatchFlush } from '../../schedulers/slackBatchScheduler.js';
 
 const blockBuilder = new SlackBlockKitBuilder(process.env.FRONTEND_URL);
 
@@ -52,6 +55,11 @@ class SlackNotificationService {
         customMessage,
         priority,
         forceImmediate = false,
+        // FlowTask workspace this event belongs to. Required for correct
+        // multi-tenant scoping — falls back to the task's/board's own
+        // workspaceId (always present, both models are workspace-scoped)
+        // so most callers don't need to compute it separately.
+        workspaceId: explicitWorkspaceId,
         // Additional fields for specific notification types
         oldStatus,
         newStatus,
@@ -70,6 +78,12 @@ class SlackNotificationService {
         payload: preBuiltPayload
       } = notificationData;
 
+      const workspaceId = explicitWorkspaceId || task?.workspaceId || board?.workspaceId;
+      if (!workspaceId) {
+        console.log(`[Slack] sendNotification(${type}) called with no resolvable workspaceId — refusing to send ambiguously-scoped notification`);
+        return null;
+      }
+
       // Get user if not provided
       const user = preFetchedUser || await User.findById(userId).lean();
       if (!user) {
@@ -77,10 +91,14 @@ class SlackNotificationService {
         return null;
       }
 
-      // Get Slack connection if not provided
-      const slackUser = preFetchedSlackUser || await SlackUser.findByUserId(userId);
+      // Get Slack connection if not provided — scoped to this specific
+      // FlowTask workspace, since the same user may have a different
+      // SlackUser doc (different preferences, possibly a different Slack
+      // team entirely) per workspace.
+      const slackUser = preFetchedSlackUser || await SlackUser.findByUserId(userId, workspaceId);
       if (!slackUser) {
-        // Silent return for expected skips (user hasn't connected Slack)
+        // Silent return for expected skips (user hasn't connected Slack
+        // in this workspace)
         return null;
       }
 
@@ -97,8 +115,10 @@ class SlackNotificationService {
         return null;
       }
 
+      const critical = isCriticalType(type);
+
       // Check quiet hours
-      if (slackUser.isInQuietHours() && !forceImmediate && priority !== 'critical') {
+      if (slackUser.isInQuietHours() && !forceImmediate && !critical) {
         // Queue for later or add to digest
         await this.handleQuietHoursNotification(slackUser, notificationData);
         return { status: 'queued_quiet_hours' };
@@ -108,8 +128,7 @@ class SlackNotificationService {
       if (
         slackUser.preferences.batchingEnabled &&
         !forceImmediate &&
-        priority !== 'critical' &&
-        !['task_assigned', 'comment_mention', 'announcement_created'].includes(type) // High-priority types always immediate
+        !critical // Critical types always deliver immediately
       ) {
         return this.addToBatch(slackUser, notificationData);
       }
@@ -122,11 +141,12 @@ class SlackNotificationService {
       }
 
       // Get channel (DM or thread)
-      const channelInfo = await this.getNotificationChannel(slackUser, workspace, task);
+      const channelInfo = await this.getNotificationChannel(slackUser, workspace, task, board);
 
       // Queue the notification
       const notification = await queueNotification({
         workspace,
+        workspaceId,
         slackUser,
         user,
         type,
@@ -160,13 +180,21 @@ class SlackNotificationService {
     console.log(`[Slack] Processing batch notification for ${userIds ? userIds.length : 0} users. Type: ${notificationData.type}`);
     if (!userIds || userIds.length === 0) return { successful: 0, failed: 0, results: [] };
 
+    const workspaceId = notificationData.workspaceId || notificationData.task?.workspaceId || notificationData.board?.workspaceId;
+    if (!workspaceId) {
+      console.log(`[Slack] sendToMultipleUsers(${notificationData.type}) called with no resolvable workspaceId — refusing to send ambiguously-scoped notification`);
+      return { successful: 0, failed: 0, results: [] };
+    }
+
     const startTime = Date.now();
 
     try {
-      // Bulk fetch active SlackUsers provided they have a slackUserId
-      // Also populate the User model to avoid another query per user
+      // Bulk fetch active SlackUsers provided they have a slackUserId,
+      // scoped to this specific FlowTask workspace (a user may have a
+      // separate SlackUser doc with different preferences per workspace).
       const slackUsers = await SlackUser.find({
         user: { $in: userIds },
+        workspaceId,
         isActive: true,
         slackUserId: { $exists: true, $ne: '' }
       }).populate('user');
@@ -193,9 +221,10 @@ class SlackNotificationService {
           
           // Pass the pre-fetched objects to sendNotification
           // slackUser.user is the populated User document
-          return this.sendNotification({ 
-            ...notificationData, 
-            userId, 
+          return this.sendNotification({
+            ...notificationData,
+            userId,
+            workspaceId,
             preFetchedSlackUser: slackUser,
             preFetchedUser: slackUser.user
           });
@@ -222,38 +251,46 @@ class SlackNotificationService {
    * Send role-based notifications
    */
   async sendRoleBasedNotification(notificationData) {
-    const { type, departmentId, teamId, excludeUserId } = notificationData;
-    
+    const { type, departmentId, teamId, excludeUserId, workspaceId } = notificationData;
+
+    if (!workspaceId) {
+      console.log(`[Slack] sendRoleBasedNotification(${type}) called with no workspaceId — refusing to broadcast across every workspace`);
+      return null;
+    }
+
     const targetRole = this.getRoleForNotificationType(type);
     if (!targetRole) {
       console.log('No role mapping for notification type:', type);
       return null;
     }
 
-    // Build user query based on role and scope
-    const userQuery = {
-      isActive: true,
-      isVerified: true
+    // Resolve candidates via WorkspaceMembership (role is per-workspace,
+    // not a global User field) — scoped to this specific workspace so a
+    // role-based broadcast (system alerts, approval requests) never
+    // notifies admins/managers of other, unrelated FlowTask workspaces.
+    const membershipQuery = {
+      workspace: workspaceId,
+      status: 'active'
     };
 
     if (targetRole === 'admin') {
-      userQuery.role = 'admin';
+      membershipQuery.role = 'admin';
     } else if (targetRole === 'manager') {
-      userQuery.role = { $in: ['admin', 'manager', 'team_lead'] };
-      if (departmentId) userQuery.department = departmentId;
-      if (teamId) userQuery.team = teamId;
+      membershipQuery.role = { $in: ['admin', 'manager', 'team_lead'] };
+      if (departmentId) membershipQuery.department = departmentId;
+      if (teamId) membershipQuery.team = teamId;
     } else {
       // Members - scope to department/team
-      if (departmentId) userQuery.department = departmentId;
-      if (teamId) userQuery.team = teamId;
+      if (departmentId) membershipQuery.department = departmentId;
+      if (teamId) membershipQuery.team = teamId;
     }
 
     if (excludeUserId) {
-      userQuery._id = { $ne: excludeUserId };
+      membershipQuery.user = { $ne: excludeUserId };
     }
 
-    const users = await User.find(userQuery).select('_id').lean();
-    const userIds = users.map(u => u._id);
+    const memberships = await WorkspaceMembership.find(membershipQuery).select('user').lean();
+    const userIds = memberships.map(m => m.user);
 
     return this.sendToMultipleUsers(userIds, {
       ...notificationData,
@@ -590,7 +627,17 @@ class SlackNotificationService {
   /**
    * Get notification channel (DM or thread)
    */
-  async getNotificationChannel(slackUser, workspace, task) {
+  async getNotificationChannel(slackUser, workspace, task, board) {
+    // Direct Messages OFF: use the workspace's configured channel routing
+    // instead of a DM. Previously this preference was saved but never
+    // actually read here, so the toggle had no effect.
+    if (slackUser.preferences.directMessageEnabled === false) {
+      const channelId = this.resolveFallbackChannel(workspace, board);
+      if (channelId) return { channelId, threadTs: null };
+      // No configured channel destination for this board/department/team —
+      // fall through to DM rather than silently dropping the notification.
+    }
+
     let channelId = slackUser.dmChannelId;
     let threadTs = null;
 
@@ -616,6 +663,23 @@ class SlackNotificationService {
   }
 
   /**
+   * Resolve a channel destination for a non-DM notification: prefer the
+   * board's department/team channel mapping (workspace.departments[] /
+   * .teams[]), fall back to the workspace's default channel.
+   */
+  resolveFallbackChannel(workspace, board) {
+    if (board?.department) {
+      const dept = workspace.departments?.find(d => d.departmentId?.toString() === board.department.toString());
+      if (dept?.channelId) return dept.channelId;
+    }
+    if (board?.team) {
+      const team = workspace.teams?.find(t => t.teamId?.toString() === board.team.toString());
+      if (team?.channelId) return team.channelId;
+    }
+    return workspace.defaultChannelId || null;
+  }
+
+  /**
    * Add notification to batch
    */
   async addToBatch(slackUser, notificationData) {
@@ -628,9 +692,20 @@ class SlackNotificationService {
     const workspace = await SlackWorkspace.findById(slackUser.workspace);
     const batchInterval = workspace?.settings?.batchIntervalMinutes || 5;
 
+    // Durable scheduling so this flush survives a process restart (the
+    // in-memory queue below does not) — a quiet-hours-deferred item flushes
+    // at the end of quiet hours; a normal batched item flushes on the
+    // regular batch window, even if no further notification arrives to
+    // re-trigger the immediate check below.
+    if (notificationData.wasInQuietHours) {
+      await scheduleQuietHoursFlush(slackUser);
+    } else {
+      await scheduleBatchFlush(slackUser, workspace);
+    }
+
     // Check if we should trigger batch now
     const timeSinceLastBatch = Date.now() - (slackUser.lastBatchSentAt?.getTime() || 0);
-    if (timeSinceLastBatch >= batchInterval * 60 * 1000) {
+    if (!notificationData.wasInQuietHours && timeSinceLastBatch >= batchInterval * 60 * 1000) {
       await queueBatchProcess(slackUser._id, workspace._id);
     }
 
@@ -772,9 +847,15 @@ class SlackNotificationService {
   /**
    * Send announcement notification using Block Kit builder
    */
-  async sendAnnouncement(announcement, targetUsers, sender) {
+  async sendAnnouncement(announcement, targetUsers, sender, workspaceId) {
     console.log(`[Slack] Sending announcement "${announcement.title}" to ${targetUsers?.length || 0} users`);
-    
+
+    const resolvedWorkspaceId = workspaceId || announcement?.workspaceId;
+    if (!resolvedWorkspaceId) {
+      console.log('[Slack] sendAnnouncement called with no resolvable workspaceId — refusing to send');
+      return { successful: 0, failed: 0, results: [] };
+    }
+
     // Use the new block kit builder for professional announcement template
     const payload = blockBuilder.buildAnnouncementNotification({
       announcement,
@@ -783,6 +864,7 @@ class SlackNotificationService {
 
     return this.sendToMultipleUsers(targetUsers, {
       type: 'announcement_created',
+      workspaceId: resolvedWorkspaceId,
       announcement,
       triggeredBy: sender,
       customMessage: announcement.title,
@@ -796,10 +878,11 @@ class SlackNotificationService {
    * Send system alert to admins
    */
   async sendSystemAlert(alertData) {
-    const { title, message, severity = 'medium' } = alertData;
+    const { title, message, severity = 'medium', workspaceId } = alertData;
 
     return this.sendRoleBasedNotification({
       type: 'system_alert',
+      workspaceId,
       customMessage: title,
       description: message,
       priority: severity === 'critical' ? 'critical' : severity === 'high' ? 'high' : 'medium'

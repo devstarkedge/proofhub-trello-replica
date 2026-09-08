@@ -147,7 +147,7 @@ export const addMember = asyncHandler(async (req, res, next) => {
 
     // Create notification
     await Notification.create({
-      type: 'team_assigned',
+      type: 'team_member_added',
       title: 'Added to Team',
       message: `You have been added to ${team.name}`,
       user: userId,
@@ -256,7 +256,7 @@ export const joinTeam = async (req, res) => {
       await User.findByIdAndUpdate(req.user.id, { team: team._id });
 
       await Notification.create({
-        type: 'team_join',
+        type: 'team_member_added',
         title: 'Joined Team',
         message: `You joined ${team.name}`,
         user: req.user.id,

@@ -27,6 +27,10 @@ export {
   queueAppHomeUpdate,
   processPendingBatches,
   processScheduledDigests,
+  processNotification,
+  processBatch,
+  processDigest,
+  processAppHomeUpdate,
   getQueueStats,
   cleanupQueues,
   shutdown as shutdownQueues

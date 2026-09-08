@@ -397,7 +397,10 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
       }
     }));
 
-    await Notification.insertMany(notifications);
+    // Routed through notificationService so each recipient's
+    // settings.notifications.announcements toggle is actually honored —
+    // a direct insertMany() bypassed that check entirely.
+    await notificationService.createBulkNotifications(notifications);
 
     // Emit real-time notification using batched room-based emission for efficiency
     const announcementPayload = {

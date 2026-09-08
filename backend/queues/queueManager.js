@@ -20,10 +20,14 @@ import { startCleanupWorker, getCleanupWorker } from '../workers/cleanupWorker.j
 import { startRecurringTaskWorker, getRecurringTaskWorker } from '../workers/recurringTaskWorker.js';
 import { startSalesAlertWorker, getSalesAlertWorker } from '../workers/salesAlertWorker.js';
 import { startChatWebhookWorker, getChatWebhookWorker } from '../workers/chatWebhookWorker.js';
+import { startSlackWorker, getSlackWorker } from '../workers/slackWorker.js';
 import { registerMaintenanceJobs } from '../schedulers/maintenanceScheduler.js';
 import { recoverAnnouncementSchedules } from '../schedulers/announcementScheduler.js';
 import { recoverRecurringSchedules } from '../schedulers/recurringTaskScheduler.js';
 import { recoverReminderSchedules } from '../schedulers/reminderScheduler.js';
+import { recoverSlackBatchSchedules } from '../schedulers/slackBatchScheduler.js';
+import { recoverSlackDigestSchedules } from '../schedulers/slackDigestScheduler.js';
+import { recoverCardDueDateSchedules } from '../schedulers/cardDueDateScheduler.js';
 import logger from '../utils/logger.js';
 
 let _initialized = false;
@@ -120,6 +124,7 @@ export async function initQueues() {
   startAnnouncementWorker();
   startCleanupWorker();
   startRecurringTaskWorker();
+  startSlackWorker();
   // Chat webhook worker handles delivery of events to ChatApp
   try {
     startChatWebhookWorker();
@@ -148,6 +153,9 @@ export async function initQueues() {
       recoverAnnouncementSchedules(),
       recoverRecurringSchedules(),
       recoverReminderSchedules(),
+      recoverSlackBatchSchedules(),
+      recoverSlackDigestSchedules(),
+      recoverCardDueDateSchedules(),
     ]);
     logger.info('QueueManager: recovery scans complete');
   } catch (err) {
@@ -183,6 +191,7 @@ export async function shutdownQueues() {
     getRecurringTaskWorker(),
     getSalesAlertWorker(),
     getChatWebhookWorker(),
+    getSlackWorker(),
   ].filter(Boolean);
 
   // Close workers (stop processing new jobs, wait for current)

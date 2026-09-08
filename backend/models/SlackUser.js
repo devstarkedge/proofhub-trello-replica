@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { meetsMinimumPriority } from '../utils/notificationPriority.js';
 
 const slackUserSchema = new mongoose.Schema({
   // Link to FlowTask user
@@ -6,6 +7,19 @@ const slackUserSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
+    index: true
+  },
+
+  // FlowTask workspace this preference/connection belongs to. A user
+  // connected to Slack in two different FlowTask workspaces gets two
+  // separate SlackUser docs (one per workspace), each with independent
+  // preferences — see the unique {user, workspaceId} index below.
+  // Deliberately NOT workspaceScopePlugin'd — see the comment on
+  // SlackWorkspace.workspaceId for why (public Slack webhooks have no
+  // ambient workspace context); every access site filters explicitly.
+  workspaceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Workspace',
     index: true
   },
 
@@ -181,7 +195,12 @@ const slackUserSchema = new mongoose.Schema({
 });
 
 // Compound indexes for efficient queries
-slackUserSchema.index({ user: 1, workspace: 1 }, { unique: true });
+// {user, workspaceId} is the real per-(user, FlowTask workspace) identity —
+// {user, workspace} (the Slack-team ref) used to be the unique key before
+// FlowTask workspace-scoping was added; kept as a plain (non-unique) index
+// since Slack-side handlers still look records up by it.
+slackUserSchema.index({ user: 1, workspaceId: 1 }, { unique: true });
+slackUserSchema.index({ user: 1, workspace: 1 });
 slackUserSchema.index({ slackUserId: 1, workspace: 1 }, { unique: true });
 slackUserSchema.index({ 'taskThreads.taskId': 1 });
 slackUserSchema.index({ isActive: 1, 'preferences.notificationsEnabled': 1 });
@@ -266,16 +285,15 @@ slackUserSchema.methods.shouldReceiveNotification = function(type, priority) {
   // If the type is not in our map, allow it by default (for new notification types)
   if (typePreferences[type] === undefined) return true;
   if (typePreferences[type] === false) return false;
-  
-  // Check priority filter
-  const priorityLevels = ['all', 'low', 'medium', 'high', 'critical'];
-  const userMinPriority = priorityLevels.indexOf(this.preferences.minPriorityLevel);
-  const notificationPriority = priorityLevels.indexOf(priority || 'medium');
-  
-  if (this.preferences.minPriorityLevel !== 'all' && notificationPriority < userMinPriority) {
+
+  // Check priority filter (only meaningful when a priority was actually
+  // supplied by the caller — priority-less event types like mentions/team
+  // updates/announcements must never be filtered just because they have no
+  // task priority to compare).
+  if (priority != null && !meetsMinimumPriority(priority, this.preferences.minPriorityLevel)) {
     return false;
   }
-  
+
   return true;
 };
 
@@ -337,10 +355,14 @@ slackUserSchema.methods.clearBatch = function() {
   this.lastBatchSentAt = new Date();
 };
 
-// Static method to find Slack user by FlowTask user ID
+// Static method to find Slack user by FlowTask user ID, scoped to a
+// specific FlowTask workspace. workspaceId should always be supplied by
+// real callers post-migration — a user can have a distinct SlackUser doc
+// (and distinct preferences) per FlowTask workspace, so omitting it would
+// return an arbitrary one of possibly several matching docs.
 slackUserSchema.statics.findByUserId = function(userId, workspaceId = null) {
   const query = { user: userId, isActive: true };
-  if (workspaceId) query.workspace = workspaceId;
+  if (workspaceId) query.workspaceId = workspaceId;
   return this.findOne(query);
 };
 
