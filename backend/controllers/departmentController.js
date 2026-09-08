@@ -202,12 +202,13 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
   }
 
   const projectMatchFilter = {
+    workspaceId: new mongoose.Types.ObjectId(req.workspaceId),
     $expr: { $eq: ['$department', '$$deptId'] },
     isArchived: false,
     isDeleted: { $ne: true }
   };
-  if (userAccessType === 'selected_projects' && user.allowedProjects?.length > 0) {
-    const allowedIds = user.allowedProjects.map(id => new mongoose.Types.ObjectId(id.toString()));
+  if (userAccessType === 'selected_projects') {
+    const allowedIds = (user.allowedProjects || []).map(id => new mongoose.Types.ObjectId(id.toString()));
     projectMatchFilter._id = { $in: allowedIds };
   } else if (userAccessType === 'assigned_tasks') {
     const uid = new mongoose.Types.ObjectId(user.id);
@@ -250,7 +251,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         let: { deptId: '$_id' },
         pipeline: [
           { $match: projectMatchFilter },
-          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1, dueDate: 1, projectCategory: 1, projectType: 1 } }
+          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1, dueDate: 1, projectCategory: 1, projectType: 1, createdAt: 1 } }
         ],
         as: 'projects'
       }
@@ -436,6 +437,16 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
     { $project: { allCards: 0, _assignedMemberIds: 0 } },
     { $sort: { name: 1 } }
   ]);
+
+  if (req.query.compact === 'true') {
+    // Home only needs assignment IDs; avoid repeating full project descriptions
+    // and cover metadata for every assigned member in the response.
+    for (const department of departments) {
+      for (const [memberId, projects] of Object.entries(department.projectsWithMemberAssignments || {})) {
+        department.projectsWithMemberAssignments[memberId] = projects.map(project => ({ _id: project._id }));
+      }
+    }
+  }
 
   res.status(200).json({
     success: true,

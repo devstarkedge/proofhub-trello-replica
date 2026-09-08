@@ -95,7 +95,7 @@ class DatabaseService {
     });
     if (!res.ok) {
       const error = await res.json();
-      throw new Error(error.message || 'Failed to create project');
+      throw Object.assign(new Error(res.status >= 500 ? 'Could not create the project. Please try again.' : error.message || 'Failed to create project'), { fieldErrors: error.errors });
     }
     return await res.json();
   }
@@ -109,7 +109,7 @@ class DatabaseService {
     });
     if (!res.ok) {
       const error = await res.json();
-      throw new Error(error.message || 'Failed to update project');
+      throw Object.assign(new Error(res.status >= 500 ? 'Could not update the project. Please try again.' : error.message || 'Failed to update project'), { fieldErrors: error.errors });
     }
     return await res.json();
   }
@@ -930,13 +930,47 @@ class DatabaseService {
     return await res.json();
   }
 
-  async getDepartmentsWithAssignments() {
+  async getDepartmentsWithAssignments({ signal, compact = false } = {}) {
     const headers = buildHeaders();
-    const res = await fetch(`${baseURL}/api/departments/with-assignments`, { headers });
+    const res = await fetch(`${baseURL}/api/departments/with-assignments${compact ? '?compact=true' : ''}`, { headers, signal });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
     return await res.json();
+  }
+
+  createWorkspacePreferenceClient(workspaceId, token) {
+    // Capture credentials with the scope. A queued write must never follow a
+    // workspace/account switch by reading the next session's localStorage.
+    const headers = { 'Content-Type': 'application/json', 'x-workspace-id': workspaceId };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const request = async (method, data, signal) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      let timedOut = false;
+      if (signal?.aborted) abort();
+      signal?.addEventListener('abort', abort, { once: true });
+      const timeout = setTimeout(() => { timedOut = true; abort(); }, 15000);
+      try {
+        const res = await fetch(`${baseURL}/api/workspaces/preferences/me`, {
+          method, headers, signal: controller.signal, ...(data ? { body: JSON.stringify(data) } : {}),
+        });
+        if (!res.ok) throw new Error(`Preference request failed (${res.status})`);
+        const result = await res.json();
+        if (!result.success) throw new Error('Preference request failed');
+        return result.data;
+      } catch (error) {
+        if (timedOut) throw new Error('Preference request timed out');
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+        signal?.removeEventListener('abort', abort);
+      }
+    };
+    return {
+      read: signal => request('GET', null, signal),
+      save: (patch, signal) => request('PATCH', patch, signal),
+    };
   }
 
   async getDepartmentStats(departmentId = null) {

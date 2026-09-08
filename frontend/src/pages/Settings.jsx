@@ -245,9 +245,10 @@ const Settings = () => {
                     <button
                       type="button"
                       onClick={() => togglePasswordVisibility('current')}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 transition-colors cursor-pointer"
+                      title={showPasswords.current ? "Hide password" : "Show password"}
                     >
-                      {showPasswords.current ? <EyeOff size={20} /> : <Eye size={20} />}
+                      {showPasswords.current ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
                   {errors.currentPassword && (
@@ -277,9 +278,10 @@ const Settings = () => {
                     <button
                       type="button"
                       onClick={() => togglePasswordVisibility('new')}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 transition-colors cursor-pointer"
+                      title={showPasswords.new ? "Hide password" : "Show password"}
                     >
-                      {showPasswords.new ? <EyeOff size={20} /> : <Eye size={20} />}
+                      {showPasswords.new ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
                   {errors.newPassword && (
@@ -309,9 +311,10 @@ const Settings = () => {
                     <button
                       type="button"
                       onClick={() => togglePasswordVisibility('confirm')}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 transition-colors cursor-pointer"
+                      title={showPasswords.confirm ? "Hide password" : "Show password"}
                     >
-                      {showPasswords.confirm ? <EyeOff size={20} /> : <Eye size={20} />}
+                      {showPasswords.confirm ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
                   {errors.confirmPassword && (
@@ -370,41 +373,42 @@ const Settings = () => {
                   { key: 'projectUpdates', label: 'Project Updates', desc: 'Updates on projects you\'re involved in' }
                 ].map(({ key, label, desc, action, state }) => (
                   <div key={key} className="flex items-center justify-between">
-                    <div className="flex-1">
+                    <div className="flex-1 select-none pr-4">
                       <p className="font-medium text-gray-900">{label}</p>
                       <p className="text-sm text-gray-600">{desc}</p>
                     </div>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={Boolean(state !== undefined ? state : settingsData.notifications[key])}
                       onClick={action || (() => handleSettingChange('notifications', key, !settingsData.notifications[key]))}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        (state !== undefined ? state : settingsData.notifications[key]) ? 'bg-blue-600' : 'bg-gray-200'
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                        (state !== undefined ? state : settingsData.notifications[key]) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
                       }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          (state !== undefined ? state : settingsData.notifications[key]) ? 'translate-x-6' : 'translate-x-1'
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                          (state !== undefined ? state : settingsData.notifications[key]) ? 'translate-x-5' : 'translate-x-0'
                         }`}
                       />
-                    </motion.button>
+                    </button>
                   </div>
                 ))}
 
                 {/* Test Notification Button */}
                 <div className="pt-4 border-t border-gray-200">
                   <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    type="button"
                     onClick={async () => {
                       try {
                         await api.post('/api/notifications/test');
-                        // toast.success removed to prevent duplicate notifications (socket will send one)
                       } catch (error) {
                         toast.error('Failed to send test notification');
                       }
                     }}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer"
                   >
                     <Bell size={16} />
                     Send Test Notification
@@ -412,8 +416,6 @@ const Settings = () => {
                 </div>
               </div>
             </motion.div>
-
-
 
             {/* Slack Integration Settings */}
             <motion.div
@@ -445,9 +447,10 @@ const Settings = () => {
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
+                type="button"
                 onClick={handleSaveSettings}
                 disabled={saving}
-                className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {saving ? (
                   <Loader2 size={20} className="animate-spin" />

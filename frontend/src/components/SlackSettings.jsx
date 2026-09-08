@@ -180,9 +180,10 @@ const SlackSettings = () => {
         
         {connectionStatus?.connected && (
           <button
+            type="button"
             onClick={fetchStatus}
-            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="Refresh"
+            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            title="Refresh status"
           >
             <RefreshCw className="w-5 h-5" />
           </button>
@@ -203,7 +204,7 @@ const SlackSettings = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center shadow-sm">
                   <CheckCircle className="w-6 h-6 text-white" />
                 </div>
                 <div>
@@ -216,8 +217,9 @@ const SlackSettings = () => {
                 </div>
               </div>
               <button
+                type="button"
                 onClick={handleDisconnect}
-                className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-red-200"
               >
                 <Unlink className="w-4 h-4" />
                 Disconnect
@@ -227,9 +229,10 @@ const SlackSettings = () => {
             {/* Quick Actions */}
             <div className="flex items-center gap-3 pt-4 border-t border-green-200 dark:border-green-800">
               <button
+                type="button"
                 onClick={handleTestNotification}
                 disabled={testing}
-                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
+                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-sm font-medium cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {testing ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -243,7 +246,7 @@ const SlackSettings = () => {
                 href={`https://slack.com/app_redirect?channel=${connectionStatus.slackUser.slackUserId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
+                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-sm font-medium cursor-pointer shadow-sm"
               >
                 <ExternalLink className="w-4 h-4" />
                 Open in Slack
@@ -262,8 +265,9 @@ const SlackSettings = () => {
               Receive task notifications, manage tasks, and collaborate with your team directly in Slack.
             </p>
             <button
+              type="button"
               onClick={handleConnect}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-[#4A154B] hover:bg-[#611f69] text-white font-medium rounded-lg transition-colors"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-[#4A154B] hover:bg-[#611f69] text-white font-medium rounded-xl transition-all cursor-pointer shadow-md hover:shadow-lg focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
             >
               <SlackLogo size={20} className="brightness-0 invert" />
               Add to Slack
@@ -610,8 +614,9 @@ const PreferenceSection = ({ title, icon, expanded, onToggle, children }) => (
     className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
   >
     <button
+      type="button"
       onClick={onToggle}
-      className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+      className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer text-left focus:outline-none"
     >
       <div className="flex items-center gap-3">
         <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-gray-600 dark:text-gray-300">
@@ -646,8 +651,8 @@ const PreferenceSection = ({ title, icon, expanded, onToggle, children }) => (
 
 // Preference Toggle Component
 const PreferenceToggle = ({ label, description, checked, onChange, disabled }) => (
-  <label className={`flex items-start gap-3 cursor-pointer group ${disabled ? 'opacity-70' : ''}`}>
-    <div className="relative mt-1">
+  <label className={`flex items-start gap-3 cursor-pointer group select-none ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+    <div className="relative mt-0.5 shrink-0">
       <input
         type="checkbox"
         checked={checked}
@@ -655,22 +660,24 @@ const PreferenceToggle = ({ label, description, checked, onChange, disabled }) =
         disabled={disabled}
         className="sr-only"
       />
-      <div className={`w-10 h-6 rounded-full transition-colors ${
-        checked ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
-      } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-        <motion.div
-          animate={{ x: checked ? 16 : 2 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-          className="w-5 h-5 bg-white rounded-full shadow-sm mt-0.5"
+      <div
+        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+          checked ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+        } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+            checked ? 'translate-x-5' : 'translate-x-0'
+          }`}
         />
       </div>
     </div>
     <div className="flex-1">
-      <span className="text-sm font-medium text-gray-900 dark:text-white group-hover:text-blue-500 transition-colors">
+      <span className="text-sm font-medium text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors">
         {label}
       </span>
       {description && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
           {description}
         </p>
       )}

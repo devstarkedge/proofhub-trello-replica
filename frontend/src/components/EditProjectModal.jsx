@@ -13,6 +13,7 @@ import {
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
 import { Badge } from "../components/ui/badge";
 import { toast } from "react-toastify";
+import { COUNTRY_CODES, clientDetailsFromForm, splitClientPhone, validateProjectClient } from '../../../shared/projectClient.mjs';
 import Database from '../services/database';
 import ReminderPanel from './ReminderPanel';
 import ReminderModal from './ReminderModal';
@@ -68,7 +69,8 @@ const EnterpriseEditProjectModal = React.memo(({
     dueDate: '',
     clientName: '',
     clientEmail: '',
-    clientWhatsappNumber: '',
+    clientCountryCode: '',
+    clientMobileNumber: '',
     projectCategory: '',
     assignees: [],
     estimatedTime: '',
@@ -206,7 +208,7 @@ const EnterpriseEditProjectModal = React.memo(({
             dueDate: fullProject.dueDate ? new Date(fullProject.dueDate).toISOString().split('T')[0] : '',
             clientName: fullProject.clientDetails?.clientName || '',
             clientEmail: fullProject.clientDetails?.clientEmail || '',
-            clientWhatsappNumber: fullProject.clientDetails?.clientWhatsappNumber || '',
+            ...splitClientPhone(fullProject.clientDetails?.clientWhatsappNumber),
             projectCategory: fullProject.projectCategory || '',
             assignees: fullProject.members?.map(m => typeof m === 'string' ? m : m._id) || [],
             estimatedTime: fullProject.estimatedTime || '',
@@ -303,7 +305,8 @@ const EnterpriseEditProjectModal = React.memo(({
         next.estimatedTime = '';
         next.clientName = '';
         next.clientEmail = '';
-        next.clientWhatsappNumber = '';
+        next.clientCountryCode = '';
+        next.clientMobileNumber = '';
       }
       return next;
     });
@@ -377,9 +380,7 @@ const EnterpriseEditProjectModal = React.memo(({
     if (formData.assignees.length === 0) newErrors.assignees = 'At least one assignee is required';
     // Only validate client fields for Hired Client projects
     if (formData.projectType !== 'Inhouse') {
-      if (formData.clientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.clientEmail)) {
-        newErrors.clientEmail = 'Invalid email format';
-      }
+      Object.assign(newErrors, validateProjectClient(formData.projectType, clientDetailsFromForm(formData)));
       if (formData.billingCycle === 'milestone') {
         const milestoneError = validateMilestoneSchedule(formData);
         if (milestoneError) newErrors.milestones = milestoneError;
@@ -444,9 +445,7 @@ const EnterpriseEditProjectModal = React.memo(({
         }
         updates.estimatedTime = formData.estimatedTime;
         updates.clientDetails = {
-          clientName: formData.clientName,
-          clientEmail: formData.clientEmail,
-          clientWhatsappNumber: formData.clientWhatsappNumber,
+          ...clientDetailsFromForm(formData),
         };
       }
 
@@ -492,6 +491,7 @@ const EnterpriseEditProjectModal = React.memo(({
       }
     } catch (error) {
       console.error('Error updating project:', error);
+      if (error.fieldErrors) { setErrors(prev => ({ ...prev, ...error.fieldErrors })); setActiveTab('details'); }
       toast.error(error.message || 'Failed to update project');
     } finally {
       setLoading(false);
@@ -734,24 +734,24 @@ const EnterpriseEditProjectModal = React.memo(({
                         {/* Client Information */}
                         {formData.projectType !== 'Inhouse' && (
                           <ClientSection
+                            required={formData.projectType === 'Hired Client'}
                             clientName={formData.clientName}
                             clientEmail={formData.clientEmail}
-                            clientCountryCode="+91" // EditProjectModal doesn't separate country code out of the box in the same way, but let's set a default
-                            clientMobileNumber={formData.clientWhatsappNumber || ''} // In edit, we map this to whatsapp number
+                            clientCountryCode={formData.clientCountryCode}
+                            clientMobileNumber={formData.clientMobileNumber}
                             errors={errors}
-                            handleInputChange={(e) => {
-                               // map clientName and clientEmail directly, mobile to Whatsapp
-                               if (e.target.name === 'clientMobileNumber') {
-                                   setFormData(prev => ({...prev, clientWhatsappNumber: e.target.value}));
-                               } else {
-                                   handleInputChange(e);
-                               }
+                            handleInputChange={handleInputChange}
+                            handleBlur={(field) => setErrors(prev => ({ ...prev, [field]: validateProjectClient(formData.projectType, clientDetailsFromForm(formData))[field] || '' }))}
+                            handleCountryCodeChange={(code) => {
+                              setFormData(prev => ({ ...prev, clientCountryCode: code, clientMobileNumber: '' }));
+                              setErrors(prev => ({ ...prev, clientMobileNumber: '' }));
                             }}
-                            handleBlur={() => {}}
-                            handleCountryCodeChange={() => {}}
-                            handleMobileNumberChange={(e) => {
-                               setFormData(prev => ({...prev, clientWhatsappNumber: e.target.value}));
-                           }}
+                            handleMobileNumberChange={(event) => {
+                              const country = COUNTRY_CODES.find(item => item.code === formData.clientCountryCode);
+                              const value = event.target.value.replace(/\D/g, '');
+                              setFormData(prev => ({ ...prev, clientMobileNumber: country ? value.slice(0, country.digits) : value }));
+                              setErrors(prev => ({ ...prev, clientMobileNumber: '' }));
+                            }}
                           />
                         )}
                       </form>
@@ -866,7 +866,7 @@ const EnterpriseEditProjectModal = React.memo(({
               clientInfo={{
                 clientName: formData.clientName,
                 clientEmail: formData.clientEmail,
-                clientWhatsappNumber: formData.clientWhatsappNumber
+                clientWhatsappNumber: clientDetailsFromForm(formData).clientWhatsappNumber
               }}
               onReminderCreated={() => {
                 setReminderKey(prev => prev + 1);

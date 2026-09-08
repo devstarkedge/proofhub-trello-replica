@@ -4,6 +4,9 @@ import { devtools } from 'zustand/middleware';
 import Database from '../services/database';
 import { registerResettable } from './resetRegistry';
 
+let departmentRequest = null;
+let departmentRequestVersion = 0;
+
 const useProjectStore = create(
   devtools(
     (set, get) => ({
@@ -24,45 +27,36 @@ const useProjectStore = create(
       // Fetch all departments with assignments
       fetchDepartments: async (forceRefresh = false) => {
         const state = get();
-        const hasData = state.departments.length > 0;
-        
-        // If we have data and not forced, we don't show full loading skeleton
-        // We just fetch in background.
-        if (!hasData || forceRefresh) {
-          set({ loading: true, error: null });
-        } else {
-          set({ isFetching: true, error: null });
-        }
-
-        try {
-          const response = await Database.getDepartmentsWithAssignments();
-          const departmentsData = response.data || [];
-
-          // Extract assignments for easy lookup
-          const membersMap = {};
-          const projectsMap = {};
-
-          departmentsData.forEach(dept => {
-            membersMap[dept._id] = dept.membersWithAssignments || [];
-            projectsMap[dept._id] = dept.projectsWithMemberAssignments || {};
-          });
-
-          set({ 
-            departments: departmentsData,
-            membersWithAssignments: membersMap,
-            projectsWithMemberAssignments: projectsMap,
-            loading: false,
-            isFetching: false,
-            lastUpdated: Date.now()
-          });
-        } catch (error) {
-          console.error('Error fetching departments:', error);
-          set({ 
-            error: error.message || 'Failed to load departments',
-            loading: false,
-            isFetching: false
-          });
-        }
+        if (departmentRequest && !forceRefresh) return departmentRequest.promise;
+        if (!forceRefresh && state.lastUpdated && Date.now() - state.lastUpdated < 30000) return;
+        departmentRequest?.controller.abort();
+        const version = ++departmentRequestVersion;
+        const controller = new AbortController();
+        const request = { controller, promise: null };
+        departmentRequest = request;
+        set({ loading: !state.lastUpdated, isFetching: true, error: null });
+        request.promise = (async () => {
+          try {
+            const response = await Database.getDepartmentsWithAssignments({ signal: controller.signal, compact: true });
+            if (version !== departmentRequestVersion) return;
+            const departmentsData = response.data || [];
+            const membersMap = {}, projectsMap = {};
+            departmentsData.forEach(dept => {
+              membersMap[dept._id] = dept.membersWithAssignments || [];
+              projectsMap[dept._id] = dept.projectsWithMemberAssignments || {};
+            });
+            set({ departments: departmentsData, membersWithAssignments: membersMap,
+              projectsWithMemberAssignments: projectsMap, loading: false,
+              isFetching: false, lastUpdated: Date.now() });
+          } catch (error) {
+            if (version !== departmentRequestVersion || error.name === 'AbortError') return;
+            console.error('Error fetching departments:', error);
+            set({ error: 'Could not load projects. Please try again.', loading: false, isFetching: false });
+          } finally {
+            if (departmentRequest === request) departmentRequest = null;
+          }
+        })();
+        return request.promise;
       },
 
       // Optimistic Add Project
@@ -216,15 +210,20 @@ const useProjectStore = create(
 
       // Workspace-scoped data (departments/projects belong to one
       // workspace) — cleared on workspace switch/logout, see resetRegistry.
-      reset: () => set({
-        departments: [],
-        membersWithAssignments: {},
-        projectsWithMemberAssignments: {},
-        loading: false,
-        isFetching: false,
-        error: null,
-        lastUpdated: null
-      })
+      reset: () => {
+        departmentRequestVersion++;
+        departmentRequest?.controller.abort();
+        departmentRequest = null;
+        set({
+          departments: [],
+          membersWithAssignments: {},
+          projectsWithMemberAssignments: {},
+          loading: false,
+          isFetching: false,
+          error: null,
+          lastUpdated: null
+        });
+      }
     }),
     {
       name: 'project-store'

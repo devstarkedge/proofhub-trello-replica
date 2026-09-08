@@ -146,9 +146,10 @@ const ChatIntegrationSettings = ({ userRole }) => {
       </div>
       {isAdmin && (
         <button
+          type="button"
           onClick={handleUpgradeToPro}
           disabled={upgrading}
-          className="flex items-center justify-center gap-2 w-full px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-lg hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-colors"
+          className="flex items-center justify-center gap-2 w-full px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-lg hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-colors cursor-pointer"
         >
           {upgrading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {upgrading ? 'Upgrading...' : 'Upgrade to Pro'}
@@ -244,26 +245,29 @@ const ChatIntegrationSettings = ({ userRole }) => {
             {isAdmin && (
               <div className="flex flex-wrap gap-3">
                 <button
+                  type="button"
                   onClick={handleTest}
                   disabled={testing}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   Test Connection
                 </button>
 
                 <button
+                  type="button"
                   onClick={handleSync}
                   disabled={syncing}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   Sync Now
                 </button>
 
                 <button
+                  type="button"
                   onClick={handleDisconnect}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors cursor-pointer"
                 >
                   <Unlink className="w-4 h-4" />
                   Disconnect
@@ -282,9 +286,10 @@ const ChatIntegrationSettings = ({ userRole }) => {
             {/* Open Chat — available even without webhook connection, hidden on Free */}
             {chatEnabled ? (
               <button
+                type="button"
                 onClick={handleOpenChat}
                 disabled={openingChat}
-                className="flex items-center justify-center gap-2 w-full px-6 py-3 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="flex items-center justify-center gap-2 w-full px-6 py-3 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer shadow-sm"
               >
                 {openingChat ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -315,9 +320,10 @@ const ChatIntegrationSettings = ({ userRole }) => {
                     className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   />
                   <button
+                    type="button"
                     onClick={handleConnect}
                     disabled={connecting}
-                    className="flex items-center gap-2 px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    className="flex items-center gap-2 px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer shadow-sm"
                   >
                     {connecting ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

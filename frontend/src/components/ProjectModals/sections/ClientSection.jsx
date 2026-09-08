@@ -7,6 +7,7 @@ import FormField from './FormField';
 import { COUNTRY_CODES } from '../shared/constants';
 
 const ClientSection = memo(({
+  required = false,
   clientName,
   clientEmail,
   clientCountryCode,
@@ -42,7 +43,7 @@ const ClientSection = memo(({
   }, [countrySearchQuery]);
 
   const selectedCountry = useMemo(() =>
-    COUNTRY_CODES.find(c => c.code === clientCountryCode) || COUNTRY_CODES[0],
+    COUNTRY_CODES.find(c => c.code === clientCountryCode),
     [clientCountryCode]
   );
 
@@ -54,23 +55,30 @@ const ClientSection = memo(({
       </h3>
 
       <div className="space-y-4">
-        <FormField label="Client Name" icon={User}>
+        <FormField label="Client Name" icon={User} required={required} error={errors?.clientName}>
           <input
             type="text"
             name="clientName"
+            aria-label="Client Name"
+            aria-required={required}
+            aria-invalid={!!errors?.clientName}
             autoComplete="off"
             value={clientName}
             onChange={handleInputChange}
-            className="w-full px-4 py-3 border border-gray-300 bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300"
+            onBlur={() => handleBlur('clientName')}
+            className={`w-full px-4 py-3 border bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors?.clientName ? 'border-red-500' : 'border-gray-300 hover:border-blue-300'}`}
             placeholder="Client's full name"
           />
         </FormField>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField label="Email Address" icon={Mail} error={errors?.clientEmail}>
+          <FormField label="Email Address" icon={Mail} required={required} error={errors?.clientEmail}>
             <input
               type="email"
               name="clientEmail"
+              aria-label="Client Email Address"
+              aria-required={required}
+              aria-invalid={!!errors?.clientEmail}
               autoComplete="off"
               value={clientEmail}
               onChange={handleInputChange}
@@ -82,17 +90,18 @@ const ClientSection = memo(({
             />
           </FormField>
 
-          <FormField label="Phone Number" icon={Phone} error={errors?.clientMobileNumber}>
+          <FormField label="Phone Number" icon={Phone} required={required} error={errors?.clientMobileNumber}>
             <div className="flex gap-2">
               {/* Country Code */}
               <div className="relative" ref={countryDropdownRef}>
                 <button
                   type="button"
+                  aria-label="Client country code"
                   onClick={() => setCountryDropdownOpen(!countryDropdownOpen)}
                   className="flex items-center gap-2 px-3 py-3 border border-gray-300 bg-white rounded-xl hover:border-blue-300 h-[50px] min-w-[110px]"
                 >
-                  <ReactCountryFlag countryCode={selectedCountry.countryCode} svg style={{ width: '1.2em', height: '1.2em' }} />
-                  <span className="text-sm font-medium">{selectedCountry.code}</span>
+                  {selectedCountry && <ReactCountryFlag countryCode={selectedCountry.countryCode} svg style={{ width: '1.2em', height: '1.2em' }} />}
+                  <span className="text-sm font-medium">{selectedCountry?.code || 'Code'}</span>
                   <ChevronDown size={14} className="text-gray-400" />
                 </button>
 
@@ -134,10 +143,14 @@ const ClientSection = memo(({
               <input
                 type="text"
                 inputMode="numeric"
+                name="clientMobileNumber"
+                aria-label="Client Phone Number"
+                aria-required={required}
+                aria-invalid={!!errors?.clientMobileNumber}
                 value={clientMobileNumber}
                 onChange={handleMobileNumberChange}
                 onBlur={() => handleBlur('clientMobileNumber')}
-                placeholder={`${selectedCountry.digits}-digit number`}
+                placeholder={selectedCountry ? `${selectedCountry.digits}-digit number` : 'Select a country code'}
                 className={`flex-1 px-4 py-3 border bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                   errors?.clientMobileNumber ? 'border-red-500' : 'border-gray-300 hover:border-blue-300'
                 }`}

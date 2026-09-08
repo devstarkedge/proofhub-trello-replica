@@ -12,6 +12,7 @@ import {
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./ui/select";
 import { Badge } from "./ui/badge";
 import { toast } from "react-toastify";
+import { clientDetailsFromForm, validateProjectClient } from '../../../shared/projectClient.mjs';
 import Database from "../services/database";
 import ReactCountryFlag from "react-country-flag";
 import CoverImageUploader from "./CoverImageUploader";
@@ -30,7 +31,7 @@ import TeamTab from './ProjectModals/tabs/TeamTab';
 import useProjectStore from '../store/projectStore';
 
 import { TabNavigation as Tab } from './ProjectModals/shared/TabNavigation';
-import { COUNTRY_CODES, EMAIL_REGEX, PROJECT_URL_REGEX } from './ProjectModals/shared/constants';
+import { COUNTRY_CODES, PROJECT_URL_REGEX } from './ProjectModals/shared/constants';
 import { drawerVariants } from './ProjectModals/shared/animations';
 import FormField from './ProjectModals/sections/FormField';
 import { useFileUploadSimulation } from './ProjectModals/shared/useFileUploadSimulation';
@@ -385,25 +386,11 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const handleBlur = useCallback((fieldName) => {
     setTouched((prev) => ({ ...prev, [fieldName]: true }));
 
-    if (fieldName === 'clientEmail' && formData.clientEmail) {
-      if (!EMAIL_REGEX.test(formData.clientEmail)) {
-        setErrors((prev) => ({ ...prev, clientEmail: "Invalid email format" }));
-      } else {
-        setErrors((prev) => ({ ...prev, clientEmail: "" }));
-      }
+    if (['clientName', 'clientEmail', 'clientMobileNumber'].includes(fieldName)) {
+      const clientErrors = validateProjectClient(formData.projectType, clientDetailsFromForm(formData));
+      setErrors(prev => ({ ...prev, [fieldName]: clientErrors[fieldName] || '' }));
     }
-
-    if (fieldName === 'clientMobileNumber' && formData.clientMobileNumber) {
-      if (formData.clientMobileNumber.length !== selectedCountry.digits) {
-        setErrors((prev) => ({
-          ...prev,
-          clientMobileNumber: `Must be ${selectedCountry.digits} digits`
-        }));
-      } else {
-        setErrors((prev) => ({ ...prev, clientMobileNumber: "" }));
-      }
-    }
-  }, [formData.clientEmail, formData.clientMobileNumber, selectedCountry]);
+  }, [formData]);
 
   const handleMobileNumberChange = useCallback((e) => {
     const value = e.target.value.replace(/\D/g, '');
@@ -445,12 +432,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     if (formData.assignees.length === 0) newErrors.assignees = "At least one assignee is required";
     // Only validate client fields for Hired Client projects
     if (formData.projectType !== 'Inhouse') {
-      if (formData.clientEmail && !EMAIL_REGEX.test(formData.clientEmail)) {
-        newErrors.clientEmail = "Invalid email format";
-      }
-      if (formData.clientMobileNumber && formData.clientMobileNumber.length !== selectedCountry.digits) {
-        newErrors.clientMobileNumber = `Must be ${selectedCountry.digits} digits`;
-      }
+      Object.assign(newErrors, validateProjectClient(formData.projectType, clientDetailsFromForm(formData)));
       if (formData.billingCycle === 'milestone') {
         const milestoneError = validateMilestoneSchedule(formData);
         if (milestoneError) newErrors.milestones = milestoneError;
@@ -458,7 +440,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     }
     setErrors(newErrors);
     return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
-  }, [formData, selectedCountry]);
+  }, [formData, selectedDepartmentId]);
 
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
@@ -501,16 +483,11 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     };
 
     onProjectAdded(optimisticProject);
-    onClose();
     toast.info("Creating project...", { autoClose: 2000 });
 
     try {
       const deptTeams = await fetchDepartmentTeams();
       const defaultTeam = deptTeams.length > 0 ? deptTeams[0]._id : null;
-
-      const fullPhoneNumber = formData.clientMobileNumber
-        ? `${formData.clientCountryCode}${formData.clientMobileNumber}`
-        : "";
 
       const projectData = {
         name: formData.title,
@@ -547,9 +524,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         }
         projectData.estimatedTime = formData.estimatedTime;
         projectData.clientDetails = {
-          clientName: formData.clientName,
-          clientEmail: formData.clientEmail,
-          clientWhatsappNumber: fullPhoneNumber
+          ...clientDetailsFromForm(formData)
         };
       }
 
@@ -610,12 +585,14 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         setPendingFiles([]);
         localStorage.removeItem(draftKey);
         toast.success("Project created successfully!");
+        onClose();
       } else {
         onProjectAdded(null, optimisticProject._id, true, selectedDepartmentId);
         throw new Error(response.message || "Failed to create project");
       }
     } catch (error) {
       onProjectAdded(null, optimisticProject._id, true, selectedDepartmentId);
+      if (error.fieldErrors) { setErrors(prev => ({ ...prev, ...error.fieldErrors })); setActiveTab('details'); }
       toast.error(error.message || "Failed to create project");
     } finally {
       setIsSaving(false);
@@ -955,6 +932,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                     {/* Client Information */}
                     {formData.projectType !== 'Inhouse' && (
                       <ClientSection
+                        required={formData.projectType === 'Hired Client'}
                         clientName={formData.clientName}
                         clientEmail={formData.clientEmail}
                         clientCountryCode={formData.clientCountryCode}

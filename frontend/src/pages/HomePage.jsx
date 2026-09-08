@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, startTransition, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, useLayoutEffect } from 'react';
 import { useNavigationType, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -12,7 +12,14 @@ import Database from '../services/database';
 import ProjectCard from '../components/ProjectCard';
 import HomePageSkeleton from '../components/LoadingSkeleton';
 import NeonSparkText from '../components/NeonSparkText';
-import { useDebounce } from '../hooks/useDebounce';
+import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import SortableDepartment, { DepartmentDragHandle } from '../components/SortableDepartment';
+import ProjectSearchInput from '../components/ProjectSearchInput';
+import useProjectSearch from '../hooks/useProjectSearch';
+import useWorkspacePreferences from '../hooks/useWorkspacePreferences';
+import WorkspaceContext from '../context/WorkspaceContext';
+import { PROJECT_SORT_OPTIONS, orderDepartments, promoteDepartments, sortProjects } from '../../../shared/projectView.mjs';
 import useProjectStore from '../store/projectStore';
 import useProjectSelection from '../hooks/useProjectSelection';
 import Avatar from '../components/Avatar';
@@ -56,6 +63,10 @@ const HomePage = () => {
   } = useProjectStore(); // Using the new store
 
   const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const { preferences, updatePreferences, error: preferenceError, retryPreferences, scopeKey } = useWorkspacePreferences();
+  const { query: searchQuery, result: searchResult, loading: searchLoading, error: searchError, search, invalidate } = useProjectSearch(departments, scopeKey);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const navType = useNavigationType();
   // Removed local useState for departments, loading, error, members assignments
 
@@ -96,11 +107,22 @@ const HomePage = () => {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [expandedDepartments, setExpandedDepartments] = useState({});
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearchQuery] = useDebounce(searchQuery, 200);
   const [viewMode, setViewMode] = useState('grid');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [projectSort, setProjectSort] = useState(preferences?.projectSort || 'default');
   const [selectedMembers, setSelectedMembers] = useState({});
+
+  // Synchronize local sort state whenever preferences load or change from remote/cache
+  useEffect(() => {
+    if (preferences?.projectSort && preferences.projectSort !== projectSort) {
+      setProjectSort(preferences.projectSort);
+    }
+  }, [preferences?.projectSort]);
+
+  const handleSortChange = useCallback((newSort) => {
+    setProjectSort(newSort); // Instant 0ms update in UI
+    updatePreferences({ projectSort: newSort }); // Asynchronously sync to preferences
+  }, [updatePreferences]);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [memberDropdownOpen, setMemberDropdownOpen] = useState({});
   const [memberListExpanded, setMemberListExpanded] = useState({});
@@ -122,8 +144,8 @@ const HomePage = () => {
   // - Admin users see ALL departments
   // - Non-admin users see ONLY departments they're assigned to
   useEffect(() => {
-    fetchDepartments();
-  }, [fetchDepartments]);
+    if (currentWorkspace?._id) fetchDepartments();
+  }, [fetchDepartments, currentWorkspace?._id]);
 
   // Real-time refresh when access permissions are updated by admin
   useEffect(() => {
@@ -338,52 +360,46 @@ const HomePage = () => {
     projectsBulkDeleted, projectsBulkRestored, clearSelection, fetchDepartments
   ]);
 
-  const toggleViewAllProjects = useCallback((departmentId) => {
+  const toggleViewAllProjects = useCallback((departmentId, total) => {
     setExpandedDepartments(prev => ({
       ...prev,
-      [departmentId]: !prev[departmentId]
+      [departmentId]: (prev[departmentId] || 6) >= total ? 6 : Math.min((prev[departmentId] || 6) + 24, total)
     }));
   }, []);
 
-  // Optimized search handler with debounce effect
-  const handleSearchChange = useCallback((e) => {
-    const value = e.target.value;
-    startTransition(() => {
-      setSearchQuery(value);
-    });
-  }, []);
-
-  const filterProjects = useCallback((projects, departmentId) => {
-    if (!projects) return [];
-
-    let filtered = projects;
-
-    // Search filter - use debounced value
-    if (debouncedSearchQuery) {
-      filtered = filtered.filter(project =>
-        project.name?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
-        project.description?.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
+  const orderedDepartments = useMemo(() => orderDepartments(departments, preferences.departmentOrder), [departments, preferences.departmentOrder]);
+  const sortedProjects = useMemo(() => Object.fromEntries(departments.map(department => [department._id, sortProjects(department.projects || [], projectSort)])), [departments, projectSort]);
+  const filteredProjectsByDepartment = useMemo(() => {
+    const result = {};
+    for (const department of departments) {
+      const selectedMember = selectedMembers[department._id];
+      const memberIds = selectedMember && selectedMember !== 'all'
+        ? new Set((projectsWithMemberAssignments[department._id]?.[selectedMember] || []).map(project => project._id)) : null;
+      const matchingIds = searchResult ? new Set(searchResult.projects[department._id] || []) : null;
+      result[department._id] = (sortedProjects[department._id] || []).filter(project =>
+        (!matchingIds || matchingIds.has(project._id)) &&
+        (filterStatus === 'all' || project.status?.toLowerCase() === filterStatus.toLowerCase()) &&
+        (!memberIds || memberIds.has(project._id))
       );
     }
-
-    // Status filter
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter(project =>
-        project.status?.toLowerCase() === filterStatus.toLowerCase()
-      );
-    }
-
-    // Member filter - now filters projects where the member has assignments
-    const selectedMember = selectedMembers[departmentId];
-    if (selectedMember && selectedMember !== 'all') {
-      // Get projects where this member has assignments (direct or through tasks)
-      const memberProjects = projectsWithMemberAssignments[departmentId]?.[selectedMember] || [];
-      const memberProjectIds = new Set(memberProjects.map(p => p._id));
-      filtered = filtered.filter(project => memberProjectIds.has(project._id));
-    }
-
-    return filtered;
-  }, [debouncedSearchQuery, filterStatus, selectedMembers, projectsWithMemberAssignments]);
+    return result;
+  }, [departments, sortedProjects, searchResult, filterStatus, selectedMembers, projectsWithMemberAssignments]);
+  const visibleDepartments = useMemo(() => searchQuery && searchResult
+    ? promoteDepartments(orderedDepartments, new Set(searchResult.matchingDepartments))
+    : orderedDepartments, [orderedDepartments, searchQuery, searchResult]);
+  const filterProjects = useCallback((_projects, departmentId) => filteredProjectsByDepartment[departmentId] || [], [filteredProjectsByDepartment]);
+  const matchingProjectCount = useMemo(() => Object.values(filteredProjectsByDepartment).reduce((total, projects) => total + projects.length, 0), [filteredProjectsByDepartment]);
+  const handleDepartmentDragEnd = useCallback(({ active, over }) => {
+    if (searchQuery || !over || active.id === over.id) return;
+    const ids = orderedDepartments.map(department => department._id);
+    const from = ids.indexOf(active.id), to = ids.indexOf(over.id);
+    if (from >= 0 && to >= 0) updatePreferences({ departmentOrder: arrayMove(ids, from, to) });
+  }, [searchQuery, orderedDepartments, updatePreferences]);
+  useEffect(() => {
+    setExpandedDepartments({});
+    setSelectedMembers({});
+    clearSelection();
+  }, [scopeKey, clearSelection]);
 
   const canAddProject = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
   const canSelectProjects = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
@@ -510,20 +526,11 @@ const HomePage = () => {
             <div className="flex flex-wrap items-center justify-between gap-4">
               {/* Search */}
               <div className="flex-1 w-full sm:w-auto min-w-[200px] sm:min-w-[300px]">
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="text"
-                    placeholder="Search projects..."
-                    value={searchQuery}
-                    onChange={handleSearchChange}
-                    className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  />
-                </div>
+                <ProjectSearchInput key={scopeKey} onSearch={search} onInvalidate={invalidate} />
               </div>
 
               {/* Filters and View Mode */}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {/* Status Filter */}
                 <div className="relative" ref={statusDropdownRef}>
                   <div className="flex items-center justify-between pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl transition-all hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -578,6 +585,16 @@ const HomePage = () => {
                   </AnimatePresence>
                 </div>
 
+                {/* Sort By */}
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <span>Sort by</span>
+                  <select aria-label="Sort projects" value={projectSort}
+                    onChange={event => handleSortChange(event.target.value)}
+                    className="py-3 px-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                    {PROJECT_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+
                 {/* View Mode Toggle */}
                 <div className="flex bg-gray-50 rounded-xl p-1 border border-gray-200">
                   <motion.button
@@ -609,6 +626,10 @@ const HomePage = () => {
             </div>
           </div>
 
+          {preferenceError && <p role="status" className="mb-4 text-sm text-amber-700">{preferenceError} <button type="button" onClick={retryPreferences} className="underline">Retry</button></p>}
+          {searchLoading && <p role="status" className="mb-4 text-sm text-gray-500">Searching projects...</p>}
+          {searchError && <p role="alert" className="mb-4 text-sm text-amber-700">{searchError} <button type="button" onClick={() => search(searchQuery)} className="underline">Retry</button></p>}
+          {searchQuery && searchResult && !searchLoading && matchingProjectCount === 0 && <p role="status" className="mb-4 text-sm text-gray-600">No projects found matching your search.</p>}
           {/* Departments Section */}
           {departments.length === 0 ? (
             <div className="bg-white rounded-2xl shadow-lg p-12 text-center border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
@@ -619,26 +640,33 @@ const HomePage = () => {
               <p className="text-gray-600 mb-6">Contact your administrator to create departments and get started.</p>
             </div>
           ) : (
-            <div className="space-y-6 animate-in fade-in duration-500 delay-400">
-              {departments.map((department, deptIndex) => {
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDepartmentDragEnd}>
+            <SortableContext items={visibleDepartments.map(department => department._id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-6">
+              {visibleDepartments.map((department) => {
                 const filteredProjects = filterProjects(department.projects, department._id);
-                const isExpanded = expandedDepartments[department._id];
-                const displayedProjects = isExpanded ? filteredProjects : filteredProjects.slice(0, 6);
+                const visibleCount = expandedDepartments[department._id] || 6;
+                const isExpanded = visibleCount >= filteredProjects.length;
+                const displayedProjects = filteredProjects.slice(0, visibleCount);
                 const hasMore = filteredProjects.length > 6;
 
                 // Get members assigned to this department
                 const departmentMembers = department.members || [];
 
                 return (
-                  <div
+                  <SortableDepartment
                     key={department._id}
-                    className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
-                    style={{ animationDelay: `${deptIndex * 100}ms` }}
+                    id={department._id}
+                    name={department.name}
+                    disabled={!!searchQuery}
+                    className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+                    style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 480px' }}
                   >
                     {/* Department Header */}
                     <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-6 border-b border-gray-200">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
+                          <DepartmentDragHandle />
                           <motion.div
                             whileHover={{ rotate: 360 }}
                             transition={{ duration: 0.5 }}
@@ -803,7 +831,7 @@ const HomePage = () => {
                                 <div
                                   key={project._id}
                                   className="animate-in fade-in slide-in-from-bottom-4 duration-300"
-                                  style={{ animationDelay: `${index * 50}ms` }}
+                                  style={{ animationDelay: `${Math.min(index, 5) * 30}ms` }}
                                 >
                                   <ProjectCard
                                     project={project}
@@ -835,7 +863,7 @@ const HomePage = () => {
                               <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
-                                onClick={() => toggleViewAllProjects(department._id)}
+                                onClick={() => toggleViewAllProjects(department._id, filteredProjects.length)}
                                 className="flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-gray-50 to-blue-50 text-gray-700 rounded-xl hover:from-gray-100 hover:to-blue-100 transition-all border border-gray-200 shadow-sm hover:shadow-md font-medium"
                               >
                                 {isExpanded ? (
@@ -846,7 +874,7 @@ const HomePage = () => {
                                 ) : (
                                   <>
                                     <Eye size={20} />
-                                    <span>View All {filteredProjects.length} Projects</span>
+                                    <span>Show More ({filteredProjects.length - displayedProjects.length} remaining)</span>
                                   </>
                                 )}
                               </motion.button>
@@ -870,10 +898,12 @@ const HomePage = () => {
                         </motion.div>
                       )}
                     </div>
-                  </div>
+                  </SortableDepartment>
                 );
               })}
             </div>
+            </SortableContext>
+            </DndContext>
           )}
       </main>
 

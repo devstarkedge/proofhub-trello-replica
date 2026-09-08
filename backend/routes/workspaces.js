@@ -1,4 +1,5 @@
 import express from 'express';
+import { getWorkspacePreferences, updateWorkspacePreferences } from '../controllers/workspacePreferenceController.js';
 import multer from 'multer';
 import { body } from 'express-validator';
 import {
@@ -33,6 +34,8 @@ const iconUpload = multer({
 });
 
 router.use(protect);
+router.get('/preferences/me', getWorkspacePreferences);
+router.patch('/preferences/me', updateWorkspacePreferences);
 
 router.get('/', getMyWorkspaces);
 

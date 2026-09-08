@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { PROJECT_SORT_OPTIONS } from '../../shared/projectView.mjs';
 
 /**
  * The per-(user, workspace) role record. This is what `protect`
@@ -65,6 +66,11 @@ const workspaceMembershipSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'suspended', 'removed'],
     default: 'active'
+  },
+  // Display preferences only; the existing unique workspace/user index owns scope.
+  preferences: {
+    departmentOrder: { type: [mongoose.Schema.Types.ObjectId], ref: 'Department', default: [] },
+    projectSort: { type: String, enum: PROJECT_SORT_OPTIONS.map(option => option.value), default: 'default' }
   },
   joinedAt: {
     type: Date,

@@ -1,4 +1,5 @@
 import Board from "../models/Board.js";
+import { normalizeClientDetails, validateProjectClient } from '../../shared/projectClient.mjs';
 import List from "../models/List.js";
 import Card from "../models/Card.js";
 import Attachment from "../models/Attachment.js";
@@ -445,6 +446,12 @@ export const getBoard = asyncHandler(async (req, res, next) => {
 // @route   POST /api/boards
 // @access  Private
 export const createBoard = asyncHandler(async (req, res, next) => {
+  // The effective type includes the existing schema default for API callers.
+  const clientErrors = validateProjectClient(req.body.projectType || 'Hired Client', req.body.clientDetails);
+  if (Object.keys(clientErrors).length) {
+    return res.status(400).json({ success: false, message: 'Please complete the required client information.', errors: clientErrors });
+  }
+  if (req.body.clientDetails) req.body.clientDetails = normalizeClientDetails(req.body.clientDetails);
   const {
     name,
     description,
@@ -703,6 +710,21 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
 
   // When switching to Inhouse, clear client/billing fields
   const updateBody = { ...req.body };
+  // Only ordinary field patches are supported. Mongo operators/dotted paths
+  // must not bypass validation of the effective project or change tenant scope.
+  if (Object.keys(updateBody).some(key => key.startsWith('$') || key.includes('.') || ['workspaceId', '_id'].includes(key))) {
+    return next(new ErrorResponse('Invalid project update fields', 400));
+  }
+  if (Object.hasOwn(updateBody, 'projectType') && !['Hired Client', 'Inhouse'].includes(updateBody.projectType)) {
+    return next(new ErrorResponse('Invalid project type', 400));
+  }
+  const nextProjectType = updateBody.projectType ?? previousBoard.projectType ?? 'Hired Client';
+  const nextClientDetails = Object.hasOwn(updateBody, 'clientDetails') ? updateBody.clientDetails : previousBoard.clientDetails;
+  const clientErrors = validateProjectClient(nextProjectType, nextClientDetails);
+  if (Object.keys(clientErrors).length) {
+    return res.status(400).json({ success: false, message: 'Please complete the required client information.', errors: clientErrors });
+  }
+  if (Object.hasOwn(updateBody, 'clientDetails')) updateBody.clientDetails = normalizeClientDetails(nextClientDetails);
   if (updateBody.projectType === 'Inhouse') {
     updateBody.projectSource = null;
     updateBody.billingCycle = null;
