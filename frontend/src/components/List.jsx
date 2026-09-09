@@ -474,7 +474,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
                       }
                     }}
                     placeholder="Enter list name..."
-                    className="w-full px-4 py-3.5 text-sm rounded-xl outline-none transition-all duration-200 text-gray-800 placeholder-gray-400 font-medium"
+                    className="w-full px-4 py-3.5 text-sm rounded-xl outline-none focus:outline-none focus:ring-0 focus-visible:outline-none transition-all duration-200 text-gray-800 placeholder-gray-400 font-medium"
                     style={{
                       background: 'linear-gradient(135deg, rgba(249, 250, 251, 0.9) 0%, rgba(243, 244, 246, 0.7) 100%)',
                       border: isRenameFocused 
@@ -483,6 +483,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
                       boxShadow: isRenameFocused 
                         ? '0 0 0 4px rgba(59, 130, 246, 0.1), inset 0 2px 4px rgba(59, 130, 246, 0.05)' 
                         : 'inset 0 2px 4px rgba(0,0,0,0.03)',
+                      outline: 'none',
                     }}
                     maxLength={50}
                   />

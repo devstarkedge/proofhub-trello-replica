@@ -36,6 +36,7 @@ const getNotificationStyle = (type) => {
     test_notification: { icon: Settings, bg: 'from-gray-400 to-slate-500' },
     sales_tab_approval: { icon: Globe, bg: 'from-amber-400 to-orange-500' },
     sales_tab_result: { icon: CheckCircle2, bg: 'from-green-400 to-emerald-500' },
+    sales_tab_alert: { icon: Bell, bg: 'from-amber-400 to-orange-500' },
   };
   return styles[type] || { icon: Bell, bg: 'from-gray-400 to-slate-500' };
 };

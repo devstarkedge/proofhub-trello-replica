@@ -141,6 +141,16 @@ export function enqueueSalesAlertRowUpdate(oldRow, newRow, opts = {}) {
   return salesAlertQueue.add('evaluate-row-update', { oldRow, newRow }, opts);
 }
 
+/**
+ * Enqueue: seed/refresh a watch tab's SalesTabWatchState baseline (watch
+ * just turned on, or filters just changed on an already-active watch tab).
+ * Queued rather than run inline since it may scan an unbounded number of
+ * matching SalesRow docs — must not block the create/update HTTP response.
+ */
+export function enqueueSalesTabReconcile(tabId, opts = {}) {
+  return salesAlertQueue.add('reconcile-watch-baseline', { tabId }, opts);
+}
+
 // ─── Export all queues for health checks / shutdown ───────────────────────────
 
 export const allQueues = [

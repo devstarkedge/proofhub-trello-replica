@@ -214,7 +214,7 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
                           }
                         }}
                         placeholder="What's this list for?"
-                        className="w-full px-3 py-2.5 text-sm rounded-lg outline-none transition-all duration-200 text-gray-800 placeholder-gray-400 font-medium"
+                        className="w-full px-3 py-2.5 text-sm rounded-lg outline-none focus:outline-none focus:ring-0 focus-visible:outline-none transition-all duration-200 text-gray-800 placeholder-gray-400 font-medium"
                         style={{
                           background: 'rgba(249, 250, 251, 0.8)',
                           border: isListInputFocused 
@@ -223,6 +223,7 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
                           boxShadow: isListInputFocused 
                             ? 'inset 0 2px 4px rgba(139, 92, 246, 0.05)' 
                             : 'inset 0 2px 4px rgba(0,0,0,0.03)',
+                          outline: 'none'
                         }}
                       />
                       

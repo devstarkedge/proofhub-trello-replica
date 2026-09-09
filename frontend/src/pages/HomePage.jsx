@@ -188,6 +188,7 @@ const HomePage = () => {
       Object.keys(memberDropdownRefs.current).forEach(deptId => {
         if (memberDropdownRefs.current[deptId] && !memberDropdownRefs.current[deptId].contains(event.target)) {
           setMemberDropdownOpen(prev => ({ ...prev, [deptId]: false }));
+          setMemberListExpanded(prev => ({ ...prev, [deptId]: false }));
         }
       });
     };
@@ -713,89 +714,94 @@ const HomePage = () => {
                         </div>
                         <div className="flex items-center gap-3">
                           {/* Member Avatars */}
-                          <div className="relative">
-                            <div
-                              className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-all"
-                              onClick={() => setMemberListExpanded(prev => ({ ...prev, [department._id]: !prev[department._id] }))}
+                          {(membersWithAssignments[department._id] || []).length > 0 && (
+                            <div 
+                              className="relative"
+                              ref={el => memberDropdownRefs.current[department._id] = el}
                             >
-                              <div className="flex -space-x-2">
-                                {(membersWithAssignments[department._id] || []).slice(0, 5).map((member, index) => (
-                                  <Avatar
-                                    key={member._id}
-                                    src={member.avatar}
-                                    name={member.name}
-                                    size="sm"
-                                    showBadge={false}
-                                    className=""
-                                  />
-                                ))}
-                                {(membersWithAssignments[department._id] || []).length > 5 && (
-                                  <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                                    <span className="text-xs font-semibold text-white">
-                                      +{(membersWithAssignments[department._id] || []).length - 5}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <ChevronDown
-                                className={`text-gray-400 transition-transform duration-200 ${memberListExpanded[department._id] ? 'rotate-180' : ''}`}
-                                size={16}
-                              />
-                            </div>
-                            {/* Expandable Member List */}
-                            <AnimatePresence>
-                              {memberListExpanded[department._id] && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                                  transition={{ duration: 0.15 }}
-                                  className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden min-w-[200px]"
-                                >
-                                  <div className="py-2">
-                                    <div
-                                      className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 flex items-center gap-3 ${
-                                        (selectedMembers[department._id] || 'all') === 'all' ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
-                                      }`}
-                                      onClick={() => {
-                                        setSelectedMembers(prev => ({ ...prev, [department._id]: 'all' }));
-                                        setMemberListExpanded(prev => ({ ...prev, [department._id]: false }));
-                                      }}
-                                    >
-                                      <Users size={16} />
-                                      <span className="font-medium">All Members</span>
-                                      {(selectedMembers[department._id] || 'all') === 'all' && (
-                                        <div className="w-2 h-2 bg-blue-600 rounded-full ml-auto"></div>
-                                      )}
+                              <div
+                                className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-all"
+                                onClick={() => setMemberListExpanded(prev => ({ ...prev, [department._id]: !prev[department._id] }))}
+                              >
+                                <div className="flex -space-x-2">
+                                  {(membersWithAssignments[department._id] || []).slice(0, 5).map((member, index) => (
+                                    <Avatar
+                                      key={member._id}
+                                      src={member.avatar}
+                                      name={member.name}
+                                      size="sm"
+                                      showBadge={false}
+                                      className=""
+                                    />
+                                  ))}
+                                  {(membersWithAssignments[department._id] || []).length > 5 && (
+                                    <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                      <span className="text-xs font-semibold text-white">
+                                        +{(membersWithAssignments[department._id] || []).length - 5}
+                                      </span>
                                     </div>
-                                    {(membersWithAssignments[department._id] || []).map((member) => (
+                                  )}
+                                </div>
+                                <ChevronDown
+                                  className={`text-gray-400 transition-transform duration-200 ${memberListExpanded[department._id] ? 'rotate-180' : ''}`}
+                                  size={16}
+                                />
+                              </div>
+                              {/* Expandable Member List */}
+                              <AnimatePresence>
+                                {memberListExpanded[department._id] && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden min-w-[200px]"
+                                  >
+                                    <div className="py-2">
                                       <div
-                                        key={member._id}
                                         className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 flex items-center gap-3 ${
-                                          selectedMembers[department._id] === member._id ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                                          (selectedMembers[department._id] || 'all') === 'all' ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
                                         }`}
                                         onClick={() => {
-                                          setSelectedMembers(prev => ({ ...prev, [department._id]: member._id }));
+                                          setSelectedMembers(prev => ({ ...prev, [department._id]: 'all' }));
                                           setMemberListExpanded(prev => ({ ...prev, [department._id]: false }));
                                         }}
                                       >
-                                        <Avatar
-                                          src={member.avatar}
-                                          name={member.name}
-                                          size="xs"
-                                          showBadge={false}
-                                        />
-                                        <span className="font-medium">{member.name}</span>
-                                        {selectedMembers[department._id] === member._id && (
+                                        <Users size={16} />
+                                        <span className="font-medium">All Members</span>
+                                        {(selectedMembers[department._id] || 'all') === 'all' && (
                                           <div className="w-2 h-2 bg-blue-600 rounded-full ml-auto"></div>
                                         )}
                                       </div>
-                                    ))}
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
+                                      {(membersWithAssignments[department._id] || []).map((member) => (
+                                        <div
+                                          key={member._id}
+                                          className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 flex items-center gap-3 ${
+                                            selectedMembers[department._id] === member._id ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                                          }`}
+                                          onClick={() => {
+                                            setSelectedMembers(prev => ({ ...prev, [department._id]: member._id }));
+                                            setMemberListExpanded(prev => ({ ...prev, [department._id]: false }));
+                                          }}
+                                        >
+                                          <Avatar
+                                            src={member.avatar}
+                                            name={member.name}
+                                            size="xs"
+                                            showBadge={false}
+                                          />
+                                          <span className="font-medium">{member.name}</span>
+                                          {selectedMembers[department._id] === member._id && (
+                                            <div className="w-2 h-2 bg-blue-600 rounded-full ml-auto"></div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
                           {canAddProject && (
                             <motion.button
                               whileHover={{ scale: 1.05 }}

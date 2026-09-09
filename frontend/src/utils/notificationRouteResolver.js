@@ -286,6 +286,16 @@ export function resolveNotificationRoute(notification) {
     };
   }
 
+  // ── Sales watch tab alert (navigate to the sales tab that matched) ─
+  if (type === 'sales_tab_alert') {
+    return result(
+      '/sales',
+      null,
+      notification?.metadata?.tabId || notification?.entityId || null,
+      '/sales',
+    );
+  }
+
   // ── Sales tab result (creator sees result, navigate to sales) ─
   if (type === 'sales_tab_result') {
     return result(
@@ -360,6 +370,7 @@ export function getNotificationRouteHint(notification) {
   if (REMINDER_TYPES.has(type)) return 'Reminders';
   if (type === 'sales_tab_approval') return 'Sales → Tab Approval';
   if (type === 'sales_tab_result') return 'Sales → Tab Result';
+  if (type === 'sales_tab_alert') return 'Sales → Watch Alert';
   if (DEPARTMENT_TYPES.has(type)) {
     return notification.metadata?.departmentName
       ? `Department: ${notification.metadata.departmentName}`

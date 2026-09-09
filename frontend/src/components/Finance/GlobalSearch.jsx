@@ -231,8 +231,12 @@ const GlobalSearch = ({
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setFocused(true)}
           placeholder={placeholder}
-          className="flex-1 bg-transparent border-none outline-none text-sm"
-          style={{ color: 'var(--color-text-primary)' }}
+          className="flex-1 bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none text-sm shadow-none focus:shadow-none"
+          style={{ 
+            color: 'var(--color-text-primary)',
+            outline: 'none',
+            boxShadow: 'none'
+          }}
         />
         {query && (
           <button

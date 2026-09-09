@@ -16,7 +16,8 @@ const VALID_ALERT_TYPES = [
 const VALID_FREQUENCIES = ['instant', '15min', 'hourly', 'daily'];
 const VALID_CHANNELS = ['in_app', 'notification_center', 'email'];
 const VALID_PRIORITIES = ['low', 'medium', 'urgent'];
-const VALID_VISIBILITIES = ['private', 'team', 'public'];
+const VALID_VISIBILITIES = ['private', 'public'];
+const MAX_NO_RESPONSE_DAYS = 365;
 
 /**
  * Validate create/update tab body.
@@ -81,6 +82,27 @@ export function validateTabBody(body, existingTabNames = [], currentTabId = null
   // Alert priority
   if (body.alertPriority !== undefined && !VALID_PRIORITIES.includes(body.alertPriority)) {
     errors.push(`alertPriority must be one of: ${VALID_PRIORITIES.join(', ')}`);
+  }
+
+  // When Watch Tab Alerts is being turned on, require a complete,
+  // deliverable configuration. When it's off, no further checks — the
+  // tab's previously-saved alert config (if any) is preserved as-is,
+  // inert until watch is re-enabled.
+  if (body.isWatchTab === true) {
+    if (!Array.isArray(body.alertRules) || body.alertRules.length === 0) {
+      errors.push('Select at least one alert condition.');
+    }
+    if (!Array.isArray(body.alertChannels) || body.alertChannels.length === 0) {
+      errors.push('Select at least one delivery method.');
+    }
+
+    const noResponseRule = (body.alertRules || []).find((r) => r && r.type === 'no_response_days');
+    if (noResponseRule) {
+      const days = noResponseRule.config?.days;
+      if (!Number.isInteger(days) || days < 1 || days > MAX_NO_RESPONSE_DAYS) {
+        errors.push(`Enter a valid number of days (1-${MAX_NO_RESPONSE_DAYS}).`);
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors };

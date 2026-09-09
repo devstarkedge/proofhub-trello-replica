@@ -58,7 +58,8 @@ const notificationSchema = new mongoose.Schema({
       'status_change',
       'system_alert',
       'sales_tab_approval',
-      'sales_tab_result'
+      'sales_tab_result',
+      'sales_tab_alert'
     ],
     required: true
   },

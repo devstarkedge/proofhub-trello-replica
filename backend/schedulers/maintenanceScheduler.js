@@ -12,6 +12,7 @@
  */
 import { cleanupQueue } from '../queues/index.js';
 import { allQueues, salesAlertQueue } from '../queues/index.js';
+import { DELIVERY_SWEEP_INTERVAL_MS } from '../modules/salesTabs/salesTab.alertConfig.js';
 
 const SIX_HOURS   = 6 * 60 * 60 * 1000;
 const EIGHT_HOURS  = 8 * 60 * 60 * 1000;
@@ -82,6 +83,20 @@ export async function registerMaintenanceJobs() {
     {
       repeat: { every: ONE_HOUR },
       jobId: 'repeat:check-overdue-alerts',
+      removeOnComplete: true,
+      removeOnFail: { count: 50 },
+    }
+  );
+
+  // 6. Sales watch-alert delivery sweep — delivers due 15min/hourly/daily
+  // digests and retries any earlier failed delivery attempt (see
+  // modules/salesTabs/salesTab.watchDelivery.service.js)
+  await salesAlertQueue.add(
+    'deliver-pending-sales-alerts',
+    {},
+    {
+      repeat: { every: DELIVERY_SWEEP_INTERVAL_MS },
+      jobId: 'repeat:deliver-pending-sales-alerts',
       removeOnComplete: true,
       removeOnFail: { count: 50 },
     }

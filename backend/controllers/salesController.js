@@ -269,8 +269,11 @@ const prepareRowForSave = (data) => {
  * @route   GET /api/sales/rows
  * @access  Private (requires sales module permission)
  */
-// Helper to build a query from filter params (shared by getSalesRows and exportRows)
-const buildSalesQuery = (params) => {
+// Helper to build a query from filter params (shared by getSalesRows and
+// exportRows, and — to keep watch-tab alert matching byte-for-byte
+// consistent with what the live grid shows — also by the Sales watch-tab
+// alert engine, see modules/salesTabs/salesTab.alert.service.js)
+export const buildSalesQuery = (params = {}) => {
   const {
     search = '',
     platform,

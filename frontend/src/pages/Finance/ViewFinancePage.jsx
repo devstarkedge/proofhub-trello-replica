@@ -656,11 +656,12 @@ const ViewFinancePage = () => {
               placeholder={`Search ${page.pageType}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-lg border text-sm"
+              className="w-full pl-10 pr-4 py-2 rounded-lg border text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none"
               style={{
                 backgroundColor: 'var(--color-bg-primary)',
                 borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-primary)'
+                color: 'var(--color-text-primary)',
+                outline: 'none'
               }}
             />
           </div>

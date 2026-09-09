@@ -27,6 +27,7 @@ import { runWorkspaceStatusMigration } from './migrateWorkspaceStatusField.js';
 import { runWorkspaceSubscriptionsMigration } from './migrateWorkspaceSubscriptions.js';
 import { runPlanCatalogV2Migration } from './migratePlanCatalogV2.js';
 import { runRetireLegacyPlanMigration } from './migrateRetireLegacyPlan.js';
+import { runSalesWatchBaselineMigration } from './migrateSalesWatchBaseline.js';
 
 // ─── Migration definitions ──────────────────────────────────────────────────
 // Order matters: migrations run in the order listed here.
@@ -84,6 +85,12 @@ const MIGRATIONS = [
     version: '20260821',
     description: 'Migrate "Stark Edge Team" to Enterprise; assign every other Legacy workspace a persisted Free/Pro test plan; retire Legacy',
     run: runRetireLegacyPlanMigration,
+  },
+  {
+    name: 'sales_watch_baseline',
+    version: '20260908',
+    description: 'Seed SalesTabWatchState baseline for pre-existing Sales watch tabs so they do not flood on first evaluation',
+    run: runSalesWatchBaselineMigration,
   },
 ];
 

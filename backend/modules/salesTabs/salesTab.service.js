@@ -5,6 +5,9 @@
  * unread badge management, and limit enforcement.
  */
 import SalesTab from './salesTab.model.js';
+import SalesTabWatchState from './salesTabWatchState.model.js';
+import SalesTabAlertEvent from './salesTabAlertEvent.model.js';
+import { enqueueSalesTabReconcile } from '../../queues/index.js';
 
 const MAX_TABS_PER_USER = 10;
 const MAX_WATCH_TABS_PER_USER = 5;
@@ -39,6 +42,16 @@ export async function createTab(userId, userName, data) {
   });
 
   await tab.save();
+
+  // A brand-new watch tab needs its baseline established so pre-existing
+  // matching rows don't all fire "new matching row" the moment it's
+  // evaluated — see salesTab.watchState.service.js#reconcileWatchBaseline.
+  if (tab.isWatchTab) {
+    enqueueSalesTabReconcile(tab._id).catch((err) =>
+      console.error('[SalesTab] Failed to enqueue baseline reconciliation:', err.message)
+    );
+  }
+
   return tab.toObject();
 }
 
@@ -57,15 +70,16 @@ export async function getUserTabs(userId, role) {
     $or: [
       // User's own tabs
       { ownerId: userId },
-      // Approved shared/public from anyone
-      { visibility: { $in: ['team', 'public'] }, approvalStatus: 'approved' },
+      // Approved public tabs from anyone (the model's visibility enum is
+      // only ['private','public'] — there is no 'team' tier)
+      { visibility: 'public', approvalStatus: 'approved' },
     ],
   };
 
-  // Admins also see pending shared/public tabs
+  // Admins also see pending public tabs
   if (isAdmin) {
     query.$or.push({
-      visibility: { $in: ['team', 'public'] },
+      visibility: 'public',
       approvalStatus: 'pending',
     });
   }
@@ -97,7 +111,8 @@ export async function updateTab(tabId, userId, role, data) {
   }
 
   // Enforce watch tab limit on upgrade
-  if (data.isWatchTab && !tab.isWatchTab) {
+  const watchJustEnabled = data.isWatchTab && !tab.isWatchTab;
+  if (watchJustEnabled) {
     const watchCount = await SalesTab.countDocuments({ ownerId: tab.ownerId, isWatchTab: true });
     if (watchCount >= MAX_WATCH_TABS_PER_USER) {
       const err = new Error(`Maximum ${MAX_WATCH_TABS_PER_USER} watch tabs allowed`);
@@ -112,8 +127,23 @@ export async function updateTab(tabId, userId, role, data) {
     data.approvedBy = undefined;
   }
 
+  const oldFilterHash = tab.filterHash;
+
   Object.assign(tab, data);
-  await tab.save();
+  await tab.save(); // pre-save hook recomputes filterHash if `filters` changed
+
+  const willBeWatching = data.isWatchTab !== undefined ? data.isWatchTab : tab.isWatchTab;
+  const filtersChanged = tab.filterHash !== oldFilterHash;
+  if (willBeWatching && (watchJustEnabled || filtersChanged)) {
+    // Watch just turned on, or filters changed on an already-active watch
+    // tab — either way the matching-row set may have shifted, so the
+    // baseline must be re-established to avoid a false "new matching row"
+    // flood for rows that already matched under the new/just-enabled filters.
+    enqueueSalesTabReconcile(tab._id).catch((err) =>
+      console.error('[SalesTab] Failed to enqueue baseline reconciliation:', err.message)
+    );
+  }
+
   return tab.toObject();
 }
 
@@ -137,6 +167,18 @@ export async function deleteTab(tabId, userId, role) {
   }
 
   await SalesTab.findByIdAndDelete(tabId);
+
+  // Stop all future watch processing for this tab: drop its baseline state
+  // entirely, and cancel any not-yet-delivered alert events (leave
+  // delivered/skipped ones in place for audit history).
+  await Promise.all([
+    SalesTabWatchState.deleteMany({ savedTabId: tabId }),
+    SalesTabAlertEvent.updateMany(
+      { savedTabId: tabId, status: 'pending' },
+      { $set: { status: 'skipped', skipReason: 'TAB_DELETED' } }
+    ),
+  ]);
+
   return { id: tabId };
 }
 

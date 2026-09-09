@@ -109,6 +109,16 @@ body {
   outline-offset: 2px;
 }
 
+/* Suppress focus outline when outline-none is explicitly specified */
+.outline-none,
+.outline-none:focus,
+.outline-none:focus-visible,
+[class*="outline-none"]:focus,
+[class*="outline-none"]:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+
 /* Placeholder text */
 ::placeholder {
   color: var(--color-text-placeholder);

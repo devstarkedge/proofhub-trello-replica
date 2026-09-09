@@ -69,11 +69,14 @@ const AddCardForm = memo(({ listId, onAdd, onCancel }) => {
               }
             }}
             placeholder="What needs to be done?"
-            className="w-full text-sm text-gray-800 placeholder-gray-400 bg-transparent resize-none outline-none transition-all duration-200"
+            className="w-full text-sm text-gray-800 placeholder-gray-400 bg-transparent resize-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none transition-all duration-200 shadow-none focus:shadow-none"
             style={{
               minHeight: '44px',
               lineHeight: '1.5',
               fontWeight: 500,
+              outline: 'none',
+              boxShadow: 'none',
+              border: 'none',
             }}
             rows="1"
           />

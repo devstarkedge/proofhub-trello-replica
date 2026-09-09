@@ -234,8 +234,12 @@ export const NotificationProvider = ({ children }) => {
 
   // Show toast for new notification
   const showToast = (notification) => {
-    // sales_tab_approval has its own dedicated TabApprovalToast — skip generic toast
-    if (notification.type === 'sales_tab_approval') return;
+    // sales_tab_approval has its own dedicated TabApprovalToast — skip generic toast.
+    // sales_tab_alert has its own dedicated WatchAlertToast (driven by the
+    // separate 'sales:tab:alert' socket event) — skip here too, otherwise a
+    // tab with both In-app toast and Notification center channels selected
+    // would show two different toasts for the same alert.
+    if (notification.type === 'sales_tab_approval' || notification.type === 'sales_tab_alert') return;
     const toastContent = (
       <div className="flex items-start gap-3">
         <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${

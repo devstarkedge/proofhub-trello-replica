@@ -754,3 +754,84 @@ export const sendEnterpriseInquiryConfirmationEmail = async (inquiry) => {
     html
   });
 };
+
+// Sales Watch Tab alert digest — batches every eligible alert item for one
+// (tab, recipient) delivery window into a single email. `items` is
+// pre-formatted by the caller (modules/salesTabs/salesTab.watchDelivery.service.js)
+// as [{ message, conditionType, rowName, rowPlatform }] — this file stays
+// free of any Sales-module import, matching its role as a generic,
+// module-agnostic template library.
+const WATCH_CONDITION_LABELS = {
+  new_row: 'New matching row',
+  status_changed: 'Status changed',
+  budget_increased: 'Budget increased',
+  rating_improved: 'Rating improved',
+  dead_to_active: 'Dead lead became active',
+  followup_overdue: 'Follow-up overdue',
+  no_response_days: 'No response',
+};
+
+export const buildSalesWatchDigestEmail = (recipientUser, { tab, items }) => {
+  const salesUrl = `${process.env.FRONTEND_URL}/sales?tab=${tab._id}`;
+  const itemsHtml = items
+    .map(
+      (item) => `
+        <div class="alert-item">
+          <span class="alert-badge">${WATCH_CONDITION_LABELS[item.conditionType] || 'Update'}</span>
+          <p class="alert-message">${item.message}</p>
+        </div>`
+    )
+    .join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Watch Tab alert: ${tab.name}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f1f5f9; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #f59e0b, #ea580c); color: white; padding: 40px 30px; text-align: center; }
+          .header h1 { margin: 0 0 8px 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+          .header p { margin: 0; font-size: 15px; color: #ffffff; font-weight: 500; }
+          .content { padding: 32px 30px; }
+          .message { font-size: 15px; color: #475569; margin-bottom: 16px; }
+          .alert-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+          .alert-badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 3px 8px; border-radius: 6px; margin-bottom: 6px; }
+          .alert-message { margin: 0; font-size: 14px; color: #1e293b; }
+          .cta-wrapper { text-align: center; margin: 28px 0 8px; }
+          .button { display: inline-block; background: linear-gradient(135deg, #f59e0b, #ea580c); color: #ffffff; padding: 14px 36px; text-decoration: none; border-radius: 12px; font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }
+          .footer { background: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🔔 Watch Tab: ${tab.name}</h1>
+            <p>${items.length} update${items.length > 1 ? 's' : ''} on your saved Sales tab</p>
+          </div>
+          <div class="content">
+            <p class="message">Hi ${recipientUser.name || 'there'},</p>
+            <p class="message">Here's what changed on your watched tab <strong>"${tab.name}"</strong>:</p>
+            ${itemsHtml}
+            <div class="cta-wrapper">
+              <a href="${salesUrl}" class="button" target="_blank" rel="noopener noreferrer">View in FlowTask</a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} FlowTask. All rights reserved.</p>
+            <p>This email was sent to ${recipientUser.email} because you created this Watch Tab and enabled email digest alerts.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  return {
+    to: recipientUser.email,
+    subject: `${items.length} update${items.length > 1 ? 's' : ''} on your watch tab "${tab.name}"`,
+    html,
+  };
+};
