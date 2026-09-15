@@ -216,10 +216,12 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
   // query without an ambient workspace context.
   let workspaceName = null;
   let workspaceSlug = null;
+  let workspaceLogo = null;
   if (workspaceId) {
-    const ws = await Workspace.findById(workspaceId).select('name slug').lean();
+    const ws = await Workspace.findById(workspaceId).select('name slug icon').lean();
     workspaceName = ws?.name || null;
     workspaceSlug = ws?.slug || null;
+    workspaceLogo = ws?.icon?.mediumUrl || ws?.icon?.url || null;
   }
 
   // Generate a short-lived JWT (5 minutes) with user identity
@@ -241,6 +243,7 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     workspaceId,
     workspaceName,
     workspaceSlug,
+    workspaceLogo,
     plan: planSlug,
     // req.user was overlaid from the active FlowTask WorkspaceMembership by
     // protect(). Keep this scoped snapshot inside the signed redirect token so

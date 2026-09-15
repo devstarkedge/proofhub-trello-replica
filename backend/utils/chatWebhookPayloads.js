@@ -102,6 +102,7 @@ export function buildWorkspaceUpdatedPayload(workspace, changes, actor) {
       id: workspace._id.toString(),
       name: workspace.name,
       slug: workspace.slug,
+      logo: workspace.icon?.mediumUrl || workspace.icon?.url || null,
     },
     changes: changes || {},
     actor: buildActor(actor),

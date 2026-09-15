@@ -245,6 +245,12 @@ export const WorkspaceProvider = ({ children }) => {
     setCurrentWorkspace((prev) => (prev?._id === workspaceId ? { ...prev, icon } : prev));
   }, []);
 
+  const applyWorkspaceMetadata = useCallback((workspaceId, workspace) => {
+    if (!workspaceId || !workspace) return;
+    setWorkspaces((prev) => prev.map((ws) => (ws._id === workspaceId ? { ...ws, ...workspace } : ws)));
+    setCurrentWorkspace((prev) => (prev?._id === workspaceId ? { ...prev, ...workspace } : prev));
+  }, []);
+
   const uploadWorkspaceIcon = useCallback(async (workspaceId, file) => {
     const formData = new FormData();
     formData.append('icon', file);
@@ -270,6 +276,15 @@ export const WorkspaceProvider = ({ children }) => {
     window.addEventListener('socket-workspace-icon-updated', handleIconUpdated);
     return () => window.removeEventListener('socket-workspace-icon-updated', handleIconUpdated);
   }, [applyWorkspaceIcon]);
+
+  useEffect(() => {
+    const handleWorkspaceUpdated = (event) => {
+      const { workspaceId, workspace } = event.detail || {};
+      applyWorkspaceMetadata(workspaceId, workspace);
+    };
+    window.addEventListener('socket-workspace-updated', handleWorkspaceUpdated);
+    return () => window.removeEventListener('socket-workspace-updated', handleWorkspaceUpdated);
+  }, [applyWorkspaceMetadata]);
 
   // Another session just added/restored this user into a workspace (HR
   // Panel, invite accept) — refresh the switcher's list live rather than

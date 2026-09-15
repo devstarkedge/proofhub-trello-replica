@@ -34,8 +34,9 @@ const TIMEOUT_MS = 10000;
  */
 export async function syncWorkspaceToChatApp({ workspace, owner }) {
   const chatAppUrl = config.chat.chatAppUrl;
+  const chatApiUrl = config.chat.apiUrl;
   const chatJwtSecret = config.chat.jwtSecret;
-  if (!chatAppUrl || !chatJwtSecret || !owner) return null;
+  if (!chatAppUrl || !chatApiUrl || !chatJwtSecret || !owner) return null;
 
   // Read live, not passed in by the caller — the entitlement is the source
   // of truth for what ChatApp should provision this workspace as. The
@@ -53,6 +54,7 @@ export async function syncWorkspaceToChatApp({ workspace, owner }) {
     workspaceId: workspace._id.toString(),
     workspaceName: workspace.name,
     workspaceSlug: workspace.slug,
+    workspaceLogo: workspace.icon?.mediumUrl || workspace.icon?.url || null,
     plan: planSlug,
     source: 'flowtask',
   };
@@ -61,7 +63,7 @@ export async function syncWorkspaceToChatApp({ workspace, owner }) {
   let response;
   try {
     response = await axios.post(
-      `${chatAppUrl.replace(/\/+$/, '')}/api/chat/auth/login/flowtask`,
+      `${chatApiUrl.replace(/\/+$/, '')}/api/chat/auth/login/flowtask`,
       { token },
       { timeout: TIMEOUT_MS },
     );
@@ -91,7 +93,8 @@ export async function syncWorkspaceToChatApp({ workspace, owner }) {
 
   // Mirrors what chatIntegrationController.js#connect would have set
   // manually — the whole point of eager sync is the admin never has to.
-  const webhookUrl = new URL('/api/chat/webhooks/flowtask', chatAppUrl).toString();
+  const webhookUrl = config.chat.webhookUrl
+    || new URL('/api/chat/webhooks/flowtask', chatApiUrl).toString();
   await Workspace.findByIdAndUpdate(workspace._id, {
     $set: {
       'settings.chatIntegration.enabled': true,

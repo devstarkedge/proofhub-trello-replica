@@ -15,6 +15,15 @@ const isDev = env === 'development';
 const isProd = env === 'production';
 const isTest = env === 'test';
 
+function deriveChatApiUrl() {
+  if (process.env.CHAT_API_URL) return process.env.CHAT_API_URL.replace(/\/+$/, '');
+  try {
+    return new URL(process.env.CHAT_WEBHOOK_URL).origin;
+  } catch {
+    return '';
+  }
+}
+
 // ─── Required Environment Variables ─────────────────────────────────────────
 const required = ['MONGO_URI', 'JWT_SECRET'];
 
@@ -121,6 +130,7 @@ const config = {
   // Chat Integration
   chat: {
     enabled: process.env.CHAT_ENABLED === 'true',
+    apiUrl: deriveChatApiUrl(),
     webhookUrl: process.env.CHAT_WEBHOOK_URL,
     webhookSecret: process.env.CHAT_WEBHOOK_SECRET,
     chatAppUrl: process.env.CHATAPP_URL || '',

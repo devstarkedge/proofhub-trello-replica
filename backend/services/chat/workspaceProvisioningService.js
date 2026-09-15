@@ -30,7 +30,7 @@ import logger from '../../utils/logger.js';
  * @param {string} [params.chatWorkspaceSlug]
  * @returns {Promise<{flowTaskWorkspaceId: string, created: boolean}>}
  */
-export async function provisionFromChatApp({ ownerId, chatWorkspaceId, chatWorkspaceName, chatWorkspaceSlug }) {
+export async function provisionFromChatApp({ ownerId, chatWorkspaceId, chatWorkspaceName, chatWorkspaceSlug, chatWorkspaceLogo = null }) {
   if (!chatWorkspaceId) {
     throw new Error('provisionFromChatApp: chatWorkspaceId is required');
   }
@@ -61,6 +61,17 @@ export async function provisionFromChatApp({ ownerId, chatWorkspaceId, chatWorks
   }
 
   const name = chatWorkspaceName || 'ChatApp Workspace';
+  const icon = chatWorkspaceLogo ? {
+    url: chatWorkspaceLogo,
+    publicId: null,
+    format: null,
+    isSvg: /\.svg(?:$|\?)/i.test(chatWorkspaceLogo),
+    smallUrl: chatWorkspaceLogo,
+    mediumUrl: chatWorkspaceLogo,
+    largeUrl: chatWorkspaceLogo,
+    uploadedAt: new Date(),
+    uploadedBy: null,
+  } : undefined;
   let slug = slugify(chatWorkspaceSlug || chatWorkspaceName || 'chatapp-workspace') || 'chatapp-workspace';
 
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -79,6 +90,7 @@ export async function provisionFromChatApp({ ownerId, chatWorkspaceId, chatWorks
           companySize: null,
           departmentName: 'General',
           ownerId,
+          icon,
           session,
         });
         workspace = result.workspace;

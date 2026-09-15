@@ -60,9 +60,58 @@ export async function createMapping({ flowTaskWorkspaceId, chatAppWorkspaceId, c
   }
 }
 
+/**
+ * Repair or create the reverse lookup when ChatApp proves the current pair
+ * through an HMAC-authenticated request. This covers workspaces first linked
+ * through the browser SSO flow, where ChatApp knew both ids but FlowTask did
+ * not receive the ChatApp id back.
+ */
+export async function reconcileMapping({
+  flowTaskWorkspaceId,
+  chatAppWorkspaceId,
+  chatAppWorkspaceSlug = null,
+  syncOrigin = 'user_initiated',
+}) {
+  const [byFlowTask, byChatApp] = await Promise.all([
+    findByFlowTaskWorkspaceId(flowTaskWorkspaceId),
+    findByChatAppWorkspaceId(chatAppWorkspaceId),
+  ]);
+
+  if (byChatApp && String(byChatApp.flowTaskWorkspaceId) !== String(flowTaskWorkspaceId)) {
+    const error = new Error('ChatApp workspace is already linked to a different FlowTask workspace');
+    error.code = 'WORKSPACE_MAPPING_CONFLICT';
+    throw error;
+  }
+
+  if (byFlowTask) {
+    if (String(byFlowTask.chatAppWorkspaceId) === String(chatAppWorkspaceId)) return byFlowTask;
+    return WorkspaceIntegrationMapping.findOneAndUpdate(
+      { _id: byFlowTask._id, status: 'active' },
+      {
+        $set: {
+          chatAppWorkspaceId,
+          chatAppWorkspaceSlug,
+          syncOrigin,
+          linkedAt: new Date(),
+        },
+      },
+      { new: true, runValidators: true },
+    );
+  }
+
+  if (byChatApp) return byChatApp;
+  return createMapping({
+    flowTaskWorkspaceId,
+    chatAppWorkspaceId,
+    chatAppWorkspaceSlug,
+    syncOrigin,
+  });
+}
+
 export default {
   resolveWorkspaceIdFromRequest,
   findByFlowTaskWorkspaceId,
   findByChatAppWorkspaceId,
   createMapping,
+  reconcileMapping,
 };

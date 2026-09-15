@@ -305,8 +305,7 @@ export const updateWorkspace = asyncHandler(async (req, res, next) => {
   }
 
   // Captured before the update so the chat-sync hook below can report what
-  // actually changed — slug/plan aren't updatable here (see `updates`
-  // above), so name is the only field that can ever need re-syncing.
+  // actually changed. Logo changes use the dedicated icon endpoints below.
   const previous = await workspaceContext.runUnscoped(async () => (
     await Workspace.findById(req.params.id).select('name').lean()
   ));
@@ -324,6 +323,7 @@ export const updateWorkspace = asyncHandler(async (req, res, next) => {
       { name: { old: previous.name, new: updates.name } },
       req.user,
     ).catch(console.error);
+    emitWorkspaceUpdated(workspace._id, workspace).catch(console.error);
   }
 
   res.status(200).json({ success: true, data: workspace });
@@ -341,6 +341,25 @@ const emitWorkspaceIconUpdated = async (workspaceId, icon) => {
     }
   } catch (err) {
     console.error('Failed to emit workspace-icon-updated:', err);
+  }
+};
+
+const emitWorkspaceUpdated = async (workspaceId, workspace) => {
+  try {
+    const { emitToUser } = await import('../realtime/index.js');
+    const memberIds = await WorkspaceMembership.find({ workspace: workspaceId, status: 'active' }).distinct('user');
+    const payload = {
+      workspaceId: workspaceId.toString(),
+      workspace: {
+        name: workspace.name,
+        icon: workspace.icon?.url ? workspace.icon : null,
+      },
+    };
+    for (const userId of memberIds) {
+      emitToUser(userId.toString(), 'workspace-updated', payload);
+    }
+  } catch (err) {
+    console.error('Failed to emit workspace-updated:', err);
   }
 };
 
@@ -379,6 +398,7 @@ export const uploadWorkspaceIcon = asyncHandler(async (req, res, next) => {
   }
 
   const oldPublicId = workspace.icon?.publicId || null;
+  const oldIconUrl = workspace.icon?.url || null;
 
   const result = await uploadWorkspaceIconToCloudinary(file.buffer, {
     workspaceId: req.params.id,
@@ -406,6 +426,12 @@ export const uploadWorkspaceIcon = asyncHandler(async (req, res, next) => {
   }
 
   await emitWorkspaceIconUpdated(workspace._id, workspace.icon);
+  await emitWorkspaceUpdated(workspace._id, workspace);
+  chatHooks.onWorkspaceUpdated(
+    workspace,
+    { logo: { old: oldIconUrl, new: workspace.icon.url } },
+    req.user,
+  ).catch(console.error);
 
   res.status(200).json({ success: true, data: { icon: workspace.icon } });
 });
@@ -429,6 +455,7 @@ export const removeWorkspaceIcon = asyncHandler(async (req, res, next) => {
   }
 
   const oldPublicId = workspace.icon?.publicId || null;
+  const oldIconUrl = workspace.icon?.url || null;
   workspace.icon = undefined;
   await workspace.save();
 
@@ -439,6 +466,12 @@ export const removeWorkspaceIcon = asyncHandler(async (req, res, next) => {
   }
 
   await emitWorkspaceIconUpdated(workspace._id, null);
+  await emitWorkspaceUpdated(workspace._id, workspace);
+  chatHooks.onWorkspaceUpdated(
+    workspace,
+    { logo: { old: oldIconUrl, new: null } },
+    req.user,
+  ).catch(console.error);
 
   res.status(200).json({ success: true, data: { icon: null } });
 });

@@ -106,10 +106,8 @@ export const chatHooks = {
   // ─── Workspace Hooks ─────────────────────────────────────────────────────
 
   /**
-   * Trigger when a workspace's own metadata changes (currently: name — the
-   * only field updateWorkspace exposes; slug/plan aren't mutable on
-   * FlowTask's side post-creation, so there's nothing else to keep in sync
-   * after the initial eager-sync at creation).
+   * Trigger when shared workspace metadata changes (name or logo). Slug and
+   * plan follow their existing immutable/entitlement-specific paths.
    * @param {object} workspace - Workspace Mongoose document (post-update)
    * @param {object} changes - What changed
    * @param {object} actor - req.user

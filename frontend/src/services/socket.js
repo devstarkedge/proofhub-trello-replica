@@ -325,6 +325,11 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-workspace-icon-updated', { detail: data }));
     });
 
+    this.socket.on('workspace-updated', (data) => {
+      console.log('Workspace metadata updated:', data);
+      window.dispatchEvent(new CustomEvent('socket-workspace-updated', { detail: data }));
+    });
+
     // Fired when this user is added/restored to a workspace from another
     // session (HR Panel add-member, invite accept) — refreshes their
     // switcher's workspace list live, no logout/refresh required.

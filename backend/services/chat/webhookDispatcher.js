@@ -48,7 +48,10 @@ async function resolveWorkspaceChatSettings(workspaceId) {
   if (!ci?.connectedAt) {
     return { enabled: CHAT_ENABLED, webhookUrl: CHAT_WEBHOOK_URL };
   }
-  return { enabled: !!ci.enabled, webhookUrl: ci.webhookUrl || CHAT_WEBHOOK_URL };
+  // Deployment configuration is authoritative for the callback host. This
+  // prevents a local/dev process that shares a database from persisting a
+  // localhost callback that the production process would later try to use.
+  return { enabled: !!ci.enabled, webhookUrl: CHAT_WEBHOOK_URL || ci.webhookUrl };
 }
 
 /**

@@ -22,8 +22,7 @@ const workspaceIntegrationMappingSchema = new mongoose.Schema({
   chatAppWorkspaceId: { type: String, required: true, match: /^[0-9a-fA-F]{24}$/ },
   chatAppWorkspaceSlug: { type: String, default: null },
   status: { type: String, enum: ['active', 'revoked'], default: 'active' },
-  // Unused until Phase 2's reverse (ChatApp→FlowTask) sync exists, but the
-  // field is added now so it doesn't require a later migration.
+  // Records whether the mapping originated in ChatApp or through FlowTask SSO.
   syncOrigin: { type: String, enum: ['user_initiated', 'sync_provisioned'], required: true, default: 'user_initiated' },
   linkedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   linkedAt: { type: Date, default: Date.now },

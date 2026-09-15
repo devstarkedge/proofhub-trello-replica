@@ -43,7 +43,7 @@ const ALREADY_OWNS_WORKSPACE_MESSAGE =
  * @param {import('mongoose').ClientSession} params.session
  * @returns {Promise<{workspace: object, department: object}>}
  */
-export async function createWorkspaceCore({ name, slug, type, industry = null, companySize = null, departmentName, ownerId, session }) {
+export async function createWorkspaceCore({ name, slug, type, industry = null, companySize = null, departmentName, ownerId, icon = undefined, session }) {
   let workspace;
   let department;
 
@@ -76,6 +76,7 @@ export async function createWorkspaceCore({ name, slug, type, industry = null, c
       type,
       industry,
       companySize,
+      icon,
     }], { session });
     workspace = createdWorkspace;
 
