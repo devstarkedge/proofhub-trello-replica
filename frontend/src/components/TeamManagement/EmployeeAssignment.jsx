@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
   UserPlus,
+  UserX,
   Search,
   Award,
   Mail,
@@ -335,7 +336,11 @@ const EmployeeAssignment = memo(({
             </>
           ) : (
             <>
-              <UserPlus size={18} className={`flex-shrink-0 ${activeTab === 'assigned' ? 'rotate-45' : ''}`} />
+              {activeTab === 'assigned' ? (
+                <UserX size={18} className="flex-shrink-0" />
+              ) : (
+                <UserPlus size={18} className="flex-shrink-0" />
+              )}
               <span className="truncate">{activeTab === 'assigned' ? 'Unassign' : 'Assign'} {selectedUsers.length > 0 && `(${selectedUsers.length})`}</span>
             </>
           )}

@@ -6,7 +6,7 @@ import {
   BarChart3, PieChart, Activity, Target, Award, AlertCircle,
   Zap, Brain, Lightbulb,
   FileSpreadsheet, FileText, Share2, Settings, Info, CheckCircle2,
-  XCircle, MinusCircle, Building2, UserCheck, UserX, Timer, Flame
+  XCircle, MinusCircle, Building2, UserCheck, UserX, Timer, Flame, X
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../../services/database';
@@ -1321,19 +1321,33 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
 
         {/* Active Filters Display */}
         {(filterPreset !== 'all' || searchQuery) && (
-          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
-            <span className="text-sm text-gray-500">Active filters:</span>
+          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex-wrap">
+            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">Active filters:</span>
             {filterPreset !== 'all' && (
-              <Badge className="bg-blue-100 text-blue-700 capitalize">
-                {filterPreset.replace('-', ' ')}
-                <button onClick={() => setFilterPreset('all')} className="ml-1">×</button>
-              </Badge>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-300 dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-700/60 shadow-xs capitalize">
+                <span>{filterPreset.replace('-', ' ')}</span>
+                <button 
+                  onClick={() => setFilterPreset('all')} 
+                  className="hover:bg-blue-200/80 dark:hover:bg-blue-800/60 rounded-full p-0.5 transition-colors text-blue-700 hover:text-blue-950 dark:text-blue-300 dark:hover:text-blue-100 cursor-pointer focus:outline-none"
+                  title="Remove filter"
+                  aria-label="Remove filter"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </span>
             )}
             {searchQuery && (
-              <Badge className="bg-amber-100 text-amber-700">
-                Search: "{searchQuery}"
-                <button onClick={() => setSearchQuery('')} className="ml-1">×</button>
-              </Badge>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-700/60 shadow-xs">
+                <span>Search: "{searchQuery}"</span>
+                <button 
+                  onClick={() => setSearchQuery('')} 
+                  className="hover:bg-amber-200/80 dark:hover:bg-amber-800/60 rounded-full p-0.5 transition-colors text-amber-700 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-100 cursor-pointer focus:outline-none"
+                  title="Clear search"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </span>
             )}
           </div>
         )}
