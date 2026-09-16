@@ -214,9 +214,6 @@ const ChatIntegrationSettings = ({ userRole }) => {
                   <p className="text-sm font-medium text-green-800">
                     Connected to ChatApp
                   </p>
-                  {status.chatUrl && (
-                    <p className="text-sm text-green-600 mt-1">{status.chatUrl}</p>
-                  )}
                 </div>
               </div>
             </div>
