@@ -8,7 +8,14 @@ import * as controller from './leavePolicy.controller.js';
 const router = express.Router();
 router.use(protect);
 
-router.get('/types', requireResourcePermission('leave', 'view_policy'), controller.listLeaveTypes);
+// Every employee needs the leave type catalog to populate their own
+// Request Leave form's "Leave Type" dropdown — not gated behind the
+// administrative view_policy permission, matching how
+// leaveCalendar.routes.js already treats work-calendar/holiday reads.
+// (This was previously gated, which silently emptied the dropdown for any
+// non-Admin/HR role — regular employees and custom roles have no grant on
+// any "leave" resource action by default.)
+router.get('/types', controller.listLeaveTypes);
 router.post(
   '/types',
   requireResourcePermission('leave', 'manage_policy'),

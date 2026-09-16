@@ -1,11 +1,12 @@
 import asyncHandler from '../../middleware/asyncHandler.js';
+import { ErrorResponse } from '../../middleware/errorHandler.js';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import LeaveRequest from './leaveRequest.model.js';
 import LeaveApproval from './leaveApproval.model.js';
 import LeavePolicy from './leavePolicy.model.js';
 import { getFullBalanceBreakdown } from './leaveBalance.service.js';
-import { getManagedDepartmentIds, getManagedEmployeeIds } from './leaveAuthorization.service.js';
+import { getManagedDepartmentIds, getManagedEmployeeIds, getLeaveDashboardScope } from './leaveAuthorization.service.js';
 import { getDayStatusForUsers } from './leaveDayStatus.service.js';
 import { canViewUserLeaveData } from './leaveAuthorization.service.js';
 import { getWorkspaceTimezone, instantToDateOnlyKey } from './leaveTimezone.util.js';
@@ -42,8 +43,15 @@ export const getManagerDashboard = asyncHandler(async (req, res) => {
   const departmentIds = await getManagedDepartmentIds({ workspaceId, managerId });
   const employeeIds = await getManagedEmployeeIds({ workspaceId, managerId });
   const todayKey = await getTodayKey(workspaceId);
+  // Department.managers/members are plain User references with no role
+  // restriction, so employeeIds/departmentIds already include any
+  // custom-role user assigned to (or managing) this department — no
+  // separate custom-role handling needed for the queries below.
 
-  const [myBalances, pendingApprovals, teamOnLeaveToday, teamPendingRequests] = await Promise.all([
+  const [
+    myBalances, pendingApprovals, teamOnLeaveToday, teamPendingRequests,
+    upcomingApprovedLeave, approvedCount, rejectedCount, cancelledCount
+  ] = await Promise.all([
     getFullBalanceBreakdown({ workspaceId, user: managerId }),
     LeaveApproval.find({ workspaceId, level: 'DEPARTMENT_MANAGER', status: 'PENDING', eligibleApproverUserIds: managerId })
       .populate({ path: 'request', populate: [{ path: 'requester', select: 'name email avatar' }, { path: 'leaveType', select: 'name color' }] })
@@ -54,10 +62,62 @@ export const getManagerDashboard = asyncHandler(async (req, res) => {
     departmentIds.length
       ? LeaveRequest.find({ workspaceId, requesterDepartmentIds: { $in: departmentIds }, status: { $in: ACTIVE_PENDING_STATUSES } })
           .populate('requester', 'name email avatar').populate('leaveType', 'name color').sort({ createdAt: -1 }).lean()
-      : []
+      : [],
+    departmentIds.length
+      ? LeaveRequest.find({ workspaceId, requesterDepartmentIds: { $in: departmentIds }, status: 'APPROVED', endDate: { $gte: new Date() } })
+          .populate('requester', 'name email avatar').populate('leaveType', 'name color').sort({ startDate: 1 }).lean()
+      : [],
+    departmentIds.length
+      ? LeaveRequest.countDocuments({ workspaceId, requesterDepartmentIds: { $in: departmentIds }, status: 'APPROVED' })
+      : 0,
+    departmentIds.length
+      ? LeaveRequest.countDocuments({ workspaceId, requesterDepartmentIds: { $in: departmentIds }, status: 'REJECTED' })
+      : 0,
+    departmentIds.length
+      ? LeaveRequest.countDocuments({ workspaceId, requesterDepartmentIds: { $in: departmentIds }, status: { $in: ['CANCELLED_BY_REQUESTER', 'CANCELLED_BY_HR', 'CANCELLED_BY_ADMIN'] } })
+      : 0
   ]);
 
-  res.json({ success: true, data: { departmentIds, myBalances, pendingApprovals, teamOnLeaveToday, teamPendingRequests } });
+  const onLeaveTodayCount = Object.values(teamOnLeaveToday).filter((byDate) => byDate[todayKey]?.status === 'ON_LEAVE').length;
+
+  res.json({
+    success: true,
+    data: {
+      departmentIds, myBalances, pendingApprovals, teamOnLeaveToday, teamPendingRequests, upcomingApprovedLeave,
+      summary: {
+        pendingCount: teamPendingRequests.length, approvedCount, rejectedCount, cancelledCount,
+        onLeaveTodayCount, teamSize: employeeIds.length
+      }
+    }
+  });
+});
+
+/**
+ * The single scope-check the frontend must consult to decide whether to
+ * show the Leave Dashboard at all, and which section to render — never a
+ * client-side branch on the raw `user.role` string, since a custom role's
+ * real entitlement (department-manager membership, or an explicit
+ * leave.view_workspace grant) can only be resolved server-side.
+ */
+export const getDashboardScope = asyncHandler(async (req, res) => {
+  const scope = await getLeaveDashboardScope({ user: req.user, workspaceId: req.workspaceId });
+  res.json({ success: true, data: scope });
+});
+
+/**
+ * Rejects outright (403) rather than silently returning empty data — a
+ * plain Employee, or a custom role granted neither department-manager
+ * membership nor leave.view_workspace, must never reach team/workspace
+ * dashboard data via a direct API call even if a UI redirect is bypassed.
+ * Self-service (/employee) is intentionally NOT behind this gate — every
+ * authenticated member may always see their own leave data.
+ */
+export const requireLeaveDashboardAccess = asyncHandler(async (req, res, next) => {
+  const scope = await getLeaveDashboardScope({ user: req.user, workspaceId: req.workspaceId });
+  if (scope.scope === 'none') {
+    throw new ErrorResponse('You do not have access to the Leave Dashboard', 403);
+  }
+  next();
 });
 
 async function buildWorkspaceWideDashboard(workspaceId) {
