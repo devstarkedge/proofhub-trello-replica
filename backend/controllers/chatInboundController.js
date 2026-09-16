@@ -5,9 +5,10 @@ import * as workspaceProvisioningService from '../services/chat/workspaceProvisi
 import * as workspaceMappingService from '../services/chat/workspaceMappingService.js';
 import Workspace from '../models/Workspace.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
-import { deleteFromCloudinary } from '../utils/cloudinary.js';
+import { deleteFromCloudinary, uploadWorkspaceIconToCloudinary } from '../utils/cloudinary.js';
 import { emitToUser } from '../realtime/index.js';
 import config from '../config/index.js';
+import axios from 'axios';
 
 /**
  * Receives the reverse-sync WORKSPACE_CREATED announcement from ChatApp
@@ -176,17 +177,54 @@ export const handleWorkspaceUpdated = asyncHandler(async (req, res, next) => {
       if (!['http:', 'https:'].includes(parsed.protocol) || logo.length > 2048) {
         return next(new ErrorResponse('workspace.logo must be an HTTP(S) URL no longer than 2048 characters', 400));
       }
-      updates.icon = {
-        url: logo,
-        publicId: null,
-        format: null,
-        isSvg: /\.svg(?:$|\?)/i.test(parsed.pathname),
-        smallUrl: logo,
-        mediumUrl: logo,
-        largeUrl: logo,
-        uploadedAt: new Date(),
-        uploadedBy: null,
-      };
+      
+      // If req.body.changes.logo exists and has a new value, we should download and upload to our own Cloudinary
+      if (req.body.changes && req.body.changes.logo && req.body.changes.logo.new) {
+        try {
+          const response = await axios.get(logo, { responseType: 'arraybuffer' });
+          const buffer = Buffer.from(response.data);
+          const uploadResult = await uploadWorkspaceIconToCloudinary(buffer, {
+            originalName: 'chat-app-logo',
+            mimetype: response.headers['content-type'] || 'image/png'
+          });
+          updates.icon = {
+            url: uploadResult.secure_url,
+            publicId: uploadResult.public_id,
+            format: uploadResult.format,
+            isSvg: uploadResult.format === 'svg',
+            smallUrl: uploadResult.secure_url,
+            mediumUrl: uploadResult.secure_url,
+            largeUrl: uploadResult.secure_url,
+            uploadedAt: new Date(),
+            uploadedBy: null,
+          };
+        } catch (error) {
+          console.error('Failed to transfer workspace logo to FlowTask Cloudinary, falling back to original URL:', error.message);
+          updates.icon = {
+            url: logo,
+            publicId: null,
+            format: null,
+            isSvg: /\.svg(?:$|\?)/i.test(parsed.pathname),
+            smallUrl: logo,
+            mediumUrl: logo,
+            largeUrl: logo,
+            uploadedAt: new Date(),
+            uploadedBy: null,
+          };
+        }
+      } else {
+        updates.icon = {
+          url: logo,
+          publicId: null,
+          format: null,
+          isSvg: /\.svg(?:$|\?)/i.test(parsed.pathname),
+          smallUrl: logo,
+          mediumUrl: logo,
+          largeUrl: logo,
+          uploadedAt: new Date(),
+          uploadedBy: null,
+        };
+      }
     } else {
       removeIcon = true;
     }
