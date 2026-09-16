@@ -89,6 +89,12 @@ export const hrCancelApprovedLeave = async (requestId, reason) =>
 export const createAdjustment = async (payload) => (await api.post('/adjustments', payload)).data;
 
 // ─── Dashboards ─────────────────────────────────────────────────────────────
+// The single check the frontend must consult to decide whether to render
+// the Leave Dashboard at all, and which section — never branch on the raw
+// user.role string, since a custom role's real entitlement can only be
+// known server-side (department-manager membership, or an explicit
+// leave:view_workspace grant). See leaveAuthorization.service.js#getLeaveDashboardScope.
+export const getDashboardScope = async () => (await api.get('/dashboard/scope')).data;
 export const getEmployeeDashboard = async () => (await api.get('/dashboard/employee')).data;
 export const getManagerDashboard = async () => (await api.get('/dashboard/manager')).data;
 export const getHrDashboard = async () => (await api.get('/dashboard/hr')).data;
