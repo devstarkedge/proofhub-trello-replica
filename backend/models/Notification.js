@@ -59,7 +59,19 @@ const notificationSchema = new mongoose.Schema({
       'system_alert',
       'sales_tab_approval',
       'sales_tab_result',
-      'sales_tab_alert'
+      'sales_tab_alert',
+      'leave_request_submitted',
+      'leave_approval_required',
+      'leave_approval_decision_recorded',
+      'leave_request_approved',
+      'leave_request_rejected',
+      'leave_request_cancelled',
+      'leave_cancellation_requested',
+      'leave_cancelled_by_hr',
+      'leave_balance_adjusted',
+      'leave_bucket_expired',
+      'leave_approval_reminder',
+      'leave_approval_escalated'
     ],
     required: true
   },
@@ -89,7 +101,7 @@ const notificationSchema = new mongoose.Schema({
   },
   entityType: {
     type: String,
-    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', 'WorkspaceJoinRequest', null],
+    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', 'WorkspaceJoinRequest', 'LeaveRequest', null],
     default: null
   },
   action: {

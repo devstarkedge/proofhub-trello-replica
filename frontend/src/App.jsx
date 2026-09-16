@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, useLocation } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from "./context/AuthContext";
 import { MeProvider } from "./context/MeContext";
@@ -43,6 +43,14 @@ import AccessControlRouteGuard from "./components/AccessControlRouteGuard";
 import AccessControlPage from "./pages/AccessControlPage";
 import JoinRequestsRouteGuard from "./components/JoinRequestsRouteGuard";
 import JoinRequestsPage from "./pages/JoinRequestsPage";
+import LeaveDashboardPage from "./pages/Leave/LeaveDashboardPage";
+import MyLeavePage from "./pages/Leave/MyLeavePage";
+import ApprovalQueuePage from "./pages/Leave/ApprovalQueuePage";
+import LeaveCalendarPage from "./pages/Leave/LeaveCalendarPage";
+import LeaveReportsPage from "./pages/Leave/LeaveReportsPage";
+import LeaveSettingsPage from "./pages/Leave/LeaveSettingsPage";
+import LeaveLayout from "./layouts/LeaveLayout";
+import LeaveSettingsLayout from "./layouts/LeaveSettingsLayout";
 import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
 import ProjectTrash from "./pages/ProjectTrash";
 import SelectWorkspacePage from "./pages/SelectWorkspacePage";
@@ -118,6 +126,37 @@ function App() {
                 <Route path="/workflow/:deptId/:projectId" element={<WorkFlow />} />
                 <Route path="/workflow/:deptId/:projectId/:taskId" element={<WorkFlow />} />
                 <Route path="/workflow/:deptId/:projectId/trash" element={<ProjectTrash />} />
+
+                {/* Leave Management — self-service (dashboard/my-leave/calendar)
+                    is open to every authenticated workspace member; only
+                    /leave/settings is role-gated, matching how the backend
+                    treats self-service as structural rather than
+                    permission-gated (see modules/leave/leaveAuthorization.service.js). */}
+                <Route path="/leave" element={<LeaveLayout />}>
+                  <Route index element={<LeaveDashboardPage />} />
+                  <Route path="my" element={<MyLeavePage />} />
+                  <Route path="approvals" element={<ApprovalQueuePage />} />
+                  <Route path="calendar" element={<LeaveCalendarPage />} />
+                  <Route
+                    path="reports"
+                    element={
+                      <PrivateRoute requiredRole={["HR", "Admin"]}>
+                        <LeaveReportsPage />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="settings"
+                    element={
+                      <PrivateRoute requiredRole={["HR", "Admin"]}>
+                        <LeaveSettingsLayout />
+                      </PrivateRoute>
+                    }
+                  >
+                    <Route index element={<Navigate to="policies" replace />} />
+                    <Route path=":section" element={<LeaveSettingsPage />} />
+                  </Route>
+                </Route>
 
                 <Route
                   path="/teams"

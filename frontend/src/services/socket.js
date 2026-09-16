@@ -507,6 +507,26 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-sales-tab-approval-pending', { detail: data }));
     });
 
+    // Leave events
+    this.socket.on('leave:request:created', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-leave-request-created', { detail: data }));
+    });
+    this.socket.on('leave:request:updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-leave-request-updated', { detail: data }));
+    });
+    this.socket.on('leave:approval:updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-leave-approval-updated', { detail: data }));
+    });
+    this.socket.on('leave:balance:updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-leave-balance-updated', { detail: data }));
+    });
+    this.socket.on('leave:policy:updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-leave-policy-updated', { detail: data }));
+    });
+    this.socket.on('leave:calendar:updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-leave-calendar-updated', { detail: data }));
+    });
+
     // Announcement events
     this.socket.on('announcement-created', (data) => {
       console.log('Announcement created:', data);

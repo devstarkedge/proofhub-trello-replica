@@ -347,7 +347,7 @@ const ModulesTab = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registry]);
 
-  const accent = { sales: '#10b981', finance: '#0ea5e9' };
+  const accent = { sales: '#10b981', finance: '#0ea5e9', leave: '#f97316' };
 
   return (
     <div className="space-y-4">

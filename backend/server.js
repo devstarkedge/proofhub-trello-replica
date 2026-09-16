@@ -54,6 +54,7 @@ import myShortcutsRoutes from './routes/myShortcuts.js';
 import salesRoutes from './routes/sales.js';
 import salesPermissionsRoutes from './routes/salesPermissions.js';
 import salesTabRoutes from './modules/salesTabs/salesTab.routes.js';
+import leaveRoutes from './modules/leave/leave.routes.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
 import workspaceRoutes from './routes/workspaces.js';
 import workspaceMemberRoutes from './routes/workspaceMembers.js';
@@ -211,6 +212,7 @@ app.use('/api/my-shortcuts', myShortcutsRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/sales-tabs', salesTabRoutes);
+app.use('/api/leave', leaveRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 app.use('/api/workspaces', workspaceRoutes);
 // Second router at the same prefix — the centralized Invite Member system's
@@ -258,6 +260,7 @@ import seedAdmin, { seedPlans, bootstrapSuperAdmin } from './utils/seed.js';
 import { initializeSlackServices, shutdownSlackServices } from './services/slack/index.js';
 import { initQueues, shutdownQueues } from './queues/queueManager.js';
 import { startAnalyticsReportScheduler, stopAnalyticsReportScheduler } from './schedulers/analyticsReportScheduler.js';
+import { runLeaveAccrualCatchUp } from './schedulers/leaveMaintenanceScheduler.js';
 import * as workspaceContext from './modules/workspaces/workspaceContext.js';
 import { hasPendingMigrations } from './scripts/migrationRegistry.js';
 
@@ -298,6 +301,13 @@ mongoose.connect(config.db.uri, {
     logger.info(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
 
     startAnalyticsReportScheduler();
+
+    // Independent of BullMQ/Redis — the accrual/expiry repeat jobs above
+    // don't run at all while Redis is down (no in-process fallback for
+    // schedulers), so this is a non-blocking safety net against exactly
+    // that gap, not the primary mechanism. Fire-and-forget: must never
+    // delay the HTTP server from accepting traffic.
+    runLeaveAccrualCatchUp();
 
     initializeSlackServices().then(() => {
       logger.info('Slack services initialized');

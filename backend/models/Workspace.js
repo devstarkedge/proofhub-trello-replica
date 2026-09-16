@@ -38,6 +38,12 @@ const workspaceSchema = new mongoose.Schema({
   type: { type: String, enum: [...WORKSPACE_TYPES, null], default: null },
   industry: { type: String, enum: [...INDUSTRY_OPTIONS, null], default: null },
   companySize: { type: String, enum: [...COMPANY_SIZE_OPTIONS, null], default: null },
+  // IANA zone used for all Leave module business-date math (month boundaries,
+  // accrual/expiry, working-day calculations). Not read directly — go through
+  // modules/leave/leaveTimezone.util.js#getWorkspaceTimezone, since Mongoose
+  // defaults don't apply to .lean() reads of pre-existing documents.
+  timezone: { type: String, default: 'Asia/Kolkata' },
+  leaveModuleEnabled: { type: Boolean, default: false },
   settings: {
     restrictDomain: { type: String }, // e.g. "@acme.com" only
     // Per-workspace ChatApp connection — replaces the old process-global

@@ -21,6 +21,22 @@ export const CRITICALITY = {
   comment_mention: 'critical',
   announcement_created: 'critical',
   task_overdue: 'critical',
+  // An unactioned approval blocks someone else's leave from finalizing, and
+  // an escalation means it's already overdue — both must reach the approver
+  // even during their quiet hours, same rationale as task_overdue above.
+  leave_approval_required: 'critical',
+  leave_approval_escalated: 'critical',
+
+  leave_request_submitted: 'non-critical',
+  leave_approval_decision_recorded: 'non-critical',
+  leave_request_approved: 'non-critical',
+  leave_request_rejected: 'non-critical',
+  leave_request_cancelled: 'non-critical',
+  leave_cancellation_requested: 'non-critical',
+  leave_cancelled_by_hr: 'non-critical',
+  leave_balance_adjusted: 'non-critical',
+  leave_bucket_expired: 'non-critical',
+  leave_approval_reminder: 'non-critical',
 
   task_updated: 'non-critical',
   task_completed: 'non-critical',

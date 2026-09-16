@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../../services/database';
+import * as leaveApi from '../../services/leaveApi';
+import DayStatusIndicator from '../Leave/DayStatusIndicator';
 import AuthContext from '../../context/AuthContext';
 import DepartmentContext from '../../context/DepartmentContext';
 import { Badge } from '../ui/badge';
@@ -331,14 +333,15 @@ const UserRow = memo(({ member, dateRange, isCompact, onUserClick }) => {
 });
 
 // Enhanced Date Cell with Hover Preview
-const EnhancedDateCell = memo(({ 
-  member, 
-  date, 
-  day, 
-  style, 
-  status, 
-  value, 
-  onOpenModal
+const EnhancedDateCell = memo(({
+  member,
+  date,
+  day,
+  style,
+  status,
+  value,
+  onOpenModal,
+  dayStatus
 }) => {
   const [showHoverCard, setShowHoverCard] = useState(false);
   const hoverTimeoutRef = useRef(null);
@@ -393,7 +396,16 @@ const EnhancedDateCell = memo(({
         )}
         <span className="whitespace-nowrap text-xs">{value}</span>
       </div>
-      
+
+      {/* Leave/holiday/weekly-off overlay — purely additive read-only join
+          against GET /api/leave/dashboard/day-status; never derived from or
+          written back into this cell's own tracked-time data. */}
+      {dayStatus && dayStatus.status !== 'WORKING_DAY' && (
+        <div className="absolute top-0.5 right-0.5">
+          <DayStatusIndicator dayStatus={dayStatus} />
+        </div>
+      )}
+
       {/* Hover Card */}
       {showHoverCard && day?.hasData && (
         <DateCellHoverCard
@@ -435,6 +447,10 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
   const [teamData, setTeamData] = useState(null);
   const [insights, setInsights] = useState(null);
   const [error, setError] = useState(null);
+  // Leave/holiday/weekly-off overlay — {[userId]: {[dateKey]: {status,...}}}.
+  // Fetched independently of fetchData()/teamData below so a failure here
+  // can never affect the actual tracked-time data this view exists for.
+  const [dayStatusMap, setDayStatusMap] = useState({});
   
   // Filter state - department is controlled by header context only
   const [dateRange, setDateRange] = useState(() => DATE_PRESETS[1].getValue());
@@ -485,6 +501,24 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Independent leave/holiday/weekly-off overlay fetch — runs whenever the
+  // member list or date range changes, entirely decoupled from fetchData()
+  // above. A failure here only means the overlay is missing, never breaks
+  // the actual time-tracking view.
+  useEffect(() => {
+    const memberIds = (teamData?.teamData || []).map((member) => member.user?._id).filter(Boolean);
+    if (!memberIds.length) {
+      setDayStatusMap({});
+      return;
+    }
+    leaveApi.getDayStatus({
+      userIds: memberIds,
+      startDate: dateRange.start,
+      endDate: dateRange.end,
+      visibility: (user?.role === 'admin' || user?.role === 'manager' || user?.role === 'hr') ? 'department' : 'approved_only'
+    }).then(({ data }) => setDayStatusMap(data || {})).catch(() => setDayStatusMap({}));
+  }, [teamData, dateRange, user?.role]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -1429,6 +1463,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                               const style = getDayCellStyle(day);
                               const status = getDateStatus(day);
                               const value = day?.hasData ? `${day.hours}h ${day.minutes}m` : '-';
+                              const dayStatus = dayStatusMap[member.user._id]?.[date];
                               return (
                                 <EnhancedDateCell
                                   key={date}
@@ -1439,6 +1474,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                                   status={status}
                                   value={value}
                                   onOpenModal={openDetailModal}
+                                  dayStatus={dayStatus}
                                 />
                               );
                             })}

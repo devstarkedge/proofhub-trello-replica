@@ -21,13 +21,16 @@ import { startRecurringTaskWorker, getRecurringTaskWorker } from '../workers/rec
 import { startSalesAlertWorker, getSalesAlertWorker } from '../workers/salesAlertWorker.js';
 import { startChatWebhookWorker, getChatWebhookWorker } from '../workers/chatWebhookWorker.js';
 import { startSlackWorker, getSlackWorker } from '../workers/slackWorker.js';
+import { startLeaveWorker, getLeaveWorker } from '../workers/leaveWorker.js';
 import { registerMaintenanceJobs } from '../schedulers/maintenanceScheduler.js';
+import { registerLeaveMaintenanceJobs } from '../schedulers/leaveMaintenanceScheduler.js';
 import { recoverAnnouncementSchedules } from '../schedulers/announcementScheduler.js';
 import { recoverRecurringSchedules } from '../schedulers/recurringTaskScheduler.js';
 import { recoverReminderSchedules } from '../schedulers/reminderScheduler.js';
 import { recoverSlackBatchSchedules } from '../schedulers/slackBatchScheduler.js';
 import { recoverSlackDigestSchedules } from '../schedulers/slackDigestScheduler.js';
 import { recoverCardDueDateSchedules } from '../schedulers/cardDueDateScheduler.js';
+import { recoverLeaveApprovalReminderSchedules } from '../schedulers/leaveReminderScheduler.js';
 import logger from '../utils/logger.js';
 
 let _initialized = false;
@@ -125,6 +128,7 @@ export async function initQueues() {
   startCleanupWorker();
   startRecurringTaskWorker();
   startSlackWorker();
+  startLeaveWorker();
   // Chat webhook worker handles delivery of events to ChatApp
   try {
     startChatWebhookWorker();
@@ -146,6 +150,7 @@ export async function initQueues() {
 
   // ─── Register maintenance repeat jobs ─────────────────────────────────────
   await registerMaintenanceJobs();
+  await registerLeaveMaintenanceJobs();
 
   // ─── Recovery scans (catch jobs missed during downtime) ───────────────────
   try {
@@ -156,6 +161,7 @@ export async function initQueues() {
       recoverSlackBatchSchedules(),
       recoverSlackDigestSchedules(),
       recoverCardDueDateSchedules(),
+      recoverLeaveApprovalReminderSchedules(),
     ]);
     logger.info('QueueManager: recovery scans complete');
   } catch (err) {
@@ -192,6 +198,7 @@ export async function shutdownQueues() {
     getSalesAlertWorker(),
     getChatWebhookWorker(),
     getSlackWorker(),
+    getLeaveWorker(),
   ].filter(Boolean);
 
   // Close workers (stop processing new jobs, wait for current)

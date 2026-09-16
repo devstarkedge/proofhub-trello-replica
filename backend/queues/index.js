@@ -52,6 +52,9 @@ export const slackQueue = createQueue('flowtask.slack');
 /** Sales tab watch alert processing */
 export const salesAlertQueue = createQueue('flowtask.sales-alert');
 
+/** Leave accrual/expiry sweeps + per-approval reminder/escalation jobs */
+export const leaveQueue = createQueue('flowtask.leave');
+
 // ─── Convenience: add jobs ────────────────────────────────────────────────────
 
 /**
@@ -162,4 +165,5 @@ export const allQueues = [
   cleanupQueue,
   slackQueue,
   salesAlertQueue,
+  leaveQueue,
 ];

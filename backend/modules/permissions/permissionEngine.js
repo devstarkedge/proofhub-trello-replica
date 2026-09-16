@@ -14,6 +14,11 @@ import { ensureDefaultWorkspace } from './workspaceService.js';
  *   3. Explicit grant override           — including scope + expiry
  *   4. Role default (only 'access_control.manage' has one today)
  *   5. Default deny
+ *
+ * HR has full Leave Management access in its active workspace, after an
+ * explicit deny check and before individual grants. Other resources keep
+ * the precedence above. The caller supplies the workspace membership role
+ * (protect's req.user overlay), not the user's global identity role.
  */
 
 const isExpired = (doc) => Boolean(doc?.expiresAt && new Date(doc.expiresAt).getTime() <= Date.now());
@@ -76,6 +81,13 @@ export async function resolveResourceAccess(user, resource, workspaceId) {
   // 2. Admin — full access.
   if (role === 'admin') {
     return { resource: key, actions: allActionsAs(key, true), scope: 'full', source: 'admin' };
+  }
+
+  // HR's built-in Leave access covers every registered Leave capability.
+  // Keep explicit denies authoritative, like Admin, and do not let an old
+  // partial grant accidentally restrict this role's full Leave access.
+  if (key === 'leave' && role === 'hr') {
+    return { resource: key, actions: allActionsAs(key, true), scope: 'full', source: 'role-default' };
   }
 
   // 3. Explicit grant override.

@@ -44,6 +44,20 @@ export const RESOURCES = {
     actions: [
       { key: 'manage', label: 'Manage roles & permissions', description: 'Can open the Access & Permissions module and edit other users’ access', legacyField: null }
     ]
+  },
+  leave: {
+    label: 'Leave Management',
+    description: 'Administrative control of the Leave module — policies, calendars, balances, and reports. Self-service (viewing/requesting/cancelling one\'s own leave) and approver authority (department manager / HR / Admin routing) are derived structurally from org data and are never gated here — see modules/leave/leaveApproval.service.js.',
+    actions: [
+      { key: 'view_workspace', label: 'View Workspace Leave Data', description: 'Can view every employee\'s leave balances/requests workspace-wide', legacyField: null },
+      { key: 'view_policy', label: 'View Policies', description: 'Can view leave policies, versions, and assignments', legacyField: null },
+      { key: 'manage_policy', label: 'Manage Policies', description: 'Can create/version/assign leave policies and leave types', legacyField: null },
+      { key: 'adjust_balance', label: 'Adjust Balances', description: 'Can create manual leave balance credits/debits', legacyField: null },
+      { key: 'manage_calendar', label: 'Manage Work Calendar', description: 'Can configure working days, weekly offs, and holidays', legacyField: null },
+      { key: 'cancel_approved', label: 'Cancel Approved Leave', description: 'Can cancel another employee\'s already-approved leave', legacyField: null },
+      { key: 'view_reports', label: 'View Reports', description: 'Can view Leave analytics and reports', legacyField: null },
+      { key: 'view_audit', label: 'View Audit Log', description: 'Can view the Leave module\'s audit trail', legacyField: null }
+    ]
   }
 };
 

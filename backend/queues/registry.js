@@ -12,6 +12,7 @@ export const QUEUES = {
   RECURRING_TASK: 'flowtask.recurring-task',
   CLEANUP: 'flowtask.cleanup',
   SLACK: 'flowtask.slack',
+  LEAVE: 'flowtask.leave',
 };
 
 /**
@@ -25,4 +26,5 @@ export const CONCURRENCY = {
   [QUEUES.RECURRING_TASK]: 3,
   [QUEUES.CLEANUP]: 1,
   [QUEUES.SLACK]: 5,
+  [QUEUES.LEAVE]: 3,
 };
