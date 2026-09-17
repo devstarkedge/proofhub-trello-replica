@@ -13,7 +13,12 @@ router.use(protect);
 // their own leave; authorization for viewing SOMEONE ELSE's data is
 // enforced inside the controller via canViewUserLeaveData (structural,
 // derived from Department.managers / role, not the AccessOverride grant
-// system — see leaveAuthorization.service.js).
+// system — see leaveAuthorization.service.js). The one exception — Admin
+// is blocked from every route below, since it all acts on/returns the
+// CALLER's own data — is enforced inside each controller via
+// assertMyLeaveSelfServiceAllowed, not here, so it stays in one
+// consistent layer alongside the other-user checks these same controllers
+// already do (getUserBalance, getUserRequests, getRequestDetail).
 router.get('/balance/me', balanceController.getMyBalance);
 router.get('/balance/:userId', balanceController.getUserBalance);
 

@@ -1,6 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useContext, useEffect, useState, useCallback } from 'react';
+import { Navigate } from 'react-router-dom';
 import { CalendarCheck2, Plus, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
+import AuthContext from '../../context/AuthContext';
 import LeaveBalanceSummaryCard from '../../components/Leave/LeaveBalanceSummaryCard';
 import LeaveRequestForm from '../../components/Leave/LeaveRequestForm';
 import LeaveRequestList from '../../components/Leave/LeaveRequestList';
@@ -9,18 +11,23 @@ import LeaveStatusBadge from '../../components/Leave/LeaveStatusBadge';
 import LeavePageHeader from '../../components/Leave/LeavePageHeader';
 import useLeaveStore from '../../store/leaveStore';
 import * as leaveApi from '../../services/leaveApi';
+import { isMyLeaveBlockedForRole } from '../../utils/leaveAccess';
 import { toast } from 'react-toastify';
 
 const MyLeavePage = () => {
+  const { user } = useContext(AuthContext);
   const { balances, myRequests, fetchMyBalance, fetchMyRequests, cancelPendingRequest, handleRequestUpdated, handleBalanceUpdated } = useLeaveStore();
   const [showForm, setShowForm] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [detail, setDetail] = useState(null);
 
+  const blocked = isMyLeaveBlockedForRole(user?.role);
+
   const refresh = useCallback(() => {
+    if (blocked) return; // Admin — the backend rejects these calls anyway; skip them entirely.
     fetchMyBalance().catch(() => {});
     fetchMyRequests().catch(() => {});
-  }, [fetchMyBalance, fetchMyRequests]);
+  }, [blocked, fetchMyBalance, fetchMyRequests]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -51,6 +58,12 @@ const MyLeavePage = () => {
       // axios interceptor already toasts the error
     }
   };
+
+  // Mirrors the backend's own rejection of every My Leave endpoint for
+  // Admin (leaveAuthorization.service.js#assertMyLeaveSelfServiceAllowed) —
+  // this is a UX convenience, not the enforcement boundary; a direct
+  // /leave/my visit or API call is independently blocked server-side.
+  if (blocked) return <Navigate to="/leave" replace />;
 
   return (
     <div className="space-y-7">

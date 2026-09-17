@@ -80,10 +80,24 @@ const LeaveTypesTab = () => {
   );
 };
 
+// Every policy effective date is stored as the UTC instant of midnight IN
+// THE WORKSPACE'S TIMEZONE (see backend's dateOnlyToInstant) — forcing
+// timeZone:'UTC' here would read that instant back as if UTC were the
+// real zone, which for any positive-offset workspace (the Asia/Kolkata
+// default included) reads the PREVIOUS day/month. That was the exact bug
+// behind an edited policy appearing to keep its old effective month after
+// saving: the save was correct, but this display silently read the new
+// UTC instant one month early. Using the Date's own local getters instead
+// (no forced timezone) is the same fix already applied to the Leave
+// Calendar grid's date-key bug — see utils/leaveDateKey.js.
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
 function formatMonthYear(dateLike) {
   if (!dateLike) return '—';
   const d = new Date(dateLike);
-  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 function allocationSummary(version) {

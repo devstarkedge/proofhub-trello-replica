@@ -25,9 +25,15 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, onCan
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [name, setName] = useState(initialPolicy?.name || '');
   const [description, setDescription] = useState(initialPolicy?.description || '');
-  const now = new Date();
-  const [effectiveYear, setEffectiveYear] = useState(now.getFullYear());
-  const [effectiveMonth, setEffectiveMonth] = useState(now.getMonth() + 1);
+  // Edit mode must pre-fill from the policy's own current/pending
+  // effective date, not always default to today — otherwise reopening
+  // Edit silently resets the start month/year to "now" instead of showing
+  // what's actually saved. Local getters (no forced UTC) for the same
+  // reason as formatMonthYear: this instant is midnight in the
+  // WORKSPACE's timezone.
+  const initialEffective = initialVersion?.effectiveFrom ? new Date(initialVersion.effectiveFrom) : new Date();
+  const [effectiveYear, setEffectiveYear] = useState(initialEffective.getFullYear());
+  const [effectiveMonth, setEffectiveMonth] = useState(initialEffective.getMonth() + 1);
   const [rules, setRules] = useState([]);
 
   useEffect(() => {

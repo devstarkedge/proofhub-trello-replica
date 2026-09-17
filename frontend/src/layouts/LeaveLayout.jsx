@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { CalendarDays } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import LeaveContentContainer from '../components/Leave/LeaveContentContainer';
+import { isMyLeaveBlockedForRole } from '../utils/leaveAccess';
 
 const MAIN_LEAVE_ROUTES = ['/leave', '/leave/my', '/leave/approvals', '/leave/calendar', '/leave/reports'];
 
@@ -19,7 +20,7 @@ const LeaveLayout = () => {
   }, [location.pathname]);
 
   const tabs = [
-    { label: 'My Leave', to: '/leave/my', visible: true },
+    { label: 'My Leave', to: '/leave/my', visible: !isMyLeaveBlockedForRole(role) },
     { label: 'Approvals', to: '/leave/approvals', visible: ['manager', 'hr', 'admin'].includes(role) },
     { label: 'Calendar', to: '/leave/calendar', visible: true },
     { label: 'Reports', to: '/leave/reports', visible: ['hr', 'admin'].includes(role) },

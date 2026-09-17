@@ -38,8 +38,13 @@ export function buildPolicyDiff({ oldPolicy, oldVersion, newValues }) {
     rows.push({ label: 'Description', oldValue: oldPolicy?.description || '—', newValue: newValues.description || '—' });
   }
 
+  // Local getters, never UTC — see LeaveSettingsPage.jsx's formatMonthYear
+  // for why: this instant is midnight in the WORKSPACE's timezone, and
+  // getUTCMonth() reads it one month early for any positive-offset
+  // workspace, which is exactly what made a genuinely-changed effective
+  // date look unchanged in this very diff.
   const oldEffective = oldVersion?.effectiveFrom ? new Date(oldVersion.effectiveFrom) : null;
-  const oldMonthLabel = oldEffective ? `${MONTH_NAMES[oldEffective.getUTCMonth()]} ${oldEffective.getUTCFullYear()}` : '—';
+  const oldMonthLabel = oldEffective ? `${MONTH_NAMES[oldEffective.getMonth()]} ${oldEffective.getFullYear()}` : '—';
   const newMonthLabel = `${MONTH_NAMES[newValues.effectiveMonth - 1]} ${newValues.effectiveYear}`;
   if (oldMonthLabel !== newMonthLabel) {
     rows.push({ label: 'Effective from', oldValue: oldMonthLabel, newValue: newMonthLabel });

@@ -510,8 +510,21 @@ export async function listDefaultPolicies({ workspaceId, includeArchived = true 
   const filter = { isDefault: true, ...(includeArchived ? {} : { status: { $ne: 'archived' } }) };
   return LeavePolicy.find(filter)
     .sort({ createdAt: -1 })
-    .populate('currentVersion', 'versionNumber effectiveFrom leaveTypeRules status publishedAt')
-    .populate('pendingVersion', 'versionNumber effectiveFrom leaveTypeRules status')
+    // A plain top-level populate does NOT reach the nested
+    // leaveTypeRules[].leaveType ref inside the version document — without
+    // the nested `populate` option here, every rule's leaveType stays an
+    // unpopulated ObjectId and the UI falls back to a generic "Leave" label
+    // instead of "Full Day Leave" / "Short Leave".
+    .populate({
+      path: 'currentVersion',
+      select: 'versionNumber effectiveFrom leaveTypeRules status publishedAt',
+      populate: { path: 'leaveTypeRules.leaveType', select: 'name key category' }
+    })
+    .populate({
+      path: 'pendingVersion',
+      select: 'versionNumber effectiveFrom leaveTypeRules status',
+      populate: { path: 'leaveTypeRules.leaveType', select: 'name key category' }
+    })
     .lean();
 }
 
@@ -651,7 +664,11 @@ async function resolveScopeTargetNames({ workspaceId, assignments }) {
 export async function listOverridePolicies({ workspaceId }) {
   const policies = await LeavePolicy.find({ isDefault: false })
     .sort({ createdAt: -1 })
-    .populate('currentVersion', 'versionNumber effectiveFrom leaveTypeRules status publishedAt')
+    .populate({
+      path: 'currentVersion',
+      select: 'versionNumber effectiveFrom leaveTypeRules status publishedAt',
+      populate: { path: 'leaveTypeRules.leaveType', select: 'name key category' }
+    })
     .lean();
   if (!policies.length) return [];
 

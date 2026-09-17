@@ -8,7 +8,7 @@ import LeavePolicy from './leavePolicy.model.js';
 import { getFullBalanceBreakdown } from './leaveBalance.service.js';
 import { getManagedDepartmentIds, getManagedEmployeeIds, getLeaveDashboardScope } from './leaveAuthorization.service.js';
 import { getDayStatusForUsers } from './leaveDayStatus.service.js';
-import { canViewUserLeaveData } from './leaveAuthorization.service.js';
+import { canViewUserLeaveData, assertMyLeaveSelfServiceAllowed } from './leaveAuthorization.service.js';
 import { getWorkspaceTimezone, instantToDateOnlyKey } from './leaveTimezone.util.js';
 
 const ACTIVE_PENDING_STATUSES = ['PENDING_APPROVAL', 'PARTIALLY_APPROVED'];
@@ -20,6 +20,12 @@ async function getTodayKey(workspaceId) {
 }
 
 export const getEmployeeDashboard = asyncHandler(async (req, res) => {
+  // Same personal-data category as /balance/me, /requests/mine, etc. — an
+  // Admin must not reach their own balance/requests through this route
+  // either, since it's what backs the "My Leave"-shaped personal section
+  // on the Leave Dashboard for every other role.
+  assertMyLeaveSelfServiceAllowed(req.user);
+
   const { workspaceId } = req;
   const userId = req.user.id;
 

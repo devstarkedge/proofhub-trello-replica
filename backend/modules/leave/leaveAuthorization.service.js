@@ -1,5 +1,33 @@
 import Department from '../../models/Department.js';
 import { hasResourceAction } from '../permissions/permissionEngine.js';
+import { ErrorResponse } from '../../middleware/errorHandler.js';
+
+/**
+ * Admin is a deliberate exception to Leave's "everyone gets self-service"
+ * rule: every OTHER role (Employee, Manager, HR, custom) keeps full
+ * personal My Leave access unconditionally (see leaveRequest.routes.js's
+ * own comment on why self-service is structural, not permission-gated),
+ * but an Admin administers the module (Dashboard/Approvals/Calendar/
+ * Reports/Settings) and does not participate in it personally. This is
+ * intentionally narrower than — and independent of — canViewUserLeaveData's
+ * "Admin can view anyone" rule below, which keeps governing every OTHER-user
+ * visibility case (Teams day-status overlay, approval queue, dashboards,
+ * viewing an employee's balance/history) unchanged. Only a My-Leave call
+ * site acting on/viewing the CALLER's own data needs this check.
+ */
+export function isMyLeaveSelfServiceBlocked(user) {
+  return String(user?.role || '').toLowerCase() === 'admin';
+}
+
+/** Throws the shared friendly 403 for every self-service call site an Admin should never reach. */
+export function assertMyLeaveSelfServiceAllowed(user) {
+  if (isMyLeaveSelfServiceBlocked(user)) {
+    throw new ErrorResponse(
+      'The "My Leave" self-service area is not available for the Admin role. Use the Leave Dashboard, Approvals, or Reports instead.',
+      403
+    );
+  }
+}
 
 /**
  * Visibility rule shared by the balance/dashboard/report controllers —

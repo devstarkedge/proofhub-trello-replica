@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { CalendarDays } from 'lucide-react';
+import AuthContext from '../../context/AuthContext';
 import LeaveBalanceSummaryCard from '../../components/Leave/LeaveBalanceSummaryCard';
 import LeaveRequestList from '../../components/Leave/LeaveRequestList';
 import LeavePageHeader from '../../components/Leave/LeavePageHeader';
 import * as leaveApi from '../../services/leaveApi';
+import { isMyLeaveBlockedForRole } from '../../utils/leaveAccess';
 
 const StatTile = ({ label, value, color }) => (
   <div className="rounded-xl border p-4 shadow-sm sm:p-5" style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}>
@@ -123,6 +125,7 @@ const WorkspaceSection = () => {
  * resolves.
  */
 const LeaveDashboardPage = () => {
+  const { user } = useContext(AuthContext);
   const [scope, setScope] = useState(undefined); // undefined = loading, null = errored
 
   useEffect(() => {
@@ -131,6 +134,14 @@ const LeaveDashboardPage = () => {
 
   if (scope === undefined) return null;
   if (!scope || scope.scope === 'none') return <Navigate to="/leave/my" replace />;
+
+  // Admin administers this module rather than participating in it
+  // personally — no personal balance/requests section, matching every
+  // other "My Leave" call site being rejected for this role server-side
+  // (leaveAuthorization.service.js#isMyLeaveSelfServiceBlocked). Every
+  // other dashboard viewer (Manager/HR/custom role) keeps their own
+  // personal slice below their team/workspace view, unchanged.
+  const showPersonalSection = !isMyLeaveBlockedForRole(user?.role);
 
   return (
     <div className="space-y-7">
@@ -142,7 +153,7 @@ const LeaveDashboardPage = () => {
 
       {scope.scope === 'workspace' && <WorkspaceSection />}
       {scope.scope === 'department' && <DepartmentSection />}
-      <EmployeeSection />
+      {showPersonalSection && <EmployeeSection />}
     </div>
   );
 };
