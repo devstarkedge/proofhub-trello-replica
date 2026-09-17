@@ -1031,9 +1031,6 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   // Send notifications before deletion
   await notificationService.notifyTaskDeleted(board, req.user.id, true); // true for project deletion
 
-  // Dispatch chat webhook before cascade deletes
-  chatHooks.onProjectDeleted(board, req.user).catch(console.error);
-
   // Get all cards for this board (needed for cascade delete of card-related data)
   const cards = await Card.find({ board: board._id }).select('_id').lean();
   const cardIds = cards.map(c => c._id);
@@ -1075,6 +1072,9 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   }
 
   await board.deleteOne();
+
+  // Notify ChatApp only after the project deletion succeeds.
+  chatHooks.onProjectDeleted(board, req.user).catch(console.error);
 
   res.status(200).json({
     success: true,
