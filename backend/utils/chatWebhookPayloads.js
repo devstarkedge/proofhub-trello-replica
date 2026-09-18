@@ -715,6 +715,7 @@ export function buildUserUpdatedPayload(user, changes, actor, workspaceId, works
       _id: (user._id || user.id)?.toString(),
       id: (user._id || user.id)?.toString(),
       name: user.name || '',
+      profileUpdatedAt: user.updatedAt || null,
       email: user.email || '',
       role: workspaceAccess?.role || user.role || 'employee',
       department: workspaceAccess?.departmentIds || (Array.isArray(user.department)

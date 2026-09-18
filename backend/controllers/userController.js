@@ -20,6 +20,7 @@ import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js'
 import { recordAuditLog } from '../modules/permissions/auditLogService.js';
 import { syncMembershipFromUser, isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
 import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
+import { publishUserProfileUpdate } from '../services/chat/userProfileSync.js';
 
 const ROLE_OPTIONS_FOR_FINANCE_ACCESS = ['admin', 'manager', 'employee', 'hr'];
 
@@ -274,6 +275,7 @@ export const updateUser = asyncHandler(async (req, res, next) => {
   }
 
   // Update fields
+  const previousProfile = { name: user.name, email: user.email, avatar: user.avatar };
   if (name) user.name = name;
   if (email) user.email = email;
   // SECURITY: role changes must go through PUT /api/users/:id/role (changeUserRole),
@@ -309,6 +311,8 @@ export const updateUser = asyncHandler(async (req, res, next) => {
 
   await user.save();
   await syncMembershipFromUser(user._id, req.workspaceId);
+
+  await publishUserProfileUpdate(user, previousProfile, req.user, req.workspaceId);
 
   res.status(200).json({
     success: true,
@@ -430,11 +434,14 @@ export const updateProfile = asyncHandler(async (req, res, next) => {
   }
 
   // Update fields
+  const previousProfile = { name: user.name, email: user.email, avatar: user.avatar };
   if (name !== undefined) user.name = name;
   if (email !== undefined) user.email = email;
   if (title !== undefined) user.title = title;
 
   await user.save();
+
+  await publishUserProfileUpdate(user, previousProfile, req.user, req.workspaceId);
 
   // Populate department and team for response
   await user.populate('department', 'name');

@@ -29,6 +29,7 @@ import { isValidWorkspaceType, WORKSPACE_TYPE_RULES, isValidIndustry, isValidCom
 import { createDefaultSubscription } from '../modules/superAdmin/subscriptionService.js';
 import { isSuperAdminEmailAllowed } from '../middleware/requireSuperAdmin.js';
 import { recordSuperAdminAuditLog } from '../modules/superAdmin/superAdminAuditService.js';
+import { publishUserProfileUpdate } from '../services/chat/userProfileSync.js';
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -500,6 +501,7 @@ export const getMe = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/auth/updatedetails
 // @access  Private
 export const updateDetails = asyncHandler(async (req, res, next) => {
+  const previousProfile = await User.findById(req.user.id).select('name email avatar').lean();
   const fieldsToUpdate = {
     name: req.body.name,
     email: req.body.email,
@@ -510,6 +512,8 @@ export const updateDetails = asyncHandler(async (req, res, next) => {
     new: true,
     runValidators: true
   });
+
+  await publishUserProfileUpdate(user, previousProfile, req.user, req.workspaceId);
 
   res.status(200).json({
     success: true,

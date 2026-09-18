@@ -238,6 +238,7 @@ export const getChatRedirectUrl = asyncHandler(async (req, res, next) => {
     id: req.user._id || req.user.id,
     email: req.user.email,
     name: req.user.name,
+    profileUpdatedAt: req.user.updatedAt || null,
     role: req.user.role,
     avatar: req.user.avatar || req.user.profileImage || '',
     workspaceId,

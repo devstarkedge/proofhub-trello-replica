@@ -534,7 +534,7 @@ export const chatHooks = {
     if (!webhookDispatcher.isEnabled()) return;
     const access = await resolveFlowTaskAccessSnapshot(user._id || user.id, workspaceId, user);
     const payload = buildUserUpdatedPayload(user, changes, actor, workspaceId, access);
-    await webhookDispatcher.dispatch(EVENTS.USER_UPDATED, payload);
+    await webhookDispatcher.dispatch(EVENTS.USER_UPDATED, payload, { throwOnFailure: true });
   },
 
   /**

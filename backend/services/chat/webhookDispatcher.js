@@ -80,7 +80,7 @@ function computeSignature(payload) {
  * @param {object} payload - Event payload matching the integration contract
  * @returns {Promise<void>}
  */
-async function dispatch(eventName, payload) {
+async function dispatch(eventName, payload, { throwOnFailure = false } = {}) {
   if (!payload?.workspaceId) {
     logger.warn('ChatWebhook: skipping dispatch — workspaceId is required', { eventName });
     return;
@@ -167,6 +167,7 @@ async function dispatch(eventName, payload) {
           status,
           error: error.message,
         });
+        if (throwOnFailure) throw error;
         return;
       }
 
@@ -189,6 +190,7 @@ async function dispatch(eventName, payload) {
           retries: MAX_RETRIES,
           error: error.message,
         });
+        if (throwOnFailure) throw error;
       }
     }
   }
