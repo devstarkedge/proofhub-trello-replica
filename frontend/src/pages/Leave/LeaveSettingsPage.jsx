@@ -9,6 +9,7 @@ import PolicyStatusBadge from '../../components/Leave/PolicyStatusBadge';
 import PolicyFormModal from '../../components/Leave/PolicyFormModal';
 import PolicyDiffConfirmModal from '../../components/Leave/PolicyDiffConfirmModal';
 import OverridePolicyFormModal from '../../components/Leave/OverridePolicyFormModal';
+import WorkCalendarSettingsPanel from '../../components/Leave/WorkCalendar/WorkCalendarSettingsPanel';
 import { buildPolicyDiff } from '../../utils/leavePolicyDiff';
 import * as leaveApi from '../../services/leaveApi';
 
@@ -374,48 +375,52 @@ const OverridesTab = () => {
   );
 };
 
-const WorkCalendarTab = () => {
+const DepartmentCalendarsReadOnly = () => {
   const [calendars, setCalendars] = useState([]);
-  const load = () => leaveApi.getWorkCalendars().then(({ data }) => setCalendars(data)).catch(() => {});
+  const load = () => leaveApi.getWorkCalendars().then(({ data }) => setCalendars((data || []).filter((c) => c.scope === 'department'))).catch(() => {});
   useEffect(() => { load(); }, []);
-
   useEffect(() => {
     const onCalendarUpdated = () => load();
     window.addEventListener('socket-leave-calendar-updated', onCalendarUpdated);
     return () => window.removeEventListener('socket-leave-calendar-updated', onCalendarUpdated);
   }, []);
+  if (!calendars.length) return null;
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
   return (
-    <SettingsPanel
-      title="Work Calendar"
-      description="This weekly pattern (plus any holidays below) is the one source of truth for every working-day decision in the workspace — the Leave Calendar, request validation, reports, and the Teams time-tracking overlay all classify each date through it. It is scoped to this workspace only and never shared across workspaces; a department can optionally override it."
-    >
-      {calendars.length ? (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {calendars.map((calendar) => (
-            <div key={calendar._id} className="rounded-xl border p-4" style={{ borderColor: 'var(--color-border-default)', backgroundColor: 'var(--color-bg-subtle)' }}>
-              <p className="mb-3 text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                {calendar.scope === 'workspace' ? 'Workspace default' : 'Department calendar'}
-              </p>
-              <div className="grid grid-cols-7 gap-1 text-center text-[11px] sm:gap-2 sm:text-xs">
-                {calendar.weeklyPattern.map((day) => (
-                  <div key={day.dayOfWeek} className="rounded-lg px-1 py-2" style={{
-                    backgroundColor: day.isWorkingDay ? 'var(--color-success-subtle)' : 'var(--color-bg-muted)',
-                    color: day.isWorkingDay ? 'var(--color-success-text)' : 'var(--color-text-muted)'
-                  }}>
-                    {dayNames[day.dayOfWeek]}
-                  </div>
-                ))}
-              </div>
+    <div className="rounded-xl border p-4" style={{ borderColor: 'var(--color-border-default)', backgroundColor: 'var(--color-bg-subtle)' }}>
+      <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Department Overrides (advanced, managed via the API)</p>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {calendars.map((calendar) => (
+          <div key={calendar._id} className="rounded-xl border p-3" style={{ borderColor: 'var(--color-border-subtle)' }}>
+            <div className="grid grid-cols-7 gap-1 text-center text-[11px]">
+              {calendar.weeklyPattern.map((day) => (
+                <div key={day.dayOfWeek} className="rounded-lg px-1 py-2" style={{
+                  backgroundColor: day.isWorkingDay ? 'var(--color-success-subtle)' : 'var(--color-bg-muted)',
+                  color: day.isWorkingDay ? 'var(--color-success-text)' : 'var(--color-text-muted)'
+                }}>
+                  {dayNames[day.dayOfWeek]}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ) : <LeaveEmptyState icon={CalendarDays} title="No work calendar configured" description="Enable the Leave module defaults to create the workspace calendar." compact />}
-    </SettingsPanel>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 };
+
+const WorkCalendarTab = () => (
+  <SettingsPanel
+    title="Work Calendar"
+    description="This is the one source of truth for every working-day decision in the workspace — the Leave Calendar, request validation, reports, and the Teams time-tracking overlay all classify each date through it. Scoped to this workspace only, never shared across workspaces."
+  >
+    <WorkCalendarSettingsPanel />
+    <div className="mt-6">
+      <DepartmentCalendarsReadOnly />
+    </div>
+  </SettingsPanel>
+);
 
 const HolidaysTab = () => {
   const [holidays, setHolidays] = useState([]);

@@ -4,6 +4,7 @@ import { Sparkles, Moon, Sun } from 'lucide-react';
 import Snowfall from 'react-snowfall';
 import useThemeStore from '../store/themeStore';
 import NeonSparkText from './NeonSparkText';
+import AttendanceQuickControl from './Attendance/AttendanceQuickControl';
 
 const WelcomeHeader = ({ user }) => {
   const { effectiveMode } = useThemeStore();
@@ -180,6 +181,8 @@ const WelcomeHeader = ({ user }) => {
              </div>
           </div>
         )}
+
+        <AttendanceQuickControl />
       </div>
 
       <style jsx="true">{`

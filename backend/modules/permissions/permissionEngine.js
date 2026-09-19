@@ -1,6 +1,6 @@
 import AccessOverride from '../../models/AccessOverride.js';
 import Role from '../../models/Role.js';
-import { RESOURCES, getResourceActionKeys } from '../../config/permissionRegistry.js';
+import { RESOURCES, RESOURCE_ROLE_DEFAULTS, getResourceActionKeys } from '../../config/permissionRegistry.js';
 import { ensureDefaultWorkspace } from './workspaceService.js';
 
 /**
@@ -11,14 +11,17 @@ import { ensureDefaultWorkspace } from './workspaceService.js';
  * Precedence (evaluated fresh on every call, never from a stale cache):
  *   1. Explicit deny override            — always wins, even over Admin
  *   2. Admin role                        — full access to everything
- *   3. Explicit grant override           — including scope + expiry
- *   4. Role default (only 'access_control.manage' has one today)
- *   5. Default deny
+ *   3. Built-in resource/role default    — e.g. HR's full Leave/Attendance access
+ *   4. Explicit grant override           — including scope + expiry
+ *   5. Role default (only 'access_control.manage' has one today)
+ *   6. Default deny
  *
- * HR has full Leave Management access in its active workspace, after an
- * explicit deny check and before individual grants. Other resources keep
- * the precedence above. The caller supplies the workspace membership role
- * (protect's req.user overlay), not the user's global identity role.
+ * A resource's built-in role defaults (step 3) come from
+ * RESOURCE_ROLE_DEFAULTS in permissionRegistry.js — data, not a per-resource
+ * `if` branch, so a new resource gets the same behavior by adding a table
+ * entry rather than editing this function. The caller supplies the
+ * workspace membership role (protect's req.user overlay), not the user's
+ * global identity role.
  */
 
 const isExpired = (doc) => Boolean(doc?.expiresAt && new Date(doc.expiresAt).getTime() <= Date.now());
@@ -83,14 +86,15 @@ export async function resolveResourceAccess(user, resource, workspaceId) {
     return { resource: key, actions: allActionsAs(key, true), scope: 'full', source: 'admin' };
   }
 
-  // HR's built-in Leave access covers every registered Leave capability.
-  // Keep explicit denies authoritative, like Admin, and do not let an old
-  // partial grant accidentally restrict this role's full Leave access.
-  if (key === 'leave' && role === 'hr') {
+  // 3. Built-in resource/role default (e.g. HR's full Leave/Attendance
+  // access) covers every registered capability for that resource. Keep
+  // explicit denies authoritative, like Admin, and do not let an old
+  // partial grant accidentally restrict this role's built-in access.
+  if (RESOURCE_ROLE_DEFAULTS[key]?.[role] === 'full') {
     return { resource: key, actions: allActionsAs(key, true), scope: 'full', source: 'role-default' };
   }
 
-  // 3. Explicit grant override.
+  // 4. Explicit grant override.
   if (override?.effect === 'grant') {
     return {
       resource: key,
@@ -103,9 +107,11 @@ export async function resolveResourceAccess(user, resource, workspaceId) {
     };
   }
 
-  // 4. Role default. Only 'access_control.manage' has a role-level default
-  // today (Role.permissions.canManageAccessControl) — Sales/Finance remain
-  // 100% per-user-override, matching pre-migration behavior exactly.
+  // 5. A second, older kind of role default that predates
+  // RESOURCE_ROLE_DEFAULTS: only 'access_control.manage' works this way
+  // today (Role.permissions.canManageAccessControl, editable per-role, not
+  // a fixed table entry) — Sales/Finance remain 100% per-user-override,
+  // matching pre-migration behavior exactly.
   if (key === 'access_control') {
     const canManage = await roleGrantsAccessControlManage(role, ws);
     return {
@@ -116,7 +122,7 @@ export async function resolveResourceAccess(user, resource, workspaceId) {
     };
   }
 
-  // 5. Default deny.
+  // 6. Default deny.
   return { resource: key, actions: allActionsAs(key, false), scope: 'none', source: 'default-deny' };
 }
 

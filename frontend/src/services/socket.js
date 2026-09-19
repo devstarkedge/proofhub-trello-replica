@@ -527,6 +527,31 @@ class SocketService {
       window.dispatchEvent(new CustomEvent('socket-leave-calendar-updated', { detail: data }));
     });
 
+    this.socket.on('attendance:checked-in', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-checked-in', { detail: data }));
+    });
+    this.socket.on('attendance:checked-out', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-checked-out', { detail: data }));
+    });
+    this.socket.on('attendance:updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-updated', { detail: data }));
+    });
+    this.socket.on('attendance:wfh-requested', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-wfh-requested', { detail: data }));
+    });
+    this.socket.on('attendance:wfh-decided', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-wfh-decided', { detail: data }));
+    });
+    this.socket.on('attendance:regularization-requested', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-regularization-requested', { detail: data }));
+    });
+    this.socket.on('attendance:regularization-decided', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-regularization-decided', { detail: data }));
+    });
+    this.socket.on('attendance:work-mode-override-updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-work-mode-override-updated', { detail: data }));
+    });
+
     // Announcement events
     this.socket.on('announcement-created', (data) => {
       console.log('Announcement created:', data);

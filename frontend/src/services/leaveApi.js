@@ -62,6 +62,11 @@ export const getHolidays = async (params = {}) => (await api.get('/holidays', { 
 export const createHoliday = async (payload) => (await api.post('/holidays', payload)).data;
 export const deleteHoliday = async (holidayId) => (await api.delete(`/holidays/${holidayId}`)).data;
 
+// ─── Work Calendar Engine (base pattern + recurring rules + date overrides) ─
+export const getWorkCalendarConfig = async () => (await api.get('/work-calendar/config')).data;
+export const saveWorkCalendarConfig = async (payload) => (await api.post('/work-calendar/config', payload)).data;
+export const previewWorkCalendarConfig = async (payload) => (await api.post('/work-calendar/preview', payload)).data;
+
 // ─── Balance ────────────────────────────────────────────────────────────────
 export const getMyBalance = async () => (await api.get('/balance/me')).data;
 export const getUserBalance = async (userId) => (await api.get(`/balance/${userId}`)).data;

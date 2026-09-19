@@ -58,10 +58,43 @@ export const RESOURCES = {
       { key: 'view_reports', label: 'View Reports', description: 'Can view Leave analytics and reports', legacyField: null },
       { key: 'view_audit', label: 'View Audit Log', description: 'Can view the Leave module\'s audit trail', legacyField: null }
     ]
+  },
+  attendance: {
+    label: 'Attendance Management',
+    description: 'Administrative control of the Attendance module — policies, shifts, locations, assignments, approvals, and reports. Self-service (own check-in/check-out, viewing one\'s own attendance) and manager visibility into their own department are derived structurally from org data and attendance eligibility — see modules/attendance/attendanceEligibility.service.js — and are never gated here, exactly like Leave\'s own self-service.',
+    actions: [
+      { key: 'view_workspace', label: 'View Workspace Attendance Data', description: 'Can view every employee\'s attendance workspace-wide (dashboards, reports)', legacyField: null },
+      { key: 'manage_policy', label: 'Manage Policies', description: 'Can create/version/publish Attendance policies (work modes, grace, shifts default, WFH/Hybrid/Field rules)', legacyField: null },
+      { key: 'manage_shifts', label: 'Manage Shifts', description: 'Can create/edit shifts and shift assignments', legacyField: null },
+      { key: 'manage_locations', label: 'Manage Locations', description: 'Can create/edit attendance locations and location assignments', legacyField: null },
+      { key: 'manage_work_modes', label: 'Manage Work Mode Overrides', description: 'Can create/edit/deactivate Work Mode Overrides for a specific role, department, or user', legacyField: null },
+      { key: 'approve_wfh', label: 'Approve WFH Requests', description: 'Can approve/reject Work-From-Home requests', legacyField: null },
+      { key: 'approve_regularization', label: 'Approve Regularization Requests', description: 'Can approve/reject attendance regularization requests', legacyField: null },
+      { key: 'correct_attendance', label: 'Manually Correct Attendance', description: 'Can directly correct an employee\'s attendance record, with a required reason', legacyField: null },
+      { key: 'view_reports', label: 'View Reports', description: 'Can view Attendance analytics and reports', legacyField: null },
+      { key: 'view_audit', label: 'View Audit Log', description: 'Can view the Attendance module\'s audit trail', legacyField: null }
+    ]
   }
 };
 
 export const RESOURCE_KEYS = Object.keys(RESOURCES);
+
+/**
+ * Built-in role defaults a resource can declare, layered into
+ * resolveResourceAccess between the Admin-full-access rule and explicit
+ * grant overrides (see permissionEngine.js). Generic replacement for what
+ * used to be a one-off `if (key === 'leave' && role === 'hr')` special
+ * case hardcoded in the engine — HR's full Leave access is now just data
+ * here, and Attendance's identical HR default is a second entry rather
+ * than a second hardcoded branch. Only 'full' (every registered action for
+ * that resource) is supported today; a role/resource pair with no entry
+ * here falls through to the engine's normal override/default-deny chain
+ * exactly as before.
+ */
+export const RESOURCE_ROLE_DEFAULTS = {
+  leave: { hr: 'full' },
+  attendance: { hr: 'full' }
+};
 
 export const resourceExists = (resource) => Boolean(RESOURCES[String(resource || '').toLowerCase()]);
 

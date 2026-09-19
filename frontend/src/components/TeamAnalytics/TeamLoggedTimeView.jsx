@@ -502,6 +502,16 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
     fetchData();
   }, [fetchData]);
 
+  // The Work Calendar drives this view's expectedMinutes/productivity math
+  // (see teamAnalyticsController.js), so a calendar edit elsewhere must
+  // refresh this data too — otherwise an admin who just changed the
+  // calendar would see stale productivity numbers until a hard refresh.
+  useEffect(() => {
+    const onCalendarUpdated = () => fetchData();
+    window.addEventListener('socket-leave-calendar-updated', onCalendarUpdated);
+    return () => window.removeEventListener('socket-leave-calendar-updated', onCalendarUpdated);
+  }, [fetchData]);
+
   // Independent leave/holiday/weekly-off overlay fetch — runs whenever the
   // member list or date range changes, entirely decoupled from fetchData()
   // above. A failure here only means the overlay is missing, never breaks
@@ -625,7 +635,22 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
     }
 
     const hours = (day.totalMinutes || 0) / 60;
-    const expectedHours = 8;
+    // Calendar-resolved expected hours for THIS day (0 on a weekly-off/
+    // holiday/recurring-off day) — supplied by the backend per cell, never
+    // a flat 8h assumption. See teamAnalyticsController.js#getTeamLoggedTime.
+    const expectedHours = (day.expectedMinutes ?? 480) / 60;
+
+    if (expectedHours === 0) {
+      // Time logged on a day with no expected hours (a day off) has no
+      // over/under target to compare against — informational, not a heat
+      // gradient built around a baseline of zero.
+      return {
+        bg: 'bg-gradient-to-br from-sky-50 to-blue-50',
+        text: 'text-sky-700',
+        border: 'border-sky-200',
+        gradient: ''
+      };
+    }
     const intensity = Math.min(hours / expectedHours, 1.5);
 
     // Heat-intensity based on percentage of expected hours
@@ -677,6 +702,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
   // Get over/under status for a day
   const getDateStatus = (day) => {
     if (!day || !day.hasData) return 'no-data';
+    if (day.expectedMinutes === 0) return 'normal'; // a day off is never "under-logged", however much (or little) was logged on it
     const hours = (day.totalMinutes || 0) / 60;
     if (hours >= 10) return 'over-logged';
     if (hours < 6) return 'under-logged';

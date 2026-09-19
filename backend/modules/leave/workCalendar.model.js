@@ -27,6 +27,13 @@ const workCalendarSchema = new mongoose.Schema({
   },
   effectiveFrom: { type: Date, required: true, default: () => new Date(0) },
   isActive: { type: Boolean, default: true },
+  // How many minutes count as one full working day for expected-hours math
+  // (Teams/productivity, reports) — configurable per workspace instead of a
+  // hardcoded 8h/480min constant. Always read through
+  // leaveTimezone.util.js#getStandardWorkMinutes, never this field directly:
+  // a .lean() read of a pre-existing row predating this field resolves to
+  // undefined, not this schema default.
+  standardWorkMinutesPerDay: { type: Number, default: 480, min: 1, max: 1440 },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 

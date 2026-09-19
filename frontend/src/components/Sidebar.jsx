@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp, ShieldCheck, ClipboardCheck, CalendarDays } from 'lucide-react';
+import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp, ShieldCheck, ClipboardCheck, CalendarDays, Fingerprint } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
@@ -26,6 +26,7 @@ const iconColors = {
   '/access-control': { color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.12)' }, // Violet - Access & Permissions
   '/join-requests': { color: '#0891b2', bg: 'rgba(8, 145, 178, 0.12)' }, // Cyan - Join Requests
   '/leave': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' }, // Orange - Leave
+  '/attendance': { color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.12)' }, // Sky - Attendance
 };
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
@@ -92,6 +93,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       { path: '/my-shortcuts', icon: Zap, label: 'My Shortcuts' },
       { path: '/announcements', icon: Bell, label: 'Announcements' },
       { path: '/leave', icon: CalendarDays, label: 'Leave' },
+      { path: '/attendance', icon: Fingerprint, label: 'Attendance' },
     ];
 
     // If no user yet, return base

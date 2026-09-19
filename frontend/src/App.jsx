@@ -51,6 +51,11 @@ import LeaveReportsPage from "./pages/Leave/LeaveReportsPage";
 import LeaveSettingsPage from "./pages/Leave/LeaveSettingsPage";
 import LeaveLayout from "./layouts/LeaveLayout";
 import LeaveSettingsLayout from "./layouts/LeaveSettingsLayout";
+import MyAttendancePage from "./pages/Attendance/MyAttendancePage";
+import AttendanceApprovalsPage from "./pages/Attendance/AttendanceApprovalsPage";
+import AttendanceSettingsPage from "./pages/Attendance/AttendanceSettingsPage";
+import AttendanceLayout from "./layouts/AttendanceLayout";
+import AttendanceSettingsLayout from "./layouts/AttendanceSettingsLayout";
 import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
 import ProjectTrash from "./pages/ProjectTrash";
 import SelectWorkspacePage from "./pages/SelectWorkspacePage";
@@ -155,6 +160,35 @@ function App() {
                   >
                     <Route index element={<Navigate to="policies" replace />} />
                     <Route path=":section" element={<LeaveSettingsPage />} />
+                  </Route>
+                </Route>
+
+                {/* Attendance — self-service (my attendance / approvals) is
+                    open to every authenticated workspace member; only
+                    /attendance/settings is role-gated, matching Leave's
+                    own split (self-service is structural, not permission-
+                    gated — see modules/attendance/attendanceEligibility.service.js). */}
+                <Route path="/attendance" element={<AttendanceLayout />}>
+                  <Route index element={<Navigate to="my" replace />} />
+                  <Route path="my" element={<MyAttendancePage />} />
+                  <Route
+                    path="approvals"
+                    element={
+                      <PrivateRoute requiredRole={["Manager", "HR", "Admin"]}>
+                        <AttendanceApprovalsPage />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="settings"
+                    element={
+                      <PrivateRoute requiredRole={["HR", "Admin"]}>
+                        <AttendanceSettingsLayout />
+                      </PrivateRoute>
+                    }
+                  >
+                    <Route index element={<Navigate to="policy" replace />} />
+                    <Route path=":section" element={<AttendanceSettingsPage />} />
                   </Route>
                 </Route>
 

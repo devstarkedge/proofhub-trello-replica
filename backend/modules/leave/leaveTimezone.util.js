@@ -15,6 +15,14 @@ export function getWorkspaceTimezone(workspaceDocOrLean) {
   return DEFAULT_WORKSPACE_TIMEZONE;
 }
 
+export const DEFAULT_STANDARD_WORK_MINUTES_PER_DAY = 480; // 8 hours
+
+/** Same "never bare field access" rule as getWorkspaceTimezone — a WorkCalendar row predating this field reads back undefined, not the schema default. */
+export function getStandardWorkMinutes(workCalendarDocOrLean) {
+  const minutes = workCalendarDocOrLean?.standardWorkMinutesPerDay;
+  return typeof minutes === 'number' && minutes > 0 ? minutes : DEFAULT_STANDARD_WORK_MINUTES_PER_DAY;
+}
+
 /** Current instant, expressed in the workspace's configured zone. */
 export function nowInWorkspaceTz(timezone) {
   return DateTime.utc().setZone(timezone);
@@ -84,6 +92,23 @@ export function dayOfWeekInTz(date, timezone) {
     .setZone(timezone)
     .weekday;
   return luxonWeekday % 7;
+}
+
+export const OCCURRENCE_LABELS = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH'];
+
+/**
+ * Which occurrence-in-month a date-only instant's weekday is — e.g. the
+ * third Saturday of the month — plus whether it's that weekday's LAST
+ * occurrence in the month (which, in a 5-occurrence month, is a distinct
+ * date from the 5th; in a 4-occurrence month, the 4th and LAST coincide).
+ * Used by leaveCalendar.service.js to match WorkCalendarRule rows against
+ * a date; always computed in the workspace's own timezone, never UTC.
+ */
+export function occurrenceOf(date, timezone) {
+  const dt = DateTime.fromJSDate(date instanceof Date ? date : new Date(date), { zone: 'utc' }).setZone(timezone);
+  const nth = Math.ceil(dt.day / 7); // 1..5
+  const isLast = (dt.day + 7) > dt.daysInMonth;
+  return { occurrence: OCCURRENCE_LABELS[nth - 1], isLast };
 }
 
 /**

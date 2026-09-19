@@ -54,6 +54,10 @@ const errorHandler = (err, req, res, next) => {
   res.status(error.statusCode || 500).json({
     success: false,
     message: error.message || 'Server Error',
+    // Optional machine-readable code (e.g. Attendance's OUTSIDE_GEOFENCE,
+    // ALREADY_CHECKED_IN) — set via `err.code = '...'` at the throw site;
+    // every existing caller that never sets it is unaffected.
+    ...(err.code && { code: err.code }),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };

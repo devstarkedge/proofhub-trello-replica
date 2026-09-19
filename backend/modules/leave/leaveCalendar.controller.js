@@ -5,6 +5,7 @@ import Holiday from './holiday.model.js';
 import Department from '../../models/Department.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import { onWorkCalendarUpdated } from './leaveHooks.js';
+import * as workCalendarSettingsService from './workCalendarSettings.service.js';
 
 export const listWorkCalendars = asyncHandler(async (req, res) => {
   const calendars = await WorkCalendar.find({ isActive: true }).sort({ scope: 1, effectiveFrom: -1 }).lean();
@@ -70,4 +71,38 @@ export const deleteHoliday = asyncHandler(async (req, res) => {
   });
   onWorkCalendarUpdated(req.workspaceId).catch(() => {});
   res.json({ success: true, data: { deleted: true } });
+});
+
+// ─── Work Calendar Engine — base pattern + recurring rules + date
+//     overrides, read/saved/previewed as one atomic unit ────────────────
+
+export const getWorkCalendarConfig = asyncHandler(async (req, res) => {
+  const config = await workCalendarSettingsService.getWorkCalendarConfiguration({ workspaceId: req.workspaceId });
+  res.json({ success: true, data: config });
+});
+
+export const saveWorkCalendarConfig = asyncHandler(async (req, res) => {
+  const { effectiveFrom, weeklyPattern, standardWorkMinutesPerDay, recurringRules, dateOverrides } = req.body;
+  const { before, after } = await workCalendarSettingsService.saveWorkCalendarConfiguration({
+    workspaceId: req.workspaceId, effectiveFrom, weeklyPattern, standardWorkMinutesPerDay,
+    recurringRules, dateOverrides, createdBy: req.user.id
+  });
+
+  await recordAuditLog({
+    actor: req.user, action: 'LEAVE_WORK_CALENDAR_CONFIGURED', targetType: 'WorkCalendar',
+    targetId: after.workCalendar?._id, resourceLabel: 'Work Calendar',
+    summary: `${req.user.name} updated the workspace Work Calendar (base pattern, recurring rules, and date overrides)`,
+    before, after, category: 'leave_management', meta: { workspaceId: req.workspaceId }
+  });
+  onWorkCalendarUpdated(req.workspaceId).catch(() => {});
+  res.json({ success: true, data: after });
+});
+
+export const previewWorkCalendarConfig = asyncHandler(async (req, res) => {
+  const { year, month, weeklyPattern, standardWorkMinutesPerDay, recurringRules, dateOverrides } = req.body;
+  if (!year || !month) throw new ErrorResponse('year and month are required', 400);
+  const preview = await workCalendarSettingsService.previewWorkCalendarConfiguration({
+    workspaceId: req.workspaceId, year, month, weeklyPattern, standardWorkMinutesPerDay, recurringRules, dateOverrides
+  });
+  res.json({ success: true, data: preview });
 });

@@ -44,6 +44,12 @@ const workspaceSchema = new mongoose.Schema({
   // defaults don't apply to .lean() reads of pre-existing documents.
   timezone: { type: String, default: 'Asia/Kolkata' },
   leaveModuleEnabled: { type: Boolean, default: false },
+  // Same opt-in convention as leaveModuleEnabled — Attendance must never
+  // silently turn on for an existing workspace. Read directly is safe here
+  // (unlike timezone) since a missing key on a pre-existing .lean() read
+  // resolves to undefined, which is falsy — the same safe-by-default
+  // behavior explicit `?? false` would give.
+  attendanceModuleEnabled: { type: Boolean, default: false },
   settings: {
     restrictDomain: { type: String }, // e.g. "@acme.com" only
     // Per-workspace ChatApp connection — replaces the old process-global

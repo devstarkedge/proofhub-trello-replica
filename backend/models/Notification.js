@@ -71,7 +71,16 @@ const notificationSchema = new mongoose.Schema({
       'leave_balance_adjusted',
       'leave_bucket_expired',
       'leave_approval_reminder',
-      'leave_approval_escalated'
+      'leave_approval_escalated',
+      'attendance_wfh_requested',
+      'attendance_wfh_approval_required',
+      'attendance_wfh_approved',
+      'attendance_wfh_rejected',
+      'attendance_regularization_requested',
+      'attendance_regularization_approval_required',
+      'attendance_regularization_approved',
+      'attendance_regularization_rejected',
+      'attendance_missing_checkout'
     ],
     required: true
   },
@@ -101,7 +110,7 @@ const notificationSchema = new mongoose.Schema({
   },
   entityType: {
     type: String,
-    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', 'WorkspaceJoinRequest', 'LeaveRequest', null],
+    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', 'WorkspaceJoinRequest', 'LeaveRequest', 'WfhRequest', 'AttendanceRegularization', null],
     default: null
   },
   action: {

@@ -26,6 +26,10 @@ export const CRITICALITY = {
   // even during their quiet hours, same rationale as task_overdue above.
   leave_approval_required: 'critical',
   leave_approval_escalated: 'critical',
+  // Same rationale as leave_approval_required — an unactioned WFH/
+  // regularization approval blocks the requester's day from resolving.
+  attendance_wfh_approval_required: 'critical',
+  attendance_regularization_approval_required: 'critical',
 
   leave_request_submitted: 'non-critical',
   leave_approval_decision_recorded: 'non-critical',
@@ -37,6 +41,14 @@ export const CRITICALITY = {
   leave_balance_adjusted: 'non-critical',
   leave_bucket_expired: 'non-critical',
   leave_approval_reminder: 'non-critical',
+
+  attendance_wfh_requested: 'non-critical',
+  attendance_wfh_approved: 'non-critical',
+  attendance_wfh_rejected: 'non-critical',
+  attendance_regularization_requested: 'non-critical',
+  attendance_regularization_approved: 'non-critical',
+  attendance_regularization_rejected: 'non-critical',
+  attendance_missing_checkout: 'non-critical',
 
   task_updated: 'non-critical',
   task_completed: 'non-critical',

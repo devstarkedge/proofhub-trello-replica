@@ -270,7 +270,12 @@ const ProductivityTrendChart = memo(({ data }) => {
     
     return data.dailyTotals.map(d => ({
       date: new Date(d.date).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
-      actual: Math.round((d.totalMinutes / (d.activeMembers * 480 || 1)) * 100),
+      // expectedMinutes is calendar-resolved per day (0 across a weekend/
+      // holiday for whichever members it's off for) — see
+      // teamAnalyticsController.js#calculateTeamAnalytics. Falls back to
+      // the old activeMembers*480 estimate only for a stale cached
+      // response that predates this field.
+      actual: Math.round((d.totalMinutes / (d.expectedMinutes || d.activeMembers * 480 || 1)) * 100),
       target: avgProductivity,
       members: d.activeMembers
     }));

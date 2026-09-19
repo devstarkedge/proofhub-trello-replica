@@ -7,6 +7,13 @@ import Department from '../models/Department.js';
 import Board from '../models/Board.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import { getExpectedMinutesByUser, getExpectedMinutesForRange, resolveWorkspaceDay } from '../modules/leave/workCalendarResolver.service.js';
+
+/** A user's primary department id (first entry) — User.department is inconsistently an array or a single ref in legacy data, same tolerance this file's role-based-access code above already applies. */
+function primaryDepartmentId(userInfo) {
+  const dept = Array.isArray(userInfo.department) ? userInfo.department[0] : userInfo.department;
+  return dept?._id || dept || null;
+}
 
 /**
  * @desc    Get team logged time analytics with role-based access
@@ -170,22 +177,40 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
   mergeLogs(subtaskLogs);
   mergeLogs(nanoLogs);
 
+  // Expected minutes are resolved through the Work Calendar Engine, not a
+  // bare "480 minutes x every calendar day" assumption — a Saturday, a
+  // workspace holiday, or a "3rd Saturday is off" recurring rule all
+  // correctly contribute 0 expected minutes instead of inflating/deflating
+  // productivityScore. One shared calendar context for the whole roster
+  // (see getExpectedMinutesByUser), never one per user.
+  const expectedMinutesByUser = await getExpectedMinutesByUser({
+    workspaceId: req.workspaceId,
+    users: users.map((userInfo) => ({ userId: userInfo._id, departmentId: primaryDepartmentId(userInfo) })),
+    startDate: dateRange[0] || start, endDate: dateRange[dateRange.length - 1] || end
+  });
+
   // Build response data
   const teamData = users.map(userInfo => {
     const logData = userLogMap.get(userInfo._id.toString()) || {
       dailyLogs: new Map(),
       totalMinutes: 0
     };
+    const expected = expectedMinutesByUser.get(String(userInfo._id)) || { totalExpectedMinutes: 0, workingDayCount: 0, dailyBreakdown: [] };
+    const expectedByDate = new Map(expected.dailyBreakdown.map((d) => [d.dateKey, d]));
 
     const dailyTimeline = dateRange.map(date => {
       const dayLog = logData.dailyLogs.get(date);
+      const dayExpected = expectedByDate.get(date);
       return {
         date,
         totalMinutes: dayLog?.totalMinutes || 0,
         hours: dayLog ? Math.floor(dayLog.totalMinutes / 60) : 0,
         minutes: dayLog ? dayLog.totalMinutes % 60 : 0,
         taskCount: dayLog?.taskCount || 0,
-        hasData: !!dayLog
+        hasData: !!dayLog,
+        expectedMinutes: dayExpected?.expectedMinutes ?? 0,
+        isWorkingDay: dayExpected?.isWorkingDay ?? false,
+        dayType: dayExpected?.dayType || null
       };
     });
 
@@ -194,11 +219,12 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
     const daysWithLogs = dailyTimeline.filter(d => d.hasData).length;
     const avgDailyMinutes = daysWithLogs > 0 ? Math.round(logData.totalMinutes / daysWithLogs) : 0;
 
-    // Calculate productivity score (8 hours = 100%)
-    const expectedDailyMinutes = 480; // 8 hours
-    const expectedTotalMinutes = expectedDailyMinutes * dateRange.length;
-    const productivityScore = expectedTotalMinutes > 0 
-      ? Math.round((logData.totalMinutes / expectedTotalMinutes) * 100) 
+    // Productivity score: logged minutes against the calendar-resolved
+    // expected minutes for this exact date range (0 on off days), not a
+    // flat 480-minutes-per-calendar-day assumption.
+    const expectedTotalMinutes = expected.totalExpectedMinutes;
+    const productivityScore = expectedTotalMinutes > 0
+      ? Math.round((logData.totalMinutes / expectedTotalMinutes) * 100)
       : 0;
 
     return {
@@ -219,6 +245,8 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
         formattedTotal: `${totalHours}h ${totalMins}m`,
         daysWithLogs,
         totalDays: dateRange.length,
+        workingDays: expected.workingDayCount, // calendar-resolved — excludes weekly-off/holiday/recurring-off days
+        expectedMinutes: expectedTotalMinutes,
         avgDailyMinutes,
         avgDailyFormatted: `${Math.floor(avgDailyMinutes / 60)}h ${avgDailyMinutes % 60}m`,
         productivityScore,
@@ -289,7 +317,7 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
 
   // Get users
   const users = await User.find({ _id: { $in: userIds } })
-    .select('name email avatar')
+    .select('name email avatar department')
     .lean();
 
   // Aggregation for insights
@@ -354,8 +382,16 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
 
   // Calculate date range days
   const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-  const expectedDailyMinutes = 480; // 8 hours
-  const expectedTotalMinutes = expectedDailyMinutes * totalDays;
+  // Expected minutes and "idle days" are resolved through the Work
+  // Calendar Engine, not a flat 480min x every calendar day — a weekend,
+  // holiday, or recurring-off day must never count against a user as an
+  // idle/missing-hours day. One shared calendar context for the whole
+  // roster (see getExpectedMinutesByUser), never one per user.
+  const expectedMinutesByUser = await getExpectedMinutesByUser({
+    workspaceId: req.workspaceId,
+    users: users.map((u) => ({ userId: u._id, departmentId: primaryDepartmentId(u) })),
+    startDate: start, endDate: end
+  });
 
   // Build insights data
   const userInsights = users.map(u => {
@@ -364,9 +400,10 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
       taskCount: 0,
       daysLogged: new Set()
     };
+    const expected = expectedMinutesByUser.get(String(u._id)) || { totalExpectedMinutes: 0, workingDayCount: 0 };
     const daysLoggedCount = insight.daysLogged.size || 0;
-    const productivityScore = expectedTotalMinutes > 0 
-      ? Math.round((insight.totalMinutes / expectedTotalMinutes) * 100) 
+    const productivityScore = expected.totalExpectedMinutes > 0
+      ? Math.round((insight.totalMinutes / expected.totalExpectedMinutes) * 100)
       : 0;
     const avgDaily = daysLoggedCount > 0 ? Math.round(insight.totalMinutes / daysLoggedCount) : 0;
 
@@ -376,7 +413,8 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
       totalHours: Math.floor(insight.totalMinutes / 60),
       taskCount: insight.taskCount,
       daysLogged: daysLoggedCount,
-      daysIdle: totalDays - daysLoggedCount,
+      workingDays: expected.workingDayCount,
+      daysIdle: Math.max(0, expected.workingDayCount - daysLoggedCount),
       productivityScore,
       avgDailyMinutes: avgDaily,
       status: getProductivityStatus(productivityScore)
@@ -386,7 +424,7 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
   // Generate AI insights
   const topPerformers = userInsights.filter(u => u.productivityScore >= 80).slice(0, 5);
   const lowPerformers = userInsights.filter(u => u.productivityScore < 40 && u.productivityScore > 0);
-  const idleUsers = userInsights.filter(u => u.daysIdle > totalDays * 0.5);
+  const idleUsers = userInsights.filter(u => u.workingDays > 0 && u.daysIdle > u.workingDays * 0.5);
   const overworkedUsers = userInsights.filter(u => u.productivityScore > 120);
   const usersNeedingAttention = userInsights.filter(u => u.productivityScore >= 40 && u.productivityScore < 60);
 
@@ -504,13 +542,17 @@ export const getDepartmentAnalytics = asyncHandler(async (req, res, next) => {
       SubtaskNano.aggregate(aggregation)
     ]);
 
-    const totalMinutes = (cardStats[0]?.totalMinutes || 0) + 
-                        (subtaskStats[0]?.totalMinutes || 0) + 
+    const totalMinutes = (cardStats[0]?.totalMinutes || 0) +
+                        (subtaskStats[0]?.totalMinutes || 0) +
                         (nanoStats[0]?.totalMinutes || 0);
-    
-    const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-    const expectedMinutes = deptUserIds.length * 480 * totalDays;
-    const avgProductivity = expectedMinutes > 0 
+
+    // One calendar resolution per department (every member shares that
+    // department's calendar), not 480min x every calendar day.
+    const expectedMinutesPerMember = await getExpectedMinutesForRange({
+      workspaceId: req.workspaceId, startDate: start, endDate: end, departmentId: dept._id
+    });
+    const expectedMinutes = deptUserIds.length * expectedMinutesPerMember;
+    const avgProductivity = expectedMinutes > 0
       ? Math.round((totalMinutes / expectedMinutes) * 100)
       : 0;
 
@@ -722,7 +764,9 @@ export const getMyLoggedTimeSummary = asyncHandler(async (req, res, next) => {
   const totalMinutes = dailyLogs.reduce((sum, d) => sum + d.totalMinutes, 0);
   const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
   const daysWithLogs = dailyLogs.length;
-  const expectedMinutes = totalDays * 480;
+  const expectedMinutes = await getExpectedMinutesForRange({
+    workspaceId: req.workspaceId, startDate: start, endDate: end, departmentId: primaryDepartmentId(req.user)
+  });
   const productivityScore = expectedMinutes > 0 ? Math.round((totalMinutes / expectedMinutes) * 100) : 0;
 
   res.status(200).json({
@@ -771,12 +815,20 @@ function calculateTeamAnalytics(teamData, dateRange) {
       const dayData = member.dailyTimeline.find(d => d.date === date);
       return dayData?.hasData;
     }).length;
+    // Calendar-resolved, per-member — a Saturday/holiday contributes 0 for
+    // whichever members it's off for, rather than the frontend assuming a
+    // flat 8h x activeMembers (see TeamAnalyticsCharts.jsx's ProductivityTrendChart).
+    const expectedMinutes = teamData.reduce((sum, member) => {
+      const dayData = member.dailyTimeline.find(d => d.date === date);
+      return sum + (dayData?.expectedMinutes || 0);
+    }, 0);
 
     return {
       date,
       totalMinutes: dayTotal,
       totalHours: Math.floor(dayTotal / 60),
-      activeMembers
+      activeMembers,
+      expectedMinutes
     };
   });
 
@@ -821,8 +873,11 @@ function generatePredictions(userInsights, totalDays) {
     });
   }
 
-  const consistentPerformers = userInsights.filter(u => 
-    u.daysLogged >= totalDays * 0.8 && u.productivityScore >= 70
+  // Against working days, not every calendar day in range — comparing to
+  // raw totalDays would make "consistent" nearly unreachable for a normal
+  // Mon-Fri workspace (5 of 7 calendar days is already only ~71%).
+  const consistentPerformers = userInsights.filter(u =>
+    u.workingDays > 0 && u.daysLogged >= u.workingDays * 0.8 && u.productivityScore >= 70
   );
   if (consistentPerformers.length > 0) {
     predictions.push({
@@ -990,12 +1045,15 @@ export const getDateHoverDetails = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Not authorized to view other users data', 403));
   }
 
+  // Needed both for the manager access check below and to resolve this
+  // date against the target user's own department calendar.
+  const targetUser = await User.findById(targetUserId).select('department').lean();
+  if (!targetUser) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
   // For managers, verify they have access to this user's department
   if (user.role === 'manager') {
-    const targetUser = await User.findById(targetUserId).select('department').lean();
-    if (!targetUser) {
-      return next(new ErrorResponse('User not found', 404));
-    }
     const userDeptIds = Array.isArray(user.department) ? user.department.map(d => d.toString()) : [user.department?.toString()];
     const targetDeptIds = Array.isArray(targetUser.department) ? targetUser.department.map(d => d.toString()) : [targetUser.department?.toString()];
     const hasAccess = targetDeptIds.some(d => userDeptIds.includes(d));
@@ -1151,11 +1209,18 @@ export const getDateHoverDetails = asyncHandler(async (req, res, next) => {
     }));
 
   const totalMinutes = allTasks.reduce((sum, t) => sum + t.minutes, 0);
-  const expectedMinutes = 480; // 8 hours default
-  
+  const { expectedMinutes, isWorkingDay } = await resolveWorkspaceDay({
+    workspaceId: req.workspaceId, date: targetDate, departmentId: primaryDepartmentId(targetUser)
+  });
+
+  // A non-working day (weekly-off/holiday/recurring-off) has 0 expected
+  // minutes — it must never be flagged under-logged just because it's a
+  // day off, regardless of whether the user happened to log time on it.
   let status = 'normal';
-  if (totalMinutes < expectedMinutes * 0.75) status = 'under-logged';
-  else if (totalMinutes > expectedMinutes * 1.25) status = 'over-logged';
+  if (isWorkingDay) {
+    if (totalMinutes < expectedMinutes * 0.75) status = 'under-logged';
+    else if (totalMinutes > expectedMinutes * 1.25) status = 'over-logged';
+  }
 
   res.status(200).json({
     success: true,
@@ -1164,6 +1229,7 @@ export const getDateHoverDetails = asyncHandler(async (req, res, next) => {
       date: date,
       totalMinutes,
       expectedMinutes,
+      isWorkingDay,
       status,
       tasks: allTasks.slice(0, 3),
       hasMore: allTasks.length > 3,
@@ -1213,7 +1279,7 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
 
   // Get user info
   const targetUser = await User.findById(targetUserId)
-    .select('name email avatar')
+    .select('name email avatar department')
     .lean();
 
   if (!targetUser) {
@@ -1429,11 +1495,16 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
     .sort((a, b) => b.totalMinutes - a.totalMinutes);
 
   const totalMinutes = hierarchy.reduce((sum, t) => sum + t.totalMinutes, 0);
-  const expectedMinutes = 480;
-  
+  const { expectedMinutes, isWorkingDay } = await resolveWorkspaceDay({
+    workspaceId: req.workspaceId, date: targetDate, departmentId: primaryDepartmentId(targetUser)
+  });
+
+  // Same rule as the hover card — a day off is never "under-logged".
   let status = 'normal';
-  if (totalMinutes < expectedMinutes * 0.75) status = 'under-logged';
-  else if (totalMinutes > expectedMinutes * 1.25) status = 'over-logged';
+  if (isWorkingDay) {
+    if (totalMinutes < expectedMinutes * 0.75) status = 'under-logged';
+    else if (totalMinutes > expectedMinutes * 1.25) status = 'over-logged';
+  }
 
   res.status(200).json({
     success: true,
@@ -1446,6 +1517,7 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
       totalMinutes,
       totalFormatted: `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
       expectedMinutes,
+      isWorkingDay,
       status,
       hierarchy
     }
