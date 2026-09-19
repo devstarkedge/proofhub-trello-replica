@@ -23,6 +23,7 @@ import {
   cancelAnnouncementJobs,
 } from "../schedulers/announcementScheduler.js";
 import { persistAnnouncementBroadcastState } from "../services/announcementBroadcastState.js";
+import * as workspaceContext from "../modules/workspaces/workspaceContext.js";
 
 // Helper function to calculate expiration date
 const calculateExpiryDate = (value, unit) => {
@@ -262,6 +263,16 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Not authorized to create announcements', 403));
   }
 
+  const workspaceId = req.workspaceId || req.user?.workspaceId;
+  if (!workspaceId) {
+    return next(new ErrorResponse('An active workspace is required to create an announcement', 400));
+  }
+
+  // Multipart middleware may complete on a different async resource from the
+  // authentication middleware. Restore the request's trusted workspace scope
+  // here so every create/query performed by this operation remains tenant-safe.
+  return workspaceContext.run({ workspaceId }, async () => {
+
   const {
     title,
     description,
@@ -292,6 +303,7 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
 
   // Create announcement object
   const announcementData = {
+    workspaceId,
     title,
     description,
     category: category === 'Custom' ? 'Custom' : category,
@@ -467,6 +479,7 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
       : 'Announcement created and broadcasted successfully',
     data: announcement,
     uploadErrors: uploadErrors.length > 0 ? uploadErrors : undefined
+  });
   });
 });
 
