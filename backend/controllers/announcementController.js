@@ -22,6 +22,7 @@ import {
   rescheduleAnnouncementArchive,
   cancelAnnouncementJobs,
 } from "../schedulers/announcementScheduler.js";
+import { persistAnnouncementBroadcastState } from "../services/announcementBroadcastState.js";
 
 // Helper function to calculate expiration date
 const calculateExpiryDate = (value, unit) => {
@@ -402,6 +403,11 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     // a direct insertMany() bypassed that check entirely.
     await notificationService.createBulkNotifications(notifications);
 
+    // Persist broadcast state before exposing the announcement to connected
+    // clients. A client can immediately mark the new row as seen, so saving
+    // this stale document after the socket event causes a Mongoose VersionError.
+    await persistAnnouncementBroadcastState(announcement, subscriberIds);
+
     // Emit real-time notification using batched room-based emission for efficiency
     const announcementPayload = {
       announcement: announcement.toJSON(),
@@ -432,10 +438,6 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
         getIO().to(`user-${userId}`).emit('announcement-created', announcementPayload);
       });
     }
-
-    announcement.broadcastedAt = new Date();
-    announcement.broadcastedTo = subscriberIds;
-    await announcement.save();
 
     // Send background email notifications
     notificationService.sendAnnouncementEmails(announcement, subscriberIds);

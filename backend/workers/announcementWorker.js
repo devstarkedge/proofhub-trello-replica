@@ -18,6 +18,7 @@ import notificationService from '../utils/notificationService.js';
 import { scheduleAnnouncementArchive } from '../schedulers/announcementScheduler.js';
 import config from '../config/index.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
+import { persistAnnouncementBroadcastState } from '../services/announcementBroadcastState.js';
 
 const JOB_HANDLERS = {
   /**
@@ -126,6 +127,12 @@ async function broadcastAnnouncement(announcement, announcementId) {
 
     await notificationService.createBulkNotifications(notifications);
 
+    // Persist first so a recipient's immediate seen/read update cannot make
+    // the worker's in-memory document stale before broadcast state is saved.
+    await persistAnnouncementBroadcastState(announcement, subscriberIds, {
+      scheduled: true,
+    });
+
     // Emit real-time
     const io = getIO();
     subscriberIds.forEach((userId) => {
@@ -138,12 +145,6 @@ async function broadcastAnnouncement(announcement, announcementId) {
         },
       });
     });
-
-    // Mark broadcasted
-    announcement.scheduleBroadcasted = true;
-    announcement.broadcastedAt = new Date();
-    announcement.broadcastedTo = subscriberIds;
-    await announcement.save();
 
     // Send emails (fire-and-forget)
     notificationService.sendAnnouncementEmails(announcement, subscriberIds);
