@@ -23,7 +23,9 @@ const EVENTS = {
   WFH_DECIDED: 'attendance:wfh-decided',
   REGULARIZATION_REQUESTED: 'attendance:regularization-requested',
   REGULARIZATION_DECIDED: 'attendance:regularization-decided',
-  WORK_MODE_OVERRIDE_UPDATED: 'attendance:work-mode-override-updated'
+  WORK_MODE_OVERRIDE_UPDATED: 'attendance:work-mode-override-updated',
+  OFFICE_HOURS_OVERRIDE_UPDATED: 'attendance:office-hours-override-updated',
+  POLICY_UPDATED: 'attendance:policy-updated'
 };
 
 /** Strips GPS/location evidence — the only fields a realtime payload may ever carry about a session. */
@@ -128,6 +130,16 @@ export async function onRegularizationDecided(result, decidingActor) {
  */
 export function onWorkModeOverrideUpdated(affectedUserIds) {
   if (affectedUserIds?.length) emitToUsers(affectedUserIds, EVENTS.WORK_MODE_OVERRIDE_UPDATED, {});
+}
+
+/** An Office Hours override change (new spec §40) — same content-free "refetch" nudge, same affected-users-only fan-out discipline. */
+export function onOfficeHoursOverrideUpdated(affectedUserIds) {
+  if (affectedUserIds?.length) emitToUsers(affectedUserIds, EVENTS.OFFICE_HOURS_OVERRIDE_UPDATED, {});
+}
+
+/** A workspace Attendance Policy version just went live (new spec §40) — fanned out to every active member, since a policy change can affect anyone's current/future calculations; still content-free. */
+export function onPolicyUpdated(allMemberUserIds) {
+  if (allMemberUserIds?.length) emitToUsers(allMemberUserIds, EVENTS.POLICY_UPDATED, {});
 }
 
 /** Fired by the missing-checkout sweep (Phase 12) — a routine self-reminder, not urgent enough to bypass quiet hours. */

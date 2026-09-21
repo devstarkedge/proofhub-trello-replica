@@ -7,9 +7,30 @@ const gpsRequirementsSchema = new mongoose.Schema({
   locationRequestTimeoutSeconds: { type: Number, default: 30, min: 1 }
 }, { _id: false });
 
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 const officeRulesSchema = new mongoose.Schema({
-  allowAnyActiveWorkspaceLocation: { type: Boolean, default: false },
+  // Every active workspace location is always available for OFFICE
+  // check-in (see attendanceGeofence.service.js#resolveEligibleLocations)
+  // — there is no narrower default to opt out of, so no toggle lives here.
   requireCheckoutGeofence: { type: Boolean, default: true }
+}, { _id: false });
+
+/**
+ * The workspace-default Office Hours (new-spec §1/§4) — the ultimate
+ * fallback of the Office Hours resolution chain (Override > Shift >
+ * this). Plain 'HH:mm' wall-clock local time, same convention as
+ * AttendanceShift.startLocalTime/endLocalTime — end <= start is a valid
+ * overnight window (lexicographic comparison), not rejected, mirroring
+ * AttendanceShift's own already-proven overnight support (spec §38).
+ * Existing graceMinutes/earlyExitGraceMinutes/minimumFullDayMinutes/
+ * minimumHalfDayMinutes below are deliberately NOT duplicated in here —
+ * they already are the policy-level grace/threshold fields the new spec
+ * asks for, unchanged, to avoid a second conflicting field set (spec §9).
+ */
+const officeHoursSchema = new mongoose.Schema({
+  startLocalTime: { type: String, required: true, match: TIME_PATTERN, default: '09:00' },
+  endLocalTime: { type: String, required: true, match: TIME_PATTERN, default: '18:00' }
 }, { _id: false });
 
 const wfhRulesSchema = new mongoose.Schema({
@@ -73,6 +94,7 @@ const attendancePolicyVersionSchema = new mongoose.Schema({
   defaultShift: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceShift', default: null },
   allowedWorkModes: { type: [String], enum: ['OFFICE', 'WFH', 'HYBRID', 'FIELD'], default: ['OFFICE'] },
 
+  officeHours: { type: officeHoursSchema, default: () => ({}) },
   graceMinutes: { type: Number, default: 15, min: 0 },
   earlyExitGraceMinutes: { type: Number, default: 0, min: 0 },
   minimumFullDayMinutes: { type: Number, default: 480, min: 1 },

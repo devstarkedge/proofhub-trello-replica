@@ -2,6 +2,17 @@ import asyncHandler from '../../middleware/asyncHandler.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import * as policyService from './attendancePolicy.service.js';
+import * as attendanceHooks from './attendanceHooks.js';
+
+async function notifyIfLive(workspaceId, version) {
+  if (version?.status !== 'published') return; // still a draft/scheduled version — nothing live changed yet
+  try {
+    const allMemberUserIds = await policyService.resolveAllActiveMemberUserIds({ workspaceId });
+    attendanceHooks.onPolicyUpdated(allMemberUserIds);
+  } catch (error) {
+    console.error('[Attendance] policy realtime hook error:', error.message);
+  }
+}
 
 export const getPolicyConfig = asyncHandler(async (req, res) => {
   const config = await policyService.getPolicyConfiguration({ workspaceId: req.workspaceId });
@@ -20,6 +31,7 @@ export const createPolicy = asyncHandler(async (req, res) => {
     resourceLabel: `Attendance Policy: ${policy.name}`, summary: `${req.user.name} created attendance policy "${policy.name}"`,
     before: null, after: { policy: policy.toObject(), version: version.toObject() }, category: 'attendance_management', meta: { workspaceId: req.workspaceId }
   });
+  await notifyIfLive(req.workspaceId, version);
   res.status(201).json({ success: true, data: { policy, version } });
 });
 
@@ -35,6 +47,7 @@ export const editPolicy = asyncHandler(async (req, res) => {
     resourceLabel: `Attendance Policy: ${policy.name}`, summary: `${req.user.name} updated attendance policy "${policy.name}"`,
     before, after: { policy: policy.toObject(), version: version?.toObject() || null }, category: 'attendance_management', meta: { workspaceId: req.workspaceId }
   });
+  await notifyIfLive(req.workspaceId, version);
   res.json({ success: true, data: { policy, version } });
 });
 
@@ -45,6 +58,7 @@ export const activatePolicy = asyncHandler(async (req, res) => {
     resourceLabel: `Attendance Policy: ${policy.name}`, summary: `${req.user.name} activated attendance policy "${policy.name}"`,
     before: null, after: { versionNumber: version.versionNumber }, category: 'attendance_management', meta: { workspaceId: req.workspaceId }
   });
+  await notifyIfLive(req.workspaceId, version);
   res.json({ success: true, data: { policy, version } });
 });
 

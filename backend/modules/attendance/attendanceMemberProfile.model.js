@@ -24,10 +24,6 @@ const attendanceMemberProfileSchema = new mongoose.Schema({
   // excluded, everyone else included) — see attendanceEligibility.service.js.
   attendanceRequiredOverride: { type: String, enum: ['REQUIRED', 'NOT_REQUIRED', null], default: null },
   assignedShift: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceShift', default: null },
-  // Per-user widening of the policy's ANY_ACTIVE_WORKSPACE_LOCATION
-  // setting — only meaningful when the policy itself doesn't already
-  // grant it workspace-wide; never grants access the policy forbids.
-  allowAnyWorkspaceLocation: { type: Boolean, default: false },
   effectiveFrom: { type: Date, default: null },
   effectiveUntil: { type: Date, default: null },
   isActive: { type: Boolean, default: true },

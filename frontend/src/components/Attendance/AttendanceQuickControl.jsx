@@ -139,16 +139,19 @@ const AttendanceQuickControl = () => {
           <LogOut className="h-4 w-4" /> Check Out
         </button>
         <span className="text-xs text-white/70">Checked in · {formatDuration(liveMinutes)}</span>
+        <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{status.activeSession.workMode}</span></span>
       </div>
     );
   } else if (status.canCheckIn) {
     // Only ever offer a choice among modes the backend itself returned as
     // currently eligible (spec §21) — never a static/local list. With just
     // one allowed mode, no picker is shown at all and defaultWorkMode is
-    // used automatically.
+    // used automatically (spec §38: always name today's mode, whether or
+    // not there's a real choice to make).
     const showModePicker = status.allowedWorkModes?.length > 1;
     content = (
       <div className="flex flex-col items-end gap-1.5">
+        <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{selectedWorkMode}</span></span>
         {showModePicker && (
           <div className="flex gap-1 rounded-lg bg-white/10 p-1 backdrop-blur-sm">
             {status.allowedWorkModes.map((mode) => (

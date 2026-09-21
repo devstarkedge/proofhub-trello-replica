@@ -22,7 +22,7 @@ import { isTimeWithinShortLeaveWindow } from './attendanceLeaveReconciliation.se
  * finalization job) alone decides when a day is truly over.
  */
 export function resolveAttendanceStatus({
-  eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift = null,
+  eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift = null, officeHours = null,
   sessions = [], serverNow = new Date(), isDayOver = false
 }) {
   if (!eligibility?.attendanceRequired) {
@@ -33,10 +33,39 @@ export function resolveAttendanceStatus({
   const isCalendarWorkingDay = calendar.isWorkingDay;
   const workedOnOffDay = !isCalendarWorkingDay && sessions.length > 0;
 
-  const effectiveGraceMinutes = shift?.graceMinutes ?? policyVersion.graceMinutes;
-  const effectiveEarlyExitGraceMinutes = policyVersion.earlyExitGraceMinutes;
-  const effectiveMinFullDayMinutes = shift?.minimumFullDayMinutes ?? policyVersion.minimumFullDayMinutes;
-  const effectiveMinHalfDayMinutes = shift?.minimumHalfDayMinutes ?? policyVersion.minimumHalfDayMinutes;
+  // `workModeResolution.workMode` is the CATEGORICAL label the employee is
+  // assigned, surfaced unchanged on every output below (e.g. it stays the
+  // literal string 'HYBRID' every day for a Hybrid employee — pre-existing
+  // behavior, not part of this fix — see
+  // attendanceWorkMode.service.js#authorizeMode). `.effectiveMode` is the
+  // CONCRETE mode resolved for THIS business date (always one of
+  // OFFICE/WFH/FIELD, e.g. 'OFFICE' on a Hybrid employee's office day) —
+  // gating Office Hours on `.workMode` would incorrectly suppress them on
+  // every Hybrid employee's actual office day, since it never literally
+  // equals 'OFFICE' (new spec §13: resolve the actual mode for each
+  // business date, never treat HYBRID as one fixed thing). These two must
+  // stay genuinely separate variables — conflating them was a real bug
+  // caught during review, not a hypothetical one.
+  const workMode = workModeResolution?.workMode || 'OFFICE';
+  const resolvedModeForGating = workModeResolution?.effectiveMode || workMode;
+  // Office Hours (start/end/grace/early-exit-grace) apply ONLY when the
+  // effective work mode for THIS business date is OFFICE (new spec §2,
+  // §12-14, §28-29) — WFH, a HYBRID day resolved as WFH, and FIELD never
+  // get a late/early-exit clock-time verdict from them, regardless of
+  // whether a shift or Office Hours override resolved. `officeHours` is
+  // fully resolved upstream (override > shift > workspace policy — see
+  // attendanceOfficeHoursOverride.service.js#resolveEffectiveOfficeHours)
+  // and passed in already-merged, so this function never re-derives any
+  // part of that chain itself.
+  const officeHoursApplicable = resolvedModeForGating === 'OFFICE' && Boolean(officeHours?.startLocalTime && officeHours?.endLocalTime);
+
+  const effectiveGraceMinutes = officeHours?.graceMinutes ?? policyVersion.graceMinutes;
+  const effectiveEarlyExitGraceMinutes = officeHours?.earlyExitGraceMinutes ?? policyVersion.earlyExitGraceMinutes;
+  // Full/half-day DURATION tiering stays mode-agnostic (unchanged, pre-
+  // existing behavior) — only the clock-time late/early-exit verdict is
+  // OFFICE-gated above; see this file's own module-level note on scope.
+  const effectiveMinFullDayMinutes = officeHours?.minimumFullDayMinutes ?? shift?.minimumFullDayMinutes ?? policyVersion.minimumFullDayMinutes;
+  const effectiveMinHalfDayMinutes = officeHours?.minimumHalfDayMinutes ?? shift?.minimumHalfDayMinutes ?? policyVersion.minimumHalfDayMinutes;
 
   const closedSessions = sessions.filter((s) => s.status === 'CLOSED');
   const activeSessions = sessions.filter((s) => s.status === 'ACTIVE');
@@ -59,15 +88,26 @@ export function resolveAttendanceStatus({
   if (sessions.some((s) => s.systemGeneratedCheckout)) exceptionFlags.push('SYSTEM_GENERATED_CHECKOUT');
   if (leave.leaveState === 'FULL_LEAVE' && sessions.length > 0) exceptionFlags.push('LEAVE_APPROVED_AFTER_ATTENDANCE');
 
+  // Historical/debugging snapshot of what actually governed today (new
+  // spec §24-25) — the timing fields are only populated when Office Hours
+  // genuinely applied; `effectiveOfficeHoursSource` is reported regardless
+  // (informational: what WOULD govern if this were an OFFICE day).
+  const officeHoursSnapshot = {
+    effectiveOfficeHoursStart: officeHoursApplicable ? officeHours.startLocalTime : null,
+    effectiveOfficeHoursEnd: officeHoursApplicable ? officeHours.endLocalTime : null,
+    effectiveOfficeHoursGraceMinutes: officeHoursApplicable ? effectiveGraceMinutes : null,
+    effectiveOfficeHoursSource: officeHours?.source || null
+  };
+
   // No sessions at all — nothing to compute; the calendar/leave dimensions
   // still fully describe the day (e.g. HOLIDAY, WEEKLY_OFF, or ON_LEAVE via
   // leaveState=FULL_LEAVE) without ever defaulting to ABSENT here.
   if (sessions.length === 0) {
     const isAbsent = isDayOver && isCalendarWorkingDay && leave.leaveState !== 'FULL_LEAVE' && leave.attendanceExpected;
     return {
-      calendarDayType, isCalendarWorkingDay, workMode: workModeResolution?.workMode || 'OFFICE',
+      calendarDayType, isCalendarWorkingDay, workMode,
       firstCheckInAt: null, lastCheckOutAt: null, workedMinutes: 0, shiftExpectedMinutes: effectiveMinFullDayMinutes,
-      lateMinutes: 0, earlyExitMinutes: 0,
+      lateMinutes: 0, earlyExitMinutes: 0, ...officeHoursSnapshot,
       presenceState: isAbsent ? 'ABSENT' : 'NOT_STARTED',
       punctualityState: null,
       leaveState: leave.leaveState, presenceFraction: 0, leaveFraction: leave.leaveFraction,
@@ -80,9 +120,9 @@ export function resolveAttendanceStatus({
   // never silently treated as any flavor of "present."
   if (hasActiveSession && isDayOver) {
     return {
-      calendarDayType, isCalendarWorkingDay, workMode: workModeResolution?.workMode || 'OFFICE',
+      calendarDayType, isCalendarWorkingDay, workMode,
       firstCheckInAt, lastCheckOutAt, workedMinutes: Math.round(workedMinutes), shiftExpectedMinutes: effectiveMinFullDayMinutes,
-      lateMinutes: 0, earlyExitMinutes: 0,
+      lateMinutes: 0, earlyExitMinutes: 0, ...officeHoursSnapshot,
       presenceState: 'MISSING_CHECKOUT', punctualityState: null,
       leaveState: leave.leaveState, presenceFraction: 0, leaveFraction: leave.leaveFraction,
       exceptionFlags
@@ -91,23 +131,24 @@ export function resolveAttendanceStatus({
 
   // Late arrival / early exit — computed from wall-clock minute-of-day in
   // the workspace timezone, suppressed for any window validly covered by
-  // an approved Short Leave (spec §30, §46).
+  // an approved Short Leave (spec §30, §46), and only ever computed at all
+  // when Office Hours actually apply to today's effective work mode.
   let lateMinutes = 0;
   let earlyExitMinutes = 0;
-  if (shift && firstCheckInAt) {
+  if (officeHoursApplicable && firstCheckInAt) {
     const checkInLocal = DateTime.fromJSDate(firstCheckInAt, { zone: 'utc' }).setZone(timezone);
     const checkInTimeStr = checkInLocal.toFormat('HH:mm');
-    const graceEndMinutes = minutesSinceMidnight(shift.startLocalTime) + effectiveGraceMinutes;
+    const graceEndMinutes = minutesSinceMidnight(officeHours.startLocalTime) + effectiveGraceMinutes;
     const checkInMinutes = checkInLocal.hour * 60 + checkInLocal.minute;
     const isWithinShortLeave = leave.shortLeaveWindow && isTimeWithinShortLeaveWindow(leave.shortLeaveWindow, checkInTimeStr);
     if (checkInMinutes > graceEndMinutes && !isWithinShortLeave) {
       lateMinutes = checkInMinutes - graceEndMinutes;
     }
   }
-  if (shift && lastCheckOutAt) {
+  if (officeHoursApplicable && lastCheckOutAt) {
     const checkOutLocal = DateTime.fromJSDate(lastCheckOutAt, { zone: 'utc' }).setZone(timezone);
     const checkOutTimeStr = checkOutLocal.toFormat('HH:mm');
-    const earlyExitBoundaryMinutes = minutesSinceMidnight(shift.endLocalTime) - effectiveEarlyExitGraceMinutes;
+    const earlyExitBoundaryMinutes = minutesSinceMidnight(officeHours.endLocalTime) - effectiveEarlyExitGraceMinutes;
     const checkOutMinutes = checkOutLocal.hour * 60 + checkOutLocal.minute;
     const isWithinShortLeave = leave.shortLeaveWindow && isTimeWithinShortLeaveWindow(leave.shortLeaveWindow, checkOutTimeStr);
     if (checkOutMinutes < earlyExitBoundaryMinutes && !isWithinShortLeave && !hasActiveSession) {
@@ -160,9 +201,9 @@ export function resolveAttendanceStatus({
   const presenceFraction = presenceState === 'ABSENT' ? 0 : presenceState === 'HALF_PRESENT' ? 0.5 : 1;
 
   return {
-    calendarDayType, isCalendarWorkingDay, workMode: workModeResolution?.workMode || 'OFFICE',
+    calendarDayType, isCalendarWorkingDay, workMode,
     firstCheckInAt, lastCheckOutAt, workedMinutes: Math.round(workedMinutes), shiftExpectedMinutes: effectiveMinFullDayMinutes,
-    lateMinutes: Math.round(lateMinutes), earlyExitMinutes: Math.round(earlyExitMinutes),
+    lateMinutes: Math.round(lateMinutes), earlyExitMinutes: Math.round(earlyExitMinutes), ...officeHoursSnapshot,
     presenceState, punctualityState,
     leaveState: leave.leaveState, presenceFraction, leaveFraction: leave.leaveFraction,
     exceptionFlags

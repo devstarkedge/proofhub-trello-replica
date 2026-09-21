@@ -55,10 +55,9 @@ export const getLocations = async (params = {}) => (await api.get('/locations', 
 export const createLocation = async (payload) => (await api.post('/locations', payload)).data;
 export const updateLocation = async (locationId, payload) => (await api.patch(`/locations/${locationId}`, payload)).data;
 export const deactivateLocation = async (locationId) => (await api.post(`/locations/${locationId}/deactivate`)).data;
-
-export const getLocationAssignments = async () => (await api.get('/location-assignments')).data;
-export const createLocationAssignment = async (payload) => (await api.post('/location-assignments', payload)).data;
-export const removeLocationAssignment = async (assignmentId) => (await api.post(`/location-assignments/${assignmentId}/remove`)).data;
+// No location-assignment endpoints — an active location is available to
+// every attendance-eligible workspace member automatically (see backend
+// attendanceGeofence.service.js#resolveEligibleLocations).
 
 // ─── Work Mode Overrides ────────────────────────────────────────────────────
 export const getWorkModeOverrides = async () => (await api.get('/work-mode-overrides')).data;
@@ -66,6 +65,21 @@ export const getWorkModeOverrideHistory = async (scopeType, scopeId) => (await a
 export const createWorkModeOverride = async (payload) => (await api.post('/work-mode-overrides', payload)).data;
 export const updateWorkModeOverride = async (overrideId, payload) => (await api.patch(`/work-mode-overrides/${overrideId}`, payload)).data;
 export const deactivateWorkModeOverride = async (overrideId) => (await api.post(`/work-mode-overrides/${overrideId}/deactivate`)).data;
+
+export const getWorkModeScheduleRules = async (overrideId) => (await api.get(`/work-mode-overrides/${overrideId}/rules`)).data;
+export const createWorkModeScheduleRule = async (overrideId, payload) => (await api.post(`/work-mode-overrides/${overrideId}/rules`, payload)).data;
+export const deactivateWorkModeScheduleRule = async (ruleId) => (await api.post(`/work-mode-overrides/rules/${ruleId}/deactivate`)).data;
+
+export const getWorkModeDateOverrides = async (overrideId) => (await api.get(`/work-mode-overrides/${overrideId}/date-overrides`)).data;
+export const createWorkModeDateOverrides = async (overrideId, payload) => (await api.post(`/work-mode-overrides/${overrideId}/date-overrides`, payload)).data;
+export const deactivateWorkModeDateOverride = async (dateOverrideId) => (await api.post(`/work-mode-overrides/date-overrides/${dateOverrideId}/deactivate`)).data;
+
+// ─── Office Hours Overrides ─────────────────────────────────────────────────
+export const getOfficeHoursOverrides = async () => (await api.get('/office-hours-overrides')).data;
+export const getOfficeHoursOverrideHistory = async (scopeType, scopeId) => (await api.get('/office-hours-overrides/history', { params: { scopeType, scopeId } })).data;
+export const createOfficeHoursOverride = async (payload) => (await api.post('/office-hours-overrides', payload)).data;
+export const updateOfficeHoursOverride = async (overrideId, payload) => (await api.patch(`/office-hours-overrides/${overrideId}`, payload)).data;
+export const deactivateOfficeHoursOverride = async (overrideId) => (await api.post(`/office-hours-overrides/${overrideId}/deactivate`)).data;
 
 // ─── WFH requests ───────────────────────────────────────────────────────────
 export const getMyWfhRequests = async () => (await api.get('/wfh/mine')).data;

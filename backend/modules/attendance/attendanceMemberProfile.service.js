@@ -2,8 +2,7 @@ import AttendanceMemberProfile from './attendanceMemberProfile.model.js';
 
 const DEFAULT_PROFILE = Object.freeze({
   attendanceRequiredOverride: null,
-  assignedShift: null,
-  allowAnyWorkspaceLocation: false
+  assignedShift: null
 });
 
 /** Lazily created — a user with no row is simply no-eligibility-override/no-assigned-shift. */
@@ -14,12 +13,11 @@ export async function getEffectiveAttendanceProfile({ workspaceId, userId }) {
 
 export async function upsertAttendanceProfile({
   workspaceId, userId, attendanceRequiredOverride, assignedShift,
-  allowAnyWorkspaceLocation, effectiveFrom, effectiveUntil, notes, updatedBy
+  effectiveFrom, effectiveUntil, notes, updatedBy
 }) {
   const update = {};
   if (attendanceRequiredOverride !== undefined) update.attendanceRequiredOverride = attendanceRequiredOverride;
   if (assignedShift !== undefined) update.assignedShift = assignedShift;
-  if (allowAnyWorkspaceLocation !== undefined) update.allowAnyWorkspaceLocation = allowAnyWorkspaceLocation;
   if (effectiveFrom !== undefined) update.effectiveFrom = effectiveFrom;
   if (effectiveUntil !== undefined) update.effectiveUntil = effectiveUntil;
   if (notes !== undefined) update.notes = notes;

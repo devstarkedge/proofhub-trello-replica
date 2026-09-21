@@ -1,5 +1,4 @@
 import AttendanceLocation from './attendanceLocation.model.js';
-import AttendanceLocationAssignment from './attendanceLocationAssignment.model.js';
 
 const EARTH_RADIUS_METERS = 6371000;
 
@@ -23,47 +22,33 @@ export function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Every location this user may legitimately check in at: direct
- * assignment + their department's assignment + (only if explicitly
- * enabled by the policy's office.allowAnyActiveWorkspaceLocation OR this
- * user's own profile.allowAnyWorkspaceLocation override) every active
- * workspace location. Never trusts a client-supplied locationId — this is
- * the only function that decides what's eligible; the geofence check
- * below only ever validates against locations this function returned.
+ * Every location an attendance-eligible employee may check in at:
+ * EVERY active location in the workspace — full stop. Creating an
+ * Office/Branch location makes it immediately available workspace-wide;
+ * there is no per-user/department assignment step, and never was meant to
+ * be one (a prior version of this module required an explicit
+ * AttendanceLocationAssignment row, which is exactly the "assign this
+ * location to users?" ceremony the spec is explicit must not exist for
+ * normal Office/Branch access — see the model file's own note). Never
+ * trusts a client-supplied locationId — this is the only function that
+ * decides what's eligible; the geofence check below only ever validates
+ * against locations this function returned. Workspace isolation alone
+ * (workspaceId) is what scopes this, exactly as strict as before.
  */
-export async function resolveEligibleLocations({ workspaceId, userId, membership, policyVersion = null, profile = null }) {
-  const allowAny = Boolean(policyVersion?.office?.allowAnyActiveWorkspaceLocation || profile?.allowAnyWorkspaceLocation);
-  if (allowAny) {
-    return AttendanceLocation.find({ workspaceId, active: true }).lean();
-  }
-
-  const departmentIds = (membership?.department || []).map(String);
-  const assignments = await AttendanceLocationAssignment.find({
-    workspaceId, isActive: true,
-    $or: [
-      { scope: 'user', scopeRef: userId },
-      ...(departmentIds.length ? [{ scope: 'department', scopeRef: { $in: departmentIds } }] : [])
-    ]
-  }).lean();
-  if (!assignments.length) return [];
-
-  const locationIds = Array.from(new Set(assignments.map((a) => String(a.location))));
-  return AttendanceLocation.find({ workspaceId, active: true, _id: { $in: locationIds } }).lean();
+export async function resolveEligibleLocations({ workspaceId }) {
+  return AttendanceLocation.find({ workspaceId, active: true }).lean();
 }
 
 /**
- * The single centralized geofence decision (spec §17). Never trusts a
- * client-computed distance — always recomputes via Haversine against the
- * eligible-locations list (never an arbitrary client-chosen location).
- * Returns a structured, machine-readable result rather than throwing, so
- * the caller (attendance.service.js) can map straight to the spec's error
- * codes without re-deriving the reason.
- *
- * GPS quality gates run BEFORE the distance check, in the order the spec
- * lists them (stale coordinates and poor accuracy are rejected outright,
- * never used to silently widen the allowed radius).
+ * The GPS quality gate shared by every mode that captures location
+ * evidence — shape, freshness, accuracy. Deliberately does NOT decide
+ * distance-to-a-location; OFFICE/FIELD-with-geofence layer that check on
+ * top via validateAttendanceGeofence below, while WFH (which never
+ * geofences — spec: "WFH Day = Anywhere") calls this directly so poor/
+ * stale GPS still gets rejected without ever comparing against an office
+ * location (spec §8-9).
  */
-export function validateAttendanceGeofence({ coordinates, reportedAccuracyMeters, capturedAt, eligibleLocations, gpsRequirements, nowInstant = new Date() }) {
+export function validateGpsQuality({ coordinates, reportedAccuracyMeters, capturedAt, gpsRequirements, nowInstant = new Date() }) {
   if (!Array.isArray(coordinates) || coordinates.length !== 2) {
     return { valid: false, code: 'LOCATION_PERMISSION_REQUIRED' };
   }
@@ -80,6 +65,25 @@ export function validateAttendanceGeofence({ coordinates, reportedAccuracyMeters
   if (typeof reportedAccuracyMeters !== 'number' || reportedAccuracyMeters > gpsRequirements.maximumGpsAccuracyMeters) {
     return { valid: false, code: 'GPS_ACCURACY_TOO_LOW' };
   }
+  return { valid: true };
+}
+
+/**
+ * The single centralized geofence decision (spec §17). Never trusts a
+ * client-computed distance — always recomputes via Haversine against the
+ * eligible-locations list (never an arbitrary client-chosen location).
+ * Returns a structured, machine-readable result rather than throwing, so
+ * the caller (attendance.service.js) can map straight to the spec's error
+ * codes without re-deriving the reason.
+ *
+ * GPS quality gates run BEFORE the distance check, in the order the spec
+ * lists them (stale coordinates and poor accuracy are rejected outright,
+ * never used to silently widen the allowed radius).
+ */
+export function validateAttendanceGeofence({ coordinates, reportedAccuracyMeters, capturedAt, eligibleLocations, gpsRequirements, nowInstant = new Date() }) {
+  const quality = validateGpsQuality({ coordinates, reportedAccuracyMeters, capturedAt, gpsRequirements, nowInstant });
+  if (!quality.valid) return quality;
+
   if (!eligibleLocations.length) {
     return { valid: false, code: 'LOCATION_NOT_ASSIGNED' };
   }

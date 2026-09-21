@@ -44,6 +44,16 @@ const attendanceDaySchema = new mongoose.Schema({
   lateMinutes: { type: Number, default: 0, min: 0 },
   earlyExitMinutes: { type: Number, default: 0, min: 0 },
 
+  // Office Hours audit snapshot (new spec §24-25) — only populated when
+  // Office Hours genuinely applied (effective work mode was OFFICE);
+  // `effectiveOfficeHoursSource` is always populated once resolved
+  // (informational even on non-OFFICE days). Lets a historical day stay
+  // fully explainable even after a later policy/override edit.
+  effectiveOfficeHoursStart: { type: String, default: null },
+  effectiveOfficeHoursEnd: { type: String, default: null },
+  effectiveOfficeHoursGraceMinutes: { type: Number, default: null },
+  effectiveOfficeHoursSource: { type: String, default: null },
+
   presenceState: {
     type: String,
     enum: ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'ABSENT', 'MISSING_CHECKOUT'],

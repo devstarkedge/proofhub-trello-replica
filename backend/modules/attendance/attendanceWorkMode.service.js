@@ -104,7 +104,7 @@ async function resolveHybridAuthorization({ workspaceId, userId, dayInstant, tim
  */
 export async function resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion, requestedWorkMode = null }) {
   const { allowedWorkModes, defaultMode, source } = await resolveEffectiveWorkModePolicy({
-    workspaceId, userId, membership, policyVersion, date: dayInstant
+    workspaceId, userId, membership, policyVersion, date: dayInstant, timezone
   });
 
   if (requestedWorkMode && !allowedWorkModes.includes(requestedWorkMode)) {

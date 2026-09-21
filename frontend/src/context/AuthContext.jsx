@@ -3,6 +3,7 @@ import api from "../services/api";
 import socketService from "../services/socket";
 import useRoleStore from "../store/roleStore";
 import { resetAllOnWorkspaceSwitch } from "../store/resetRegistry";
+import { clearAttendanceLocationBootstrapState } from "../utils/attendanceLocationBootstrap";
 
 const AuthContext = createContext();
 
@@ -52,6 +53,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("token");
     localStorage.removeItem("workspaceId");
     sessionStorage.removeItem("push_modal_dismissed");
+    clearAttendanceLocationBootstrapState();
     setToken(null);
 
     setUser((prevUser) => {

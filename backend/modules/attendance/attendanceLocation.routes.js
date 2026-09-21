@@ -24,12 +24,4 @@ router.post(
 router.patch('/locations/:locationId', controller.updateLocation);
 router.post('/locations/:locationId/deactivate', controller.deactivateLocation);
 
-router.get('/location-assignments', controller.listLocationAssignments);
-router.post(
-  '/location-assignments',
-  [body('locationId').notEmpty(), body('scope').isIn(['user', 'department']), body('scopeRef').notEmpty(), validate],
-  controller.createLocationAssignment
-);
-router.post('/location-assignments/:assignmentId/remove', controller.removeLocationAssignment);
-
 export default router;

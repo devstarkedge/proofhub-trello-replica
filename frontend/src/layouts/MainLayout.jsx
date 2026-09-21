@@ -1,11 +1,17 @@
-import React, { useContext } from 'react';
+import React, { useContext, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import AuthContext from '../context/AuthContext';
+import { runAttendanceLocationBootstrapOnce } from '../utils/attendanceLocationBootstrap';
 
 const MainLayout = () => {
   const { loading } = useContext(AuthContext);
+
+  // MainLayout only ever mounts once PrivateRoute has confirmed both login
+  // and active-workspace resolution, and remounts fresh on logout->login —
+  // exactly the "once per login session" boundary this bootstrap needs.
+  useEffect(() => { runAttendanceLocationBootstrapOnce(); }, []);
 
   if (loading) {
     return (

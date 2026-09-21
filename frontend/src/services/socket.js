@@ -551,6 +551,12 @@ class SocketService {
     this.socket.on('attendance:work-mode-override-updated', (data) => {
       window.dispatchEvent(new CustomEvent('socket-attendance-work-mode-override-updated', { detail: data }));
     });
+    this.socket.on('attendance:office-hours-override-updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-office-hours-override-updated', { detail: data }));
+    });
+    this.socket.on('attendance:policy-updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-policy-updated', { detail: data }));
+    });
 
     // Announcement events
     this.socket.on('announcement-created', (data) => {

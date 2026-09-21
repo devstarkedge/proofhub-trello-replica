@@ -12,6 +12,10 @@ const WORK_MODES = ['OFFICE', 'WFH', 'HYBRID', 'FIELD'];
 function defaultContent(version) {
   return {
     allowedWorkModes: version?.allowedWorkModes || ['OFFICE'],
+    officeHours: {
+      startLocalTime: version?.officeHours?.startLocalTime || '09:00',
+      endLocalTime: version?.officeHours?.endLocalTime || '18:00'
+    },
     graceMinutes: version?.graceMinutes ?? 15,
     earlyExitGraceMinutes: version?.earlyExitGraceMinutes ?? 0,
     minimumFullDayMinutes: version?.minimumFullDayMinutes ?? 480,
@@ -26,7 +30,6 @@ function defaultContent(version) {
       locationRequestTimeoutSeconds: version?.gpsRequirements?.locationRequestTimeoutSeconds ?? 30
     },
     office: {
-      allowAnyActiveWorkspaceLocation: version?.office?.allowAnyActiveWorkspaceLocation ?? false,
       requireCheckoutGeofence: version?.office?.requireCheckoutGeofence ?? true
     },
     missingCheckout: {
@@ -146,9 +149,11 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submi
           </div>
         </Section>
 
-        <Section title="Punctuality & duration">
+        <Section title="Office Hours" description="Applies to employees whose effective work mode is Office. WFH and other work modes use their applicable rules.">
           <div className="grid grid-cols-2 gap-3">
-            <div><label className={labelClass} style={labelStyle}>Grace (minutes)</label><input type="number" min="0" className={inputClass} style={inputStyle} value={content.graceMinutes} onChange={(e) => updateContent({ graceMinutes: Number(e.target.value) })} /></div>
+            <div><label className={labelClass} style={labelStyle}>Start time</label><input type="time" className={inputClass} style={inputStyle} value={content.officeHours.startLocalTime} onChange={(e) => updateNested('officeHours', { startLocalTime: e.target.value })} required /></div>
+            <div><label className={labelClass} style={labelStyle}>End time</label><input type="time" className={inputClass} style={inputStyle} value={content.officeHours.endLocalTime} onChange={(e) => updateNested('officeHours', { endLocalTime: e.target.value })} required /></div>
+            <div><label className={labelClass} style={labelStyle}>Check-in grace period (minutes)</label><input type="number" min="0" className={inputClass} style={inputStyle} value={content.graceMinutes} onChange={(e) => updateContent({ graceMinutes: Number(e.target.value) })} /></div>
             <div><label className={labelClass} style={labelStyle}>Early-exit grace (minutes)</label><input type="number" min="0" className={inputClass} style={inputStyle} value={content.earlyExitGraceMinutes} onChange={(e) => updateContent({ earlyExitGraceMinutes: Number(e.target.value) })} /></div>
             <div><label className={labelClass} style={labelStyle}>Full-day minimum (minutes)</label><input type="number" min="1" className={inputClass} style={inputStyle} value={content.minimumFullDayMinutes} onChange={(e) => updateContent({ minimumFullDayMinutes: Number(e.target.value) })} /></div>
             <div><label className={labelClass} style={labelStyle}>Half-day minimum (minutes)</label><input type="number" min="1" className={inputClass} style={inputStyle} value={content.minimumHalfDayMinutes} onChange={(e) => updateContent({ minimumHalfDayMinutes: Number(e.target.value) })} /></div>
@@ -170,7 +175,7 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submi
             <div><label className={labelClass} style={labelStyle}>Max coordinate age (s)</label><input type="number" min="1" className={inputClass} style={inputStyle} value={content.gpsRequirements.maximumCoordinateAgeSeconds} onChange={(e) => updateNested('gpsRequirements', { maximumCoordinateAgeSeconds: Number(e.target.value) })} /></div>
             <div><label className={labelClass} style={labelStyle}>Location timeout (s)</label><input type="number" min="1" className={inputClass} style={inputStyle} value={content.gpsRequirements.locationRequestTimeoutSeconds} onChange={(e) => updateNested('gpsRequirements', { locationRequestTimeoutSeconds: Number(e.target.value) })} /></div>
           </div>
-          <Checkbox checked={content.office.allowAnyActiveWorkspaceLocation} onChange={(v) => updateNested('office', { allowAnyActiveWorkspaceLocation: v })} label="Allow check-in at ANY active workspace location (not just assigned ones)" />
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Every active location in this workspace is available to all attendance-eligible users for OFFICE check-in — manage them in the Locations tab.</p>
           <Checkbox checked={content.office.requireCheckoutGeofence} onChange={(v) => updateNested('office', { requireCheckoutGeofence: v })} label="Require geofence validation at check-out too" />
         </Section>
 

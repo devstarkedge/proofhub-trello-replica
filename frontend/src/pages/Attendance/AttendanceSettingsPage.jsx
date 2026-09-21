@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Plus, SquarePen, Ban, Rocket, Archive } from 'lucide-react';
+import { Plus, SquarePen, Ban, Rocket, Archive, CalendarClock } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import AttendancePolicyStatusBadge from '../../components/Attendance/AttendancePolicyStatusBadge';
 import PolicyFormModal from '../../components/Attendance/PolicyFormModal';
@@ -9,6 +9,8 @@ import ShiftFormModal from '../../components/Attendance/ShiftFormModal';
 import LocationFormModal from '../../components/Attendance/LocationFormModal';
 import AssignmentFormModal from '../../components/Attendance/AssignmentFormModal';
 import WorkModeOverrideFormModal from '../../components/Attendance/WorkModeOverrideFormModal';
+import WorkModeScheduleModal from '../../components/Attendance/WorkModeScheduleModal';
+import OfficeHoursOverrideFormModal from '../../components/Attendance/OfficeHoursOverrideFormModal';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';
 import * as attendanceApi from '../../services/attendanceApi';
 
@@ -45,7 +47,11 @@ const PoliciesTab = () => {
   useEffect(() => {
     const onChanged = () => load();
     window.addEventListener('socket-attendance-updated', onChanged);
-    return () => window.removeEventListener('socket-attendance-updated', onChanged);
+    window.addEventListener('socket-attendance-policy-updated', onChanged);
+    return () => {
+      window.removeEventListener('socket-attendance-updated', onChanged);
+      window.removeEventListener('socket-attendance-policy-updated', onChanged);
+    };
   }, []);
 
   const handleCreate = async (values) => {
@@ -226,15 +232,10 @@ const ShiftsTab = () => {
 // ─── Locations tab ──────────────────────────────────────────────────────────
 const LocationsTab = () => {
   const [locations, setLocations] = useState([]);
-  const [assignments, setAssignments] = useState([]);
   const [formState, setFormState] = useState(null);
-  const [assigning, setAssigning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const load = () => {
-    attendanceApi.getLocations({ includeInactive: true }).then(({ data }) => setLocations(data)).catch(() => {});
-    attendanceApi.getLocationAssignments().then(({ data }) => setAssignments(data)).catch(() => {});
-  };
+  const load = () => attendanceApi.getLocations({ includeInactive: true }).then(({ data }) => setLocations(data)).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const handleCreate = async (payload) => {
@@ -250,25 +251,21 @@ const LocationsTab = () => {
   const deactivate = async (location) => {
     try { await attendanceApi.deactivateLocation(location._id); toast.success('Location deactivated'); load(); } catch { /* interceptor */ }
   };
-  const handleAssign = async ({ targetId, scope, scopeRef }) => {
-    setSubmitting(true);
-    try { await attendanceApi.createLocationAssignment({ locationId: targetId, scope, scopeRef }); toast.success('Location assigned'); setAssigning(false); load(); }
-    catch { /* interceptor */ } finally { setSubmitting(false); }
-  };
-  const removeAssignment = async (assignment) => {
-    try { await attendanceApi.removeLocationAssignment(assignment._id); toast.success('Assignment removed'); load(); } catch { /* interceptor */ }
-  };
 
   return (
     <div className="space-y-4">
-      <SettingsPanel title="Locations" description="Offices, branches, warehouses, or client/field sites employees can check in at." action={<Button size="sm" onClick={() => setFormState({ mode: 'create' })}><Plus className="h-3.5 w-3.5" /> Add Location</Button>}>
+      <SettingsPanel
+        title="Locations"
+        description="Offices, branches, and sites employees can check in at. Every active location is available to all attendance-eligible users in this workspace for OFFICE check-in — no per-person assignment needed."
+        action={<Button size="sm" onClick={() => setFormState({ mode: 'create' })}><Plus className="h-3.5 w-3.5" /> Add Location</Button>}
+      >
         {!locations.length ? <LeaveEmptyState title="No locations yet" description="Add your office or site to enable geofenced check-in." compact /> : (
           <RowList>
             {locations.map((location) => (
               <Row key={location._id}>
                 <div>
                   <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{location.name}</span>
-                  <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{location.type} · {location.allowedRadiusMeters}m radius{!location.active ? ' · inactive' : ''}</span>
+                  <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{location.type} · {location.allowedRadiusMeters}m radius{!location.active ? ' · inactive' : ' · available to all attendance-eligible users'}</span>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => setFormState({ mode: 'edit', location })}><SquarePen className="h-3.5 w-3.5" /> Edit</Button>
@@ -280,27 +277,8 @@ const LocationsTab = () => {
         )}
       </SettingsPanel>
 
-      <SettingsPanel title="Location Assignments" description="Who may check in at each location." action={<Button size="sm" disabled={!locations.length} onClick={() => setAssigning(true)}><Plus className="h-3.5 w-3.5" /> Assign</Button>}>
-        {!assignments.length ? <LeaveEmptyState title="No assignments yet" compact /> : (
-          <RowList>
-            {assignments.map((a) => (
-              <Row key={a._id}>
-                <span style={{ color: 'var(--color-text-primary)' }}>{a.location?.name || 'Unknown location'} → {a.scope}</span>
-                <Button variant="outline" size="sm" onClick={() => removeAssignment(a)}><Ban className="h-3.5 w-3.5" /> Remove</Button>
-              </Row>
-            ))}
-          </RowList>
-        )}
-      </SettingsPanel>
-
       {formState && (
         <LocationFormModal mode={formState.mode} initialLocation={formState.location} submitting={submitting} onCancel={() => setFormState(null)} onSubmit={formState.mode === 'create' ? handleCreate : handleEdit} />
-      )}
-      {assigning && (
-        <AssignmentFormModal
-          targetLabel="Location" targetOptions={locations.map((l) => ({ value: l._id, label: l.name }))} scopeOptions={['user', 'department']}
-          submitting={submitting} onCancel={() => setAssigning(false)} onSubmit={handleAssign}
-        />
       )}
     </div>
   );
@@ -311,6 +289,7 @@ const WorkModeOverridesTab = () => {
   const [overrides, setOverrides] = useState([]);
   const [formState, setFormState] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [scheduling, setScheduling] = useState(null);
 
   const load = () => attendanceApi.getWorkModeOverrides().then(({ data }) => setOverrides(data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -350,6 +329,7 @@ const WorkModeOverridesTab = () => {
                   <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{override.allowedModes.join(', ')} (default {override.defaultMode})</span>
                 </div>
                 <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setScheduling(override)}><CalendarClock className="h-3.5 w-3.5" /> Schedule</Button>
                   <Button variant="outline" size="sm" onClick={() => setFormState({ mode: 'edit', override })}><SquarePen className="h-3.5 w-3.5" /> Edit</Button>
                   <Button variant="outline" size="sm" onClick={() => deactivate(override)}><Ban className="h-3.5 w-3.5" /> Deactivate</Button>
                 </div>
@@ -368,11 +348,94 @@ const WorkModeOverridesTab = () => {
           onSubmit={formState.mode === 'create' ? handleCreate : handleEdit}
         />
       )}
+      {scheduling && (
+        <WorkModeScheduleModal override={scheduling} onClose={() => setScheduling(null)} />
+      )}
     </div>
   );
 };
 
-const SECTION_COMPONENTS = { policy: PoliciesTab, shifts: ShiftsTab, locations: LocationsTab, 'work-modes': WorkModeOverridesTab };
+// ─── Office Hours Overrides tab ────────────────────────────────────────────
+const OFFICE_HOURS_FIELD_LABELS = {
+  startLocalTime: 'Start', endLocalTime: 'End', graceMinutes: 'Grace',
+  earlyExitGraceMinutes: 'Early-exit grace', minimumFullDayMinutes: 'Full-day min', minimumHalfDayMinutes: 'Half-day min'
+};
+function describeOfficeHoursOverride(override) {
+  const parts = Object.keys(OFFICE_HOURS_FIELD_LABELS)
+    .filter((key) => override[key] !== null && override[key] !== undefined)
+    .map((key) => `${OFFICE_HOURS_FIELD_LABELS[key]}: ${override[key]}`);
+  return parts.length ? parts.join(' · ') : 'No fields set';
+}
+
+const OfficeHoursOverridesTab = () => {
+  const [overrides, setOverrides] = useState([]);
+  const [formState, setFormState] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = () => attendanceApi.getOfficeHoursOverrides().then(({ data }) => setOverrides(data)).catch(() => {});
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const onChanged = () => load();
+    window.addEventListener('socket-attendance-office-hours-override-updated', onChanged);
+    return () => window.removeEventListener('socket-attendance-office-hours-override-updated', onChanged);
+  }, []);
+
+  const handleCreate = async (payload) => {
+    setSubmitting(true);
+    try { await attendanceApi.createOfficeHoursOverride(payload); toast.success('Office Hours override created'); setFormState(null); load(); }
+    catch { /* interceptor owns error toasts */ } finally { setSubmitting(false); }
+  };
+  const handleEdit = async (payload) => {
+    setSubmitting(true);
+    try { await attendanceApi.updateOfficeHoursOverride(formState.override._id, payload); toast.success('Office Hours override updated'); setFormState(null); load(); }
+    catch { /* interceptor */ } finally { setSubmitting(false); }
+  };
+  const deactivate = async (override) => {
+    try { await attendanceApi.deactivateOfficeHoursOverride(override._id); toast.success('Override deactivated'); load(); } catch { /* interceptor */ }
+  };
+
+  return (
+    <div className="space-y-4">
+      <SettingsPanel
+        title="Office Hours Overrides"
+        description="Narrow the workspace default Office Hours for a specific role, department, or person — most specific wins (User > Department > Role > the Policy tab's workspace default). Only checked fields override; everything else falls through unchanged."
+        action={<Button size="sm" onClick={() => setFormState({ mode: 'create' })}><Plus className="h-3.5 w-3.5" /> Add Override</Button>}
+      >
+        {!overrides.length ? <LeaveEmptyState title="No overrides yet" description="Everyone currently uses the workspace default Office Hours from the Policy tab." compact /> : (
+          <RowList>
+            {overrides.map((override) => (
+              <Row key={override._id}>
+                <div>
+                  <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{override.scopeType}: {override.scopeName}</span>
+                  <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{describeOfficeHoursOverride(override)}</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setFormState({ mode: 'edit', override })}><SquarePen className="h-3.5 w-3.5" /> Edit</Button>
+                  <Button variant="outline" size="sm" onClick={() => deactivate(override)}><Ban className="h-3.5 w-3.5" /> Deactivate</Button>
+                </div>
+              </Row>
+            ))}
+          </RowList>
+        )}
+      </SettingsPanel>
+
+      {formState && (
+        <OfficeHoursOverrideFormModal
+          mode={formState.mode}
+          initialOverride={formState.mode === 'edit' ? formState.override : null}
+          submitting={submitting}
+          onCancel={() => setFormState(null)}
+          onSubmit={formState.mode === 'create' ? handleCreate : handleEdit}
+        />
+      )}
+    </div>
+  );
+};
+
+const SECTION_COMPONENTS = {
+  policy: PoliciesTab, shifts: ShiftsTab, locations: LocationsTab,
+  'work-modes': WorkModeOverridesTab, 'office-hours': OfficeHoursOverridesTab
+};
 
 const AttendanceSettingsPage = () => {
   const { section } = useParams();

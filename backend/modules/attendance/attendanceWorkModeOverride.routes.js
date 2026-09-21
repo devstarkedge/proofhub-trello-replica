@@ -26,4 +26,25 @@ router.post(
 router.patch('/work-mode-overrides/:overrideId', controller.update);
 router.post('/work-mode-overrides/:overrideId/deactivate', controller.deactivate);
 
+router.get('/work-mode-overrides/:overrideId/rules', controller.listRules);
+router.post(
+  '/work-mode-overrides/:overrideId/rules',
+  [
+    body('dayOfWeek').isInt({ min: 0, max: 6 }),
+    body('occurrence').optional().isIn(['EVERY', 'FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'LAST']),
+    body('mode').isIn(['OFFICE', 'WFH', 'HYBRID', 'FIELD']),
+    validate
+  ],
+  controller.createRule
+);
+router.post('/work-mode-overrides/rules/:ruleId/deactivate', controller.deactivateRule);
+
+router.get('/work-mode-overrides/:overrideId/date-overrides', controller.listDateOverridesForOverride);
+router.post(
+  '/work-mode-overrides/:overrideId/date-overrides',
+  [body('startDate').notEmpty(), body('mode').isIn(['OFFICE', 'WFH', 'HYBRID', 'FIELD']), validate],
+  controller.createDateOverridesForOverride
+);
+router.post('/work-mode-overrides/date-overrides/:dateOverrideId/deactivate', controller.deactivateDateOverrideForOverride);
+
 export default router;

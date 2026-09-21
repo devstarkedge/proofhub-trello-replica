@@ -46,28 +46,3 @@ export const deactivateLocation = asyncHandler(async (req, res) => {
   });
   res.json({ success: true, data: location });
 });
-
-export const listLocationAssignments = asyncHandler(async (req, res) => {
-  const assignments = await locationService.listLocationAssignments({ workspaceId: req.workspaceId });
-  res.json({ success: true, data: assignments });
-});
-
-export const createLocationAssignment = asyncHandler(async (req, res) => {
-  const assignment = await locationService.createLocationAssignment({ workspaceId: req.workspaceId, ...req.body, createdBy: req.user.id });
-  await recordAuditLog({
-    actor: req.user, action: 'ATTENDANCE_LOCATION_ASSIGNED', targetType: 'AttendanceLocationAssignment', targetId: assignment._id,
-    resourceLabel: 'Attendance Location Assignment', summary: `${req.user.name} created a location assignment`,
-    before: null, after: assignment.toObject(), category: 'attendance_management', meta: { workspaceId: req.workspaceId }
-  });
-  res.status(201).json({ success: true, data: assignment });
-});
-
-export const removeLocationAssignment = asyncHandler(async (req, res) => {
-  const assignment = await locationService.removeLocationAssignment({ workspaceId: req.workspaceId, assignmentId: req.params.assignmentId });
-  await recordAuditLog({
-    actor: req.user, action: 'ATTENDANCE_LOCATION_ASSIGNMENT_REMOVED', targetType: 'AttendanceLocationAssignment', targetId: assignment._id,
-    resourceLabel: 'Attendance Location Assignment', summary: `${req.user.name} removed a location assignment`,
-    before: null, after: null, category: 'attendance_management', meta: { workspaceId: req.workspaceId }
-  });
-  res.json({ success: true, data: assignment });
-});

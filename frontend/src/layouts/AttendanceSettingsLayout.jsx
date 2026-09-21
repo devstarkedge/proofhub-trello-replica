@@ -10,7 +10,8 @@ const SETTINGS_TABS = [
   { label: 'Policy', to: '/attendance/settings/policy' },
   { label: 'Shifts', to: '/attendance/settings/shifts' },
   { label: 'Locations', to: '/attendance/settings/locations' },
-  { label: 'Work Mode Overrides', to: '/attendance/settings/work-modes' }
+  { label: 'Work Mode Overrides', to: '/attendance/settings/work-modes' },
+  { label: 'Office Hours Overrides', to: '/attendance/settings/office-hours' }
 ];
 
 const isSafeAttendanceReturn = (path) => (

@@ -9,8 +9,10 @@ import { applyRegularizationOverlay } from './attendanceRegularizationOverlay.js
 import { resolveAttendanceEligibility } from './attendanceEligibility.service.js';
 import { resolveApplicablePolicyVersion } from './attendancePolicy.service.js';
 import { resolveApplicableShift, resolveWorkDateKey } from './attendanceShiftResolver.service.js';
-import { resolveEligibleLocations, validateAttendanceGeofence } from './attendanceGeofence.service.js';
+import { resolveEligibleLocations, validateAttendanceGeofence, validateGpsQuality } from './attendanceGeofence.service.js';
 import { resolveAuthorizedWorkMode } from './attendanceWorkMode.service.js';
+import { resolveEffectiveOfficeHours } from './attendanceOfficeHoursOverride.service.js';
+import { resolveExpectedWorkingMinutes } from './attendanceExpectedMinutes.service.js';
 import { resolveLeaveContextForDate } from './attendanceLeaveReconciliation.service.js';
 import { resolveAttendanceStatus } from './attendanceStatusResolver.service.js';
 import { resolveWorkspaceDay } from '../workCalendar/workCalendarFacade.js';
@@ -73,13 +75,14 @@ export async function resolveAttendanceContext({ workspaceId, userId, membership
   const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone });
   const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant });
   const workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion, requestedWorkMode });
+  const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift });
 
   const sessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey }).sort({ checkInAt: 1 }).lean();
   const activeSession = sessions.find((s) => s.status === 'ACTIVE') || null;
 
   return {
     attendanceApplicable: true, eligibility, profile, serverNow, timezone, policyVersion, shift,
-    workDateKey, dayInstant, calendar, leave, workModeResolution, sessions, activeSession
+    workDateKey, dayInstant, calendar, leave, workModeResolution, officeHours, sessions, activeSession
   };
 }
 
@@ -105,9 +108,9 @@ function evaluateCheckInBlockers(ctx) {
 }
 
 /** Computes today's multi-dimensional status and upserts AttendanceDay to match — the one place either check-in or check-out writes that document. */
-export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, sessions, serverNow, dbSession }) {
+export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, dbSession }) {
   const status = resolveAttendanceStatus({
-    eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, sessions, serverNow, isDayOver: false
+    eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, isDayOver: false
   });
   const day = await AttendanceDay.findOneAndUpdate(
     { user: userId, workDateKey }, // workspaceId deliberately omitted from the filter — workspaceScopePlugin injects it; see attendanceMemberProfile.service.js for why duplicating it here would break the upsert.
@@ -118,6 +121,8 @@ export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, el
         firstCheckInAt: status.firstCheckInAt, lastCheckOutAt: status.lastCheckOutAt,
         workedMinutes: status.workedMinutes, shiftExpectedMinutes: status.shiftExpectedMinutes,
         lateMinutes: status.lateMinutes, earlyExitMinutes: status.earlyExitMinutes,
+        effectiveOfficeHoursStart: status.effectiveOfficeHoursStart, effectiveOfficeHoursEnd: status.effectiveOfficeHoursEnd,
+        effectiveOfficeHoursGraceMinutes: status.effectiveOfficeHoursGraceMinutes, effectiveOfficeHoursSource: status.effectiveOfficeHoursSource,
         presenceState: status.presenceState, punctualityState: status.punctualityState,
         leaveState: status.leaveState, presenceFraction: status.presenceFraction, leaveFraction: status.leaveFraction,
         exceptionFlags: status.exceptionFlags
@@ -165,6 +170,12 @@ export async function recomputeAttendanceDayForDate({ workspaceId, userId, membe
   const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone });
   const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant });
   const workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion });
+  // Resolved fresh, scoped to `dayInstant` — same treatment as
+  // workModeResolution above, never pinned to a prior snapshot, since an
+  // Office Hours Override is date-scoped (effectiveFrom/effectiveUntil)
+  // the same way a Work Mode Override already is (spec §35: recompute
+  // using the configuration applicable TO THAT DATE, not "current" state).
+  const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift });
 
   const rawSessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
   const approvedRegularizations = await AttendanceRegularization.find({ workspaceId, requester: userId, workDateKey, status: 'APPROVED' }).session(dbSession).lean();
@@ -174,7 +185,7 @@ export async function recomputeAttendanceDayForDate({ workspaceId, userId, membe
 
   return computeAndUpsertDay({
     workspaceId, userId, workDateKey, eligibility, timezone, calendar, leave, workModeResolution,
-    policyVersion, shift, sessions, serverNow: new Date(), dbSession
+    policyVersion, shift, officeHours, sessions, serverNow: new Date(), dbSession
   });
 }
 
@@ -187,7 +198,7 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
 
   const status = resolveAttendanceStatus({
     eligibility: ctx.eligibility, timezone: ctx.timezone, calendar: ctx.calendar, leave: ctx.leave,
-    workModeResolution: ctx.workModeResolution, policyVersion: ctx.policyVersion, shift: ctx.shift,
+    workModeResolution: ctx.workModeResolution, policyVersion: ctx.policyVersion, shift: ctx.shift, officeHours: ctx.officeHours,
     sessions: ctx.sessions, serverNow: ctx.serverNow, isDayOver: false
   });
   const checkInBlocker = evaluateCheckInBlockers(ctx);
@@ -206,6 +217,9 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
     // is shown at all and defaultWorkMode is used automatically.
     allowedWorkModes: ctx.workModeResolution.allowedWorkModes, defaultWorkMode: ctx.workModeResolution.defaultWorkMode,
     workModeSource: ctx.workModeResolution.workModeSource,
+    // Informational only (new spec §33) — never fed back into presence/
+    // duration tiering, which stays governed by shiftExpectedMinutes above.
+    expectedWorkingMinutes: resolveExpectedWorkingMinutes({ workMode: status.workMode, officeHours: ctx.officeHours, calendar: ctx.calendar, shift: ctx.shift, leave: ctx.leave }),
     requirements: { officeRequiresGeofence: Boolean(ctx.policyVersion?.office?.requireCheckoutGeofence), wfhRequiresApproval: Boolean(ctx.policyVersion?.wfh?.requireApproval) }
   };
 }
@@ -233,7 +247,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
 
   if (ctx.workModeResolution.requiresGeofence) {
     if (!gps?.coordinates) throw codedError(friendlyAttendanceMessage('LOCATION_PERMISSION_REQUIRED'), 400, 'LOCATION_PERMISSION_REQUIRED');
-    const eligibleLocations = await resolveEligibleLocations({ workspaceId, userId, membership, policyVersion: ctx.policyVersion, profile: ctx.profile });
+    const eligibleLocations = await resolveEligibleLocations({ workspaceId });
     const geofence = validateAttendanceGeofence({
       coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
       eligibleLocations, gpsRequirements: ctx.policyVersion.gpsRequirements, nowInstant: ctx.serverNow
@@ -244,7 +258,17 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
       reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
       distanceMeters: geofence.distanceMeters, allowedRadiusMeters: geofence.allowedRadiusMeters
     };
-  } else if (ctx.workModeResolution.requiresGps && gps?.coordinates) {
+  } else if (ctx.workModeResolution.requiresGps) {
+    // WFH (or any other non-geofenced mode) still requires GPS evidence
+    // when the policy calls for it — validated for quality (accuracy/
+    // freshness) but NEVER compared against an office location ("WFH Day
+    // = Anywhere": no distance/geofence restriction ever applies here).
+    if (!gps?.coordinates) throw codedError(friendlyAttendanceMessage('LOCATION_PERMISSION_REQUIRED'), 400, 'LOCATION_PERMISSION_REQUIRED');
+    const quality = validateGpsQuality({
+      coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
+      gpsRequirements: ctx.policyVersion.gpsRequirements, nowInstant: ctx.serverNow
+    });
+    if (!quality.valid) throw codedError(friendlyAttendanceMessage(quality.code), 400, quality.code);
     evidence = { ...evidence, coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt };
   }
 
@@ -287,7 +311,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
       const { day } = await computeAndUpsertDay({
         workspaceId, userId, workDateKey: ctx.workDateKey, eligibility: ctx.eligibility, timezone: ctx.timezone,
         calendar: ctx.calendar, leave: ctx.leave, workModeResolution: ctx.workModeResolution, policyVersion: ctx.policyVersion,
-        shift: ctx.shift, sessions: [...ctx.sessions, created.toObject()], serverNow: ctx.serverNow, dbSession
+        shift: ctx.shift, officeHours: ctx.officeHours, sessions: [...ctx.sessions, created.toObject()], serverNow: ctx.serverNow, dbSession
       });
       result = { session: created, replay: false, attendanceDay: day };
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
@@ -352,7 +376,19 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
           distanceMeters: geofence.distanceMeters, allowedRadiusMeters: geofence.allowedRadiusMeters
         };
       } else if (gps?.coordinates) {
-        checkOutEvidence = { ...checkOutEvidence, coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt };
+        // Non-geofenced check-out (e.g. WFH) — GPS is optional evidence
+        // here, never mandatory ("GPS may be captured for evidence/
+        // context"), so a quality failure just means no evidence is
+        // stored, never a blocked check-out. It's still validated rather
+        // than stored blindly: stale/inaccurate coordinates are worse
+        // than none at all.
+        const quality = validateGpsQuality({
+          coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
+          gpsRequirements: policyVersion.gpsRequirements, nowInstant: serverNow
+        });
+        if (quality.valid) {
+          checkOutEvidence = { ...checkOutEvidence, coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt };
+        }
       }
 
       const closed = await AttendanceSession.findOneAndUpdate(
@@ -373,11 +409,16 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone });
       const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant });
       const workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion });
+      // Pinned policyVersion/shift (captured at check-in) + a fresh,
+      // date-scoped Office Hours Override resolution — identical treatment
+      // to workModeResolution just above (see recomputeAttendanceDayForDate's
+      // own comment for why this is safe/correct, not a history leak).
+      const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift });
       const daySessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey: closed.workDateKey }).session(dbSession).lean();
 
       const { day } = await computeAndUpsertDay({
         workspaceId, userId, workDateKey: closed.workDateKey, eligibility, timezone, calendar, leave,
-        workModeResolution, policyVersion, shift, sessions: daySessions, serverNow, dbSession
+        workModeResolution, policyVersion, shift, officeHours, sessions: daySessions, serverNow, dbSession
       });
 
       result = { session: closed, replay: false, attendanceDay: day };

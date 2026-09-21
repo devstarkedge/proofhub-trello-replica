@@ -7,6 +7,7 @@ import locationRoutes from './attendanceLocation.routes.js';
 import wfhRoutes from './wfhRequest.routes.js';
 import regularizationRoutes from './attendanceRegularization.routes.js';
 import workModeOverrideRoutes from './attendanceWorkModeOverride.routes.js';
+import officeHoursOverrideRoutes from './attendanceOfficeHoursOverride.routes.js';
 
 /**
  * Single mount point for the Attendance module —
@@ -24,5 +25,6 @@ router.use('/', locationRoutes);
 router.use('/', wfhRoutes);
 router.use('/', regularizationRoutes);
 router.use('/', workModeOverrideRoutes);
+router.use('/', officeHoursOverrideRoutes);
 
 export default router;

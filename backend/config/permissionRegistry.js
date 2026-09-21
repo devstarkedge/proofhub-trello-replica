@@ -68,6 +68,7 @@ export const RESOURCES = {
       { key: 'manage_shifts', label: 'Manage Shifts', description: 'Can create/edit shifts and shift assignments', legacyField: null },
       { key: 'manage_locations', label: 'Manage Locations', description: 'Can create/edit attendance locations and location assignments', legacyField: null },
       { key: 'manage_work_modes', label: 'Manage Work Mode Overrides', description: 'Can create/edit/deactivate Work Mode Overrides for a specific role, department, or user', legacyField: null },
+      { key: 'manage_office_hours', label: 'Manage Office Hours', description: 'Can configure workspace Office Hours and create/edit/deactivate Office Hours Overrides for a specific role, department, or user', legacyField: null },
       { key: 'approve_wfh', label: 'Approve WFH Requests', description: 'Can approve/reject Work-From-Home requests', legacyField: null },
       { key: 'approve_regularization', label: 'Approve Regularization Requests', description: 'Can approve/reject attendance regularization requests', legacyField: null },
       { key: 'correct_attendance', label: 'Manually Correct Attendance', description: 'Can directly correct an employee\'s attendance record, with a required reason', legacyField: null },

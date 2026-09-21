@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import AttendancePolicy from './attendancePolicy.model.js';
 import AttendancePolicyVersion from './attendancePolicyVersion.model.js';
 import Workspace from '../../models/Workspace.js';
+import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { getWorkspaceTimezone, nowInWorkspaceTz, dateOnlyToInstant, instantToDateOnlyKey } from '../leave/leaveTimezone.util.js';
 import * as workspaceContext from '../workspaces/workspaceContext.js';
@@ -33,12 +34,23 @@ export async function resolveApplicablePolicyVersion({ workspaceId }) {
   return AttendancePolicyVersion.findOne({ _id: policy.currentVersion, workspaceId }).lean();
 }
 
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 function assertValidPolicyContent(content) {
   if (!Array.isArray(content.allowedWorkModes) || content.allowedWorkModes.length === 0) {
     throw new ErrorResponse('At least one allowed work mode (Office/WFH/Hybrid/Field) must be configured', 400);
   }
   if (content.minimumHalfDayMinutes >= content.minimumFullDayMinutes) {
     throw new ErrorResponse('The half-day minimum must be less than the full-day minimum', 400);
+  }
+  const officeHours = content.officeHours;
+  if (officeHours) {
+    if (!TIME_PATTERN.test(officeHours.startLocalTime || '') || !TIME_PATTERN.test(officeHours.endLocalTime || '')) {
+      throw new ErrorResponse('Office Hours start/end must be valid HH:mm times', 400);
+    }
+    if (officeHours.startLocalTime === officeHours.endLocalTime) {
+      throw new ErrorResponse('Office Hours start and end cannot be the same time', 400);
+    }
   }
 }
 
@@ -198,6 +210,12 @@ export async function archivePolicy({ workspaceId, policyId }) {
   policy.pendingVersion = null;
   await policy.save();
   return policy;
+}
+
+/** Every attendance-eligible-or-not active workspace member — used only for the content-free "policy changed, refetch" realtime nudge (spec §40), never for anything data-bearing. */
+export async function resolveAllActiveMemberUserIds({ workspaceId }) {
+  const members = await WorkspaceMembership.find({ workspace: workspaceId, status: 'active' }).select('user').lean();
+  return members.map((m) => String(m.user));
 }
 
 /** Idempotent scheduler sweep — mirrors leavePolicy.service.js#runScheduledDefaultPolicyActivations exactly. */
