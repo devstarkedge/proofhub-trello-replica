@@ -557,6 +557,9 @@ class SocketService {
     this.socket.on('attendance:policy-updated', (data) => {
       window.dispatchEvent(new CustomEvent('socket-attendance-policy-updated', { detail: data }));
     });
+    this.socket.on('attendance:locations-updated', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-attendance-locations-updated', { detail: data }));
+    });
 
     // Announcement events
     this.socket.on('announcement-created', (data) => {

@@ -25,7 +25,7 @@ function defaultContent(version) {
     holidayAttendanceBehavior: version?.holidayAttendanceBehavior || 'REJECT',
     fullDayLeaveCheckInBehavior: version?.fullDayLeaveCheckInBehavior || 'REJECT',
     gpsRequirements: {
-      maximumGpsAccuracyMeters: version?.gpsRequirements?.maximumGpsAccuracyMeters ?? 100,
+      maximumGpsAccuracyMeters: version?.gpsRequirements?.maximumGpsAccuracyMeters ?? 200,
       maximumCoordinateAgeSeconds: version?.gpsRequirements?.maximumCoordinateAgeSeconds ?? 120,
       locationRequestTimeoutSeconds: version?.gpsRequirements?.locationRequestTimeoutSeconds ?? 30
     },

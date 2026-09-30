@@ -23,9 +23,19 @@ const pointSchema = new mongoose.Schema({
  * One centralized physical-site model for every attendance location type —
  * office, branch, warehouse, client site, or field site — so Field mode
  * (spec §11) reuses this instead of a separate coordinate/geofence
- * implementation. Never hard-deleted (spec §15): deactivating a location
- * only flips `active`, so historical AttendanceSession.locationSnapshot
- * references stay resolvable forever.
+ * implementation.
+ *
+ * Never actually hard-deleted at the database level, even when an Admin/HR
+ * user "deletes" one from the UI — `deletedAt` is a TERMINAL soft-delete
+ * flag instead (never cleared, never reactivatable), so historical
+ * AttendanceSession evidence (which snapshots `locationName` directly at
+ * check-in/out time — see attendanceSession.model.js) always stays fully
+ * explainable even after the location it referenced is gone from the active
+ * pool. This mirrors the exact same "never hard-delete, use a terminal flag"
+ * convention already used for AttendanceWorkModeOverride/
+ * AttendanceOfficeHoursOverride (`isActive`) elsewhere in this module — a
+ * deleted location is simply a stronger, irreversible-from-the-UI version
+ * of that same idea, distinct from the reversible `active` toggle.
  */
 const attendanceLocationSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
@@ -35,11 +45,13 @@ const attendanceLocationSchema = new mongoose.Schema({
   location: { type: pointSchema, required: true },
   allowedRadiusMeters: { type: Number, required: true, min: 1, max: 50000 },
   active: { type: Boolean, default: true },
+  deletedAt: { type: Date, default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 
 attendanceLocationSchema.index({ workspaceId: 1, active: 1 });
+attendanceLocationSchema.index({ workspaceId: 1, deletedAt: 1 });
 attendanceLocationSchema.index({ workspaceId: 1, normalizedName: 1 });
 attendanceLocationSchema.index({ location: '2dsphere' });
 

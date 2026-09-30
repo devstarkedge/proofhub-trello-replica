@@ -77,7 +77,7 @@ const config = {
 
   // Redis (for BullMQ, rate limiting, Socket.IO adapter)
   redis: {
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    url: process.env.REDIS_URL || null, // takes precedence over host/port/password when set
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT, 10) || 6379,
     password: process.env.REDIS_PASSWORD || undefined,

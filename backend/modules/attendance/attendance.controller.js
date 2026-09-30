@@ -45,7 +45,7 @@ export const postCheckIn = asyncHandler(async (req, res) => {
 
   const result = await checkIn({
     workspaceId: req.workspaceId, userId: req.user.id, membership: membershipFromReq(req),
-    workspace, gps, idempotencyKey, ipAddress: req.ip, requestedWorkMode: requestedWorkMode || null
+    workspace, gps, idempotencyKey, ipAddress: req.ip, requestedWorkMode: requestedWorkMode || null, actorName: req.user.name
   });
 
   if (!result.replay) {
@@ -66,7 +66,7 @@ export const postCheckOut = asyncHandler(async (req, res) => {
 
   const result = await checkOut({
     workspaceId: req.workspaceId, userId: req.user.id, membership: membershipFromReq(req),
-    workspace, gps, ipAddress: req.ip
+    workspace, gps, ipAddress: req.ip, actorName: req.user.name
   });
 
   if (!result.replay) {

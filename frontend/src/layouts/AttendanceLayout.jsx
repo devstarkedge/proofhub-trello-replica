@@ -4,7 +4,7 @@ import { Fingerprint } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import LeaveContentContainer from '../components/Leave/LeaveContentContainer';
 
-const MAIN_ATTENDANCE_ROUTES = ['/attendance', '/attendance/my', '/attendance/approvals'];
+const MAIN_ATTENDANCE_ROUTES = ['/attendance', '/attendance/my', '/attendance/team', '/attendance/approvals'];
 
 const AttendanceLayout = () => {
   const { user } = useContext(AuthContext);
@@ -20,6 +20,13 @@ const AttendanceLayout = () => {
 
   const tabs = [
     { label: 'My Attendance', to: '/attendance/my', visible: true },
+    // Visibility here is a frontend convenience only, matching Approvals'
+    // own existing convention — a custom role who genuinely manages a
+    // department (Department.managers) but doesn't hold one of these role
+    // strings can still reach /attendance/team directly; the backend
+    // (attendanceAuthorization.service.js) remains the sole real gate
+    // either way, since TeamAttendancePage resolves its own access itself.
+    { label: 'Team Attendance', to: '/attendance/team', visible: ['manager', 'hr', 'admin'].includes(role) },
     { label: 'Approvals', to: '/attendance/approvals', visible: ['manager', 'hr', 'admin'].includes(role) },
     { label: 'Settings', to: '/attendance/settings', visible: ['hr', 'admin'].includes(role), settings: true }
   ].filter((tab) => tab.visible);

@@ -22,8 +22,66 @@ function getCurrentPosition() {
   });
 }
 
+/**
+ * Best-effort read of the browser's own permission state for geolocation —
+ * NOT the same question as "did we get a good fix." A `GeolocationPositionError`
+ * can still happen with permission:'granted' (e.g. a timeout or the OS
+ * reporting POSITION_UNAVAILABLE), and a huge `accuracy` value on a
+ * *successful* read is a THIRD, separate condition again (permission was
+ * granted, a position was returned, it's just a low-quality one — see the
+ * debug log in captureGps below). `navigator.permissions` isn't universally
+ * supported for the 'geolocation' name in every browser, so this is
+ * defensive and never blocks the real capture.
+ */
+async function readGeolocationPermissionState() {
+  try {
+    if (!navigator.permissions?.query) return 'unsupported';
+    const status = await navigator.permissions.query({ name: 'geolocation' });
+    return status.state; // 'granted' | 'denied' | 'prompt'
+  } catch {
+    return 'unknown';
+  }
+}
+
 async function captureGps() {
-  const position = await getCurrentPosition();
+  const permissionState = await readGeolocationPermissionState();
+  let position;
+  try {
+    position = await getCurrentPosition();
+  } catch (error) {
+    // error.code: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+    console.info('[Attendance][GPS Debug] getCurrentPosition FAILED', {
+      permissionState, errorCode: error.code, errorMessage: error.message,
+      enableHighAccuracy: GEO_OPTIONS.enableHighAccuracy, maximumAge: GEO_OPTIONS.maximumAge, timeout: GEO_OPTIONS.timeout
+    });
+    throw error;
+  }
+
+  // Every field requested for debugging a bad-accuracy fix, logged BEFORE
+  // this ever reaches the backend. `enableHighAccuracy`/`maximumAge` only
+  // control what the browser ASKS the OS's location provider for — they
+  // cannot force a better fix to exist. A very large, suspiciously round
+  // `accuracy` (e.g. exactly 10000) is the classic signature of the OS/
+  // browser having fallen all the way back to coarse IP-based geolocation
+  // (no GPS chip, no usable Wi-Fi scan, or the OS's location permission/
+  // "precise location" toggle is off) — none of which this code can detect
+  // or override; it can only report what it was actually given.
+  console.info('[Attendance][GPS Debug] getCurrentPosition SUCCEEDED', {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+    accuracy: position.coords.accuracy,
+    timestamp: position.timestamp,
+    enableHighAccuracy: GEO_OPTIONS.enableHighAccuracy,
+    maximumAge: GEO_OPTIONS.maximumAge,
+    timeout: GEO_OPTIONS.timeout,
+    permissionState,
+    // Not requested in the minimal shape above, but free diagnostic
+    // context from the same reading — altitudeAccuracy in particular is
+    // often null/0 on an IP-based fix and non-null on a real GPS one.
+    altitude: position.coords.altitude, altitudeAccuracy: position.coords.altitudeAccuracy,
+    heading: position.coords.heading, speed: position.coords.speed
+  });
+
   return {
     coordinates: [position.coords.longitude, position.coords.latitude],
     reportedAccuracyMeters: position.coords.accuracy,
@@ -65,9 +123,15 @@ const AttendanceQuickControl = () => {
     const onChanged = () => load();
     window.addEventListener('socket-attendance-checked-in', onChanged);
     window.addEventListener('socket-attendance-checked-out', onChanged);
+    // A Location was added/edited/activated/deactivated/deleted anywhere in
+    // this workspace — refetch so requiresGeofence/requiresGps (and thus
+    // whether GPS is even attempted below) reflects the current
+    // configuration immediately, not just on next page load (new spec §5).
+    window.addEventListener('socket-attendance-locations-updated', onChanged);
     return () => {
       window.removeEventListener('socket-attendance-checked-in', onChanged);
       window.removeEventListener('socket-attendance-checked-out', onChanged);
+      window.removeEventListener('socket-attendance-locations-updated', onChanged);
     };
   }, [load]);
 
@@ -83,16 +147,23 @@ const AttendanceQuickControl = () => {
 
   if (!status || !status.attendanceApplicable) return null;
 
-  // Best-effort GPS capture on every action, regardless of which mode is
-  // selected — a per-mode requirement isn't known on the client (never
-  // re-derived here per spec §20), so the backend remains the sole
-  // authority: it rejects with LOCATION_PERMISSION_REQUIRED (surfaced as a
-  // friendly toast by the API interceptor) when the resolved mode actually
-  // needed GPS and none was captured.
+  // GPS is attempted ONLY when the backend's own resolution says today's
+  // mode actually needs it (requiresGeofence/requiresGps, already
+  // workspace/location-aware — see attendanceWorkMode.service.js). A
+  // workspace with no valid active Attendance Location configured must
+  // never see a GPS permission prompt or error at all (new spec §2-3) —
+  // skipping the capture attempt entirely, not just tolerating its
+  // failure, is what actually prevents that prompt from firing. When
+  // location IS required, this stays best-effort: the backend remains the
+  // sole authority and rejects with LOCATION_PERMISSION_REQUIRED (a
+  // friendly toast via the API interceptor) if capture still fails.
   const runAction = async (apiCall, successMessage, extraPayload = {}) => {
-    setPhase('locating');
+    const needsLocation = Boolean(status.requiresGeofence || status.requiresGps);
+    setPhase(needsLocation ? 'locating' : 'submitting');
     let gps = null;
-    try { gps = await captureGps(); } catch { /* the backend will reject if this mode actually required it */ }
+    if (needsLocation) {
+      try { gps = await captureGps(); } catch { /* the backend will reject if this mode actually required it */ }
+    }
 
     setPhase('submitting');
     try {

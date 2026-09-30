@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
-import { getSharedConnection } from './connection.js';
+import { getSharedConnection, logQueueErrors } from './connection.js';
 
-const chatWebhookQueue = new Queue('chat-webhooks', {
+const chatWebhookQueue = logQueueErrors(new Queue('chat-webhooks', {
   connection: getSharedConnection(),
   defaultJobOptions: {
     attempts: 5,
@@ -11,6 +11,6 @@ const chatWebhookQueue = new Queue('chat-webhooks', {
     removeOnComplete: { age: 86400, count: 10000 },
     removeOnFail: false,
   },
-});
+}));
 
 export default chatWebhookQueue;

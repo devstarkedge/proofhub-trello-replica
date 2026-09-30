@@ -64,6 +64,16 @@ export const RESOURCES = {
     description: 'Administrative control of the Attendance module — policies, shifts, locations, assignments, approvals, and reports. Self-service (own check-in/check-out, viewing one\'s own attendance) and manager visibility into their own department are derived structurally from org data and attendance eligibility — see modules/attendance/attendanceEligibility.service.js — and are never gated here, exactly like Leave\'s own self-service.',
     actions: [
       { key: 'view_workspace', label: 'View Workspace Attendance Data', description: 'Can view every employee\'s attendance workspace-wide (dashboards, reports)', legacyField: null },
+      // view_self/view_department are informational/extensibility grants
+      // for the Access Control UI, NOT the actual gate on the structural
+      // Department.managers-derived scoping (see attendanceAuthorization.
+      // service.js#resolveAttendanceAccess) — a genuine department manager
+      // already sees their team's attendance unconditionally, exactly like
+      // Leave's own precedent, with no permission setup required. These
+      // exist so an Admin/HR can still see "Attendance: view self/view
+      // department" listed explicitly when reviewing a Custom Role's grants.
+      { key: 'view_self', label: 'View Own Attendance', description: 'Can view their own attendance — every attendance-eligible member already has this structurally; listed here for visibility in the Access Control UI', legacyField: null },
+      { key: 'view_department', label: 'View Department Attendance', description: 'Can view attendance for departments they manage — already structural for a genuine Department manager; listed here for visibility in the Access Control UI', legacyField: null },
       { key: 'manage_policy', label: 'Manage Policies', description: 'Can create/version/publish Attendance policies (work modes, grace, shifts default, WFH/Hybrid/Field rules)', legacyField: null },
       { key: 'manage_shifts', label: 'Manage Shifts', description: 'Can create/edit shifts and shift assignments', legacyField: null },
       { key: 'manage_locations', label: 'Manage Locations', description: 'Can create/edit attendance locations and location assignments', legacyField: null },

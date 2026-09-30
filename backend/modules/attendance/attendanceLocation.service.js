@@ -6,9 +6,11 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
  * Whether the lat/lng came from the Admin/HR "Use Current Location" GPS
  * auto-fetch flow or manual typing is a frontend-only distinction — either
  * way this service only ever saves on an explicit call after the UI has
- * shown the value for review, never automatically. Locations are never
- * hard-deleted — only `active` is ever flipped, so a historical session's
- * snapshotted location reference always stays resolvable.
+ * shown the value for review, never automatically. `active` is the
+ * reversible toggle (Activate/Deactivate); `deletedAt` is a SEPARATE,
+ * terminal, irreversible-from-the-UI state (Delete) — see the model file's
+ * own doc comment for why the underlying document is still never actually
+ * removed from the database.
  *
  * There is deliberately no per-user/department assignment step: creating
  * an active location here makes it immediately available to every
@@ -19,9 +21,18 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
  */
 
 export async function listLocations({ workspaceId, includeInactive = false }) {
-  const filter = { workspaceId };
+  // A deleted location never appears here, regardless of includeInactive —
+  // "deleted" is a stronger, terminal state than merely "inactive".
+  const filter = { workspaceId, deletedAt: null };
   if (!includeInactive) filter.active = true;
   return AttendanceLocation.find(filter).sort({ name: 1 }).lean();
+}
+
+async function loadNonDeletedOrThrow({ workspaceId, locationId }) {
+  const location = await AttendanceLocation.findOne({ _id: locationId, workspaceId });
+  if (!location) throw new ErrorResponse('Location not found', 404);
+  if (location.deletedAt) throw new ErrorResponse('This location has been deleted and can no longer be modified', 400);
+  return location;
 }
 
 function assertValidCoordinates(latitude, longitude) {
@@ -45,8 +56,7 @@ export async function createLocation({ workspaceId, name, type, latitude, longit
 }
 
 export async function updateLocation({ workspaceId, locationId, updates, updatedBy }) {
-  const location = await AttendanceLocation.findOne({ _id: locationId, workspaceId });
-  if (!location) throw new ErrorResponse('Location not found', 404);
+  const location = await loadNonDeletedOrThrow({ workspaceId, locationId });
 
   if (updates.name !== undefined) location.name = updates.name;
   if (updates.type !== undefined) location.type = updates.type;
@@ -63,9 +73,46 @@ export async function updateLocation({ workspaceId, locationId, updates, updated
 }
 
 export async function deactivateLocation({ workspaceId, locationId, updatedBy }) {
+  await loadNonDeletedOrThrow({ workspaceId, locationId });
   const location = await AttendanceLocation.findOneAndUpdate(
     { _id: locationId, workspaceId }, { $set: { active: false, updatedBy } }, { new: true }
   );
+  return location;
+}
+
+/**
+ * Activate/reactivate — makes the location immediately available to every
+ * attendance-eligible workspace member again (the same workspace-wide,
+ * no-per-user-assignment rule as creation itself). Idempotent: activating
+ * an already-active location is a harmless no-op success, not an error.
+ */
+export async function activateLocation({ workspaceId, locationId, updatedBy }) {
+  await loadNonDeletedOrThrow({ workspaceId, locationId });
+  const location = await AttendanceLocation.findOneAndUpdate(
+    { _id: locationId, workspaceId }, { $set: { active: true, updatedBy } }, { new: true }
+  );
+  return location;
+}
+
+/**
+ * "Delete" — terminal and irreversible from the UI (no un-delete action
+ * exists), but implemented as a soft-delete flag rather than an actual
+ * Mongo document removal, so every historical AttendanceSession/Day that
+ * already referenced this location (by id and by its own denormalized
+ * `locationName` snapshot) stays fully explainable forever. Also flips
+ * `active: false` in the same write, so it can never be double-counted as
+ * both "deleted" and "available." Idempotent: deleting an already-deleted
+ * location returns the same result rather than erroring, so a retried
+ * request (e.g. a double-click) is harmless.
+ */
+export async function deleteLocation({ workspaceId, locationId, deletedBy }) {
+  const location = await AttendanceLocation.findOne({ _id: locationId, workspaceId });
   if (!location) throw new ErrorResponse('Location not found', 404);
+  if (location.deletedAt) return location; // already deleted — idempotent no-op
+
+  location.active = false;
+  location.deletedAt = new Date();
+  location.updatedBy = deletedBy;
+  await location.save();
   return location;
 }

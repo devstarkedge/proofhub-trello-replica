@@ -23,5 +23,7 @@ router.post(
 );
 router.patch('/locations/:locationId', controller.updateLocation);
 router.post('/locations/:locationId/deactivate', controller.deactivateLocation);
+router.post('/locations/:locationId/activate', controller.activateLocation);
+router.post('/locations/:locationId/delete', controller.deleteLocation);
 
 export default router;

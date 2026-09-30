@@ -10,6 +10,10 @@ import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
 const evidenceSchema = new mongoose.Schema({
   workMode: { type: String, enum: ['OFFICE', 'WFH', 'HYBRID', 'FIELD'], required: true },
   location: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceLocation', default: null },
+  // Denormalized at write time — so this evidence stays fully explainable
+  // even after the referenced AttendanceLocation is later renamed or
+  // soft-deleted; never re-derived by populating `location` later.
+  locationName: { type: String, default: null },
   coordinates: { type: [Number], default: null }, // [longitude, latitude], if captured
   reportedAccuracyMeters: { type: Number, default: null },
   capturedAt: { type: Date, default: null }, // client GPS fix time — freshness check only

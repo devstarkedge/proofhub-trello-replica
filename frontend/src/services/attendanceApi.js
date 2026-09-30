@@ -55,6 +55,8 @@ export const getLocations = async (params = {}) => (await api.get('/locations', 
 export const createLocation = async (payload) => (await api.post('/locations', payload)).data;
 export const updateLocation = async (locationId, payload) => (await api.patch(`/locations/${locationId}`, payload)).data;
 export const deactivateLocation = async (locationId) => (await api.post(`/locations/${locationId}/deactivate`)).data;
+export const activateLocation = async (locationId) => (await api.post(`/locations/${locationId}/activate`)).data;
+export const deleteLocation = async (locationId) => (await api.post(`/locations/${locationId}/delete`)).data;
 // No location-assignment endpoints — an active location is available to
 // every attendance-eligible workspace member automatically (see backend
 // attendanceGeofence.service.js#resolveEligibleLocations).
@@ -99,5 +101,11 @@ export const getRegularizationApprovalQueue = async () => (await api.get('/regul
 export const decideRegularizationApproval = async (approvalId, decision, comment) =>
   (await api.post(`/regularizations/approvals/${approvalId}/decide`, { decision, comment })).data;
 export const submitManualCorrection = async (payload) => (await api.post('/manual-correction', payload)).data;
+
+// ─── Role-based visibility (view/dashboard) ────────────────────────────────
+export const getAttendanceAccess = async () => (await api.get('/access')).data;
+export const getAttendanceView = async (params = {}) => (await api.get('/view', { params })).data;
+export const getAttendanceDashboard = async (params = {}) => (await api.get('/dashboard', { params })).data;
+export const getAttendanceSessionDetail = async (sessionId) => (await api.get(`/sessions/${sessionId}`)).data;
 
 export default api;

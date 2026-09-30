@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Plus, X, Ban } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import PresenceStatusBadge from '../../components/Attendance/PresenceStatusBadge';
 import { resolveDisplayStatus } from '../../utils/attendanceStatus';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';
+import WorkspaceContext from '../../context/WorkspaceContext';
 import * as attendanceApi from '../../services/attendanceApi';
 
 const inputClass = 'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
@@ -118,6 +119,7 @@ const RegularizationRequestForm = ({ onCancel, onSubmitted }) => {
 };
 
 const MyAttendancePage = () => {
+  const { currentWorkspace } = useContext(WorkspaceContext) || {};
   const [today, setToday] = useState(undefined);
   const [wfhRequests, setWfhRequests] = useState([]);
   const [regularizations, setRegularizations] = useState([]);
@@ -130,16 +132,26 @@ const MyAttendancePage = () => {
     attendanceApi.getMyRegularizations().then(({ data }) => setRegularizations(data)).catch(() => {});
   };
 
-  useEffect(() => { loadToday(); loadRequests(); }, []);
+  // Re-fetch whenever the ACTIVE workspace changes, not just on mount — this
+  // page's data is plain component state, not one of the Zustand stores
+  // resetAllOnWorkspaceSwitch() already clears on a switch (see
+  // WorkspaceContext#switchWorkspace), so without this it would keep
+  // showing the previous workspace's (or a previous 403's empty) data
+  // until the user happened to navigate away and back.
+  useEffect(() => { loadToday(); loadRequests(); }, [currentWorkspace?._id]);
   useEffect(() => {
     const refresh = () => { loadToday(); loadRequests(); };
     window.addEventListener('socket-attendance-checked-in', refresh);
     window.addEventListener('socket-attendance-checked-out', refresh);
     window.addEventListener('socket-attendance-wfh-decided', refresh);
     window.addEventListener('socket-attendance-regularization-decided', refresh);
+    // A Location changed for this workspace — refetch so "Today" reflects
+    // the current GPS/geofence requirement immediately (new spec §5).
+    window.addEventListener('socket-attendance-locations-updated', refresh);
     return () => {
       window.removeEventListener('socket-attendance-checked-in', refresh);
       window.removeEventListener('socket-attendance-checked-out', refresh);
+      window.removeEventListener('socket-attendance-locations-updated', refresh);
       window.removeEventListener('socket-attendance-wfh-decided', refresh);
       window.removeEventListener('socket-attendance-regularization-decided', refresh);
     };

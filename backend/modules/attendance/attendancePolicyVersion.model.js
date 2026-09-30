@@ -2,7 +2,15 @@ import mongoose from 'mongoose';
 import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
 
 const gpsRequirementsSchema = new mongoose.Schema({
-  maximumGpsAccuracyMeters: { type: Number, default: 100, min: 1 },
+  // 200m (not a tighter value like 100) is the workspace-wide DEFAULT for
+  // every newly-created policy — chosen to comfortably cover normal real-
+  // world GPS/Wi-Fi-positioning variance (commonly 20-150m depending on
+  // device/conditions) while still rejecting a genuine IP-geolocation
+  // fallback (which reports accuracy in the thousands of meters, e.g.
+  // 10000) by a wide margin. Always workspace-configurable via the Policy
+  // settings UI — this is only the starting point, never hardcoded into
+  // the validation logic itself (see attendanceGeofence.service.js).
+  maximumGpsAccuracyMeters: { type: Number, default: 200, min: 1 },
   maximumCoordinateAgeSeconds: { type: Number, default: 120, min: 1 },
   locationRequestTimeoutSeconds: { type: Number, default: 30, min: 1 }
 }, { _id: false });

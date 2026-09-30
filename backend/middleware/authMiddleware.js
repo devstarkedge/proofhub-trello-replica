@@ -7,6 +7,7 @@ import { LRUCache } from 'lru-cache';
 import config from '../config/index.js';
 import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
+import logger from '../utils/logger.js';
 
 // ─── Auth Cache ─────────────────────────────────────────────────────────────
 // In-memory LRU cache for authenticated user lookups.
@@ -185,6 +186,24 @@ export const protect = async (req, res, next) => {
           return next();
         }
 
+        // Diagnostic trail for "why did this specific request get rejected"
+        // — getMembership() always queries fresh (a negative lookup is
+        // never cached, see its own comment above), so this rejection
+        // genuinely reflects "no active WorkspaceMembership + active
+        // Workspace" for this exact (userId, requestedWorkspaceId) pair at
+        // this exact moment. The most common legitimate cause is simply
+        // the browser's active workspace (x-workspace-id) pointing at a
+        // different workspace than the one a later request used — e.g. the
+        // user switched workspaces between the two calls — not a bug by
+        // itself, but logged here so that's provable instead of assumed.
+        logger.warn('[Auth] Rejected: no active membership for requested workspace', {
+          userId, requestedWorkspaceId,
+          workspaceIdSource: req.headers['x-workspace-id'] ? 'x-workspace-id header'
+            : userObj.lastActiveWorkspace ? 'user.lastActiveWorkspace' : 'ensureDefaultWorkspace() fallback',
+          xWorkspaceIdHeader: req.headers['x-workspace-id'] || null,
+          lastActiveWorkspace: userObj.lastActiveWorkspace?.toString() || null,
+          path: req.originalUrl, method: req.method
+        });
         return res.status(requestedWorkspaceId ? 403 : 401).json({
           success: false,
           message: requestedWorkspaceId ? 'Not a member of this workspace' : 'No workspace context available'

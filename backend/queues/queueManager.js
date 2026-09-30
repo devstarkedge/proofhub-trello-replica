@@ -11,7 +11,7 @@
  *   await shutdownQueues();      // call on SIGTERM/SIGINT
  */
 import { allQueues, announcementQueue } from './index.js';
-import { closeSharedConnection, createRedisConnection } from './connection.js';
+import { closeSharedConnection, createRedisConnection, stopSharedConnectionRetries } from './connection.js';
 import { startEmailWorker, getEmailWorker } from '../workers/emailWorker.js';
 import { startNotificationWorker, getNotificationWorker } from '../workers/notificationWorker.js';
 import { startActivityWorker, getActivityWorker } from '../workers/activityWorker.js';
@@ -111,6 +111,8 @@ export async function initQueues() {
 
   if (!_redisAvailable) {
     logger.warn('QueueManager: Redis not available — falling back to in-process background tasks');
+    // Queues opened the shared connection on import; stop its retry loop.
+    stopSharedConnectionRetries();
     _initialized = true;
     return false;
   }

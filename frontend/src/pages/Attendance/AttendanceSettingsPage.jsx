@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Plus, SquarePen, Ban, Rocket, Archive, CalendarClock } from 'lucide-react';
+import { Plus, SquarePen, Ban, Rocket, Archive, CalendarClock, CheckCircle2, Trash2, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import AttendancePolicyStatusBadge from '../../components/Attendance/AttendancePolicyStatusBadge';
 import PolicyFormModal from '../../components/Attendance/PolicyFormModal';
@@ -34,6 +34,31 @@ const Row = ({ children }) => (
 );
 const RowList = ({ children }) => (
   <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--color-border-default)' }}>{children}</div>
+);
+
+/** Small, generic "are you sure" gate for an irreversible action — used here for permanently deleting a Location. */
+const ConfirmDeleteModal = ({ title, description, confirmLabel = 'Delete', submitting, onCancel, onConfirm }) => (
+  <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onClick={onCancel}>
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="w-full max-w-sm rounded-2xl p-6 space-y-4"
+      style={{ backgroundColor: 'var(--color-bg-base)' }}
+    >
+      <div className="flex items-start gap-3">
+        <TriangleAlert className="h-5 w-5 flex-none text-red-500" />
+        <div>
+          <h2 className="text-base font-bold" style={{ color: 'var(--color-text-primary)' }}>{title}</h2>
+          <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>{description}</p>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 border-t pt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>Cancel</Button>
+        <Button type="button" variant="destructive" onClick={onConfirm} disabled={submitting}>
+          {submitting ? 'Deleting…' : confirmLabel}
+        </Button>
+      </div>
+    </div>
+  </div>
 );
 
 // ─── Policy tab ─────────────────────────────────────────────────────────────
@@ -234,9 +259,17 @@ const LocationsTab = () => {
   const [locations, setLocations] = useState([]);
   const [formState, setFormState] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingActionId, setPendingActionId] = useState(null); // location._id currently activating/deactivating
+  const [confirmingDelete, setConfirmingDelete] = useState(null); // the location object pending delete confirmation
+  const [deleting, setDeleting] = useState(false);
 
   const load = () => attendanceApi.getLocations({ includeInactive: true }).then(({ data }) => setLocations(data)).catch(() => {});
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const onChanged = () => load();
+    window.addEventListener('socket-attendance-locations-updated', onChanged);
+    return () => window.removeEventListener('socket-attendance-locations-updated', onChanged);
+  }, []);
 
   const handleCreate = async (payload) => {
     setSubmitting(true);
@@ -249,11 +282,36 @@ const LocationsTab = () => {
     catch { /* interceptor */ } finally { setSubmitting(false); }
   };
   const deactivate = async (location) => {
-    try { await attendanceApi.deactivateLocation(location._id); toast.success('Location deactivated'); load(); } catch { /* interceptor */ }
+    setPendingActionId(location._id);
+    try { await attendanceApi.deactivateLocation(location._id); toast.success('Location deactivated'); load(); }
+    catch { /* interceptor */ } finally { setPendingActionId(null); }
   };
+  const activate = async (location) => {
+    setPendingActionId(location._id);
+    try { await attendanceApi.activateLocation(location._id); toast.success(`${location.name} is now active and available to all attendance-eligible users`); load(); }
+    catch { /* interceptor */ } finally { setPendingActionId(null); }
+  };
+  const performDelete = async () => {
+    if (!confirmingDelete) return;
+    setDeleting(true);
+    try {
+      await attendanceApi.deleteLocation(confirmingDelete._id);
+      toast.success(`${confirmingDelete.name} deleted`);
+      setConfirmingDelete(null);
+      load();
+    } catch { /* interceptor */ } finally { setDeleting(false); }
+  };
+
+  const hasActiveLocation = locations.some((l) => l.active);
 
   return (
     <div className="space-y-4">
+      {!hasActiveLocation && (
+        <div className="flex items-start gap-2 rounded-xl border px-4 py-3 text-sm" style={{ borderColor: 'var(--color-border-default)', backgroundColor: 'var(--color-warning-subtle)', color: 'var(--color-warning-text)' }}>
+          <TriangleAlert className="mt-0.5 h-4 w-4 flex-none" />
+          <span>No active attendance location configured. GPS/geofence validation is currently disabled for this workspace — Office check-in/check-out will work without location for every attendance-eligible user until a valid location is added and activated.</span>
+        </div>
+      )}
       <SettingsPanel
         title="Locations"
         description="Offices, branches, and sites employees can check in at. Every active location is available to all attendance-eligible users in this workspace for OFFICE check-in — no per-person assignment needed."
@@ -265,11 +323,26 @@ const LocationsTab = () => {
               <Row key={location._id}>
                 <div>
                   <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{location.name}</span>
-                  <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{location.type} · {location.allowedRadiusMeters}m radius{!location.active ? ' · inactive' : ' · available to all attendance-eligible users'}</span>
+                  <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{location.type} · {location.allowedRadiusMeters}m radius</span>
+                  {location.active ? (
+                    <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-green-600"><CheckCircle2 className="h-3 w-3" /> Active — available to all attendance-eligible users</span>
+                  ) : (
+                    <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>· Inactive</span>
+                  )}
                 </div>
                 <div className="flex gap-2">
+                  {!location.active && (
+                    <Button size="sm" disabled={pendingActionId === location._id} onClick={() => activate(location)}>
+                      <Rocket className="h-3.5 w-3.5" /> Apply / Activate
+                    </Button>
+                  )}
                   <Button variant="outline" size="sm" onClick={() => setFormState({ mode: 'edit', location })}><SquarePen className="h-3.5 w-3.5" /> Edit</Button>
-                  {location.active && <Button variant="outline" size="sm" onClick={() => deactivate(location)}><Ban className="h-3.5 w-3.5" /> Deactivate</Button>}
+                  {location.active && (
+                    <Button variant="outline" size="sm" disabled={pendingActionId === location._id} onClick={() => deactivate(location)}>
+                      <Ban className="h-3.5 w-3.5" /> Deactivate
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => setConfirmingDelete(location)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
                 </div>
               </Row>
             ))}
@@ -279,6 +352,15 @@ const LocationsTab = () => {
 
       {formState && (
         <LocationFormModal mode={formState.mode} initialLocation={formState.location} submitting={submitting} onCancel={() => setFormState(null)} onSubmit={formState.mode === 'create' ? handleCreate : handleEdit} />
+      )}
+      {confirmingDelete && (
+        <ConfirmDeleteModal
+          title={`Delete "${confirmingDelete.name}"?`}
+          description="This permanently removes it from the workspace's location pool — employees will no longer be able to check in here, and it can't be reactivated. Past attendance records that used this location stay fully intact and explainable."
+          submitting={deleting}
+          onCancel={() => setConfirmingDelete(null)}
+          onConfirm={performDelete}
+        />
       )}
     </div>
   );

@@ -25,7 +25,8 @@ const EVENTS = {
   REGULARIZATION_DECIDED: 'attendance:regularization-decided',
   WORK_MODE_OVERRIDE_UPDATED: 'attendance:work-mode-override-updated',
   OFFICE_HOURS_OVERRIDE_UPDATED: 'attendance:office-hours-override-updated',
-  POLICY_UPDATED: 'attendance:policy-updated'
+  POLICY_UPDATED: 'attendance:policy-updated',
+  LOCATIONS_UPDATED: 'attendance:locations-updated'
 };
 
 /** Strips GPS/location evidence — the only fields a realtime payload may ever carry about a session. */
@@ -37,12 +38,25 @@ function sanitizeSession(session) {
   };
 }
 
-export function onCheckedIn(userId, session, attendanceDay) {
-  emitToUser(userId, EVENTS.CHECKED_IN, { session: sanitizeSession(session), presenceState: attendanceDay?.presenceState });
+/**
+ * `observerUserIds` (new spec §20/TEST 10) — the subject's department
+ * manager(s) plus every active Admin/HR member, resolved by the caller via
+ * attendanceAuthorization.service.js#resolveAttendanceObserverUserIds.
+ * Still only ever personal-room emitToUser/emitToUsers — never a shared
+ * department/workspace room — so an observer gets exactly this one
+ * employee's event, never a workspace-wide feed. `userId` is included so an
+ * observer (who isn't the subject) can tell whose event this is.
+ */
+export function onCheckedIn(userId, session, attendanceDay, observerUserIds = []) {
+  const payload = { userId, session: sanitizeSession(session), presenceState: attendanceDay?.presenceState };
+  emitToUser(userId, EVENTS.CHECKED_IN, payload);
+  if (observerUserIds.length) emitToUsers(observerUserIds, EVENTS.CHECKED_IN, payload);
 }
 
-export function onCheckedOut(userId, session, attendanceDay) {
-  emitToUser(userId, EVENTS.CHECKED_OUT, { session: sanitizeSession(session), presenceState: attendanceDay?.presenceState, workedMinutes: attendanceDay?.workedMinutes });
+export function onCheckedOut(userId, session, attendanceDay, observerUserIds = []) {
+  const payload = { userId, session: sanitizeSession(session), presenceState: attendanceDay?.presenceState, workedMinutes: attendanceDay?.workedMinutes };
+  emitToUser(userId, EVENTS.CHECKED_OUT, payload);
+  if (observerUserIds.length) emitToUsers(observerUserIds, EVENTS.CHECKED_OUT, payload);
 }
 
 const entityFor = (request, entityType) => ({ type: entityType, id: request._id || request.id });
@@ -140,6 +154,11 @@ export function onOfficeHoursOverrideUpdated(affectedUserIds) {
 /** A workspace Attendance Policy version just went live (new spec §40) — fanned out to every active member, since a policy change can affect anyone's current/future calculations; still content-free. */
 export function onPolicyUpdated(allMemberUserIds) {
   if (allMemberUserIds?.length) emitToUsers(allMemberUserIds, EVENTS.POLICY_UPDATED, {});
+}
+
+/** A Location was created/edited/activated/deactivated/deleted — fanned out to every active member, since workspace-wide location availability affects any attendance-eligible person's next check-in. Content-free "refetch" nudge, same as every other config-change hook here. */
+export function onLocationsUpdated(allMemberUserIds) {
+  if (allMemberUserIds?.length) emitToUsers(allMemberUserIds, EVENTS.LOCATIONS_UPDATED, {});
 }
 
 /** Fired by the missing-checkout sweep (Phase 12) — a routine self-reminder, not urgent enough to bypass quiet hours. */

@@ -40,15 +40,22 @@ export async function runAttendanceLocationBootstrapOnce() {
   if (readFlag(ATTEMPTED_KEY) === 'true') return;
   writeFlag(ATTEMPTED_KEY, 'true');
 
-  let attendanceRequired = false;
+  let requiresLocation = false;
   try {
     const { data } = await attendanceApi.getMyTodayStatus();
-    attendanceRequired = Boolean(data?.attendanceRequired);
+    // Both must be true: the member is attendance-required AND the
+    // backend actually needs GPS/geofence for today's resolved mode.
+    // requiresGps/requiresGeofence already reflect whether this workspace
+    // even has a valid active Attendance Location configured — a
+    // workspace that never set one up (or removed its only one) must
+    // never see a GPS permission prompt at all, on login or otherwise
+    // (new spec).
+    requiresLocation = Boolean(data?.attendanceRequired) && Boolean(data?.requiresGps || data?.requiresGeofence);
   } catch {
     writeFlag(PERMISSION_STATE_KEY, 'unknown');
     return;
   }
-  if (!attendanceRequired) { writeFlag(PERMISSION_STATE_KEY, 'not_applicable'); return; }
+  if (!requiresLocation) { writeFlag(PERMISSION_STATE_KEY, 'not_applicable'); return; }
 
   if (!navigator.geolocation) { writeFlag(PERMISSION_STATE_KEY, 'unavailable'); return; }
 

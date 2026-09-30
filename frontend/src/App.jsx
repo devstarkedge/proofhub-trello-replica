@@ -52,6 +52,7 @@ import LeaveSettingsPage from "./pages/Leave/LeaveSettingsPage";
 import LeaveLayout from "./layouts/LeaveLayout";
 import LeaveSettingsLayout from "./layouts/LeaveSettingsLayout";
 import MyAttendancePage from "./pages/Attendance/MyAttendancePage";
+import TeamAttendancePage from "./pages/Attendance/TeamAttendancePage";
 import AttendanceApprovalsPage from "./pages/Attendance/AttendanceApprovalsPage";
 import AttendanceSettingsPage from "./pages/Attendance/AttendanceSettingsPage";
 import AttendanceLayout from "./layouts/AttendanceLayout";
@@ -171,6 +172,14 @@ function App() {
                 <Route path="/attendance" element={<AttendanceLayout />}>
                   <Route index element={<Navigate to="my" replace />} />
                   <Route path="my" element={<MyAttendancePage />} />
+                  <Route
+                    path="team"
+                    element={
+                      <PrivateRoute requiredRole={["Manager", "HR", "Admin"]}>
+                        <TeamAttendancePage />
+                      </PrivateRoute>
+                    }
+                  />
                   <Route
                     path="approvals"
                     element={

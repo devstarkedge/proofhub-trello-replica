@@ -7,7 +7,7 @@
  * Queue naming: 'flowtask:<domain>' to namespace cleanly.
  */
 import { Queue } from 'bullmq';
-import { getSharedConnection } from './connection.js';
+import { getSharedConnection, logQueueErrors } from './connection.js';
 import config from '../config/index.js';
 
 const defaultJobOptions = {
@@ -20,10 +20,10 @@ const defaultJobOptions = {
 // ─── Queue Factory ────────────────────────────────────────────────────────────
 
 function createQueue(name, opts = {}) {
-  return new Queue(name, {
+  return logQueueErrors(new Queue(name, {
     connection: getSharedConnection(),
     defaultJobOptions: { ...defaultJobOptions, ...opts },
-  });
+  }));
 }
 
 // ─── Queue Instances ──────────────────────────────────────────────────────────

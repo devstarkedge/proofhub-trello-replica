@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import WfhRequest from './wfhRequest.model.js';
 import { resolveEffectiveWorkModePolicy } from './attendanceWorkModeOverride.service.js';
+import { resolveWorkspaceLocationAvailability } from './attendanceGeofence.service.js';
 
 /**
  * Resolves Office/WFH/Hybrid/Field authorization server-side (spec §7-11,
@@ -45,6 +46,21 @@ function resolveHybridEffectiveMode({ hybrid, dayInstant, timezone, approvedWfhT
   return 'OFFICE';
 }
 
+/**
+ * OFFICE-mode geofence/GPS requirement — dynamic, not a hardcoded `true`
+ * (new spec): a workspace that has never configured a valid active
+ * Attendance Location, or has removed its only one, must never force GPS
+ * permission or a geofence check on ordinary Office check-in/check-out.
+ * The moment Admin/HR adds a valid one back, this flips to required again
+ * with zero further code changes — every consumer (checkIn/checkOut,
+ * getTodayStatus, the login bootstrap) reads this same resolved flag,
+ * never re-deriving "is there a location" independently.
+ */
+async function resolveOfficeGeofenceRequirement({ workspaceId }) {
+  const { hasValidLocation } = await resolveWorkspaceLocationAvailability({ workspaceId });
+  return { requiresGeofence: hasValidLocation, requiresGps: hasValidLocation };
+}
+
 async function authorizeMode({ baseMode, workspaceId, userId, dayInstant, timezone, policyVersion }) {
   if (baseMode === 'FIELD') {
     if (!policyVersion?.field?.enabled) {
@@ -74,8 +90,10 @@ async function authorizeMode({ baseMode, workspaceId, userId, dayInstant, timezo
     return resolveHybridAuthorization({ workspaceId, userId, dayInstant, timezone, policyVersion });
   }
 
-  // Default: OFFICE — always authorized (no approval gate), always geofenced.
-  return { workMode: 'OFFICE', authorized: true, reason: null, requiresGeofence: true, requiresGps: true, effectiveMode: 'OFFICE' };
+  // Default: OFFICE — always authorized (no approval gate). Geofence/GPS
+  // requirement depends on whether a valid location is actually configured.
+  const officeRequirement = await resolveOfficeGeofenceRequirement({ workspaceId });
+  return { workMode: 'OFFICE', authorized: true, reason: null, ...officeRequirement, effectiveMode: 'OFFICE' };
 }
 
 async function resolveHybridAuthorization({ workspaceId, userId, dayInstant, timezone, policyVersion }) {
@@ -89,7 +107,8 @@ async function resolveHybridAuthorization({ workspaceId, userId, dayInstant, tim
     const requiresGps = Boolean(policyVersion.wfh?.requireGps);
     return { workMode: 'HYBRID', authorized: true, reason: null, requiresGeofence: false, requiresGps, effectiveMode };
   }
-  return { workMode: 'HYBRID', authorized: true, reason: null, requiresGeofence: true, requiresGps: true, effectiveMode: 'OFFICE' };
+  const officeRequirement = await resolveOfficeGeofenceRequirement({ workspaceId });
+  return { workMode: 'HYBRID', authorized: true, reason: null, ...officeRequirement, effectiveMode: 'OFFICE' };
 }
 
 /**

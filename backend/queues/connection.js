@@ -26,10 +26,7 @@ const MAX_RETRIES = 10;
  * @returns {IORedis}
  */
 export function createRedisConnection(overrides = {}) {
-  return new IORedis({
-    host: config.redis.host,
-    port: config.redis.port,
-    password: config.redis.password,
+  const options = {
     maxRetriesPerRequest: null,   // Required by BullMQ
     enableReadyCheck: false,
     lazyConnect: true,            // Don't connect until first command
@@ -45,7 +42,32 @@ export function createRedisConnection(overrides = {}) {
       return delay;
     },
     ...overrides,
+  };
+
+  // REDIS_URL (e.g. a hosted Redis) wins over REDIS_HOST / REDIS_PORT / REDIS_PASSWORD
+  if (config.redis.url) {
+    return new IORedis(config.redis.url, options);
+  }
+  return new IORedis({
+    host: config.redis.host,
+    port: config.redis.port,
+    password: config.redis.password,
+    ...options,
   });
+}
+
+/**
+ * Attach an error listener to a BullMQ Queue. Without one, BullMQ
+ * console.error()s the full stack once per queue for every failed connect
+ * attempt. Connection errors are already logged by the shared connection,
+ * so only other errors are reported here.
+ */
+export function logQueueErrors(queue) {
+  queue.on('error', (err) => {
+    if (err?.code || err?.message === 'Connection is closed.') return;
+    console.error(`[Queue ${queue.name}] error:`, err?.message);
+  });
+  return queue;
 }
 
 /**
@@ -56,7 +78,8 @@ export function getSharedConnection() {
   if (!_sharedConnection) {
     _sharedConnection = createRedisConnection();
     _sharedConnection.on('error', (err) => {
-      console.error('[Redis] Shared connection error:', err.message);
+      // AggregateError (IPv4 + IPv6 both refused) has an empty message
+      console.error('[Redis] Shared connection error:', err.message || err.code);
     });
     _sharedConnection.on('connect', () => {
       console.log('[Redis] Shared connection established');
@@ -74,10 +97,22 @@ export function getWorkerConnection() {
   if (!_workerConnection) {
     _workerConnection = createRedisConnection();
     _workerConnection.on('error', (err) => {
-      console.error('[Redis] Worker connection error:', err.message);
+      console.error('[Redis] Worker connection error:', err.message || err.code);
     });
   }
   return _workerConnection;
+}
+
+/**
+ * Stop the shared connection from reconnecting. Queues connect on import,
+ * so when the startup probe finds Redis down this ends the ECONNREFUSED
+ * retry loop: the next attempt is the last, ioredis emits 'end', and
+ * pending/future enqueue calls reject so callers can fall back.
+ * (disconnect() can't be used — called between retries it never emits
+ * 'end', which leaves BullMQ's readiness wait, and every add(), hanging.)
+ */
+export function stopSharedConnectionRetries() {
+  if (_sharedConnection) _sharedConnection.options.retryStrategy = () => null;
 }
 
 /**

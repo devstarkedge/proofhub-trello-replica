@@ -9,7 +9,7 @@ import { applyRegularizationOverlay } from './attendanceRegularizationOverlay.js
 import { resolveAttendanceEligibility } from './attendanceEligibility.service.js';
 import { resolveApplicablePolicyVersion } from './attendancePolicy.service.js';
 import { resolveApplicableShift, resolveWorkDateKey } from './attendanceShiftResolver.service.js';
-import { resolveEligibleLocations, validateAttendanceGeofence, validateGpsQuality } from './attendanceGeofence.service.js';
+import { resolveEligibleLocations, validateAttendanceGeofence, validateGpsQuality, logAttendanceLocationValidation } from './attendanceGeofence.service.js';
 import { resolveAuthorizedWorkMode } from './attendanceWorkMode.service.js';
 import { resolveEffectiveOfficeHours } from './attendanceOfficeHoursOverride.service.js';
 import { resolveExpectedWorkingMinutes } from './attendanceExpectedMinutes.service.js';
@@ -19,6 +19,7 @@ import { resolveWorkspaceDay } from '../workCalendar/workCalendarFacade.js';
 import { getWorkspaceTimezone, dateOnlyToInstant } from '../leave/leaveTimezone.util.js';
 import { codedError } from './attendanceErrors.js';
 import { friendlyAttendanceMessage } from './attendanceErrorMessages.js';
+import { resolveAttendanceObserverUserIds } from './attendanceAuthorization.service.js';
 import * as attendanceHooks from './attendanceHooks.js';
 
 /**
@@ -224,7 +225,7 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
   };
 }
 
-export async function checkIn({ workspaceId, userId, membership, workspace, gps = null, idempotencyKey = null, ipAddress = null, requestedWorkMode = null }) {
+export async function checkIn({ workspaceId, userId, membership, workspace, gps = null, idempotencyKey = null, ipAddress = null, requestedWorkMode = null, actorName = null }) {
   if (idempotencyKey) {
     const replay = await AttendanceSession.findOne({ workspaceId, user: userId, idempotencyKey }).lean();
     if (replay) return { session: replay, replay: true };
@@ -246,15 +247,30 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
   };
 
   if (ctx.workModeResolution.requiresGeofence) {
-    if (!gps?.coordinates) throw codedError(friendlyAttendanceMessage('LOCATION_PERMISSION_REQUIRED'), 400, 'LOCATION_PERMISSION_REQUIRED');
+    // Resolved BEFORE the coordinates check (not just on the happy path) so
+    // the diagnostic log below always has "what office(s) were configured"
+    // context, even when the client sent no location at all.
     const eligibleLocations = await resolveEligibleLocations({ workspaceId });
-    const geofence = validateAttendanceGeofence({
-      coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
-      eligibleLocations, gpsRequirements: ctx.policyVersion.gpsRequirements, nowInstant: ctx.serverNow
+    const geofence = gps?.coordinates
+      ? validateAttendanceGeofence({
+        coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
+        eligibleLocations, gpsRequirements: ctx.policyVersion.gpsRequirements, nowInstant: ctx.serverNow
+      })
+      : { valid: false, code: 'LOCATION_PERMISSION_REQUIRED' };
+
+    logAttendanceLocationValidation({
+      action: 'CHECK-IN', userId, actorName, workspaceId, workMode: ctx.workModeResolution.workMode, gps,
+      eligibleLocations, gpsRequirements: ctx.policyVersion.gpsRequirements, geofenceResult: geofence
     });
+
     if (!geofence.valid) throw codedError(friendlyAttendanceMessage(geofence.code), 400, geofence.code);
+    // Denormalized here (not just referenced by id) so this session's
+    // evidence stays fully explainable even after the location is later
+    // renamed or deleted (deleteLocation is a soft-delete, never a hard
+    // one, for exactly this reason — see attendanceLocation.model.js).
+    const matchedLocation = eligibleLocations.find((l) => String(l._id) === String(geofence.locationId));
     evidence = {
-      ...evidence, location: geofence.locationId, coordinates: gps.coordinates,
+      ...evidence, location: geofence.locationId, locationName: matchedLocation?.name || null, coordinates: gps.coordinates,
       reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
       distanceMeters: geofence.distanceMeters, allowedRadiusMeters: geofence.allowedRadiusMeters
     };
@@ -319,12 +335,15 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
     await dbSession.endSession();
   }
   if (!result.replay) {
-    try { attendanceHooks.onCheckedIn(userId, result.session, result.attendanceDay); } catch (error) { console.error('[Attendance] check-in realtime hook error:', error.message); }
+    try {
+      const observerUserIds = await resolveAttendanceObserverUserIds({ workspaceId, subjectUserId: userId, subjectDepartmentIds: membership.department });
+      attendanceHooks.onCheckedIn(userId, result.session, result.attendanceDay, observerUserIds);
+    } catch (error) { console.error('[Attendance] check-in realtime hook error:', error.message); }
   }
   return result;
 }
 
-export async function checkOut({ workspaceId, userId, membership, workspace, gps = null, ipAddress = null }) {
+export async function checkOut({ workspaceId, userId, membership, workspace, gps = null, ipAddress = null, actorName = null }) {
   const serverNow = new Date();
   const timezone = getWorkspaceTimezone(workspace);
 
@@ -362,16 +381,24 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       // must never trap the employee at checkout (spec §37, §80).
       const checkoutNeedsGeofence = Boolean(existing.checkIn.location) && policyVersion?.office?.requireCheckoutGeofence;
       if (checkoutNeedsGeofence) {
-        if (!gps?.coordinates) throw codedError(friendlyAttendanceMessage('LOCATION_PERMISSION_REQUIRED'), 400, 'LOCATION_PERMISSION_REQUIRED');
         const checkInLocation = await AttendanceLocation.findById(existing.checkIn.location).session(dbSession).lean();
-        const geofence = validateAttendanceGeofence({
-          coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
-          eligibleLocations: checkInLocation ? [checkInLocation] : [],
-          gpsRequirements: policyVersion.gpsRequirements, nowInstant: serverNow
+        const eligibleLocationsForLog = checkInLocation ? [checkInLocation] : [];
+        const geofence = gps?.coordinates
+          ? validateAttendanceGeofence({
+            coordinates: gps.coordinates, reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
+            eligibleLocations: eligibleLocationsForLog,
+            gpsRequirements: policyVersion.gpsRequirements, nowInstant: serverNow
+          })
+          : { valid: false, code: 'LOCATION_PERMISSION_REQUIRED' };
+
+        logAttendanceLocationValidation({
+          action: 'CHECK-OUT', userId, actorName, workspaceId, workMode: existing.checkIn.workMode, gps,
+          eligibleLocations: eligibleLocationsForLog, gpsRequirements: policyVersion.gpsRequirements, geofenceResult: geofence
         });
+
         if (!geofence.valid) throw codedError(friendlyAttendanceMessage(geofence.code), 400, geofence.code);
         checkOutEvidence = {
-          ...checkOutEvidence, location: geofence.locationId, coordinates: gps.coordinates,
+          ...checkOutEvidence, location: geofence.locationId, locationName: checkInLocation?.name || null, coordinates: gps.coordinates,
           reportedAccuracyMeters: gps.reportedAccuracyMeters, capturedAt: gps.capturedAt,
           distanceMeters: geofence.distanceMeters, allowedRadiusMeters: geofence.allowedRadiusMeters
         };
@@ -427,7 +454,10 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
     await dbSession.endSession();
   }
   if (!result.replay) {
-    try { attendanceHooks.onCheckedOut(userId, result.session, result.attendanceDay); } catch (error) { console.error('[Attendance] check-out realtime hook error:', error.message); }
+    try {
+      const observerUserIds = await resolveAttendanceObserverUserIds({ workspaceId, subjectUserId: userId, subjectDepartmentIds: membership.department });
+      attendanceHooks.onCheckedOut(userId, result.session, result.attendanceDay, observerUserIds);
+    } catch (error) { console.error('[Attendance] check-out realtime hook error:', error.message); }
   }
   return result;
 }
