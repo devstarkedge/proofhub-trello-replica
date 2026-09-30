@@ -136,7 +136,15 @@ async function dispatch(eventName, payload, { throwOnFailure = false } = {}) {
     // fallthrough to direct dispatch below
   }
 
-  // Fallback: inline HTTP dispatch (legacy behavior)
+  // Fallback: inline HTTP dispatch. It retries for up to ~36s, so unless the
+  // caller needs the outcome (throwOnFailure) run it in the background —
+  // otherwise a Redis/chat outage stalls the originating API request.
+  const inline = () => dispatchInline();
+  if (throwOnFailure) return inline();
+  inline().catch((err) => logger.error('ChatWebhook: inline dispatch crashed', { eventName, error: err.message }));
+  return;
+
+  async function dispatchInline() {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await axios.post(webhookUrl, body, {
@@ -165,7 +173,7 @@ async function dispatch(eventName, payload, { throwOnFailure = false } = {}) {
           deliveryId,
           workspaceId,
           status,
-          error: error.message,
+          error: error.message || error.code || String(error),
         });
         if (throwOnFailure) throw error;
         return;
@@ -188,11 +196,12 @@ async function dispatch(eventName, payload, { throwOnFailure = false } = {}) {
           deliveryId,
           workspaceId,
           retries: MAX_RETRIES,
-          error: error.message,
+          error: error.message || error.code || String(error),
         });
         if (throwOnFailure) throw error;
       }
     }
+  }
   }
 }
 

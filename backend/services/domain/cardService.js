@@ -22,6 +22,7 @@ import { slackHooks } from '../../utils/slackHooks.js';
 import { chatHooks } from '../../utils/chatHooks.js';
 import { emitTimeEntryDiffs } from '../../utils/chatTimeTracking.js';
 import { processTimeEntriesWithOwnership } from '../../utils/timeEntryUtils.js';
+import { timeEntryUserPopulate } from '../../utils/timeEntryPopulate.js';
 
 const snapshotTimeEntries = (entries = []) => entries.map((entry) => (
   typeof entry?.toObject === 'function' ? entry.toObject() : entry
@@ -142,9 +143,9 @@ class CardService {
       .populate('members', 'name email avatar')
       .populate('createdBy', 'name email avatar')
       .populate('coverImage', 'url secureUrl thumbnailUrl fileName fileType')
-      .populate('estimationTime.user', 'name email avatar')
-      .populate('loggedTime.user', 'name email avatar')
-      .populate('billedTime.user', 'name email avatar');
+      .populate(timeEntryUserPopulate('estimationTime.user'))
+      .populate(timeEntryUserPopulate('loggedTime.user'))
+      .populate(timeEntryUserPopulate('billedTime.user'));
 
     // Activity logging + notifications (fire-and-forget background)
     this._processUpdateSideEffects(card, updates, old, user).catch((err) =>

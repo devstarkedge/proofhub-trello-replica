@@ -22,6 +22,7 @@ import { chatHooks } from "../utils/chatHooks.js";
 import { scheduleDueDateJobs, cancelDueDateJobs } from "../schedulers/cardDueDateScheduler.js";
 import { emitTimeEntryDiffs, emitTimeEntryWebhook } from "../utils/chatTimeTracking.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
+import { timeEntryUserPopulate } from "../utils/timeEntryPopulate.js";
 import { emitFinanceDataRefresh } from "../realtime/index.js";
 
 // In-memory store for undo tokens (move operations) — entries auto-expire after 10 seconds
@@ -1050,9 +1051,9 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
     .populate("coverImage", "url secureUrl thumbnailUrl fileName fileType")
-    .populate("estimationTime.user", "name email avatar")
-    .populate("loggedTime.user", "name email avatar")
-    .populate("billedTime.user", "name email avatar")
+    .populate(timeEntryUserPopulate("estimationTime.user"))
+    .populate(timeEntryUserPopulate("loggedTime.user"))
+    .populate(timeEntryUserPopulate("billedTime.user"))
     .lean();
 
   // Log specific activity types based on what changed - compare to OLD values
@@ -2065,7 +2066,7 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
   await card.save();
 
   // Populate user info for response
-  await card.populate(`${fieldName}.user`, 'name email avatar');
+  await card.populate(timeEntryUserPopulate(`${fieldName}.user`));
   
   // Find the newly added entry to return
   const addedEntry = card[fieldName].find(e => e._id.toString() === newEntry._id.toString());
@@ -2157,7 +2158,7 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
   if (updates.description !== undefined && type !== 'estimation') entry.description = updates.description;
 
   await card.save();
-  await card.populate(`${fieldName}.user`, 'name email avatar');
+  await card.populate(timeEntryUserPopulate(`${fieldName}.user`));
   const updatedEntry = card[fieldName][entryIndex];
 
   // Log activity
