@@ -11,6 +11,7 @@ export const ATTENDANCE_ERROR_MESSAGES = {
   NON_WORKING_DAY: 'Today is not a working day, so check-in is not required.',
   FULL_DAY_LEAVE_ACTIVE: "You're on approved leave today, so check-in isn't available.",
   ALREADY_CHECKED_IN: 'You already have an active attendance session.',
+  STALE_ACTIVE_SESSION: 'You have an unfinished attendance session from a previous day. Please check out of it before checking in again.',
   NO_ACTIVE_SESSION: 'No active attendance session was found to check out of.',
   ATTENDANCE_COMPLETED: 'Attendance for today has already been completed.',
   LOCATION_PERMISSION_REQUIRED: 'Location access is required to continue. Please allow location access and try again.',

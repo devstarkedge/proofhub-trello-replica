@@ -63,7 +63,22 @@ attendanceSessionSchema.index(
 );
 attendanceSessionSchema.index({ workspaceId: 1, user: 1, checkInAt: -1 });
 attendanceSessionSchema.index({ workspaceId: 1, attendanceDay: 1 });
-attendanceSessionSchema.index({ workspaceId: 1, user: 1, idempotencyKey: 1 }, { unique: true, sparse: true });
+// `partialFilterExpression`, NOT `sparse` — a well-known Mongo gotcha: a
+// COMPOUND sparse index only excludes a document when EVERY indexed field
+// is missing. workspaceId/user always exist, so a plain `sparse: true`
+// here still indexed (and uniquely constrained) every session that had no
+// caller-supplied idempotency key, since Mongoose/the service stores that
+// as an explicit `idempotencyKey: null` rather than omitting the field. A
+// user's SECOND such session ever — any two days, active or already
+// closed — collided on this index and was misreported as ALREADY_CHECKED_IN
+// with no real active session involved (confirmed root cause of a false
+// "already checked in on a brand new day" report). A partial filter that
+// only indexes real string keys excludes null/missing entirely, so only
+// genuine idempotency-key replays are ever constrained.
+attendanceSessionSchema.index(
+  { workspaceId: 1, user: 1, idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
+);
 
 attendanceSessionSchema.plugin(workspaceScopePlugin);
 

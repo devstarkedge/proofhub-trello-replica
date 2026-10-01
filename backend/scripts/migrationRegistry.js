@@ -28,6 +28,7 @@ import { runWorkspaceSubscriptionsMigration } from './migrateWorkspaceSubscripti
 import { runPlanCatalogV2Migration } from './migratePlanCatalogV2.js';
 import { runRetireLegacyPlanMigration } from './migrateRetireLegacyPlan.js';
 import { runSalesWatchBaselineMigration } from './migrateSalesWatchBaseline.js';
+import { runAttendanceIdempotencyIndexMigration } from './migrateAttendanceIdempotencyIndex.js';
 
 // ─── Migration definitions ──────────────────────────────────────────────────
 // Order matters: migrations run in the order listed here.
@@ -91,6 +92,12 @@ const MIGRATIONS = [
     version: '20260908',
     description: 'Seed SalesTabWatchState baseline for pre-existing Sales watch tabs so they do not flood on first evaluation',
     run: runSalesWatchBaselineMigration,
+  },
+  {
+    name: 'attendance_idempotency_index',
+    version: '20261001',
+    description: 'Replace sparse unique index with partial unique index on AttendanceSession.idempotencyKey (fixes false ALREADY_CHECKED_IN on a brand new day)',
+    run: runAttendanceIdempotencyIndexMigration,
   },
 ];
 

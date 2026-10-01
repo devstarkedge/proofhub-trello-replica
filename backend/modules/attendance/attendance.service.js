@@ -79,7 +79,22 @@ export async function resolveAttendanceContext({ workspaceId, userId, membership
   const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift });
 
   const sessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey }).sort({ checkInAt: 1 }).lean();
-  const activeSession = sessions.find((s) => s.status === 'ACTIVE') || null;
+  // Active-session detection must be date-agnostic, matching the REAL
+  // concurrency guard: AttendanceSession's partial unique index is scoped
+  // to {workspaceId, user} + status:'ACTIVE' only — it has no workDateKey
+  // dimension at all (checkOut() itself queries it the same way, so an
+  // open session from any day can always be closed). A session left open
+  // from a PREVIOUS day (e.g. a forgotten check-out) would still collide
+  // with that index on a fresh check-in attempt even though it's invisible
+  // to the `sessions` lookup above (scoped to TODAY only) — if this
+  // resolver didn't also check for it here, the status API would tell the
+  // UI "you may check in," the write would then fail with a confusing
+  // duplicate-key 409, and the employee would have no way to discover the
+  // stale session to close it (canCheckOut below would also wrongly read
+  // false). Checking today's sessions first avoids a second query on the
+  // common case where today's own session (if any) is already the active one.
+  const activeSession = sessions.find((s) => s.status === 'ACTIVE')
+    || await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).lean();
 
   return {
     attendanceApplicable: true, eligibility, profile, serverNow, timezone, policyVersion, shift,
@@ -89,7 +104,15 @@ export async function resolveAttendanceContext({ workspaceId, userId, membership
 
 /** Every reason a NEW check-in could be refused, sourced once so the live "can I check in" preview (GET /me/today) and the real POST /check-in never disagree. */
 function evaluateCheckInBlockers(ctx) {
-  if (ctx.activeSession) return { allowed: false, code: 'ALREADY_CHECKED_IN' };
+  if (ctx.activeSession) {
+    // Distinguishes "you're already checked in today" from "you forgot to
+    // check out of a PREVIOUS day" — same underlying block, but a clearly
+    // different message/code so the stale case is diagnosable instead of
+    // looking like a same-day double-check-in (spec: future stale-session
+    // issues must be easy to tell apart).
+    const isStale = ctx.activeSession.workDateKey !== ctx.workDateKey;
+    return { allowed: false, code: isStale ? 'STALE_ACTIVE_SESSION' : 'ALREADY_CHECKED_IN' };
+  }
   if (ctx.sessions.some((s) => s.status === 'CLOSED')) return { allowed: false, code: 'ATTENDANCE_COMPLETED' };
 
   const isHoliday = ctx.calendar.dayType === 'HOLIDAY';
@@ -314,10 +337,29 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
       } catch (error) {
         if (error?.code === 11000) {
           const keys = Object.keys(error.keyPattern || {});
-          if (idempotencyKey && keys.includes('idempotencyKey')) {
-            const existing = await AttendanceSession.findOne({ workspaceId, user: userId, idempotencyKey }).session(dbSession).lean();
-            result = { session: existing, replay: true };
-            return;
+          // The idempotencyKey index collision is handled ONLY as a real
+          // replay (the caller actually supplied a key we've seen before).
+          // Root cause of the reported false "already checked in" on a
+          // brand new day (confirmed via direct reproduction): this index
+          // used to be declared `sparse: true`, but a COMPOUND sparse index
+          // only excludes a document when EVERY indexed field is missing —
+          // workspaceId/user always exist, so every check-in made with no
+          // idempotencyKey (the frontend never sends one) stored a literal
+          // `idempotencyKey: null`, and a user's SECOND such session ever
+          // (any two days, active or already closed) collided with the
+          // FIRST one on this index — a false conflict with no real active
+          // session involved at all. Fixed structurally in
+          // attendanceSession.model.js (partialFilterExpression instead of
+          // sparse). If this branch's collision ever fires with no
+          // idempotencyKey supplied, that fix has regressed — surface the
+          // raw error loudly rather than re-mislabeling it ALREADY_CHECKED_IN.
+          if (keys.includes('idempotencyKey')) {
+            if (idempotencyKey) {
+              const existing = await AttendanceSession.findOne({ workspaceId, user: userId, idempotencyKey }).session(dbSession).lean();
+              result = { session: existing, replay: true };
+              return;
+            }
+            throw error;
           }
           throw codedError(friendlyAttendanceMessage('ALREADY_CHECKED_IN'), 409, 'ALREADY_CHECKED_IN');
         }
