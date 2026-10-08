@@ -1,3 +1,4 @@
+import { requestEmailChange, confirmEmailChange } from '../services/emailChangeService.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
@@ -83,7 +84,7 @@ export const register = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('No workspace available to register into', 500));
   }
 
-  const { user, employeeRole } = await workspaceContext.run({ workspaceId: targetWorkspaceId }, async () => {
+  const user = await workspaceContext.run({ workspaceId: targetWorkspaceId }, async () => {
     // Validate department if provided
     if (department) {
       const deptExists = await Department.findById(department);
@@ -92,21 +93,13 @@ export const register = asyncHandler(async (req, res, next) => {
       }
     }
 
-    // Determine roleId for default 'employee' role — the global system
-    // template (workspaceId: null), never a workspace-custom role.
-    const role = await Role.findOne({ slug: 'employee', workspaceId: null });
-
     const createdUser = await User.create({
       name,
       email,
       password,
-      role: 'employee',
-      roleId: role?._id,
-      department: department || undefined,
       isVerified: !!invitation // invited signups are pre-approved; public ones still need an admin to verify
     });
-
-    return { user: createdUser, employeeRole: role };
+    return createdUser;
   });
 
   let acceptOutcome = 'joined';
@@ -134,6 +127,7 @@ export const register = asyncHandler(async (req, res, next) => {
 
   // Generate token
   const token = generateToken(user._id);
+  const membership = acceptOutcome === 'joined' ? await WorkspaceMembership.findOne({ user: user._id, workspace: targetWorkspaceId, status: 'active' }).lean() : null;
   res.status(201).json({
     success: true,
     token,
@@ -142,8 +136,9 @@ export const register = asyncHandler(async (req, res, next) => {
       id: user._id,
       name: user.name,
       email: user.email,
-      role: user.role,
-      department: user.department,
+      role: membership?.role || null,
+      roleId: membership?.roleId || null,
+      department: membership?.department || [],
       isVerified: user.isVerified
     }
   });
@@ -258,8 +253,6 @@ export const registerAndCreateWorkspace = asyncHandler(async (req, res, next) =>
           name: String(name).trim(),
           email: String(email).toLowerCase().trim(),
           password,
-          role: 'admin',
-          roleId: adminRole?._id,
           isVerified: true,  // Workspace founders are self-verified
         }], { session });
         createdUser = newUser;
@@ -502,9 +495,10 @@ export const getMe = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const updateDetails = asyncHandler(async (req, res, next) => {
   const previousProfile = await User.findById(req.user.id).select('name email avatar').lean();
+  if (req.body.email && req.body.email !== previousProfile.email) await requestEmailChange(req.user.id, req.body.email);
   const fieldsToUpdate = {
     name: req.body.name,
-    email: req.body.email,
+
     avatar: req.body.avatar
   };
 
@@ -553,19 +547,13 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
 // @route   POST /api/auth/check-email
 // @access  Public
 export const checkEmail = asyncHandler(async (req, res, next) => {
-  const { email, excludeUserId } = req.body;
-
-  if (!email) {
+  const { email } = req.body;
+  if (typeof email !== 'string' || email.length > 254 || !email.includes('@')) {
     return next(new ErrorResponse('Email is required', 400));
   }
-
-  // Search for a user with the provided email
-  const existing = await User.findOne({ email }).select('_id');
-
-  // If found and it's not the excluded user, it's not available
-  const available = !(existing && (!excludeUserId || existing._id.toString() !== excludeUserId));
-
-  res.status(200).json({ success: true, available });
+  // Availability is enforced by registration/account-change, never disclosed
+  // by this anonymous endpoint. Keep the response shape for existing clients.
+  res.status(200).json({ success: true, available: true });
 });
 
 // @desc    Refresh JWT token
@@ -701,4 +689,9 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
       forcePasswordChange: false
     }
   });
+});
+
+export const confirmAccountEmailChange = asyncHandler(async (req, res) => {
+  const data = await confirmEmailChange(req.user.id, req.body.token);
+  res.json({ success: true, data });
 });

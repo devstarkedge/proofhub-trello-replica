@@ -5,6 +5,21 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { sendEmail } from '../../utils/email.js';
 import { parseAnalyticsFilters } from './analyticsFilters.js';
 import { getDashboardAnalytics } from './analyticsService.js';
+import WorkspaceMembership from '../../models/WorkspaceMembership.js';
+import Workspace from '../../models/Workspace.js';
+import { getActiveWorkspaceId } from '../../modules/workspaces/workspaceContext.js';
+import { buildContext } from '../../authz/context.js';
+import { can } from '../../authz/engine.js';
+
+export async function validateReportRecipients(userId, workspaceId, recipients) {
+  const ctx = await buildContext(userId, workspaceId, { allowLegacy: true });
+  if (ctx.status !== 'active' || ctx.kind === 'guest') throw new ErrorResponse('Report creator is not an active workspace member', 403);
+  const memberIds = await WorkspaceMembership.distinct('user', { workspace: workspaceId, status: 'active', kind: { $ne: 'guest' } });
+  const internal = await User.find({ _id: { $in: memberIds }, isActive: true, email: { $in: recipients } }).select('email').lean();
+  const addresses = new Set(internal.map(u => u.email.toLowerCase()));
+  if (recipients.some(email => !addresses.has(email.toLowerCase())) && !can(ctx, 'analytics.export_external')) throw new ErrorResponse('External analytics recipients require export permission', 403);
+  return ctx;
+}
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -54,6 +69,7 @@ export const createReportSchedule = async (user, input) => {
   const recipients = [...new Set((input.recipients || []).map((email) => String(email).trim().toLowerCase()).filter(Boolean))];
   if (!input.name || !['daily', 'weekly', 'monthly'].includes(input.frequency)) throw new ErrorResponse('Name and a valid frequency are required', 400);
   if (!recipients.length || recipients.length > 10 || recipients.some((email) => !EMAIL_PATTERN.test(email))) throw new ErrorResponse('Provide between 1 and 10 valid recipient emails', 400);
+  await validateReportRecipients(user._id || user.id, user.workspaceId || getActiveWorkspaceId(), recipients);
   const schedule = new AnalyticsReportSchedule({
     name: String(input.name).trim().slice(0, 100), createdBy: user._id || user.id, recipients,
     frequency: input.frequency, format: input.format === 'csv' ? 'csv' : 'xlsx',
@@ -75,8 +91,15 @@ export const deleteReportSchedule = async (user, scheduleId) => {
 };
 
 export const deliverScheduledReport = async (schedule) => {
-  const user = await User.findById(schedule.createdBy).select('_id role department accessType allowedProjects isActive').lean();
+  const user = await User.findById(schedule.createdBy).select('_id isActive').lean();
   if (!user?.isActive) throw new Error('Schedule owner is inactive');
+  const [membership, workspace] = await Promise.all([
+    WorkspaceMembership.findOne({ user: schedule.createdBy, workspace: schedule.workspaceId, status: 'active' }).lean(),
+    Workspace.findById(schedule.workspaceId).select('isActive').lean()
+  ]);
+  if (!membership || !workspace?.isActive) throw new Error('Schedule owner is not an active workspace member');
+  await validateReportRecipients(schedule.createdBy, schedule.workspaceId, schedule.recipients);
+  Object.assign(user, { role: membership.role, roleId: membership.roleId, department: membership.department || [], accessType: membership.accessType, allowedProjects: membership.allowedProjects || [], workspaceId: schedule.workspaceId });
   const data = await getDashboardAnalytics(user, parseAnalyticsFilters(schedule.filters || {}));
   const attachment = await makeAttachment(data, schedule.format);
   await sendEmail({

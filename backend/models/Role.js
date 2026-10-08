@@ -47,6 +47,14 @@ const permissionSchema = new mongoose.Schema({
  * Supports both predefined (system) roles and custom roles
  */
 const roleSchema = new mongoose.Schema({
+  key: { type: String, lowercase: true, trim: true },
+  kind: { type: String, enum: ['member', 'guest'], default: 'member' },
+  templateKey: String,
+  templateVersion: { type: Number, default: 0 },
+  customized: { type: Boolean, default: false },
+  locked: { type: Boolean, default: false },
+  grants: { type: [{ permission: { type: String, required: true }, scope: { type: String, enum: ['own', 'assigned', 'project', 'department', 'workspace'], required: true }, _id: false }], default: undefined },
+  updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   name: {
     type: String,
     required: [true, 'Role name is required'],
@@ -108,6 +116,7 @@ const roleSchema = new mongoose.Schema({
 // { workspaceId: null, slug: 'admin' } template while allowing each
 // workspace its own custom slugs.
 roleSchema.index({ workspaceId: 1, slug: 1 }, { unique: true });
+roleSchema.index({ workspaceId: 1, key: 1 }, { unique: true, partialFilterExpression: { key: { $type: 'string' } } });
 roleSchema.index({ isSystem: 1 });
 roleSchema.index({ isActive: 1 });
 roleSchema.index({ createdAt: -1 });

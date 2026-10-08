@@ -3,6 +3,7 @@ import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js'
 
 const listSchema = new mongoose.Schema({
   workspaceId: {
+    immutable: true,
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Workspace',
     required: true

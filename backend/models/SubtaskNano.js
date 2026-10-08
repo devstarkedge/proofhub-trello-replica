@@ -39,6 +39,7 @@ const attachmentSchema = new mongoose.Schema({
 
 const subtaskNanoSchema = new mongoose.Schema({
   workspaceId: {
+    immutable: true,
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Workspace',
     required: true,
@@ -137,6 +138,7 @@ const subtaskNanoSchema = new mongoose.Schema({
     subtask: { type: String, trim: true }
   },
   createdBy: {
+    immutable: true,
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true

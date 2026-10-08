@@ -6,7 +6,7 @@ import { validate } from '../middleware/validation.js';
 
 const router = express.Router();
 
-router.get('/public', getPublicDepartments); // Public route must be before protected routes (or distinct)
+router.get('/public', protect, getDepartments); // Public route must be before protected routes (or distinct)
 router.get('/', protect, getDepartments);
 router.get('/with-assignments', protect, getDepartmentsWithAssignments);
 router.get('/filter-options', protect, getUserDepartmentFilterOptions);

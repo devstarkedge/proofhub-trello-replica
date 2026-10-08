@@ -1,3 +1,4 @@
+import { ROOM } from '../../realtime/events.js';
 /**
  * Slack Interactive Handler
  * Handles all interactive components: buttons, modals, select menus
@@ -1424,7 +1425,7 @@ class SlackInteractiveHandler {
 
           // Emit socket event for real-time UI update
           const { io } = await import('../../server.js');
-          io.to(`user-${flowTaskUserId}`).emit('announcement-acknowledged', {
+          io.to(ROOM.user(flowTaskUserId)).emit('announcement-acknowledged', {
             announcementId: announcement._id,
             userId: flowTaskUserId
           });
@@ -1493,7 +1494,7 @@ class SlackInteractiveHandler {
 
           // Emit socket event for real-time UI update
           const { io } = await import('../../server.js');
-          io.to(`user-${flowTaskUserId}`).emit('announcement-read', {
+          io.to(ROOM.user(flowTaskUserId)).emit('announcement-read', {
             announcementId: announcement._id,
             userId: flowTaskUserId
           });

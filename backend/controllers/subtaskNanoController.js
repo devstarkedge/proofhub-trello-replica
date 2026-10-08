@@ -1,3 +1,4 @@
+import { strictUpdate, NANO_UPDATE_FIELDS } from '../utils/strictUpdate.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import mongoose from 'mongoose';
@@ -163,6 +164,7 @@ export const createNano = asyncHandler(async (req, res, next) => {
 });
 
 export const updateNano = asyncHandler(async (req, res, next) => {
+  req.body = strictUpdate(req.body, NANO_UPDATE_FIELDS);
   let nano = await SubtaskNano.findById(req.params.id);
   if (!nano) {
     return next(new ErrorResponse('Subtask-Nano not found', 404));

@@ -1,3 +1,4 @@
+import { updateMemberAccess } from '../authz/accessAdminService.js';
 import mongoose from 'mongoose';
 import Department from "../models/Department.js";
 import User from "../models/User.js";
@@ -111,10 +112,7 @@ export const getDepartmentStats = asyncHandler(async (req, res, next) => {
         }
       }
     ]),
-    User.countDocuments({
-      role: 'employee',
-      isVerified: true,
-      isActive: true,
+    WorkspaceMembership.countDocuments({ workspace: req.workspaceId, status: 'active', role: 'employee',
       ...(Array.isArray(departmentIds)
         ? { department: { $in: departmentIds.map((id) => new mongoose.Types.ObjectId(id)) } }
         : {})
@@ -666,16 +664,16 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
   if (managers !== undefined) {
     // Add department to new managers
     if (managersToAdd.length > 0) {
-      await User.updateMany(
-        { _id: { $in: managersToAdd } },
+      await WorkspaceMembership.updateMany(
+        { workspace: req.workspaceId, status: 'active', user: { $in: managersToAdd } },
         { $addToSet: { department: department._id } }
       );
     }
 
     // Remove department from old managers (only if they have no other roles in this department)
     if (managersToRemove.length > 0) {
-      await User.updateMany(
-        { _id: { $in: managersToRemove } },
+      await WorkspaceMembership.updateMany(
+        { workspace: req.workspaceId, status: 'active', user: { $in: managersToRemove } },
         { $pull: { department: department._id } }
       );
     }
@@ -722,8 +720,8 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
   }
 
   // Remove department from users (use $pull for array field)
-  await User.updateMany(
-    { department: req.params.id },
+  await WorkspaceMembership.updateMany(
+    { workspace: req.workspaceId, department: req.params.id },
     { $pull: { department: req.params.id } }
   );
 
@@ -747,6 +745,7 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
 
   const department = await Department.findById(req.params.id);
   const user = await User.findById(userId);
+  if (user) { const membership = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: user._id, status: 'active' }).lean(); user.department = membership?.department || []; user.role = membership?.role || ''; }
 
   if (!department) {
     return next(new ErrorResponse("Department not found", 404));
@@ -787,7 +786,7 @@ export const addMemberToDepartment = asyncHandler(async (req, res, next) => {
   });
 
   // Update user's department field — push rather than overwrite so the array stays intact
-  await User.findByIdAndUpdate(userId, {
+  await WorkspaceMembership.findOneAndUpdate({ workspace: req.workspaceId, user: userId, status: 'active' }, {
     $addToSet: { department: req.params.id }
   });
 
@@ -849,8 +848,8 @@ export const removeMemberFromDepartment = asyncHandler(
     });
 
     // Update user's department field
-    await User.findByIdAndUpdate(req.params.userId, {
-      $unset: { department: 1 },
+    await WorkspaceMembership.findOneAndUpdate({ workspace: req.workspaceId, user: req.params.userId, status: 'active' }, {
+      $pull: { department: req.params.id },
     });
 
     // Mirrors into the membership row (and busts the cache) so stale
@@ -992,6 +991,7 @@ export const unassignUserFromDepartment = asyncHandler(
     const { deptId, userId } = req.params;
 
     const user = await User.findById(userId);
+  if (user) { const membership = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: user._id, status: 'active' }).lean(); user.department = membership?.department || []; user.role = membership?.role || ''; }
     const department = await Department.findById(deptId);
 
     if (!user) {
@@ -1016,7 +1016,7 @@ export const unassignUserFromDepartment = asyncHandler(
 
     // Remove department from user's department array
     user.department = user.department.filter(id => id.toString() !== deptId);
-    await user.save();
+    await updateMemberAccess({ workspaceId: req.workspaceId, userId: user._id, actor: req.user, patch: { department: user.department } });
     await syncMembershipFromUser(user._id, req.workspaceId);
 
     // Remove user from department's members array
@@ -1092,6 +1092,8 @@ export const bulkAssignUsersToDepartment = asyncHandler(async (req, res, next) =
   // Process each user assignment
   for (const user of users) {
     try {
+      const membership = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: user._id, status: 'active' }).lean();
+      user.department = membership?.department || []; user.role = membership?.role || '';
       if (!activeMemberIds.has(String(user._id))) {
         errors.push({
           userId: user._id,
@@ -1121,7 +1123,7 @@ export const bulkAssignUsersToDepartment = asyncHandler(async (req, res, next) =
 
       if (!deptExists) {
         user.department = [...deptArray, departmentId];
-        await user.save();
+        await updateMemberAccess({ workspaceId: req.workspaceId, userId: user._id, actor: req.user, patch: { department: user.department } });
         // Mirrors into the membership row (and busts the cache) so the
         // user's next request sees the updated departments.
         await syncMembershipFromUser(user._id, req.workspaceId);
@@ -1227,6 +1229,8 @@ export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, nex
   // Process each user unassignment
   for (const user of users) {
     try {
+      const membership = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: user._id, status: 'active' }).lean();
+      user.department = membership?.department || []; user.role = membership?.role || '';
       if (!activeMemberIds.has(String(user._id))) {
         errors.push({
           userId: user._id,
@@ -1248,7 +1252,7 @@ export const bulkUnassignUsersFromDepartment = asyncHandler(async (req, res, nex
 
       // Remove department from user's department array
       user.department = user.department.filter(id => id.toString() !== departmentId);
-      await user.save();
+      await updateMemberAccess({ workspaceId: req.workspaceId, userId: user._id, actor: req.user, patch: { department: user.department } });
       // Mirrors into the membership row (and busts the cache) so the
       // user's next request sees the updated departments.
       await syncMembershipFromUser(user._id, req.workspaceId);

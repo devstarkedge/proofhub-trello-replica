@@ -38,9 +38,11 @@ const boardSchema = new mongoose.Schema({
   }],
   visibility: {
     type: String,
-    enum: ['public', 'private'],
+    enum: ['public', 'private', 'department', 'workspace'],
     default: 'public'
   },
+  managers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  guests: [{ user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, access: { type: String, enum: ['viewer', 'commenter', 'editor'], default: 'commenter' }, addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, addedAt: { type: Date, default: Date.now }, expiresAt: Date }],
   // Monotonic version used by ChatApp to reject stale membership snapshots.
   chatMembershipVersion: {
     type: Number,

@@ -10,7 +10,7 @@ export {
   emitToUser,
   emitToTeam,
   emitToBoard,
-  emitToAll,
+  emitToWorkspace,
   emitToUserShortcuts,
   emitToDepartment,
   emitCardUpdate,

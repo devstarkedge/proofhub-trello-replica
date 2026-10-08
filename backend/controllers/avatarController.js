@@ -73,8 +73,8 @@ export const uploadAvatar = asyncHandler(async (req, res, next) => {
 
     // Emit socket event for real-time sync
     try {
-      const { emitToAll } = await import('../server.js');
-      emitToAll('avatar-updated', {
+      const { emitToWorkspace } = await import('../server.js');
+      emitToWorkspace('avatar-updated', {
         userId: user._id,
         avatar: user.avatar,
         name: user.name
@@ -178,8 +178,8 @@ export const uploadAvatarFromGoogleDrive = asyncHandler(async (req, res, next) =
 
     // Emit socket event
     try {
-      const { emitToAll } = await import('../server.js');
-      emitToAll('avatar-updated', {
+      const { emitToWorkspace } = await import('../server.js');
+      emitToWorkspace('avatar-updated', {
         userId: user._id,
         avatar: user.avatar,
         name: user.name
@@ -231,8 +231,8 @@ export const removeAvatar = asyncHandler(async (req, res, next) => {
 
   // Emit socket event
   try {
-    const { emitToAll } = await import('../server.js');
-    emitToAll('avatar-updated', {
+    const { emitToWorkspace } = await import('../server.js');
+    emitToWorkspace('avatar-updated', {
       userId: user._id,
       avatar: '',
       name: user.name

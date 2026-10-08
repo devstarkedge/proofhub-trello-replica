@@ -867,6 +867,10 @@ export const createCard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("List not found", 404));
   }
 
+  if (String(cardList.board) !== String(board)) {
+    return next(new ErrorResponse('List does not belong to the project', 400));
+  }
+
   const card = await Card.create({
     title,
     description,
@@ -967,6 +971,8 @@ export const createCard = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/cards/:id
 // @access  Private
 export const updateCard = asyncHandler(async (req, res, next) => {
+  const { strictUpdate, TASK_UPDATE_FIELDS } = await import('../utils/strictUpdate.js');
+  req.body = strictUpdate(req.body, TASK_UPDATE_FIELDS);
   let card = await Card.findById(req.params.id);
 
   if (!card) {
@@ -974,6 +980,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   }
 
   const originalBoardId = card.board;
+  if (req.body.list !== undefined) {
+    const targetList = await List.findById(req.body.list).select('board').lean();
+    if (!targetList || String(targetList.board) !== String(card.board)) return next(new ErrorResponse('Use the cross-project move endpoint for another project', 400));
+  }
   const originalListId = card.list;
 
   // Store old values for change detection

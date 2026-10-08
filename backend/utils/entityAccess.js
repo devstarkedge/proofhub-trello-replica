@@ -1,3 +1,4 @@
+import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 /**
  * Small, focused entity-access check for notification fan-out (currently
  * used by @mention resolution — notificationService.js#processMentions —
@@ -35,7 +36,7 @@ async function userCanAccessBoard({ userId, boardId }) {
   const board = await Board.findById(boardId).select('owner members visibility isDeleted').lean();
   if (!board || board.isDeleted) return false;
 
-  const membership = await WorkspaceMembership.findOne({ user: userId, status: 'active' })
+  const membership = await WorkspaceMembership.findOne({ user: userId, workspace: getActiveWorkspaceId(), status: 'active' })
     .select('role accessType allowedProjects')
     .lean();
   if (!membership) return false;

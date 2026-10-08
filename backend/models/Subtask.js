@@ -39,6 +39,7 @@ const attachmentSchema = new mongoose.Schema({
 
 const subtaskSchema = new mongoose.Schema({
   workspaceId: {
+    immutable: true,
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Workspace',
     required: true,
@@ -168,6 +169,7 @@ const subtaskSchema = new mongoose.Schema({
     ref: 'RecurringTask'
   },
   createdBy: {
+    immutable: true,
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true

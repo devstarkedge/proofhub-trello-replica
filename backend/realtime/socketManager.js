@@ -1,3 +1,6 @@
+import Workspace from '../models/Workspace.js';
+import { hasResourceAction } from '../modules/permissions/permissionEngine.js';
+import { isSuperAdminEmailAllowed } from '../middleware/requireSuperAdmin.js';
 /**
  * Socket.IO Manager
  * 
@@ -93,9 +96,9 @@ function init(httpServer) {
         // server-verified DB lookup, not a claim trusted off the JWT
         // payload — the JWT here carries only {id}, and trusting a
         // decodedUser.role-style claim is exactly the mistake that already
-        // left ROOM.admin/ROOM.managers unreachable elsewhere in this file.
-        const dbUser = await User.findById(userId).select('isSuperAdmin').lean();
-        if (dbUser?.isSuperAdmin === true) {
+        // left ROOM.admin(socketWorkspaceId)/ROOM.managers(socketWorkspaceId) unreachable elsewhere in this file.
+        const dbUser = await User.findById(userId).select('isSuperAdmin isActive email').lean();
+        if (dbUser?.isActive && dbUser.isSuperAdmin === true && isSuperAdminEmailAllowed(dbUser.email)) {
           socket.data.user = decodedUser;
           socket.data.workspaceId = null;
           socket.data.isSuperAdmin = true;
@@ -104,6 +107,9 @@ function init(httpServer) {
         return next(new Error('Not a member of this workspace'));
       }
 
+      const [account, workspace] = await Promise.all([User.findById(userId).select('isActive').lean(), Workspace.findById(requestedWorkspaceId).select('isActive').lean()]);
+      if (!account?.isActive || !workspace?.isActive || membership.kind === 'guest') return next(new Error('Inactive account or workspace'));
+      socket.data.membership = membership;
       socket.data.user = decodedUser;
       socket.data.workspaceId = requestedWorkspaceId;
       next();
@@ -115,7 +121,7 @@ function init(httpServer) {
   // ─── Connection Handler ────────────────────────────────────────────────
   _io.on('connection', (socket) => {
     if (config.isDev) logger.debug('New socket connection attempt', { socketId: socket.id });
-    if (config.isDev) logger.debug('Handshake auth', { auth: socket.handshake.auth });
+
 
     const decodedUser = socket.data.user || {};
     const userId = decodedUser.id || decodedUser._id?.toString();
@@ -127,35 +133,22 @@ function init(httpServer) {
       return;
     }
 
-    // ── Auto-join rooms based on user attributes ──
-    socket.join(ROOM.user(userId));
-
-    if (decodedUser.role === 'admin') {
-      socket.join(ROOM.admin);
-      logger.debug(`Admin user ${userId} joined admin room`);
-    }
-
-    if (decodedUser.role === 'manager') {
-      socket.join(ROOM.managers);
-      logger.debug(`User ${userId} joined managers room`);
-    }
-
-    if (decodedUser.department) {
-      const departments = Array.isArray(decodedUser.department)
-        ? decodedUser.department
-        : [decodedUser.department];
-      departments.forEach((deptId) => {
-        if (deptId) {
-          socket.join(ROOM.department(deptId));
-    if (config.isDev) logger.debug(`User ${userId} joined department room: department-${deptId}`);
-        }
-      });
+    // Roles and department rooms come from the server-resolved membership.
+    const membership = socket.data.membership;
+    if (socketWorkspaceId && membership) {
+      socket.join(ROOM.user(userId, socketWorkspaceId));
+      socket.join(ROOM.workspace(socketWorkspaceId));
+      if (membership.role === 'admin') socket.join(ROOM.admin(socketWorkspaceId));
+      if (membership.role === 'manager') socket.join(ROOM.managers(socketWorkspaceId));
+      for (const departmentId of membership.department || []) socket.join(ROOM.department(departmentId, socketWorkspaceId));
     }
 
     logger.debug('User connected', { userId });
 
     // ── Card rooms ──
     socket.on('join-card', async (cardId) => {
+      const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
+      if (!fresh) { socket.disconnect(true); return; }
       try {
         await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
         const Card = (await import('../models/Card.js')).default;
@@ -176,8 +169,8 @@ function init(httpServer) {
         }
 
         // Allow if admin
-        if (decodedUser.role === 'admin') {
-          socket.join(ROOM.card(cardId));
+        if (fresh.role === 'admin') {
+          socket.join(ROOM.card(cardId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined card room (admin): card-${cardId}`);
           return;
         }
@@ -185,12 +178,12 @@ function init(httpServer) {
         // Direct card membership or assignee
         const userIdStr = userId.toString();
         if (Array.isArray(card.members) && card.members.map(m => m.toString()).includes(userIdStr)) {
-          socket.join(ROOM.card(cardId));
+          socket.join(ROOM.card(cardId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined card room (member): card-${cardId}`);
           return;
         }
         if (Array.isArray(card.assignees) && card.assignees.map(a => a.toString()).includes(userIdStr)) {
-          socket.join(ROOM.card(cardId));
+          socket.join(ROOM.card(cardId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined card room (assignee): card-${cardId}`);
           return;
         }
@@ -201,17 +194,17 @@ function init(httpServer) {
           const board = await Board.findById(card.board).lean();
           if (board) {
             if (board.visibility === 'public') {
-              socket.join(ROOM.card(cardId));
+              socket.join(ROOM.card(cardId, socketWorkspaceId));
               if (config.isDev) logger.debug(`User ${userId} joined card room (public board): card-${cardId}`);
               return;
             }
             if (board.owner?.toString() === userIdStr) {
-              socket.join(ROOM.card(cardId));
+              socket.join(ROOM.card(cardId, socketWorkspaceId));
               if (config.isDev) logger.debug(`User ${userId} joined card room (board owner): card-${cardId}`);
               return;
             }
             if (Array.isArray(board.members) && board.members.map(m => m.toString()).includes(userIdStr)) {
-              socket.join(ROOM.card(cardId));
+              socket.join(ROOM.card(cardId, socketWorkspaceId));
               if (config.isDev) logger.debug(`User ${userId} joined card room (board member): card-${cardId}`);
               return;
             }
@@ -225,12 +218,14 @@ function init(httpServer) {
       }
     });
     socket.on('leave-card', (cardId) => {
-      socket.leave(ROOM.card(cardId));
+      socket.leave(ROOM.card(cardId, socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left card room: card-${cardId}`);
     });
 
     // ── Team rooms ──
     socket.on('join-team', async (teamId) => {
+      const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
+      if (!fresh) { socket.disconnect(true); return; }
       try {
         await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
         const Team = (await import('../models/Team.js')).default;
@@ -246,15 +241,15 @@ function init(httpServer) {
         }
 
         // Admins or managers can join
-        if (decodedUser.role === 'admin' || decodedUser.role === 'manager') {
-          socket.join(ROOM.team(teamId));
+        if (fresh.role === 'admin' || fresh.role === 'manager') {
+          socket.join(ROOM.team(teamId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined team ${teamId} (privileged)`);
           return;
         }
 
         const userIdStr = userId.toString();
         if (Array.isArray(team.members) && team.members.map(m => m.toString()).includes(userIdStr)) {
-          socket.join(ROOM.team(teamId));
+          socket.join(ROOM.team(teamId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined team ${teamId}`);
           return;
         }
@@ -266,12 +261,14 @@ function init(httpServer) {
       }
     });
     socket.on('leave-team', (teamId) => {
-      socket.leave(ROOM.team(teamId));
+      socket.leave(ROOM.team(teamId, socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left team ${teamId}`);
     });
 
     // ── Board rooms ──
     socket.on('join-board', async (boardId) => {
+      const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
+      if (!fresh) { socket.disconnect(true); return; }
       try {
         await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
         const Board = (await import('../models/Board.js')).default;
@@ -287,25 +284,25 @@ function init(httpServer) {
         }
 
         // Admins always allowed
-        if (decodedUser.role === 'admin') {
-          socket.join(ROOM.board(boardId));
+        if (fresh.role === 'admin') {
+          socket.join(ROOM.board(boardId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (admin)`);
           return;
         }
 
         const userIdStr = userId.toString();
         if (board.visibility === 'public') {
-          socket.join(ROOM.board(boardId));
+          socket.join(ROOM.board(boardId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (public)`);
           return;
         }
         if (board.owner?.toString() === userIdStr) {
-          socket.join(ROOM.board(boardId));
+          socket.join(ROOM.board(boardId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (owner)`);
           return;
         }
         if (Array.isArray(board.members) && board.members.map(m => m.toString()).includes(userIdStr)) {
-          socket.join(ROOM.board(boardId));
+          socket.join(ROOM.board(boardId, socketWorkspaceId));
           if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (member)`);
           return;
         }
@@ -317,38 +314,45 @@ function init(httpServer) {
       }
     });
     socket.on('leave-board', (boardId) => {
-      socket.leave(ROOM.board(boardId));
+      socket.leave(ROOM.board(boardId, socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left board ${boardId}`);
     });
 
-    // ── Client-side real-time relay ──
-    socket.on('update-card', ({ cardId, updates, boardId }) => {
-      _io.to(ROOM.board(boardId)).emit('card-updated', { cardId, updates });
-    });
-    socket.on('add-comment', ({ cardId, comment, boardId }) => {
-      _io.to(ROOM.board(boardId)).emit('comment-added', { cardId, comment });
-    });
-
     // ── Announcement rooms ──
-    socket.on('join-announcements', () => {
-      socket.join(ROOM.announcements);
+    socket.on('join-announcements', async () => {
+      const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
+      if (!fresh) { socket.disconnect(true); return; }
+      socket.join(ROOM.announcements(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} joined announcements room`);
     });
     socket.on('leave-announcements', () => {
-      socket.leave(ROOM.announcements);
+      socket.leave(ROOM.announcements(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left announcements room`);
     });
-    socket.on('join-announcement', (announcementId) => {
-      socket.join(ROOM.announcement(announcementId));
+    socket.on('join-announcement', async (announcementId) => {
+      const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
+      if (!fresh) { socket.disconnect(true); return; }
+      const { default: Announcement } = await import('../models/Announcement.js');
+      const { announcementAudience } = await import('../services/workspaceAudience.js');
+      const permitted = await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
+        const announcement = await Announcement.findById(announcementId).lean();
+        return announcement && (String(announcement.createdBy) === String(userId) || (await announcementAudience(announcement.subscribers)).some(id => String(id) === String(userId)));
+      });
+      if (!permitted) return;
+      socket.join(ROOM.announcement(announcementId, socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} joined announcement room: announcement-${announcementId}`);
     });
     socket.on('leave-announcement', (announcementId) => {
-      socket.leave(ROOM.announcement(announcementId));
+      socket.leave(ROOM.announcement(announcementId, socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left announcement room: announcement-${announcementId}`);
     });
 
     // ── Finance rooms ──
-    socket.on('join-finance', () => {
+    socket.on('join-finance', async () => {
+      const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
+      if (!fresh) { socket.disconnect(true); return; }
+      const permitted = await workspaceContext.run({ workspaceId: socketWorkspaceId }, () => hasResourceAction({ _id: userId, role: fresh.role, workspaceId: socketWorkspaceId }, 'finance', 'view', socketWorkspaceId));
+      if (!permitted) return;
       socket.join(ROOM.finance(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} joined finance room`);
     });
@@ -358,17 +362,23 @@ function init(httpServer) {
     });
 
     // ── My Shortcuts rooms ──
-    socket.on('join-my-shortcuts', () => {
-      socket.join(ROOM.userShortcuts(userId));
+    socket.on('join-my-shortcuts', async () => {
+      const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
+      if (!fresh) { socket.disconnect(true); return; }
+      socket.join(ROOM.userShortcuts(userId, socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} joined my-shortcuts room`);
     });
     socket.on('leave-my-shortcuts', () => {
-      socket.leave(ROOM.userShortcuts(userId));
+      socket.leave(ROOM.userShortcuts(userId, socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} left my-shortcuts room`);
     });
 
     // ── Sales rooms ──
-    socket.on('join-sales', () => {
+    socket.on('join-sales', async () => {
+      const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
+      if (!fresh) { socket.disconnect(true); return; }
+      const permitted = await workspaceContext.run({ workspaceId: socketWorkspaceId }, () => hasResourceAction({ _id: userId, role: fresh.role, workspaceId: socketWorkspaceId }, 'sales', 'view', socketWorkspaceId));
+      if (!permitted) return;
       socket.join(ROOM.sales(socketWorkspaceId));
       if (config.isDev) logger.debug(`User ${userId} joined sales room`);
     });

@@ -1,3 +1,6 @@
+import { ROOM } from '../realtime/events.js';
+import { announcementAudience } from '../services/workspaceAudience.js';
+import { emitAnnouncementEvent } from '../services/announcementEvents.js';
 import Announcement from "../models/Announcement.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
@@ -49,54 +52,7 @@ const calculateExpiryDate = (value, unit) => {
 
 // Helper to get subscriber user IDs
 // Handles all subscriber types with proper array-based department matching
-const getSubscriberUserIds = async (subscribers) => {
-  console.log('[Announcement] resolving subscribers:', JSON.stringify(subscribers));
-  let userIds = [];
-
-  // Base filter to exclude inactive and deleted users
-  const baseFilter = { 
-    isActive: true, 
-    isVerified: true 
-  };
-
-  if (subscribers.type === 'all') {
-    const users = await User.find(baseFilter).select('_id');
-    console.log(`[Announcement] found ${users.length} users for type 'all'`);
-    userIds = users.map(u => u._id);
-  } else if (subscribers.type === 'departments') {
-    // User.department is an array of ObjectIds
-    // Find users where at least one of their departments is in the selected departments
-    const users = await User.find({
-      ...baseFilter,
-      department: { $elemMatch: { $in: subscribers.departments } }
-    }).select('_id');
-    console.log(`[Announcement] found ${users.length} users for type 'departments': ${JSON.stringify(subscribers.departments)}`);
-    userIds = users.map(u => u._id);
-  } else if (subscribers.type === 'users') {
-    // Filter out inactive/deleted users from the explicit list
-    const validUsers = await User.find({
-      _id: { $in: subscribers.users },
-      ...baseFilter
-    }).select('_id');
-    userIds = validUsers.map(u => u._id);
-  } else if (subscribers.type === 'managers') {
-    // Role field is a string, match 'manager' exactly
-    const users = await User.find({
-      ...baseFilter,
-      role: 'manager'
-    }).select('_id');
-    userIds = users.map(u => u._id);
-  } else if (subscribers.type === 'custom') {
-    // Filter out inactive/deleted users from the explicit list
-    const validUsers = await User.find({
-      _id: { $in: subscribers.users },
-      ...baseFilter
-    }).select('_id');
-    userIds = validUsers.map(u => u._id);
-  }
-
-  return userIds;
-};
+const getSubscriberUserIds = announcementAudience;
 
 // @desc    Get all announcements with filtering and sorting
 // @route   GET /api/announcements
@@ -430,26 +386,7 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
       }
     };
 
-    // Emit based on subscriber type for optimized delivery
-    const subscriberType = rawSubscribers.type || 'all';
-    
-    if (subscriberType === 'all') {
-      // Broadcast to all connected users
-      getIO().emit('announcement-created', announcementPayload);
-    } else if (subscriberType === 'departments') {
-      // Emit to each department room
-      (rawSubscribers.departments || []).forEach(deptId => {
-        getIO().to(`department-${deptId}`).emit('announcement-created', announcementPayload);
-      });
-    } else if (subscriberType === 'managers') {
-      // Emit to managers room
-      getIO().to('managers').emit('announcement-created', announcementPayload);
-    } else {
-      // For 'users' and 'custom' types, emit to individual user rooms
-      subscriberIds.forEach(userId => {
-        getIO().to(`user-${userId}`).emit('announcement-created', announcementPayload);
-      });
-    }
+    await emitAnnouncementEvent(announcement, 'announcement-created', announcementPayload);
 
     // Send background email notifications
     notificationService.sendAnnouncementEmails(announcement, subscriberIds);
@@ -539,7 +476,7 @@ export const updateAnnouncement = asyncHandler(async (req, res, next) => {
 
     if (subscriberIds && Array.isArray(subscriberIds)) {
       subscriberIds.forEach(userId => {
-        getIO().to(`user-${userId}`).emit('announcement-updated', {
+        getIO().to(ROOM.user(userId)).emit('announcement-updated', {
           announcementId: announcement._id,
           announcement: announcement.toJSON()
         });
@@ -618,7 +555,7 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
 
     if (subscriberIds && Array.isArray(subscriberIds)) {
       subscriberIds.forEach(userId => {
-        getIO().to(`user-${userId}`).emit('announcement-deleted', {
+        getIO().to(ROOM.user(userId)).emit('announcement-deleted', {
           announcementId: announcement._id
         });
       });
@@ -666,7 +603,7 @@ export const addComment = asyncHandler(async (req, res, next) => {
   await announcement.populate('comments.author', 'name email avatar role');
 
   // Emit real-time update
-  getIO().emit('announcement-comment-added', {
+  await emitAnnouncementEvent(announcement, 'announcement-comment-added', {
     announcementId: announcement._id,
     comment: announcement.comments[announcement.comments.length - 1]
   });
@@ -709,7 +646,7 @@ export const deleteComment = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  getIO().emit('announcement-comment-deleted', {
+  await emitAnnouncementEvent(announcement, 'announcement-comment-deleted', {
     announcementId: announcement._id,
     commentId
   });
@@ -758,7 +695,7 @@ export const addReaction = asyncHandler(async (req, res, next) => {
   await announcement.populate('reactions.users', 'name avatar');
 
   // Emit real-time update
-  getIO().emit('announcement-reaction-added', {
+  await emitAnnouncementEvent(announcement, 'announcement-reaction-added', {
     announcementId: announcement._id,
     reaction
   });
@@ -803,7 +740,7 @@ export const removeReaction = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  getIO().emit('announcement-reaction-removed', {
+  await emitAnnouncementEvent(announcement, 'announcement-reaction-removed', {
     announcementId: announcement._id,
     emoji
   });
@@ -852,7 +789,7 @@ export const togglePin = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  getIO().emit('announcement-pin-toggled', {
+  await emitAnnouncementEvent(announcement, 'announcement-pin-toggled', {
     announcementId: announcement._id,
     isPinned: announcement.isPinned
   });
@@ -900,7 +837,7 @@ export const toggleArchive = asyncHandler(async (req, res, next) => {
   }
 
   // Emit real-time update
-  getIO().emit('announcement-archived', {
+  await emitAnnouncementEvent(announcement, 'announcement-archived', {
     announcementId: announcement._id,
     isArchived: announcement.isArchived
   });
@@ -952,7 +889,7 @@ export const extendExpiry = asyncHandler(async (req, res, next) => {
   }
 
   // Emit real-time update
-  getIO().emit('announcement-expiry-extended', {
+  await emitAnnouncementEvent(announcement, 'announcement-expiry-extended', {
     announcementId: announcement._id,
     newExpiresAt: announcement.expiresAt
   });
@@ -1057,7 +994,7 @@ export const uploadAttachments = asyncHandler(async (req, res, next) => {
   }
 
   // Emit real-time update
-  getIO().emit('announcement-attachments-added', {
+  await emitAnnouncementEvent(announcement, 'announcement-attachments-added', {
     announcementId: announcement._id,
     newAttachments: uploadResults.successful
   });
@@ -1128,7 +1065,7 @@ export const deleteAttachment = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  getIO().emit('announcement-attachment-deleted', {
+  await emitAnnouncementEvent(announcement, 'announcement-attachment-deleted', {
     announcementId: announcement._id,
     attachmentId,
     permanent: permanent === 'true'
@@ -1175,7 +1112,7 @@ export const restoreAttachment = asyncHandler(async (req, res, next) => {
   await announcement.save();
 
   // Emit real-time update
-  getIO().emit('announcement-attachment-restored', {
+  await emitAnnouncementEvent(announcement, 'announcement-attachment-restored', {
     announcementId: announcement._id,
     attachmentId
   });

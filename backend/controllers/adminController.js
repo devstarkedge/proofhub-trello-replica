@@ -1,15 +1,10 @@
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
+import { requestEmailChange } from '../services/emailChangeService.js';
 /**
- * @desc    Update admin settings (email/password and .env)
+ * @desc    Update the signed-in admin's account settings
  * @route   PUT /api/admin/settings
  * @access  Private/Admin
  */
@@ -41,12 +36,7 @@ export const updateAdminSettings = asyncHandler(async (req, res, next) => {
 
   // Update email if provided
   if (newEmail && newEmail !== admin.email) {
-    // Check if new email is already taken
-    const emailExists = await User.findOne({ email: newEmail });
-    if (emailExists) {
-      return next(new ErrorResponse('Email already in use', 400));
-    }
-    admin.email = newEmail;
+    await requestEmailChange(req.user.id, newEmail);
   }
 
   // Update password if provided
@@ -57,42 +47,9 @@ export const updateAdminSettings = asyncHandler(async (req, res, next) => {
 
   await admin.save();
 
-  // Update .env file
-  const envPath = path.join(__dirname, '..', '.env');
-  let envContent = '';
-
-  try {
-    if (fs.existsSync(envPath)) {
-      envContent = fs.readFileSync(envPath, 'utf8');
-    }
-
-    // Update ADMIN_EMAIL if email changed
-    if (newEmail) {
-      if (envContent.includes('ADMIN_EMAIL=')) {
-        envContent = envContent.replace(/ADMIN_EMAIL=.*/, `ADMIN_EMAIL=${newEmail}`);
-      } else {
-        envContent += `\nADMIN_EMAIL=${newEmail}`;
-      }
-    }
-
-    // Update ADMIN_PASSWORD if password changed
-    if (newPassword) {
-      if (envContent.includes('ADMIN_PASSWORD=')) {
-        envContent = envContent.replace(/ADMIN_PASSWORD=.*/, `ADMIN_PASSWORD=${newPassword}`);
-      } else {
-        envContent += `\nADMIN_PASSWORD=${newPassword}`;
-      }
-    }
-
-    fs.writeFileSync(envPath, envContent.trim());
-  } catch (error) {
-    console.error('Error updating .env file:', error);
-    // Don't fail the request if .env update fails
-  }
-
   res.status(200).json({
     success: true,
-    message: 'Admin settings updated successfully',
+    message: newEmail && newEmail !== admin.email ? 'Check your new email address to confirm the change.' : 'Account settings updated successfully',
     data: {
       email: admin.email,
       forcePasswordChange: admin.forcePasswordChange
@@ -106,23 +63,12 @@ export const updateAdminSettings = asyncHandler(async (req, res, next) => {
  * @access  Private/Admin
  */
 export const getSystemStats = asyncHandler(async (req, res, next) => {
-  const totalUsers = await User.countDocuments();
-  const verifiedUsers = await User.countDocuments({ isVerified: true });
-  const activeUsers = await User.countDocuments({ isActive: true });
-
-  const usersByRole = await User.aggregate([
-    { $group: { _id: '$role', count: { $sum: 1 } } }
-  ]);
-
-  res.status(200).json({
-    success: true,
-    data: {
-      totalUsers,
-      verifiedUsers,
-      activeUsers,
-      usersByRole
-    }
-  });
+  const memberships = await WorkspaceMembership.find({ workspace: req.workspaceId, status: 'active' }).select('user role').lean();
+  const ids = memberships.map(m => m.user);
+  const [verifiedUsers, activeUsers] = await Promise.all([User.countDocuments({ _id: { $in: ids }, isVerified: true }), User.countDocuments({ _id: { $in: ids }, isActive: true })]);
+  const counts = new Map();
+  memberships.forEach(m => counts.set(m.role, (counts.get(m.role) || 0) + 1));
+  res.json({ success: true, data: { totalUsers: ids.length, verifiedUsers, activeUsers, usersByRole: [...counts].map(([_id, count]) => ({ _id, count })) } });
 });
 
 /**

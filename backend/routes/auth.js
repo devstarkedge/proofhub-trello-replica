@@ -1,3 +1,4 @@
+import { confirmAccountEmailChange } from '../controllers/authController.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { register, login, getMe, updateDetails, updatePassword, refreshToken, checkEmail, forgotPassword, verifyResetToken, resetPassword, registerAndCreateWorkspace } from '../controllers/authController.js';
@@ -32,7 +33,7 @@ router.post('/login', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 10, m
 ], login);
 
 // Email uniqueness check (public)
-router.post('/check-email', [
+router.post('/check-email', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 10 }), [
   body('email').isEmail().withMessage('Valid email is required'),
   validate
 ], checkEmail);
@@ -55,6 +56,7 @@ router.post('/reset-password/:token', rateLimiter({ windowMs: 15 * 60 * 1000, ma
 // /admin-create-user was retired — see authController.js's note near where
 // adminCreateUser used to be defined.
 
+router.post('/confirm-email-change', protect, rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 10 }), confirmAccountEmailChange);
 router.get('/me', protect, getMe);
 router.put('/updatedetails', protect, updateDetails);
 router.put('/updatepassword', protect, updatePassword);

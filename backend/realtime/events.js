@@ -1,3 +1,4 @@
+import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 /**
  * Socket.IO Event Constants
  * 
@@ -152,29 +153,25 @@ export const ANNOUNCEMENT_REACTION_REMOVED = 'announcement-reaction-removed';
 export const ANNOUNCEMENT_PIN_TOGGLED = 'announcement-pin-toggled';
 
 // ─── Room Prefixes ──────────────────────────────────────────────────────────
+
+function room(workspaceId, kind, resourceId) {
+  const workspace = workspaceId || getActiveWorkspaceId();
+  if (!workspace) throw new Error('Workspace is required for socket rooms');
+  return 'ws:' + workspace + ':' + kind + (resourceId == null ? '' : ':' + resourceId);
+}
 export const ROOM = {
-  user: (id) => `user-${id}`,
-  board: (id) => `board-${id}`,
-  card: (id) => `card-${id}`,
-  team: (id) => `team-${id}`,
-  department: (id) => `department-${id}`,
-  announcement: (id) => `announcement-${id}`,
-  userShortcuts: (id) => `user-shortcuts-${id}`,
-  admin: 'admin',
-  managers: 'managers',
-  announcements: 'announcements',
-  // Namespaced by workspace: unlike ROOM.admin/managers (unreachable today
-  // regardless — the JWT carries no role claim, a pre-existing bug out of
-  // scope for this migration), join-finance/join-sales had NO membership
-  // check at all and were joinable by any authenticated socket — now that
-  // Finance/Sales data itself carries workspaceId, these must not leak
-  // across workspaces either.
-  finance: (workspaceId) => `finance-${workspaceId}`,
-  sales: (workspaceId) => `sales-${workspaceId}`,
-  // Joined only by sockets the server itself verified as isSuperAdmin (see
-  // socketManager.js's handshake) — never inferred from a client-sent flag
-  // or a JWT claim, matching the same lesson ROOM.admin/managers's own dead
-  // code (a few lines above) teaches: the JWT carries no role claim, so
-  // trusting one at connection time silently never fires.
-  platformAdmin: 'platform-admin',
+  workspace: workspaceId => room(workspaceId, 'events'),
+  user: (id, workspaceId) => room(workspaceId, 'user', id),
+  board: (id, workspaceId) => room(workspaceId, 'project', id),
+  card: (id, workspaceId) => room(workspaceId, 'task', id),
+  team: (id, workspaceId) => room(workspaceId, 'team', id),
+  department: (id, workspaceId) => room(workspaceId, 'department', id),
+  announcement: (id, workspaceId) => room(workspaceId, 'announcement', id),
+  userShortcuts: (id, workspaceId) => room(workspaceId, 'shortcuts', id),
+  admin: workspaceId => room(workspaceId, 'access-admin'),
+  managers: workspaceId => room(workspaceId, 'managers'),
+  announcements: workspaceId => room(workspaceId, 'announcements'),
+  finance: workspaceId => room(workspaceId, 'finance'),
+  sales: workspaceId => room(workspaceId, 'sales'),
+  platformAdmin: 'platform-admin'
 };

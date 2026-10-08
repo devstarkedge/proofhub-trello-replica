@@ -28,7 +28,7 @@ export const rateLimiter = (options = {}) => {
         rateLimitStore.delete(key);
       }
     }
-  }, 60 * 1000); // Clean up every minute
+  }, 60 * 1000).unref(); // Cleanup must not keep a standalone test/CLI alive.
 
   return (req, res, next) => {
     const key = keyFn(req);

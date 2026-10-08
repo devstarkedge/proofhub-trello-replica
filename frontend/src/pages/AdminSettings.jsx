@@ -79,8 +79,8 @@ const AdminSettings = () => {
       setMessage(res.data.message);
       
       // Update user context if email changed
-      if (newEmail && user.email !== newEmail) {
-        setUser((prev) => ({ ...prev, email: newEmail }));
+      if (res.data.data?.email) {
+        setUser((prev) => ({ ...prev, email: res.data.data.email }));
       }
       
       setFormData({

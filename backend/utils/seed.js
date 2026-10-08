@@ -121,8 +121,13 @@ const seedAdmin = async () => {
 
     if (!adminExists) {
       const email = process.env.ADMIN_EMAIL || "dev@starkedge.com";
-      const password = process.env.ADMIN_PASSWORD || "Admin@1234";
+      const password = process.env.ADMIN_PASSWORD;
       const name = "Admin User";
+      if (!password) {
+        console.warn('ADMIN_PASSWORD is unset; skipping account seed.');
+        await seedRoles();
+        return;
+      }
 
       if (
         password.length < 8 ||
@@ -150,7 +155,7 @@ const seedAdmin = async () => {
       await adminUser.save();
       console.log("Default admin user created successfully.");
       console.log(`Email: ${email}`);
-      console.log(`Password: ${password}`);
+
       console.log(
         "IMPORTANT: Please change this default password immediately after your first login."
       );

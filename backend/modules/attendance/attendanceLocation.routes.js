@@ -7,11 +7,10 @@ import * as controller from './attendanceLocation.controller.js';
 
 const router = express.Router();
 router.use(protect);
-router.use(requireResourcePermission('attendance', 'manage_locations'));
+const gate = requireResourcePermission('attendance', 'manage_locations');
 
-router.get('/locations', controller.listLocations);
-router.post(
-  '/locations',
+router.get('/locations', gate, controller.listLocations);
+router.post('/locations', gate,
   [
     body('name').trim().notEmpty(),
     body('latitude').isFloat({ min: -90, max: 90 }),
@@ -21,9 +20,9 @@ router.post(
   ],
   controller.createLocation
 );
-router.patch('/locations/:locationId', controller.updateLocation);
-router.post('/locations/:locationId/deactivate', controller.deactivateLocation);
-router.post('/locations/:locationId/activate', controller.activateLocation);
-router.post('/locations/:locationId/delete', controller.deleteLocation);
+router.patch('/locations/:locationId', gate, controller.updateLocation);
+router.post('/locations/:locationId/deactivate', gate, controller.deactivateLocation);
+router.post('/locations/:locationId/activate', gate, controller.activateLocation);
+router.post('/locations/:locationId/delete', gate, controller.deleteLocation);
 
 export default router;

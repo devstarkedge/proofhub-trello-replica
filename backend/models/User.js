@@ -146,6 +146,8 @@ const userSchema = new mongoose.Schema({
     type: String,
     select: false
   },
+  tokenVersion: { type: Number, default: 0 },
+  pendingEmailChange: { type: new mongoose.Schema({ email: String, tokenHash: String, expiresAt: Date }, { _id: false }), select: false },
   resetPasswordExpires: {
     type: Date,
     select: false

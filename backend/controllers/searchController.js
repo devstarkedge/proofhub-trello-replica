@@ -1,3 +1,5 @@
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
+import { literalSearch } from '../utils/literalSearch.js';
 import Card from "../models/Card.js";
 import Board from "../models/Board.js";
 import User from "../models/User.js";
@@ -17,7 +19,10 @@ export const globalSearch = asyncHandler(async (req, res, next) => {
     });
   }
 
-  const searchRegex = new RegExp(q, "i");
+  const searchRegex = literalSearch(q);
+  const membershipFilter = { workspace: req.workspaceId, status: 'active' };
+  if (req.query.departmentId && req.query.departmentId !== 'all') membershipFilter.department = req.query.departmentId;
+  const memberIds = await WorkspaceMembership.distinct('user', membershipFilter);
   let results = {};
 
   // Search cards
@@ -56,12 +61,11 @@ export const globalSearch = asyncHandler(async (req, res, next) => {
   // Search users
   if (!type || type === "users") {
     const users = await User.find({
+      _id: { $in: memberIds },
       $or: [{ name: searchRegex }, { email: searchRegex }],
       isActive: true,
     })
-      .select("name email avatar role department team")
-      .populate("department", "name")
-      .populate("team", "name")
+      .select("name email avatar")
       .limit(20);
 
     results.users = users;
@@ -93,7 +97,10 @@ export const searchCards = asyncHandler(async (req, res, next) => {
 
   // Text search
   if (q) {
-    const searchRegex = new RegExp(q, "i");
+    const searchRegex = literalSearch(q);
+  const membershipFilter = { workspace: req.workspaceId, status: 'active' };
+  if (req.query.departmentId && req.query.departmentId !== 'all') membershipFilter.department = req.query.departmentId;
+  const memberIds = await WorkspaceMembership.distinct('user', membershipFilter);
     query.$or = [{ title: searchRegex }, { description: searchRegex }];
   }
 
@@ -136,7 +143,10 @@ export const getSuggestions = asyncHandler(async (req, res, next) => {
   }
 
   const query = q.trim();
-  const searchRegex = new RegExp(query, "i");
+  const searchRegex = literalSearch(query);
+  const membershipFilter = { workspace: req.workspaceId, status: 'active' };
+  if (req.query.departmentId && req.query.departmentId !== 'all') membershipFilter.department = req.query.departmentId;
+  const memberIds = await WorkspaceMembership.distinct('user', membershipFilter);
   const limit = 8;
 
   let suggestions = [];
@@ -190,10 +200,7 @@ export const getSuggestions = asyncHandler(async (req, res, next) => {
     }
 
     case "assignee": {
-      let userFilter = { isActive: true, name: searchRegex };
-      if (departmentId && departmentId !== "all") {
-        userFilter.department = departmentId;
-      }
+      let userFilter = { _id: { $in: memberIds }, isActive: true, name: searchRegex };
 
       const users = await User.find(userFilter)
         .select("name email avatar")
@@ -257,11 +264,9 @@ export const getSuggestions = asyncHandler(async (req, res, next) => {
           .limit(3)
           .lean(),
         User.find({
+      _id: { $in: memberIds },
           isActive: true,
           name: searchRegex,
-          ...(departmentId && departmentId !== "all"
-            ? { department: departmentId }
-            : {}),
         })
           .select("name avatar")
           .limit(3)

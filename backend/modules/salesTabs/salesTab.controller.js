@@ -1,3 +1,4 @@
+import { workspaceAdmins } from '../../services/workspaceAudience.js';
 /**
  * SalesTab Controller
  *
@@ -27,7 +28,7 @@ import {
  */
 async function notifyAdminsOfPendingTab(tab, senderId) {
   try {
-    const admins = await User.find({ role: 'admin' }).select('_id').lean();
+    const admins = await workspaceAdmins(tab.workspaceId);
     await Promise.all(
       admins.map(async (admin) => {
         // Dedup: skip if an unread approval notification already exists for this tab

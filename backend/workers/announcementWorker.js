@@ -1,3 +1,6 @@
+import { announcementAudience } from '../services/workspaceAudience.js';
+import { emitToUser } from '../realtime/emitters.js';
+import { emitAnnouncementEvent } from '../services/announcementEvents.js';
 /**
  * Announcement Worker (Event-Driven)
  *
@@ -76,7 +79,7 @@ const JOB_HANDLERS = {
 
       await announcement.save();
 
-      getIO().emit('announcement-archived', {
+      await emitAnnouncementEvent(announcement, 'announcement-archived', {
         announcementId: announcement._id,
         isArchived: true,
         reason: 'expired',
@@ -89,28 +92,7 @@ const JOB_HANDLERS = {
 };
 
 async function broadcastAnnouncement(announcement, announcementId) {
-    let subscriberIds = [];
-
-    if (announcement.subscribers.type === 'all') {
-      const users = await User.find({ isActive: true, isVerified: true }).select('_id');
-      subscriberIds = users.map((u) => u._id);
-    } else if (announcement.subscribers.type === 'departments') {
-      const users = await User.find({
-        department: { $in: announcement.subscribers.departments },
-        isActive: true,
-        isVerified: true,
-      }).select('_id');
-      subscriberIds = users.map((u) => u._id);
-    } else if (announcement.subscribers.type === 'users') {
-      subscriberIds = announcement.subscribers.users.map((u) => u._id || u);
-    } else if (announcement.subscribers.type === 'managers') {
-      const users = await User.find({
-        role: 'manager',
-        isActive: true,
-        isVerified: true,
-      }).select('_id');
-      subscriberIds = users.map((u) => u._id);
-    }
+    const subscriberIds = await announcementAudience(announcement.subscribers, announcement.workspaceId);
 
     // Create notifications — routed through notificationService (not a
     // direct insertMany) so each recipient's settings.notifications.announcements
@@ -136,7 +118,7 @@ async function broadcastAnnouncement(announcement, announcementId) {
     // Emit real-time
     const io = getIO();
     subscriberIds.forEach((userId) => {
-      io.to(`user-${userId}`).emit('announcement-created', {
+      emitToUser(userId, 'announcement-created', {
         announcement: announcement.toJSON(),
         notification: {
           type: 'announcement_created',

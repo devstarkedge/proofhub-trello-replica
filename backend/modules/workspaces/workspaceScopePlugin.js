@@ -64,7 +64,20 @@ export default function workspaceScopePlugin(schema, { allowGlobal = false } = {
   );
 
   function injectQueryFilter() {
+    const update = this.getUpdate?.();
+    if (update) {
+      if (Array.isArray(update)) throw new Error('Pipeline updates on tenant data are not supported');
+      for (const [operator, value] of Object.entries(update)) {
+        if (operator === '$setOnInsert') continue;
+        if (operator === 'workspaceId' || (value && typeof value === 'object' && Object.entries(value).some(([key, target]) => key === 'workspaceId' || key.startsWith('workspaceId.') || (operator === '$rename' && (target === 'workspaceId' || String(target).startsWith('workspaceId.')))))) {
+          throw new Error('workspaceId is immutable');
+        }
+      }
+    }
     const ctx = getActiveContext();
+    if (!ctx?.bypass && ctx?.workspaceId && update?.$setOnInsert?.workspaceId != null && String(update.$setOnInsert.workspaceId) !== String(ctx.workspaceId)) {
+      throw new Error('Cannot insert data into another workspace');
+    }
     if (ctx?.bypass) {
       // An upsert that CREATES a new document is a write, not a read — and
       // upserts skip Mongoose document validators by default (even with
@@ -125,6 +138,10 @@ export default function workspaceScopePlugin(schema, { allowGlobal = false } = {
   // the read-side hooks above, `ctx.bypass` does NOT exempt a write from
   // needing a real workspaceId — see the plugin-level doc comment.
   schema.pre('validate', function (next) {
+    const active = getActiveContext();
+    if (!active?.bypass && active?.workspaceId && this.workspaceId != null && String(this.workspaceId) !== String(active.workspaceId)) {
+      return next(new Error('Cannot save data in another workspace'));
+    }
     if (this.isNew && this.workspaceId == null) {
       const ctx = getActiveContext();
       const isGlobalTemplate = allowGlobal && this.isSystem === true;
@@ -149,6 +166,9 @@ export default function workspaceScopePlugin(schema, { allowGlobal = false } = {
     if (!Array.isArray(docs)) return next();
 
     for (const doc of docs) {
+      if (!ctx?.bypass && ctx?.workspaceId && doc.workspaceId != null && String(doc.workspaceId) !== String(ctx.workspaceId)) {
+        return next(new Error('Cannot insert data into another workspace'));
+      }
       if (doc.workspaceId == null) {
         const isGlobalTemplate = allowGlobal && doc.isSystem === true;
         if (ctx?.workspaceId) {

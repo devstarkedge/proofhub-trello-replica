@@ -1,3 +1,4 @@
+import { strictUpdate, SUBTASK_UPDATE_FIELDS } from '../utils/strictUpdate.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import mongoose from 'mongoose';
@@ -184,6 +185,7 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
 });
 
 export const updateSubtask = asyncHandler(async (req, res, next) => {
+  req.body = strictUpdate(req.body, SUBTASK_UPDATE_FIELDS);
   let subtask = await Subtask.findById(req.params.id).populate('task').populate('board');
   if (!subtask) {
     return next(new ErrorResponse('Subtask not found', 404));

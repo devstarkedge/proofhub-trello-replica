@@ -6,6 +6,9 @@ import { emitNotification } from '../realtime/index.js';
 import { sendEmail } from './email.js';
 import { getUserPushSubscriptions, sendPushNotification } from './pushNotification.js';
 import { userCanAccessEntity } from './entityAccess.js';
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
+import Workspace from '../models/Workspace.js';
+import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 
 class NotificationService {
   constructor() {
@@ -50,9 +53,20 @@ class NotificationService {
         taskId
       } = notificationData;
 
+      const workspaceId = notificationData.workspaceId || getActiveWorkspaceId();
+      if (!workspaceId) return null;
+      const membership = await WorkspaceMembership.findOne({ workspace: workspaceId, user, status: 'active', kind: { $ne: 'guest' } }).lean();
+      if (!membership || !await Workspace.exists({ _id: workspaceId, isActive: true })) return null;
+
       // Check user settings before creating notification
-      const userDoc = await User.findById(user).select('settings role department team pushSubscription pushSubscriptions email name');
+      const userDoc = await User.findById(user).select('settings isActive role department team pushSubscription pushSubscriptions email name');
       if (!userDoc) return null;
+      if (userDoc.isActive === false) return null;
+      // Notification templates may use role/department. Resolve them from
+      // this membership, never the identity's legacy authorization mirror.
+      userDoc.role = membership.role;
+      userDoc.department = membership.department || [];
+      userDoc.team = membership.team;
 
       // Check if user has enabled this notification type
       if (!this.shouldSendNotification(userDoc.settings, type)) {
@@ -64,6 +78,7 @@ class NotificationService {
 
       // Create the notification
       const notification = await Notification.create({
+        workspaceId,
         type,
         title,
         message,

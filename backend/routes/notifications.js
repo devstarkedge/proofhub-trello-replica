@@ -1,3 +1,4 @@
+import { rateLimiter } from '../middleware/rateLimiter.js';
 import express from 'express';
 import { 
   getNotifications, 
@@ -19,7 +20,7 @@ import { protect } from '../middleware/authMiddleware.js';
 const router = express.Router();
 
 // Public route for subscription - No protect middleware
-router.post('/subscribe', subscribeToFeature);
+router.post('/subscribe', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 5 }), subscribeToFeature);
 
 // Get notifications with pagination & filters
 router.get('/', protect, getNotifications);
@@ -49,10 +50,11 @@ router.put('/bulk-archive', protect, bulkArchive);
 router.put('/clear-all', protect, clearAll);
 
 // Delete notification permanently
+router.delete('/bulk-delete', protect, bulkDelete);
 router.delete('/:id', protect, deleteNotification);
 
 // Bulk delete
-router.delete('/bulk-delete', protect, bulkDelete);
+
 
 // Send test notification
 router.post('/test', protect, sendTestNotification);

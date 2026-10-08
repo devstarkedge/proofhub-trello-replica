@@ -116,7 +116,6 @@ router.post('/columns', requireSalesPermission('canManageDropdowns'), createCust
 // Update custom column (requires canManageDropdowns)
 router.put('/columns/:id', requireSalesPermission('canManageDropdowns'), updateCustomColumn);
 // Update custom column (requires canManageDropdowns)
-router.put('/columns/:id', requireSalesPermission('canManageDropdowns'), updateCustomColumn);
 // Delete custom column (requires canManageDropdowns)
 router.delete('/columns/:id', requireSalesPermission('canManageDropdowns'), deleteCustomColumn);
 

@@ -15,6 +15,7 @@ import { WORKSPACE_TYPES, INDUSTRY_OPTIONS, COMPANY_SIZE_OPTIONS } from '../util
  * the first real tenant, not a placeholder.
  */
 const workspaceSchema = new mongoose.Schema({
+  authzVersion: { type: Number, default: 1 },
   name: { type: String, required: true },
   slug: { type: String, required: true, unique: true },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -51,6 +52,10 @@ const workspaceSchema = new mongoose.Schema({
   // behavior explicit `?? false` would give.
   attendanceModuleEnabled: { type: Boolean, default: false },
   settings: {
+    access: {
+      defaultProjectVisibility: { type: String, enum: ['private', 'department', 'workspace'], default: 'department' },
+      guestsEnabled: { type: Boolean, default: false }
+    },
     restrictDomain: { type: String }, // e.g. "@acme.com" only
     // Per-workspace ChatApp connection — replaces the old process-global
     // config.chat.* mutation in chatIntegrationController.js, where any

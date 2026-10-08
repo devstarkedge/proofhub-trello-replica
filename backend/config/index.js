@@ -140,7 +140,7 @@ const config = {
   // Admin Seed
   admin: {
     email: process.env.ADMIN_EMAIL || 'dev@starkedge.com',
-    password: process.env.ADMIN_PASSWORD || 'Admin@1234',
+    password: process.env.ADMIN_PASSWORD || '',
   },
 
   // Sales / Enterprise inquiry recipient — "configured, not hardcoded" per

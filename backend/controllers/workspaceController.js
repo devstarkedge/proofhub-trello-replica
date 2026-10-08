@@ -1,3 +1,4 @@
+import { updateMemberAccess } from '../authz/accessAdminService.js';
 import mongoose from 'mongoose';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
@@ -594,9 +595,8 @@ export const updateWorkspaceMemberRole = asyncHandler(async (req, res, next) => 
     await assertCustomRoleAssignable(req.params.id, roleDoc);
   }
 
+  await workspaceContext.run({ workspaceId: req.params.id }, () => updateMemberAccess({ workspaceId: req.params.id, userId: req.params.userId, actor: { ...req.user, role: callerMembership.role }, patch: { role: roleDoc.slug, roleId: roleDoc._id } }));
   target.role = roleDoc.slug;
-  target.roleId = roleDoc._id;
-  await target.save();
 
   invalidateAuthCache(req.params.userId);
 
@@ -648,8 +648,7 @@ export const removeWorkspaceMember = asyncHandler(async (req, res, next) => {
   // later re-invite/re-add restores it instead of colliding with the
   // unique {workspace,user} index. The user's global account and their
   // membership in every other workspace are completely untouched.
-  target.status = 'removed';
-  await target.save();
+  await workspaceContext.run({ workspaceId: req.params.id }, () => updateMemberAccess({ workspaceId: req.params.id, userId: req.params.userId, actor: { ...req.user, role: callerMembership.role }, patch: { status: 'removed' }, reason: 'Member removed from workspace' }));
   invalidateAuthCache(req.params.userId);
   entitlementService.clearLimitNotificationIfUnderLimit(req.params.id).catch(() => {});
 

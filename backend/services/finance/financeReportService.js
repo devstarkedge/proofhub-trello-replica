@@ -1,3 +1,5 @@
+import { workspacePeople } from '../workspaceAudience.js';
+import { hasResourceAction } from '../../modules/permissions/permissionEngine.js';
 import Board from '../../models/Board.js';
 import Card from '../../models/Card.js';
 import Subtask from '../../models/Subtask.js';
@@ -219,15 +221,9 @@ const buildUserNameMap = async (items = [], milestoneApprovals = []) => {
 };
 
 export const getFinancePermittedUserIds = async () => {
-  const [permissions, admins] = await Promise.all([
-    UserPermission.find({ pageKey: FINANCE_PAGE_KEY, hasAccess: true }).select('user').lean(),
-    User.find({ role: /^admin$/i, isActive: { $ne: false } }).select('_id').lean()
-  ]);
-
-  return new Set([
-    ...permissions.map((permission) => permission.user?.toString()).filter(Boolean),
-    ...admins.map((admin) => admin._id?.toString()).filter(Boolean)
-  ]);
+  const users = await workspacePeople();
+  const permitted = await Promise.all(users.map(async user => await hasResourceAction(user, 'finance', 'view') ? String(user._id) : null));
+  return new Set(permitted.filter(Boolean));
 };
 
 const buildProjectMatch = (filters, includeBillingType = true) => {

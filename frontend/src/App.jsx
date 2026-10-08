@@ -19,6 +19,7 @@ import WorkFlow from "./pages/WorkFlow";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import ConfirmEmailChange from './pages/ConfirmEmailChange';
 import VerifyPending from "./pages/VerifyPending";
 import TeamManagement from "./pages/TeamManagement";
 import Search from "./pages/Search";
@@ -103,6 +104,7 @@ function App() {
           <NotificationProvider>
             <ClientInfoProvider>
               <Routes>
+        <Route path="/confirm-email-change" element={<ConfirmEmailChange />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/create-workspace" element={<CreateWorkspacePublicPage />} />
               <Route path="/contact-sales" element={<ContactSalesPage />} />

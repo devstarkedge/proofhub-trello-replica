@@ -55,6 +55,7 @@ const attachmentSchema = new mongoose.Schema({
 
 const cardSchema = new mongoose.Schema({
   workspaceId: {
+    immutable: true,
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Workspace',
     required: true
@@ -172,6 +173,7 @@ const cardSchema = new mongoose.Schema({
     default: null
   },
   createdBy: {
+    immutable: true,
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true

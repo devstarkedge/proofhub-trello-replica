@@ -9,12 +9,11 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 const router = express.Router();
 router.use(protect);
-router.use(requireResourcePermission('attendance', 'manage_office_hours'));
+const gate = requireResourcePermission('attendance', 'manage_office_hours');
 
-router.get('/office-hours-overrides', controller.list);
-router.get('/office-hours-overrides/history', controller.history);
-router.post(
-  '/office-hours-overrides',
+router.get('/office-hours-overrides', gate, controller.list);
+router.get('/office-hours-overrides/history', gate, controller.history);
+router.post('/office-hours-overrides', gate,
   [
     body('scopeType').isIn(['ROLE', 'DEPARTMENT', 'USER']),
     body('scopeId').notEmpty(),
@@ -29,7 +28,7 @@ router.post(
   ],
   controller.create
 );
-router.patch('/office-hours-overrides/:overrideId', controller.update);
-router.post('/office-hours-overrides/:overrideId/deactivate', controller.deactivate);
+router.patch('/office-hours-overrides/:overrideId', gate, controller.update);
+router.post('/office-hours-overrides/:overrideId/deactivate', gate, controller.deactivate);
 
 export default router;

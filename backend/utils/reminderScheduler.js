@@ -1,3 +1,4 @@
+import { workspaceAdmins } from '../services/workspaceAudience.js';
 import Reminder from '../models/Reminder.js';
 import Board from '../models/Board.js';
 import User from '../models/User.js';
@@ -238,7 +239,7 @@ export const checkAndTagAwaitingResponse = async (reminder) => {
       await reminder.save();
 
       // Notify all admins
-      const admins = await User.find({ role: 'admin', isActive: true }).select('_id email name');
+      const admins = await workspaceAdmins(reminder.workspaceId);
       
       for (const admin of admins) {
         const notification = await Notification.create({

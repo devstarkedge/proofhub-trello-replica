@@ -1,3 +1,4 @@
+import { workspacePeople } from '../services/workspaceAudience.js';
 import mongoose from 'mongoose';
 import Board from '../models/Board.js';
 import Card from '../models/Card.js';
@@ -1189,15 +1190,7 @@ export const getFilterOptions = asyncHandler(async (req, res, next) => {
     .lean();
 
   // Get users from accessible departments
-  const users = await User.find({
-    $or: [
-      { department: { $in: accessibleDeptIds } },
-      { role: 'admin' }
-    ],
-    isActive: true
-  })
-    .select('name email avatar department role')
-    .lean();
+  const users = await workspacePeople({ $or: [{ department: { $in: accessibleDeptIds } }, { role: 'admin' }] });
 
   // Get projects from accessible departments
   const projects = await Board.find({
@@ -1334,13 +1327,7 @@ export const getSummaryStats = asyncHandler(async (req, res, next) => {
   });
 
   // Get total users
-  const totalUsers = await User.countDocuments({
-    $or: [
-      { department: { $in: accessibleDeptIds } },
-      { role: 'admin' }
-    ],
-    isActive: true
-  });
+  const totalUsers = (await workspacePeople({ $or: [{ department: { $in: accessibleDeptIds } }, { role: 'admin' }] })).length;
 
   // Get total billed time this period
   const boards = await Board.find({ department: { $in: accessibleDeptIds } });

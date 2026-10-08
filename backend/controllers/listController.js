@@ -4,6 +4,7 @@ import Board from '../models/Board.js';
 import Activity from '../models/Activity.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import { strictUpdate, LIST_UPDATE_FIELDS } from '../utils/strictUpdate.js';
 
 // @desc    Get lists for board
 // @route   GET /api/lists/board/:boardId
@@ -66,7 +67,7 @@ export const createList = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/lists/:id
 // @access  Private
 export const updateList = asyncHandler(async (req, res, next) => {
-  const list = await List.findByIdAndUpdate(req.params.id, req.body, {
+  const list = await List.findByIdAndUpdate(req.params.id, strictUpdate(req.body, LIST_UPDATE_FIELDS), {
     new: true,
     runValidators: true
   });

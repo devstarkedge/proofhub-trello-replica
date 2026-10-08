@@ -15,13 +15,14 @@ export {
   emitToUser,
   emitToTeam,
   emitToBoard,
-  emitToAll,
+  emitToWorkspace,
   emitToUserShortcuts,
   emitToDepartment,
   getIO as io, // legacy compat: import { io } from '../server.js' → getIO()
 } from './realtime/index.js';
 
 import authRoutes from './routes/auth.js';
+import authzRoutes from './authz/routes.js';
 import boardsRoutes from './routes/boards.js';
 import listsRoutes from './routes/lists.js';
 import cardsRoutes from './routes/cards.js';
@@ -158,29 +159,14 @@ app.use(compression());
 
 
 // ─── Health Check ────────────────────────────────────────────────────────────
-app.get('/api/health', async (req, res) => {
-  const healthcheck = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    services: {
-      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      chatWebhook: config.chat.enabled ? 'enabled' : 'disabled',
-    }
-  };
-  try {
-    await mongoose.connection.db.admin().ping();
-    healthcheck.services.database = 'connected';
-  } catch {
-    healthcheck.services.database = 'disconnected';
-    healthcheck.status = 'degraded';
-  }
-  const statusCode = healthcheck.status === 'ok' ? 200 : 503;
-  res.status(statusCode).json(healthcheck);
+app.get('/api/health', (req, res) => {
+  const healthy = mongoose.connection.readyState === 1;
+  res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded' });
 });
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/authz', authzRoutes);
 app.use('/api/boards', boardsRoutes);
 app.use('/api/lists', listsRoutes);
 app.use('/api/cards', cardsRoutes);

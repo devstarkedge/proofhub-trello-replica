@@ -74,6 +74,7 @@ export const clearAuthCache = () => {
 };
 
 export const protect = async (req, res, next) => {
+  if (req.user && req.workspaceId) return workspaceContext.run({ workspaceId: req.workspaceId }, next);
   try {
     let token;
 
@@ -255,7 +256,7 @@ export const authorize = (...roles) => {
     }
 
     // Normalize roles to lowercase for comparison
-    const normalizedUserRole = req.user.role.toLowerCase();
+    const normalizedUserRole = String(req.user.role || '').toLowerCase();
     const normalizedRoles = roles.map(role => role.toLowerCase());
 
     // Check if user's role is in the allowed roles list
@@ -281,7 +282,7 @@ export const authorize = (...roles) => {
           userRoleDoc = await Role.findResolvable(normalizedUserRole, req.user.workspaceId);
         }
         
-        if (userRoleDoc && userRoleDoc.permissions && userRoleDoc.permissions.canManageSystem) {
+        if (userRoleDoc?.isActive && userRoleDoc.permissions?.canManageSystem) {
           return next();
         }
       } catch (error) {
@@ -292,25 +293,6 @@ export const authorize = (...roles) => {
         success: false,
         message: `User role '${req.user.role}' is not authorized to access this route`
       });
-    }
-
-    // For custom roles not in the predefined list, 
-    // check if the role exists and is active
-    try {
-      let userRoleDoc;
-      const roleId = req.user.roleId?._id || req.user.roleId;
-      if (roleId) {
-        userRoleDoc = await Role.findById(roleId);
-      } else {
-        userRoleDoc = await Role.findResolvable(normalizedUserRole, req.user.workspaceId);
-      }
-      if (userRoleDoc) {
-        // Custom role exists and is active - allow access based on route requirements
-        // More granular permission checks should be done using checkPermission middleware
-        return next();
-      }
-    } catch (error) {
-      console.error('Error checking custom role:', error);
     }
 
     return res.status(403).json({

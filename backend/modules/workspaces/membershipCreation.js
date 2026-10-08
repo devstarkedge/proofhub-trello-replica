@@ -70,7 +70,7 @@ export async function createOrRestoreMembership({
 export async function notifyMembershipAdded(userId, workspaceId) {
   try {
     const { emitToUser } = await import('../../realtime/index.js');
-    emitToUser(userId.toString(), 'workspace-membership-added', { workspaceId: workspaceId.toString() });
+    emitToUser(userId.toString(), 'workspace-membership-added', { workspaceId: workspaceId.toString() }, workspaceId);
   } catch (err) {
     console.error('Failed to emit workspace-membership-added:', err);
   }

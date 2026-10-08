@@ -1,5 +1,5 @@
 import Department from '../../models/Department.js';
-import User from '../../models/User.js';
+import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { syncMembershipFromUser } from './membershipSyncService.js';
 
@@ -35,15 +35,13 @@ export async function createDepartmentCore({ name, description, managers, worksp
   );
 
   if (managers && managers.length > 0) {
-    await User.updateMany(
-      { _id: { $in: managers } },
+    await WorkspaceMembership.updateMany(
+      { workspace: workspaceId, status: 'active', user: { $in: managers } },
       { $addToSet: { department: department._id } },
       { session }
     );
-    // Best-effort bookkeeping on WorkspaceMembership (a model deliberately
-    // exempt from workspace-scoping — see workspaceScopePlugin.js), not
-    // correctness-critical to department creation itself, so it's
-    // deliberately outside the transaction session.
+    // Invalidate legacy caches after the membership write. Never edit a
+    // global User authorization mirror when creating a tenant department.
     await Promise.all(managers.map((managerId) => syncMembershipFromUser(managerId, workspaceId)));
   }
 

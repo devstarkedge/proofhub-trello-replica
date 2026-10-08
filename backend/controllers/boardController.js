@@ -16,7 +16,7 @@ import User from "../models/User.js";
 import { getAssignmentBasedBoardIds, userHasCapability, CAPABILITIES } from "../services/permissionService.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { emitNotification, emitToAll } from "../realtime/index.js";
+import { emitNotification, emitToBoard } from "../realtime/index.js";
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
@@ -961,9 +961,9 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   }
 
   // Emit socket event for real-time updates (e.g., reminders page needs to update client info)
-  emitToAll('board-updated', {
+  emitToBoard(board._id, 'board-updated', {
     boardId: board._id.toString(),
-    updates: req.body,
+    updates: { name: board.name, status: board.status, visibility: board.visibility },
     projectName: board.name
   });
 
