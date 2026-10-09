@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import LeaveDashboardRecords from '../../components/Leave/LeaveDashboardRecords';
 import { CalendarDays } from 'lucide-react';
 import AuthContext from '../../context/AuthContext';
 import LeaveBalanceSummaryCard from '../../components/Leave/LeaveBalanceSummaryCard';
@@ -8,18 +9,19 @@ import LeavePageHeader from '../../components/Leave/LeavePageHeader';
 import * as leaveApi from '../../services/leaveApi';
 import { isMyLeaveBlockedForRole } from '../../utils/leaveAccess';
 
-const StatTile = ({ label, value, color }) => (
-  <div className="rounded-xl border p-4 shadow-sm sm:p-5" style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}>
-    <div className="text-2xl font-bold" style={{ color: color || 'var(--color-text-primary)' }}>{value}</div>
-    <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>{label}</div>
-  </div>
-);
-
 /** Every dashboard viewer's own personal balance/requests, shown below their team or workspace section. */
 const EmployeeSection = () => {
   const [data, setData] = useState(null);
-  useEffect(() => { leaveApi.getEmployeeDashboard().then(({ data }) => setData(data)).catch(() => {}); }, []);
-  if (!data) return null;
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    const load = () => leaveApi.getEmployeeDashboard().then(({ data }) => { if (active) { setData(data); setError(''); } }).catch(() => { if (active) setError('Unable to refresh personal leave data.'); });
+    const events = ['socket-leave-balance-updated', 'socket-leave-calendar-updated', 'socket-leave-request-updated', 'socket-leave-request-created'];
+    load(); events.forEach((event) => window.addEventListener(event, load));
+    return () => { active = false; events.forEach((event) => window.removeEventListener(event, load)); };
+  }, []);
+  if (error) return <p role="alert">{error}</p>;
+  if (!data) return <p role="status">Loading personal leave…</p>;
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -45,86 +47,21 @@ const EmployeeSection = () => {
   );
 };
 
-/**
- * Department-scoped — every count/list here comes from
- * GET /dashboard/manager, which derives the department list server-side
- * from Department.managers (never a client-supplied id), so this section
- * can never show another department's data no matter who renders it.
- */
-const DepartmentSection = () => {
-  const [data, setData] = useState(null);
-  useEffect(() => { leaveApi.getManagerDashboard().then(({ data }) => setData(data)).catch(() => {}); }, []);
-  if (!data) return null;
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Team Size" value={data.summary.teamSize} />
-        <StatTile label="Pending" value={data.summary.pendingCount} color="var(--color-warning-text)" />
-        <StatTile label="Approved" value={data.summary.approvedCount} color="var(--color-success-text)" />
-        <StatTile label="Rejected" value={data.summary.rejectedCount} color="var(--color-error-text)" />
-        <StatTile label="Cancelled" value={data.summary.cancelledCount} />
-        <StatTile label="On Leave Today" value={data.summary.onLeaveTodayCount} color="var(--color-info-text)" />
-      </div>
-      <div>
-        <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>Team Pending Requests</h3>
-        <LeaveRequestList
-          requests={data.teamPendingRequests}
-          showRequester
-          emptyTitle="Your team is all caught up"
-          emptyDescription="There are no team leave requests waiting for review."
-        />
-      </div>
-      <div>
-        <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>Team Upcoming Approved Leave</h3>
-        <LeaveRequestList
-          requests={data.upcomingApprovedLeave}
-          showRequester
-          emptyTitle="No upcoming approved leave"
-          emptyDescription="Approved leave for your team will appear here as dates approach."
-        />
-      </div>
-    </div>
-  );
+const ApprovalSection = ({ workspaceScope }) => {
+  const [requests, setRequests] = useState([]);
+  useEffect(() => {
+    let active = true;
+    const load = () => leaveApi.getApprovalQueue().then(({ data }) => { if (active) setRequests([...new Map(data.filter((a) => a.request && ['SUBMITTED', 'PENDING_APPROVAL', 'PARTIALLY_APPROVED'].includes(a.request.status)).map((a) => [a.request._id, a.request])).values()]); }).catch(() => {});
+    load();
+    window.addEventListener('socket-leave-calendar-updated', load);
+    window.addEventListener('socket-leave-approval-updated', load);
+    return () => { active = false; window.removeEventListener('socket-leave-calendar-updated', load); window.removeEventListener('socket-leave-approval-updated', load); };
+  }, []);
+  return <section className="space-y-3"><h3 className="text-sm font-semibold">{workspaceScope ? 'Pending Approvals (HR / Admin)' : 'Pending Approvals'}</h3><LeaveRequestList requests={requests} showRequester emptyTitle="No actionable pending approvals" /><a href="/leave/approvals" className="text-sm underline">Open approvals</a></section>;
 };
 
-/** Workspace-wide — served only to callers the backend has already verified hold leave:view_workspace (Admin always, HR by default, or a custom role with an explicit grant). */
-const WorkspaceSection = () => {
-  const [data, setData] = useState(null);
-  useEffect(() => { leaveApi.getAdminDashboard().then(({ data }) => setData(data)).catch(() => {}); }, []);
-  if (!data) return null;
-  const { summary } = data;
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-        <StatTile label="Pending" value={summary.pendingCount} color="var(--color-warning-text)" />
-        <StatTile label="Approved" value={summary.approvedCount} color="var(--color-success-text)" />
-        <StatTile label="Rejected" value={summary.rejectedCount} color="var(--color-error-text)" />
-        <StatTile label="Cancelled" value={summary.cancelledCount} />
-        <StatTile label="On Leave Today" value={summary.onLeaveTodayCount} color="var(--color-info-text)" />
-      </div>
-      <div>
-        <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>Pending Approvals (HR / Admin)</h3>
-        <LeaveRequestList
-          requests={data.pendingApprovals.map((a) => a.request)}
-          showRequester
-          emptyTitle="No pending approvals"
-          emptyDescription="Workspace leave requests that need an HR or Admin decision will appear here."
-        />
-      </div>
-    </div>
-  );
-};
-
-/**
- * Access to this page is decided entirely by the server — never by
- * branching on the client's `user.role` string, since a custom role's real
- * entitlement (department-manager membership, or an explicit
- * leave:view_workspace grant) can only be resolved there. A plain Employee
- * (or any role with neither) is redirected to My Leave rather than shown an
- * empty dashboard shell; no dashboard API is ever called before this check
- * resolves.
- */
-const LeaveDashboardPage = () => {
+/** Visibility is resolved server-side for the active workspace. */
+const DashboardContent = () => {
   const { user } = useContext(AuthContext);
   const [scope, setScope] = useState(undefined); // undefined = loading, null = errored
 
@@ -132,8 +69,8 @@ const LeaveDashboardPage = () => {
     leaveApi.getDashboardScope().then(({ data }) => setScope(data)).catch(() => setScope(null));
   }, []);
 
-  if (scope === undefined) return null;
-  if (!scope || scope.scope === 'none') return <Navigate to="/leave/my" replace />;
+  if (scope === undefined) return <p>Loading dashboard…</p>;
+  if (!scope) return <p role="alert">Unable to load dashboard permissions. Refresh to retry.</p>;
 
   // Admin administers this module rather than participating in it
   // personally — no personal balance/requests section, matching every
@@ -151,11 +88,15 @@ const LeaveDashboardPage = () => {
         icon={CalendarDays}
       />
 
-      {scope.scope === 'workspace' && <WorkspaceSection />}
-      {scope.scope === 'department' && <DepartmentSection />}
+      <LeaveDashboardRecords />
+      {scope.scope !== 'none' && <ApprovalSection workspaceScope={scope.scope === 'workspace'} />}
       {showPersonalSection && <EmployeeSection />}
     </div>
   );
 };
 
+const LeaveDashboardPage = () => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  return <DashboardContent key={currentWorkspace?._id} />;
+};
 export default LeaveDashboardPage;

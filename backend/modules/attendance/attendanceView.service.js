@@ -1,4 +1,6 @@
 import AttendanceDay from './attendanceDay.model.js';
+import mongoose from 'mongoose';
+import { validateDateRange } from '../../utils/calendarDateRange.js';
 import AttendanceSession from './attendanceSession.model.js';
 import Department from '../../models/Department.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
@@ -47,8 +49,11 @@ async function resolveUserIdFilter({ access, viewerId, workspaceId, userId, depa
 }
 
 function buildDayFilter({ workspaceId, userIdFilter, startDate, endDate, status, workMode }) {
-  const filter = { workspaceId };
-  if (userIdFilter) filter.user = { $in: userIdFilter };
+  if (startDate || endDate) validateDateRange(startDate, endDate);
+  if (status && !SUMMARY_STATES.includes(status)) throw new ErrorResponse('Invalid attendance status', 400);
+  if (workMode && !['OFFICE', 'WFH', 'HYBRID', 'FIELD'].includes(workMode)) throw new ErrorResponse('Invalid attendance work mode', 400);
+  const filter = { workspaceId: new mongoose.Types.ObjectId(workspaceId) };
+  if (userIdFilter) filter.user = { $in: userIdFilter.map((id) => new mongoose.Types.ObjectId(id)) };
   if (startDate || endDate) {
     filter.workDateKey = {};
     if (startDate) filter.workDateKey.$gte = startDate;
@@ -72,11 +77,11 @@ export async function getAttendanceView({ viewer, workspaceId, startDate, endDat
   const access = await resolveAttendanceAccess({ viewer, workspaceId });
   const userIdFilter = await resolveUserIdFilter({ access, viewerId, workspaceId, userId, departmentId });
 
+  const filter = buildDayFilter({ workspaceId, userIdFilter, startDate, endDate, status, workMode });
   if (Array.isArray(userIdFilter) && userIdFilter.length === 0) {
     return { scope: access.scope, records: [] };
   }
 
-  const filter = buildDayFilter({ workspaceId, userIdFilter, startDate, endDate, status, workMode });
   const records = await AttendanceDay.find(filter)
     .sort({ workDateKey: -1 })
     .populate('user', 'name email avatar')
@@ -94,17 +99,17 @@ const SUMMARY_STATES = ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'ABSENT', 'MIS
  * so they're structurally excluded from every count below with no extra
  * filter needed.
  */
-export async function getAttendanceDashboardSummary({ viewer, workspaceId, startDate, endDate, departmentId = null }) {
+export async function getAttendanceDashboardSummary({ viewer, workspaceId, startDate, endDate, departmentId = null, status = null, workMode = null }) {
   const viewerId = viewer._id || viewer.id;
   const access = await resolveAttendanceAccess({ viewer, workspaceId });
   const userIdFilter = await resolveUserIdFilter({ access, viewerId, workspaceId, userId: null, departmentId });
 
+  const filter = buildDayFilter({ workspaceId, userIdFilter, startDate, endDate, status, workMode });
   const counts = SUMMARY_STATES.reduce((acc, state) => ({ ...acc, [state]: 0 }), {});
   if (Array.isArray(userIdFilter) && userIdFilter.length === 0) {
     return { scope: access.scope, totalMembers: 0, counts };
   }
 
-  const filter = buildDayFilter({ workspaceId, userIdFilter, startDate, endDate });
   const rows = await AttendanceDay.aggregate([
     { $match: filter },
     { $group: { _id: '$presenceState', count: { $sum: 1 } } }
@@ -113,7 +118,7 @@ export async function getAttendanceDashboardSummary({ viewer, workspaceId, start
     if (row._id in counts) counts[row._id] = row.count;
   });
 
-  const totalMembers = userIdFilter ? userIdFilter.length : await AttendanceDay.distinct('user', filter).then((ids) => ids.length);
+  const totalMembers = await AttendanceDay.distinct('user', filter).then((ids) => ids.length);
   return { scope: access.scope, totalMembers, counts };
 }
 

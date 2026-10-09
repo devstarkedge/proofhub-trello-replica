@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import LeaveApproval from './leaveApproval.model.js';
-import LeaveRequest, { LEAVE_REQUEST_STATUSES } from './leaveRequest.model.js';
+import LeaveRequest, { LEAVE_REQUEST_STATUSES, PENDING_STATUSES } from './leaveRequest.model.js';
 import AuditLog from '../../models/AuditLog.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { resolveDepartmentManagers, resolveActiveMembersByRole, resolveAdminApprovers } from './leaveApprovalAudience.service.js';
@@ -166,10 +166,11 @@ export async function decideApproval({ workspaceId, approvalId, actor, decision,
 }
 
 export async function getApprovalQueue({ workspaceId, userId }) {
-  return LeaveApproval.find({ workspaceId, status: 'PENDING', eligibleApproverUserIds: userId })
+  const approvals = await LeaveApproval.find({ workspaceId, status: 'PENDING', eligibleApproverUserIds: userId })
     .sort({ createdAt: 1 })
     .populate({ path: 'request', populate: [{ path: 'requester', select: 'name email avatar' }, { path: 'leaveType', select: 'name key category' }] })
     .lean();
+  return approvals.filter((a) => a.request && PENDING_STATUSES.includes(a.request.status) && String(a.request.requester?._id) !== String(userId));
 }
 
 export async function getApprovalTimeline({ workspaceId, requestId }) {

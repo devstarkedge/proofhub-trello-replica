@@ -1,6 +1,14 @@
 import asyncHandler from '../../middleware/asyncHandler.js';
+import Workspace from '../../models/Workspace.js';
+import { hasResourceAction } from '../permissions/permissionEngine.js';
 import { setupLeaveModule } from './leaveSetup.service.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
+
+export const getSetupStatus = asyncHandler(async (req, res) => {
+  const workspace = await Workspace.findById(req.workspaceId).select('leaveModuleEnabled').lean();
+  const canInitialize = await hasResourceAction(req.user, 'leave', 'manage_policy', req.workspaceId);
+  res.json({ success: true, data: { enabled: workspace?.leaveModuleEnabled === true, canInitialize } });
+});
 
 export const setup = asyncHandler(async (req, res) => {
   const result = await setupLeaveModule({ workspaceId: req.workspaceId, actorId: req.user.id });

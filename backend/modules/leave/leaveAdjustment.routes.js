@@ -12,9 +12,12 @@ router.post(
   '/',
   requireResourcePermission('leave', 'adjust_balance'),
   [
-    body('userId').notEmpty(),
-    body('leaveTypeId').notEmpty(),
-    body('amount').isNumeric(),
+    body('userId').isMongoId(),
+    body('leaveTypeId').isMongoId(),
+    body('amount').optional().isNumeric(),
+    body('count').optional().isNumeric(),
+    body('operation').optional().isIn(['CREDIT', 'DEBIT']),
+    body('clientAdjustmentId').optional().isString().isLength({ min: 1, max: 100 }),
     body('reason').trim().notEmpty(),
     validate
   ],

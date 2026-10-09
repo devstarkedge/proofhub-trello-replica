@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import { MONTHS, workspaceDateKey } from '../../utils/workspaceDateRange';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Button } from '../ui/button';
 import LeaveTypeAllocationCards from './LeaveTypeAllocationCards';
 import { ruleFromVersion, buildLeaveTypeRulesPayload } from '../../utils/leavePolicyRules';
@@ -7,10 +9,6 @@ import * as leaveApi from '../../services/leaveApi';
 const inputClass = 'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
 const inputStyle = { backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' };
 
-export const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
 
 /**
  * Full policy configuration form — name/description, a policy start
@@ -25,15 +23,10 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, onCan
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [name, setName] = useState(initialPolicy?.name || '');
   const [description, setDescription] = useState(initialPolicy?.description || '');
-  // Edit mode must pre-fill from the policy's own current/pending
-  // effective date, not always default to today — otherwise reopening
-  // Edit silently resets the start month/year to "now" instead of showing
-  // what's actually saved. Local getters (no forced UTC) for the same
-  // reason as formatMonthYear: this instant is midnight in the
-  // WORKSPACE's timezone.
-  const initialEffective = initialVersion?.effectiveFrom ? new Date(initialVersion.effectiveFrom) : new Date();
-  const [effectiveYear, setEffectiveYear] = useState(initialEffective.getFullYear());
-  const [effectiveMonth, setEffectiveMonth] = useState(initialEffective.getMonth() + 1);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const initialEffective = workspaceDateKey(initialVersion?.effectiveFrom ? new Date(initialVersion.effectiveFrom) : new Date(), currentWorkspace?.timezone);
+  const [effectiveYear, setEffectiveYear] = useState(Number(initialEffective.slice(0, 4)));
+  const [effectiveMonth, setEffectiveMonth] = useState(Number(initialEffective.slice(5, 7)));
   const [rules, setRules] = useState([]);
 
   useEffect(() => {

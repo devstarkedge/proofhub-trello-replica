@@ -11,6 +11,7 @@ router.use(protect);
 // leaveAuthorization.service.js#getLeaveDashboardScope. Open to any
 // authenticated member; it only reports what THEY are entitled to see.
 router.get('/scope', controller.getDashboardScope);
+router.get('/records', controller.getRecords);
 
 // /employee always self-scopes to the caller — every member may see their
 // own leave data regardless of dashboard scope, so no extra gate is needed

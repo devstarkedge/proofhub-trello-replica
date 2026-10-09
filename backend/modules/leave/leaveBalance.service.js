@@ -177,7 +177,7 @@ export async function restoreConsumptionForRequest({ workspaceId, request, reaso
 export async function creditBucket({
   workspaceId, user, leaveType, policyVersion, period = null, sourceType,
   amount, creditedAt, expiresAt = null, reason = '', createdBy = null, session,
-  ledgerType = 'MONTHLY_CREDIT'
+  ledgerType = 'MONTHLY_CREDIT', clientAdjustmentId = null
 }) {
   const [bucket] = await LeaveAccrualBucket.create([{
     workspaceId, user, leaveType, policyVersion, period, sourceType,
@@ -186,16 +186,16 @@ export async function creditBucket({
   }], { session });
   const [ledgerEntry] = await LeaveLedger.create([{
     workspaceId, user, leaveType, bucket: bucket._id, type: ledgerType,
-    amount, reason, actor: createdBy, occurredAt: creditedAt || new Date(), policyVersion
+    amount, reason, actor: createdBy, occurredAt: creditedAt || new Date(), policyVersion, clientAdjustmentId
   }], { session });
   return { bucket, ledgerEntry };
 }
 
 /** Immediate FIFO debit (manual HR/Admin adjustment) — unlike a leave request, there is no reservation step. */
-export async function debitViaFIFO({ workspaceId, user, leaveType, amount, reason, actor, session }) {
+export async function debitViaFIFO({ workspaceId, user, leaveType, amount, reason, actor, session, clientAdjustmentId = null }) {
   if (amount <= EPSILON) return [];
 
-  const buckets = await LeaveAccrualBucket.find({ workspaceId, user, leaveType, status: 'active' }).session(session);
+  const buckets = await LeaveAccrualBucket.find({ workspaceId, user, leaveType, status: 'active', $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }).session(session);
   buckets.sort(fifoComparator);
 
   let remaining = amount;
@@ -218,7 +218,7 @@ export async function debitViaFIFO({ workspaceId, user, leaveType, amount, reaso
 
     const [ledgerEntry] = await LeaveLedger.create([{
       workspaceId, user, leaveType, bucket: bucket._id, type: 'MANUAL_DEBIT', amount: take,
-      reason, actor: actor || null, occurredAt: new Date(), policyVersion: bucket.policyVersion
+      reason, actor: actor || null, occurredAt: new Date(), policyVersion: bucket.policyVersion, clientAdjustmentId
     }], { session });
     entries.push(ledgerEntry);
     remaining -= take;

@@ -1,4 +1,6 @@
-import React, { useContext, useEffect, useState } from 'react';
+import { periodDateRange, isValidDateRange } from '../../utils/workspaceDateRange';
+import { formatHours } from '../../utils/duration';
+import React, { useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Users } from 'lucide-react';
 import PresenceStatusBadge from '../../components/Attendance/PresenceStatusBadge';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';
@@ -26,10 +28,6 @@ const WORK_MODE_OPTIONS = [
   { value: 'FIELD', label: 'Field' }
 ];
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 const SummaryCard = ({ label, value }) => (
   <div className="rounded-xl border px-4 py-3" style={{ backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-subtle)' }}>
     <p className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
@@ -46,11 +44,20 @@ const SummaryCard = ({ label, value }) => (
  * filters here are frontend conveniences only — the backend remains the
  * sole enforcer of WHICH records can ever be returned in the first place.
  */
-const TeamAttendancePage = () => {
+const TeamAttendanceContent = () => {
   const { currentWorkspace } = useContext(WorkspaceContext) || {};
   const [access, setAccess] = useState(undefined);
-  const [startDate, setStartDate] = useState(todayKey());
-  const [endDate, setEndDate] = useState(todayKey());
+  const [period, setPeriod] = useState('month');
+  const [range, setRange] = useState(() => periodDateRange('month', { timezone: currentWorkspace?.timezone, weekStartsOn: currentWorkspace?.weekStartsOn ?? 0 }));
+  const { startDate, endDate } = range;
+  const [error, setError] = useState('');
+  const generation = useRef(0);
+  const validRange = isValidDateRange(startDate, endDate);
+  const setPreset = (value) => {
+    setPeriod(value);
+    if (value !== 'custom') setRange(periodDateRange(value, { timezone: currentWorkspace?.timezone, weekStartsOn: currentWorkspace?.weekStartsOn ?? 0 }));
+  };
+  const editDate = (field, value) => { setPeriod('custom'); setRange((old) => ({ ...old, [field]: value })); };
   const [status, setStatus] = useState('');
   const [workMode, setWorkMode] = useState('');
   const [records, setRecords] = useState([]);
@@ -61,34 +68,32 @@ const TeamAttendancePage = () => {
     attendanceApi.getAttendanceAccess().then(({ data }) => setAccess(data)).catch(() => setAccess({ scope: 'self' }));
   }, [currentWorkspace?._id]);
 
-  const load = () => {
-    setLoading(true);
+  const load = useCallback(() => {
+    const id = ++generation.current;
+    if (!validRange || !access || access.scope === 'self') { setRecords([]); setSummary(null); setLoading(false); return; }
+    setLoading(true); setError('');
     const params = { startDate, endDate, status: status || undefined, workMode: workMode || undefined };
-    Promise.all([
-      attendanceApi.getAttendanceView(params),
-      attendanceApi.getAttendanceDashboard({ startDate, endDate })
-    ])
-      .then(([viewRes, dashboardRes]) => { setRecords(viewRes.data); setSummary(dashboardRes.data); })
-      .catch(() => { setRecords([]); setSummary(null); })
-      .finally(() => setLoading(false));
+    Promise.all([attendanceApi.getAttendanceView(params), attendanceApi.getAttendanceDashboard(params)])
+      .then(([viewRes, dashboardRes]) => { if (id === generation.current) { setRecords(viewRes.data); setSummary(dashboardRes.data); } })
+      .catch((err) => { if (id === generation.current) { setRecords([]); setSummary(null); setError(err.response?.data?.message || 'Unable to load attendance'); } })
+      .finally(() => { if (id === generation.current) setLoading(false); });
+  }, [access, startDate, endDate, status, workMode, validRange]);
+
+  useEffect(() => {
+    load();
+    const events = ['socket-attendance-checked-in', 'socket-attendance-checked-out', 'socket-attendance-regularization-updated'];
+    events.forEach((event) => window.addEventListener(event, load));
+    const requestGeneration = generation;
+    return () => { requestGeneration.current++; events.forEach((event) => window.removeEventListener(event, load)); };
+  }, [load]);
+
+  const exportRows = () => {
+    if (loading || error || !validRange) return;
+    const cell = (value) => '"' + String(value ?? '').replace(/^[=+@-]/, "'").replaceAll('"', '""') + '"';
+    const csv = [['Employee', 'Date', 'Work mode', 'Worked hours', 'Status'], ...records.map((record) => [record.user?.name, record.workDateKey, record.workMode, Number(record.workedMinutes || 0) / 60, record.presenceState])].map((row) => row.map(cell).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'attendance-' + startDate + '-to-' + endDate + '.csv'; link.click(); URL.revokeObjectURL(url);
   };
-
-  useEffect(() => {
-    if (access && access.scope !== 'self') load();
-    else setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [access, startDate, endDate, status, workMode, currentWorkspace?._id]);
-
-  useEffect(() => {
-    const refresh = () => { if (access && access.scope !== 'self') load(); };
-    window.addEventListener('socket-attendance-checked-in', refresh);
-    window.addEventListener('socket-attendance-checked-out', refresh);
-    return () => {
-      window.removeEventListener('socket-attendance-checked-in', refresh);
-      window.removeEventListener('socket-attendance-checked-out', refresh);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [access, startDate, endDate, status, workMode]);
 
   if (access === undefined) return null;
 
@@ -111,9 +116,16 @@ const TeamAttendancePage = () => {
           </h2>
         </div>
 
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <label className="text-xs">Period <select aria-label="Attendance period" className={selectClass} style={selectStyle} value={period} onChange={(e) => setPreset(e.target.value)}>
+            <option value="week">This Week</option><option value="month">This Month</option><option value="year">This Year</option><option value="custom">Custom Date Range</option>
+          </select></label>
+          <button type="button" onClick={load} disabled={loading || !validRange} className={selectClass}>Refresh</button>
+          {access.reportPermissions?.canViewReports && <button type="button" onClick={exportRows} disabled={loading || !validRange || !!error} className={selectClass}>Export CSV</button>}
+        </div>
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div><label className={labelClass} style={labelStyle}>From</label><input type="date" className={`${selectClass} w-full`} style={selectStyle} value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
-          <div><label className={labelClass} style={labelStyle}>To</label><input type="date" className={`${selectClass} w-full`} style={selectStyle} value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+          <div><label className={labelClass} style={labelStyle}>From</label><input type="date" aria-label="Start date" className={`${selectClass} w-full`} style={selectStyle} value={startDate} onChange={(e) => editDate('startDate', e.target.value)} /></div>
+          <div><label className={labelClass} style={labelStyle}>To</label><input type="date" aria-label="End date" className={`${selectClass} w-full`} style={selectStyle} value={endDate} min={startDate} onChange={(e) => editDate('endDate', e.target.value)} /></div>
           <div>
             <label className={labelClass} style={labelStyle}>Status</label>
             <select className={`${selectClass} w-full`} style={selectStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -128,17 +140,19 @@ const TeamAttendancePage = () => {
           </div>
         </div>
 
-        {summary && (
+        {!validRange && <p role="alert" className="mb-3" style={{ color: 'var(--color-error-text)' }}>Choose valid dates in order, spanning at most 3660 days.</p>}
+        {error && <p role="alert">{error}</p>}
+        {summary && validRange && (
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <SummaryCard label="Members" value={summary.totalMembers} />
-            <SummaryCard label="Present" value={summary.counts.PRESENT} />
-            <SummaryCard label="Half Day" value={summary.counts.HALF_PRESENT} />
-            <SummaryCard label="Absent" value={summary.counts.ABSENT} />
+            <SummaryCard label="Members with records" value={summary.totalMembers} />
+            <SummaryCard label="Present days" value={summary.counts.PRESENT} />
+            <SummaryCard label="Half days" value={summary.counts.HALF_PRESENT} />
+            <SummaryCard label="Absent days" value={summary.counts.ABSENT} />
             <SummaryCard label="Missing Check-Out" value={summary.counts.MISSING_CHECKOUT} />
           </div>
         )}
 
-        {loading ? null : !records.length ? (
+        {loading ? <p role="status">Loading attendance…</p> : !records.length ? (
           <LeaveEmptyState title="No attendance records for this range" compact />
         ) : (
           <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--color-border-default)' }}>
@@ -150,7 +164,7 @@ const TeamAttendancePage = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   {typeof record.workedMinutes === 'number' && record.workedMinutes > 0 && (
-                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{Math.floor(record.workedMinutes / 60)}h {Math.round(record.workedMinutes % 60)}m</span>
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{formatHours(record.workedMinutes)}</span>
                   )}
                   <PresenceStatusBadge status={record.presenceState} />
                 </div>
@@ -163,4 +177,8 @@ const TeamAttendancePage = () => {
   );
 };
 
+const TeamAttendancePage = () => {
+  const { currentWorkspace } = useContext(WorkspaceContext) || {};
+  return <TeamAttendanceContent key={currentWorkspace?._id + ':' + currentWorkspace?.timezone} />;
+};
 export default TeamAttendancePage;

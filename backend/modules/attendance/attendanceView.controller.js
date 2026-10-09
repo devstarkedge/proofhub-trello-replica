@@ -19,10 +19,10 @@ export const getView = asyncHandler(async (req, res) => {
 });
 
 export const getDashboard = asyncHandler(async (req, res) => {
-  const { startDate, endDate, departmentId } = req.query;
+  const { startDate, endDate, departmentId, status, workMode } = req.query;
   const result = await getAttendanceDashboardSummary({
     viewer: req.user, workspaceId: req.workspaceId,
-    startDate: startDate || null, endDate: endDate || null, departmentId: departmentId || null
+    startDate: startDate || null, endDate: endDate || null, departmentId: departmentId || null, status: status || null, workMode: workMode || null
   });
   res.json({ success: true, data: result });
 });

@@ -1,3 +1,4 @@
+import DurationHoursInput from '../ui/DurationHoursInput';
 import React, { useContext, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -14,10 +15,10 @@ const labelStyle = { color: 'var(--color-text-secondary)' };
 const FIELDS = [
   { key: 'startLocalTime', label: 'Start time', type: 'time' },
   { key: 'endLocalTime', label: 'End time', type: 'time' },
-  { key: 'graceMinutes', label: 'Check-in grace (minutes)', type: 'number', min: 0 },
-  { key: 'earlyExitGraceMinutes', label: 'Early-exit grace (minutes)', type: 'number', min: 0 },
-  { key: 'minimumFullDayMinutes', label: 'Full-day minimum (minutes)', type: 'number', min: 1 },
-  { key: 'minimumHalfDayMinutes', label: 'Half-day minimum (minutes)', type: 'number', min: 1 }
+  { key: 'graceMinutes', label: 'Check-in grace (hours)', type: 'number', min: 0 },
+  { key: 'earlyExitGraceMinutes', label: 'Early-exit grace (hours)', type: 'number', min: 0 },
+  { key: 'minimumFullDayMinutes', label: 'Full-day minimum (hours)', type: 'number', min: 1 },
+  { key: 'minimumHalfDayMinutes', label: 'Half-day minimum (hours)', type: 'number', min: 1 }
 ];
 const FIELD_DEFAULTS = { startLocalTime: '09:00', endLocalTime: '18:00', graceMinutes: 15, earlyExitGraceMinutes: 0, minimumFullDayMinutes: 480, minimumHalfDayMinutes: 240 };
 
@@ -124,10 +125,7 @@ const OfficeHoursOverrideFormModal = ({ mode = 'create', initialOverride, submit
                   <input type="checkbox" checked={fields[key].enabled} onChange={() => toggleField(key)} className="h-3.5 w-3.5 rounded" />
                   {label}
                 </label>
-                <input
-                  type={type} min={min} disabled={!fields[key].enabled} className={inputClass} style={inputStyle}
-                  value={fields[key].value} onChange={(e) => setFieldValue(key, e.target.value)}
-                />
+                {type === 'number' ? <DurationHoursInput minMinutes={min} disabled={!fields[key].enabled} className={inputClass} style={inputStyle} value={fields[key].value} onChange={(value) => setFieldValue(key, value)} /> : <input type={type} disabled={!fields[key].enabled} className={inputClass} style={inputStyle} value={fields[key].value} onChange={(e) => setFieldValue(key, e.target.value)} />}
               </div>
             ))}
           </div>

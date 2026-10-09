@@ -35,6 +35,7 @@ const EVENTS = {
 };
 
 export async function onRequestSubmitted(request, requesterUserId) {
+  await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
   emitToUser(requesterUserId, EVENTS.REQUEST_CREATED, { request });
 
   await evaluateAndDeliver({
@@ -69,6 +70,7 @@ export async function onApprovalRequired(request, approvalLevels, requesterUserI
 }
 
 export async function onApprovalDecisionRecorded(result, decidingActor) {
+  await onWorkCalendarUpdated(result.request.workspaceId).catch(() => {});
   const { request, approval } = result;
   const decidedByUserId = decidingActor._id || decidingActor.id;
 
@@ -90,6 +92,7 @@ export async function onApprovalDecisionRecorded(result, decidingActor) {
 }
 
 export async function onRequestApproved(request) {
+  await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
   emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request });
   emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { userId: request.requester });
 
@@ -106,6 +109,7 @@ export async function onRequestApproved(request) {
 }
 
 export async function onRequestRejected(request) {
+  await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
   emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request });
   emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { userId: request.requester });
 
@@ -123,6 +127,7 @@ export async function onRequestRejected(request) {
 
 /** Employee cancelled their own still-pending request — let any still-pending approver know no action is needed. */
 export async function onRequestCancelled(request, cancelledByUserId, pendingApprovalLevels = []) {
+  await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
   emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request });
   emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { userId: request.requester });
 
@@ -158,6 +163,7 @@ export async function onRequestCancelled(request, cancelledByUserId, pendingAppr
 
 /** Employee requested cancellation of an already-approved leave — notify HR/Admin to review. */
 export async function onCancellationRequested(request, requestedByUserId, reviewerUserIds = []) {
+  await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
   const recipientIds = Array.from(new Set(reviewerUserIds.map(String)));
   if (!recipientIds.length) return;
   await evaluateAndDeliverBulk(recipientIds, {
@@ -173,6 +179,7 @@ export async function onCancellationRequested(request, requestedByUserId, review
 
 /** HR/Admin cancelled an already-approved leave (e.g. the employee ended up working that day). */
 export async function onCancelledByHr(request, cancelledByUserId, reason) {
+  await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
   emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request });
   emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { userId: request.requester });
 
@@ -246,12 +253,11 @@ export async function onApprovalReminder(request, approval) {
  * of this module.
  */
 export async function onPolicyActivated(workspaceId, policy) {
-  const [admins, hrs] = await Promise.all([
-    resolveActiveMembersByRole({ workspaceId, role: 'admin', excludeUserId: null }),
-    resolveActiveMembersByRole({ workspaceId, role: 'hr', excludeUserId: null })
-  ]);
-  const recipientIds = Array.from(new Set([...admins, ...hrs].map(String)));
-  if (recipientIds.length) emitToUsers(recipientIds, EVENTS.POLICY_UPDATED, { policyId: policy._id, status: policy.status });
+  const members = await WorkspaceMembership.find({ workspace: workspaceId, status: 'active' }).select('user').lean();
+  // Custom policy administrators and employee calculations also need to
+  // refresh. Send only an invalidation; authorized APIs return the data.
+  if (members.length) emitToUsers(members.map((member) => String(member.user)), EVENTS.POLICY_UPDATED, { policyId: policy._id, status: policy.status });
+  await onWorkCalendarUpdated(workspaceId);
 }
 
 /**

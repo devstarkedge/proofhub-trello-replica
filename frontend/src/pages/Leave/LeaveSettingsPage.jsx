@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import React, { useContext, useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { Archive, CalendarDays, FileText, Layers3, PlayCircle, Plus, SquarePen, Users, X } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -81,24 +82,8 @@ const LeaveTypesTab = () => {
   );
 };
 
-// Every policy effective date is stored as the UTC instant of midnight IN
-// THE WORKSPACE'S TIMEZONE (see backend's dateOnlyToInstant) — forcing
-// timeZone:'UTC' here would read that instant back as if UTC were the
-// real zone, which for any positive-offset workspace (the Asia/Kolkata
-// default included) reads the PREVIOUS day/month. That was the exact bug
-// behind an edited policy appearing to keep its old effective month after
-// saving: the save was correct, but this display silently read the new
-// UTC instant one month early. Using the Date's own local getters instead
-// (no forced timezone) is the same fix already applied to the Leave
-// Calendar grid's date-key bug — see utils/leaveDateKey.js.
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
-function formatMonthYear(dateLike) {
-  if (!dateLike) return '—';
-  const d = new Date(dateLike);
-  return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+function formatMonthYear(dateLike, timezone) {
+  return dateLike ? new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: timezone || 'Asia/Kolkata' }).format(new Date(dateLike)) : '—';
 }
 
 function allocationSummary(version) {
@@ -109,6 +94,7 @@ function allocationSummary(version) {
 }
 
 const PoliciesTab = () => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const [policies, setPolicies] = useState([]);
   const [formState, setFormState] = useState(null); // { mode: 'create'|'edit', policy? }
   const [diffState, setDiffState] = useState(null); // { policy, diff, values }
@@ -122,6 +108,11 @@ const PoliciesTab = () => {
     window.addEventListener('socket-leave-policy-updated', onPolicyUpdated);
     return () => window.removeEventListener('socket-leave-policy-updated', onPolicyUpdated);
   }, []);
+
+  const deleteArchived = async (policy) => {
+    if (!window.confirm(`Permanently delete "${policy.name}"? This cannot be undone. Policies referenced by employee history cannot be deleted.`)) return;
+    try { await leaveApi.deleteArchivedPolicy(policy._id); toast.success('Archived policy deleted'); load(); } catch { /* API shows reason if blocked. */ }
+  };
 
   const openCreate = () => setFormState({ mode: 'create' });
   const openEdit = (policy) => setFormState({ mode: 'edit', policy });
@@ -161,6 +152,7 @@ const PoliciesTab = () => {
   };
 
   const activateNow = async (policy) => {
+    if (!window.confirm(`Activate "${policy.name}"? The current active workspace policy will be replaced. Historical records are preserved.`)) return;
     try {
       await leaveApi.activateDefaultPolicy(policy._id);
       toast.success(`"${policy.name}" is now active`);
@@ -199,15 +191,17 @@ const PoliciesTab = () => {
                   </div>
                   {policy.description && <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>{policy.description}</p>}
                   <p className="mt-1.5 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                    Effective from {formatMonthYear(policy.effectiveDate)} · {allocationSummary(policy.currentVersion)}
+                    Effective from {formatMonthYear(policy.effectiveDate, currentWorkspace?.timezone)} · {allocationSummary(displayedVersion)}
                   </p>
                   {policy.pendingVersion && (
                     <p className="mt-1 text-xs font-medium" style={{ color: 'var(--color-info-text)' }}>
-                      Update scheduled for {formatMonthYear(policy.pendingVersion.effectiveFrom)} · {allocationSummary(policy.pendingVersion)}
+                      {policy.pendingVersion.status === 'draft' ? 'Draft starts' : 'Update scheduled for'} {formatMonthYear(policy.pendingVersion.effectiveFrom, currentWorkspace?.timezone)} · {allocationSummary(policy.pendingVersion)}
                     </p>
                   )}
                 </div>
                 <div className="flex flex-none flex-wrap gap-2">
+                  {policy.status === 'archived' && policy.canDelete && <Button variant="outline" size="sm" onClick={() => deleteArchived(policy)}>Delete</Button>}
+                  {policy.status === 'archived' && policy.deletionBlockReason && <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{policy.deletionBlockReason}</p>}
                   {policy.status !== 'archived' && (
                     <Button variant="outline" size="sm" onClick={() => openEdit(policy)} className="flex items-center gap-1">
                       <SquarePen className="h-3.5 w-3.5" /> Edit
@@ -286,6 +280,11 @@ const OverridesTab = () => {
     } catch { /* The API interceptor owns error notifications. */ } finally { setSubmitting(false); }
   };
 
+  const deleteArchived = async (policy) => {
+    if (!window.confirm(`Permanently delete "${policy.name}"? This cannot be undone. Overrides referenced by employee history cannot be deleted.`)) return;
+    try { await leaveApi.deleteArchivedPolicy(policy._id, 'overrides'); toast.success('Archived override deleted'); load(); } catch { /* API shows reason if blocked. */ }
+  };
+
   const archive = async (policy) => {
     if (!window.confirm(`Archive "${policy.name}"? Everyone it currently applies to will revert to the default policy.`)) return;
     try {
@@ -325,15 +324,18 @@ const OverridesTab = () => {
                   <PolicyStatusBadge status={policy.status} />
                 </div>
                 {policy.description && <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>{policy.description}</p>}
-                <p className="mt-1.5 text-xs" style={{ color: 'var(--color-text-muted)' }}>{allocationSummary(policy.currentVersion)}</p>
+                <p className="mt-1.5 text-xs" style={{ color: 'var(--color-text-muted)' }}>{allocationSummary(policy.currentVersion || policy.pendingVersion)}</p>
               </div>
               <div className="flex flex-none flex-wrap gap-2">
-                {policy.status !== 'archived' && (
+                {policy.status === 'archived' && policy.canDelete && <Button variant="outline" size="sm" onClick={() => deleteArchived(policy)}>Delete</Button>}
+                  {policy.status === 'archived' && policy.deletionBlockReason && <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{policy.deletionBlockReason}</p>}
+                  {policy.status !== 'archived' && (
                   <Button variant="outline" size="sm" onClick={() => setFormState({ mode: 'edit', policy })} className="flex items-center gap-1">
                     <SquarePen className="h-3.5 w-3.5" /> Edit
                   </Button>
                 )}
-                {policy.status !== 'archived' && (
+                
+                  {policy.status !== 'archived' && (
                   <Button variant="outline" size="sm" onClick={() => archive(policy)} className="flex items-center gap-1">
                     <Archive className="h-3.5 w-3.5" /> Archive
                   </Button>
@@ -428,6 +430,10 @@ const HolidaysTab = () => {
   const load = () => leaveApi.getHolidays().then(({ data }) => setHolidays(data));
   useEffect(() => { load(); }, []);
 
+  const remove = async (holiday) => {
+    if (!window.confirm(`Delete past holiday "${holiday.name}"? Finalized leave calculations will be preserved. This cannot be undone.`)) return;
+    try { await leaveApi.deleteHoliday(holiday._id); toast.success('Holiday deleted'); load(); } catch { /* API displays errors. */ }
+  };
   const create = async (event) => {
     event.preventDefault();
     try {
@@ -458,7 +464,8 @@ const HolidaysTab = () => {
             {holidays.map((holiday) => (
               <div key={holiday._id} className="flex flex-col gap-1 border-b px-4 py-3 text-sm last:border-b-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: 'var(--color-border-subtle)' }}>
                 <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{holiday.name}</span>
-                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{new Date(holiday.date).toLocaleDateString()}</span>
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{holiday.dateKey || String(holiday.date).slice(0, 10)}</span>
+                {holiday.canDelete && <Button variant="outline" size="sm" onClick={() => remove(holiday)}>Delete</Button>}
               </div>
             ))}
           </div>

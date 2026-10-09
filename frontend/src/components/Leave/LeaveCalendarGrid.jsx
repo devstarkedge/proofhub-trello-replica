@@ -1,3 +1,7 @@
+import { useContext } from 'react';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import { workspaceDateKey } from '../../utils/workspaceDateRange';
+import { formatHours } from '../../utils/duration';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import DayStatusIndicator from './DayStatusIndicator';
@@ -13,7 +17,8 @@ const DAY_TYPE_LABELS = {
   SHORT_LEAVE: 'Short Leave'
 };
 const EVENT_STYLES = {
-  leave: { color: 'var(--color-warning-text)', backgroundColor: 'var(--color-warning-subtle)' },
+  leave: { color: 'var(--color-success-text)', backgroundColor: 'var(--color-success-subtle)' },
+  pending: { color: 'var(--color-warning-text)', backgroundColor: 'var(--color-warning-subtle)' },
   holiday: { color: 'var(--color-info-text)', backgroundColor: 'var(--color-info-subtle)' },
   weeklyOff: { color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg-muted)' },
   specialWorkday: { color: 'var(--color-success-text)', backgroundColor: 'var(--color-success-subtle)' }
@@ -31,17 +36,17 @@ function buildMonthCells(year, month) {
 
 const toKey = toDateKey;
 const formatDate = (date) => date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-const humanize = (value = '') => value.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 function indexHolidaysByDate(holidays) {
   const byDate = new Map();
   for (const holiday of holidays) {
-    const storedDate = String(holiday.date || '').slice(0, 10);
+    const storedDate = holiday.dateKey || String(holiday.date || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(storedDate)) continue;
     const dateKey = storedDate;
     const bucket = byDate.get(dateKey) || [];
     bucket.push(holiday);
     byDate.set(dateKey, bucket);
+    if (holiday.recurrenceRule === 'ANNUAL_SAME_DATE') byDate.set(`*-${dateKey.slice(5)}`, [...(byDate.get(`*-${dateKey.slice(5)}`) || []), holiday]);
   }
   return byDate;
 }
@@ -72,30 +77,27 @@ function buildHolidayEvent(holiday, date, index) {
   };
 }
 
-function buildEventsForDate({ status, holidays, date, employeeName }) {
-  const events = [];
+function buildEventsForDate({ status, holidays, date, leaveEvents = [] }) {
+  const events = leaveEvents.map((day) => ({
+    id: String(day._id), kind: day.pending ? 'pending' : 'leave',
+    kindLabel: day.pending ? 'Pending Leave' : 'Approved Leave',
+    title: day.request.requester?.name || day.request.leaveType?.name || 'Leave',
+    cellLabel: (day.pending ? 'Pending · ' : '') + (day.request.requester?.name || day.request.leaveType?.name || 'Leave'),
+    ...(day.pending ? EVENT_STYLES.pending : EVENT_STYLES.leave),
+    details: [
+      { label: 'Employee', value: day.request.requester?.name || 'Employee' },
+      { label: 'Leave Type', value: day.request.leaveType?.name || 'Leave' },
+      { label: 'Day', value: DAY_TYPE_LABELS[day.dayType] || day.dayType },
+      { label: 'Status', value: day.pending ? 'Pending' : day.request.status === 'CANCELLATION_REQUESTED' ? 'Approved — cancellation requested' : 'Approved' },
+      ...(day.dayType === 'SHORT_LEAVE' ? [{ label: 'Time', value: day.shortLeaveStartTime + '–' + day.shortLeaveEndTime }, { label: 'Duration', value: formatHours(day.shortLeaveDurationMinutes) }] : [])
+    ]
+  }));
   const holidayEvents = holidays.map((holiday, index) => buildHolidayEvent(holiday, date, index));
 
-  if (status?.status === 'ON_LEAVE') {
-    const requestStatus = status.requestStatus === 'APPROVED' ? 'Approved' : humanize(status.requestStatus || 'APPROVED');
-    events.push({
-      id: 'leave',
-      kind: 'leave',
-      kindLabel: requestStatus === 'Approved' ? 'Approved Leave' : 'On Leave',
-      title: employeeName || status.leaveTypeName || 'On Leave',
-      cellLabel: employeeName || status.leaveTypeName || 'On Leave',
-      ...EVENT_STYLES.leave,
-      details: [
-        ...(employeeName ? [{ label: 'Employee', value: employeeName }] : []),
-        { label: 'Leave Type', value: status.leaveTypeName || DAY_TYPE_LABELS[status.dayType] || 'Leave' },
-        { label: 'Day', value: DAY_TYPE_LABELS[status.dayType] || humanize(status.dayType || 'FULL_DAY') },
-        { label: 'Status', value: requestStatus }
-      ]
-    });
-    events.push(...holidayEvents);
-  } else if (status?.status === 'HOLIDAY') {
+  events.push(...holidayEvents);
+  if (status?.status === 'HOLIDAY') {
     const standardHolidays = holidayEvents.filter((event) => event.kind === 'holiday');
-    events.push(...(standardHolidays.length ? standardHolidays : [{
+    events.push(...(standardHolidays.length ? [] : [{
       id: 'holiday',
       kind: 'holiday',
       kindLabel: 'Holiday',
@@ -120,16 +122,19 @@ function buildEventsForDate({ status, holidays, date, employeeName }) {
         { label: 'Type', value: 'Recurring weekly off' }
       ]
     });
-  } else if (status?.status === 'WORKING_DAY') {
-    events.push(...holidayEvents.filter((event) => event.kind === 'specialWorkday'));
   }
 
   return events;
 }
 
 /** Month-view calendar for one user's own day-status. Reusable for a future team roster view. */
-const LeaveCalendarGrid = ({ userId, employeeName }) => {
-  const [cursor, setCursor] = useState(() => new Date());
+const LeaveCalendarGrid = ({ userId }) => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const [cursor, setCursor] = useState(() => new Date(workspaceDateKey(new Date(), currentWorkspace?.timezone) + 'T12:00:00'));
+  const [leaveEvents, setLeaveEvents] = useState([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const generation = useRef(0);
   const [dayStatus, setDayStatus] = useState({});
   const [holidays, setHolidays] = useState([]);
   const [activeDetails, setActiveDetails] = useState(null);
@@ -144,7 +149,7 @@ const LeaveCalendarGrid = ({ userId, employeeName }) => {
   const loadHolidays = useCallback(() => {
     leaveApi.getHolidays()
       .then(({ data }) => setHolidays(data || []))
-      .catch(() => setHolidays([]));
+      .catch(() => { setHolidays([]); setError('Unable to load workspace holidays'); });
   }, []);
 
   const loadDayStatus = useCallback(() => {
@@ -153,21 +158,27 @@ const LeaveCalendarGrid = ({ userId, employeeName }) => {
     if (!validDates.length) return;
     const startDate = toKey(validDates[0]);
     const endDate = toKey(validDates[validDates.length - 1]);
-    leaveApi.getDayStatus({ userIds: [userId], startDate, endDate, visibility: 'approved_only' })
-      .then(({ data }) => setDayStatus(data[userId] || {}))
-      .catch(() => setDayStatus({}));
+    const id = ++generation.current;
+    setLoading(true); setError('');
+    Promise.all([
+      leaveApi.getDayStatus({ userIds: [userId], startDate, endDate, visibility: 'approved_only', calendarOnly: true }),
+      leaveApi.getCalendarEvents({ startDate, endDate })
+    ]).then(([days, leaves]) => { if (id === generation.current) { setDayStatus(days.data[userId] || {}); setLeaveEvents(leaves.data.events || []); } })
+      .catch(() => { if (id === generation.current) { setDayStatus({}); setLeaveEvents([]); setError('Unable to load calendar events. Try refreshing.'); } })
+      .finally(() => { if (id === generation.current) setLoading(false); });
   }, [cells, userId]);
 
   useEffect(() => { loadHolidays(); }, [loadHolidays]);
-  useEffect(() => { loadDayStatus(); }, [loadDayStatus]);
+  useEffect(() => { const requestGeneration = generation; loadDayStatus(); return () => { requestGeneration.current++; }; }, [loadDayStatus]);
 
   // The Work Calendar / Holiday list can change from the Settings page (or
   // another admin) at any time — refetch rather than let this grid drift
   // out of sync with what actually governs classification server-side.
   useEffect(() => {
     const onCalendarUpdated = () => { loadHolidays(); loadDayStatus(); };
-    window.addEventListener('socket-leave-calendar-updated', onCalendarUpdated);
-    return () => window.removeEventListener('socket-leave-calendar-updated', onCalendarUpdated);
+    const names = ['socket-leave-calendar-updated', 'socket-leave-request-created', 'socket-leave-request-updated', 'socket-leave-approval-updated'];
+    names.forEach((name) => window.addEventListener(name, onCalendarUpdated));
+    return () => names.forEach((name) => window.removeEventListener(name, onCalendarUpdated));
   }, [loadHolidays, loadDayStatus]);
 
   useEffect(() => () => clearTimeout(closeTimerRef.current), []);
@@ -194,9 +205,9 @@ const LeaveCalendarGrid = ({ userId, employeeName }) => {
 
   const activeEvents = activeDetails ? buildEventsForDate({
     status: dayStatus[activeDetails.dateKey],
-    holidays: holidaysByDate.get(activeDetails.dateKey) || [],
+    holidays: [...new Map([...(holidaysByDate.get(activeDetails.dateKey) || []), ...(holidaysByDate.get(`*-${activeDetails.dateKey.slice(5)}`) || [])].map((h) => [h._id, h])).values()],
     date: activeDetails.dateValue,
-    employeeName
+    leaveEvents: leaveEvents.filter((event) => event.dateKey === activeDetails.dateKey)
   }) : [];
 
   return (
@@ -221,8 +232,8 @@ const LeaveCalendarGrid = ({ userId, employeeName }) => {
           if (!date) return <div key={`empty-${index}`} />;
           const key = toKey(date);
           const status = dayStatus[key];
-          const dateEvents = buildEventsForDate({ status, holidays: holidaysByDate.get(key) || [], date, employeeName });
-          const isToday = key === toKey(new Date());
+          const dateEvents = buildEventsForDate({ status, holidays: [...new Map([...(holidaysByDate.get(key) || []), ...(holidaysByDate.get(`*-${key.slice(5)}`) || [])].map((h) => [h._id, h])).values()], date, leaveEvents: leaveEvents.filter((event) => event.dateKey === key) });
+          const isToday = key === workspaceDateKey(new Date(), currentWorkspace?.timezone);
           const hasEvents = dateEvents.length > 0;
           const visibleEvents = dateEvents.slice(0, 2);
           const isOpen = activeDetails?.dateKey === key;
@@ -284,8 +295,11 @@ const LeaveCalendarGrid = ({ userId, employeeName }) => {
         })}
       </div>
 
+      {loading && <p role="status">Loading calendar…</p>}
+      {error && <p role="alert">{error} <button type="button" onClick={() => { loadHolidays(); loadDayStatus(); }}>Refresh</button></p>}
       <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-        <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'ON_LEAVE' }} /> On Leave</span>
+        <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'ON_LEAVE' }} /> Approved Leave</span>
+        <span className="flex items-center gap-1.5" style={{ color: EVENT_STYLES.pending.color }}>● Pending Leave</span>
         <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'HOLIDAY' }} /> Holiday</span>
         <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'WEEKLY_OFF' }} /> Weekly Off</span>
       </div>

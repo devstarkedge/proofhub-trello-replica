@@ -88,7 +88,7 @@ export function assertShortLeaveDuration({ leaveType, policyRule, durationMinute
   }
   const max = policyRule?.maxDurationMinutesPerInstance;
   if (max && durationMinutes > max) {
-    throw new ErrorResponse(`This short leave exceeds the maximum duration allowed by your policy (${max} minutes)`, 400);
+    throw new ErrorResponse(`This short leave exceeds the maximum duration allowed by your policy (${Number((max / 60).toFixed(4))} hours)`, 400);
   }
 }
 

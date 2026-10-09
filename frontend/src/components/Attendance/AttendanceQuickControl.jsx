@@ -1,3 +1,4 @@
+import { formatHours } from '../../utils/duration';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { MapPin, LogIn, LogOut, CheckCircle2, Loader2 } from 'lucide-react';
@@ -5,12 +6,7 @@ import * as attendanceApi from '../../services/attendanceApi';
 
 const GEO_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
 
-function formatDuration(totalMinutes) {
-  const minutes = Math.max(0, Math.round(totalMinutes));
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+
 
 function getCurrentPosition() {
   return new Promise((resolve, reject) => {
@@ -195,7 +191,7 @@ const AttendanceQuickControl = () => {
           <CheckCircle2 className="h-4 w-4" /> Attendance Completed
         </div>
         {typeof status.workedMinutes === 'number' && (
-          <span className="text-xs text-white/70">Worked {formatDuration(status.workedMinutes)} today</span>
+          <span className="text-xs text-white/70">Worked {formatHours(status.workedMinutes)} today</span>
         )}
       </div>
     );
@@ -209,7 +205,7 @@ const AttendanceQuickControl = () => {
         >
           <LogOut className="h-4 w-4" /> Check Out
         </button>
-        <span className="text-xs text-white/70">Checked in · {formatDuration(liveMinutes)}</span>
+        <span className="text-xs text-white/70">Checked in · {formatHours(liveMinutes)}</span>
         <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{status.activeSession.workMode}</span></span>
       </div>
     );

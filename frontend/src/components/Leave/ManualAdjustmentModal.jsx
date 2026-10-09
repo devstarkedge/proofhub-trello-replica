@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Button } from '../ui/button';
 import Database from '../../services/database';
@@ -15,7 +15,8 @@ const inputStyle = { backgroundColor: 'var(--color-bg-base)', borderColor: 'var(
 const ManualAdjustmentModal = ({ onClose, onDone }) => {
   const [users, setUsers] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
-  const [form, setForm] = useState({ userId: '', leaveTypeId: '', amount: '', reason: '' });
+  const [form, setForm] = useState({ userId: '', leaveTypeId: '', operation: 'CREDIT', count: '', reason: '' });
+  const clientAdjustmentId = useRef(crypto.randomUUID());
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -25,13 +26,14 @@ const ManualAdjustmentModal = ({ onClose, onDone }) => {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.userId || !form.leaveTypeId || !form.amount || !form.reason.trim()) {
+    if (!form.userId || !form.leaveTypeId || !form.count || Number(form.count) <= 0 || !form.reason.trim()) {
       toast.error('All fields, including a reason, are required');
       return;
     }
     setSubmitting(true);
     try {
-      await leaveApi.createAdjustment({ ...form, amount: Number(form.amount) });
+      await leaveApi.createAdjustment({ ...form, count: Number(form.count), clientAdjustmentId: clientAdjustmentId.current });
+      window.dispatchEvent(new CustomEvent('socket-leave-balance-updated'));
       toast.success('Balance adjustment recorded');
       onDone?.();
     } catch {
@@ -64,9 +66,17 @@ const ManualAdjustmentModal = ({ onClose, onDone }) => {
 
         <div>
           <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
-            Amount (positive to credit, negative to debit)
+            Operation
           </label>
-          <input type="number" step="0.5" className={inputClass} style={inputStyle} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+          <select className={inputClass} style={inputStyle} value={form.operation} onChange={(e) => setForm({ ...form, operation: e.target.value })}>
+            <option value="CREDIT">Credit — Add leave</option>
+            <option value="DEBIT">Debit — Deduct leave</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Leave Count</label>
+          <input type="number" required min="0" max="1000000" step={leaveTypes.find((t) => t._id === form.leaveTypeId)?.category === 'SHORT_LEAVE' ? '1' : '0.5'} className={inputClass} style={inputStyle} value={form.count} onChange={(e) => setForm({ ...form, count: e.target.value })} />
+          <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>Enter entitlements, not hours. The employee’s policy determines permitted increments and balance limits.</p>
         </div>
 
         <div>

@@ -14,7 +14,7 @@ const LeaveCalendarPage = () => {
     <div className="space-y-7">
       <LeavePageHeader
         title="Leave Calendar"
-        description="Plan around approved leave, workspace holidays, and weekly days off."
+        description="View approved and pending leave alongside workspace holidays and weekly days off."
         icon={CalendarRange}
       />
       <div className="rounded-2xl border p-3 shadow-sm sm:p-5 lg:p-6" style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}>

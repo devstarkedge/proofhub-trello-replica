@@ -27,6 +27,7 @@ api.interceptors.response.use(
 
 // ─── Setup ──────────────────────────────────────────────────────────────────
 export const setupLeaveModule = async () => (await api.post('/setup')).data;
+export const getSetupStatus = async () => (await api.get('/setup')).data;
 
 // ─── Leave Types & Policies ─────────────────────────────────────────────────
 export const getLeaveTypes = async (params = {}) => (await api.get('/types', { params })).data;
@@ -47,6 +48,9 @@ export const createDefaultPolicy = async (payload) => (await api.post('/policies
 export const editDefaultPolicy = async (policyId, payload) => (await api.patch(`/policies/default/${policyId}`, payload)).data;
 export const activateDefaultPolicy = async (policyId) => (await api.post(`/policies/default/${policyId}/activate`)).data;
 export const archiveDefaultPolicy = async (policyId) => (await api.post(`/policies/default/${policyId}/archive`)).data;
+export const deleteArchivedPolicy = async (policyId, kind = 'default') => (await api.delete(`/policies/${kind}/${policyId}`)).data;
+export const getCalendarEvents = async (params) => (await api.get('/calendar/events', { params })).data;
+export const getDashboardRecords = async (params) => (await api.get('/dashboard/records', { params })).data;
 
 // ─── Override (department/role/employee-specific) Policies ─────────────────
 export const getOverridePolicies = async () => (await api.get('/policies/overrides')).data;
@@ -104,8 +108,8 @@ export const getEmployeeDashboard = async () => (await api.get('/dashboard/emplo
 export const getManagerDashboard = async () => (await api.get('/dashboard/manager')).data;
 export const getHrDashboard = async () => (await api.get('/dashboard/hr')).data;
 export const getAdminDashboard = async () => (await api.get('/dashboard/admin')).data;
-export const getDayStatus = async ({ userIds, startDate, endDate, visibility }) =>
-  (await api.get('/dashboard/day-status', { params: { userIds: userIds.join(','), startDate, endDate, visibility } })).data;
+export const getDayStatus = async ({ userIds, startDate, endDate, visibility, calendarOnly }) =>
+  (await api.get('/dashboard/day-status', { params: { userIds: userIds.join(','), startDate, endDate, visibility, calendarOnly } })).data;
 
 // ─── Reports & Audit ────────────────────────────────────────────────────────
 export const getEmployeeUsageReport = async (userId) => (await api.get(`/reports/usage/employee/${userId || ''}`)).data;

@@ -1,5 +1,5 @@
 import express from 'express';
-import { body } from 'express-validator';
+import { body, param } from 'express-validator';
 import { protect } from '../../middleware/authMiddleware.js';
 import { requireResourcePermission } from '../../middleware/requireAccessControl.js';
 import { validate } from '../../middleware/validation.js';
@@ -7,6 +7,7 @@ import * as controller from './leaveCalendar.controller.js';
 
 const router = express.Router();
 router.use(protect);
+router.get('/calendar/events', controller.listLeaveEvents);
 
 // Reading the working calendar/holiday list is needed by every employee's
 // own request form (to grey out non-working days) — not gated behind the
@@ -26,7 +27,7 @@ router.post(
   [body('date').notEmpty(), body('name').trim().notEmpty(), validate],
   controller.createHoliday
 );
-router.delete('/holidays/:holidayId', requireResourcePermission('leave', 'manage_calendar'), controller.deleteHoliday);
+router.delete('/holidays/:holidayId', requireResourcePermission('leave', 'manage_calendar'), [param('holidayId').isMongoId(), validate], controller.deleteHoliday);
 
 // Work Calendar Engine — base pattern + recurring rules + date overrides,
 // read/saved/previewed as one atomic unit. Reads open to any workspace

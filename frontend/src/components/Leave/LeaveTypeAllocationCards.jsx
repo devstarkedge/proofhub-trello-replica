@@ -1,3 +1,4 @@
+import DurationHoursInput from '../ui/DurationHoursInput';
 import React from 'react';
 
 const inputClass = 'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
@@ -45,12 +46,8 @@ const LeaveTypeAllocationCards = ({ rules, updateRule }) => (
           )}
           {rule.category === 'SHORT_LEAVE' ? (
             <label className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-              Max duration per request (minutes)
-              <input
-                type="number" min="1" className={`${inputClass} mt-1.5`} style={inputStyle}
-                value={rule.maxDurationMinutesPerInstance}
-                onChange={(e) => updateRule(rule.leaveTypeId, { maxDurationMinutesPerInstance: e.target.value })}
-              />
+              Max duration per request (hours)
+              <DurationHoursInput minMinutes={1} required className={`${inputClass} mt-1.5`} style={inputStyle} value={rule.maxDurationMinutesPerInstance} onChange={(value) => updateRule(rule.leaveTypeId, { maxDurationMinutesPerInstance: value })} />
             </label>
           ) : (
             <label className="flex items-center gap-2 text-xs font-medium pt-5" style={{ color: 'var(--color-text-secondary)' }}>

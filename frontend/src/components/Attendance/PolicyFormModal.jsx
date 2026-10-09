@@ -1,3 +1,4 @@
+import DurationHoursInput from '../ui/DurationHoursInput';
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -153,10 +154,10 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submi
           <div className="grid grid-cols-2 gap-3">
             <div><label className={labelClass} style={labelStyle}>Start time</label><input type="time" className={inputClass} style={inputStyle} value={content.officeHours.startLocalTime} onChange={(e) => updateNested('officeHours', { startLocalTime: e.target.value })} required /></div>
             <div><label className={labelClass} style={labelStyle}>End time</label><input type="time" className={inputClass} style={inputStyle} value={content.officeHours.endLocalTime} onChange={(e) => updateNested('officeHours', { endLocalTime: e.target.value })} required /></div>
-            <div><label className={labelClass} style={labelStyle}>Check-in grace period (minutes)</label><input type="number" min="0" className={inputClass} style={inputStyle} value={content.graceMinutes} onChange={(e) => updateContent({ graceMinutes: Number(e.target.value) })} /></div>
-            <div><label className={labelClass} style={labelStyle}>Early-exit grace (minutes)</label><input type="number" min="0" className={inputClass} style={inputStyle} value={content.earlyExitGraceMinutes} onChange={(e) => updateContent({ earlyExitGraceMinutes: Number(e.target.value) })} /></div>
-            <div><label className={labelClass} style={labelStyle}>Full-day minimum (minutes)</label><input type="number" min="1" className={inputClass} style={inputStyle} value={content.minimumFullDayMinutes} onChange={(e) => updateContent({ minimumFullDayMinutes: Number(e.target.value) })} /></div>
-            <div><label className={labelClass} style={labelStyle}>Half-day minimum (minutes)</label><input type="number" min="1" className={inputClass} style={inputStyle} value={content.minimumHalfDayMinutes} onChange={(e) => updateContent({ minimumHalfDayMinutes: Number(e.target.value) })} /></div>
+            <div><label className={labelClass} style={labelStyle}>Check-in grace period (hours)</label><DurationHoursInput minMinutes={0} className={inputClass} style={inputStyle} value={content.graceMinutes} onChange={(value) => updateContent({ graceMinutes: value })} /></div>
+            <div><label className={labelClass} style={labelStyle}>Early-exit grace (hours)</label><DurationHoursInput minMinutes={0} className={inputClass} style={inputStyle} value={content.earlyExitGraceMinutes} onChange={(value) => updateContent({ earlyExitGraceMinutes: value })} /></div>
+            <div><label className={labelClass} style={labelStyle}>Full-day minimum (hours)</label><DurationHoursInput minMinutes={1} className={inputClass} style={inputStyle} value={content.minimumFullDayMinutes} onChange={(value) => updateContent({ minimumFullDayMinutes: value })} /></div>
+            <div><label className={labelClass} style={labelStyle}>Half-day minimum (hours)</label><DurationHoursInput minMinutes={1} className={inputClass} style={inputStyle} value={content.minimumHalfDayMinutes} onChange={(value) => updateContent({ minimumHalfDayMinutes: value })} /></div>
           </div>
           <div>
             <label className={labelClass} style={labelStyle}>Half-day is triggered by</label>

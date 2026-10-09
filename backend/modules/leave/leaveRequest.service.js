@@ -9,7 +9,7 @@ import AuditLog from '../../models/AuditLog.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { getWorkspaceTimezone, computeExpiryDate, eachCalendarDate } from './leaveTimezone.util.js';
 import { buildCalendarContext, classifyDateWithContext } from './leaveCalendar.service.js';
-import { resolvePolicyContext, findLeaveTypeRule } from './leavePolicy.service.js';
+import { assertPolicyVersionAvailable, resolvePolicyContext, findLeaveTypeRule } from './leavePolicy.service.js';
 import { getEffectiveEmploymentProfile } from './leaveEmployeeProfile.service.js';
 import {
   assertValidDateRange, assertValidDayType, assertNoOverlap, assertEmploymentEligible,
@@ -119,6 +119,7 @@ export async function submitLeaveRequest({
   let created;
   try {
     await session.withTransaction(async () => {
+            await assertPolicyVersionAvailable({ workspaceId, policyVersionId: policyVersion._id, session });
       const [request] = await LeaveRequest.create([{
         workspaceId, requester: requesterId, requesterDepartmentIds: departmentIds,
         leaveType: leaveType._id, policyVersion: policyVersion._id, startDate, endDate,
@@ -345,6 +346,7 @@ export async function decideCancellationRequest({ workspaceId, requestId, actor,
 
   try {
     if (result.decision === 'approved') await leaveHooks.onCancelledByHr(result.request, actorId, reason);
+    else await leaveHooks.onWorkCalendarUpdated(workspaceId);
   } catch (error) {
     console.error('[Leave] post-cancellation-decision notification error:', error.message);
   }

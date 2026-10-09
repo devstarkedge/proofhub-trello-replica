@@ -1,3 +1,4 @@
+import { formatHours } from '../../utils/duration';
 import React, { useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -141,7 +142,7 @@ const PoliciesTab = () => {
             </Row>
             {config.currentVersion && (
               <Row>
-                <span style={{ color: 'var(--color-text-secondary)' }}>Active version: work modes {config.currentVersion.allowedWorkModes?.join(', ')}, grace {config.currentVersion.graceMinutes}m</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Active version: work modes {config.currentVersion.allowedWorkModes?.join(', ')}, grace {formatHours(config.currentVersion.graceMinutes)}</span>
                 {config.status !== 'active' && <Button variant="outline" size="sm" onClick={activateNow}><Rocket className="h-3.5 w-3.5" /> Activate now</Button>}
               </Row>
             )}
@@ -445,7 +446,7 @@ const OFFICE_HOURS_FIELD_LABELS = {
 function describeOfficeHoursOverride(override) {
   const parts = Object.keys(OFFICE_HOURS_FIELD_LABELS)
     .filter((key) => override[key] !== null && override[key] !== undefined)
-    .map((key) => `${OFFICE_HOURS_FIELD_LABELS[key]}: ${override[key]}`);
+    .map((key) => `${OFFICE_HOURS_FIELD_LABELS[key]}: ${key.endsWith('Minutes') ? formatHours(override[key]) : override[key]}`);
   return parts.length ? parts.join(' · ') : 'No fields set';
 }
 

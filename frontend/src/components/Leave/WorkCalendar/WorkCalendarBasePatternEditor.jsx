@@ -1,3 +1,4 @@
+import DurationHoursInput from '../../ui/DurationHoursInput';
 import React from 'react';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -65,12 +66,9 @@ const WorkCalendarBasePatternEditor = ({ weeklyPattern, standardWorkMinutesPerDa
       </div>
 
       <label className="block max-w-xs text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-        Standard work minutes per day
-        <input
-          type="number" min="1" max="1440" className={`${inputClass} mt-1.5`} style={inputStyle}
-          value={standardWorkMinutesPerDay}
-          onChange={(e) => onChange({ weeklyPattern, standardWorkMinutesPerDay: Number(e.target.value) || 480 })}
-        />
+        Standard work hours per day
+        <DurationHoursInput minMinutes={1} required className={`${inputClass} mt-1.5`} style={inputStyle}
+          value={standardWorkMinutesPerDay} onChange={(value) => onChange({ weeklyPattern, standardWorkMinutesPerDay: value })} />
         <span className="mt-1 block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
           Used for expected-hours math in Reports and Teams — a half day counts half this value.
         </span>

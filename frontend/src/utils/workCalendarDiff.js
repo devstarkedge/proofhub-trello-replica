@@ -1,3 +1,4 @@
+import { formatHours } from './duration';
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const OCCURRENCE_LABELS = { FIRST: '1st', SECOND: '2nd', THIRD: '3rd', FOURTH: '4th', FIFTH: '5th', LAST: 'Last' };
 
@@ -35,7 +36,7 @@ export function buildWorkCalendarDiff({ serverConfig, draft }) {
 
   const oldMinutes = serverConfig?.workCalendar?.standardWorkMinutesPerDay ?? 480;
   if (oldMinutes !== draft.standardWorkMinutesPerDay) {
-    rows.push({ label: 'Standard work minutes/day', oldValue: String(oldMinutes), newValue: String(draft.standardWorkMinutesPerDay) });
+    rows.push({ label: 'Standard work hours/day', oldValue: formatHours(oldMinutes), newValue: formatHours(draft.standardWorkMinutesPerDay) });
   }
 
   const oldRuleKeys = new Set((serverConfig?.recurringRules || []).map((r) => `${r.dayOfWeek}:${r.occurrence}:${r.action}`));

@@ -1,4 +1,5 @@
 import LeaveRequestDay from './leaveRequestDay.model.js';
+import { PENDING_STATUSES, APPROVED_STATUSES } from './leaveRequest.model.js';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { getWorkspaceTimezone, dateOnlyToInstant, instantToDateOnlyKey, eachCalendarDate } from './leaveTimezone.util.js';
@@ -10,7 +11,7 @@ import { buildCalendarContext, classifyDateWithContext } from './leaveCalendar.s
 // (see spec's "HR cancels on the day" flow), never as a residual leave
 // indicator, and existing task-tracked time for that date is untouched by
 // this read-only overlay (it never queries Card/Subtask/SubtaskNano).
-const IN_EFFECT_STATUSES = ['APPROVED', 'CANCELLATION_REQUESTED', 'PARTIALLY_APPROVED', 'PENDING_APPROVAL'];
+const IN_EFFECT_STATUSES = [...APPROVED_STATUSES, ...PENDING_STATUSES];
 
 /**
  * For each (user, date) in range, resolve one of: ON_LEAVE (with dayType +
@@ -26,7 +27,7 @@ const IN_EFFECT_STATUSES = ['APPROVED', 'CANCELLATION_REQUESTED', 'PARTIALLY_APP
  * into) — callers must pass the narrower option unless the viewer is
  * authorized to see pending leave for these users.
  */
-export async function getDayStatusForUsers({ workspaceId, userIds, startDate, endDate, visibility = 'approved_only' }) {
+export async function getDayStatusForUsers({ workspaceId, userIds, startDate, endDate, visibility = 'approved_only', includeLeave = true }) {
   const workspace = await Workspace.findById(workspaceId).select('timezone').lean();
   const timezone = getWorkspaceTimezone(workspace);
 
@@ -40,15 +41,15 @@ export async function getDayStatusForUsers({ workspaceId, userIds, startDate, en
 
   const rangeStart = dateOnlyToInstant(startDate, timezone);
   const rangeEnd = dateOnlyToInstant(endDate, timezone);
-  const allowedStatuses = visibility === 'approved_only' ? ['APPROVED', 'CANCELLATION_REQUESTED'] : IN_EFFECT_STATUSES;
+  const allowedStatuses = visibility === 'approved_only' ? APPROVED_STATUSES : IN_EFFECT_STATUSES;
 
-  const days = await LeaveRequestDay.find({ workspaceId, date: { $gte: rangeStart, $lte: rangeEnd } })
+  const days = includeLeave ? await LeaveRequestDay.find({ workspaceId, date: { $gte: rangeStart, $lte: rangeEnd } })
     .populate({
       path: 'request',
       select: 'requester status leaveType',
       populate: { path: 'leaveType', select: 'name category' }
     })
-    .lean();
+    .lean() : [];
 
   const leaveByKey = new Map();
   for (const day of days) {

@@ -40,13 +40,12 @@ export function assertMyLeaveSelfServiceAllowed(user) {
 export async function canViewUserLeaveData({ viewer, targetUserId, workspaceId }) {
   const viewerId = viewer._id || viewer.id;
   if (String(viewerId) === String(targetUserId)) return true;
-  if (viewer.role === 'admin') return true;
 
-  if (viewer.role === 'hr' && await hasResourceAction(viewer, 'leave', 'view_workspace', workspaceId)) {
+  if (await hasResourceAction(viewer, 'leave', 'view_workspace', workspaceId)) {
     return true;
   }
 
-  if (viewer.role === 'manager') {
+  {
     const managed = await Department.findOne({
       workspaceId, managers: viewerId, members: targetUserId, isActive: true
     }).select('_id').lean();
@@ -90,7 +89,7 @@ export async function getManagedEmployeeIds({ workspaceId, managerId }) {
 export async function getLeaveDashboardScope({ user, workspaceId }) {
   const userId = user._id || user.id;
 
-  if (user.role === 'admin' || await hasResourceAction(user, 'leave', 'view_workspace', workspaceId)) {
+  if (await hasResourceAction(user, 'leave', 'view_workspace', workspaceId)) {
     return { scope: 'workspace', departmentIds: [] };
   }
 

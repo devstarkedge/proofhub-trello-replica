@@ -99,6 +99,17 @@ export const listDefaultPolicies = asyncHandler(async (req, res) => {
   res.json({ success: true, data: policies });
 });
 
+export const deleteArchivedPolicy = asyncHandler(async (req, res) => {
+  const before = await leavePolicyService.deleteArchivedPolicy({ workspaceId: req.workspaceId, policyId: req.params.policyId, isDefault: req.params.kind === 'default' });
+  await recordAuditLog({
+    actor: req.user, action: 'LEAVE_POLICY_DELETED', targetType: 'LeavePolicy', targetId: before._id,
+    resourceLabel: `Leave Policy: ${before.name}`, summary: `${req.user.name} permanently deleted unused archived policy "${before.name}"`,
+    before, after: null, category: 'leave_management', meta: { workspaceId: req.workspaceId }
+  });
+  onPolicyActivated(req.workspaceId, before).catch(() => {});
+  res.json({ success: true, data: { deleted: true } });
+});
+
 export const createDefaultPolicy = asyncHandler(async (req, res) => {
   const { name, description, effectiveYear, effectiveMonth, leaveTypeRules, approvalWorkflow, blackout } = req.body;
   const { policy, version } = await leavePolicyService.createDefaultPolicy({

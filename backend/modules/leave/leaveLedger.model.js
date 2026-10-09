@@ -43,6 +43,7 @@ const leaveLedgerSchema = new mongoose.Schema({
   relatedEntryId: { type: mongoose.Schema.Types.ObjectId, ref: 'LeaveLedger', default: null },
   reason: { type: String, trim: true, maxlength: 500, default: '' },
   actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // null = system-generated
+  clientAdjustmentId: { type: String, default: null, maxlength: 100 },
   occurredAt: { type: Date, required: true, default: Date.now },
   policyVersion: { type: mongoose.Schema.Types.ObjectId, ref: 'LeavePolicyVersion', default: null }
 }, { timestamps: true });
@@ -51,6 +52,7 @@ leaveLedgerSchema.index({ workspaceId: 1, user: 1, leaveType: 1, occurredAt: 1 }
 leaveLedgerSchema.index({ workspaceId: 1, request: 1 });
 leaveLedgerSchema.index({ workspaceId: 1, bucket: 1 });
 leaveLedgerSchema.index({ workspaceId: 1, type: 1, occurredAt: 1 });
+leaveLedgerSchema.index({ workspaceId: 1, actor: 1, clientAdjustmentId: 1 });
 
 leaveLedgerSchema.plugin(workspaceScopePlugin);
 

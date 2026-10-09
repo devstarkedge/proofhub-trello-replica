@@ -1,3 +1,4 @@
+import { formatHours } from '../../utils/duration';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -181,6 +182,7 @@ const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
               <input type="time" className={selectClass} style={selectStyle} {...register('shortLeaveEndTime')} />
             </div>
           </div>
+          {watch('shortLeaveDurationMinutes') > 0 && <p className="mt-2 text-xs">Duration: {formatHours(watch('shortLeaveDurationMinutes'))}</p>}
           {shortLeaveStartTime && shortLeaveEndTime && !watch('shortLeaveDurationMinutes') && (
             <p className="text-xs mt-1" style={{ color: 'var(--color-error-text)' }}>End time must be after start time.</p>
           )}

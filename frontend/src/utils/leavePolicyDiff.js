@@ -1,3 +1,4 @@
+import { formatHours } from './duration';
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
@@ -79,7 +80,7 @@ export function buildPolicyDiff({ oldPolicy, oldVersion, newValues }) {
       if (oldMax !== newMax) {
         rows.push({
           label: `${rule.leaveTypeName} — max duration`,
-          oldValue: oldMax ? `${oldMax} min` : '—', newValue: newMax ? `${newMax} min` : '—'
+          oldValue: oldMax ? formatHours(oldMax) : '—', newValue: newMax ? formatHours(newMax) : '—'
         });
       }
     } else {

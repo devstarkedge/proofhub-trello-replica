@@ -73,7 +73,7 @@ export function* eachCalendarDate(startDate, endDate, timezone) {
   const end = dateOnlyToInstant(endDate, timezone).getTime();
   while (cursor.getTime() <= end) {
     yield cursor;
-    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+    cursor = DateTime.fromJSDate(cursor, { zone: timezone }).plus({ days: 1 }).startOf('day').toUTC().toJSDate();
   }
 }
 

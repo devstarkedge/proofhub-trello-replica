@@ -15,6 +15,11 @@ export const LEAVE_REQUEST_STATUSES = Object.freeze({
   EXPIRED: 'EXPIRED'
 });
 
+export const PENDING_STATUSES = ['SUBMITTED', 'PENDING_APPROVAL', 'PARTIALLY_APPROVED'];
+// An approved absence remains in effect until cancellation is finalized.
+export const APPROVED_STATUSES = ['APPROVED', 'CANCELLATION_REQUESTED'];
+export const CANCELLED_STATUSES = ['CANCELLED_BY_REQUESTER', 'CANCELLED_BY_HR', 'CANCELLED_BY_ADMIN'];
+
 const cancellationSchema = new mongoose.Schema({
   requestedAt: { type: Date, default: null },
   requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

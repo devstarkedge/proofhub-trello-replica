@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import WorkspaceContext from '../context/WorkspaceContext';
 import { ArrowLeft, Rocket, Settings } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -25,6 +26,15 @@ const LeaveSettingsLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [settingUp, setSettingUp] = useState(false);
+  const { currentWorkspace, loadWorkspaces } = useContext(WorkspaceContext);
+  const [setupState, setSetupState] = useState(null);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setSetupState(null);
+    leaveApi.getSetupStatus().then(({ data }) => { if (active) setSetupState({ ...data, workspaceId: currentWorkspace?._id }); }).catch(() => {});
+    return () => { active = false; };
+  }, [currentWorkspace?._id, revision]);
   const backTargetRef = useRef((() => {
     const stateTarget = location.state?.fromLeave;
     const storedTarget = sessionStorage.getItem('flowtask.leave.lastRoute');
@@ -37,6 +47,9 @@ const LeaveSettingsLayout = () => {
     setSettingUp(true);
     try {
       await leaveApi.setupLeaveModule();
+      setSetupState({ enabled: true });
+      setRevision((v) => v + 1);
+      await loadWorkspaces();
       toast.success('Leave module enabled for this workspace');
     } catch {
       // The API interceptor owns error notifications.
@@ -68,9 +81,9 @@ const LeaveSettingsLayout = () => {
                 <h1 className="truncate text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>Leave Settings</h1>
               </div>
             </div>
-            <Button variant="outline" onClick={runSetup} disabled={settingUp} className="flex items-center gap-2 self-start sm:self-auto">
-              <Rocket className="h-4 w-4" /> {settingUp ? 'Setting up…' : 'Enable / Reset Defaults'}
-            </Button>
+            {setupState?.workspaceId === currentWorkspace?._id && setupState?.enabled === false && setupState?.canInitialize && <Button variant="outline" onClick={runSetup} disabled={settingUp} className="flex items-center gap-2 self-start sm:self-auto">
+              <Rocket className="h-4 w-4" /> {settingUp ? 'Setting up…' : 'Enable / Initialize Defaults'}
+            </Button>}
           </div>
 
           <nav className="flex max-w-full gap-1 overflow-x-auto pb-2" aria-label="Leave settings navigation">
@@ -91,7 +104,7 @@ const LeaveSettingsLayout = () => {
         </LeaveContentContainer>
       </div>
 
-      <LeaveContentContainer><Outlet /></LeaveContentContainer>
+      <LeaveContentContainer key={`${currentWorkspace?._id}-${revision}`}><Outlet /></LeaveContentContainer>
     </div>
   );
 };

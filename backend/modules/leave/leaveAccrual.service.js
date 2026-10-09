@@ -3,7 +3,7 @@ import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import Workspace from '../../models/Workspace.js';
 import * as workspaceContext from '../workspaces/workspaceContext.js';
 import { getWorkspaceTimezone, getCurrentPeriodKey, getPeriodBounds, computeExpiryDate } from './leaveTimezone.util.js';
-import { resolvePolicyContext } from './leavePolicy.service.js';
+import { assertPolicyVersionAvailable, resolvePolicyContext } from './leavePolicy.service.js';
 import { creditBucket } from './leaveBalance.service.js';
 import { getEffectiveEmploymentProfile } from './leaveEmployeeProfile.service.js';
 import { onBucketCredited } from './leaveHooks.js';
@@ -103,6 +103,7 @@ export async function runMonthlyAccrualForWorkspace({ workspaceId, period = null
         const session = await mongoose.startSession();
         try {
           await session.withTransaction(async () => {
+            await assertPolicyVersionAvailable({ workspaceId, policyVersionId: policyVersion._id, session });
             await creditBucket({
               workspaceId, user: membership.user, leaveType: rule.leaveType, policyVersion: policyVersion._id,
               period: targetPeriod, sourceType: isJoiningPeriod ? 'JOINING_CREDIT' : 'MONTHLY_ACCRUAL',

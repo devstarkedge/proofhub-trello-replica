@@ -7,10 +7,10 @@ import LeaveApprovalWorkflow from './leaveApprovalWorkflow.model.js';
  * engine and the reminder scheduler can import it without a circular
  * dependency between those two modules.
  */
-export async function getOrCreateActiveWorkflow(workspaceId) {
-  let workflow = await LeaveApprovalWorkflow.findOne({ workspaceId, isActive: true });
+export async function getOrCreateActiveWorkflow(workspaceId, session = null) {
+  let workflow = await LeaveApprovalWorkflow.findOne({ workspaceId, isActive: true }).session(session);
   if (!workflow) {
-    workflow = await LeaveApprovalWorkflow.create({ workspaceId, name: 'Default Workflow', isActive: true });
+    [workflow] = await LeaveApprovalWorkflow.create([{ workspaceId, name: 'Default Workflow', isActive: true }], session ? { session } : {});
   }
   return workflow;
 }

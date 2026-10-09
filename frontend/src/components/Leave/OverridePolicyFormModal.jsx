@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import { MONTHS, workspaceDateKey } from '../../utils/workspaceDateRange';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Button } from '../ui/button';
 import LeaveTypeAllocationCards from './LeaveTypeAllocationCards';
-import { MONTHS } from './PolicyFormModal';
 import { ruleFromVersion, buildLeaveTypeRulesPayload } from '../../utils/leavePolicyRules';
 import * as leaveApi from '../../services/leaveApi';
 import Database from '../../services/database';
@@ -34,9 +35,10 @@ const OverridePolicyFormModal = ({ mode = 'create', initialPolicy, initialAssign
   const [description, setDescription] = useState(initialPolicy?.description || '');
   const [scope, setScope] = useState(initialAssignment?.scope || 'department');
   const [scopeRef, setScopeRef] = useState(initialAssignment?.scopeRef || '');
-  const now = new Date();
-  const [effectiveYear, setEffectiveYear] = useState(now.getFullYear());
-  const [effectiveMonth, setEffectiveMonth] = useState(now.getMonth() + 1);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const now = workspaceDateKey(new Date(), currentWorkspace?.timezone);
+  const [effectiveYear, setEffectiveYear] = useState(Number(now.slice(0, 4)));
+  const [effectiveMonth, setEffectiveMonth] = useState(Number(now.slice(5, 7)));
   const [rules, setRules] = useState([]);
 
   useEffect(() => {

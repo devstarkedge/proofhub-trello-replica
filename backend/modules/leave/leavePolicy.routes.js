@@ -1,5 +1,5 @@
 import express from 'express';
-import { body } from 'express-validator';
+import { body, param } from 'express-validator';
 import { protect } from '../../middleware/authMiddleware.js';
 import { requireResourcePermission } from '../../middleware/requireAccessControl.js';
 import { validate } from '../../middleware/validation.js';
@@ -112,6 +112,7 @@ router.post(
 );
 
 router.get('/policies/:policyId', requireResourcePermission('leave', 'view_policy'), controller.getPolicy);
+router.delete('/policies/:kind(default|overrides)/:policyId', requireResourcePermission('leave', 'manage_policy'), [param('policyId').isMongoId(), validate], controller.deleteArchivedPolicy);
 router.post(
   '/policies/:policyId/versions',
   requireResourcePermission('leave', 'manage_policy'),

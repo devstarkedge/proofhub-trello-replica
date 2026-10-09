@@ -1,3 +1,4 @@
+import DurationHoursInput from '../ui/DurationHoursInput';
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -54,8 +55,8 @@ const ShiftFormModal = ({ mode = 'create', initialShift, submitting, onCancel, o
         )}
 
         <div>
-          <label className={labelClass} style={labelStyle}>Unpaid break (minutes)</label>
-          <input type="number" min="0" className={inputClass} style={inputStyle} value={breakMinutes} onChange={(e) => setBreakMinutes(e.target.value)} />
+          <label className={labelClass} style={labelStyle}>Unpaid break (hours)</label>
+          <DurationHoursInput className={inputClass} style={inputStyle} value={breakMinutes} onChange={setBreakMinutes} />
         </div>
 
         <div className="space-y-2 rounded-lg border p-3" style={{ borderColor: 'var(--color-border-subtle)' }}>
@@ -64,7 +65,7 @@ const ShiftFormModal = ({ mode = 'create', initialShift, submitting, onCancel, o
             Override the policy's default grace period for this shift
           </label>
           {overrideGrace && (
-            <input type="number" min="0" className={inputClass} style={inputStyle} value={graceMinutes} onChange={(e) => setGraceMinutes(e.target.value)} />
+            <DurationHoursInput className={inputClass} style={inputStyle} value={graceMinutes} onChange={setGraceMinutes} />
           )}
         </div>
 

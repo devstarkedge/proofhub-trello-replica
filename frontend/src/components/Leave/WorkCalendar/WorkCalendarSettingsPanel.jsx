@@ -75,6 +75,8 @@ const WorkCalendarSettingsPanel = () => {
   if (!draft) return null;
 
   const handleSaveClick = () => {
+    const invalid = document.querySelector('[data-work-calendar-settings] input:invalid');
+    if (invalid) { invalid.reportValidity(); return; }
     const computedDiff = buildWorkCalendarDiff({ serverConfig, draft });
     if (!computedDiff.length) {
       toast.info('No changes to save');
@@ -96,7 +98,7 @@ const WorkCalendarSettingsPanel = () => {
   const cancelDraft = () => setDraft(draftFromServerConfig(serverConfig));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-work-calendar-settings>
       {staleNotice && (
         <div
           className="flex items-center justify-between gap-3 rounded-lg border px-4 py-2.5 text-xs"
