@@ -12,6 +12,7 @@ const LeaveLayout = () => {
   const location = useLocation();
   const role = (user?.role || '').toLowerCase();
   const isSettings = location.pathname.startsWith('/leave/settings');
+  const isCalendar = location.pathname === '/leave/calendar';
 
   useEffect(() => {
     if (MAIN_LEAVE_ROUTES.includes(location.pathname)) {
@@ -28,14 +29,14 @@ const LeaveLayout = () => {
   ].filter((tab) => tab.visible);
 
   return (
-    <div className="min-h-full w-full" style={{ backgroundColor: 'var(--color-bg-base)' }}>
+    <div className={`w-full ${isCalendar ? 'h-full flex flex-col overflow-hidden' : 'min-h-full'}`} style={{ backgroundColor: 'var(--color-bg-base)' }}>
       {!isSettings && (
         <div
-          className="sticky top-0 z-30 border-b"
+          className="sticky top-0 z-30 border-b flex-none"
           style={{ backgroundColor: 'color-mix(in srgb, var(--color-bg-base) 96%, transparent)', borderColor: 'var(--color-border-subtle)' }}
         >
           <LeaveContentContainer className="!py-0">
-            <div className="flex min-h-16 flex-col gap-2 py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+            <div className="flex min-h-14 lg:min-h-16 flex-col gap-2 py-2.5 lg:py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
               <NavLink to="/leave" className="flex flex-none items-center gap-2.5 rounded-lg py-1">
                 <span
                   className="flex h-9 w-9 items-center justify-center rounded-xl"
@@ -69,7 +70,13 @@ const LeaveLayout = () => {
         </div>
       )}
 
-      {isSettings ? <Outlet /> : <LeaveContentContainer><Outlet /></LeaveContentContainer>}
+      {isSettings ? (
+        <Outlet />
+      ) : (
+        <LeaveContentContainer className={isCalendar ? 'flex-1 flex flex-col min-h-0 !py-2 sm:!py-2.5 lg:!py-3' : ''}>
+          <Outlet />
+        </LeaveContentContainer>
+      )}
     </div>
   );
 };

@@ -203,6 +203,13 @@ const LeaveCalendarGrid = ({ userId }) => {
     setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + offset, 1));
   };
 
+  const goToToday = () => {
+    setActiveDetails(null);
+    setCursor(new Date(workspaceDateKey(new Date(), currentWorkspace?.timezone) + 'T12:00:00'));
+  };
+
+  const numRows = Math.ceil(cells.length / 7) || 5;
+
   const activeEvents = activeDetails ? buildEventsForDate({
     status: dayStatus[activeDetails.dateKey],
     holidays: [...new Map([...(holidaysByDate.get(activeDetails.dateKey) || []), ...(holidaysByDate.get(`*-${activeDetails.dateKey.slice(5)}`) || [])].map((h) => [h._id, h])).values()],
@@ -211,25 +218,78 @@ const LeaveCalendarGrid = ({ userId }) => {
   }) : [];
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between sm:mb-5">
-        <button type="button" onClick={() => changeMonth(-1)} className="rounded-lg p-1.5 hover:bg-[var(--color-bg-muted)]" aria-label="Previous month">
-          <ChevronLeft className="h-4 w-4" style={{ color: 'var(--color-text-secondary)' }} />
-        </button>
-        <h3 className="text-sm font-semibold sm:text-base" style={{ color: 'var(--color-text-primary)' }}>
-          {cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-        </h3>
-        <button type="button" onClick={() => changeMonth(1)} className="rounded-lg p-1.5 hover:bg-[var(--color-bg-muted)]" aria-label="Next month">
-          <ChevronRight className="h-4 w-4" style={{ color: 'var(--color-text-secondary)' }} />
-        </button>
+    <div className="flex-1 flex flex-col min-h-0 h-full">
+      <div className="mb-2 sm:mb-2.5 flex flex-none items-center justify-between gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => changeMonth(-1)}
+            className="rounded-lg p-1.5 transition-colors hover:bg-[var(--color-bg-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border-focus)]"
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="h-4 w-4" style={{ color: 'var(--color-text-secondary)' }} />
+          </button>
+          <h3 className="text-sm font-semibold sm:text-base min-w-[130px] sm:min-w-[160px] text-center" style={{ color: 'var(--color-text-primary)' }}>
+            {cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+          </h3>
+          <button
+            type="button"
+            onClick={() => changeMonth(1)}
+            className="rounded-lg p-1.5 transition-colors hover:bg-[var(--color-bg-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border-focus)]"
+            aria-label="Next month"
+          >
+            <ChevronRight className="h-4 w-4" style={{ color: 'var(--color-text-secondary)' }} />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {loading && (
+            <span className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: 'var(--color-text-muted)' }}>
+              <span className="h-1.5 w-1.5 rounded-full animate-ping bg-[var(--color-primary-600)]" />
+              <span className="hidden sm:inline">Updating...</span>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={goToToday}
+            className="rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--color-bg-muted)]"
+            style={{ borderColor: 'var(--color-border-default)', color: 'var(--color-text-secondary)' }}
+          >
+            Today
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 text-center sm:gap-2">
+      {error && (
+        <div className="mb-2 flex flex-none items-center justify-between rounded-lg bg-red-500/10 px-3 py-1.5 text-xs text-red-500">
+          <span>{error}</span>
+          <button type="button" onClick={() => { loadHolidays(); loadDayStatus(); }} className="underline font-semibold ml-2">
+            Refresh
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center flex-none mb-1">
         {DAY_LABELS.map((label) => (
-          <div key={label} className="py-1 text-[10px] font-semibold uppercase tracking-wide sm:text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</div>
+          <div
+            key={label}
+            className="py-1 text-[10px] font-semibold uppercase tracking-wider sm:text-xs"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            <span className="hidden sm:inline">{label}</span>
+            <span className="sm:hidden">{label.slice(0, 3)}</span>
+          </div>
         ))}
+      </div>
+
+      <div
+        className="grid grid-cols-7 gap-1 sm:gap-1.5 flex-1 min-h-0"
+        style={{
+          gridTemplateRows: `repeat(${numRows}, minmax(0, 1fr))`
+        }}
+      >
         {cells.map((date, index) => {
-          if (!date) return <div key={`empty-${index}`} />;
+          if (!date) return <div key={`empty-${index}`} className="min-h-0" />;
           const key = toKey(date);
           const status = dayStatus[key];
           const dateEvents = buildEventsForDate({ status, holidays: [...new Map([...(holidaysByDate.get(key) || []), ...(holidaysByDate.get(`*-${key.slice(5)}`) || [])].map((h) => [h._id, h])).values()], date, leaveEvents: leaveEvents.filter((event) => event.dateKey === key) });
@@ -241,7 +301,7 @@ const LeaveCalendarGrid = ({ userId }) => {
           return (
             <div
               key={key}
-              className={`relative flex min-h-[3.75rem] min-w-0 flex-col rounded-lg border px-1.5 py-2 text-left transition-colors sm:min-h-20 sm:px-2 sm:py-2.5 lg:min-h-24 xl:min-h-28 ${hasEvents ? 'cursor-pointer hover:bg-[var(--color-bg-subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]' : ''}`}
+              className={`group relative flex flex-col min-w-0 min-h-0 rounded-lg border p-1 sm:p-1.5 text-left transition-colors overflow-hidden ${hasEvents ? 'cursor-pointer hover:bg-[var(--color-bg-subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]' : ''}`}
               style={{
                 backgroundColor: isToday ? 'var(--color-bg-muted)' : 'transparent',
                 borderColor: isToday ? 'var(--color-border-focus)' : (hasEvents ? 'var(--color-border-subtle)' : 'transparent')
@@ -269,23 +329,36 @@ const LeaveCalendarGrid = ({ userId }) => {
                 showDetails(date, key, dateEvents, event.currentTarget);
               }}
             >
-              <span className="mb-1 text-center text-xs font-semibold sm:text-sm" style={{ color: 'var(--color-text-primary)' }}>{date.getDate()}</span>
-              <div className="min-w-0 space-y-1">
+              <div className="flex flex-none items-center justify-between mb-0.5">
+                <span
+                  className={`text-[11px] sm:text-xs font-semibold ${isToday ? 'font-bold' : ''}`}
+                  style={{ color: isToday ? 'var(--color-primary-600)' : 'var(--color-text-primary)' }}
+                >
+                  {date.getDate()}
+                </span>
+                {isToday && (
+                  <span className="hidden md:inline-block text-[9px] font-bold px-1 rounded bg-[var(--color-primary-subtle)] text-[var(--color-primary-600)]">
+                    Today
+                  </span>
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1 space-y-0.5 overflow-hidden">
                 {visibleEvents.map((event) => (
                   <div
                     key={event.id}
-                    className="flex min-w-0 items-center gap-1 rounded-md px-1 py-1 text-[9px] font-medium sm:px-1.5 sm:text-[11px]"
+                    className="flex min-w-0 items-center gap-1 rounded px-1 py-0.5 text-[9px] font-medium sm:px-1.5 sm:text-[10px] lg:text-[11px] leading-tight"
                     style={{ backgroundColor: event.backgroundColor, color: event.color }}
                   >
                     <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ backgroundColor: event.color }} />
                     {['leave', 'holiday'].includes(event.kind) && (
-                      <span className="hidden flex-none font-semibold lg:inline">{event.kind === 'leave' ? 'On Leave' : 'Holiday'} ·</span>
+                      <span className="hidden flex-none font-semibold xl:inline">{event.kind === 'leave' ? 'On Leave' : 'Holiday'} ·</span>
                     )}
                     <span className="truncate">{event.cellLabel}</span>
                   </div>
                 ))}
                 {dateEvents.length > visibleEvents.length && (
-                  <p className="truncate px-1 text-[9px] font-medium sm:text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                  <p className="truncate px-1 text-[8px] sm:text-[9px] lg:text-[10px] font-medium leading-none" style={{ color: 'var(--color-text-muted)' }}>
                     +{dateEvents.length - visibleEvents.length} more
                   </p>
                 )}
@@ -295,13 +368,19 @@ const LeaveCalendarGrid = ({ userId }) => {
         })}
       </div>
 
-      {loading && <p role="status">Loading calendar…</p>}
-      {error && <p role="alert">{error} <button type="button" onClick={() => { loadHolidays(); loadDayStatus(); }}>Refresh</button></p>}
-      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-        <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'ON_LEAVE' }} /> Approved Leave</span>
-        <span className="flex items-center gap-1.5" style={{ color: EVENT_STYLES.pending.color }}>● Pending Leave</span>
-        <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'HOLIDAY' }} /> Holiday</span>
-        <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'WEEKLY_OFF' }} /> Weekly Off</span>
+      <div
+        className="mt-2 sm:mt-2.5 flex flex-none flex-wrap items-center justify-between gap-x-4 gap-y-1 pt-2 border-t text-[11px] sm:text-xs"
+        style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}
+      >
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'ON_LEAVE' }} /> Approved Leave</span>
+          <span className="flex items-center gap-1.5" style={{ color: EVENT_STYLES.pending.color }}>
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: EVENT_STYLES.pending.color }} />
+            <span style={{ color: 'var(--color-text-muted)' }}>Pending Leave</span>
+          </span>
+          <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'HOLIDAY' }} /> Holiday</span>
+          <span className="flex items-center gap-1.5"><DayStatusIndicator dayStatus={{ status: 'WEEKLY_OFF' }} /> Weekly Off</span>
+        </div>
       </div>
 
       {activeDetails && activeEvents.length > 0 && (
