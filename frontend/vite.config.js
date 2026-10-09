@@ -28,6 +28,8 @@ export default ({ mode }) => {
       // Enable minification
       minify: 'terser',
       terserOptions: {
+        // Bound memory use on large workspaces and Windows development machines.
+        maxWorkers: 1,
         compress: {
           drop_console: true,
           drop_debugger: true,

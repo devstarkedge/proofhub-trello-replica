@@ -2,71 +2,71 @@ import { create } from 'zustand';
 import * as accessControlApi from '../services/accessControlApi';
 import { registerResettable } from './resetRegistry';
 
-/**
- * Zustand store for the centralized Access & Permissions engine.
- *
- * Holds the current user's fully-resolved effective permissions (one object
- * covering every resource — Sales, Finance, Access Control delegation — plus
- * the role checklist and HR Panel access scope) and the permission registry
- * used to render permission pickers. This is the single client-side source
- * of truth every component should read from instead of re-deriving
- * `user.role === 'admin'` locally or fetching a resource's permissions itself.
- */
+let generation = 0;
+let permissionSerial = 0;
+let permissionRequest = null;
+let registryRequest = null;
+let lastRefreshEvent = null;
+
 const useAccessControlStore = create((set, get) => ({
-  myPermissions: null, // { role, isAdmin, resources: {sales:{...}, finance:{...}, access_control:{...}}, roleChecklist, accessScope, canManageAccessControl }
-  registry: null, // { resources: { sales: {label, actions:[...]}, finance: {...}, access_control: {...} } }
+  myPermissions: null,
+  registry: null,
   loading: false,
+  registryLoading: false,
   error: null,
+  registryError: null,
 
-  loadMyPermissions: async () => {
-    try {
-      set({ loading: true, error: null });
-      const data = await accessControlApi.getMyEffectivePermissions();
-      set({ myPermissions: data, loading: false });
+  loadMyPermissions: (force = false) => {
+    if (permissionRequest && !force) return permissionRequest;
+    const epoch = generation;
+    const serial = ++permissionSerial;
+    set({ loading: true, error: null });
+    const request = accessControlApi.getMyEffectivePermissions().then((data) => {
+      if (!data?.resources) throw new Error('Permissions could not be loaded.');
+      if (epoch === generation && serial === permissionSerial) set({ myPermissions: data, loading: false });
       return data;
-    } catch (error) {
-      console.error('Error loading effective permissions:', error);
-      set({ error: error.message, loading: false });
+    }).catch((error) => {
+      if (epoch === generation && serial === permissionSerial) set({ myPermissions: null, error: error.message, loading: false });
       throw error;
-    }
+    }).finally(() => { if (permissionRequest === request) permissionRequest = null; });
+    permissionRequest = request;
+    return request;
   },
 
-  loadRegistry: async () => {
-    try {
-      const data = await accessControlApi.getRegistry();
-      set({ registry: data });
+  loadRegistry: () => {
+    if (registryRequest) return registryRequest;
+    const epoch = generation;
+    set({ registryLoading: true, registryError: null });
+    const request = accessControlApi.getRegistry().then((data) => {
+      if (!data?.resources) throw new Error('The permission catalog could not be loaded.');
+      if (epoch === generation) set({ registry: data, registryLoading: false });
       return data;
-    } catch (error) {
-      console.error('Error loading permission registry:', error);
+    }).catch((error) => {
+      if (epoch === generation) set({ registry: null, registryLoading: false, registryError: error.message });
       throw error;
-    }
+    }).finally(() => { if (registryRequest === request) registryRequest = null; });
+    registryRequest = request;
+    return request;
   },
 
-  /** Does the current user have resource.action? Admin always true. */
-  can: (resource, action) => {
-    const { myPermissions } = get();
-    if (!myPermissions) return false;
-    if (myPermissions.isAdmin) return true;
-    return myPermissions.resources?.[resource]?.[action] === true;
+  // The server has already resolved role defaults and explicit overrides.
+  can: (resource, action) => get().myPermissions?.resources?.[resource]?.[action] === true,
+  canAny: (resource, ...actions) => actions.some((action) => get().can(resource, action)),
+  canManageAccessControl: () => Boolean(get().myPermissions?.canManageAccessControl),
+  refresh: () => Promise.all([get().loadMyPermissions(true), get().loadRegistry()]),
+  refreshAfterEvent: (event) => {
+    if (event === lastRefreshEvent) return permissionRequest || Promise.resolve();
+    lastRefreshEvent = event;
+    return get().loadMyPermissions(true);
   },
-
-  canAny: (resource, ...actions) => {
-    const { can } = get();
-    return actions.some((action) => can(resource, action));
-  },
-
-  canManageAccessControl: () => {
-    const { myPermissions } = get();
-    return Boolean(myPermissions?.canManageAccessControl);
-  },
-
-  refresh: async () => {
-    await Promise.all([get().loadMyPermissions(), get().loadRegistry()]);
-  },
-
-  reset: () => set({ myPermissions: null, registry: null, loading: false, error: null })
+  reset: () => {
+    generation += 1;
+    permissionRequest = null;
+    registryRequest = null;
+    lastRefreshEvent = null;
+    set({ myPermissions: null, registry: null, loading: false, registryLoading: false, error: null, registryError: null });
+  }
 }));
 
 registerResettable(() => useAccessControlStore.getState().reset());
-
 export default useAccessControlStore;

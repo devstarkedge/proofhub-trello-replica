@@ -38,7 +38,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (!navigator.onLine && error.config) {
+    if (!navigator.onLine && error.config && !error.config.skipOfflineQueue) {
       // Store the failed request for later retry
       await addMutation({
         url: error.config.url,

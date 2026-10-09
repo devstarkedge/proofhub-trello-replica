@@ -11,27 +11,27 @@ import api from './api';
  */
 
 export const getRegistry = async () => {
-  const { data } = await api.get('/api/access-control/registry');
+  const { data } = await api.get('/api/access-control/registry', { skipOfflineQueue: true });
   return data?.data;
 };
 
 export const getMyEffectivePermissions = async () => {
-  const { data } = await api.get('/api/access-control/my-permissions');
+  const { data } = await api.get('/api/access-control/my-permissions', { skipOfflineQueue: true });
   return data?.data;
 };
 
 export const getUserEffectivePermissions = async (userId) => {
-  const { data } = await api.get(`/api/access-control/users/${userId}/effective`);
+  const { data } = await api.get(`/api/access-control/users/${userId}/effective`, { skipOfflineQueue: true });
   return data?.data;
 };
 
 export const putUserResourceOverride = async (userId, resource, payload) => {
-  const { data } = await api.put(`/api/access-control/users/${userId}/overrides/${resource}`, payload);
+  const { data } = await api.put(`/api/access-control/users/${userId}/overrides/${resource}`, payload, { skipOfflineQueue: true });
   return data?.data;
 };
 
 export const deleteUserResourceOverride = async (userId, resource) => {
-  const { data } = await api.delete(`/api/access-control/users/${userId}/overrides/${resource}`);
+  const { data } = await api.delete(`/api/access-control/users/${userId}/overrides/${resource}`, { skipOfflineQueue: true });
   return data?.data;
 };
 

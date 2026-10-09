@@ -26,7 +26,7 @@ import WorkspaceContext from '../context/WorkspaceContext';
 import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
-import UserAccessEditor from '../components/AccessControl/UserAccessEditor';
+import UserAccessDialog from '../components/AccessControl/UserAccessDialog';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
 import BulkInviteModal from '../components/Workspace/BulkInviteModal/BulkInviteModal';
@@ -596,58 +596,8 @@ const HRPanel = () => {
             </div>
           </div>
 
-          {/* Assignment Modal */}
-          {showModal && selectedUser && (
-            <div className="fixed inset-0 backdrop-blur-sm bg-black/30 overflow-y-auto h-full w-full z-50 flex items-center justify-center animate-fade-in p-4">
-              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 animate-slide-up">
-                {/* Modal Header */}
-                <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-2xl">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-white/20 p-2 rounded-lg">
-                        <UserCog className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold">Assign Department & Access</h3>
-                        <p className="text-blue-100 text-sm">{selectedUser.name}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={closeAssignModal}
-                      className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-colors duration-200"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Modal Body — role, department, and access scope, plus
-                    every module's resource overrides for this user, all
-                    from the centralized Access & Permissions module's
-                    editor. HRPanel only opens it; it doesn't implement its
-                    own copy, and the Role column is read-only display only —
-                    this modal is the one place role changes happen. */}
-                <div className="p-6 max-h-[70vh] overflow-y-auto">
-                  <UserAccessEditor
-                    userId={selectedUser._id}
-                    currentUserId={user?._id}
-                    onUserUpdated={loadData}
-                  />
-                </div>
-
-                {/* Modal Footer */}
-                <div className="flex justify-end gap-3 p-6 bg-gray-50 rounded-b-2xl border-t border-gray-200">
-                  <button
-                    onClick={closeAssignModal}
-                    className="px-6 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors duration-200 font-semibold"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
+          {/* Uses the same member-access dialog as Access & Permissions. */}
+          {showModal && selectedUser && <UserAccessDialog user={selectedUser} currentUserId={user?._id} onClose={closeAssignModal} onUserUpdated={loadData} />}
           {/* Remove-from-Workspace Confirmation Modal — this only ever drops
               the WorkspaceMembership row for the active workspace; it never
               touches the global User account or the user's membership in

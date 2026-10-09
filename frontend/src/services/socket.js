@@ -472,6 +472,9 @@ class SocketService {
       console.log('Access control updated via socket:', data);
       window.dispatchEvent(new CustomEvent('socket-access-control-updated', { detail: data }));
     });
+    this.socket.on('authz:changed', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-authz-changed', { detail: data }));
+    });
 
     // Sales permissions update (admin changed access for a user)
     this.socket.on('sales:permissions:updated', (data) => {

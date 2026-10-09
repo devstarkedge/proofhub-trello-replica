@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { AlertTriangle, ArrowRight, Ban, Check, ShieldCheck, ShieldOff, ShieldQuestion, X } from 'lucide-react';
 import useConfirmModalStore from '../../store/confirmModalStore';
+import useModalFocus from '../../hooks/useModalFocus';
 
 const VERB_CONFIG = {
   grant:   { icon: ShieldCheck,   color: '#059669', bg: 'rgba(16,185,129,0.12)',  confirmLabel: 'Grant Access',    preposition: 'to'   },
@@ -18,12 +19,11 @@ const formatValue = (value) => {
 };
 
 const buildDefaultMessage = (details) => {
-  const { targetUserName, changes = [], actionVerb } = details;
-  const config = VERB_CONFIG[actionVerb] || VERB_CONFIG.update;
+  const { targetUserName, changes = [] } = details;
   if (changes.length === 1) {
-    return `You are ${actionVerb}ing "${changes[0].label}" ${config.preposition} ${targetUserName}.`;
+    return `Review the change to “${changes[0].label}” for ${targetUserName} before confirming.`;
   }
-  return `You are about to ${actionVerb} ${changes.length} permission${changes.length === 1 ? '' : 's'} ${config.preposition} ${targetUserName}.`;
+  return `Review these ${changes.length} access changes for ${targetUserName} before confirming.`;
 };
 
 /**
@@ -45,6 +45,8 @@ const PermissionConfirmModal = () => {
   const isOpen  = useConfirmModalStore((state) => state.isOpen);
   const details = useConfirmModalStore((state) => state.details);
   const resolve = useConfirmModalStore((state) => state.resolve);
+  const dialogRef = useRef(null);
+  useModalFocus({ open: isOpen, dialogRef, onClose: () => resolve(false) });
 
   if (!isOpen || !details) return null;
 
@@ -69,17 +71,19 @@ const PermissionConfirmModal = () => {
       onMouseDown={(e) => e.target === e.currentTarget && resolve(false)}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm" onMouseDown={() => resolve(false)} />
 
       {/* Dialog card */}
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="relative z-10 w-full max-w-lg rounded-xl border bg-white shadow-2xl dark:bg-gray-900 flex flex-col"
-        style={{ borderColor: 'var(--color-border-subtle)', maxHeight: '90dvh' }}
+        style={{ borderColor: 'var(--color-border-default)', maxHeight: '90dvh' }}
       >
         {/* ── Header ── */}
         <div
           className="flex items-start gap-3 px-4 sm:px-5 py-4 border-b shrink-0"
-          style={{ borderColor: 'var(--color-border-subtle)' }}
+          style={{ borderColor: 'var(--color-border-default)' }}
         >
           <div
             className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shrink-0"
@@ -118,7 +122,7 @@ const PermissionConfirmModal = () => {
             onClick={() => resolve(false)}
             className="p-1.5 rounded-lg shrink-0 hover:opacity-70 transition-opacity"
             style={{ color: 'var(--color-text-muted)' }}
-            aria-label="Cancel"
+            aria-label="Close confirmation"
           >
             <X className="w-4 h-4" />
           </button>
@@ -130,7 +134,7 @@ const PermissionConfirmModal = () => {
             <div
               key={idx}
               className="rounded-lg border px-3 py-2.5"
-              style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: 'var(--color-bg-secondary)' }}
+              style={{ borderColor: 'var(--color-border-default)', backgroundColor: 'var(--color-bg-subtle)' }}
             >
               {/*
                 Two-row layout on very narrow screens, single-row on wider:
@@ -170,16 +174,16 @@ const PermissionConfirmModal = () => {
         {/* ── Footer — stacks on xs, row on sm+ ── */}
         <div
           className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 px-4 sm:px-5 py-4 border-t shrink-0"
-          style={{ borderColor: 'var(--color-border-subtle)' }}
+          style={{ borderColor: 'var(--color-border-default)' }}
         >
           <button
             type="button"
             onClick={() => resolve(false)}
             className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg text-sm font-semibold border text-center"
             style={{
-              borderColor: 'var(--color-border-subtle)',
+              borderColor: 'var(--color-border-default)',
               color: 'var(--color-text-primary)',
-              backgroundColor: 'var(--color-bg-secondary)'
+              backgroundColor: 'var(--color-bg-subtle)'
             }}
           >
             Cancel

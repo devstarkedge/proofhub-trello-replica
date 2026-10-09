@@ -1,86 +1,50 @@
 import { useContext, useEffect, useCallback } from 'react';
 import useAccessControlStore from '../store/accessControlStore';
 import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
 
-/**
- * The one hook every component should use to answer "can this user see/do X".
- * Replaces the four separate ad hoc mechanisms that used to answer this
- * question differently (Sidebar's own fetches, FinanceRouteGuard's own
- * fetch, SalesPage's own fetch, scattered `user.role === 'admin'` checks).
- *
- * Loads once per session and stays live: it re-fetches whenever the admin
- * changes this user's access anywhere (Sales, Finance, role, or a delegated
- * access_control.manage grant) via the 'socket-access-control-updated',
- * 'socket-sales-permissions-updated', 'socket-finance-permissions-updated',
- * and 'socket-user-role-changed' events already pushed by the backend.
- */
+/** Server-resolved workspace permissions, shared by permission consumers and editors. */
 const useAccessControl = () => {
   const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const myPermissions = useAccessControlStore((state) => state.myPermissions);
   const registry = useAccessControlStore((state) => state.registry);
   const loading = useAccessControlStore((state) => state.loading);
+  const registryLoading = useAccessControlStore((state) => state.registryLoading);
+  const error = useAccessControlStore((state) => state.error);
+  const registryError = useAccessControlStore((state) => state.registryError);
   const loadMyPermissions = useAccessControlStore((state) => state.loadMyPermissions);
   const loadRegistry = useAccessControlStore((state) => state.loadRegistry);
   const can = useAccessControlStore((state) => state.can);
   const canAny = useAccessControlStore((state) => state.canAny);
+  const refresh = useAccessControlStore((state) => state.refresh);
+  const refreshAfterEvent = useAccessControlStore((state) => state.refreshAfterEvent);
 
   useEffect(() => {
-    if (!user) return;
-    if (!myPermissions && !loading) {
-      loadMyPermissions().catch(() => {});
-    }
-    if (!registry) {
-      loadRegistry().catch(() => {});
-    }
-  }, [user, myPermissions, registry, loading, loadMyPermissions, loadRegistry]);
+    if (!user || !currentWorkspace?._id) return;
+    if (!myPermissions && !loading && !error) loadMyPermissions().catch(() => {});
+    if (!registry && !registryLoading && !registryError) loadRegistry().catch(() => {});
+  }, [user, currentWorkspace?._id, myPermissions, registry, loading, registryLoading, error, registryError, loadMyPermissions, loadRegistry]);
 
   useEffect(() => {
-    if (!user) return;
-
+    if (!user || !currentWorkspace?._id) return;
     const handleRefresh = (event) => {
-      const detailUserId = event?.detail?.userId;
-      // access-control:updated is targeted (userId in payload); the legacy
-      // sales/finance events are also always targeted at one user.
-      if (detailUserId && String(detailUserId) !== String(user._id)) return;
-      loadMyPermissions().catch(() => {});
+      if (event?.detail?.userId && String(event.detail.userId) !== String(user._id || user.id)) return;
+      if (event?.detail?.workspaceId && String(event.detail.workspaceId) !== String(currentWorkspace._id)) return;
+      refreshAfterEvent(event).catch(() => {});
     };
+    const events = ['socket-access-control-updated', 'socket-sales-permissions-updated', 'socket-finance-permissions-updated', 'socket-user-role-changed', 'socket-authz-changed'];
+    events.forEach((name) => window.addEventListener(name, handleRefresh));
+    return () => events.forEach((name) => window.removeEventListener(name, handleRefresh));
+  }, [user, currentWorkspace?._id, refreshAfterEvent]);
 
-    window.addEventListener('socket-access-control-updated', handleRefresh);
-    window.addEventListener('socket-sales-permissions-updated', handleRefresh);
-    window.addEventListener('socket-finance-permissions-updated', handleRefresh);
-    window.addEventListener('socket-user-role-changed', handleRefresh);
-
-    return () => {
-      window.removeEventListener('socket-access-control-updated', handleRefresh);
-      window.removeEventListener('socket-sales-permissions-updated', handleRefresh);
-      window.removeEventListener('socket-finance-permissions-updated', handleRefresh);
-      window.removeEventListener('socket-user-role-changed', handleRefresh);
-    };
-  }, [user, loadMyPermissions]);
-
-  const isAdmin = Boolean(myPermissions?.isAdmin);
-  const canManageAccessControl = Boolean(myPermissions?.canManageAccessControl);
-
-  const resourceActions = useCallback(
-    (resource) => registry?.resources?.[resource]?.actions || [],
-    [registry]
-  );
-
+  const resourceActions = useCallback((resource) => registry?.resources?.[resource]?.actions || [], [registry]);
   return {
-    myPermissions,
-    registry,
-    loading,
-    isAdmin,
-    canManageAccessControl,
-    can,
-    canAny,
-    resourceActions,
+    myPermissions, registry, loading, registryLoading, error, registryError, can, canAny, resourceActions, refresh,
+    isAdmin: Boolean(myPermissions?.isAdmin),
+    canManageAccessControl: Boolean(myPermissions?.canManageAccessControl),
     accessScope: myPermissions?.accessScope || { type: 'full_department', allowedProjects: [] },
-    roleChecklist: myPermissions?.roleChecklist || {},
-    refresh: async () => {
-      await Promise.all([loadMyPermissions(), loadRegistry()]);
-    }
+    roleChecklist: myPermissions?.roleChecklist || {}
   };
 };
-
 export default useAccessControl;

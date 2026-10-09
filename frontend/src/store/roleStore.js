@@ -277,7 +277,7 @@ const useRoleStore = create((set, get) => ({
    * Change a user's role (admin only)
    */
   changeUserRole: async (userId, role) => {
-    const response = await api.put(`/api/users/${userId}/role`, { role });
+    const response = await api.put(`/api/users/${userId}/role`, { role }, { skipOfflineQueue: true });
     return response.data.data;
   },
 

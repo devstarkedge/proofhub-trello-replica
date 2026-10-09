@@ -29,6 +29,25 @@ const assertNotSelf = (actorId, targetUserId) => {
   }
 };
 
+// Use the same workspace principal for both the editor's reads and writes.
+async function loadWorkspacePermissionUser(userId, workspaceId) {
+  const targetUser = await User.findById(userId).select('_id name email');
+  if (!targetUser) return null;
+  const membership = await WorkspaceMembership.findOne({
+    user: userId, workspace: workspaceId, status: 'active'
+  }).lean();
+  if (!membership) return null;
+  return {
+    ...targetUser.toObject(),
+    workspaceId,
+    role: membership.role,
+    roleId: membership.roleId,
+    department: membership.department || [],
+    accessType: membership.accessType,
+    allowedProjects: membership.allowedProjects || []
+  };
+}
+
 const RESOURCE_MODULE_LABEL = {
   access_control: 'Delegated Access & Permissions Management'
 };
@@ -117,7 +136,8 @@ export async function setResourceOverride(targetUserId, resource, payload = {}, 
   const actorId = actor?._id || actor?.id;
   assertNotSelf(actorId, targetUserId);
 
-  const targetUser = await User.findById(targetUserId).select('role name email');
+  const workspace = meta.workspaceId || actor?.workspaceId || await ensureDefaultWorkspace();
+  const targetUser = await loadWorkspacePermissionUser(targetUserId, workspace);
   if (!targetUser) {
     throw new Error('User not found');
   }
@@ -131,7 +151,6 @@ export async function setResourceOverride(targetUserId, resource, payload = {}, 
     throw new Error('Admin access cannot be overridden with a grant. Use effect: "deny" to suspend an admin.');
   }
 
-  const workspace = meta.workspaceId || await ensureDefaultWorkspace();
   const beforeAccess = await resolveResourceAccess(targetUser, key, workspace);
   const before = toLegacyShape(key, beforeAccess.actions);
 
@@ -204,12 +223,12 @@ export async function clearResourceOverride(targetUserId, resource, actor, meta 
   const actorId = actor?._id || actor?.id;
   assertNotSelf(actorId, targetUserId);
 
-  const targetUser = await User.findById(targetUserId).select('role name email');
+  const workspace = meta.workspaceId || actor?.workspaceId || await ensureDefaultWorkspace();
+  const targetUser = await loadWorkspacePermissionUser(targetUserId, workspace);
   if (!targetUser) {
     throw new Error('User not found');
   }
 
-  const workspace = meta.workspaceId || await ensureDefaultWorkspace();
   const beforeAccess = await resolveResourceAccess(targetUser, key, workspace);
   const before = toLegacyShape(key, beforeAccess.actions);
 
@@ -281,9 +300,11 @@ async function emitAndReturnEffective(targetUserId, targetUser, resourceKey, wor
 export async function resolveEffectivePermissions(user, workspaceId) {
   const ws = workspaceId || user?.workspaceId || await ensureDefaultWorkspace();
   const resources = {};
+  const resourceDetails = {};
   for (const key of RESOURCE_KEYS) {
     const result = await resolveResourceAccess(user, key, ws);
     resources[key] = result.actions;
+    resourceDetails[key] = { source: result.source, scope: result.scope };
   }
 
   const role = String(user.role || '').toLowerCase();
@@ -302,6 +323,7 @@ export async function resolveEffectivePermissions(user, workspaceId) {
     role,
     isAdmin: role === 'admin',
     resources,
+    resourceDetails,
     roleChecklist,
     accessScope: {
       type: user.accessType || 'full_department',
@@ -312,28 +334,6 @@ export async function resolveEffectivePermissions(user, workspaceId) {
 }
 
 export async function getEffectivePermissionsForUser(targetUserId, workspaceId) {
-  const targetUser = await User.findById(targetUserId).select('-password');
-  if (!targetUser) return null;
-
-  // Resolve against the target's role IN THIS WORKSPACE, not their global
-  // User.role — a user can hold a different role in each workspace they
-  // belong to (e.g. Manager here, Employee elsewhere), and WorkspaceMembership
-  // is the source of truth for that, same as userController.js#getUsers'
-  // own overlay and protect's per-request req.user overlay. Returning null
-  // for a non-member also covers the workspace-membership check this
-  // function's callers need (see accessControlController.js).
-  const membership = await WorkspaceMembership.findOne({
-    user: targetUserId, workspace: workspaceId, status: 'active'
-  }).lean();
-  if (!membership) return null;
-
-  const scopedUser = {
-    ...targetUser.toObject(),
-    role: membership.role,
-    roleId: membership.roleId,
-    accessType: membership.accessType,
-    allowedProjects: membership.allowedProjects
-  };
-
-  return resolveEffectivePermissions(scopedUser, workspaceId);
+  const scopedUser = await loadWorkspacePermissionUser(targetUserId, workspaceId);
+  return scopedUser ? resolveEffectivePermissions(scopedUser, workspaceId) : null;
 }

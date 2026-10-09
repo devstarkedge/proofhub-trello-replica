@@ -11,7 +11,12 @@ import useAccessControl from '../hooks/useAccessControl';
  */
 const AccessControlRouteGuard = ({ children }) => {
   const location = useLocation();
-  const { isAdmin, canManageAccessControl, myPermissions } = useAccessControl();
+  const { isAdmin, canManageAccessControl, myPermissions, error, refresh } = useAccessControl();
+
+  if (error) return <div role="alert" className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-sm">
+    <p>Access could not be verified. Check your connection and try again.</p>
+    <button type="button" onClick={() => refresh().catch(() => {})} className="text-purple-600 underline">Retry access check</button>
+  </div>;
 
   // Gate on data having arrived at all, not the store's transient `loading`
   // flag — on first mount `loading` is still false for one render before the

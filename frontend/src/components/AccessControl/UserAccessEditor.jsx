@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Ban, Building2, ChevronDown, Loader2, Save, Shield, X } from 'lucide-react';
+import { useContext, useEffect, useId, useRef, useState } from 'react';
+import { Ban, ChevronDown, Loader2, Save, Shield } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import * as accessControlApi from '../../services/accessControlApi';
@@ -9,351 +9,234 @@ import useAccessControl from '../../hooks/useAccessControl';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import useConfirmPermissionChange from '../../hooks/useConfirmPermissionChange';
 import AccessScopePicker from './AccessScopePicker';
-import ResourceActionToggleGrid, { applyViewCascade, verbForToggle } from './ResourceActionToggleGrid';
+import PermissionCheckbox from './PermissionCheckbox';
+import ResourceActionToggleGrid from './ResourceActionToggleGrid';
+import { applyViewCascade, idsOf, sameIds, resourceDescription, verbForToggle, isRoleManagedResource } from './permissionEditorUtils';
 
-const ACCESS_SCOPE_LABELS = {
-  full_department: 'Full Dept',
-  selected_projects: 'Selected',
-  assigned_tasks: 'My Tasks'
-};
+const SCOPE_LABELS = { full_department: 'All department projects', selected_projects: 'Selected projects', assigned_tasks: 'Assigned work only', none: 'No projects' };
+const cardStyle = { backgroundColor: 'var(--color-bg-subtle)', borderColor: 'var(--color-border-default)' };
 
-/**
- * The one place a user's entire access profile — role, department, access
- * scope, and every module's resource overrides — is edited. This is the
- * centralized Access & Permissions module's core editor: the "Users" tab
- * opens it for any user, and HRPanel's "Assign" button now opens the exact
- * same component instead of a second, hand-rolled implementation of the
- * same role/department/scope form.
- *
- * Role/department/scope are batch-saved (one "Save Profile" click, matching
- * the pre-existing HR workflow); resource overrides (Sales, Finance,
- * delegated Access Control) save instantly per toggle, matching the rest of
- * the centralized module.
- */
-const UserAccessEditor = ({ userId, currentUserId, onUserUpdated }) => {
-  const { loadRoles, changeUserRole, getRolesForDropdown } = useRoleStore();
+/** Shared editor for Access & Permissions and the HR member-assignment dialog. */
+export default function UserAccessEditor({ userId, currentUserId, onUserUpdated, onBusyChange }) {
+  const { loadRoles, changeUserRole, roles: roleCatalog, error: roleError, loading: rolesLoading } = useRoleStore();
   const { currentWorkspace } = useContext(WorkspaceContext);
-  // Admin can assign any role, including Admin. A delegated non-admin editor
-  // (access_control.manage without actually being Admin) must not see or be
-  // able to pick "Admin" — matches the server-side check in changeUserRole.
-  // Team workspaces don't support custom roles, so those are filtered out too.
-  const roles = getRolesForDropdown(currentWorkspace?.type);
   const departmentStore = useDepartmentStore();
-  const { registry, refresh: refreshMyPermissions } = useAccessControl();
+  const { registry, registryError, myPermissions, isAdmin, canManageAccessControl, refresh } = useAccessControl();
   const confirmChange = useConfirmPermissionChange();
-
+  const roleId = useId();
+  const contextKey = `${currentWorkspace?._id || ''}:${userId}`;
+  const activeContext = useRef(contextKey);
+  activeContext.current = contextKey;
+  const operation = useRef(false);
+  const [loadedContext, setLoadedContext] = useState(null);
   const [targetUser, setTargetUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
+  const [loadError, setLoadError] = useState('');
+  const [permissionError, setPermissionError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [resourceSavingKey, setResourceSavingKey] = useState(null);
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedDepartments, setSelectedDepartments] = useState([]);
-  const [showDepartmentDropdown, setShowDepartmentDropdown] = useState(false);
+  const [departmentSearch, setDepartmentSearch] = useState('');
   const [accessType, setAccessType] = useState('full_department');
   const [allowedProjects, setAllowedProjects] = useState([]);
-
   const [resourceEffective, setResourceEffective] = useState({});
-  const [resourceSavingKey, setResourceSavingKey] = useState(null);
+  const [resourceDetails, setResourceDetails] = useState({});
 
-  const isSelf = currentUserId && userId && String(currentUserId) === String(userId);
-  const isTargetAdmin = targetUser?.role === 'admin';
+  const isSelf = Boolean(currentUserId && String(currentUserId) === String(userId));
+  const canEditRole = !isSelf && (isAdmin || canManageAccessControl);
+  const canAssign = !isSelf && (isAdmin || canManageAccessControl || ['manager', 'hr'].includes(myPermissions?.role));
+  const isOwner = String(currentWorkspace?.owner?._id || currentWorkspace?.owner) === String(userId);
+  const profileLocked = busy || !canAssign || isOwner || (!isAdmin && targetUser?.role === 'admin');
+  const departments = departmentStore.departments || [];
+  const roles = roleCatalog.filter((role) => role.isActive !== false && (isAdmin || role.slug !== 'admin') && (currentWorkspace?.type !== 'team' || role.isSystem));
+  const visibleDepartments = departments.filter((department) => department.name?.toLowerCase().includes(departmentSearch.toLowerCase()));
 
   useEffect(() => {
-    if (!departmentStore.departments?.length) departmentStore.loadDepartments();
-    if (!roles?.length) loadRoles();
+    departmentStore.loadDepartments().catch(() => {});
+    loadRoles().catch(() => {});
+    // Store methods are stable; reload the catalog for the active workspace.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentWorkspace?._id]);
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
+    setLoading(true);
+    setLoadError('');
+    setPermissionError('');
+    setTargetUser(null);
+    setResourceEffective({});
+    setResourceDetails({});
     (async () => {
       try {
-        setLoading(true);
-        const [userRes, effective] = await Promise.all([
-          api.get(`/api/users/${userId}`),
-          accessControlApi.getUserEffectivePermissions(userId).catch(() => null)
+        const [profile, permissions] = await Promise.allSettled([
+          api.get(`/api/users/${userId}`, { skipOfflineQueue: true }),
+          canManageAccessControl ? accessControlApi.getUserEffectivePermissions(userId) : Promise.resolve(null)
         ]);
-        if (!mounted) return;
-
-        const u = userRes.data?.data;
-        setTargetUser(u);
-        setSelectedRole(u?.role || 'employee');
-        setSelectedDepartments((u?.department || []).map((d) => d._id || d));
-        setAccessType(u?.accessType || 'full_department');
-        setAllowedProjects((u?.allowedProjects || []).map((p) => p._id || p));
-        setResourceEffective(effective?.resources || {});
+        if (!active) return;
+        if (profile.status !== 'fulfilled' || !profile.value.data?.data) throw new Error('Unable to load this member. Please try again.');
+        const user = profile.value.data.data;
+        setTargetUser(user);
+        setSelectedRole(user.role || 'employee');
+        setSelectedDepartments(idsOf(user.department));
+        setAccessType(user.accessType || 'full_department');
+        setAllowedProjects(idsOf(user.allowedProjects));
+        if (permissions.status === 'fulfilled' && permissions.value?.resources) {
+          setResourceEffective(permissions.value.resources);
+          setResourceDetails(permissions.value.resourceDetails || {});
+        }
+        else if (canManageAccessControl) setPermissionError('Permissions could not be loaded. Editing is disabled until you retry.');
+        setLoadedContext(contextKey);
       } catch (error) {
-        console.error('Failed to load user access profile:', error);
-        toast.error('Failed to load user');
+        if (active) setLoadError(error.message);
       } finally {
-        if (mounted) setLoading(false);
+        if (active) setLoading(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
-  }, [userId]);
+    return () => { active = false; };
+  }, [contextKey, userId, canManageAccessControl, retry]);
 
-  const departmentOptions = departmentStore.departments || [];
-  const availableDepartments = useMemo(
-    () => departmentOptions.filter((d) => !selectedDepartments.includes(d._id)),
-    [departmentOptions, selectedDepartments]
-  );
-  const selectedDepartmentObjects = useMemo(
-    () => departmentOptions.filter((d) => selectedDepartments.includes(d._id)),
-    [departmentOptions, selectedDepartments]
-  );
+  useEffect(() => {
+    activeContext.current = contextKey;
+    return () => { activeContext.current = null; };
+  }, [contextKey]);
 
-  const profileDirty =
-    targetUser &&
-    (selectedRole !== targetUser.role ||
-      accessType !== (targetUser.accessType || 'full_department') ||
-      JSON.stringify([...selectedDepartments].sort()) !== JSON.stringify((targetUser.department || []).map((d) => d._id || d).sort()) ||
-      JSON.stringify([...allowedProjects].sort()) !== JSON.stringify((targetUser.allowedProjects || []).map((p) => p._id || p).sort()));
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
+
+  const profileDirty = targetUser && (selectedRole !== targetUser.role || accessType !== (targetUser.accessType || 'full_department') ||
+    !sameIds(selectedDepartments, idsOf(targetUser.department)) || !sameIds(allowedProjects, idsOf(targetUser.allowedProjects)));
+
+  const begin = () => {
+    if (operation.current) return false;
+    operation.current = true;
+    setBusy(true);
+    return true;
+  };
+  const end = () => { operation.current = false; setBusy(false); setResourceSavingKey(null); };
 
   const handleSaveProfile = async () => {
-    if (!targetUser || isSelf) return;
-
-    const changes = [];
-    if (selectedRole !== targetUser.role) {
-      changes.push({ label: 'Role', previous: targetUser.role, next: selectedRole });
-    }
-    if (accessType !== (targetUser.accessType || 'full_department')) {
-      changes.push({ label: 'Access Scope', previous: ACCESS_SCOPE_LABELS[targetUser.accessType] || 'Full Dept', next: ACCESS_SCOPE_LABELS[accessType] });
-    }
-    const previousDeptIds = (targetUser.department || []).map((d) => d._id || d).sort();
-    if (JSON.stringify([...selectedDepartments].sort()) !== JSON.stringify(previousDeptIds)) {
-      changes.push({
-        label: 'Departments',
-        previous: departmentOptions.filter((d) => previousDeptIds.includes(d._id)).map((d) => d.name),
-        next: selectedDepartmentObjects.map((d) => d.name)
-      });
-    }
-    if (changes.length === 0) return;
-
-    const confirmed = await confirmChange({
-      targetUserName: targetUser.name,
-      targetUserRole: targetUser.role,
-      actionVerb: 'update',
-      changes
-    });
-    if (!confirmed) return;
-
-    setSaving(true);
+    if (!targetUser || profileLocked || !profileDirty || !begin()) return;
+    const requestContext = contextKey;
+    let roleSaved = false;
     try {
+      const changes = [];
+      if (selectedRole !== targetUser.role) changes.push({ label: 'Role', previous: targetUser.role, next: selectedRole });
+      if (accessType !== (targetUser.accessType || 'full_department')) changes.push({ label: 'Project access', previous: SCOPE_LABELS[targetUser.accessType], next: SCOPE_LABELS[accessType] });
+      if (!sameIds(selectedDepartments, idsOf(targetUser.department))) changes.push({ label: 'Departments',
+        previous: (targetUser.department || []).map((department) => department.name || String(department)),
+        next: departments.filter((department) => selectedDepartments.includes(String(department._id))).map((department) => department.name) });
+      if (!sameIds(allowedProjects, idsOf(targetUser.allowedProjects))) changes.push({ label: 'Selected projects', previous: `${(targetUser.allowedProjects || []).length} selected`, next: `${allowedProjects.length} selected` });
+      const confirmed = await confirmChange({ targetUserName: targetUser.name, targetUserRole: targetUser.role, actionVerb: 'update', changes });
+      if (!confirmed || activeContext.current !== requestContext) return;
       if (selectedRole !== targetUser.role) {
         await changeUserRole(userId, selectedRole);
+        roleSaved = true;
+        if (activeContext.current !== requestContext) return;
       }
-      await api.put(`/api/users/${userId}/assign`, {
-        departments: selectedDepartments,
-        team: null,
-        accessType,
+      const response = await api.put(`/api/users/${userId}/assign`, {
+        departments: selectedDepartments, accessType,
         allowedProjects: accessType === 'selected_projects' ? allowedProjects : []
-      });
-      toast.success('User profile updated');
-      setTargetUser((prev) => ({
-        ...prev,
-        role: selectedRole,
-        accessType,
-        allowedProjects,
-        department: departmentOptions.filter((d) => selectedDepartments.includes(d._id))
-      }));
+      }, { skipOfflineQueue: true });
+      if (!response.data?.success) throw new Error('The profile was not saved. Please try again.');
+      if (activeContext.current !== requestContext) return;
+      toast.success('Member access profile saved');
+      setRetry((value) => value + 1);
       onUserUpdated?.();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update user');
-    } finally {
-      setSaving(false);
-    }
+      if (activeContext.current !== requestContext) return;
+      toast.error(roleSaved ? 'The role was saved, but the access profile failed. Reloading the current profile.' : error.response?.data?.message || error.message || 'Failed to save member access');
+      if (roleSaved) { setRetry((value) => value + 1); onUserUpdated?.(); }
+    } finally { end(); }
   };
 
   const handleToggleResource = async (resource, actionKey, nextValue, viewKey) => {
-    if (isSelf) return;
+    if (isSelf || !canManageAccessControl || permissionError || registryError || targetUser?.role === 'admin' || isRoleManagedResource(resource, resourceDetails[resource]) || !begin()) return;
+    const requestContext = contextKey;
     const current = resourceEffective[resource] || {};
     const next = applyViewCascade(current, actionKey, nextValue, viewKey);
-    const actionLabel = registry?.resources?.[resource]?.actions?.find((a) => a.key === actionKey)?.label || actionKey;
-
-    const confirmed = await confirmChange({
-      targetUserName: targetUser.name,
-      targetUserRole: targetUser.role,
-      actionVerb: verbForToggle(actionKey, nextValue, viewKey),
-      changes: [{ label: `${registry?.resources?.[resource]?.label || resource} — ${actionLabel}`, previous: current[actionKey] === true, next: nextValue }]
-    });
-    if (!confirmed) return;
-
-    setResourceEffective((prev) => ({ ...prev, [resource]: next }));
-    setResourceSavingKey(resource);
-
     try {
-      await accessControlApi.putUserResourceOverride(userId, resource, { actions: next, effect: 'grant' });
-      refreshMyPermissions().catch(() => {});
+      const changes = (registry?.resources?.[resource]?.actions || [])
+        .filter((action) => Boolean(current[action.key]) !== Boolean(next[action.key]))
+        .map((action) => ({ label: `${registry.resources[resource].label} — ${action.label}`, previous: current[action.key] === true, next: next[action.key] === true }));
+      const confirmed = await confirmChange({ targetUserName: targetUser.name, targetUserRole: targetUser.role,
+        actionVerb: verbForToggle(actionKey, nextValue, viewKey), changes });
+      if (!confirmed || activeContext.current !== requestContext) return;
+      setResourceSavingKey(resource);
+      const result = await accessControlApi.putUserResourceOverride(userId, resource, { actions: next, effect: 'grant' });
+      if (activeContext.current !== requestContext) return;
+      if (!result?.effective?.actions) throw new Error('Unable to verify the saved permissions. Reload before making another change.');
+      setResourceEffective((previous) => ({ ...previous, [resource]: result.effective.actions }));
+      setResourceDetails((previous) => ({ ...previous, [resource]: { source: result.effective.source, scope: result.effective.scope } }));
+      toast.success('Permissions saved');
     } catch (error) {
-      setResourceEffective((prev) => ({ ...prev, [resource]: current }));
-      toast.error(error.response?.data?.message || 'Failed to update permissions');
-    } finally {
-      setResourceSavingKey(null);
-    }
+      if (activeContext.current === requestContext) {
+        toast.error(error.response?.data?.message || error.message || 'Failed to update permissions');
+        // A timeout can follow a successful write. Re-read instead of guessing the saved state.
+        setRetry((value) => value + 1);
+      }
+    } finally { end(); }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-3 py-12 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-        <Loader2 className="w-5 h-5 animate-spin" />
-        Loading user access profile...
-      </div>
-    );
-  }
+  if (loading || (!loadError && loadedContext !== contextKey)) return <div role="status" className="flex justify-center items-center gap-3 py-12 text-sm"><Loader2 className="w-5 h-5 animate-spin" />Loading member access…</div>;
+  if (loadError || !targetUser) return <div role="alert" className="p-6 text-sm text-center"><p>{loadError || 'Member not found.'}</p><button type="button" className="mt-3 text-purple-600 underline" onClick={() => setRetry((value) => value + 1)}>Retry</button></div>;
 
-  if (!targetUser) {
-    return <p className="text-sm text-center py-8" style={{ color: 'var(--color-text-muted)' }}>User not found.</p>;
-  }
-
-  return (
-    <div className="space-y-6">
-      {isSelf && (
-        <div
-          className="flex items-start gap-2 text-sm font-medium rounded-lg px-4 py-3"
-          style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', color: '#dc2626' }}
-        >
-          <Ban className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>You cannot modify your own role, access scope, department, or permissions. Ask another admin or a delegated manager to make this change.</span>
-        </div>
-      )}
-
-      {/* ── Role ── */}
+  return <div className="space-y-6">
+    {isSelf && <div className="flex gap-2 rounded-lg p-3 text-sm" style={cardStyle}><Ban className="w-4 h-4 shrink-0 mt-0.5" /><span>Your access is read-only here. Ask another authorized administrator to make changes.</span></div>}
+    {isOwner && !isSelf && <p className="rounded-lg border p-3 text-sm" style={cardStyle}>The workspace owner’s role and assignment profile are locked.</p>}
+    <section className="rounded-xl border p-4 sm:p-5 space-y-5" style={cardStyle} aria-labelledby={`${roleId}-profile`}>
+      <div><h3 id={`${roleId}-profile`} className="font-semibold">Workspace profile</h3><p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>Choose a role, departments, and project access, then save the profile.</p></div>
       <div>
-        <label className="block text-sm font-semibold mb-2 flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
-          <Shield className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
-          Role
-        </label>
-        <div className="relative">
-          <select
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value)}
-            disabled={isSelf}
-            className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: 'var(--color-bg-primary)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-primary)' }}
-          >
-            {roles.filter((r) => r.isActive !== false).map((r) => (
-              <option key={r._id} value={r.slug}>{r.name}</option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 pointer-events-none" style={{ color: 'var(--color-text-muted)' }} />
-        </div>
-        {isSelf && (
-          <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>You cannot change your own role.</p>
-        )}
-        {!isSelf && selectedRole !== targetUser.role && (
-          <p className="text-xs text-blue-600 mt-1">
-            Role will change from <strong>{targetUser.role}</strong> to <strong>{selectedRole}</strong>
-          </p>
-        )}
+        <label htmlFor={roleId} className="mb-2 flex items-center gap-2 text-sm font-semibold"><Shield className="w-4 h-4" />Role</label>
+        <div className="relative"><select id={roleId} value={selectedRole} disabled={profileLocked || !canEditRole || rolesLoading || Boolean(roleError)}
+          onChange={(event) => { const role = event.target.value; setSelectedRole(role); if (role === 'admin') { setAccessType('full_department'); setAllowedProjects([]); } }}
+          className="w-full rounded-lg border px-3 py-2.5 pr-10 text-sm appearance-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60" style={{ ...cardStyle, backgroundColor: 'var(--color-bg-base)' }}>
+          {!roles.some((role) => role.slug === selectedRole) && <option value={selectedRole}>{selectedRole}</option>}
+          {roles.map((role) => <option key={role._id} value={role.slug}>{role.name}</option>)}
+        </select><ChevronDown className="pointer-events-none absolute right-3 top-3 w-4 h-4" /></div>
+        {!canEditRole && !isSelf && <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>Role changes require permission to manage workspace access.</p>}
+        {roleError && <p role="alert" className="text-xs mt-1">Role options could not be loaded. <button type="button" className="text-purple-600 underline" onClick={() => loadRoles().catch(() => {})}>Retry roles</button></p>}
       </div>
-
-      {/* ── Departments ── */}
-      <div>
-        <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
-          Departments
-        </label>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => !isSelf && setShowDepartmentDropdown((v) => !v)}
-            disabled={isSelf}
-            className="w-full px-4 py-3 text-left border rounded-lg flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: 'var(--color-bg-primary)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-primary)' }}
-          >
-            <span>{availableDepartments.length > 0 ? 'Choose departments...' : 'All departments selected'}</span>
-            <ChevronDown className={`w-5 h-5 transition-transform ${showDepartmentDropdown ? 'rotate-180' : ''}`} style={{ color: 'var(--color-text-muted)' }} />
-          </button>
-          {!isSelf && showDepartmentDropdown && availableDepartments.length > 0 && (
-            <div className="absolute z-10 w-full mt-2 bg-white dark:bg-gray-800 border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: 'var(--color-border-subtle)' }}>
-              {availableDepartments.map((dept) => (
-                <button
-                  key={dept._id}
-                  onClick={() => {
-                    setSelectedDepartments((prev) => [...prev, dept._id]);
-                    setShowDepartmentDropdown(false);
-                  }}
-                  className="w-full px-4 py-3 text-left hover:bg-blue-50 dark:hover:bg-gray-700 flex items-center gap-2 border-b last:border-b-0"
-                  style={{ borderColor: 'var(--color-border-subtle)' }}
-                >
-                  <Building2 className="w-4 h-4 text-blue-600" />
-                  <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{dept.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
+      <fieldset><legend className="text-sm font-semibold mb-2">Departments <span className="font-normal text-xs">({selectedDepartments.length} selected)</span></legend>
+        <input type="search" aria-label="Search departments" placeholder="Search departments…" value={departmentSearch} onChange={(event) => setDepartmentSearch(event.target.value)}
+          className="w-full rounded-lg border px-3 py-2 mb-2 text-sm" style={{ ...cardStyle, backgroundColor: 'var(--color-bg-base)' }} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto p-1">
+          {visibleDepartments.map((department) => <PermissionCheckbox key={department._id} label={department.name} checked={selectedDepartments.includes(String(department._id))} disabled={profileLocked}
+            onChange={(checked) => setSelectedDepartments((previous) => checked ? [...previous, String(department._id)] : previous.filter((id) => id !== String(department._id)))} />)}
         </div>
-        {selectedDepartmentObjects.length > 0 && (
-          <div className="flex flex-wrap gap-2 p-3 mt-2 rounded-lg border min-h-[52px]" style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }}>
-            {selectedDepartmentObjects.map((dept) => (
-              <span key={dept._id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium">
-                <Building2 className="w-4 h-4" />
-                {dept.name}
-                {!isSelf && (
-                  <button onClick={() => setSelectedDepartments((prev) => prev.filter((id) => id !== dept._id))} className="hover:bg-blue-800 rounded-full p-0.5">
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ── Access Scope (shared component) ── */}
-      <AccessScopePicker
-        role={selectedRole}
-        departmentIds={selectedDepartments}
-        accessType={accessType}
-        onAccessTypeChange={setAccessType}
-        allowedProjects={allowedProjects}
-        onAllowedProjectsChange={setAllowedProjects}
-        disabled={isSelf}
-      />
-
-      <div className="flex justify-end pt-2 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
-        <button
-          type="button"
-          onClick={handleSaveProfile}
-          disabled={saving || !profileDirty || isSelf}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ backgroundColor: '#2563eb' }}
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save Profile
+        {visibleDepartments.length === 0 && <p className="text-xs py-2" style={{ color: 'var(--color-text-secondary)' }}>{departmentStore.loading ? 'Loading departments…' : departmentStore.error ? 'Departments could not be loaded. Close and reopen to retry.' : 'No matching departments.'}</p>}
+      </fieldset>
+      <AccessScopePicker role={selectedRole} departmentIds={selectedDepartments} accessType={accessType} onAccessTypeChange={setAccessType} allowedProjects={allowedProjects} onAllowedProjectsChange={setAllowedProjects} disabled={profileLocked} />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4" style={{ borderColor: 'var(--color-border-default)' }}>
+        <p role="status" className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{profileDirty ? 'Unsaved profile changes' : 'Profile is up to date'}</p>
+        <button type="button" onClick={handleSaveProfile} disabled={profileLocked || !profileDirty || Boolean(departmentStore.error)} className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed">
+          {busy && !resourceSavingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Save profile
         </button>
       </div>
-
-      {/* ── Resource overrides (Sales, Finance, delegated Access Control) ── */}
-      {isTargetAdmin ? (
-        <div className="rounded-lg border p-4 text-sm" style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}>
-          Admins already have full access to every module — there's nothing to grant here. To suspend a specific permission for this admin instead, use a deny override via the API (not yet exposed in this UI).
-        </div>
-      ) : (
-        Object.entries(registry?.resources || {}).map(([resourceKey, resourceDef]) => (
-          <div key={resourceKey} className="rounded-lg border p-4" style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }}>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h4 className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{resourceDef.label}</h4>
-                {resourceDef.description && (
-                  <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{resourceDef.description}</p>
-                )}
-              </div>
-              {resourceSavingKey === resourceKey && <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--color-text-muted)' }} />}
-            </div>
-            <ResourceActionToggleGrid
-              actions={resourceDef.actions}
-              effective={resourceEffective[resourceKey] || {}}
-              onToggle={(actionKey, nextValue, viewKey) => handleToggleResource(resourceKey, actionKey, nextValue, viewKey)}
-              accentColor={resourceKey === 'access_control' ? '#7c3aed' : '#10b981'}
-              disabled={resourceSavingKey === resourceKey || isSelf}
-            />
-          </div>
-        ))
-      )}
-    </div>
-  );
-};
-
-export default UserAccessEditor;
+    </section>
+    <section className="space-y-4" aria-labelledby={`${roleId}-modules`}>
+      <div><h3 id={`${roleId}-modules`} className="font-semibold">Module permissions</h3><p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>Checkbox changes are saved after confirmation. Workspace rules also determine personal leave and attendance access.</p></div>
+      {targetUser.role === 'admin' && <p className="rounded-lg border p-4 text-sm" style={cardStyle}>Administrator permissions are read-only in this grant editor. The checkboxes show their current effective access.</p>}
+      {!canManageAccessControl ? <p className="rounded-lg border p-4 text-sm" style={cardStyle}>Module permissions require access-management permission. An authorized administrator can update them in Access & Permissions.</p> :
+        permissionError || registryError ? <div role="alert" className="rounded-lg border p-4 text-sm" style={cardStyle}><p>{permissionError || 'The permission catalog could not be loaded.'}</p><button type="button" className="mt-2 text-purple-600 underline" onClick={() => { refresh().catch(() => {}); setRetry((value) => value + 1); }}>Retry permissions</button></div> :
+        !registry ? <p role="status" className="text-sm">Loading permission catalog…</p> :
+        Object.entries(registry.resources || {}).map(([key, definition]) => {
+          const effective = resourceEffective[key];
+          const roleManaged = isRoleManagedResource(key, resourceDetails[key]);
+          const count = definition.actions.filter((action) => effective?.[action.key] === true).length;
+          return <fieldset key={key} className="rounded-xl border p-4 sm:p-5" style={cardStyle}>
+            <legend className="px-1 font-semibold text-sm">{definition.label}</legend>
+            <div className="mb-3 flex items-start justify-between gap-3"><p className="text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>{resourceDescription(key)}</p><span className="shrink-0 rounded-full px-2 py-1 text-xs" style={{ backgroundColor: 'var(--color-bg-muted)' }}>{count}/{definition.actions.length}</span></div>
+            {!effective && <p role="alert" className="text-xs mb-2">Permissions are unavailable for this module. Retry before editing.</p>}
+            {resourceSavingKey === key && <p role="status" className="mb-2 text-xs">Saving permissions…</p>}
+            {roleManaged && <p className="mb-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>Included in this workspace role. Individual grant checkboxes cannot restrict this module.</p>}
+            <ResourceActionToggleGrid actions={definition.actions} effective={effective} onToggle={(action, value, view) => handleToggleResource(key, action, value, view)} disabled={busy || isSelf || targetUser.role === 'admin' || profileDirty || !effective || roleManaged} />
+            {profileDirty && <p className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>Save your profile changes before editing module permissions.</p>}
+          </fieldset>;
+        })}
+    </section>
+  </div>;
+}

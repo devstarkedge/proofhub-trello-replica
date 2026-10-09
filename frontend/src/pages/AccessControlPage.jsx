@@ -6,11 +6,11 @@ import WorkspaceContext from '../context/WorkspaceContext';
 import api from '../services/api';
 import useRoleStore from '../store/roleStore';
 import useAccessControl from '../hooks/useAccessControl';
-import * as accessControlApi from '../services/accessControlApi';
 import Avatar from '../components/Avatar';
 import RoleManagementPanel from '../components/TeamManagement/RoleManagementPanel';
 import ResourceAccessPanel from '../components/AccessControl/ResourceAccessPanel';
-import UserAccessEditor from '../components/AccessControl/UserAccessEditor';
+import UserAccessDialog from '../components/AccessControl/UserAccessDialog';
+import { resourceDescription } from '../components/AccessControl/permissionEditorUtils';
 import AuditLogViewer from '../components/AccessControl/AuditLogViewer';
 
 const CreateRoleModal = lazy(() => import('../components/TeamManagement/modals/CreateRoleModal'));
@@ -35,11 +35,10 @@ const TABS = [
  */
 const AccessControlPage = () => {
   const { user: currentUser } = useContext(AuthContext);
-  const { isAdmin } = useAccessControl();
   const [activeTab, setActiveTab] = useState('users');
 
   return (
-    <div className="min-h-full" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+    <div className="min-h-full" style={{ backgroundColor: 'var(--color-bg-base)' }}>
       <main className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
         <div className="mb-6 flex items-center gap-3">
           <div className="p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(124, 58, 237, 0.12)' }}>
@@ -50,17 +49,20 @@ const AccessControlPage = () => {
               Access & Permissions
             </h1>
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              Manage users, roles, and module access from one place — every other page reads from this.
+              Manage workspace roles, member access, and module permissions from one place.
             </p>
           </div>
         </div>
 
-        <div className="mb-6 border-b flex gap-1" style={{ borderColor: 'var(--color-border-subtle)' }}>
-          {TABS.map(({ key, label, icon: Icon }) => (
+        <div className="mb-6 border-b flex gap-1 overflow-x-auto" style={{ borderColor: 'var(--color-border-default)' }}>
+          {TABS.map((tab) => {
+            const { key, label } = tab;
+            const Icon = tab.icon;
+            return (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className="px-4 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2"
+              className="shrink-0 px-4 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-purple-500"
               style={{
                 borderColor: activeTab === key ? '#7c3aed' : 'transparent',
                 color: activeTab === key ? '#7c3aed' : 'var(--color-text-secondary)'
@@ -69,11 +71,11 @@ const AccessControlPage = () => {
               <Icon className="w-4 h-4" />
               {label}
             </button>
-          ))}
+          ); })}
         </div>
 
         {activeTab === 'users' && <UsersTab currentUserId={currentUser?._id} />}
-        {activeTab === 'roles' && <RolesTab isAdmin={isAdmin} />}
+        {activeTab === 'roles' && <RolesTab />}
         {activeTab === 'modules' && <ModulesTab />}
         {activeTab === 'activity' && <ActivityLogPanel />}
       </main>
@@ -140,7 +142,7 @@ const UsersTab = ({ currentUserId }) => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm outline-none"
-          style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-primary)' }}
+          style={{ backgroundColor: 'var(--color-bg-subtle)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
         />
       </div>
 
@@ -150,12 +152,12 @@ const UsersTab = ({ currentUserId }) => {
           Loading users...
         </div>
       ) : (
-        <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-border-subtle)' }}>
-          <div className="divide-y" style={{ borderColor: 'var(--color-border-subtle)' }}>
+        <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-border-default)' }}>
+          <div className="divide-y" style={{ borderColor: 'var(--color-border-default)' }}>
             {filtered.map((u) => {
               const isSelf = currentUserId && String(currentUserId) === String(u._id);
               return (
-                <div key={u._id} className="flex items-center justify-between gap-3 px-4 py-3" style={{ backgroundColor: 'var(--color-bg-secondary)' }}>
+                <div key={u._id} className="flex items-center justify-between gap-3 px-4 py-3" style={{ backgroundColor: 'var(--color-bg-subtle)' }}>
                   <div className="flex items-center gap-3 min-w-0">
                     <Avatar src={u.avatar} name={u.name} role={u.role} size="md" />
                     <div className="min-w-0">
@@ -200,44 +202,14 @@ const UsersTab = ({ currentUserId }) => {
         </div>
       )}
 
-      {selectedUser && (
-        <div
-          className="fixed inset-0 z-[1000] flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          onMouseDown={(e) => e.target === e.currentTarget && setSelectedUser(null)}
-        >
-          <div className="absolute inset-0 bg-gray-900/45 backdrop-blur-sm" />
-          <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-white shadow-2xl dark:bg-gray-900" style={{ borderColor: 'var(--color-border-subtle)' }}>
-            <div className="flex items-center justify-between gap-4 px-5 py-4 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
-              <div className="flex items-center gap-3">
-                <Avatar src={selectedUser.avatar} name={selectedUser.name} role={selectedUser.role} size="lg" />
-                <div>
-                  <h3 className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>{selectedUser.name}</h3>
-                  <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{selectedUser.email}</p>
-                </div>
-              </div>
-              <button onClick={() => setSelectedUser(null)} className="p-2 rounded-lg" style={{ color: 'var(--color-text-secondary)' }}>
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="overflow-y-auto p-5">
-              <UserAccessEditor
-                userId={selectedUser._id}
-                currentUserId={currentUserId}
-                onUserUpdated={loadUsers}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {selectedUser && <UserAccessDialog user={selectedUser} currentUserId={currentUserId} onClose={() => setSelectedUser(null)} onUserUpdated={loadUsers} />}
     </div>
   );
 };
 
 // ─── Roles & Permissions tab — moved wholesale out of Team Management ──
 
-const RolesTab = ({ isAdmin }) => {
+const RolesTab = () => {
   const { currentWorkspace } = useContext(WorkspaceContext);
   const { createRole, updateRole, deleteRole, roles } = useRoleStore();
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -351,15 +323,15 @@ const ModulesTab = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1">
         {resourceKeys.map((key) => (
           <button
             key={key}
             onClick={() => setActiveResource(key)}
-            className="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors"
+            className="shrink-0 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors"
             style={{
-              backgroundColor: activeResource === key ? `${accent[key] || '#7c3aed'}18` : 'var(--color-bg-secondary)',
-              borderColor: activeResource === key ? accent[key] || '#7c3aed' : 'var(--color-border-subtle)',
+              backgroundColor: activeResource === key ? `${accent[key] || '#7c3aed'}18` : 'var(--color-bg-subtle)',
+              borderColor: activeResource === key ? accent[key] || '#7c3aed' : 'var(--color-border-default)',
               color: activeResource === key ? accent[key] || '#7c3aed' : 'var(--color-text-secondary)'
             }}
           >
@@ -371,7 +343,7 @@ const ModulesTab = () => {
       <ResourceAccessPanel
         resource={activeResource}
         title={`${registry?.resources?.[activeResource]?.label || ''} Module Access`}
-        description={registry?.resources?.[activeResource]?.description}
+        description={resourceDescription(activeResource)}
         icon={Blocks}
         accentColor={accent[activeResource] || '#7c3aed'}
         userFilter={(u) => u.role?.toLowerCase() !== 'admin'}
