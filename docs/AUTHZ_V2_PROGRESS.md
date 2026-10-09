@@ -90,3 +90,16 @@ After incident review, finish Phase 0 validation and the Phase 1 writer/cache/mi
 ## Approval gates
 
 The specification requires backup confirmation and reviewed staging output before write migrations against a real database, separate approval for visibility mapping (005) and legacy deletion (009), and approval for ChatApp contract changes, guest activation, cookie/CORS changes and domain join. These remain pending until reviewable artifacts are ready.
+
+## 2026-10-09 authorized UI follow-up
+
+The user separately authorized centralizing the existing permission UI and replacing action tiles with checkboxes. That follow-up is implemented in the current workspace; see `ACCESS_CONTROL_UI_UPDATE.md` for its scope and behavior.
+
+- HR assignment and the central Users tab now use the same responsive member-access dialog/editor. User, module, and role permission pickers share visible native checkbox controls. Project scope remains a mutually exclusive radio selection.
+- Fixed project-only saves, unintended team clearing, offline false-success responses, failed-read editing, stale permission-store responses, confirmation/cascade visibility, and read-only/self-edit states.
+- The legacy override service now reads the same active workspace membership for both reads and writes. Resolver source metadata marks built-in role-provided module access as read-only. Administrator checkboxes show actual effective access, including denies.
+- Validation: **82 backend tests passed across 7 files**, **12 mocked browser checks passed**, changed frontend files and the isolated preview passed ESLint, backend service syntax passed, and the final frontend production build passed (**4,358 modules**). Desktop/mobile light/dark screenshots were visually reviewed. `git diff --check` passed; Windows line-ending warnings remain informational.
+- An initial production build exhausted memory during parallel minification. Limiting minification to one worker allowed the final build to pass. Existing mixed-import and approximately 4.2 MB main-bundle warnings remain.
+- No real database writes, migrations, production application-server startup, or deployment occurred. The pre-existing staged `docs/RBAC_CONTEXT.md` and private report artifacts were preserved.
+
+This is an improvement to the existing workspace-scoped permission UI and its supporting service, not completion or activation of the full Phase 4 v2 Access Control Center. The remaining v2 writer, ceiling enforcement, route/socket conversion, incident review, migration approvals, and rollout gates listed above are unchanged.
