@@ -96,6 +96,10 @@ export function resolveNotificationRoute(notification) {
   }
 
   const type = notification.type;
+  if (type?.startsWith('leave_')) {
+    const requestId = notification.entity?.id || notification.metadata?.requestId || notification.metadata?.entityId || notification.entityId;
+    return result(requestId ? `/leave?request=${encodeURIComponent(requestId)}` : '/leave', null, requestId || null, '/leave');
+  }
   const deptId = extractDepartmentId(notification);
   const projectId = extractProjectId(notification);
   const taskId = extractTaskId(notification);

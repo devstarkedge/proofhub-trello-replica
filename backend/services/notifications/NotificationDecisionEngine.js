@@ -83,11 +83,11 @@ export async function evaluateAndDeliver({
   }
 
   if (entity?.type && entity?.id) {
-    const hasAccess = await userCanAccessEntity({
+    const hasAccess = await workspaceContext.run({ workspaceId }, () => userCanAccessEntity({
       userId: recipientUserId,
       entityType: entity.type,
       entityId: entity.id,
-    });
+    }));
     if (!hasAccess) {
       return { delivered: false, reason: 'no_entity_access' };
     }

@@ -144,6 +144,7 @@ function App() {
                   <Route index element={<LeaveDashboardPage />} />
                   <Route path="my" element={<MyLeavePage />} />
                   <Route path="approvals" element={<ApprovalQueuePage />} />
+                  <Route path="approvals/:requestId" element={<ApprovalQueuePage />} />
                   <Route path="calendar" element={<LeaveCalendarPage />} />
                   <Route
                     path="reports"

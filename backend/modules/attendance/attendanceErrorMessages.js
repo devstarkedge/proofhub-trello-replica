@@ -24,7 +24,8 @@ export const ATTENDANCE_ERROR_MESSAGES = {
   WORK_MODE_NOT_AUTHORIZED: 'Your current work mode is not enabled for attendance. Please contact your admin or HR.',
   POLICY_NOT_CONFIGURED: 'Attendance has not been fully configured for this workspace yet. Please contact your admin or HR.',
   SHIFT_NOT_CONFIGURED: 'No shift has been configured for you yet. Please contact your admin or HR.',
-  REGULARIZATION_NOT_ALLOWED: 'This attendance record is not eligible for regularization.'
+  REGULARIZATION_NOT_ALLOWED: 'This attendance record is not eligible for regularization.',
+  MISSED_CHECKOUT_EXPIRED: 'Your attendance session has expired because the checkout cutoff was missed. Please submit a regularization request.'
 };
 
 export function friendlyAttendanceMessage(code, fallback = 'Something went wrong. Please try again.') {

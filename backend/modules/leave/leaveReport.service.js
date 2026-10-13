@@ -1,23 +1,21 @@
 import LeaveRequest from './leaveRequest.model.js';
+import mongoose from 'mongoose';
 import LeaveApproval from './leaveApproval.model.js';
-import LeaveType from './leaveType.model.js';
-import { getBalanceSummary } from './leaveBalance.service.js';
+import { getFullBalanceBreakdown } from './leaveBalance.service.js';
+import { getActiveWorkspaceId } from '../workspaces/workspaceContext.js';
 
 /** Per-leave-type Earned/Consumed/Reserved/Expired/Available for one employee. */
 export async function getEmployeeUsageReport({ workspaceId, userId }) {
-  const leaveTypes = await LeaveType.find({ isActive: true }).lean();
-  const rows = [];
-  for (const leaveType of leaveTypes) {
-    const summary = await getBalanceSummary({ workspaceId, user: userId, leaveType: leaveType._id });
-    rows.push({ leaveType: { id: leaveType._id, name: leaveType.name, category: leaveType.category }, ...summary });
-  }
-  return rows;
+  const breakdown = await getFullBalanceBreakdown({ workspaceId, user: userId });
+  return breakdown.map(({ leaveType, earned, consumed, debited, reserved, expired, available }) => ({
+    leaveType: { id: leaveType.id, name: leaveType.name, category: leaveType.category }, earned, consumed, debited, reserved, expired, available
+  }));
 }
 
 /** Requests overlapping [startDate, endDate], grouped by leave type + status — the department-usage/monthly-trend base. */
-export async function getUsageBreakdown({ departmentIds = [], startDate, endDate }) {
-  const match = { startDate: { $lte: new Date(endDate) }, endDate: { $gte: new Date(startDate) } };
-  if (departmentIds.length) match.requesterDepartmentIds = { $in: departmentIds };
+export async function getUsageBreakdown({ workspaceId = getActiveWorkspaceId(), departmentIds = [], startDate, endDate }) {
+  const match = { workspaceId: new mongoose.Types.ObjectId(workspaceId), startDate: { $lte: new Date(endDate) }, endDate: { $gte: new Date(startDate) } };
+  if (departmentIds.length) match.requesterDepartmentIds = { $in: departmentIds.map((id) => new mongoose.Types.ObjectId(id)) };
 
   return LeaveRequest.aggregate([
     { $match: match },
@@ -44,9 +42,9 @@ export async function getUsageBreakdown({ departmentIds = [], startDate, endDate
 }
 
 /** Monthly submitted/approved/rejected/cancelled counts and day totals. */
-export async function getMonthlyTrends({ startDate, endDate }) {
+export async function getMonthlyTrends({ workspaceId = getActiveWorkspaceId(), startDate, endDate }) {
   return LeaveRequest.aggregate([
-    { $match: { createdAt: { $gte: new Date(startDate), $lte: new Date(endDate) } } },
+    { $match: { workspaceId: new mongoose.Types.ObjectId(workspaceId), createdAt: { $gte: new Date(startDate), $lte: new Date(endDate) } } },
     {
       $group: {
         _id: { month: { $dateToString: { format: '%Y-%m', date: '$createdAt' } }, status: '$status' },
@@ -60,20 +58,19 @@ export async function getMonthlyTrends({ startDate, endDate }) {
 }
 
 /** Average hours from submission to final decision, and the current pending backlog size. */
-export async function getApprovalTurnaround({ startDate, endDate }) {
-  const decided = await LeaveApproval.find({
-    status: { $in: ['APPROVED', 'REJECTED'] },
-    decidedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  }).populate('request', 'createdAt').lean();
-
-  const turnaroundHours = decided
-    .filter((approval) => approval.request?.createdAt)
-    .map((approval) => (new Date(approval.decidedAt) - new Date(approval.request.createdAt)) / (1000 * 60 * 60));
-
-  const averageTurnaroundHours = turnaroundHours.length
-    ? Math.round((turnaroundHours.reduce((sum, hours) => sum + hours, 0) / turnaroundHours.length) * 10) / 10
-    : 0;
-  const pendingBacklog = await LeaveApproval.countDocuments({ status: 'PENDING' });
-
-  return { averageTurnaroundHours, decidedCount: decided.length, pendingBacklog };
+export async function getApprovalTurnaround({ workspaceId = getActiveWorkspaceId(), startDate, endDate }) {
+  const workspace = new mongoose.Types.ObjectId(workspaceId);
+  const [[summary], pendingBacklog] = await Promise.all([
+    LeaveApproval.aggregate([
+      { $match: { workspaceId: workspace, status: { $in: ['APPROVED', 'REJECTED'] }, decidedAt: { $gte: new Date(startDate), $lte: new Date(endDate) } } },
+      { $lookup: { from: LeaveRequest.collection.name, localField: 'request', foreignField: '_id', pipeline: [
+        { $match: { workspaceId: workspace } }, { $project: { createdAt: 1 } }
+      ], as: '_request' } },
+      { $group: { _id: null, decidedCount: { $sum: 1 }, hours: { $avg: { $cond: [
+        { $gt: [{ $size: '$_request' }, 0] }, { $divide: [{ $subtract: ['$decidedAt', { $arrayElemAt: ['$_request.createdAt', 0] }] }, 3600000] }, null
+      ] } } } }
+    ]),
+    LeaveApproval.countDocuments({ workspaceId: workspace, status: 'PENDING' })
+  ]);
+  return { averageTurnaroundHours: Math.round((summary?.hours || 0) * 10) / 10, decidedCount: summary?.decidedCount || 0, pendingBacklog };
 }

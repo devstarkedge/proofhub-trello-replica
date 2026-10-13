@@ -50,6 +50,8 @@ export const RESOURCES = {
     description: 'Administrative control of the Leave module — policies, calendars, balances, and reports. Self-service (viewing/requesting/cancelling one\'s own leave) and approver authority (department manager / HR / Admin routing) are derived structurally from org data and are never gated here — see modules/leave/leaveApproval.service.js.',
     actions: [
       { key: 'view_workspace', label: 'View Workspace Leave Data', description: 'Can view every employee\'s leave balances/requests workspace-wide', legacyField: null },
+      { key: 'approve_assigned', label: 'Approve Assigned Leave Stage', description: 'Can approve a stage already assigned to this user; workflow and self-approval rules still apply', legacyField: null },
+      { key: 'reject_assigned', label: 'Reject Assigned Leave Stage', description: 'Can reject a stage already assigned to this user; workflow and self-approval rules still apply', legacyField: null },
       { key: 'view_policy', label: 'View Policies', description: 'Can view leave policies, versions, and assignments', legacyField: null },
       { key: 'manage_policy', label: 'Manage Policies', description: 'Can create/version/assign leave policies and leave types', legacyField: null },
       { key: 'adjust_balance', label: 'Adjust Balances', description: 'Can create manual leave balance credits/debits', legacyField: null },

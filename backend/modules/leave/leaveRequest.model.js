@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
+import { LEAVE_CLIENT_ID_KEYS, LEAVE_CLIENT_ID_OPTIONS, normalizeLeaveClientId } from '../../utils/leaveRequestIdentity.js';
 
 export const LEAVE_REQUEST_STATUSES = Object.freeze({
   DRAFT: 'DRAFT',
@@ -67,14 +68,19 @@ const leaveRequestSchema = new mongoose.Schema({
   cancellation: { type: cancellationSchema, default: () => ({}) },
   // Optional client-supplied idempotency token guarding against an
   // accidental double-submit (e.g. a double form-click).
-  clientRequestId: { type: String, default: null },
+  clientRequestId: { type: String, default: undefined, maxlength: 100, set: normalizeLeaveClientId },
+  clientRequestFingerprint: { type: String, default: undefined, immutable: true, maxlength: 64 },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 
 leaveRequestSchema.index({ workspaceId: 1, requester: 1, status: 1 });
 leaveRequestSchema.index({ workspaceId: 1, status: 1, startDate: 1 });
 leaveRequestSchema.index({ workspaceId: 1, requesterDepartmentIds: 1, status: 1 });
-leaveRequestSchema.index({ workspaceId: 1, requester: 1, clientRequestId: 1 }, { unique: true, sparse: true });
+// Stable newest/oldest pages for workspace, personal, and department OR scopes.
+leaveRequestSchema.index({ workspaceId: 1, createdAt: -1, _id: -1 }, { name: 'leave_workspace_created' });
+leaveRequestSchema.index({ workspaceId: 1, requester: 1, createdAt: -1, _id: -1 }, { name: 'leave_requester_created' });
+leaveRequestSchema.index({ workspaceId: 1, requesterDepartmentIds: 1, createdAt: -1, _id: -1 }, { name: 'leave_department_created' });
+leaveRequestSchema.index(LEAVE_CLIENT_ID_KEYS, LEAVE_CLIENT_ID_OPTIONS);
 
 leaveRequestSchema.plugin(workspaceScopePlugin);
 

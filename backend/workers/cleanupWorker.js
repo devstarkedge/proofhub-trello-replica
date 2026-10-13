@@ -13,6 +13,7 @@ import { cleanupTrashedAttachments } from '../utils/trashCleanup.js';
 import { cleanupExpiredArchivedCards } from '../utils/archiveCleanup.js';
 import { cleanupSoftDeletedBoards } from '../utils/boardCleanup.js';
 import { cleanAllQueues } from '../schedulers/maintenanceScheduler.js';
+import { reconcileAllOverdueSessions } from '../modules/attendance/attendanceSessionLifecycle.service.js';
 import config from '../config/index.js';
 
 const JOB_HANDLERS = {
@@ -46,6 +47,14 @@ const JOB_HANDLERS = {
   async 'cleanup-queues'(_job) {
     await cleanAllQueues();
     return { status: 'ok' };
+  },
+
+  /**
+   * Reconcile overdue attendance sessions whose checkout cutoff has passed.
+   */
+  async 'attendance-missed-checkout-sweep'(_job) {
+    const result = await reconcileAllOverdueSessions();
+    return { status: 'ok', ...result };
   },
 };
 

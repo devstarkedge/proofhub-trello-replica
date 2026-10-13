@@ -26,7 +26,8 @@ const EVENTS = {
   WORK_MODE_OVERRIDE_UPDATED: 'attendance:work-mode-override-updated',
   OFFICE_HOURS_OVERRIDE_UPDATED: 'attendance:office-hours-override-updated',
   POLICY_UPDATED: 'attendance:policy-updated',
-  LOCATIONS_UPDATED: 'attendance:locations-updated'
+  LOCATIONS_UPDATED: 'attendance:locations-updated',
+  MISSED_CHECKOUT: 'attendance:missed-checkout'
 };
 
 /** Strips GPS/location evidence — the only fields a realtime payload may ever carry about a session. */
@@ -169,4 +170,47 @@ export async function onMissingCheckout(workspaceId, userId, workDateKey) {
     title: 'Missing check-out', message: "You didn't check out yesterday. Please submit a regularization request if needed.",
     channels: { inApp: true, slack: false }
   });
+}
+
+/**
+ * Fired immediately when an overdue attendance session is identified and reconciled
+ * as MISSED_CHECKOUT (either via background sweep or API fallback on check-in/out).
+ */
+export async function onMissedCheckoutDetected(session, attendanceDay) {
+  if (!session) return;
+  const userId = session.user?._id || session.user;
+  if (!userId) return;
+
+  const payload = {
+    userId,
+    session: sanitizeSession(session),
+    workDateKey: session.workDateKey,
+    presenceState: attendanceDay?.presenceState || 'MISSING_CHECKOUT'
+  };
+
+  try {
+    emitToUser(userId, EVENTS.MISSED_CHECKOUT, payload);
+    emitToUser(userId, EVENTS.DAY_UPDATED, {
+      workDateKey: session.workDateKey,
+      presenceState: attendanceDay?.presenceState || 'MISSING_CHECKOUT',
+      workedMinutes: attendanceDay?.workedMinutes || 0
+    });
+  } catch {
+    // Socket emit failures are non-blocking
+  }
+
+  try {
+    await evaluateAndDeliver({
+      type: 'attendance_missing_checkout',
+      workspaceId: session.workspaceId,
+      recipientUserId: userId,
+      notifySelf: true,
+      entity: entityFor(session, 'AttendanceSession'),
+      title: 'Missed check-out detected',
+      message: `You did not check out for work date ${session.workDateKey}. Please submit a regularization request if needed.`,
+      channels: { inApp: true, slack: false }
+    });
+  } catch {
+    // Notification failure must not bubble up
+  }
 }

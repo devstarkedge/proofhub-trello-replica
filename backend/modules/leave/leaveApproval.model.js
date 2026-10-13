@@ -10,10 +10,9 @@ import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
  * there is no 'SKIPPED' status.
  *
  * `eligibleApproverUserIds` is a frozen snapshot taken when the request was
- * submitted, not a live lookup — a department's manager changing after
- * submission must never silently change who was authorized to decide an
- * already-in-flight request (see leaveRequest.model.js's
- * requesterDepartmentIds for the matching rationale on the requester side).
+ * submitted. It preserves assignment history; a decision additionally
+ * requires current workspace membership, resource access and organizational
+ * authority. Revoked managers cannot decide an in-flight request.
  *
  * Decisions are written via a conditional `findOneAndUpdate` matching
  * `{status: 'PENDING'}` (see leaveApproval.service.js#decideApproval) — a
@@ -27,6 +26,8 @@ const leaveApprovalSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
   request: { type: mongoose.Schema.Types.ObjectId, ref: 'LeaveRequest', required: true },
   level: { type: String, enum: ['DEPARTMENT_MANAGER', 'HR', 'ADMIN'], required: true },
+  sequence: { type: Number, min: 0 },
+  mode: { type: String, enum: ['PARALLEL', 'SEQUENTIAL'], default: 'PARALLEL' },
   eligibleApproverUserIds: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', default: [] },
   status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED', 'VOIDED'], default: 'PENDING' },
   decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

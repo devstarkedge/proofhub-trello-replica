@@ -6,6 +6,9 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { resolveDepartmentManagers, resolveActiveMembersByRole, resolveAdminApprovers } from './leaveApprovalAudience.service.js';
 import { releaseReservationsForRequest, consumeReservationsForRequest } from './leaveBalance.service.js';
 import * as leaveHooks from './leaveHooks.js';
+import { getLeaveActionContext, eligibleStage, orderStages } from './leaveActionEligibility.service.js';
+import { canViewUserInLeaveScope } from './leaveAuthorization.service.js';
+import { queryLeaveRequests } from './leaveRequestQuery.service.js';
 
 const auditEntry = ({ workspaceId, actor, action, targetId, before, after }) => ({
   workspace: workspaceId,
@@ -57,17 +60,17 @@ export async function generateApprovalChain({ workspaceId, request, requesterMem
   }
 
   const created = await LeaveApproval.insertMany(
-    levels.map((entry) => ({ workspaceId, request: request._id, ...entry })),
+    levels.map((entry, sequence) => ({ workspaceId, request: request._id, ...entry, sequence, mode: workflow.approvalMode || 'PARALLEL' })),
     { session }
   );
   return created;
 }
 
 /**
- * Decide one approval level. Authorization is structural, not permission-
- * engine-based: the actor must appear in this level's frozen
- * eligibleApproverUserIds snapshot, and can never be the request's own
- * requester under any role. The decision write is a conditional
+ * Decide one approval level. The actor must be in its assignment snapshot
+ * and retain current workspace access and stage authority. Explicit access
+ * denials and sequential ordering apply; self-approval is always forbidden.
+ * The decision write is a conditional
  * findOneAndUpdate matching {status:'PENDING'} — a concurrent second
  * decision attempt on the same level matches zero documents and surfaces
  * as a 409, never a silent overwrite.
@@ -88,6 +91,14 @@ export async function decideApproval({ workspaceId, approvalId, actor, decision,
       const request = await LeaveRequest.findOne({ _id: approval.request, workspaceId }).session(session);
       if (!request) throw new ErrorResponse('Leave request not found', 404);
 
+      // Write the parent before reading all stages: concurrent decisions on
+      // different stages must retry against the same committed request state.
+      if (!PENDING_STATUSES.includes(request.status)) throw new ErrorResponse('This leave request is no longer awaiting approval', 409);
+      await LeaveRequest.updateOne({ _id: request._id, workspaceId }, { $inc: { __v: 1 } }, { session });
+      const stages = await LeaveApproval.find({ workspaceId, request: request._id }).session(session).lean();
+      const context = await getLeaveActionContext({ workspaceId, viewer: actor, session });
+      if (!canViewUserInLeaveScope(context.visibility, request.requester)) throw new ErrorResponse('You no longer have access to this leave request', 403);
+
       if (String(request.requester) === String(actorId)) {
         throw new ErrorResponse('You cannot approve or reject your own leave request', 403);
       }
@@ -95,6 +106,8 @@ export async function decideApproval({ workspaceId, approvalId, actor, decision,
       if (!isEligible) {
         throw new ErrorResponse('You are not an eligible approver for this request', 403);
       }
+      if (approval.status !== 'PENDING') throw new ErrorResponse('This approval has already been decided', 409);
+      if (!eligibleStage({ request, stage: approval, stages, context, decision })) throw new ErrorResponse('This stage is not currently authorized or is waiting for an earlier stage', 403);
 
       const updatedApproval = await LeaveApproval.findOneAndUpdate(
         { _id: approvalId, workspaceId, status: 'PENDING' },
@@ -166,17 +179,15 @@ export async function decideApproval({ workspaceId, approvalId, actor, decision,
 }
 
 export async function getApprovalQueue({ workspaceId, userId }) {
-  const approvals = await LeaveApproval.find({ workspaceId, status: 'PENDING', eligibleApproverUserIds: userId })
-    .sort({ createdAt: 1 })
-    .populate({ path: 'request', populate: [{ path: 'requester', select: 'name email avatar' }, { path: 'leaveType', select: 'name key category' }] })
-    .lean();
-  return approvals.filter((a) => a.request && PENDING_STATUSES.includes(a.request.status) && String(a.request.requester?._id) !== String(userId));
+  const result = await queryLeaveRequests({ workspaceId, viewer: { _id: userId }, view: 'approval' });
+  return result.requests;
 }
 
 export async function getApprovalTimeline({ workspaceId, requestId }) {
-  return LeaveApproval.find({ workspaceId, request: requestId })
+  const stages = await LeaveApproval.find({ workspaceId, request: requestId })
     .sort({ level: 1 })
     .populate('decidedBy', 'name email avatar')
     .populate('eligibleApproverUserIds', 'name email avatar')
     .lean();
+  return orderStages(stages);
 }

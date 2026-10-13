@@ -43,8 +43,15 @@ const LeaveBalanceSummaryCard = ({ balance }) => {
         ))}
       </div>
 
+      {balance.debited > 0 && (
+        <p className="text-xs mt-2.5 font-medium flex items-center gap-1.5" style={{ color: 'var(--color-warning-text, #d97706)' }}>
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
+          Manual Debit: {balance.debited} {balance.debited === 1 ? 'leave' : 'leaves'}
+        </p>
+      )}
+
       {nearestExpiry && (
-        <p className="text-xs mt-3" style={{ color: 'var(--color-warning-text)' }}>
+        <p className="text-xs mt-2" style={{ color: 'var(--color-warning-text)' }}>
           {nearestExpiry.availableAmount} expiring {new Date(nearestExpiry.expiresAt).toLocaleDateString()}
         </p>
       )}

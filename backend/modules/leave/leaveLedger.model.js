@@ -43,12 +43,25 @@ const leaveLedgerSchema = new mongoose.Schema({
   relatedEntryId: { type: mongoose.Schema.Types.ObjectId, ref: 'LeaveLedger', default: null },
   reason: { type: String, trim: true, maxlength: 500, default: '' },
   actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // null = system-generated
+  actorRole: { type: String, default: undefined },
+  // Optional evidence for new transactions. Never backfill historical rows.
+  balanceDelta: { type: Number, default: undefined },
+  policySource: {
+    type: new mongoose.Schema({
+      assignmentId: mongoose.Schema.Types.ObjectId,
+      scope: { type: String, enum: ['workspace', 'employee', 'department', 'role'] },
+      scopeRef: mongoose.Schema.Types.ObjectId
+    }, { _id: false }),
+    default: undefined
+  },
   clientAdjustmentId: { type: String, default: null, maxlength: 100 },
   occurredAt: { type: Date, required: true, default: Date.now },
   policyVersion: { type: mongoose.Schema.Types.ObjectId, ref: 'LeavePolicyVersion', default: null }
 }, { timestamps: true });
 
 leaveLedgerSchema.index({ workspaceId: 1, user: 1, leaveType: 1, occurredAt: 1 });
+leaveLedgerSchema.index({ workspaceId: 1, user: 1, occurredAt: -1, _id: -1 });
+leaveLedgerSchema.index({ workspaceId: 1, user: 1, type: 1, occurredAt: -1 });
 leaveLedgerSchema.index({ workspaceId: 1, request: 1 });
 leaveLedgerSchema.index({ workspaceId: 1, bucket: 1 });
 leaveLedgerSchema.index({ workspaceId: 1, type: 1, occurredAt: 1 });

@@ -8,11 +8,9 @@ import * as controller from './leaveApproval.controller.js';
 const router = express.Router();
 router.use(protect);
 
-// Deciding a specific approval slot is authorized structurally inside the
-// service (actor must be in that slot's frozen eligibleApproverUserIds and
-// cannot be the requester) — not gated by the delegable permission system,
-// since "am I this request's Department Manager/HR/Admin approver" is
-// derived from org data, not an administrator-granted override.
+// The service validates assigned candidates, current membership and view
+// scope, current organizational or explicitly delegated stage authority,
+// sequential ordering and self-approval restrictions for every decision.
 router.get('/queue', controller.getApprovalQueue);
 router.post(
   '/:approvalId/decide',

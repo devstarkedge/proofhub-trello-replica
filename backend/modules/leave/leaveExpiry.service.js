@@ -12,7 +12,7 @@ import * as leaveHooks from './leaveHooks.js';
  * the update only matches `status:'active'`, so once a bucket flips to
  * 'expired' a second sweep pass matches nothing — safe to run as often as
  * the scheduler likes, and safe to re-run after a crash mid-sweep. Only
- * `credited - consumed - reserved` expires; an active reservation against
+ * `credited - consumed - debited - reserved` expires; an active reservation against
  * a bucket past its nominal expiry stays protected until it's released
  * (rejected/cancelled) or consumed (approved) — see leaveBalance.service.js.
  */
@@ -29,18 +29,25 @@ export async function runExpirySweepForWorkspace(workspaceId) {
     for (const candidate of candidates) {
       const session = await mongoose.startSession();
       try {
+        let expiredBucket = null;
         await session.withTransaction(async () => {
+          // Transaction retries must not duplicate notifications or counters.
+          expiredBucket = null;
+          const bucket = await LeaveAccrualBucket.findOne({
+            _id: candidate._id, workspaceId, status: 'active', expiresAt: { $lte: now }
+          }).session(session).lean();
+          if (!bucket) return;
+          const expiredAmount = Math.max(0, bucket.creditedAmount - bucket.consumedAmount
+            - (bucket.debitedAmount || 0) - bucket.reservedAmount);
           const updated = await LeaveAccrualBucket.findOneAndUpdate(
             { _id: candidate._id, workspaceId, status: 'active', expiresAt: { $lte: now } },
-            [{
+            {
               $set: {
-                expiredAmount: {
-                  $max: [0, { $subtract: [{ $subtract: ['$creditedAmount', '$consumedAmount'] }, '$reservedAmount'] }]
-                },
+                expiredAmount,
                 status: 'expired',
                 expiredAt: now
               }
-            }],
+            },
             { session, new: true }
           );
           if (!updated) return; // already processed by a concurrent/previous sweep — genuine no-op
@@ -51,10 +58,13 @@ export async function runExpirySweepForWorkspace(workspaceId) {
               type: 'LEAVE_EXPIRED', amount: updated.expiredAmount, actor: null, occurredAt: now,
               policyVersion: updated.policyVersion
             }], { session });
-            expiredForNotification.push(updated.toObject());
           }
-          expiredCount++;
+          expiredBucket = updated.toObject();
         });
+        if (expiredBucket) {
+          expiredCount++;
+          if (expiredBucket.expiredAmount > 0) expiredForNotification.push(expiredBucket);
+        }
       } catch (error) {
         console.error('[Leave] expiry sweep error', { workspaceId, bucketId: candidate._id, error: error.message });
       } finally {

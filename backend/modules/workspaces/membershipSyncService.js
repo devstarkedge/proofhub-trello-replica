@@ -1,5 +1,6 @@
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { invalidateAuthCache } from '../../middleware/authMiddleware.js';
+import { emitToUser } from '../../realtime/emitters.js';
 
 // Legacy callers retain this name during rollout. It invalidates cached
 // memberships only; identity mirrors must never overwrite tenant access.
@@ -8,6 +9,8 @@ export async function syncMembershipFromUser(userId, workspaceId) {
   // imported into workspace authorization, nor manufacture a membership.
   if (!userId || !workspaceId) return;
   invalidateAuthCache(userId);
+  try { emitToUser(userId, 'user:access-updated', { workspaceId, userId }, workspaceId); }
+  catch { /* Sockets may not be initialized in setup or offline maintenance. */ }
 }
 
 /**

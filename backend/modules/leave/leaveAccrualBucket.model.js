@@ -3,18 +3,18 @@ import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
 
 /**
  * One bucket per monthly (or manual/restore) credit — never one mutable
- * balance number. Running totals (`consumedAmount`/`reservedAmount`/
- * `expiredAmount`) are updated atomically via conditional `findOneAndUpdate`
- * (see leaveBalance.service.js); "available for reservation" is always
- * computed as `creditedAmount - consumedAmount - reservedAmount -
- * expiredAmount`, never stored redundantly.
+ * balance number. Running totals (`consumedAmount`/`debitedAmount`/
+ * `reservedAmount`/`expiredAmount`) are updated atomically via conditional
+ * `findOneAndUpdate` (see leaveBalance.service.js); "available for reservation"
+ * is always computed as `creditedAmount - consumedAmount - (debitedAmount || 0)
+ * - reservedAmount - expiredAmount`, never stored redundantly.
  *
- * The unique index on {workspaceId, user, leaveType, policyVersion, period}
- * (period restricted to string values via a partial filter, since
- * MANUAL_CREDIT/CANCELLATION_RESTORE buckets have period: null and must not
- * collide) IS the monthly-accrual idempotency mechanism — a duplicate
- * accrual attempt for the same period fails with E11000, caught as a no-op
- * by leaveAccrual.service.js. No separate lock/flag is needed.
+ * The unique index on {workspaceId, user, leaveType, period} (period
+ * restricted to string values via a partial filter, since MANUAL_CREDIT /
+ * CANCELLATION_RESTORE buckets have period: null and must not collide) IS
+ * the monthly-accrual idempotency mechanism — a duplicate accrual attempt for
+ * the same period fails with E11000, caught as a no-op by leaveAccrual.service.js.
+ * Only one authoritative periodic bucket exists per (user, leaveType, period).
  */
 const leaveAccrualBucketSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
@@ -27,11 +27,12 @@ const leaveAccrualBucketSchema = new mongoose.Schema({
   period: { type: String, default: null, match: /^\d{4}-\d{2}$/ },
   sourceType: {
     type: String,
-    enum: ['MONTHLY_ACCRUAL', 'JOINING_CREDIT', 'MANUAL_CREDIT', 'CANCELLATION_RESTORE'],
+    enum: ['MONTHLY_ACCRUAL', 'JOINING_CREDIT', 'MANUAL_CREDIT', 'CANCELLATION_RESTORE', 'POLICY_MIGRATION'],
     required: true
   },
   creditedAmount: { type: Number, required: true, min: 0 },
   consumedAmount: { type: Number, default: 0, min: 0 },
+  debitedAmount: { type: Number, default: 0, min: 0 },
   reservedAmount: { type: Number, default: 0, min: 0 },
   expiredAmount: { type: Number, default: 0, min: 0 },
   creditedAt: { type: Date, required: true },
@@ -44,7 +45,7 @@ const leaveAccrualBucketSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 leaveAccrualBucketSchema.index(
-  { workspaceId: 1, user: 1, leaveType: 1, policyVersion: 1, period: 1 },
+  { workspaceId: 1, user: 1, leaveType: 1, period: 1 },
   { unique: true, partialFilterExpression: { period: { $type: 'string' } } }
 );
 // FIFO consumption ordering: earliest-expiring-first among active buckets.

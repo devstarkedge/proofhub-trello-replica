@@ -1,5 +1,9 @@
 import Department from '../../models/Department.js';
-import { hasResourceAction } from '../permissions/permissionEngine.js';
+import mongoose from 'mongoose';
+import WorkspaceMembership from '../../models/WorkspaceMembership.js';
+import LeaveRequest from './leaveRequest.model.js';
+import { departmentRosterFieldForRole } from '../workspaces/departmentRosterSync.js';
+import { resolveResourceAccess } from '../permissions/permissionEngine.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 
 /**
@@ -23,7 +27,7 @@ export function isMyLeaveSelfServiceBlocked(user) {
 export function assertMyLeaveSelfServiceAllowed(user) {
   if (isMyLeaveSelfServiceBlocked(user)) {
     throw new ErrorResponse(
-      'The "My Leave" self-service area is not available for the Admin role. Use the Leave Dashboard, Approvals, or Reports instead.',
+      'The "My Leave" self-service area is not available for the Admin role. Use the Leave Dashboard or Reports instead.',
       403
     );
   }
@@ -32,37 +36,59 @@ export function assertMyLeaveSelfServiceAllowed(user) {
 /**
  * Visibility rule shared by the balance/dashboard/report controllers —
  * Employee sees only self; Manager sees self + genuinely-managed
- * departments' employees (derived server-side from Department.managers,
+ * departments' current employees (derived from current workspace relationships,
  * never trusted from a frontend-supplied department id); HR/Admin see
  * workspace-wide per the `leave.view_workspace` administrative permission
  * (Admin always has it, per permissionEngine's own Admin-full-access rule).
  */
 export async function canViewUserLeaveData({ viewer, targetUserId, workspaceId }) {
-  const viewerId = viewer._id || viewer.id;
-  if (String(viewerId) === String(targetUserId)) return true;
-
-  if (await hasResourceAction(viewer, 'leave', 'view_workspace', workspaceId)) {
-    return true;
-  }
-
-  {
-    const managed = await Department.findOne({
-      workspaceId, managers: viewerId, members: targetUserId, isActive: true
-    }).select('_id').lean();
-    if (managed) return true;
-  }
-
-  return false;
+  const scope = await resolveLeaveAccessScope({ viewer, workspaceId, includeEmployees: true });
+  return canViewUserInLeaveScope(scope, targetUserId);
+}
+export function canViewUserInLeaveScope(scope, targetUserId) {
+  return String(scope.viewer._id) === String(targetUserId) || scope.scope === 'workspace' || scope.employeeIds.some((id) => String(id) === String(targetUserId));
 }
 
-export async function getManagedDepartmentIds({ workspaceId, managerId }) {
-  const departments = await Department.find({ workspaceId, managers: managerId, isActive: true }).select('_id').lean();
-  return departments.map((department) => department._id);
+export async function resolveCurrentManagedDepartments({ workspaceId, managerId, membership, session = null, includeEmployees = true }) {
+  const member = membership || await WorkspaceMembership.findOne({ workspace: workspaceId, user: managerId, status: 'active' }).session(session).lean();
+  if (!member) return { departmentIds: [], employeeIds: [] };
+  const relationships = [{ managers: managerId }];
+  // Membership assignments use the same existing roster convention as the
+  // assignment writer. This also handles pre-fix membership-only assignments.
+  if (departmentRosterFieldForRole(member.role) === 'managers') relationships.push({ _id: { $in: member.department || [] } });
+  const departments = await Department.find({ workspaceId, isActive: true, $or: relationships }).session(session).select(includeEmployees ? '_id members' : '_id').lean();
+  const departmentIds = departments.map((department) => department._id);
+  const employeeIds = includeEmployees && departmentIds.length ? await WorkspaceMembership.find({ workspace: workspaceId, status: 'active', $or: [{ department: { $in: departmentIds } }, { user: { $in: departments.flatMap((department) => department.members || []) } }] }).session(session).distinct('user') : [];
+  return { departmentIds, employeeIds };
 }
 
+export async function getManagedDepartmentIds(options) {
+  return (await resolveCurrentManagedDepartments({ ...options, includeEmployees: false })).departmentIds;
+}
 export async function getManagedEmployeeIds({ workspaceId, managerId }) {
-  const departments = await Department.find({ workspaceId, managers: managerId, isActive: true }).select('members').lean();
-  return Array.from(new Set(departments.flatMap((department) => (department.members || []).map(String))));
+  return (await resolveCurrentManagedDepartments({ workspaceId, managerId })).employeeIds;
+}
+
+// Request visibility follows the immutable submission department association,
+// not the requester's present department or the manager's assignment date.
+export async function resolveLeaveAccessScope({ viewer, workspaceId, includeEmployees = false, session = null }) {
+  const userId = viewer._id || viewer.id;
+  const membership = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId, status: 'active' }).session(session).select('role roleId department user').lean();
+  if (!membership) throw new ErrorResponse('Active workspace membership is required', 403);
+  const principal = { ...viewer, _id: userId, id: String(userId), role: membership.role, roleId: membership.roleId, department: membership.department };
+  const [access, managed] = await Promise.all([
+    resolveResourceAccess(principal, 'leave', workspaceId),
+    resolveCurrentManagedDepartments({ workspaceId, managerId: userId, membership, includeEmployees, session })
+  ]);
+  const workspace = new mongoose.Types.ObjectId(workspaceId), user = new mongoose.Types.ObjectId(userId);
+  if (access.actions.view_workspace && access.scope === 'full') return { viewer: principal, access, scope: 'workspace', ...managed, requestFilter: { workspaceId: workspace } };
+  return { viewer: principal, access, scope: managed.departmentIds.length ? 'department' : 'none', ...managed,
+    requestFilter: { workspaceId: workspace, ...(managed.departmentIds.length ? { $or: [{ requester: user }, { requesterDepartmentIds: { $in: managed.departmentIds } }] } : { requester: user }) } };
+}
+
+export async function canViewLeaveRequest({ viewer, workspaceId, requestId }) {
+  const { requestFilter } = await resolveLeaveAccessScope({ viewer, workspaceId });
+  return Boolean(await LeaveRequest.exists({ $and: [requestFilter, { _id: requestId }] }));
 }
 
 /**
@@ -82,21 +108,9 @@ export async function getManagedEmployeeIds({ workspaceId, managerId }) {
  *   (custom) role only if explicitly granted leave.view_workspace.
  * - 'department': anyone who genuinely manages at least one Department
  *   (Department.managers membership), scoped to exactly those departments.
- * - 'none': plain Employees and any custom role with neither of the
- *   above — they keep their own personal leave data (My Leave) but never
- *   a team/workspace dashboard.
+ * - 'none': members with neither grant still have their personal Dashboard.
  */
 export async function getLeaveDashboardScope({ user, workspaceId }) {
-  const userId = user._id || user.id;
-
-  if (await hasResourceAction(user, 'leave', 'view_workspace', workspaceId)) {
-    return { scope: 'workspace', departmentIds: [] };
-  }
-
-  const departmentIds = await getManagedDepartmentIds({ workspaceId, managerId: userId });
-  if (departmentIds.length > 0) {
-    return { scope: 'department', departmentIds };
-  }
-
-  return { scope: 'none', departmentIds: [] };
+  const { scope, departmentIds } = await resolveLeaveAccessScope({ viewer: user, workspaceId });
+  return { scope, departmentIds };
 }

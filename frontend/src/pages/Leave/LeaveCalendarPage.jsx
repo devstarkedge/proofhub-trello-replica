@@ -34,7 +34,7 @@ const LeaveCalendarPage = () => {
         className="flex-1 flex flex-col min-h-0 rounded-xl sm:rounded-2xl border p-2 sm:p-3 lg:p-3.5 shadow-sm"
         style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}
       >
-        <LeaveCalendarGrid key={currentWorkspace?._id} userId={userId} employeeName={user?.name} />
+        <LeaveCalendarGrid key={`${currentWorkspace?._id}:${userId}`} userId={userId} employeeName={user?.name} />
       </div>
     </div>
   );

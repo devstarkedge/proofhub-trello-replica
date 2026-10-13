@@ -110,7 +110,7 @@ const notificationSchema = new mongoose.Schema({
   },
   entityType: {
     type: String,
-    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', 'WorkspaceJoinRequest', 'LeaveRequest', 'WfhRequest', 'AttendanceRegularization', null],
+    enum: ['Card', 'Board', 'Comment', 'User', 'Announcement', 'Reminder', 'Team', 'Department', 'Subtask', 'SubtaskNano', 'SalesTab', 'WorkspaceJoinRequest', 'LeaveRequest', 'WfhRequest', 'AttendanceRegularization', 'AttendanceSession', null],
     default: null
   },
   action: {

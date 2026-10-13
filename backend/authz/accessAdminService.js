@@ -9,6 +9,7 @@ import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import { recordAuditLog } from '../modules/permissions/auditLogService.js';
 import { emitToUser, getIO } from '../realtime/emitters.js';
 import { ROOM } from '../realtime/events.js';
+import { syncUserDepartmentRoster } from '../modules/workspaces/departmentRosterSync.js';
 
 // Transitional single writer. V2 grants and ceiling validation are added below
 // as the catalog lands; legacy controllers already stop touching User mirrors.
@@ -40,15 +41,15 @@ export async function updateMemberAccess({ workspaceId, userId, actor, patch, re
   const before = Object.fromEntries(allowed.map(key => [key, member.toObject()[key]]));
   Object.assign(member, patch);
   await member.save();
-  if (patch.department !== undefined) {
-    await Department.updateMany({ workspaceId, members: userId, _id: { $nin: patch.department } }, { $pull: { members: userId } });
-    await Department.updateMany({ workspaceId, _id: { $in: patch.department } }, { $addToSet: { members: userId } });
+  if (patch.department !== undefined || patch.role !== undefined || patch.status !== undefined) {
+    await syncUserDepartmentRoster({ workspaceId, userId, departmentIds: member.status === 'active' ? member.department : [], roleSlug: member.role, previousRole: before.role });
   }
   await recordAuditLog({ actor, target: { _id: userId }, action: 'MEMBER_ACCESS_CHANGED', targetType: 'WorkspaceMembership', targetId: member._id, resourceKey: 'membership', resourceLabel: 'Workspace membership', summary: reason, before, after: Object.fromEntries(allowed.map(key => [key, member.toObject()[key]])), meta: { ...meta, workspaceId } });
   invalidateAuthCache(userId);
   try {
-    emitToUser(userId, 'authz:changed', { workspaceId, userId });
-    emitToUser(userId, 'user-role-changed', { userId, previousRole: before.role, newRole: member.role, roleId: member.roleId });
+    emitToUser(userId, 'authz:changed', { workspaceId, userId }, workspaceId);
+    emitToUser(userId, 'user:access-updated', { workspaceId, userId }, workspaceId);
+    emitToUser(userId, 'user-role-changed', { workspaceId, userId, previousRole: before.role, newRole: member.role, roleId: member.roleId }, workspaceId);
     // All old room permissions become invalid when access changes. Reconnect
     // rechecks membership and prevents removed users retaining subscriptions.
     getIO().in(ROOM.user(userId, workspaceId)).disconnectSockets(true);

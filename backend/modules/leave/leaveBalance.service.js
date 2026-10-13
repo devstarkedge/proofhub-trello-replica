@@ -19,7 +19,7 @@ function fifoComparator(a, b) {
 }
 
 function availableOf(bucket) {
-  return bucket.creditedAmount - bucket.consumedAmount - bucket.reservedAmount - bucket.expiredAmount;
+  return bucket.creditedAmount - bucket.consumedAmount - (bucket.debitedAmount || 0) - bucket.reservedAmount - bucket.expiredAmount;
 }
 
 /**
@@ -37,7 +37,7 @@ function availableOf(bucket) {
 export async function reserveFromBuckets({ workspaceId, user, leaveType, amount, request, actor, session }) {
   if (amount <= EPSILON) return [];
 
-  const buckets = await LeaveAccrualBucket.find({ workspaceId, user, leaveType, status: 'active' }).session(session);
+  const buckets = await LeaveAccrualBucket.find({ workspaceId, user, leaveType, status: 'active', $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }).session(session);
   buckets.sort(fifoComparator);
 
   let remaining = amount;
@@ -54,7 +54,12 @@ export async function reserveFromBuckets({ workspaceId, user, leaveType, amount,
         _id: bucket._id,
         workspaceId,
         status: 'active',
-        $expr: { $lte: [{ $add: ['$reservedAmount', '$consumedAmount', '$expiredAmount', take] }, '$creditedAmount'] }
+        $expr: {
+          $lte: [
+            { $add: ['$reservedAmount', '$consumedAmount', { $ifNull: ['$debitedAmount', 0] }, '$expiredAmount', take] },
+            '$creditedAmount'
+          ]
+        }
       },
       { $inc: { reservedAmount: take } },
       { session, new: true }
@@ -88,9 +93,13 @@ export async function releaseReservationsForRequest({ workspaceId, request, reas
   const reserved = await LeaveLedger.find({ workspaceId, request, type: 'LEAVE_RESERVED' }).session(session);
   const released = [];
   for (const entry of reserved) {
+    const bucket = await LeaveAccrualBucket.findOne({ _id: entry.bucket, workspaceId }).session(session);
+    if (!bucket || bucket.reservedAmount + EPSILON < entry.amount) throw new ErrorResponse('Leave reservation changed concurrently — please retry', 409);
+    const now = new Date();
+    const expired = bucket.status === 'expired' || (bucket.expiresAt && bucket.expiresAt <= now);
     await LeaveAccrualBucket.updateOne(
       { _id: entry.bucket, workspaceId },
-      { $inc: { reservedAmount: -entry.amount } },
+      { $inc: { reservedAmount: -entry.amount, ...(expired ? { expiredAmount: entry.amount } : {}) } },
       { session }
     );
     const [ledgerEntry] = await LeaveLedger.create([{
@@ -99,6 +108,13 @@ export async function releaseReservationsForRequest({ workspaceId, request, reas
       reason, actor: actor || null, occurredAt: new Date(), policyVersion: entry.policyVersion
     }], { session });
     released.push(ledgerEntry);
+    // Protection ends on release. Lapsed entitlement cannot become available
+    // again merely because a pending request was rejected or cancelled.
+    if (expired) await LeaveLedger.create([{
+      workspaceId, user: entry.user, leaveType: entry.leaveType, bucket: entry.bucket, request,
+      type: 'LEAVE_EXPIRED', amount: entry.amount, relatedEntryId: ledgerEntry._id,
+      reason: 'Reservation released after entitlement expiry', actor: null, occurredAt: now, policyVersion: entry.policyVersion
+    }], { session });
   }
   return released;
 }
@@ -177,7 +193,7 @@ export async function restoreConsumptionForRequest({ workspaceId, request, reaso
 export async function creditBucket({
   workspaceId, user, leaveType, policyVersion, period = null, sourceType,
   amount, creditedAt, expiresAt = null, reason = '', createdBy = null, session,
-  ledgerType = 'MONTHLY_CREDIT', clientAdjustmentId = null
+  ledgerType = 'MONTHLY_CREDIT', clientAdjustmentId = null, policySource, actorRole
 }) {
   const [bucket] = await LeaveAccrualBucket.create([{
     workspaceId, user, leaveType, policyVersion, period, sourceType,
@@ -186,13 +202,13 @@ export async function creditBucket({
   }], { session });
   const [ledgerEntry] = await LeaveLedger.create([{
     workspaceId, user, leaveType, bucket: bucket._id, type: ledgerType,
-    amount, reason, actor: createdBy, occurredAt: creditedAt || new Date(), policyVersion, clientAdjustmentId
+    amount, reason, actor: createdBy, occurredAt: creditedAt || new Date(), policyVersion, clientAdjustmentId, policySource, actorRole
   }], { session });
   return { bucket, ledgerEntry };
 }
 
 /** Immediate FIFO debit (manual HR/Admin adjustment) — unlike a leave request, there is no reservation step. */
-export async function debitViaFIFO({ workspaceId, user, leaveType, amount, reason, actor, session, clientAdjustmentId = null }) {
+export async function debitViaFIFO({ workspaceId, user, leaveType, amount, reason, actor, session, clientAdjustmentId = null, actorRole }) {
   if (amount <= EPSILON) return [];
 
   const buckets = await LeaveAccrualBucket.find({ workspaceId, user, leaveType, status: 'active', $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }).session(session);
@@ -209,16 +225,21 @@ export async function debitViaFIFO({ workspaceId, user, leaveType, amount, reaso
     const updated = await LeaveAccrualBucket.findOneAndUpdate(
       {
         _id: bucket._id, workspaceId, status: 'active',
-        $expr: { $lte: [{ $add: ['$reservedAmount', '$consumedAmount', '$expiredAmount', take] }, '$creditedAmount'] }
+        $expr: {
+          $lte: [
+            { $add: ['$reservedAmount', '$consumedAmount', { $ifNull: ['$debitedAmount', 0] }, '$expiredAmount', take] },
+            '$creditedAmount'
+          ]
+        }
       },
-      { $inc: { consumedAmount: take } },
+      { $inc: { debitedAmount: take } },
       { session, new: true }
     );
     if (!updated) throw new ErrorResponse('Leave balance changed concurrently — please retry', 409);
 
     const [ledgerEntry] = await LeaveLedger.create([{
       workspaceId, user, leaveType, bucket: bucket._id, type: 'MANUAL_DEBIT', amount: take,
-      reason, actor: actor || null, occurredAt: new Date(), policyVersion: bucket.policyVersion, clientAdjustmentId
+      reason, actor: actor || null, occurredAt: new Date(), policyVersion: bucket.policyVersion, clientAdjustmentId, actorRole
     }], { session });
     entries.push(ledgerEntry);
     remaining -= take;
@@ -239,38 +260,53 @@ export async function getBalanceSummary({ workspaceId, user, leaveType }) {
     workspaceId, user, leaveType, status: { $in: ['active', 'expired'] }
   }).lean();
 
-  let earned = 0, consumed = 0, reserved = 0, expired = 0;
+  return projectBalanceBuckets(buckets);
+}
+
+export function projectBalanceBuckets(buckets) {
+  let earned = 0, consumed = 0, debited = 0, reserved = 0, expired = 0;
   for (const bucket of buckets) {
     earned += bucket.creditedAmount;
     consumed += bucket.consumedAmount;
+    debited += (bucket.debitedAmount || 0);
     reserved += bucket.reservedAmount;
     expired += bucket.expiredAmount;
   }
-  const available = Math.max(0, earned - consumed - reserved - expired);
-  return { earned, consumed, reserved, expired, available };
+  const available = Math.max(0, earned - consumed - debited - reserved - expired);
+  return { earned, consumed, debited, reserved, expired, available };
 }
 
 /** Per-bucket breakdown for display (e.g. "2 Full Days expiring 31 Mar"). */
 export async function listActiveBucketsForDisplay({ workspaceId, user, leaveType }) {
   const buckets = await LeaveAccrualBucket.find({ workspaceId, user, leaveType, status: 'active' }).lean();
   buckets.sort(fifoComparator);
-  return buckets.map((bucket) => ({ ...bucket, availableAmount: Math.max(0, availableOf(bucket)) }));
+  return buckets.map((bucket) => ({
+    ...bucket,
+    debitedAmount: bucket.debitedAmount || 0,
+    availableAmount: Math.max(0, availableOf(bucket))
+  }));
 }
 
 /** Full per-leave-type breakdown (summary + active bucket detail) for balance cards / dashboards. */
 export async function getFullBalanceBreakdown({ workspaceId, user }) {
-  const leaveTypes = await LeaveType.find({ isActive: true }).sort({ displayOrder: 1 }).lean();
+  const [leaveTypes, allBuckets] = await Promise.all([
+    LeaveType.find({ workspaceId, isActive: true }).select('name key category color displayOrder').sort({ displayOrder: 1 }).lean(),
+    LeaveAccrualBucket.find({ workspaceId, user, status: { $in: ['active', 'expired'] } })
+      .select('leaveType creditedAmount consumedAmount debitedAmount reservedAmount expiredAmount status expiresAt creditedAt period sourceType').lean()
+  ]);
+  const byType = new Map();
+  for (const bucket of allBuckets) { const key = String(bucket.leaveType); if (!byType.has(key)) byType.set(key, []); byType.get(key).push(bucket); }
   const breakdown = [];
   for (const leaveType of leaveTypes) {
-    const [summary, buckets] = await Promise.all([
-      getBalanceSummary({ workspaceId, user, leaveType: leaveType._id }),
-      listActiveBucketsForDisplay({ workspaceId, user, leaveType: leaveType._id })
-    ]);
+    const typeBuckets = byType.get(String(leaveType._id)) || [];
+    const summary = projectBalanceBuckets(typeBuckets);
+    const buckets = typeBuckets.filter((bucket) => bucket.status === 'active').sort(fifoComparator).map((bucket) => ({ ...bucket, availableAmount: Math.max(0, availableOf(bucket)) }));
     breakdown.push({
       leaveType: { id: leaveType._id, name: leaveType.name, key: leaveType.key, category: leaveType.category, color: leaveType.color },
       ...summary,
       buckets: buckets.map((bucket) => ({
-        id: bucket._id, creditedAmount: bucket.creditedAmount, availableAmount: bucket.availableAmount,
+        id: bucket._id, creditedAmount: bucket.creditedAmount, debitedAmount: bucket.debitedAmount || 0,
+        availableAmount: bucket.availableAmount,
         expiresAt: bucket.expiresAt, period: bucket.period, sourceType: bucket.sourceType
       }))
     });

@@ -69,6 +69,10 @@ class SocketService {
 
       // Dispatch custom event for disconnection
       window.dispatchEvent(new CustomEvent('socket-disconnected', { detail: reason }));
+      // Access updates deliberately disconnect old rooms. Socket.IO does not
+      // automatically reconnect a server-disconnected socket; reauthenticate
+      // it so subsequent leave/department updates continue without a login.
+      if (reason === 'io server disconnect') this.socket?.connect();
     });
 
     this.socket.on('connect_error', (error) => {

@@ -12,6 +12,12 @@ const useLeaveStore = create(
       approvalQueue: [],
       loading: false,
       error: null,
+      accessRevision: 0,
+      readsPaused: false,
+      invalidateAccess: () => set((state) => ({
+        balances: [], myRequests: [], approvalQueue: [], loading: false, error: null,
+        readsPaused: true, accessRevision: state.accessRevision + (state.readsPaused ? 0 : 1)
+      })),
 
       // ─── UI preferences (persisted) ──────────────────────────────────────
       calendarViewMode: 'month',
@@ -43,16 +49,11 @@ const useLeaveStore = create(
       },
 
       submitLeaveRequest: async (payload) => {
-        const previous = get().myRequests;
-        try {
-          const { data } = await leaveApi.submitRequest(payload);
-          set({ myRequests: [data.request, ...previous] });
-          await get().fetchMyBalance();
-          return data;
-        } catch (error) {
-          set({ myRequests: previous });
-          throw error;
-        }
+        const { data } = await leaveApi.submitRequest(payload);
+        set((state) => ({ myRequests: [data.request, ...state.myRequests.filter((request) => request._id !== data.request._id)] }));
+        // The API mutation event invalidates the existing QueryClient balance
+        // read. Do not issue a second, unused balance request from this store.
+        return data;
       },
 
       cancelPendingRequest: async (requestId) => {
@@ -80,7 +81,7 @@ const useLeaveStore = create(
       // subscribing to the matching window CustomEvent — see services/socket.js) ───
       handleRequestCreated: (payload) => {
         if (payload?.request) {
-          set({ myRequests: [payload.request, ...get().myRequests] });
+          set((state) => ({ myRequests: [payload.request, ...state.myRequests.filter((request) => request._id !== payload.request._id)] }));
         }
       },
       handleRequestUpdated: (payload) => {
@@ -100,9 +101,10 @@ const useLeaveStore = create(
       setCalendarViewMode: (mode) => set({ calendarViewMode: mode }),
       setDashboardTab: (tab) => set({ dashboardTab: tab }),
 
-      reset: () => set({
-        balances: [], myRequests: [], approvalQueue: [], loading: false, error: null
-      })
+      reset: () => set((state) => ({
+        balances: [], myRequests: [], approvalQueue: [], loading: false, error: null,
+        accessRevision: state.accessRevision + 1, readsPaused: false
+      }))
     }),
     {
       name: 'leave-storage',

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import Workspace from '../../models/Workspace.js';
+import User from '../../models/User.js';
 import AuditLog from '../../models/AuditLog.js';
 import LeaveType from './leaveType.model.js';
 import LeaveLedger from './leaveLedger.model.js';
@@ -64,7 +65,7 @@ export async function createManualAdjustment({ workspaceId, actor, userId, leave
       if (!Number.isInteger(Math.abs(numericAmount) / increment)) throw new ErrorResponse(`This leave type requires increments of ${increment} leave(s)`, 400);
       if (numericAmount > 0 && rule.maxBalanceCap != null) {
         const buckets = await LeaveAccrualBucket.find({ workspaceId, user: userId, leaveType: leaveTypeId, status: 'active', $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }).session(session);
-        const balance = buckets.reduce((n, b) => n + b.creditedAmount - b.consumedAmount - b.expiredAmount, 0);
+        const balance = buckets.reduce((n, b) => n + b.creditedAmount - b.consumedAmount - (b.debitedAmount || 0) - b.expiredAmount, 0);
         if (balance + numericAmount > rule.maxBalanceCap) throw new ErrorResponse('Credit would exceed the policy balance cap', 400);
       }
       if (numericAmount > 0) {
@@ -75,13 +76,14 @@ export async function createManualAdjustment({ workspaceId, actor, userId, leave
         const { bucket, ledgerEntry } = await creditBucket({
           workspaceId, user: userId, leaveType: leaveTypeId, policyVersion: policyContext.policyVersion._id,
           period: null, sourceType: 'MANUAL_CREDIT', amount: numericAmount, creditedAt: new Date(), expiresAt,
-          reason: reason.trim(), createdBy: actorId, session, ledgerType: 'MANUAL_CREDIT', clientAdjustmentId
+          reason: reason.trim(), createdBy: actorId, session, ledgerType: 'MANUAL_CREDIT', clientAdjustmentId, actorRole: actor.role,
+          policySource: { assignmentId: policyContext.assignment._id, scope: policyContext.assignment.scope, scopeRef: policyContext.assignment.scopeRef }
         });
         result = { bucket: bucket.toObject(), ledgerEntries: [ledgerEntry.toObject()] };
       } else {
         const entries = await debitViaFIFO({
           workspaceId, user: userId, leaveType: leaveTypeId, amount: Math.abs(numericAmount),
-          reason: reason.trim(), actor: actorId, session, clientAdjustmentId
+          reason: reason.trim(), actor: actorId, session, clientAdjustmentId, actorRole: actor.role
         });
         result = { ledgerEntries: entries.map((entry) => entry.toObject()) };
       }
@@ -106,4 +108,88 @@ export async function createManualAdjustment({ workspaceId, actor, userId, leave
   }
 
   return result;
+}
+
+/**
+ * List adjustment history (MANUAL_CREDIT and MANUAL_DEBIT ledger entries)
+ * with filtering by user, leave type, operation, date range, search, and pagination.
+ */
+export async function listManualAdjustments({
+  workspaceId, page = 1, limit = 20, userId, leaveTypeId, operation, startDate, endDate, search
+}) {
+  const query = {
+    workspaceId,
+    type: { $in: ['MANUAL_CREDIT', 'MANUAL_DEBIT'] }
+  };
+
+  if (operation === 'CREDIT') {
+    query.type = 'MANUAL_CREDIT';
+  } else if (operation === 'DEBIT') {
+    query.type = 'MANUAL_DEBIT';
+  }
+
+  if (userId) {
+    query.user = userId;
+  }
+
+  if (leaveTypeId) {
+    query.leaveType = leaveTypeId;
+  }
+
+  if (startDate || endDate) {
+    query.occurredAt = {};
+    if (startDate) {
+      query.occurredAt.$gte = new Date(startDate);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query.occurredAt.$lte = end;
+    }
+  }
+
+  if (search && search.trim()) {
+    const term = search.trim();
+    const matchingUsers = await User.find({
+      $or: [
+        { name: { $regex: term, $options: 'i' } },
+        { email: { $regex: term, $options: 'i' } }
+      ]
+    }).select('_id').lean();
+    const matchingUserIds = matchingUsers.map((u) => u._id);
+
+    query.$or = [
+      { user: { $in: matchingUserIds } },
+      { actor: { $in: matchingUserIds } },
+      { reason: { $regex: term, $options: 'i' } }
+    ];
+  }
+
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const skip = (safePage - 1) * safeLimit;
+
+  const [total, adjustments] = await Promise.all([
+    LeaveLedger.countDocuments(query),
+    LeaveLedger.find(query)
+      .sort({ occurredAt: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(safeLimit)
+      .populate('user', 'name email avatar')
+      .populate('actor', 'name email avatar')
+      .populate('leaveType', 'name key color category')
+      .populate('policyVersion', 'versionNumber status')
+      .populate('bucket', 'creditedAmount consumedAmount debitedAmount status')
+      .lean()
+  ]);
+
+  return {
+    adjustments,
+    pagination: {
+      total,
+      page: safePage,
+      limit: safeLimit,
+      pages: Math.ceil(total / safeLimit)
+    }
+  };
 }

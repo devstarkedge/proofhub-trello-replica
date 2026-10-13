@@ -1,4 +1,6 @@
 import asyncHandler from '../../middleware/asyncHandler.js';
+import mongoose from 'mongoose';
+import { validateDateRange } from '../../utils/calendarDateRange.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
@@ -6,15 +8,21 @@ import LeaveRequest from './leaveRequest.model.js';
 import LeaveApproval from './leaveApproval.model.js';
 import LeavePolicy from './leavePolicy.model.js';
 import { getFullBalanceBreakdown } from './leaveBalance.service.js';
-import { getManagedDepartmentIds, getManagedEmployeeIds, getLeaveDashboardScope } from './leaveAuthorization.service.js';
+import { getLeaveDashboardScope } from './leaveAuthorization.service.js';
 import { getDayStatusForUsers } from './leaveDayStatus.service.js';
-import { canViewUserLeaveData, assertMyLeaveSelfServiceAllowed } from './leaveAuthorization.service.js';
+import { resolveLeaveAccessScope, assertMyLeaveSelfServiceAllowed } from './leaveAuthorization.service.js';
 import { getWorkspaceTimezone, instantToDateOnlyKey } from './leaveTimezone.util.js';
 import { getLeaveDashboardRecords, PENDING_STATUSES, APPROVED_STATUSES, CANCELLED_STATUSES } from './leaveRead.service.js';
+import { queryLeaveRequests, queryLeaveSummary } from './leaveRequestQuery.service.js';
+
+const compatibleQueue = (requests) => requests.map((request) => ({ _id: request._id, request, level: request.actions.approvals[0]?.level, stages: request.approvals, actions: request.actions }));
 
 export const getRecords = asyncHandler(async (req, res) => {
-  const { status, page, limit } = req.query;
-  const data = await getLeaveDashboardRecords({ viewer: req.user, workspaceId: req.workspaceId, status, page, limit });
+  const data = await getLeaveDashboardRecords({ ...req.query, viewer: req.user, workspaceId: req.workspaceId });
+  res.json({ success: true, data });
+});
+export const getSummary = asyncHandler(async (req, res) => {
+  const data = await queryLeaveSummary({ viewer: req.user, workspaceId: req.workspaceId });
   res.json({ success: true, data });
 });
 
@@ -53,8 +61,8 @@ export const getManagerDashboard = asyncHandler(async (req, res) => {
   const { workspaceId } = req;
   const managerId = req.user.id;
 
-  const departmentIds = await getManagedDepartmentIds({ workspaceId, managerId });
-  const employeeIds = await getManagedEmployeeIds({ workspaceId, managerId });
+  const visibility = await resolveLeaveAccessScope({ viewer: req.user, workspaceId, includeEmployees: true });
+  const { departmentIds, employeeIds, requestFilter: requestScope } = visibility;
   const todayKey = await getTodayKey(workspaceId);
   // Department.managers/members are plain User references with no role
   // restriction, so employeeIds/departmentIds already include any
@@ -66,29 +74,27 @@ export const getManagerDashboard = asyncHandler(async (req, res) => {
     upcomingApprovedLeave
   ] = await Promise.all([
     getFullBalanceBreakdown({ workspaceId, user: managerId }),
-    LeaveApproval.find({ workspaceId, level: 'DEPARTMENT_MANAGER', status: 'PENDING', eligibleApproverUserIds: managerId })
-      .populate({ path: 'request', populate: [{ path: 'requester', select: 'name email avatar' }, { path: 'leaveType', select: 'name color' }] })
-      .lean(),
+    queryLeaveRequests({ workspaceId, viewer: req.user, view: 'approval', includeSummary: false }).then((result) => compatibleQueue(result.requests)),
     employeeIds.length
-      ? getDayStatusForUsers({ workspaceId, userIds: employeeIds, startDate: todayKey, endDate: todayKey, visibility: 'department' })
+      ? getDayStatusForUsers({ workspaceId, userIds: employeeIds, startDate: todayKey, endDate: todayKey, visibility: 'department', requestScope })
       : {},
     departmentIds.length
-      ? LeaveRequest.find({ workspaceId, requester: { $in: employeeIds }, status: { $in: ACTIVE_PENDING_STATUSES } })
+      ? LeaveRequest.find({ ...requestScope, status: { $in: ACTIVE_PENDING_STATUSES } })
           .populate('requester', 'name email avatar').populate('leaveType', 'name color').sort({ createdAt: -1 }).lean()
       : [],
     departmentIds.length
-      ? LeaveRequest.find({ workspaceId, requesterDepartmentIds: { $in: departmentIds }, status: { $in: APPROVED_STATUSES }, endDate: { $gte: new Date() } })
+      ? LeaveRequest.find({ ...requestScope, status: { $in: APPROVED_STATUSES }, endDate: { $gte: new Date() } })
           .populate('requester', 'name email avatar').populate('leaveType', 'name color').sort({ startDate: 1 }).lean()
       : [],
 
   ]);
 
-  const consistent = await getLeaveDashboardRecords({ viewer: req.user, workspaceId });
+  const consistent = await queryLeaveSummary({ viewer: req.user, workspaceId, visibility });
 
   res.json({
     success: true,
     data: {
-      departmentIds, myBalances, pendingApprovals: pendingApprovals.filter((a) => a.request && PENDING_STATUSES.includes(a.request.status) && String(a.request.requester?._id) !== String(managerId)), teamOnLeaveToday, teamPendingRequests, upcomingApprovedLeave,
+      departmentIds, myBalances, pendingApprovals, teamOnLeaveToday, teamPendingRequests, upcomingApprovedLeave,
       summary: {
         pendingCount: consistent.summary.pending, approvedCount: consistent.summary.approved, rejectedCount: consistent.summary.rejected, cancelledCount: consistent.summary.cancelled,
         onLeaveTodayCount: consistent.summary.today, teamSize: employeeIds.length
@@ -131,15 +137,14 @@ async function buildWorkspaceWideDashboard(workspaceId, user) {
   const memberIds = activeMembers.map((member) => member.user);
 
   const [pendingApprovals, policies] = await Promise.all([
-    LeaveApproval.find({ workspaceId, status: 'PENDING', eligibleApproverUserIds: userId })
-      .populate({ path: 'request', populate: [{ path: 'requester', select: 'name email avatar' }, { path: 'leaveType', select: 'name color' }] }).lean(),
+    queryLeaveRequests({ workspaceId, viewer: user, view: 'approval', includeSummary: false }).then((result) => compatibleQueue(result.requests)),
     LeavePolicy.find({ workspaceId, status: { $ne: 'archived' } }).select('name status isDefault').lean()
   ]);
-  const consistent = await getLeaveDashboardRecords({ viewer: user, workspaceId });
+  const consistent = await queryLeaveSummary({ viewer: user, workspaceId });
 
   return {
     summary: { pendingCount: consistent.summary.pending, approvedCount: consistent.summary.approved, rejectedCount: consistent.summary.rejected, cancelledCount: consistent.summary.cancelled, onLeaveTodayCount: consistent.summary.today, totalMembers: memberIds.length },
-    pendingApprovals: pendingApprovals.filter((a) => a.request && ACTIVE_PENDING_STATUSES.includes(a.request.status) && String(a.request.requester?._id) !== String(userId)), policies
+    pendingApprovals, policies
   };
 }
 
@@ -155,7 +160,7 @@ export const getAdminDashboard = asyncHandler(async (req, res) => {
 
 export const getDayStatus = asyncHandler(async (req, res) => {
   const { userIds, startDate, endDate, visibility } = req.query;
-  const requestedIds = String(userIds || '').split(',').filter(Boolean);
+  const requestedIds = [...new Set(String(userIds || '').split(',').filter(Boolean))];
   if (!requestedIds.length || !startDate || !endDate) {
     return res.json({ success: true, data: {} });
   }
@@ -164,17 +169,17 @@ export const getDayStatus = asyncHandler(async (req, res) => {
   // HR-or-Admin-workspace-wide visibility — never trust a caller-supplied
   // user-id list without re-checking it here, since this endpoint backs a
   // Teams-page grid an ordinary Employee can also load.
-  const allowedIds = [];
-  for (const id of requestedIds) {
-    if (await canViewUserLeaveData({ viewer: req.user, targetUserId: id, workspaceId: req.workspaceId })) {
-      allowedIds.push(id);
-    }
-  }
+  if (requestedIds.length > 500 || requestedIds.some((id) => !mongoose.isValidObjectId(id))) throw new ErrorResponse('Select up to 500 valid employees', 400);
+  validateDateRange(startDate, endDate, 93);
+  const scope = await resolveLeaveAccessScope({ viewer: req.user, workspaceId: req.workspaceId, includeEmployees: true });
+  const allowedSet = new Set([String(scope.viewer._id), ...scope.employeeIds.map(String)]);
+  const allowedIds = scope.scope === 'workspace' ? requestedIds : requestedIds.filter((id) => allowedSet.has(id));
   if (!allowedIds.length) return res.json({ success: true, data: {} });
 
   const data = await getDayStatusForUsers({
     workspaceId: req.workspaceId, userIds: allowedIds, startDate, endDate,
-    visibility: visibility === 'approved_only' ? 'approved_only' : 'department', includeLeave: req.query.calendarOnly !== 'true'
+    visibility: visibility === 'approved_only' ? 'approved_only' : 'department', includeLeave: req.query.calendarOnly !== 'true',
+    requestScope: scope.requestFilter
   });
   res.json({ success: true, data });
 });

@@ -144,6 +144,8 @@ const MyAttendancePage = () => {
     const refresh = () => { loadToday(); loadRequests(); };
     window.addEventListener('socket-attendance-checked-in', refresh);
     window.addEventListener('socket-attendance-checked-out', refresh);
+    window.addEventListener('socket-attendance-missed-checkout', refresh);
+    window.addEventListener('socket-attendance-updated', refresh);
     window.addEventListener('socket-attendance-wfh-decided', refresh);
     window.addEventListener('socket-attendance-regularization-decided', refresh);
     // A Location changed for this workspace — refetch so "Today" reflects
@@ -152,6 +154,8 @@ const MyAttendancePage = () => {
     return () => {
       window.removeEventListener('socket-attendance-checked-in', refresh);
       window.removeEventListener('socket-attendance-checked-out', refresh);
+      window.removeEventListener('socket-attendance-missed-checkout', refresh);
+      window.removeEventListener('socket-attendance-updated', refresh);
       window.removeEventListener('socket-attendance-locations-updated', refresh);
       window.removeEventListener('socket-attendance-wfh-decided', refresh);
       window.removeEventListener('socket-attendance-regularization-decided', refresh);
@@ -173,6 +177,24 @@ const MyAttendancePage = () => {
 
   return (
     <div className="space-y-4">
+      {today.unresolvedMissedCheckout && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <p className="font-semibold text-amber-900 dark:text-amber-100">Missed Check-Out Detected</p>
+            <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
+              You missed checking out for work date <span className="font-bold">{today.unresolvedMissedCheckout.workDateKey}</span>. Please submit a regularization request to verify your working hours.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+            onClick={() => setShowRegularizationForm(true)}
+          >
+            Request Regularization
+          </Button>
+        </div>
+      )}
+
       <Panel title="Today">
         <div className="flex flex-wrap items-center gap-3">
           <PresenceStatusBadge status={resolveDisplayStatus(today)} />

@@ -191,6 +191,12 @@ const config = {
     slack: { concurrency: 5 },
   },
 
+  // Attendance Module
+  attendance: {
+    sweepIntervalMs: parseInt(process.env.ATTENDANCE_SWEEP_INTERVAL_MS, 10) || 10 * 60 * 1000,
+    batchSize: parseInt(process.env.ATTENDANCE_SWEEP_BATCH_SIZE, 10) || 100,
+  },
+
   // HTTP Server
   http: {
     bodyLimit: '10mb',

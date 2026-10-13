@@ -1,5 +1,6 @@
 import { periodDateRange, isValidDateRange } from '../../utils/workspaceDateRange';
 import { formatHours } from '../../utils/duration';
+import { attendanceCsv } from '../../utils/attendanceExport';
 import React, { useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Users } from 'lucide-react';
 import PresenceStatusBadge from '../../components/Attendance/PresenceStatusBadge';
@@ -89,10 +90,12 @@ const TeamAttendanceContent = () => {
 
   const exportRows = () => {
     if (loading || error || !validRange) return;
-    const cell = (value) => '"' + String(value ?? '').replace(/^[=+@-]/, "'").replaceAll('"', '""') + '"';
-    const csv = [['Employee', 'Date', 'Work mode', 'Worked hours', 'Status'], ...records.map((record) => [record.user?.name, record.workDateKey, record.workMode, Number(record.workedMinutes || 0) / 60, record.presenceState])].map((row) => row.map(cell).join(',')).join('\r\n');
+    const csv = attendanceCsv(records);
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a'); link.href = url; link.download = 'attendance-' + startDate + '-to-' + endDate + '.csv'; link.click(); URL.revokeObjectURL(url);
+    const link = document.createElement('a');
+    link.href = url; link.download = 'attendance-' + startDate + '-to-' + endDate + '.csv';
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   if (access === undefined) return null;

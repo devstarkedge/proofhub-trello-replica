@@ -35,7 +35,7 @@ const attendanceSessionSchema = new mongoose.Schema({
   attendanceDay: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceDay', required: true },
   workDateKey: { type: String, required: true }, // denormalized from AttendanceDay for cheap range queries
 
-  status: { type: String, enum: ['ACTIVE', 'CLOSED'], default: 'ACTIVE' },
+  status: { type: String, enum: ['ACTIVE', 'CLOSED', 'COMPLETED', 'MISSED_CHECKOUT'], default: 'ACTIVE' },
   checkInAt: { type: Date, required: true }, // server timestamp, always
   checkOutAt: { type: Date, default: null },
 
@@ -46,6 +46,23 @@ const attendanceSessionSchema = new mongoose.Schema({
   // trap an already-active session or reinterpret it (spec §37, §74, §80-82).
   policyVersion: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendancePolicyVersion', default: null },
   shift: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceShift', default: null },
+
+  // Policy-aware missed checkout lifecycle fields
+  missedCheckoutCutoffAt: { type: Date, default: null },
+  effectiveShiftEndAt: { type: Date, default: null },
+  closureReason: {
+    type: String,
+    enum: ['NORMAL_CHECKOUT', 'MISSED_CHECKOUT_CUTOFF', 'AUTO_CLOSED_BY_POLICY', 'SYSTEM_RECONCILIATION', null],
+    default: null
+  },
+  reconciledAt: { type: Date, default: null },
+  missedCheckoutDetectedAt: { type: Date, default: null },
+  regularizationStatus: {
+    type: String,
+    enum: ['NONE', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
+    default: 'NONE'
+  },
+  provisionalMinutes: { type: Number, default: 0 },
 
   systemGeneratedCheckout: { type: Boolean, default: false },
   idempotencyKey: { type: String, trim: true, minlength: 8, maxlength: 128, default: null },
@@ -63,6 +80,9 @@ attendanceSessionSchema.index(
 );
 attendanceSessionSchema.index({ workspaceId: 1, user: 1, checkInAt: -1 });
 attendanceSessionSchema.index({ workspaceId: 1, attendanceDay: 1 });
+attendanceSessionSchema.index({ workspaceId: 1, status: 1, missedCheckoutCutoffAt: 1 });
+attendanceSessionSchema.index({ status: 1, missedCheckoutCutoffAt: 1, workspaceId: 1 });
+attendanceSessionSchema.index({ workspaceId: 1, user: 1, status: 1 });
 // `partialFilterExpression`, NOT `sparse` — a well-known Mongo gotcha: a
 // COMPOUND sparse index only excludes a document when EVERY indexed field
 // is missing. workspaceId/user always exist, so a plain `sparse: true`
@@ -82,12 +102,14 @@ attendanceSessionSchema.index(
 
 attendanceSessionSchema.plugin(workspaceScopePlugin);
 
-// Immutable after creation except the small set of fields a check-out (or
-// an authorized system auto-close) legitimately needs to write — mirrors
-// MilestoneApproval.js's "history is immutable" guard pattern, but scoped
-// to permit exactly one legitimate follow-up write (closing the session)
-// rather than none at all.
-const MUTABLE_AFTER_CREATE_PATHS = new Set(['status', 'checkOutAt', 'checkOut', 'systemGeneratedCheckout', 'updatedAt']);
+// Immutable after creation except the fields a check-out, an authorized
+// system reconciliation, or a missed-checkout lifecycle event legitimately
+// needs to write.
+const MUTABLE_AFTER_CREATE_PATHS = new Set([
+  'status', 'checkOutAt', 'checkOut', 'systemGeneratedCheckout', 'updatedAt',
+  'missedCheckoutCutoffAt', 'effectiveShiftEndAt', 'closureReason',
+  'reconciledAt', 'missedCheckoutDetectedAt', 'regularizationStatus', 'provisionalMinutes'
+]);
 attendanceSessionSchema.pre('save', function guardImmutableEvidence(next) {
   if (this.isNew) return next();
   const changedPaths = this.modifiedPaths();

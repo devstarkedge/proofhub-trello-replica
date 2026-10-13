@@ -8,6 +8,7 @@ import DayStatusIndicator from './DayStatusIndicator';
 import LeaveCalendarEventPopover from './LeaveCalendarEventPopover';
 import * as leaveApi from '../../services/leaveApi';
 import { toDateKey } from '../../utils/leaveDateKey';
+import useLeaveQuery from '../../hooks/useLeaveQuery';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_TYPE_LABELS = {
@@ -131,55 +132,35 @@ function buildEventsForDate({ status, holidays, date, leaveEvents = [] }) {
 const LeaveCalendarGrid = ({ userId }) => {
   const { currentWorkspace } = useContext(WorkspaceContext);
   const [cursor, setCursor] = useState(() => new Date(workspaceDateKey(new Date(), currentWorkspace?.timezone) + 'T12:00:00'));
-  const [leaveEvents, setLeaveEvents] = useState([]);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const generation = useRef(0);
-  const [dayStatus, setDayStatus] = useState({});
-  const [holidays, setHolidays] = useState([]);
   const [activeDetails, setActiveDetails] = useState(null);
   const closeTimerRef = useRef(null);
 
   const cells = useMemo(() => buildMonthCells(cursor.getFullYear(), cursor.getMonth()), [cursor]);
+  const validDates = cells.filter(Boolean);
+  const range = { startDate: toKey(validDates[0]), endDate: toKey(validDates.at(-1)) };
+  const dayRead = useLeaveQuery('day-status', { ...range, userIds: [userId], visibility: 'approved_only', calendarOnly: true }, leaveApi.getDayStatus, { enabled: Boolean(userId) });
+  const eventRead = useLeaveQuery('calendar', range, leaveApi.getCalendarEvents);
+  const holidayRead = useLeaveQuery('holidays', { ...range, includeRecurring: true }, leaveApi.getHolidays);
+  const dayStatus = dayRead.isError ? {} : dayRead.data?.[userId] || {};
+  const holidays = holidayRead.isError ? undefined : holidayRead.data;
+  const loading = dayRead.isFetching || eventRead.isFetching || holidayRead.isFetching;
+  const error = dayRead.isError || eventRead.isError ? 'Unable to load calendar events. Try refreshing.' : '';
+  const holidayError = holidayRead.isError ? 'Unable to load workspace holidays. Try refreshing.' : '';
+  const eventsByDate = useMemo(() => {
+    const map = new Map();
+    for (const event of (eventRead.isError ? [] : eventRead.data?.events) || []) {
+      if (!map.has(event.dateKey)) map.set(event.dateKey, []);
+      map.get(event.dateKey).push(event);
+    }
+    return map;
+  }, [eventRead.data, eventRead.isError]);
   const holidaysByDate = useMemo(
-    () => indexHolidaysByDate(holidays),
+    () => indexHolidaysByDate(holidays || []),
     [holidays]
   );
 
-  const loadHolidays = useCallback(() => {
-    leaveApi.getHolidays()
-      .then(({ data }) => setHolidays(data || []))
-      .catch(() => { setHolidays([]); setError('Unable to load workspace holidays'); });
-  }, []);
-
-  const loadDayStatus = useCallback(() => {
-    if (!userId) return;
-    const validDates = cells.filter(Boolean);
-    if (!validDates.length) return;
-    const startDate = toKey(validDates[0]);
-    const endDate = toKey(validDates[validDates.length - 1]);
-    const id = ++generation.current;
-    setLoading(true); setError('');
-    Promise.all([
-      leaveApi.getDayStatus({ userIds: [userId], startDate, endDate, visibility: 'approved_only', calendarOnly: true }),
-      leaveApi.getCalendarEvents({ startDate, endDate })
-    ]).then(([days, leaves]) => { if (id === generation.current) { setDayStatus(days.data[userId] || {}); setLeaveEvents(leaves.data.events || []); } })
-      .catch(() => { if (id === generation.current) { setDayStatus({}); setLeaveEvents([]); setError('Unable to load calendar events. Try refreshing.'); } })
-      .finally(() => { if (id === generation.current) setLoading(false); });
-  }, [cells, userId]);
-
-  useEffect(() => { loadHolidays(); }, [loadHolidays]);
-  useEffect(() => { const requestGeneration = generation; loadDayStatus(); return () => { requestGeneration.current++; }; }, [loadDayStatus]);
-
-  // The Work Calendar / Holiday list can change from the Settings page (or
-  // another admin) at any time — refetch rather than let this grid drift
-  // out of sync with what actually governs classification server-side.
-  useEffect(() => {
-    const onCalendarUpdated = () => { loadHolidays(); loadDayStatus(); };
-    const names = ['socket-leave-calendar-updated', 'socket-leave-request-created', 'socket-leave-request-updated', 'socket-leave-approval-updated'];
-    names.forEach((name) => window.addEventListener(name, onCalendarUpdated));
-    return () => names.forEach((name) => window.removeEventListener(name, onCalendarUpdated));
-  }, [loadHolidays, loadDayStatus]);
+  const loadHolidays = () => holidayRead.refetch();
+  const loadDayStatus = () => { dayRead.refetch(); eventRead.refetch(); };
 
   useEffect(() => () => clearTimeout(closeTimerRef.current), []);
 
@@ -214,7 +195,7 @@ const LeaveCalendarGrid = ({ userId }) => {
     status: dayStatus[activeDetails.dateKey],
     holidays: [...new Map([...(holidaysByDate.get(activeDetails.dateKey) || []), ...(holidaysByDate.get(`*-${activeDetails.dateKey.slice(5)}`) || [])].map((h) => [h._id, h])).values()],
     date: activeDetails.dateValue,
-    leaveEvents: leaveEvents.filter((event) => event.dateKey === activeDetails.dateKey)
+    leaveEvents: eventsByDate.get(activeDetails.dateKey) || []
   }) : [];
 
   return (
@@ -260,9 +241,9 @@ const LeaveCalendarGrid = ({ userId }) => {
         </div>
       </div>
 
-      {error && (
+      {(error || holidayError) && (
         <div className="mb-2 flex flex-none items-center justify-between rounded-lg bg-red-500/10 px-3 py-1.5 text-xs text-red-500">
-          <span>{error}</span>
+          <span>{[error, holidayError].filter(Boolean).join(' ')}</span>
           <button type="button" onClick={() => { loadHolidays(); loadDayStatus(); }} className="underline font-semibold ml-2">
             Refresh
           </button>
@@ -292,7 +273,7 @@ const LeaveCalendarGrid = ({ userId }) => {
           if (!date) return <div key={`empty-${index}`} className="min-h-0" />;
           const key = toKey(date);
           const status = dayStatus[key];
-          const dateEvents = buildEventsForDate({ status, holidays: [...new Map([...(holidaysByDate.get(key) || []), ...(holidaysByDate.get(`*-${key.slice(5)}`) || [])].map((h) => [h._id, h])).values()], date, leaveEvents: leaveEvents.filter((event) => event.dateKey === key) });
+          const dateEvents = buildEventsForDate({ status, holidays: [...new Map([...(holidaysByDate.get(key) || []), ...(holidaysByDate.get(`*-${key.slice(5)}`) || [])].map((h) => [h._id, h])).values()], date, leaveEvents: eventsByDate.get(key) || [] });
           const isToday = key === workspaceDateKey(new Date(), currentWorkspace?.timezone);
           const hasEvents = dateEvents.length > 0;
           const visibleEvents = dateEvents.slice(0, 2);

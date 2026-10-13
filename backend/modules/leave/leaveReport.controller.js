@@ -36,20 +36,20 @@ export const getDepartmentUsageReport = asyncHandler(async (req, res) => {
     throw new ErrorResponse('You do not have permission to view this report', 403);
   }
 
-  const data = await leaveReportService.getUsageBreakdown({ departmentIds, startDate, endDate });
+  const data = await leaveReportService.getUsageBreakdown({ workspaceId: req.workspaceId, departmentIds, startDate, endDate });
   res.json({ success: true, data });
 });
 
 export const getMonthlyTrends = asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) throw new ErrorResponse('startDate and endDate are required', 400);
-  const data = await leaveReportService.getMonthlyTrends({ startDate, endDate });
+  const data = await leaveReportService.getMonthlyTrends({ workspaceId: req.workspaceId, startDate, endDate });
   res.json({ success: true, data });
 });
 
 export const getApprovalTurnaround = asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) throw new ErrorResponse('startDate and endDate are required', 400);
-  const data = await leaveReportService.getApprovalTurnaround({ startDate, endDate });
+  const data = await leaveReportService.getApprovalTurnaround({ workspaceId: req.workspaceId, startDate, endDate });
   res.json({ success: true, data });
 });

@@ -1,5 +1,5 @@
 import { formatHours } from '../../utils/duration';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
@@ -8,6 +8,9 @@ import LeaveDateRangePicker from './LeaveDateRangePicker';
 import { leaveRequestSchema } from '../../utils/leaveValidation';
 import * as leaveApi from '../../services/leaveApi';
 import useLeaveStore from '../../store/leaveStore';
+import AuthContext from '../../context/AuthContext';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import { createLeaveSubmissionIdentity } from '../../utils/leaveSubmissionIdentity';
 
 const HALF_DAY_SIDE_OPTIONS = [
   { value: 'HALF_DAY_FIRST_HALF', label: 'First Half' },
@@ -54,6 +57,10 @@ function buildLeaveOptions(leaveTypes) {
 }
 
 const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
+  const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const submission = useRef(null);
+  const inFlight = useRef(false);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [leaveOptionKey, setLeaveOptionKey] = useState('');
   const [serverError, setServerError] = useState(null);
@@ -106,13 +113,28 @@ const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
   }, [shape, shortLeaveStartTime, shortLeaveEndTime, setValue]);
 
   const onSubmit = async (values) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setServerError(null);
     try {
-      const result = await submitLeaveRequest(values);
+      const userId = user?._id || user?.id;
+      if (!userId || !currentWorkspace?._id) throw new Error('Select a workspace before submitting leave.');
+      const key = `flowtask.leave.submission:${currentWorkspace._id}:${userId}`;
+      if (submission.current?.key !== key) {
+        let storage;
+        try { storage = window.sessionStorage; } catch { /* Use the in-memory fallback. */ }
+        submission.current = { key, identity: createLeaveSubmissionIdentity({ key, storage }) };
+      }
+      const identity = submission.current.identity;
+      const clientRequestId = await identity.forPayload(values);
+      const result = await submitLeaveRequest({ ...values, clientRequestId });
+      identity.complete(clientRequestId);
       onSubmitted?.(result);
     } catch (error) {
-      setServerError(error.response?.data?.message || 'Failed to submit leave request');
-    }
+      setServerError(error.response?.data?.message || (error.request
+        ? 'The submission result could not be confirmed. Check My Leave or retry the same details safely.'
+        : error.message || 'Failed to submit leave request'));
+    } finally { inFlight.current = false; }
   };
 
   return (
@@ -126,6 +148,7 @@ const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
         </div>
       )}
 
+      <fieldset disabled={isSubmitting} className="space-y-4">
       <div>
         <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Leave Type</label>
         <select
@@ -202,6 +225,7 @@ const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
           {isSubmitting ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting…</>) : 'Submit Request'}
         </Button>
       </div>
+      </fieldset>
     </form>
   );
 };

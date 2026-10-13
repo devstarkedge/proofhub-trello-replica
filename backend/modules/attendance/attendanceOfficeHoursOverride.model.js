@@ -40,6 +40,8 @@ const attendanceOfficeHoursOverrideSchema = new mongoose.Schema({
   earlyExitGraceMinutes: { type: Number, default: null, min: 0 },
   minimumFullDayMinutes: { type: Number, default: null, min: 1 },
   minimumHalfDayMinutes: { type: Number, default: null, min: 1 },
+  cutoffGraceMinutes: { type: Number, default: null, min: 0 },
+  maxSessionDurationHours: { type: Number, default: null, min: 1 },
 
   // Tie-breaker only for a user belonging to multiple departments that
   // each have their own active override — identical role to Work Mode

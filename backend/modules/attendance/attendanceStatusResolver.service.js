@@ -67,9 +67,11 @@ export function resolveAttendanceStatus({
   const effectiveMinFullDayMinutes = officeHours?.minimumFullDayMinutes ?? shift?.minimumFullDayMinutes ?? policyVersion.minimumFullDayMinutes;
   const effectiveMinHalfDayMinutes = officeHours?.minimumHalfDayMinutes ?? shift?.minimumHalfDayMinutes ?? policyVersion.minimumHalfDayMinutes;
 
-  const closedSessions = sessions.filter((s) => s.status === 'CLOSED');
+  const closedSessions = sessions.filter((s) => ['CLOSED', 'COMPLETED'].includes(s.status));
   const activeSessions = sessions.filter((s) => s.status === 'ACTIVE');
+  const missedCheckoutSessions = sessions.filter((s) => s.status === 'MISSED_CHECKOUT');
   const hasActiveSession = activeSessions.length > 0;
+  const hasMissedCheckout = missedCheckoutSessions.length > 0;
 
   const allCheckIns = sessions.map((s) => s.checkInAt).filter(Boolean);
   const firstCheckInAt = allCheckIns.length ? new Date(Math.min(...allCheckIns.map((d) => new Date(d).getTime()))) : null;
@@ -79,8 +81,22 @@ export function resolveAttendanceStatus({
   const workedMinutes = sessions.reduce((sum, s) => {
     if (!s.checkInAt) return sum;
     const start = new Date(s.checkInAt).getTime();
-    const end = s.status === 'CLOSED' && s.checkOutAt ? new Date(s.checkOutAt).getTime() : (s.status === 'ACTIVE' ? serverNow.getTime() : start);
-    return sum + Math.max(0, end - start) / 60000;
+    if (['CLOSED', 'COMPLETED'].includes(s.status) && s.checkOutAt) {
+      const end = new Date(s.checkOutAt).getTime();
+      return sum + Math.max(0, end - start) / 60000;
+    }
+    if (s.status === 'ACTIVE' && !isDayOver) {
+      let activeEnd = serverNow.getTime();
+      if (s.missedCheckoutCutoffAt) {
+        const cutoffTime = new Date(s.missedCheckoutCutoffAt).getTime();
+        if (activeEnd > cutoffTime) {
+          activeEnd = cutoffTime;
+        }
+      }
+      return sum + Math.max(0, activeEnd - start) / 60000;
+    }
+    // MISSED_CHECKOUT or overdue active session contributes 0 verified minutes
+    return sum;
   }, 0);
 
   const exceptionFlags = [];
@@ -116,9 +132,12 @@ export function resolveAttendanceStatus({
   }
 
   // A session is still open past the point the caller has determined the
-  // business day is genuinely over — this IS the missing-checkout state,
-  // never silently treated as any flavor of "present."
-  if (hasActiveSession && isDayOver) {
+  // business day is genuinely over, or has been marked as MISSED_CHECKOUT —
+  // this IS the missing-checkout state, never silently treated as any flavor of "present."
+  if ((hasActiveSession && isDayOver) || hasMissedCheckout) {
+    if (!exceptionFlags.includes('MISSING_CHECKOUT')) {
+      exceptionFlags.push('MISSING_CHECKOUT');
+    }
     return {
       calendarDayType, isCalendarWorkingDay, workMode,
       firstCheckInAt, lastCheckOutAt, workedMinutes: Math.round(workedMinutes), shiftExpectedMinutes: effectiveMinFullDayMinutes,

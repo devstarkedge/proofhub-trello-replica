@@ -25,8 +25,7 @@ const LeaveRequestList = ({
       {requests.map((request) => (
         <div
           key={request._id}
-          onClick={() => onSelect?.(request)}
-          className="flex cursor-pointer flex-col gap-3 rounded-xl border p-3.5 text-left transition-all hover:-translate-y-px hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-3 rounded-xl border p-3.5 text-left transition-all sm:flex-row sm:items-center sm:justify-between"
           style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}
         >
           <div className="flex items-center gap-3 min-w-0">
@@ -50,6 +49,7 @@ const LeaveRequestList = ({
               {request.days?.length > 0 && <p className="text-xs">{[...new Set(request.days.map((d) => ({ FULL_DAY: 'Full day', HALF_DAY_FIRST_HALF: 'Half day (AM)', HALF_DAY_SECOND_HALF: 'Half day (PM)', SHORT_LEAVE: 'Short leave' })[d.dayType]))].join(', ')}</p>}
               {request.days?.some((d) => d.dayType === 'SHORT_LEAVE') && <p className="text-xs">{request.days.filter((d) => d.dayType === 'SHORT_LEAVE').map((d) => `${d.shortLeaveStartTime}–${d.shortLeaveEndTime} · ${formatHours(d.shortLeaveDurationMinutes)}`).join(', ')}</p>}
               {request.createdAt && <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Requested {new Date(request.createdAt).toLocaleDateString(undefined, { timeZone: timezone })}</p>}
+              {request.progress && <p className="mt-2 text-xs">Approval progress: {request.progress.approved} of {request.progress.total} stages{request.actions?.approvals.length ? ' · Needs your decision' : ''}</p>}
             </div>
           </div>
 

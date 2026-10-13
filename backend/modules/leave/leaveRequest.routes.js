@@ -4,6 +4,7 @@ import { protect } from '../../middleware/authMiddleware.js';
 import { validate } from '../../middleware/validation.js';
 import * as requestController from './leaveRequest.controller.js';
 import * as balanceController from './leaveBalance.controller.js';
+import * as historyController from './leaveHistory.controller.js';
 
 const router = express.Router();
 router.use(protect);
@@ -20,6 +21,8 @@ router.use(protect);
 // consistent layer alongside the other-user checks these same controllers
 // already do (getUserBalance, getUserRequests, getRequestDetail).
 router.get('/balance/me', balanceController.getMyBalance);
+router.get('/balance/activity', historyController.getMyActivity);
+router.get('/balance/activity/:activityId', historyController.getMyActivityDetail);
 router.get('/balance/:userId', balanceController.getUserBalance);
 
 router.get('/requests/mine', requestController.getMyRequests);

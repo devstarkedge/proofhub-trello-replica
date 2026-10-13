@@ -603,13 +603,13 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
 
   if (managers !== undefined) {
     const newManagers = managers || [];
-    managersToAdd = newManagers.filter(id => !oldManagers.includes(id));
-    managersToRemove = oldManagers.filter(id => !newManagers.includes(id));
+    const oldIds = new Set(oldManagers.map(String)), newIds = new Set(newManagers.map(String));
+    managersToAdd = newManagers.filter(id => !oldIds.has(String(id)));
+    managersToRemove = oldManagers.filter(id => !newIds.has(String(id)));
 
-    // Every manager being added or removed must already be a member of this
-    // workspace — otherwise syncMembershipFromUser's upsert below would
-    // silently create a membership for a user from a different workspace.
-    const candidateIds = [...managersToAdd, ...managersToRemove];
+    // New appointments require active workspace membership. Removal must
+    // remain possible for former/suspended managers already on this roster.
+    const candidateIds = managersToAdd;
     if (candidateIds.length > 0) {
       const validIds = await WorkspaceMembership.find({
         workspace: req.workspaceId,
@@ -678,9 +678,11 @@ export const updateDepartment = asyncHandler(async (req, res, next) => {
       );
     }
 
-    await Promise.all(
-      [...managersToAdd, ...managersToRemove].map((managerId) => syncMembershipFromUser(managerId, req.workspaceId))
-    );
+  }
+
+  if (managers !== undefined || members !== undefined || isActive !== undefined) {
+    const assigned = await WorkspaceMembership.find({ workspace: req.workspaceId, department: department._id, status: 'active' }).distinct('user');
+    await Promise.all([...new Set([...oldManagers, ...(department.managers || []), ...assigned].map(String))].map(userId => syncMembershipFromUser(userId, req.workspaceId)));
   }
 
   // Populate managers data before returning
@@ -720,6 +722,7 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
   }
 
   // Remove department from users (use $pull for array field)
+  const affectedUsers = await WorkspaceMembership.find({ workspace: req.workspaceId, $or: [{ department: department._id }, { user: { $in: department.managers || [] } }] }).distinct('user');
   await WorkspaceMembership.updateMany(
     { workspace: req.workspaceId, department: req.params.id },
     { $pull: { department: req.params.id } }
@@ -727,6 +730,7 @@ export const deleteDepartment = asyncHandler(async (req, res, next) => {
 
   // Actually delete the department from database
   await Department.findByIdAndDelete(req.params.id);
+  await Promise.all(affectedUsers.map(userId => syncMembershipFromUser(userId, req.workspaceId)));
 
   // Dispatch chat webhook
   chatHooks.onDepartmentDeleted(department, req.user).catch(console.error);
@@ -844,7 +848,7 @@ export const removeMemberFromDepartment = asyncHandler(
 
     // Use $pull to remove from array
     await Department.findByIdAndUpdate(req.params.id, {
-      $pull: { members: req.params.userId }
+      $pull: { members: req.params.userId, managers: req.params.userId }
     });
 
     // Update user's department field

@@ -13,3 +13,11 @@
 export function isMyLeaveBlockedForRole(role) {
   return String(role || '').toLowerCase() === 'admin';
 }
+
+/**
+ * Every workspace member has a personal dashboard. Broader data visibility
+ * is resolved by the backend, independently of navigation visibility.
+ */
+export function canAccessLeaveDashboard() {
+  return true;
+}

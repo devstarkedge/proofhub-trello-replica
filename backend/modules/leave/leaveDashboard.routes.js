@@ -11,7 +11,10 @@ router.use(protect);
 // leaveAuthorization.service.js#getLeaveDashboardScope. Open to any
 // authenticated member; it only reports what THEY are entitled to see.
 router.get('/scope', controller.getDashboardScope);
+// The shared read service returns only the caller's records without a
+// department or workspace grant. Personal dashboards are open to members.
 router.get('/records', controller.getRecords);
+router.get('/summary', controller.getSummary);
 
 // /employee always self-scopes to the caller — every member may see their
 // own leave data regardless of dashboard scope, so no extra gate is needed

@@ -14,7 +14,13 @@ import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import User from '../../models/User.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import * as workspaceContext from '../workspaces/workspaceContext.js';
-import { getWorkspaceTimezone, nowInWorkspaceTz, dateOnlyToInstant, instantToDateOnlyKey } from './leaveTimezone.util.js';
+import {
+  getWorkspaceTimezone, nowInWorkspaceTz, dateOnlyToInstant, instantToDateOnlyKey,
+  getCurrentPeriodKey, getPeriodKey, getPeriodBounds, computeExpiryDate
+} from './leaveTimezone.util.js';
+import { getEffectiveEmploymentProfile } from './leaveEmployeeProfile.service.js';
+import { computeAccrualForPeriod } from './leaveAccrual.service.js';
+import { creditBucket } from './leaveBalance.service.js';
 
 const SPECIFICITY_RANK = { employee: 3, role: 2, department: 1, workspace: 0 };
 
@@ -148,13 +154,15 @@ async function resolveMembershipRoleId(membership, workspaceId) {
  * broken by priority then most recent effectiveFrom. `membership` is the
  * caller's already-loaded WorkspaceMembership for this user.
  */
-export async function resolveAssignmentForUser({ workspaceId, userId, membership, date }) {
-  const assignments = await LeavePolicyAssignment.find({
+export async function resolveAssignmentForUser({ workspaceId, userId, membership, date, session = null }) {
+  let query = LeavePolicyAssignment.find({
     workspaceId,
     isActive: true,
     effectiveFrom: { $lte: date },
     $or: [{ effectiveUntil: null }, { effectiveUntil: { $gte: date } }]
-  }).lean();
+  });
+  if (session) query = query.session(session);
+  const assignments = await query.lean();
   if (assignments.length === 0) return null;
 
   const roleId = await resolveMembershipRoleId(membership, workspaceId);
@@ -301,6 +309,169 @@ async function deactivateOtherDefaultPolicies({ workspaceId, exceptPolicyId, ses
 }
 
 /**
+ * When a default policy becomes active for a workspace, reconcile employee
+ * accrual buckets for the current period so that activating a replacement
+ * policy adjusts the current month's grant to match the new policy instead
+ * of incorrectly stacking independent allocations on top of the old policy.
+ * Historical periods (< currentPeriod) remain untouched. Employees with
+ * specific override assignments (employee, department, role) are unaffected.
+ */
+export async function reconcileActivePolicyTransition({ workspaceId, policy, version, actor, session }) {
+  const workspace = await Workspace.findById(workspaceId).select('timezone').session(session).lean();
+  const timezone = getWorkspaceTimezone(workspace);
+  const currentPeriod = getCurrentPeriodKey(timezone);
+  const { start: periodStart } = getPeriodBounds(currentPeriod, timezone);
+  const now = nowInWorkspaceTz(timezone).toUTC().toJSDate();
+
+  // If the new policy's effectiveFrom is in a future month, don't reconcile current month.
+  const versionPeriod = getPeriodKey(version.effectiveFrom, timezone);
+  if (versionPeriod > currentPeriod) {
+    return { reconciled: 0 };
+  }
+
+  const members = await WorkspaceMembership.find({ workspace: workspaceId, status: 'active' }).session(session).lean();
+  let reconciled = 0;
+
+  for (const membership of members) {
+    // Check if this user is covered by an override policy
+    const assignment = await resolveAssignmentForUser({
+      workspaceId, userId: membership.user, membership, date: now, session
+    });
+    if (assignment && assignment.scope !== 'workspace' && String(assignment.policy) !== String(policy._id)) {
+      continue;
+    }
+
+    // Check if this member has already received accruals for currentPeriod
+    const existingMemberBuckets = await LeaveAccrualBucket.find({
+      workspaceId, user: membership.user, period: currentPeriod
+    }).session(session);
+
+    if (existingMemberBuckets.length === 0) {
+      // Accrual has not run for this member for currentPeriod yet;
+      // leave it to monthly accrual so initial setup / empty periods are cleanly handled.
+      continue;
+    }
+
+    const profile = await getEffectiveEmploymentProfile({ workspaceId, userId: membership.user });
+    const effectiveHireDate = profile.accrualStartOverrideDate || profile.hireDate || membership.joinedAt;
+
+    for (const rule of (version.leaveTypeRules || [])) {
+      const isEligible = (rule.eligibleEmploymentStatuses || ['ACTIVE', 'ON_PROBATION']).includes(profile.employmentStatus);
+      let targetAmount = 0;
+      if (isEligible) {
+        const { shouldCredit, amount } = computeAccrualForPeriod({
+          rule, effectiveHireDate, period: currentPeriod, timezone
+        });
+        if (shouldCredit && amount > 0) {
+          targetAmount = amount;
+        }
+      }
+
+      const bucket = existingMemberBuckets.find(
+        (b) => String(b.leaveType) === String(rule.leaveType)
+      );
+
+      if (bucket) {
+        const currentAmount = bucket.creditedAmount;
+        const delta = Math.round((targetAmount - currentAmount) * 100) / 100;
+
+        if (delta > 0) {
+          bucket.creditedAmount = Math.round((bucket.creditedAmount + delta) * 100) / 100;
+          bucket.policyVersion = version._id;
+          const newExpiry = computeExpiryDate(periodStart, rule.expiryRule, timezone);
+          if (newExpiry) bucket.expiresAt = newExpiry;
+          await bucket.save({ session });
+
+          await LeaveLedger.create([{
+            workspaceId,
+            user: membership.user,
+            leaveType: rule.leaveType,
+            bucket: bucket._id,
+            type: 'POLICY_MIGRATION_ADJUSTMENT',
+            amount: delta,
+            balanceDelta: delta,
+            policySource: { assignmentId: assignment?._id, scope: assignment?.scope || 'workspace', scopeRef: assignment?.scopeRef },
+            reason: `Policy transition credit adjustment (${policy.name})`,
+            actor: actor?._id || actor?.id || null,
+            occurredAt: new Date(),
+            policyVersion: version._id
+          }], { session });
+          reconciled++;
+        } else if (delta < 0) {
+          const available = bucket.creditedAmount - bucket.consumedAmount - (bucket.debitedAmount || 0) - bucket.reservedAmount - bucket.expiredAmount;
+          const reduction = Math.min(Math.abs(delta), Math.max(0, available));
+          const roundedReduction = Math.round(reduction * 100) / 100;
+
+          if (roundedReduction > 0) {
+            bucket.creditedAmount = Math.round((bucket.creditedAmount - roundedReduction) * 100) / 100;
+            bucket.policyVersion = version._id;
+            await bucket.save({ session });
+
+            await LeaveLedger.create([{
+              workspaceId,
+              user: membership.user,
+              leaveType: rule.leaveType,
+              bucket: bucket._id,
+              type: 'POLICY_MIGRATION_ADJUSTMENT',
+              amount: roundedReduction,
+              balanceDelta: -roundedReduction,
+              policySource: { assignmentId: assignment?._id, scope: assignment?.scope || 'workspace', scopeRef: assignment?.scopeRef },
+              reason: `Policy transition reduction adjustment (${policy.name})`,
+              actor: actor?._id || actor?.id || null,
+              occurredAt: new Date(),
+              policyVersion: version._id
+            }], { session });
+            reconciled++;
+          } else {
+            bucket.policyVersion = version._id;
+            await bucket.save({ session });
+          }
+        } else {
+          if (String(bucket.policyVersion) !== String(version._id)) {
+            bucket.policyVersion = version._id;
+            await bucket.save({ session });
+          }
+        }
+      } else if (targetAmount > 0) {
+        const expiresAt = computeExpiryDate(periodStart, rule.expiryRule, timezone);
+        const [newBucket] = await LeaveAccrualBucket.create([{
+          workspaceId,
+          user: membership.user,
+          leaveType: rule.leaveType,
+          policyVersion: version._id,
+          period: currentPeriod,
+          sourceType: 'POLICY_MIGRATION',
+          creditedAmount: targetAmount,
+          creditedAt: periodStart,
+          expiresAt,
+          status: 'active',
+          reason: `Policy transition accrual (${policy.name})`,
+          createdBy: actor?._id || actor?.id || null
+        }], { session });
+
+        await LeaveLedger.create([{
+          workspaceId,
+          user: membership.user,
+          leaveType: rule.leaveType,
+          bucket: newBucket._id,
+          type: 'POLICY_MIGRATION_ADJUSTMENT',
+          amount: targetAmount,
+          balanceDelta: targetAmount,
+          policySource: { assignmentId: assignment?._id, scope: assignment?.scope || 'workspace', scopeRef: assignment?.scopeRef },
+          reason: `Policy transition initial allocation (${policy.name})`,
+          actor: actor?._id || actor?.id || null,
+          occurredAt: periodStart,
+          policyVersion: version._id
+        }], { session });
+        reconciled++;
+      }
+    }
+  }
+
+  return { reconciled };
+}
+
+/**
  * Makes `version` (already content-frozen, status 'draft'/'scheduled') the
  * workspace's one active default policy right now: publishes it if needed
  * (superseding whatever this SAME policy had previously published), flips
@@ -347,6 +518,10 @@ async function activateDefaultPolicyTransaction({ workspaceId, policy, version, 
       await upsertWorkspaceDefaultAssignment({
         workspaceId, policyId: policy._id, effectiveFrom: version.effectiveFrom,
         createdBy: actor?._id || actor?.id || policy.createdBy, session
+      });
+
+      await reconcileActivePolicyTransition({
+        workspaceId, policy, version, actor, session
       });
     });
   } catch (error) {

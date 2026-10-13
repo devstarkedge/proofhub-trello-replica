@@ -2,10 +2,11 @@ import asyncHandler from '../../middleware/asyncHandler.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import * as leaveApprovalService from './leaveApproval.service.js';
 import * as leaveRequestService from './leaveRequest.service.js';
+import { queryLeaveRequests, getAuthorizedRequestDetail } from './leaveRequestQuery.service.js';
 
 export const getApprovalQueue = asyncHandler(async (req, res) => {
-  const queue = await leaveApprovalService.getApprovalQueue({ workspaceId: req.workspaceId, userId: req.user.id });
-  res.json({ success: true, data: queue });
+  const queue = await queryLeaveRequests({ ...req.query, workspaceId: req.workspaceId, viewer: req.user, view: 'approval', status: 'all', includeSummary: false });
+  res.json({ success: true, data: queue.requests, total: queue.total, page: queue.page, limit: queue.limit });
 });
 
 export const decideApproval = asyncHandler(async (req, res) => {
@@ -18,8 +19,8 @@ export const decideApproval = asyncHandler(async (req, res) => {
 });
 
 export const getApprovalTimeline = asyncHandler(async (req, res) => {
-  const timeline = await leaveApprovalService.getApprovalTimeline({ workspaceId: req.workspaceId, requestId: req.params.requestId });
-  res.json({ success: true, data: timeline });
+  const detail = await getAuthorizedRequestDetail({ viewer: req.user, workspaceId: req.workspaceId, requestId: req.params.requestId });
+  res.json({ success: true, data: detail.approvals });
 });
 
 export const decideCancellationRequest = asyncHandler(async (req, res) => {

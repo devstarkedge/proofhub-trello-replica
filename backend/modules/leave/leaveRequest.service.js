@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { createHash } from 'node:crypto';
+import { normalizeLeaveClientId, isLeaveClientIdDuplicate } from '../../utils/leaveRequestIdentity.js';
 import LeaveRequest, { LEAVE_REQUEST_STATUSES } from './leaveRequest.model.js';
 import LeaveRequestDay from './leaveRequestDay.model.js';
 import LeaveApproval from './leaveApproval.model.js';
@@ -21,6 +23,9 @@ import { getOrCreateActiveWorkflow } from './leaveApprovalWorkflow.service.js';
 import { scheduleApprovalReminders } from '../../schedulers/leaveReminderScheduler.js';
 import { resolveActiveMembersByRole } from './leaveApprovalAudience.service.js';
 import * as leaveHooks from './leaveHooks.js';
+import { getLeaveActionContext } from './leaveActionEligibility.service.js';
+import { canViewUserInLeaveScope } from './leaveAuthorization.service.js';
+import LeaveApprovalWorkflow from './leaveApprovalWorkflow.model.js';
 
 const auditEntry = ({ workspaceId, actor, action, targetId, before, after }) => ({
   workspace: workspaceId, actor, action, category: 'leave_management',
@@ -29,14 +34,56 @@ const auditEntry = ({ workspaceId, actor, action, targetId, before, after }) => 
 
 const DAY_UNIT_BY_TYPE = { FULL_DAY: 1, HALF_DAY_FIRST_HALF: 0.5, HALF_DAY_SECOND_HALF: 0.5, SHORT_LEAVE: 1 };
 
+function submissionFingerprint(payload) {
+  const short = payload.dayType === 'SHORT_LEAVE';
+  return createHash('sha256').update(JSON.stringify({
+    leaveTypeId: String(payload.leaveTypeId).toLowerCase(),
+    startDate: new Date(payload.startDate).toISOString().slice(0, 10),
+    endDate: new Date(payload.endDate).toISOString().slice(0, 10),
+    dayType: payload.dayType, reason: String(payload.reason || '').trim(),
+    shortLeaveStartTime: short ? payload.shortLeaveStartTime : null,
+    shortLeaveEndTime: short ? payload.shortLeaveEndTime : null,
+    shortLeaveDurationMinutes: short ? Number(payload.shortLeaveDurationMinutes) : null,
+    adminBlackoutOverride: payload.adminBlackoutOverride === true
+  })).digest('hex');
+}
+
+async function replaySubmission({ workspaceId, requesterId, clientRequestId, fingerprint, session = null }) {
+  if (!clientRequestId) return null;
+  const request = await LeaveRequest.findOne({ workspaceId, requester: requesterId, clientRequestId }).session(session).lean();
+  if (!request) return null;
+  const days = await LeaveRequestDay.find({ workspaceId, request: request._id }).sort({ date: 1 }).session(session).lean();
+  // Old token-bearing requests have no fingerprint. Their immutable inputs
+  // still permit a safe comparison; do not write to historical records.
+  const existingFingerprint = request.clientRequestFingerprint || submissionFingerprint({
+    ...request, leaveTypeId: request.leaveType, dayType: days[0]?.dayType,
+    ...days.find((day) => day.dayType === 'SHORT_LEAVE'),
+    adminBlackoutOverride: Boolean(request.blackoutOverride?.adminOverrodeBy)
+  });
+  if (existingFingerprint !== fingerprint) {
+    const error = new ErrorResponse('This submission ID was already used for different leave details. Start a new submission.', 409);
+    error.code = 'LEAVE_SUBMISSION_CONFLICT';
+    throw error;
+  }
+  const approvalLevels = await LeaveApproval.find({ workspaceId, request: request._id }).session(session).lean();
+  return { request, days, approvalLevels, replayed: true };
+}
+
 export async function submitLeaveRequest({
   workspaceId, requesterUser, leaveTypeId, startDate, endDate, dayType,
   reason = '', shortLeaveStartTime = null, shortLeaveEndTime = null,
-  shortLeaveDurationMinutes = null, clientRequestId = null, adminBlackoutOverride = false
+  shortLeaveDurationMinutes = null, clientRequestId, adminBlackoutOverride = false
 }) {
   const requesterId = requesterUser._id || requesterUser.id;
+  try { clientRequestId = normalizeLeaveClientId(clientRequestId); }
+  catch (error) { throw new ErrorResponse(error.message, 400); }
   assertValidDayType(dayType);
   assertValidDateRange(startDate, endDate);
+  reason = String(reason || '').trim();
+  const fingerprint = submissionFingerprint({ leaveTypeId, startDate, endDate, dayType, reason, shortLeaveStartTime, shortLeaveEndTime, shortLeaveDurationMinutes, adminBlackoutOverride });
+  const identity = { workspaceId, requesterId, clientRequestId, fingerprint };
+  const replay = await replaySubmission(identity);
+  if (replay) return replay;
   if (dayType !== 'FULL_DAY' && String(startDate).slice(0, 10) !== String(endDate).slice(0, 10)) {
     throw new ErrorResponse('Half-day and short leave requests must be for a single date', 400);
   }
@@ -66,9 +113,6 @@ export async function submitLeaveRequest({
     assertShortLeaveDuration({ leaveType, policyRule, durationMinutes: shortLeaveDurationMinutes });
   }
   assertHalfDayAllowed({ leaveType, policyRule, dayType });
-
-  const existingRequests = await LeaveRequest.find({ workspaceId, requester: requesterId }).lean();
-  assertNoOverlap({ existingRequests, startDate, endDate });
 
   const departmentIds = requesterUser.department || [];
   const calendarContext = await buildCalendarContext({ timezone, departmentIds });
@@ -100,7 +144,10 @@ export async function submitLeaveRequest({
     throw new ErrorResponse('This date range does not include any working day that would consume leave', 400);
   }
 
-  const workflow = await getOrCreateActiveWorkflow(workspaceId);
+  const workflow = policyVersion.approvalWorkflow
+    ? await LeaveApprovalWorkflow.findOne({ workspaceId, _id: policyVersion.approvalWorkflow })
+    : await getOrCreateActiveWorkflow(workspaceId);
+  if (!workflow) throw new ErrorResponse('The assigned approval workflow is unavailable', 409);
   const { hasMatch: blackoutHit } = checkBlackout({
     blackoutDates: policyVersion.blackout?.dates, startDate, endDate, requestDepartmentIds: departmentIds
   });
@@ -119,12 +166,19 @@ export async function submitLeaveRequest({
   let created;
   try {
     await session.withTransaction(async () => {
-            await assertPolicyVersionAvailable({ workspaceId, policyVersionId: policyVersion._id, session });
+      await assertPolicyVersionAvailable({ workspaceId, policyVersionId: policyVersion._id, session });
+      // The workspace write above serializes concurrent creates. Recheck the
+      // identity and overlap in this transaction before reserving anything.
+      created = await replaySubmission({ ...identity, session });
+      if (created) return;
+      const existingRequests = await LeaveRequest.find({ workspaceId, requester: requesterId }).session(session).lean();
+      assertNoOverlap({ existingRequests, startDate, endDate });
       const [request] = await LeaveRequest.create([{
         workspaceId, requester: requesterId, requesterDepartmentIds: departmentIds,
         leaveType: leaveType._id, policyVersion: policyVersion._id, startDate, endDate,
         totalRequestedDayUnits, totalConsumingDayUnits, reason,
-        status: LEAVE_REQUEST_STATUSES.PENDING_APPROVAL, blackoutOverride, clientRequestId, createdBy: requesterId
+        status: LEAVE_REQUEST_STATUSES.PENDING_APPROVAL, blackoutOverride, clientRequestId,
+        ...(clientRequestId ? { clientRequestFingerprint: fingerprint } : {}), createdBy: requesterId
       }], { session });
 
       await LeaveRequestDay.insertMany(
@@ -149,9 +203,20 @@ export async function submitLeaveRequest({
 
       created = { request: request.toObject(), days, approvalLevels: approvalLevels.map((l) => l.toObject()) };
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+  } catch (error) {
+    if (!isLeaveClientIdDuplicate(error)) throw error;
+    const existing = await replaySubmission(identity);
+    if (existing) return existing;
+    const failure = new ErrorResponse(clientRequestId
+      ? 'This leave submission conflicts with an existing request. Refresh your requests before retrying.'
+      : 'Leave submission requires the client request ID index migration. Please contact your administrator.', clientRequestId ? 409 : 503);
+    failure.code = clientRequestId ? 'LEAVE_SUBMISSION_CONFLICT' : 'LEAVE_REQUEST_INDEX_MIGRATION_REQUIRED';
+    throw failure;
   } finally {
     await session.endSession();
   }
+
+  if (created.replayed) return created;
 
   try {
     await leaveHooks.onRequestSubmitted(created.request, requesterId);
@@ -224,7 +289,11 @@ export async function cancelPendingRequest({ workspaceId, requestId, actor }) {
 /** Employee requests cancellation of an already-approved leave — HR/Admin must decide. */
 export async function requestCancellationOfApprovedLeave({ workspaceId, requestId, actor, reason }) {
   const actorId = actor._id || actor.id;
-  const request = await LeaveRequest.findOne({ _id: requestId, workspaceId });
+  const session = await mongoose.startSession();
+  let result;
+  try {
+  await session.withTransaction(async () => {
+  const request = await LeaveRequest.findOne({ _id: requestId, workspaceId }).session(session);
   if (!request) throw new ErrorResponse('Leave request not found', 404);
   if (String(request.requester) !== String(actorId)) {
     throw new ErrorResponse('You can only request cancellation of your own leave', 403);
@@ -238,24 +307,35 @@ export async function requestCancellationOfApprovedLeave({ workspaceId, requestI
     ...request.cancellation?.toObject?.() || {},
     requestedAt: new Date(), requestedBy: actorId, requestedReason: reason || ''
   };
-  await request.save();
+  await request.save({ session });
 
-  await AuditLog.create(auditEntry({
+  await AuditLog.create([auditEntry({
     workspaceId, actor: actorId, action: 'LEAVE_CANCELLATION_REQUESTED', targetId: request._id,
     before: { status: 'APPROVED' }, after: { status: request.status, reason }
-  }));
+  })], { session });
+  result = request.toObject();
+  });
+  } finally { await session.endSession(); }
 
   const [hrIds, adminIds] = await Promise.all([
     resolveActiveMembersByRole({ workspaceId, role: 'hr', excludeUserId: actorId }),
     resolveActiveMembersByRole({ workspaceId, role: 'admin', excludeUserId: actorId })
   ]);
   try {
-    await leaveHooks.onCancellationRequested(request.toObject(), actorId, [...hrIds, ...adminIds]);
+    await leaveHooks.onCancellationRequested(result, actorId, [...hrIds, ...adminIds]);
   } catch (error) {
     console.error('[Leave] post-cancellation-request notification error:', error.message);
   }
 
-  return request.toObject();
+  return result;
+}
+
+async function assertCancellationAuthority({ workspaceId, request, actor, session }) {
+  const context = await getLeaveActionContext({ workspaceId, viewer: actor, session });
+  if (String(request.requester) === context.userId || context.access.actions.cancel_approved !== true || context.access.scope !== 'full' ||
+    !canViewUserInLeaveScope(context.visibility, request.requester)) {
+    throw new ErrorResponse('You are not authorized to cancel or review this leave request', 403);
+  }
 }
 
 /**
@@ -308,6 +388,7 @@ function statusForActorRole(actorRole) {
 
 /** HR/Admin decides a pending cancellation request (approve = finalize the restore; reject = leave stands). */
 export async function decideCancellationRequest({ workspaceId, requestId, actor, decision, reason }) {
+  if (!['approved', 'rejected'].includes(decision)) throw new ErrorResponse('Invalid cancellation decision', 400);
   const actorId = actor._id || actor.id;
   const session = await mongoose.startSession();
   let result;
@@ -315,6 +396,7 @@ export async function decideCancellationRequest({ workspaceId, requestId, actor,
     await session.withTransaction(async () => {
       const request = await LeaveRequest.findOne({ _id: requestId, workspaceId }).session(session);
       if (!request) throw new ErrorResponse('Leave request not found', 404);
+      await assertCancellationAuthority({ workspaceId, request, actor, session });
       if (request.status !== LEAVE_REQUEST_STATUSES.CANCELLATION_REQUESTED) {
         throw new ErrorResponse('This request has no pending cancellation to decide', 409);
       }
@@ -364,6 +446,7 @@ export async function cancelApprovedLeaveDirectly({ workspaceId, requestId, acto
     await session.withTransaction(async () => {
       const request = await LeaveRequest.findOne({ _id: requestId, workspaceId }).session(session);
       if (!request) throw new ErrorResponse('Leave request not found', 404);
+      await assertCancellationAuthority({ workspaceId, request, actor, session });
       if (![LEAVE_REQUEST_STATUSES.APPROVED, LEAVE_REQUEST_STATUSES.CANCELLATION_REQUESTED].includes(request.status)) {
         throw new ErrorResponse('Only an approved leave can be cancelled this way', 409);
       }

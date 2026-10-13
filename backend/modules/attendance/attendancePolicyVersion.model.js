@@ -70,8 +70,13 @@ const fieldRulesSchema = new mongoose.Schema({
 }, { _id: false });
 
 const missingCheckoutSchema = new mongoose.Schema({
-  behavior: { type: String, enum: ['FLAG_ONLY', 'REQUIRE_REGULARIZATION', 'AUTO_CLOSE_AT_CONFIGURED_TIME'], default: 'FLAG_ONLY' },
-  autoCloseAtLocalTime: { type: String, default: null } // 'HH:mm', only meaningful for AUTO_CLOSE_AT_CONFIGURED_TIME
+  enabled: { type: Boolean, default: true },
+  behavior: { type: String, enum: ['FLAG_ONLY', 'REQUIRE_REGULARIZATION', 'AUTO_CLOSE_AT_CONFIGURED_TIME'], default: 'REQUIRE_REGULARIZATION' },
+  cutoffGraceMinutes: { type: Number, default: 60, min: 0 },
+  maxSessionDurationHours: { type: Number, default: 16, min: 1, max: 24 },
+  autoCloseAtLocalTime: { type: String, default: null }, // 'HH:mm', only meaningful for AUTO_CLOSE_AT_CONFIGURED_TIME
+  notifyEmployee: { type: Boolean, default: true },
+  requireRegularization: { type: Boolean, default: true }
 }, { _id: false });
 
 const regularizationRulesSchema = new mongoose.Schema({

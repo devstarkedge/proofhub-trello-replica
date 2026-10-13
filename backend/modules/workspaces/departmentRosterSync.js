@@ -1,6 +1,20 @@
 import Department from '../../models/Department.js';
 import * as workspaceContext from './workspaceContext.js';
 
+// Reuse the existing roster convention in every assignment writer and reader.
+export const departmentRosterFieldForRole = (roleSlug) => ['admin', 'manager'].includes(roleSlug) ? 'managers' : 'members';
+
+export async function syncUserDepartmentRoster({ workspaceId, userId, departmentIds, roleSlug, previousRole }) {
+  const target = departmentRosterFieldForRole(roleSlug);
+  const opposite = target === 'managers' ? 'members' : 'managers';
+  await Department.updateMany({ workspaceId, _id: { $nin: departmentIds }, $or: [{ members: userId }, { managers: userId }] }, { $pull: { members: userId, managers: userId } });
+  const update = { $addToSet: { [target]: userId } };
+  // Preserve explicit manager appointments for custom/member roles. A role
+  // transition or the established manager convention moves the roster entry.
+  if (target === 'managers' || previousRole !== roleSlug) update.$pull = { [opposite]: userId };
+  await Department.updateMany({ workspaceId, _id: { $in: departmentIds } }, update);
+}
+
 /**
  * Adds a user to a department's managers/members array. WorkspaceMembership
  * .department is the newer source of truth, but older UI (e.g.
@@ -19,9 +33,8 @@ export async function addUserToDepartmentRoster(workspaceId, departmentId, userI
     const dept = await Department.findById(departmentId);
     if (!dept) return;
 
-    const isManagerRole = roleSlug === 'admin' || roleSlug === 'manager';
-    const targetArray = isManagerRole ? 'managers' : 'members';
-    const oppositeArray = isManagerRole ? 'members' : 'managers';
+    const targetArray = departmentRosterFieldForRole(roleSlug);
+    const oppositeArray = targetArray === 'managers' ? 'members' : 'managers';
 
     dept[oppositeArray] = dept[oppositeArray].filter((id) => id.toString() !== userId.toString());
     if (!dept[targetArray].some((id) => id.toString() === userId.toString())) {

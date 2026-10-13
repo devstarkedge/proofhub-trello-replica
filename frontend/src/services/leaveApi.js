@@ -9,18 +9,22 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  if (['get', 'head'].includes(config.method) && !config.timeout) config.timeout = 20000;
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   const workspaceId = localStorage.getItem('workspaceId');
-  if (workspaceId) config.headers['x-workspace-id'] = workspaceId;
+  if (workspaceId && !config.headers['x-workspace-id']) config.headers['x-workspace-id'] = workspaceId;
   return config;
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (!['get', 'head', 'options'].includes(response.config.method)) window.dispatchEvent(new CustomEvent('leave-local-change', { detail: { workspaceId: response.config.headers['x-workspace-id'] } }));
+    return response;
+  },
   (error) => {
     const message = error.response?.data?.message || 'An error occurred';
-    if (![403, 423].includes(error.response?.status)) toast.error(message);
+    if (!axios.isCancel(error) && ![403, 423].includes(error.response?.status)) toast.error(message);
     return Promise.reject(error);
   }
 );
@@ -49,8 +53,10 @@ export const editDefaultPolicy = async (policyId, payload) => (await api.patch(`
 export const activateDefaultPolicy = async (policyId) => (await api.post(`/policies/default/${policyId}/activate`)).data;
 export const archiveDefaultPolicy = async (policyId) => (await api.post(`/policies/default/${policyId}/archive`)).data;
 export const deleteArchivedPolicy = async (policyId, kind = 'default') => (await api.delete(`/policies/${kind}/${policyId}`)).data;
-export const getCalendarEvents = async (params) => (await api.get('/calendar/events', { params })).data;
-export const getDashboardRecords = async (params) => (await api.get('/dashboard/records', { params })).data;
+const readOptions = ({ signal, workspaceId } = {}) => ({ signal, ...(workspaceId ? { headers: { 'x-workspace-id': workspaceId } } : {}) });
+export const getCalendarEvents = async (params, options) => (await api.get('/calendar/events', { params, ...readOptions(options) })).data;
+export const getDashboardRecords = async (params, options) => (await api.get('/dashboard/records', { params, ...readOptions(options) })).data;
+export const getDashboardSummary = async (params = {}, options) => (await api.get('/dashboard/summary', { params, ...readOptions(options) })).data;
 
 // ─── Override (department/role/employee-specific) Policies ─────────────────
 export const getOverridePolicies = async () => (await api.get('/policies/overrides')).data;
@@ -62,7 +68,7 @@ export const removeOverrideAssignment = async (assignmentId) => (await api.post(
 // ─── Working Calendar ───────────────────────────────────────────────────────
 export const getWorkCalendars = async () => (await api.get('/work-calendars')).data;
 export const upsertWorkCalendar = async (payload) => (await api.post('/work-calendars', payload)).data;
-export const getHolidays = async (params = {}) => (await api.get('/holidays', { params })).data;
+export const getHolidays = async (params = {}, options) => (await api.get('/holidays', { params, ...readOptions(options) })).data;
 export const createHoliday = async (payload) => (await api.post('/holidays', payload)).data;
 export const deleteHoliday = async (holidayId) => (await api.delete(`/holidays/${holidayId}`)).data;
 
@@ -72,13 +78,15 @@ export const saveWorkCalendarConfig = async (payload) => (await api.post('/work-
 export const previewWorkCalendarConfig = async (payload) => (await api.post('/work-calendar/preview', payload)).data;
 
 // ─── Balance ────────────────────────────────────────────────────────────────
-export const getMyBalance = async () => (await api.get('/balance/me')).data;
+export const getMyBalance = async (_params, options) => (await api.get('/balance/me', readOptions(options))).data;
+export const getMyLeaveActivity = async (params = {}, options) => (await api.get('/balance/activity', { params, ...readOptions(options) })).data;
+export const getMyLeaveActivityDetail = async (activityId, options) => (await api.get(`/balance/activity/${activityId}`, readOptions(options))).data;
 export const getUserBalance = async (userId) => (await api.get(`/balance/${userId}`)).data;
 
 // ─── Requests ───────────────────────────────────────────────────────────────
 export const getMyRequests = async (params = {}) => (await api.get('/requests/mine', { params })).data;
 export const getUserRequests = async (userId, params = {}) => (await api.get(`/requests/user/${userId}`, { params })).data;
-export const getRequestDetail = async (requestId) => (await api.get(`/requests/${requestId}`)).data;
+export const getRequestDetail = async (requestId, options) => (await api.get(`/requests/${requestId}`, readOptions(options))).data;
 export const submitRequest = async (payload) => (await api.post('/requests', payload)).data;
 export const cancelPendingRequest = async (requestId) => (await api.post(`/requests/${requestId}/cancel`)).data;
 export const requestCancellation = async (requestId, reason) =>
@@ -96,6 +104,7 @@ export const hrCancelApprovedLeave = async (requestId, reason) =>
 
 // ─── Adjustments ────────────────────────────────────────────────────────────
 export const createAdjustment = async (payload) => (await api.post('/adjustments', payload)).data;
+export const getAdjustments = async (params = {}) => (await api.get('/adjustments', { params })).data;
 
 // ─── Dashboards ─────────────────────────────────────────────────────────────
 // The single check the frontend must consult to decide whether to render
@@ -108,8 +117,8 @@ export const getEmployeeDashboard = async () => (await api.get('/dashboard/emplo
 export const getManagerDashboard = async () => (await api.get('/dashboard/manager')).data;
 export const getHrDashboard = async () => (await api.get('/dashboard/hr')).data;
 export const getAdminDashboard = async () => (await api.get('/dashboard/admin')).data;
-export const getDayStatus = async ({ userIds, startDate, endDate, visibility, calendarOnly }) =>
-  (await api.get('/dashboard/day-status', { params: { userIds: userIds.join(','), startDate, endDate, visibility, calendarOnly } })).data;
+export const getDayStatus = async ({ userIds, startDate, endDate, visibility, calendarOnly }, options) =>
+  (await api.get('/dashboard/day-status', { params: { userIds: userIds.join(','), startDate, endDate, visibility, calendarOnly }, ...readOptions(options) })).data;
 
 // ─── Reports & Audit ────────────────────────────────────────────────────────
 export const getEmployeeUsageReport = async (userId) => (await api.get(`/reports/usage/employee/${userId || ''}`)).data;

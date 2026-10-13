@@ -23,6 +23,7 @@ const leaveApprovalWorkflowSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
   name: { type: String, trim: true, default: 'Default Workflow' },
   isActive: { type: Boolean, default: true },
+  approvalMode: { type: String, enum: ['PARALLEL', 'SEQUENTIAL'], default: 'PARALLEL' },
   roleTierMap: {
     type: Map,
     of: Number,

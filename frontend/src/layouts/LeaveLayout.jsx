@@ -3,13 +3,20 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { CalendarDays } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import LeaveContentContainer from '../components/Leave/LeaveContentContainer';
-import { isMyLeaveBlockedForRole } from '../utils/leaveAccess';
+import { isMyLeaveBlockedForRole, canAccessLeaveDashboard } from '../utils/leaveAccess';
+import WorkspaceContext from '../context/WorkspaceContext';
+import useLeaveStore from '../store/leaveStore';
+import { LEAVE_SCOPE_REFRESH_EVENTS, subscribeLeaveRefresh } from '../utils/leaveRequestSync';
+import { useQueryClient } from '@tanstack/react-query';
+import { registerResettable } from '../store/resetRegistry';
 
-const MAIN_LEAVE_ROUTES = ['/leave', '/leave/my', '/leave/approvals', '/leave/calendar', '/leave/reports'];
+const MAIN_LEAVE_ROUTES = ['/leave', '/leave/my', '/leave/calendar', '/leave/reports'];
 
 const LeaveLayout = () => {
   const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const location = useLocation();
+  const queryClient = useQueryClient();
   const role = (user?.role || '').toLowerCase();
   const isSettings = location.pathname.startsWith('/leave/settings');
   const isCalendar = location.pathname === '/leave/calendar';
@@ -20,9 +27,33 @@ const LeaveLayout = () => {
     }
   }, [location.pathname]);
 
+  useEffect(() => {
+    const queryKey = ['leave'];
+    const reset = (pause = false) => {
+      queryClient.cancelQueries({ queryKey });
+      queryClient.removeQueries({ queryKey });
+      if (pause) useLeaveStore.getState().invalidateAccess();
+      else useLeaveStore.getState().reset();
+    };
+    const unregister = registerResettable(reset);
+    const unsubscribe = subscribeLeaveRefresh({ workspaceId: currentWorkspace?._id,
+      onInvalidate: (event) => {
+        // Never keep a previously authorized department visible during revalidation.
+        if ([...LEAVE_SCOPE_REFRESH_EVENTS, 'socket-connected', 'socket-disconnected', 'focus'].includes(event.type)) reset(true);
+      },
+      refresh: () => {
+        useLeaveStore.setState({ readsPaused: false });
+        queryClient.invalidateQueries({ queryKey });
+      }
+    });
+    return () => { unsubscribe(); unregister(); queryClient.cancelQueries({ queryKey }); queryClient.removeQueries({ queryKey }); useLeaveStore.setState({ readsPaused: false }); };
+  }, [currentWorkspace?._id, user?._id, user?.id, queryClient]);
+
+  const canAccessDashboard = canAccessLeaveDashboard();
+
   const tabs = [
+    { label: 'Dashboard', to: '/leave', end: true, visible: canAccessDashboard },
     { label: 'My Leave', to: '/leave/my', visible: !isMyLeaveBlockedForRole(role) },
-    { label: 'Approvals', to: '/leave/approvals', visible: ['manager', 'hr', 'admin'].includes(role) },
     { label: 'Calendar', to: '/leave/calendar', visible: true },
     { label: 'Reports', to: '/leave/reports', visible: ['hr', 'admin'].includes(role) },
     { label: 'Settings', to: '/leave/settings', visible: ['hr', 'admin'].includes(role), settings: true }
@@ -55,6 +86,7 @@ const LeaveLayout = () => {
                   <NavLink
                     key={tab.to}
                     to={tab.to}
+                    end={tab.end}
                     state={tab.settings ? { fromLeave: location.pathname } : undefined}
                     className="flex-none whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors"
                     style={({ isActive }) => isActive

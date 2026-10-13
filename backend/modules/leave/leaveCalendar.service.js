@@ -61,11 +61,12 @@ export function buildContextFromRows({ timezone, holidays = [], workspaceCalenda
  * worth of Teams-grid cells, a report — never re-queries per cell.
  * Single-date callers should use `classifyDate` below instead.
  */
-export async function buildCalendarContext({ timezone, departmentIds = [] }) {
+export async function buildCalendarContext({ timezone, departmentIds = [], startDate, endDate }) {
   const uniqueDepartmentIds = Array.from(new Set((departmentIds || []).filter(Boolean).map(String)));
+  const range = startDate && endDate ? { $gte: dateOnlyToInstant(startDate, timezone), $lte: dateOnlyToInstant(endDate, timezone) } : null;
 
   const [holidays, workspaceCalendars, departmentCalendars, recurringRules, dateOverrides] = await Promise.all([
-    Holiday.find({}).lean(),
+    Holiday.find(range ? { $or: [{ date: range }, { recurrenceRule: 'ANNUAL_SAME_DATE' }] } : {}).lean(),
     WorkCalendar.find({ scope: 'workspace', isActive: true }).sort({ effectiveFrom: -1 }).lean(),
     uniqueDepartmentIds.length
       ? WorkCalendar.find({ scope: 'department', departmentId: { $in: uniqueDepartmentIds }, isActive: true })
@@ -75,7 +76,7 @@ export async function buildCalendarContext({ timezone, departmentIds = [] }) {
     // Workspace-scoped only (no per-department recurring rules/overrides in
     // this pass — see workCalendarRule.model.js).
     WorkCalendarRule.find({ isActive: true }).lean(),
-    WorkCalendarDateOverride.find({}).lean()
+    WorkCalendarDateOverride.find(range ? { date: range } : {}).lean()
   ]);
 
   return buildContextFromRows({ timezone, holidays, workspaceCalendars, departmentCalendars, recurringRules, dateOverrides });

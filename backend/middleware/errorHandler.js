@@ -1,3 +1,5 @@
+import { isLeaveClientIdDuplicate } from '../utils/leaveRequestIdentity.js';
+
 class ErrorResponse extends Error {
   constructor(message, statusCode) {
     super(message);
@@ -32,6 +34,9 @@ const errorHandler = (err, req, res, next) => {
     const field = stringField || keys[keys.length - 1] || keys[0] || 'value';
     const message = `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`;
     error = new ErrorResponse(message, 400);
+    if (isLeaveClientIdDuplicate(err)) {
+      error = new ErrorResponse('This leave submission conflicts with an existing request. Refresh your requests before retrying.', 409);
+    }
   }
 
   // Mongoose validation error
@@ -58,7 +63,7 @@ const errorHandler = (err, req, res, next) => {
     // ALREADY_CHECKED_IN) — set via `err.code = '...'` at the throw site;
     // every existing caller that never sets it is unaffected.
     ...(err.code && { code: err.code }),
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    ...(process.env.NODE_ENV === 'development' && err.code !== 11000 && { stack: err.stack })
   });
 };
 

@@ -119,6 +119,9 @@ const AttendanceQuickControl = () => {
     const onChanged = () => load();
     window.addEventListener('socket-attendance-checked-in', onChanged);
     window.addEventListener('socket-attendance-checked-out', onChanged);
+    window.addEventListener('socket-attendance-missed-checkout', onChanged);
+    window.addEventListener('socket-attendance-updated', onChanged);
+    window.addEventListener('socket-attendance-regularization-decided', onChanged);
     // A Location was added/edited/activated/deactivated/deleted anywhere in
     // this workspace — refetch so requiresGeofence/requiresGps (and thus
     // whether GPS is even attempted below) reflects the current
@@ -127,6 +130,9 @@ const AttendanceQuickControl = () => {
     return () => {
       window.removeEventListener('socket-attendance-checked-in', onChanged);
       window.removeEventListener('socket-attendance-checked-out', onChanged);
+      window.removeEventListener('socket-attendance-missed-checkout', onChanged);
+      window.removeEventListener('socket-attendance-updated', onChanged);
+      window.removeEventListener('socket-attendance-regularization-decided', onChanged);
       window.removeEventListener('socket-attendance-locations-updated', onChanged);
     };
   }, [load]);
@@ -135,11 +141,23 @@ const AttendanceQuickControl = () => {
     clearInterval(tickRef.current);
     if (!status?.activeSession?.checkInAt) { setLiveMinutes(0); return undefined; }
     const checkInAt = new Date(status.activeSession.checkInAt).getTime();
-    const tick = () => setLiveMinutes((Date.now() - checkInAt) / 60000);
+    const cutoffAt = status.activeSession.missedCheckoutCutoffAt
+      ? new Date(status.activeSession.missedCheckoutCutoffAt).getTime()
+      : Infinity;
+
+    const tick = () => {
+      const now = Date.now();
+      if (now >= cutoffAt && cutoffAt !== Infinity) {
+        // Expired — trigger reload so state updates
+        load();
+      }
+      const effectiveEnd = Math.min(now, cutoffAt);
+      setLiveMinutes(Math.max(0, (effectiveEnd - checkInAt) / 60000));
+    };
     tick();
     tickRef.current = setInterval(tick, 30000);
     return () => clearInterval(tickRef.current);
-  }, [status?.activeSession?.checkInAt]);
+  }, [status?.activeSession?.checkInAt, status?.activeSession?.missedCheckoutCutoffAt, load]);
 
   if (!status || !status.attendanceApplicable) return null;
 
@@ -250,7 +268,16 @@ const AttendanceQuickControl = () => {
     );
   }
 
-  return <div className="flex flex-col items-end">{content}</div>;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {content}
+      {status.unresolvedMissedCheckout && (
+        <span className="text-[11px] font-medium text-amber-300">
+          Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance
+        </span>
+      )}
+    </div>
+  );
 };
 
 function friendlyBlockingLabel(code) {
@@ -260,7 +287,9 @@ function friendlyBlockingLabel(code) {
     ATTENDANCE_COMPLETED: 'Attendance completed',
     WFH_NOT_APPROVED: 'WFH not approved',
     WORK_MODE_NOT_AUTHORIZED: 'Attendance unavailable',
-    WORK_MODE_NOT_ALLOWED: 'Attendance unavailable'
+    WORK_MODE_NOT_ALLOWED: 'Attendance unavailable',
+    MISSED_CHECKOUT_EXPIRED: 'Session expired (missed checkout)',
+    STALE_ACTIVE_SESSION: 'Previous day session expired'
   };
   return labels[code] || 'Attendance unavailable';
 }

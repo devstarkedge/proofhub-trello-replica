@@ -1,4 +1,6 @@
 import LeaveRequestDay from './leaveRequestDay.model.js';
+import mongoose from 'mongoose';
+import LeaveRequest from './leaveRequest.model.js';
 import { PENDING_STATUSES, APPROVED_STATUSES } from './leaveRequest.model.js';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
@@ -27,35 +29,38 @@ const IN_EFFECT_STATUSES = [...APPROVED_STATUSES, ...PENDING_STATUSES];
  * into) — callers must pass the narrower option unless the viewer is
  * authorized to see pending leave for these users.
  */
-export async function getDayStatusForUsers({ workspaceId, userIds, startDate, endDate, visibility = 'approved_only', includeLeave = true }) {
-  const workspace = await Workspace.findById(workspaceId).select('timezone').lean();
+export async function getDayStatusForUsers({ workspaceId, userIds, startDate, endDate, visibility = 'approved_only', includeLeave = true, requestScope = { workspaceId } }) {
+  const [workspace, memberships] = await Promise.all([
+    Workspace.findById(workspaceId).select('timezone').lean(),
+    WorkspaceMembership.find({ workspace: workspaceId, user: { $in: userIds }, status: 'active' }).select('user department').lean()
+  ]);
   const timezone = getWorkspaceTimezone(workspace);
 
-  const memberships = await WorkspaceMembership.find({ workspace: workspaceId, user: { $in: userIds } })
-    .select('user department')
-    .lean();
   const membershipByUser = new Map(memberships.map((m) => [String(m.user), m]));
   const departmentIds = Array.from(new Set(memberships.flatMap((m) => (m.department || []).map(String))));
 
-  const calendarContext = await buildCalendarContext({ timezone, departmentIds });
+  const calendarContext = await buildCalendarContext({ timezone, departmentIds, startDate, endDate });
 
   const rangeStart = dateOnlyToInstant(startDate, timezone);
   const rangeEnd = dateOnlyToInstant(endDate, timezone);
   const allowedStatuses = visibility === 'approved_only' ? APPROVED_STATUSES : IN_EFFECT_STATUSES;
 
-  const days = includeLeave ? await LeaveRequestDay.find({ workspaceId, date: { $gte: rangeStart, $lte: rangeEnd } })
-    .populate({
-      path: 'request',
-      select: 'requester status leaveType',
-      populate: { path: 'leaveType', select: 'name category' }
-    })
-    .lean() : [];
+  const days = includeLeave ? await LeaveRequestDay.aggregate([
+    { $match: { workspaceId: new mongoose.Types.ObjectId(workspaceId), date: { $gte: rangeStart, $lte: rangeEnd } } },
+    { $lookup: { from: LeaveRequest.collection.name, localField: 'request', foreignField: '_id', pipeline: [
+      { $match: { $and: [requestScope, { workspaceId: new mongoose.Types.ObjectId(workspaceId), requester: { $in: userIds.map((id) => new mongoose.Types.ObjectId(id)) }, status: { $in: allowedStatuses } }] } },
+      { $project: { requester: 1, status: 1, leaveType: 1 } }
+    ], as: 'request' } }, { $unwind: '$request' },
+    { $project: { request: 1, date: 1, dayType: 1 } }
+  ]) : [];
+  if (days.length) await LeaveRequestDay.populate(days, { path: 'request.leaveType', model: 'LeaveType', select: 'name category' });
+  const userSet = new Set(userIds.map(String));
 
   const leaveByKey = new Map();
   for (const day of days) {
     const request = day.request;
     if (!request || !allowedStatuses.includes(request.status)) continue;
-    if (!userIds.some((id) => String(id) === String(request.requester))) continue;
+    if (!userSet.has(String(request.requester))) continue;
     const dateKey = instantToDateOnlyKey(day.date, timezone);
     leaveByKey.set(`${request.requester}|${dateKey}`, {
       status: 'ON_LEAVE',
@@ -67,19 +72,21 @@ export async function getDayStatusForUsers({ workspaceId, userIds, startDate, en
   }
 
   const result = {};
+  const dates = [...eachCalendarDate(startDate, endDate, timezone)].map((date) => ({ date, key: instantToDateOnlyKey(date, timezone) }));
+  const classifications = new Map();
   for (const userId of userIds) {
     const membership = membershipByUser.get(String(userId));
     const primaryDepartmentId = membership?.department?.[0] || null;
     const byDate = {};
-    for (const date of eachCalendarDate(startDate, endDate, timezone)) {
-      const dateKey = instantToDateOnlyKey(date, timezone);
+    for (const { date, key: dateKey } of dates) {
       const leaveEntry = leaveByKey.get(`${userId}|${dateKey}`);
       if (leaveEntry) {
         byDate[dateKey] = leaveEntry;
         continue;
       }
-      const { classification } = classifyDateWithContext(calendarContext, date, primaryDepartmentId);
-      byDate[dateKey] = { status: classification };
+      const cacheKey = `${primaryDepartmentId || ''}:${dateKey}`;
+      if (!classifications.has(cacheKey)) classifications.set(cacheKey, classifyDateWithContext(calendarContext, date, primaryDepartmentId).classification);
+      byDate[dateKey] = { status: classifications.get(cacheKey) };
     }
     result[String(userId)] = byDate;
   }

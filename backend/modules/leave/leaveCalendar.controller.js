@@ -49,7 +49,9 @@ export const listHolidays = asyncHandler(async (req, res) => {
   const timezone = getWorkspaceTimezone(workspace);
   if (startDate || endDate) {
     validateDateRange(startDate || endDate, endDate || startDate);
-    filter.date = { ...(startDate ? { $gte: dateOnlyToInstant(startDate, timezone) } : {}), ...(endDate ? { $lte: dateOnlyToInstant(endDate, timezone) } : {}) };
+    const date = { ...(startDate ? { $gte: dateOnlyToInstant(startDate, timezone) } : {}), ...(endDate ? { $lte: dateOnlyToInstant(endDate, timezone) } : {}) };
+    if (req.query.includeRecurring === 'true') filter.$or = [{ date }, { recurrenceRule: 'ANNUAL_SAME_DATE' }];
+    else filter.date = date;
   }
   const today = instantToDateOnlyKey(new Date(), timezone);
   const holidays = (await Holiday.find({ ...filter, workspaceId: req.workspaceId }).sort({ date: 1 }).lean())

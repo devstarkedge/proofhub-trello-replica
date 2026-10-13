@@ -6,6 +6,7 @@ import { getWorkspaceTimezone, getCurrentPeriodKey, getPeriodBounds, computeExpi
 import { assertPolicyVersionAvailable, resolvePolicyContext } from './leavePolicy.service.js';
 import { creditBucket } from './leaveBalance.service.js';
 import { getEffectiveEmploymentProfile } from './leaveEmployeeProfile.service.js';
+import LeaveAccrualBucket from './leaveAccrualBucket.model.js';
 import { onBucketCredited } from './leaveHooks.js';
 
 /**
@@ -99,6 +100,15 @@ export async function runMonthlyAccrualForWorkspace({ workspaceId, period = null
         });
         if (!shouldCredit || amount <= 0) continue;
 
+        // Idempotency pre-check: only one periodic bucket may exist per (user, leaveType, period).
+        const existingBucket = await LeaveAccrualBucket.findOne({
+          workspaceId, user: membership.user, leaveType: rule.leaveType, period: targetPeriod
+        }).lean();
+        if (existingBucket) {
+          skipped++;
+          continue;
+        }
+
         const expiresAt = computeExpiryDate(periodStart, rule.expiryRule, timezone);
         const session = await mongoose.startSession();
         try {
@@ -107,7 +117,8 @@ export async function runMonthlyAccrualForWorkspace({ workspaceId, period = null
             await creditBucket({
               workspaceId, user: membership.user, leaveType: rule.leaveType, policyVersion: policyVersion._id,
               period: targetPeriod, sourceType: isJoiningPeriod ? 'JOINING_CREDIT' : 'MONTHLY_ACCRUAL',
-              amount, creditedAt: periodStart, expiresAt, createdBy: null, session
+              amount, creditedAt: periodStart, expiresAt, createdBy: null, session,
+              policySource: { assignmentId: policyContext.assignment._id, scope: policyContext.assignment.scope, scopeRef: policyContext.assignment.scopeRef }
             });
           });
           created++;

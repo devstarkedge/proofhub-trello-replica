@@ -18,7 +18,10 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
  */
 
 const SPECIFICITY_RANK = { USER: 3, DEPARTMENT: 2, ROLE: 1 };
-const OVERRIDABLE_FIELDS = ['startLocalTime', 'endLocalTime', 'graceMinutes', 'earlyExitGraceMinutes', 'minimumFullDayMinutes', 'minimumHalfDayMinutes'];
+const OVERRIDABLE_FIELDS = [
+  'startLocalTime', 'endLocalTime', 'graceMinutes', 'earlyExitGraceMinutes',
+  'minimumFullDayMinutes', 'minimumHalfDayMinutes', 'cutoffGraceMinutes', 'maxSessionDurationHours'
+];
 // Mirrors attendancePolicyVersion.model.js's own officeHoursSchema defaults exactly.
 const DEFAULT_START_LOCAL_TIME = '09:00';
 const DEFAULT_END_LOCAL_TIME = '18:00';
@@ -91,7 +94,9 @@ export async function resolveEffectiveOfficeHours({ workspaceId, userId, members
     graceMinutes: shift?.graceMinutes ?? null,
     earlyExitGraceMinutes: null, // AttendanceShift has no early-exit-grace override slot
     minimumFullDayMinutes: shift?.minimumFullDayMinutes ?? null,
-    minimumHalfDayMinutes: shift?.minimumHalfDayMinutes ?? null
+    minimumHalfDayMinutes: shift?.minimumHalfDayMinutes ?? null,
+    cutoffGraceMinutes: null,
+    maxSessionDurationHours: null
   };
   const policyValues = {
     // `?? DEFAULT_*` covers a policy version stored before this field
@@ -106,7 +111,9 @@ export async function resolveEffectiveOfficeHours({ workspaceId, userId, members
     graceMinutes: policyVersion.graceMinutes,
     earlyExitGraceMinutes: policyVersion.earlyExitGraceMinutes,
     minimumFullDayMinutes: policyVersion.minimumFullDayMinutes,
-    minimumHalfDayMinutes: policyVersion.minimumHalfDayMinutes
+    minimumHalfDayMinutes: policyVersion.minimumHalfDayMinutes,
+    cutoffGraceMinutes: policyVersion.missingCheckout?.cutoffGraceMinutes ?? 60,
+    maxSessionDurationHours: policyVersion.missingCheckout?.maxSessionDurationHours ?? 16
   };
 
   const resolved = {};

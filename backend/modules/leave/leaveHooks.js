@@ -1,3 +1,4 @@
+import { getActiveWorkspaceId } from '../workspaces/workspaceContext.js';
 /**
  * Leave notification hooks — one function per event, mirroring
  * utils/slackHooks.js's shape. Each call goes through
@@ -17,8 +18,18 @@ import { evaluateAndDeliver, evaluateAndDeliverBulk } from '../../services/notif
 import { emitToUser, emitToUsers } from '../../realtime/emitters.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { resolveActiveMembersByRole } from './leaveApprovalAudience.service.js';
+import { canViewLeaveRequest } from './leaveAuthorization.service.js';
 
 const entityFor = (request) => ({ type: 'LeaveRequest', id: request._id || request.id });
+const changeFor = (request) => ({ workspaceId: request.workspaceId, requestId: request._id || request.id, updatedAt: request.updatedAt });
+async function emitRequestChange(userIds, event, request) {
+  const members = await WorkspaceMembership.find({ workspace: request.workspaceId, user: { $in: [...new Set(userIds.map(String))] }, status: 'active' }).select('user role').lean();
+  for (const member of members) {
+    if (await canViewLeaveRequest({ viewer: { _id: member.user, role: member.role }, requestId: request._id || request.id, workspaceId: request.workspaceId })) {
+      emitToUser(member.user, event, changeFor(request), request.workspaceId);
+    }
+  }
+}
 
 // Colon-namespaced, matching this codebase's own module-scoped convention
 // (sales:tab:*, finance:page:*) rather than dot-notation. Always emitted via
@@ -36,7 +47,7 @@ const EVENTS = {
 
 export async function onRequestSubmitted(request, requesterUserId) {
   await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
-  emitToUser(requesterUserId, EVENTS.REQUEST_CREATED, { request });
+  await emitRequestChange([requesterUserId], EVENTS.REQUEST_CREATED, request);
 
   await evaluateAndDeliver({
     type: 'leave_request_submitted',
@@ -56,7 +67,7 @@ export async function onApprovalRequired(request, approvalLevels, requesterUserI
   ));
   if (!recipientIds.length) return;
 
-  emitToUsers(recipientIds, EVENTS.APPROVAL_UPDATED, { request });
+  await emitRequestChange(recipientIds, EVENTS.APPROVAL_UPDATED, request);
 
   await evaluateAndDeliverBulk(recipientIds, {
     type: 'leave_approval_required',
@@ -74,10 +85,10 @@ export async function onApprovalDecisionRecorded(result, decidingActor) {
   const { request, approval } = result;
   const decidedByUserId = decidingActor._id || decidingActor.id;
 
-  emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request, approval });
+  await emitRequestChange([request.requester], EVENTS.REQUEST_UPDATED, request);
   // Notify every eligible approver of this level (including whoever just
   // decided it) so a peer who could also have acted on it sees it's resolved.
-  emitToUsers(approval.eligibleApproverUserIds || [], EVENTS.APPROVAL_UPDATED, { request, approval });
+  await emitRequestChange(approval.eligibleApproverUserIds || [], EVENTS.APPROVAL_UPDATED, request);
 
   await evaluateAndDeliver({
     type: 'leave_approval_decision_recorded',
@@ -93,8 +104,8 @@ export async function onApprovalDecisionRecorded(result, decidingActor) {
 
 export async function onRequestApproved(request) {
   await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
-  emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request });
-  emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { userId: request.requester });
+  await emitRequestChange([request.requester], EVENTS.REQUEST_UPDATED, request);
+  emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { workspaceId: request.workspaceId, userId: request.requester });
 
   await evaluateAndDeliver({
     type: 'leave_request_approved',
@@ -110,8 +121,8 @@ export async function onRequestApproved(request) {
 
 export async function onRequestRejected(request) {
   await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
-  emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request });
-  emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { userId: request.requester });
+  await emitRequestChange([request.requester], EVENTS.REQUEST_UPDATED, request);
+  emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { workspaceId: request.workspaceId, userId: request.requester });
 
   await evaluateAndDeliver({
     type: 'leave_request_rejected',
@@ -128,13 +139,13 @@ export async function onRequestRejected(request) {
 /** Employee cancelled their own still-pending request — let any still-pending approver know no action is needed. */
 export async function onRequestCancelled(request, cancelledByUserId, pendingApprovalLevels = []) {
   await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
-  emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request });
-  emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { userId: request.requester });
+  await emitRequestChange([request.requester], EVENTS.REQUEST_UPDATED, request);
+  emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { workspaceId: request.workspaceId, userId: request.requester });
 
   const pendingApproverIds = Array.from(new Set(
     pendingApprovalLevels.flatMap((level) => (level.eligibleApproverUserIds || []).map(String))
   ));
-  if (pendingApproverIds.length) emitToUsers(pendingApproverIds, EVENTS.APPROVAL_UPDATED, { request });
+  if (pendingApproverIds.length) await emitRequestChange(pendingApproverIds, EVENTS.APPROVAL_UPDATED, request);
 
   await evaluateAndDeliver({
     type: 'leave_request_cancelled',
@@ -164,6 +175,7 @@ export async function onRequestCancelled(request, cancelledByUserId, pendingAppr
 /** Employee requested cancellation of an already-approved leave — notify HR/Admin to review. */
 export async function onCancellationRequested(request, requestedByUserId, reviewerUserIds = []) {
   await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
+  await emitRequestChange([request.requester], EVENTS.REQUEST_UPDATED, request);
   const recipientIds = Array.from(new Set(reviewerUserIds.map(String)));
   if (!recipientIds.length) return;
   await evaluateAndDeliverBulk(recipientIds, {
@@ -180,8 +192,8 @@ export async function onCancellationRequested(request, requestedByUserId, review
 /** HR/Admin cancelled an already-approved leave (e.g. the employee ended up working that day). */
 export async function onCancelledByHr(request, cancelledByUserId, reason) {
   await onWorkCalendarUpdated(request.workspaceId).catch(() => {});
-  emitToUser(request.requester, EVENTS.REQUEST_UPDATED, { request });
-  emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { userId: request.requester });
+  await emitRequestChange([request.requester], EVENTS.REQUEST_UPDATED, request);
+  emitToUser(request.requester, EVENTS.BALANCE_UPDATED, { workspaceId: request.workspaceId, userId: request.requester });
 
   await evaluateAndDeliver({
     type: 'leave_cancelled_by_hr',
@@ -197,7 +209,7 @@ export async function onCancelledByHr(request, cancelledByUserId, reason) {
 }
 
 export async function onBalanceAdjusted({ workspaceId, userId, actorUserId, leaveTypeName, amount, reason }) {
-  emitToUser(userId, EVENTS.BALANCE_UPDATED, { userId });
+  emitToUser(userId, EVENTS.BALANCE_UPDATED, { workspaceId, userId });
 
   await evaluateAndDeliver({
     type: 'leave_balance_adjusted',
@@ -213,7 +225,7 @@ export async function onBalanceAdjusted({ workspaceId, userId, actorUserId, leav
 
 export async function onBucketExpired({ workspaceId, userId, leaveTypeName, amount }) {
   if (amount <= 0) return;
-  emitToUser(userId, EVENTS.BALANCE_UPDATED, { userId });
+  emitToUser(userId, EVENTS.BALANCE_UPDATED, { workspaceId, userId });
 
   await evaluateAndDeliver({
     type: 'leave_bucket_expired',
@@ -227,8 +239,8 @@ export async function onBucketExpired({ workspaceId, userId, leaveTypeName, amou
 }
 
 /** Routine monthly/manual credit landed — realtime balance refresh only, no notification (avoid monthly spam). */
-export function onBucketCredited({ userId }) {
-  emitToUser(userId, EVENTS.BALANCE_UPDATED, { userId });
+export function onBucketCredited({ userId, workspaceId = getActiveWorkspaceId() }) {
+  emitToUser(userId, EVENTS.BALANCE_UPDATED, { workspaceId, userId });
 }
 
 export async function onApprovalReminder(request, approval) {
@@ -246,17 +258,17 @@ export async function onApprovalReminder(request, approval) {
 
 /**
  * A default policy activated (or its scheduled activation was promoted) —
- * push HR/Admin a realtime nudge to refresh the Policies settings page.
+ * push active members a realtime nudge to refresh authorized policy views.
  * Content-free (no per-user leave data), so unlike a leave-request/approval
  * event this is safe to fan out widely; still routed through emitToUsers
  * (personal rooms) rather than a shared room for consistency with the rest
  * of this module.
  */
-export async function onPolicyActivated(workspaceId, policy) {
+export async function onPolicyActivated(workspaceId) {
   const members = await WorkspaceMembership.find({ workspace: workspaceId, status: 'active' }).select('user').lean();
   // Custom policy administrators and employee calculations also need to
   // refresh. Send only an invalidation; authorized APIs return the data.
-  if (members.length) emitToUsers(members.map((member) => String(member.user)), EVENTS.POLICY_UPDATED, { policyId: policy._id, status: policy.status });
+  if (members.length) emitToUsers(members.map((member) => String(member.user)), EVENTS.POLICY_UPDATED, { workspaceId });
   await onWorkCalendarUpdated(workspaceId);
 }
 
@@ -271,13 +283,13 @@ export async function onPolicyActivated(workspaceId, policy) {
 export async function onWorkCalendarUpdated(workspaceId) {
   const members = await WorkspaceMembership.find({ workspace: workspaceId, status: 'active' }).select('user').lean();
   const userIds = members.map((m) => String(m.user));
-  if (userIds.length) emitToUsers(userIds, EVENTS.CALENDAR_UPDATED, {});
+  if (userIds.length) emitToUsers(userIds, EVENTS.CALENDAR_UPDATED, { workspaceId });
 }
 
 export async function onApprovalEscalated(request, approval, escalatedToUserIds) {
   const recipientIds = Array.from(new Set((escalatedToUserIds || []).map(String)));
   if (!recipientIds.length) return;
-  emitToUsers(recipientIds, EVENTS.APPROVAL_UPDATED, { request, approval });
+  await emitRequestChange(recipientIds, EVENTS.APPROVAL_UPDATED, request);
 
   await evaluateAndDeliverBulk(recipientIds, {
     type: 'leave_approval_escalated',

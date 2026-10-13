@@ -24,6 +24,7 @@ import { startSlackWorker, getSlackWorker } from '../workers/slackWorker.js';
 import { startLeaveWorker, getLeaveWorker } from '../workers/leaveWorker.js';
 import { registerMaintenanceJobs } from '../schedulers/maintenanceScheduler.js';
 import { registerLeaveMaintenanceJobs } from '../schedulers/leaveMaintenanceScheduler.js';
+import { registerAttendanceMaintenanceJobs, startInProcessAttendanceSweeper, stopInProcessAttendanceSweeper } from '../schedulers/attendanceMaintenanceScheduler.js';
 import { recoverAnnouncementSchedules } from '../schedulers/announcementScheduler.js';
 import { recoverRecurringSchedules } from '../schedulers/recurringTaskScheduler.js';
 import { recoverReminderSchedules } from '../schedulers/reminderScheduler.js';
@@ -113,6 +114,7 @@ export async function initQueues() {
     logger.warn('QueueManager: Redis not available — falling back to in-process background tasks');
     // Queues opened the shared connection on import; stop its retry loop.
     stopSharedConnectionRetries();
+    startInProcessAttendanceSweeper();
     _initialized = true;
     return false;
   }
@@ -153,6 +155,7 @@ export async function initQueues() {
   // ─── Register maintenance repeat jobs ─────────────────────────────────────
   await registerMaintenanceJobs();
   await registerLeaveMaintenanceJobs();
+  await registerAttendanceMaintenanceJobs();
 
   // ─── Recovery scans (catch jobs missed during downtime) ───────────────────
   try {
@@ -186,6 +189,7 @@ export function isQueueActive() {
  * Gracefully shut down all workers and close connections.
  */
 export async function shutdownQueues() {
+  stopInProcessAttendanceSweeper();
   if (!_initialized || !_redisAvailable) return;
 
   logger.info('QueueManager: shutting down workers...');

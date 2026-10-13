@@ -1,7 +1,7 @@
 import WorkspaceContext from '../../context/WorkspaceContext';
 import React, { useContext, useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
-import { Archive, CalendarDays, FileText, Layers3, PlayCircle, Plus, SquarePen, Users, X } from 'lucide-react';
+import { Archive, ArrowDownRight, ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, Eye, FileText, History, Layers3, PlayCircle, Plus, RotateCcw, Search, SquarePen, Users, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button } from '../../components/ui/button';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';
@@ -13,6 +13,7 @@ import OverridePolicyFormModal from '../../components/Leave/OverridePolicyFormMo
 import WorkCalendarSettingsPanel from '../../components/Leave/WorkCalendar/WorkCalendarSettingsPanel';
 import { buildPolicyDiff } from '../../utils/leavePolicyDiff';
 import * as leaveApi from '../../services/leaveApi';
+import Database from '../../services/database';
 
 const inputClass = 'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
 const inputStyle = { backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' };
@@ -475,17 +476,394 @@ const HolidaysTab = () => {
   );
 };
 
+const AdjustmentDetailModal = ({ adjustment, onClose }) => {
+  if (!adjustment) return null;
+  const isCredit = adjustment.type === 'MANUAL_CREDIT';
+
+  return (
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-2xl p-6 shadow-xl border space-y-4"
+        style={{ backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${isCredit ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+              {isCredit ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+              {isCredit ? 'Credit' : 'Debit'}
+            </span>
+            <h3 className="text-base font-bold" style={{ color: 'var(--color-text-primary)' }}>Adjustment Details</h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 text-xs">
+          <div>
+            <span className="block font-medium mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>Employee</span>
+            <div className="font-semibold text-sm" style={{ color: 'var(--color-text-primary)' }}>
+              {adjustment.user?.name || 'Unknown'}
+            </div>
+            <div style={{ color: 'var(--color-text-muted)' }}>{adjustment.user?.email || 'N/A'}</div>
+          </div>
+
+          <div>
+            <span className="block font-medium mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>Leave Type</span>
+            <div className="flex items-center gap-1.5 font-semibold text-sm mt-0.5" style={{ color: 'var(--color-text-primary)' }}>
+              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: adjustment.leaveType?.color || '#3b82f6' }} />
+              {adjustment.leaveType?.name || 'Unknown'}
+            </div>
+            <div className="text-[11px] capitalize" style={{ color: 'var(--color-text-muted)' }}>{adjustment.leaveType?.category?.toLowerCase() || 'standard'}</div>
+          </div>
+
+          <div>
+            <span className="block font-medium mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>Adjustment Amount</span>
+            <div className={`text-base font-bold ${isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              {isCredit ? '+' : '-'}{adjustment.amount} {adjustment.amount === 1 ? 'leave' : 'leaves'}
+            </div>
+          </div>
+
+          <div>
+            <span className="block font-medium mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>Timestamp</span>
+            <div className="font-medium text-xs mt-1" style={{ color: 'var(--color-text-primary)' }}>
+              {new Date(adjustment.occurredAt || adjustment.createdAt).toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+              })}
+            </div>
+          </div>
+
+          <div>
+            <span className="block font-medium mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>Performed By</span>
+            <div className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+              {adjustment.actor?.name || 'System / Auto'}
+            </div>
+            <div style={{ color: 'var(--color-text-muted)' }}>{adjustment.actor?.email || ''}</div>
+          </div>
+
+          <div>
+            <span className="block font-medium mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>Policy Version</span>
+            <div className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+              {adjustment.policyVersion?.versionNumber ? `v${adjustment.policyVersion.versionNumber}` : 'Current Policy'}
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-2 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
+          <span className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Reason</span>
+          <div className="rounded-lg p-3 text-xs leading-relaxed border" style={{ backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}>
+            {adjustment.reason || 'No reason provided.'}
+          </div>
+        </div>
+
+        {(adjustment.clientAdjustmentId || adjustment._id) && (
+          <div className="text-[11px] space-y-1 pt-1" style={{ color: 'var(--color-text-muted)' }}>
+            <div><span className="font-mono">Transaction ID:</span> {adjustment._id}</div>
+            {adjustment.clientAdjustmentId && <div><span className="font-mono">Client ID:</span> {adjustment.clientAdjustmentId}</div>}
+          </div>
+        )}
+
+        <div className="pt-3 flex justify-end">
+          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AdjustmentsTab = () => {
   const [showModal, setShowModal] = useState(false);
+  const [selectedAdjustment, setSelectedAdjustment] = useState(null);
+  const [adjustments, setAdjustments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, pages: 1 });
+  const [users, setUsers] = useState([]);
+  const [leaveTypes, setLeaveTypes] = useState([]);
+
+  // Filters
+  const [userId, setUserId] = useState('');
+  const [leaveTypeId, setLeaveTypeId] = useState('');
+  const [operation, setOperation] = useState('ALL');
+  const [search, setSearch] = useState('');
+
+  const loadAdjustments = async (page = 1) => {
+    setLoading(true);
+    try {
+      const res = await leaveApi.getAdjustments({
+        page,
+        limit: 10,
+        userId: userId || undefined,
+        leaveTypeId: leaveTypeId || undefined,
+        operation: operation !== 'ALL' ? operation : undefined,
+        search: search.trim() || undefined
+      });
+      if (res?.data) {
+        setAdjustments(res.data.adjustments || []);
+        setPagination(res.data.pagination || { page: 1, limit: 10, total: 0, pages: 1 });
+      }
+    } catch {
+      setAdjustments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    Database.getUsers().then((res) => setUsers(res?.data || res?.users || [])).catch(() => setUsers([]));
+    leaveApi.getLeaveTypes().then(({ data }) => setLeaveTypes(data || [])).catch(() => setLeaveTypes([]));
+  }, []);
+
+  useEffect(() => {
+    loadAdjustments(1);
+  }, [userId, leaveTypeId, operation]);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    loadAdjustments(1);
+  };
+
+  const resetFilters = () => {
+    setUserId('');
+    setLeaveTypeId('');
+    setOperation('ALL');
+    setSearch('');
+  };
+
+  const hasActiveFilters = Boolean(userId || leaveTypeId || operation !== 'ALL' || search);
+
   return (
-    <SettingsPanel title="Balance Adjustments" description="Credit or debit an employee’s balance with a fully auditable ledger entry.">
-      <p className="max-w-3xl text-sm leading-6" style={{ color: 'var(--color-text-muted)' }}>
-        Every adjustment requires a reason and is recorded in the immutable leave ledger and audit log. Existing balances are never directly overwritten.
-      </p>
-      <Button onClick={() => setShowModal(true)} className="mt-4 flex items-center gap-2">
-        <Plus className="h-4 w-4" /> New Adjustment
-      </Button>
-      {showModal && <ManualAdjustmentModal onClose={() => setShowModal(false)} onDone={() => setShowModal(false)} />}
+    <SettingsPanel
+      title="Balance Adjustments"
+      description="Credit or debit an employee’s balance with a fully auditable ledger entry. All adjustments are permanently tracked in the immutable ledger."
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <p className="max-w-2xl text-sm leading-6" style={{ color: 'var(--color-text-muted)' }}>
+          Every manual adjustment creates an immutable ledger transaction with audit attribution. Adjustments never overwrite past calculations or invalidate approved leave.
+        </p>
+        <Button onClick={() => setShowModal(true)} className="flex items-center gap-2 shrink-0">
+          <Plus className="h-4 w-4" /> New Adjustment
+        </Button>
+      </div>
+
+      {/* Filter Toolbar */}
+      <div className="rounded-xl border p-3.5 mb-6 space-y-3" style={{ backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Search */}
+          <form onSubmit={handleSearchSubmit} className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search reason or employee…"
+              className={`${inputClass} pl-9`}
+              style={inputStyle}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </form>
+
+          {/* Employee Filter */}
+          <select
+            className={inputClass}
+            style={inputStyle}
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+          >
+            <option value="">All Employees</option>
+            {users.map((u) => (
+              <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
+            ))}
+          </select>
+
+          {/* Leave Type Filter */}
+          <select
+            className={inputClass}
+            style={inputStyle}
+            value={leaveTypeId}
+            onChange={(e) => setLeaveTypeId(e.target.value)}
+          >
+            <option value="">All Leave Types</option>
+            {leaveTypes.map((t) => (
+              <option key={t._id} value={t._id}>{t.name}</option>
+            ))}
+          </select>
+
+          {/* Operation Filter */}
+          <div className="flex items-center gap-2">
+            <select
+              className={inputClass}
+              style={inputStyle}
+              value={operation}
+              onChange={(e) => setOperation(e.target.value)}
+            >
+              <option value="ALL">All Operations</option>
+              <option value="CREDIT">Credits Only</option>
+              <option value="DEBIT">Debits Only</option>
+            </select>
+
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetFilters}
+                className="shrink-0 flex items-center gap-1"
+                title="Reset filters"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Table Section */}
+      <div className="mt-4">
+        {loading ? (
+          <div className="py-16 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            Loading adjustment history…
+          </div>
+        ) : adjustments.length > 0 ? (
+          <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--color-border-default)' }}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b text-xs font-semibold uppercase tracking-wider" style={{ backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}>
+                  <tr>
+                    <th className="px-4 py-3">Date & Time</th>
+                    <th className="px-4 py-3">Employee</th>
+                    <th className="px-4 py-3">Leave Type</th>
+                    <th className="px-4 py-3">Operation & Amount</th>
+                    <th className="px-4 py-3">Adjusted By</th>
+                    <th className="px-4 py-3">Reason</th>
+                    <th className="px-4 py-3 text-right">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y" style={{ borderColor: 'var(--color-border-subtle)' }}>
+                  {adjustments.map((item) => {
+                    const isCredit = item.type === 'MANUAL_CREDIT';
+                    return (
+                      <tr
+                        key={item._id}
+                        className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+                      >
+                        <td className="px-4 py-3.5 whitespace-nowrap text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          {new Date(item.occurredAt || item.createdAt).toLocaleDateString(undefined, {
+                            month: 'short', day: 'numeric', year: 'numeric'
+                          })}
+                          <span className="block text-[11px] opacity-75">
+                            {new Date(item.occurredAt || item.createdAt).toLocaleTimeString(undefined, {
+                              hour: '2-digit', minute: '2-digit'
+                            })}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                              {(item.user?.name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-medium text-xs" style={{ color: 'var(--color-text-primary)' }}>
+                                {item.user?.name || 'Unknown User'}
+                              </div>
+                              <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                {item.user?.email || ''}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap text-xs">
+                          <div className="flex items-center gap-1.5 font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: item.leaveType?.color || '#3b82f6' }} />
+                            {item.leaveType?.name || 'Leave'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${isCredit ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+                            {isCredit ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+                            {isCredit ? `+${item.amount}` : `-${item.amount}`}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                          {item.actor?.name || 'System'}
+                        </td>
+                        <td className="px-4 py-3.5 max-w-xs truncate text-xs" title={item.reason} style={{ color: 'var(--color-text-muted)' }}>
+                          {item.reason}
+                        </td>
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => setSelectedAdjustment(item)}
+                            title="View details"
+                          >
+                            <Eye className="h-4 w-4 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {pagination.pages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t text-xs" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: 'var(--color-bg-base)' }}>
+                <span style={{ color: 'var(--color-text-muted)' }}>
+                  Showing {(pagination.page - 1) * pagination.limit + 1}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} adjustments
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.page <= 1}
+                    onClick={() => loadAdjustments(pagination.page - 1)}
+                    className="h-8 px-2 flex items-center gap-1 text-xs"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                  </Button>
+                  <span className="font-medium px-1" style={{ color: 'var(--color-text-primary)' }}>
+                    {pagination.page} / {pagination.pages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.page >= pagination.pages}
+                    onClick={() => loadAdjustments(pagination.page + 1)}
+                    className="h-8 px-2 flex items-center gap-1 text-xs"
+                  >
+                    Next <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <LeaveEmptyState
+            icon={History}
+            title={hasActiveFilters ? "No matching adjustments" : "No balance adjustments recorded yet"}
+            description={hasActiveFilters ? "Try clearing your filters to see more entries." : "Use 'New Adjustment' to credit or debit an employee's balance with an auditable ledger record."}
+            compact
+          />
+        )}
+      </div>
+
+      {showModal && (
+        <ManualAdjustmentModal
+          onClose={() => setShowModal(false)}
+          onDone={() => {
+            setShowModal(false);
+            loadAdjustments(1);
+          }}
+        />
+      )}
+
+      {selectedAdjustment && (
+        <AdjustmentDetailModal
+          adjustment={selectedAdjustment}
+          onClose={() => setSelectedAdjustment(null)}
+        />
+      )}
     </SettingsPanel>
   );
 };

@@ -1,10 +1,10 @@
 /**
  * The shared "which departments/employees does this manager actually
  * manage" facade — the single source of truth every module needs,
- * instead of each reimplementing Department.managers-derived scoping (or
- * worse, trusting a membership's own `department` array as if it meant
- * "departments I manage," which it does not — that array is "departments
- * I belong to").
+ * instead of each reimplementing organization scoping. Explicit department
+ * managers and workspace membership assignments under the established
+ * manager roster convention are resolved centrally. Ordinary department
+ * membership alone never grants management access.
  *
  * This is a thin re-export, not a new implementation: the real resolver
  * lives in ../leave/leaveAuthorization.service.js, already built, tested,

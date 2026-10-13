@@ -77,6 +77,13 @@ export async function userCanAccessEntity({ userId, entityType, entityId }) {
   if (!userId || !entityType || !entityId) return true;
 
   switch (entityType) {
+    case 'LeaveRequest': {
+      if (!mongoose.isValidObjectId(entityId)) return false;
+      const workspaceId = getActiveWorkspaceId();
+      const { canViewLeaveRequest } = await import('../modules/leave/leaveAuthorization.service.js');
+      const membership = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId, status: 'active' }).select('role').lean();
+      return Boolean(membership && await canViewLeaveRequest({ viewer: { _id: userId, role: membership.role }, requestId: entityId, workspaceId }));
+    }
     case 'Card': {
       const card = await Card.findById(entityId).select('board').lean();
       if (!card) return false;
