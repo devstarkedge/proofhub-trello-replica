@@ -1,0 +1,369 @@
+import React from "react";
+import { Navigate, Routes, Route } from "react-router-dom";
+import { ToastContainer } from 'react-toastify';
+import { AuthProvider } from "./context/AuthContext";
+import { MeProvider } from "./context/MeContext";
+import { WorkspaceProvider } from "./context/WorkspaceContext";
+import { TeamProvider } from "./context/DepartmentContext";
+import { NotificationProvider } from "./context/NotificationContext";
+import { ClientInfoProvider } from "./context/ClientInfoContext";
+import NetworkStatusToast from "./components/NetworkStatusToast";
+import ErrorBoundary from "./components/ErrorBoundary";
+import GlobalFallback from "./components/GlobalFallback";
+import GlobalPushPrompt from "./components/GlobalPushPrompt";
+import useThemeStore from "./store/themeStore";
+import "./App.css";
+
+// Direct imports for instant navigation (no lazy loading)
+import WorkFlow from "./pages/WorkFlow";
+import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
+import ConfirmEmailChange from './pages/ConfirmEmailChange';
+import VerifyPending from "./pages/VerifyPending";
+import TeamManagement from "./pages/TeamManagement";
+import Search from "./pages/Search";
+import ListViewLayout from "./layouts/ListViewLayout";
+import MainLayout from "./layouts/MainLayout";
+import ListViewTasks from "./pages/ListViewTasks";
+import ListViewTeams from "./pages/ListViewTeams";
+import CalendarView from "./pages/CalendarView";
+import GanttView from "./pages/GanttView";
+import AdminSettings from "./pages/AdminSettings";
+import HRPanel from "./pages/HRPanel";
+import Analytics from "./pages/Analytics";
+import HomePage from "./pages/HomePage";
+import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
+import Announcements from "./pages/Announcements";
+import RemindersPage from "./pages/RemindersPage";
+import ClientReminderCalendarPage from "./pages/ClientReminderCalendarPage";
+import PrivateRoute from "./components/PrivateRoute";
+import FinanceRouteGuard from "./components/FinanceRouteGuard";
+import AccessControlRouteGuard from "./components/AccessControlRouteGuard";
+import AccessControlPage from "./pages/AccessControlPage";
+import JoinRequestsRouteGuard from "./components/JoinRequestsRouteGuard";
+import JoinRequestsPage from "./pages/JoinRequestsPage";
+import LeaveDashboardPage from "./pages/Leave/LeaveDashboardPage";
+import MyLeavePage from "./pages/Leave/MyLeavePage";
+import ApprovalQueuePage from "./pages/Leave/ApprovalQueuePage";
+import LeaveCalendarPage from "./pages/Leave/LeaveCalendarPage";
+import LeaveReportsPage from "./pages/Leave/LeaveReportsPage";
+import LeaveSettingsPage from "./pages/Leave/LeaveSettingsPage";
+import LeaveLayout from "./layouts/LeaveLayout";
+import LeaveSettingsLayout from "./layouts/LeaveSettingsLayout";
+import MyAttendancePage from "./pages/Attendance/MyAttendancePage";
+import TeamAttendancePage from "./pages/Attendance/TeamAttendancePage";
+import AttendanceApprovalsPage from "./pages/Attendance/AttendanceApprovalsPage";
+import AttendanceSettingsPage from "./pages/Attendance/AttendanceSettingsPage";
+import AttendanceLayout from "./layouts/AttendanceLayout";
+import AttendanceSettingsLayout from "./layouts/AttendanceSettingsLayout";
+import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
+import ProjectTrash from "./pages/ProjectTrash";
+import SelectWorkspacePage from "./pages/SelectWorkspacePage";
+import NoWorkspacePage from "./pages/NoWorkspacePage";
+import InvitePage from "./pages/InvitePage";
+import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
+import CreateWorkspacePublicPage from './pages/CreateWorkspacePublicPage';
+import ContactSalesPage from './pages/ContactSalesPage';
+
+// PM Sheet Pages
+import PMSheetDashboard from "./pages/PMSheetDashboard";
+import MonthWisePMReport from "./pages/MonthWisePMReport";
+import ProjectCoordinatorReport from "./pages/ProjectCoordinatorReport";
+import ApproachPage from "./pages/ApproachPage";
+import PMSheetLayout from "./layouts/PMSheetLayout";
+
+// Finance Module Pages
+import FinanceLayout from "./pages/Finance/FinanceLayout";
+import FinanceDashboard from "./pages/Finance/FinanceDashboard";
+import UsersTab from "./pages/Finance/UsersTab";
+import ProjectsTab from "./pages/Finance/ProjectsTab";
+import WeeklyTab from "./pages/Finance/WeeklyTab";
+import FinancePagesManager from "./pages/Finance/FinancePagesManager";
+import CreateFinancePage from "./pages/Finance/CreateFinancePage";
+import ViewFinancePage from "./pages/Finance/ViewFinancePage";
+import MyShortcutsPage from "./pages/MyShortcutsPage";
+import SalesPage from "./pages/SalesPage";
+
+// Super Admin Dashboard — platform-level context, deliberately NOT nested
+// inside MainLayout/PrivateRoute's workspace-scoped tree (see SuperAdminRouteGuard).
+import SuperAdminRouteGuard from "./components/SuperAdminRouteGuard";
+import SuperAdminLayout from "./pages/SuperAdmin/SuperAdminLayout";
+import SuperAdminOverviewPage from "./pages/SuperAdmin/SuperAdminOverviewPage";
+import SuperAdminWorkspacesPage from "./pages/SuperAdmin/SuperAdminWorkspacesPage";
+import SuperAdminWorkspaceDetailPage from "./pages/SuperAdmin/SuperAdminWorkspaceDetailPage";
+import SuperAdminAuditLogPage from "./pages/SuperAdmin/SuperAdminAuditLogPage";
+
+function App() {
+  return (
+    <AuthProvider>
+      <MeProvider>
+        <WorkspaceProvider>
+        <TeamProvider>
+          <NotificationProvider>
+            <ClientInfoProvider>
+              <Routes>
+        <Route path="/confirm-email-change" element={<ConfirmEmailChange />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/create-workspace" element={<CreateWorkspacePublicPage />} />
+              <Route path="/contact-sales" element={<ContactSalesPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+              <Route path="/verify-pending" element={<VerifyPending />} />
+              <Route path="/select-workspace" element={<SelectWorkspacePage />} />
+              <Route path="/no-workspace" element={<NoWorkspacePage />} />
+              <Route path="/invite/:token" element={<InvitePage />} />
+              <Route
+                element={
+                  <PrivateRoute>
+                    <MainLayout />
+                  </PrivateRoute>
+                }
+              >
+                <Route
+                  path="/"
+                  element={
+                    <ErrorBoundary>
+                      <HomePage />
+                    </ErrorBoundary>
+                  }
+                />
+                <Route path="/my-shortcuts" element={<MyShortcutsPage />} />
+                <Route path="/workspace-settings" element={<WorkspaceSettingsPage />} />
+                <Route path="/workflow/:deptId/:projectId" element={<WorkFlow />} />
+                <Route path="/workflow/:deptId/:projectId/:taskId" element={<WorkFlow />} />
+                <Route path="/workflow/:deptId/:projectId/trash" element={<ProjectTrash />} />
+
+                {/* Leave Management — self-service (dashboard/my-leave/calendar)
+                    is open to every authenticated workspace member; only
+                    /leave/settings is role-gated, matching how the backend
+                    treats self-service as structural rather than
+                    permission-gated (see modules/leave/leaveAuthorization.service.js). */}
+                <Route path="/leave" element={<LeaveLayout />}>
+                  <Route index element={<LeaveDashboardPage />} />
+                  <Route path="my" element={<MyLeavePage />} />
+                  <Route path="approvals" element={<ApprovalQueuePage />} />
+                  <Route path="approvals/:requestId" element={<ApprovalQueuePage />} />
+                  <Route path="calendar" element={<LeaveCalendarPage />} />
+                  <Route
+                    path="reports"
+                    element={
+                      <PrivateRoute requiredRole={["HR", "Admin"]}>
+                        <LeaveReportsPage />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="settings"
+                    element={
+                      <PrivateRoute requiredRole={["HR", "Admin"]}>
+                        <LeaveSettingsLayout />
+                      </PrivateRoute>
+                    }
+                  >
+                    <Route index element={<Navigate to="policies" replace />} />
+                    <Route path=":section" element={<LeaveSettingsPage />} />
+                  </Route>
+                </Route>
+
+                {/* Attendance — self-service (my attendance / approvals) is
+                    open to every authenticated workspace member; only
+                    /attendance/settings is role-gated, matching Leave's
+                    own split (self-service is structural, not permission-
+                    gated — see modules/attendance/attendanceEligibility.service.js). */}
+                <Route path="/attendance" element={<AttendanceLayout />}>
+                  <Route index element={<Navigate to="my" replace />} />
+                  <Route path="my" element={<MyAttendancePage />} />
+                  <Route
+                    path="team"
+                    element={
+                      <PrivateRoute requiredRole={["Manager", "HR", "Admin"]}>
+                        <TeamAttendancePage />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="approvals"
+                    element={
+                      <PrivateRoute requiredRole={["Manager", "HR", "Admin"]}>
+                        <AttendanceApprovalsPage />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="settings"
+                    element={
+                      <PrivateRoute requiredRole={["HR", "Admin"]}>
+                        <AttendanceSettingsLayout />
+                      </PrivateRoute>
+                    }
+                  >
+                    <Route index element={<Navigate to="policy" replace />} />
+                    <Route path=":section" element={<AttendanceSettingsPage />} />
+                  </Route>
+                </Route>
+
+                <Route
+                  path="/teams"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>
+                      <TeamManagement />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/team-management"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin", "HR"]}>
+                      <TeamManagement />
+                    </PrivateRoute>
+                  }
+                />
+
+                <Route path="/sales" element={<SalesPage />} />
+
+                <Route
+                  path="/admin/settings"
+                  element={
+                    <PrivateRoute requiredRole={["Admin"]}>
+                      <AdminSettings />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/hr-panel"
+                  element={
+                    <PrivateRoute requiredRole={["Admin", "HR"]}>
+                      <HRPanel />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/access-control"
+                  element={
+                    <AccessControlRouteGuard>
+                      <AccessControlPage />
+                    </AccessControlRouteGuard>
+                  }
+                />
+                <Route
+                  path="/join-requests"
+                  element={
+                    <JoinRequestsRouteGuard>
+                      <JoinRequestsPage />
+                    </JoinRequestsRouteGuard>
+                  }
+                />
+                <Route path="/search" element={<Search />} />
+
+                <Route path="/list-view" element={<ListViewLayout />}>
+                  <Route index element={<ListViewTasks />} />
+                  <Route path="teams" element={<ListViewTeams />} />
+                </Route>
+
+                <Route path="/calendar" element={<CalendarView />} />
+                <Route path="/gantt" element={<GanttView />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/announcements" element={<Announcements />} />
+
+                <Route
+                  path="/reminders"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                      <RemindersPage />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/reminder-calendar"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                      <ClientReminderCalendarPage />
+                    </PrivateRoute>
+                  }
+                />
+
+                {/* PM Sheet Routes - Admin and Manager only */}
+                <Route
+                  path="/pm-sheet"
+                  element={
+                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
+                      <PMSheetLayout />
+                    </PrivateRoute>
+                  }
+                >
+                  <Route index element={<PMSheetDashboard />} />
+                  <Route path="month-wise" element={<MonthWisePMReport />} />
+                  <Route path="coordinator" element={<ProjectCoordinatorReport />} />
+                  <Route path="approach" element={<ApproachPage />} />
+                </Route>
+
+                {/* Finance Module Routes - Admin and Manager only */}
+                <Route
+                  path="/finance"
+                  element={
+                    <FinanceRouteGuard>
+                      <FinanceLayout />
+                    </FinanceRouteGuard>
+                  }
+                >
+                  <Route index element={<FinanceDashboard />} />
+                  <Route path="users" element={<UsersTab />} />
+                  <Route path="projects" element={<ProjectsTab />} />
+                  <Route path="weekly" element={<WeeklyTab />} />
+                  <Route path="pages" element={<FinancePagesManager />} />
+                  <Route path="pages/new" element={<CreateFinancePage />} />
+                  <Route path="pages/:id" element={<ViewFinancePage />} />
+                  <Route path="pages/:id/edit" element={<CreateFinancePage />} />
+                </Route>
+              </Route>
+
+              {/* Super Admin Dashboard — platform-level, sibling to the
+                  workspace-scoped tree above (not nested in MainLayout), so
+                  it never inherits or touches the active workspace context. */}
+              <Route
+                path="/super-admin"
+                element={
+                  <SuperAdminRouteGuard>
+                    <SuperAdminLayout />
+                  </SuperAdminRouteGuard>
+                }
+              >
+                <Route index element={<SuperAdminOverviewPage />} />
+                <Route path="workspaces" element={<SuperAdminWorkspacesPage />} />
+                <Route path="workspaces/:workspaceId" element={<SuperAdminWorkspaceDetailPage />} />
+                <Route path="audit-log" element={<SuperAdminAuditLogPage />} />
+              </Route>
+
+              <Route path="*" element={<GlobalFallback type="404" />} />
+              </Routes>
+            </ClientInfoProvider>
+            <ToastContainer
+              position="top-right"
+              autoClose={5000}
+              hideProgressBar={false}
+              newestOnTop={false}
+              closeOnClick
+              rtl={false}
+              pauseOnFocusLoss
+              draggable
+              pauseOnHover
+              theme={useThemeStore.getState().effectiveMode === 'dark' ? 'dark' : 'light'}
+            />
+            <NetworkStatusToast />
+            <GlobalPushPrompt />
+            {/* The one confirmation modal for every permission change in the
+                app — see components/AccessControl/PermissionConfirmModal.jsx */}
+            <PermissionConfirmModal />
+          </NotificationProvider>
+        </TeamProvider>
+        </WorkspaceProvider>
+      </MeProvider>
+    </AuthProvider>
+  );
+}
+
+export default App;

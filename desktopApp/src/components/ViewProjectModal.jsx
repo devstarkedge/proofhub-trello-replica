@@ -1,0 +1,280 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  X,
+  Eye,
+  FileText,
+  Calendar,
+  Clock,
+  Globe,
+  DollarSign,
+  Link2,
+  Users,
+  Shield,
+  Tag,
+  Mail,
+  Phone,
+  Info,
+  Image as ImageIcon,
+  History,
+  Pencil
+} from 'lucide-react';
+import Database from '../services/database';
+import EnterpriseFileUploader from './EnterpriseFileUploader';
+import ActivityTimeline from './ActivityTimeline';
+import HtmlContent from './ui/HtmlContent';
+import ViewDetailsTab from './ProjectModals/tabs/ViewDetailsTab';
+
+import { drawerVariants, overlayVariants } from './ProjectModals/shared/animations';
+import { StatusBadge, PriorityBadge } from './ProjectModals/shared/Badges';
+import { TabNavigation } from './ProjectModals/shared/TabNavigation';
+const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject }) => {
+  const [activeTab, setActiveTab] = useState('details');
+  const [project, setProject] = useState(null);
+  const [attachments, setAttachments] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const tabs = useMemo(() => [
+    { id: 'details', label: 'Details', icon: Info },
+    { id: 'files', label: 'Files', icon: FileText, badge: attachments?.length ? attachments.length : null },
+    { id: 'team', label: 'Team', icon: Users, badge: project?.members?.length || 0 },
+    { id: 'activity', label: 'Activity', icon: History, badge: activity?.length || 0 }
+  ], [attachments?.length, project?.members?.length, activity?.length]);
+
+  useEffect(() => {
+    if (!isOpen || !projectId) return;
+
+    const fetchData = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const response = await Database.getProject(projectId);
+        if (response.success) {
+          setProject(response.data);
+        } else {
+          setError('Failed to load project');
+        }
+      } catch (err) {
+        setError('Failed to load project');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [isOpen, projectId]);
+
+  // Track which tabs have had their data fetched
+  const fetchedTabsRef = React.useRef({});
+
+  // Reset fetched tabs when projectId changes
+  useEffect(() => {
+    fetchedTabsRef.current = {};
+    setAttachments([]);
+    setActivity([]);
+  }, [projectId]);
+
+  // Lazy fetch attachments when files tab is selected
+  useEffect(() => {
+    if (!isOpen || !projectId) return;
+    if (activeTab === 'files' && !fetchedTabsRef.current.files) {
+      fetchedTabsRef.current.files = true;
+      setFilesLoading(true);
+      Database.getProjectAttachments(projectId)
+        .then(res => {
+          if (res.success) setAttachments(res.data || []);
+        })
+        .catch(() => {})
+        .finally(() => setFilesLoading(false));
+    }
+  }, [activeTab, isOpen, projectId]);
+
+  // Lazy fetch activity when activity tab is selected
+  useEffect(() => {
+    if (!isOpen || !projectId) return;
+    if (activeTab === 'activity' && !fetchedTabsRef.current.activity) {
+      fetchedTabsRef.current.activity = true;
+      setActivityLoading(true);
+      Database.getProjectActivity(projectId)
+        .then(res => {
+          if (res.success) setActivity(res.data || []);
+        })
+        .catch(() => {})
+        .finally(() => setActivityLoading(false));
+    }
+  }, [activeTab, isOpen, projectId]);
+
+  if (!isOpen) return null;
+
+  const handleEditClick = () => {
+    if (!project || !onEditProject) return;
+    const departmentId = project?.department?._id || project?.departmentId;
+    onEditProject(project, departmentId);
+    onClose();
+  };
+
+  return createPortal(
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            variants={overlayVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            onClick={onClose}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60]"
+          />
+
+          <motion.div
+            variants={drawerVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="fixed right-0 top-0 h-full w-full max-w-5xl bg-white shadow-2xl z-[61] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 px-6 py-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-2 bg-white/10 rounded-xl">
+                    <Eye size={22} className="text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-xl font-bold text-white truncate max-w-[320px]">
+                        {project?.name || 'Project Details'}
+                      </h2>
+                      {project?.status && <StatusBadge status={project.status} />}
+                      {project?.priority && <PriorityBadge priority={project.priority} />}
+                    </div>
+                    <p className="text-indigo-200 text-sm mt-1">
+                      {project?.updatedAt ? `Last updated: ${new Date(project.updatedAt).toLocaleDateString()}` : 'View project information'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {onEditProject && project && (
+                    <button
+                      onClick={handleEditClick}
+                      className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                      aria-label="Edit project"
+                    >
+                      <Pencil size={20} />
+                    </button>
+                  )}
+                  <button
+                    onClick={onClose}
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                    aria-label="Close"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <TabNavigation tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} variant="view" />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-6 space-y-6">
+                {loading ? (
+                  <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
+                    <div className="animate-pulse space-y-3">
+                      <div className="h-5 bg-gray-200 rounded w-1/3" />
+                      <div className="h-4 bg-gray-200 rounded w-2/3" />
+                      <div className="h-4 bg-gray-200 rounded w-full" />
+                    </div>
+                  </div>
+                ) : error ? (
+                  <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4">
+                    {error}
+                  </div>
+                ) : (
+                  <>
+                    {activeTab === 'details' && project && (
+                      <ViewDetailsTab project={project} />
+                    )}
+
+                    {activeTab === 'files' && (
+                      <div className="space-y-4">
+                        <EnterpriseFileUploader
+                          title="Project Attachments"
+                          description="Attachments uploaded to this project"
+                          pendingFiles={[]}
+                          existingFiles={attachments}
+                          onFilesAdded={null}
+                          onRemovePending={null}
+                          onRemoveExisting={null}
+                          disabled={true}
+                          showVersionHistory={true}
+                          showPreview={true}
+                          showDropzone={false}
+                        />
+                        {filesLoading && (
+                          <p className="text-xs text-gray-500">Loading files...</p>
+                        )}
+                      </div>
+                    )}
+
+                    {activeTab === 'team' && project && (
+                      <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
+                        <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                          <Shield size={16} className="text-purple-600" />
+                          Project Team
+                        </h3>
+                        {project.members?.length ? (
+                          <div className="space-y-3">
+                            {project.members.map((member) => (
+                              <div
+                                key={member._id}
+                                className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl"
+                              >
+                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
+                                  {(member?.name || 'U').charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">{member?.name || 'Unknown'}</p>
+                                  <p className="text-xs text-gray-500">{member?.email || 'No email'}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500">No team members assigned.</p>
+                        )}
+                      </section>
+                    )}
+
+                    {activeTab === 'activity' && (
+                      <ActivityTimeline
+                        activities={activity}
+                        loading={activityLoading}
+                        projectCreatedAt={project?.createdAt}
+                        projectCreatedBy={project?.owner?.name}
+                        projectUpdatedAt={project?.updatedAt}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
+};
+
+export default EnterpriseViewProjectModal;

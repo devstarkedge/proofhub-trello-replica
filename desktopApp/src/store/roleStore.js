@@ -1,0 +1,403 @@
+import { create } from 'zustand';
+import api from '../services/api';
+import { registerResettable } from './resetRegistry';
+
+/**
+ * Access-scope capability constants — mirrors backend permissionService.js
+ * Use these with hasAccessCapability() for UI-level visibility decisions.
+ * NOTE: Never use these alone for security — backend always re-validates.
+ */
+export const CAPABILITIES = Object.freeze({
+  VIEW_ALL_PROJECTS: 'VIEW_ALL_PROJECTS',
+  VIEW_DEPT_PROJECTS: 'VIEW_DEPT_PROJECTS',
+  VIEW_SELECTED_PROJECTS: 'VIEW_SELECTED_PROJECTS',
+  VIEW_ASSIGNED_PROJECTS: 'VIEW_ASSIGNED_PROJECTS',
+  MANAGE_PROJECT: 'MANAGE_PROJECT',
+  ASSIGN_PROJECT_ACCESS: 'ASSIGN_PROJECT_ACCESS',
+  MANAGE_ROLES: 'MANAGE_ROLES',
+  MANAGE_MEMBERS: 'MANAGE_MEMBERS',
+  FORCE_ASSIGNMENT_SCOPE: 'FORCE_ASSIGNMENT_SCOPE',
+});
+
+// Role → capability set mapping (mirrors backend)
+const ROLE_CAPABILITIES_MAP = {
+  admin: new Set([
+    CAPABILITIES.VIEW_ALL_PROJECTS,
+    CAPABILITIES.VIEW_DEPT_PROJECTS,
+    CAPABILITIES.VIEW_SELECTED_PROJECTS,
+    CAPABILITIES.VIEW_ASSIGNED_PROJECTS,
+    CAPABILITIES.MANAGE_PROJECT,
+    CAPABILITIES.ASSIGN_PROJECT_ACCESS,
+    CAPABILITIES.MANAGE_ROLES,
+    CAPABILITIES.MANAGE_MEMBERS,
+  ]),
+  manager: new Set([
+    CAPABILITIES.VIEW_DEPT_PROJECTS,
+    CAPABILITIES.VIEW_SELECTED_PROJECTS,
+    CAPABILITIES.VIEW_ASSIGNED_PROJECTS,
+    CAPABILITIES.MANAGE_PROJECT,
+    CAPABILITIES.ASSIGN_PROJECT_ACCESS,
+    CAPABILITIES.MANAGE_MEMBERS,
+  ]),
+  hr: new Set([
+    CAPABILITIES.VIEW_DEPT_PROJECTS,
+    CAPABILITIES.VIEW_SELECTED_PROJECTS,
+    CAPABILITIES.VIEW_ASSIGNED_PROJECTS,
+    CAPABILITIES.MANAGE_MEMBERS,
+    CAPABILITIES.ASSIGN_PROJECT_ACCESS,
+  ]),
+  employee: new Set([
+    CAPABILITIES.VIEW_ASSIGNED_PROJECTS,
+    CAPABILITIES.FORCE_ASSIGNMENT_SCOPE,
+  ]),
+};
+
+/**
+ * Permission definitions for UI rendering
+ * Grouped by category with labels and keys
+ */
+export const PERMISSION_CATEGORIES = {
+  creation: {
+    label: '🔧 Creation Permissions',
+    permissions: [
+      { key: 'canCreateDepartment', label: 'Create departments' },
+      { key: 'canCreateTask', label: 'Create tasks' },
+      { key: 'canCreateProject', label: 'Create projects' },
+      { key: 'canCreateAnnouncement', label: 'Create announcements' },
+      { key: 'canCreateReminder', label: 'Create reminders' }
+    ]
+  },
+  member: {
+    label: '👥 Member Permissions',
+    permissions: [
+      { key: 'canAssignMembers', label: 'Assign members to tasks/projects/departments' },
+      { key: 'canInviteMembers', label: 'Invite new members to the workspace' },
+      { key: 'canApproveJoinRequests', label: 'Approve or reject workspace join requests' }
+    ]
+  },
+  delete: {
+    label: '🗑️ Delete Permissions',
+    permissions: [
+      { key: 'canDeleteTasks', label: 'Delete tasks' },
+      { key: 'canDeleteProjects', label: 'Delete projects' }
+    ]
+  },
+  management: {
+    label: '⚙️ Management Permissions',
+    permissions: [
+      { key: 'canManageRoles', label: 'Manage roles' },
+      { key: 'canManageUsers', label: 'Manage users' },
+      { key: 'canManageSystem', label: 'Full system access (Admin equivalent)' },
+      { key: 'canManageAccessControl', label: 'Manage Access & Permissions module (delegated admin)' }
+    ]
+  },
+  editing: {
+    label: '✏️ Editing Permissions',
+    permissions: [
+      { key: 'canEditPriority', label: 'Edit task priority' },
+      { key: 'canEditDates', label: 'Edit start/due dates' },
+      { key: 'canManageAttachments', label: 'Manage all attachments' }
+    ]
+  }
+};
+
+/**
+ * Get all permission keys as a flat array
+ */
+export const ALL_PERMISSION_KEYS = Object.values(PERMISSION_CATEGORIES)
+  .flatMap(category => category.permissions.map(p => p.key));
+
+/**
+ * Default permissions object (all false)
+ */
+export const DEFAULT_PERMISSIONS = ALL_PERMISSION_KEYS.reduce((acc, key) => {
+  acc[key] = false;
+  return acc;
+}, {});
+
+/**
+ * System roles that cannot be edited or deleted
+ */
+export const SYSTEM_ROLES = ['admin', 'manager', 'employee', 'hr'];
+
+/**
+ * Default permissions for system roles (for cloning/presets)
+ */
+export const SYSTEM_ROLE_PERMISSIONS = {
+  admin: ALL_PERMISSION_KEYS.reduce((acc, key) => ({ ...acc, [key]: true }), {}),
+  manager: {
+    ...DEFAULT_PERMISSIONS,
+    canCreateTask: true,
+    canCreateProject: true,
+    canCreateAnnouncement: true,
+    canCreateReminder: true,
+    canAssignMembers: true,
+    canDeleteTasks: true,
+    canEditPriority: true,
+    canEditDates: true,
+    canManageAttachments: true
+  },
+  employee: {
+    ...DEFAULT_PERMISSIONS,
+    canCreateTask: true
+  },
+  hr: {
+    ...DEFAULT_PERMISSIONS,
+    canCreateAnnouncement: true,
+    canAssignMembers: true,
+    canEditPriority: true,
+    canEditDates: true,
+    canInviteMembers: true,
+    canApproveJoinRequests: true
+  }
+};
+/**
+ * Zustand store for roles and permissions management
+ */
+const useRoleStore = create((set, get) => ({
+  // State
+  roles: [],
+  myPermissions: null,
+  myRole: null,
+  loading: false,
+  error: null,
+  initialized: false,
+
+  /**
+   * Load all roles from the server
+   */
+  loadRoles: async () => {
+    try {
+      set({ loading: true, error: null });
+      const response = await api.get('/api/roles');
+      const roles = response.data.data || [];
+      set({ roles, loading: false, initialized: true });
+      return roles;
+    } catch (error) {
+      console.error('Error loading roles:', error);
+      set({ error: error.message, loading: false });
+      throw error;
+    }
+  },
+
+  /**
+   * Load current user's permissions
+   */
+  loadMyPermissions: async () => {
+    try {
+      set({ loading: true, error: null });
+      const response = await api.get('/api/roles/my-permissions');
+      const data = response.data.data;
+      
+      // Ensure all permission keys exist (fill missing with false)
+      const normalizedPermissions = { ...DEFAULT_PERMISSIONS, ...data.permissions };
+      
+      set({
+        myPermissions: normalizedPermissions,
+        myRole: data.role,
+        loading: false
+      });
+      return data;
+    } catch (error) {
+      console.error('Error loading permissions:', error);
+      set({ error: error.message, loading: false });
+      throw error;
+    }
+  },
+
+  /**
+   * Create a new custom role
+   */
+  createRole: async (roleData) => {
+    try {
+      set({ loading: true, error: null });
+      const response = await api.post('/api/roles', roleData);
+      const newRole = response.data.data;
+      
+      set((state) => ({
+        roles: [...state.roles, newRole],
+        loading: false
+      }));
+      
+      return newRole;
+    } catch (error) {
+      console.error('Error creating role:', error);
+      set({ error: error.response?.data?.message || error.message, loading: false });
+      throw error;
+    }
+  },
+
+  /**
+   * Update an existing role
+   */
+  updateRole: async (roleId, updates) => {
+    try {
+      set({ loading: true, error: null });
+      const response = await api.put(`/api/roles/${roleId}`, updates);
+      const updatedRole = response.data.data;
+      
+      set((state) => ({
+        roles: state.roles.map(role =>
+          role._id === roleId ? updatedRole : role
+        ),
+        loading: false
+      }));
+      
+      return updatedRole;
+    } catch (error) {
+      console.error('Error updating role:', error);
+      set({ error: error.response?.data?.message || error.message, loading: false });
+      throw error;
+    }
+  },
+
+  /**
+   * Delete a role
+   */
+  deleteRole: async (roleId) => {
+    try {
+      set({ loading: true, error: null });
+      await api.delete(`/api/roles/${roleId}`);
+      
+      // Remove role from state
+      set((state) => ({
+        roles: state.roles.filter(role => role._id !== roleId),
+        loading: false
+      }));
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting role:', error);
+      set({ error: error.response?.data?.message || error.message, loading: false });
+      throw error;
+    }
+  },
+
+  /**
+   * Change a user's role (admin only)
+   */
+  changeUserRole: async (userId, role) => {
+    const response = await api.put(`/api/users/${userId}/role`, { role }, { skipOfflineQueue: true });
+    return response.data.data;
+  },
+
+  /**
+   * Initialize default roles (admin only)
+   */
+  initializeRoles: async () => {
+    try {
+      set({ loading: true, error: null });
+      const response = await api.post('/api/roles/init');
+      
+      // Reload roles after initialization
+      await get().loadRoles();
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error initializing roles:', error);
+      set({ error: error.message, loading: false });
+      throw error;
+    }
+  },
+
+  /**
+   * Check if current user has a specific permission
+   */
+  hasPermission: (permission) => {
+    const { myPermissions, myRole } = get();
+    
+    // Admin always has all permissions
+    if (myRole === 'admin') return true;
+    
+    if (!myPermissions) return false;
+    return myPermissions[permission] === true;
+  },
+
+  /**
+   * Check if current user has any of the specified permissions
+   */
+  hasAnyPermission: (...permissions) => {
+    const { myPermissions, myRole } = get();
+    
+    // Admin always has all permissions
+    if (myRole === 'admin') return true;
+    
+    if (!myPermissions) return false;
+    return permissions.some(perm => myPermissions[perm] === true);
+  },
+
+  /**
+   * Check if current user has all of the specified permissions
+   */
+  hasAllPermissions: (...permissions) => {
+    const { myPermissions, myRole } = get();
+    
+    // Admin always has all permissions
+    if (myRole === 'admin') return true;
+    
+    if (!myPermissions) return false;
+    return permissions.every(perm => myPermissions[perm] === true);
+  },
+
+  /**
+   * Check if current user has a specific access-scope capability.
+   * Uses ROLE_CAPABILITIES_MAP — no server round-trip needed.
+   */
+  hasAccessCapability: (capability) => {
+    const { myRole } = get();
+    const role = (myRole || 'employee').toLowerCase();
+    const caps = ROLE_CAPABILITIES_MAP[role] ?? ROLE_CAPABILITIES_MAP.employee;
+    return caps.has(capability);
+  },
+
+  /**
+   * Check if current user is admin
+   */
+  isAdmin: () => {
+    const { myRole } = get();
+    return myRole === 'admin';
+  },
+
+  /**
+   * Get roles for dropdown (excludes admin for non-admin users)
+   */
+  getRolesForDropdown: (workspaceType) => {
+    const { roles, myRole } = get();
+    // Team workspaces don't support custom roles — existing holders are
+    // grandfathered, but a custom role must not be offered as a new
+    // assignment option.
+    const customRolesAllowed = workspaceType !== 'team';
+    const base = roles.filter(role => role.isActive !== false && (customRolesAllowed || role.isSystem));
+
+    // Admin can see all roles
+    if (myRole === 'admin') {
+      return base;
+    }
+
+    // Non-admin users can't assign admin role
+    return base.filter(role => role.slug !== 'admin');
+  },
+
+  /**
+   * Check if a role is a system role
+   */
+  isSystemRole: (roleSlug) => {
+    return SYSTEM_ROLES.includes(roleSlug?.toLowerCase());
+  },
+
+  /**
+   * Reset store state
+   */
+  reset: () => set({
+    roles: [],
+    myPermissions: null,
+    myRole: null,
+    loading: false,
+    error: null,
+    initialized: false
+  })
+}));
+
+registerResettable(() => useRoleStore.getState().reset());
+
+export default useRoleStore;

@@ -1,1 +1,10 @@
 .vscode
+node_modules
+dist
+dist-ssr
+*docs/
+test/
+tests/
+.log
+.log*
+reports/

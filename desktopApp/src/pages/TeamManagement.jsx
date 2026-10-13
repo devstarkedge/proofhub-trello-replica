@@ -1,0 +1,766 @@
+import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspense, lazy, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Building2, Shield, Users } from 'lucide-react';
+import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
+import useAccessControl from '../hooks/useAccessControl';
+import usePermissions from '../hooks/usePermissions';
+import Database from '../services/database';
+import useDepartmentStore from '../store/departmentStore';
+import useRoleStore from '../store/roleStore';
+import useThemeStore from '../store/themeStore';
+import { Link } from 'react-router-dom';
+import DepartmentList from '../components/TeamManagement/DepartmentList';
+import EmployeeAssignment from '../components/TeamManagement/EmployeeAssignment';
+import TeamStats from '../components/TeamManagement/TeamStats';
+import Toast from '../components/TeamManagement/Toast';
+import { TeamManagementSkeleton } from '../components/LoadingSkeleton';
+import ErrorBoundary from '../components/TeamManagement/ErrorBoundary';
+import { teamManagementReducer, initialState, ACTION_TYPES } from '../components/TeamManagement/teamManagementReducer';
+import EditDepartmentModal from '../components/EditDepartmentModal';
+import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
+import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
+import BulkInviteModal from '../components/Workspace/BulkInviteModal/BulkInviteModal';
+
+// Lazy load modals
+const CreateDepartmentModal = lazy(() => import('../components/TeamManagement/modals/CreateDepartmentModal'));
+// CreateRoleModal stays here only as the "+ create a new role" shortcut
+// reachable from inside AddMemberModal's role dropdown. Full role management
+// (create/edit/delete, permission checklist, delegated access) now lives
+// exclusively in the centralized Access & Permissions module — see
+// pages/AccessControlPage.jsx — which this page links out to below.
+const CreateRoleModal = lazy(() => import('../components/TeamManagement/modals/CreateRoleModal'));
+const ReassignModal = lazy(() => import('../components/TeamManagement/modals/ReassignModal'));
+const DeleteConfirmationModal = lazy(() => import('../components/TeamManagement/modals/DeleteConfirmationModal'));
+
+
+/**
+ * Main TeamManagement Page Component
+ * Optimized container that manages state, data, and layout
+ * Features:
+ * - useReducer for consolidated state management
+ * - useMemo for computed values
+ * - useCallback for memoized event handlers
+ * - Lazy-loaded modals for code splitting
+ * - React.memo on child components
+ * - Error boundary for crash handling
+ * - Debounced search
+ */
+const TeamManagement = () => {
+  const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const { effectiveMode } = useThemeStore();
+  const isDarkMode = effectiveMode === 'dark';
+  const {
+    departments,
+    currentDepartment,
+    setCurrentDepartment,
+    createDepartment,
+    updateDepartment,
+    deleteDepartment,
+    assignUserToDepartment,
+    unassignUserFromDepartment,
+    loading: departmentsLoading
+  } = useDepartmentStore();
+
+  // Role store — only used here for the "+ create a new role" shortcut from
+  // AddMemberModal. Full CRUD lives in the centralized module (AccessControlPage).
+  const { roles, createRole, loadRoles, initialized: rolesInitialized } = useRoleStore();
+
+  // Create Role Modal state (AddMemberModal bridge only)
+  const [showCreateRoleModal, setShowCreateRoleModal] = useState(false);
+  const [createRoleLoading, setCreateRoleLoading] = useState(false);
+
+  // Centralized Invite Member modal — replaces AddMemberModal below.
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showManageInvitations, setShowManageInvitations] = useState(false);
+  const [showBulkInvite, setShowBulkInvite] = useState(false);
+  // Team workspaces don't support custom roles — existing holders are
+  // grandfathered (still counted/valid elsewhere), but they must not be
+  // offered as an assignment option for a different member going forward.
+  const customRolesAllowed = currentWorkspace?.type !== 'team';
+  const activeRoles = useMemo(
+    () => (roles || []).filter((r) => r.isActive !== false && (customRolesAllowed || r.isSystem)),
+    [roles, customRolesAllowed]
+  );
+
+  // Consolidated state management with useReducer
+  const [state, dispatch] = useReducer(teamManagementReducer, initialState);
+
+  // Load roles on mount
+  useEffect(() => {
+    if (!rolesInitialized) {
+      loadRoles().catch(console.error);
+    }
+  }, [rolesInitialized, loadRoles]);
+
+  // Track departments loading
+  useEffect(() => {
+    if (departmentsLoading) {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    } else {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [departmentsLoading]);
+
+  // Compute assigned and available employees with useMemo
+  const { assignedEmployees, availableEmployees } = useMemo(() => {
+    if (!state.currentDepartment) return { assignedEmployees: [], availableEmployees: [] };
+
+    const assigned = state.employees.filter(emp =>
+      state.currentDepartment?.members?.some(member => member._id === emp._id)
+    );
+
+    const available = state.employees.filter(emp =>
+      !state.currentDepartment?.members?.some(member => member._id === emp._id)
+    );
+
+    return { assignedEmployees: assigned, availableEmployees: available };
+  }, [state.employees, state.currentDepartment]);
+
+  // Filter employees based on search
+  const filteredAssignedEmployees = useMemo(() => {
+    return assignedEmployees.filter(emp => {
+      const matchesSearch = emp.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+        emp.email.toLowerCase().includes(state.searchQuery.toLowerCase());
+      return matchesSearch;
+    });
+  }, [assignedEmployees, state.searchQuery]);
+
+  const filteredAvailableEmployees = useMemo(() => {
+    return availableEmployees.filter(emp => {
+      const matchesSearch = emp.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+        emp.email.toLowerCase().includes(state.searchQuery.toLowerCase());
+      return matchesSearch;
+    });
+  }, [availableEmployees, state.searchQuery]);
+
+  // Toast notification handler
+  const showToast = useCallback((message, type = 'info') => {
+    dispatch({ type: ACTION_TYPES.SHOW_TOAST, payload: { message, type } });
+  }, []);
+
+  // Load users from API
+  const loadUsers = useCallback(async () => {
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    try {
+      const userList = await Database.getUsers();
+      const allUsers = userList.data || [];
+      dispatch({ type: ACTION_TYPES.SET_USERS, payload: allUsers });
+      dispatch({ type: ACTION_TYPES.SET_MANAGERS, payload: allUsers.filter(u => u.role === 'manager' || u.role === 'admin') });
+      dispatch({ type: ACTION_TYPES.SET_EMPLOYEES, payload: allUsers.filter(u => u.isVerified && u.role === 'employee') });
+    } catch (error) {
+      console.error('Error loading users:', error);
+      showToast('Failed to load users', 'error');
+    } finally {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [showToast]);
+
+  // Load initial data
+  useEffect(() => {
+    loadUsers();
+    useDepartmentStore.getState().loadDepartments();
+  }, [loadUsers]);
+
+  // Initialize socket listeners
+  useEffect(() => {
+    const cleanup = useDepartmentStore.getState().initializeSocketListeners();
+    return cleanup;
+  }, []);
+
+  // Auto-select and persist department
+  useEffect(() => {
+    if (departments.length > 0 && !state.currentDepartment) {
+      // Priority 1: Check for last managed department (page-specific preference)
+      const managedDepartmentId = localStorage.getItem('managedDepartmentId');
+      let targetDept = managedDepartmentId ?
+        departments.find(dept => dept._id === managedDepartmentId) : null;
+
+      // Priority 2: If no managed preference, check global selection (if it's a specific valid department)
+      if (!targetDept) {
+        const globalDepartmentId = localStorage.getItem('selectedDepartmentId');
+        // Only use global selection if it's NOT 'all' and exists in our list
+        if (globalDepartmentId && globalDepartmentId !== 'all') {
+          targetDept = departments.find(dept => dept._id === globalDepartmentId);
+        }
+      }
+
+      // Priority 3: Default to first available department
+      const dept = targetDept || departments[0];
+      
+      if (dept) {
+        dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
+        setCurrentDepartment(dept);
+      }
+    }
+  }, [departments, state.currentDepartment, setCurrentDepartment]);
+
+  useEffect(() => {
+    if (state.currentDepartment) {
+      localStorage.setItem('managedDepartmentId', state.currentDepartment._id);
+    }
+  }, [state.currentDepartment]);
+
+  // Load stats (role-aware)
+  const loadStats = useCallback(async () => {
+    if (!user) return;
+
+    const role = (user.role || '').toLowerCase();
+    const isAdmin = role === 'admin';
+    const departmentId = isAdmin ? null : state.currentDepartment?._id;
+
+    if (!isAdmin && !departmentId) return;
+
+    try {
+      const statsResponse = await Database.getDepartmentStats(departmentId);
+      const statsData = statsResponse.data || statsResponse || {};
+
+      dispatch({
+        type: ACTION_TYPES.SET_STATS,
+        payload: {
+          totalDepartments: statsData.totalDepartments || 0,
+          totalMembers: statsData.totalMembers || 0,
+          totalManagers: statsData.totalManagers || 0,
+          avgMembersPerDept: statsData.avgMembersPerDept || 0
+        }
+      });
+    } catch (error) {
+      console.error('Error loading stats:', error);
+      showToast('Failed to load stats', 'error');
+    }
+  }, [user, state.currentDepartment, showToast]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  const stats = state.stats;
+
+  // Memoized event handlers
+  const handleSelectDepartment = useCallback((dept) => {
+    dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
+    setCurrentDepartment(dept);
+  }, [setCurrentDepartment]);
+
+  const handleSelectUser = useCallback((userId) => {
+    if (state.selectedUsers.includes(userId)) {
+      dispatch({ type: ACTION_TYPES.DESELECT_USER, payload: userId });
+    } else {
+      dispatch({ type: ACTION_TYPES.SELECT_USER, payload: userId });
+    }
+  }, [state.selectedUsers]);
+
+  const handleSelectAll = useCallback(() => {
+    const currentEmployees = state.activeTab === 'assigned' ? filteredAssignedEmployees : filteredAvailableEmployees;
+    if (state.selectedUsers.length === currentEmployees.length && currentEmployees.length > 0) {
+      dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+    } else {
+      dispatch({ type: ACTION_TYPES.SELECT_ALL_USERS, payload: currentEmployees.map(emp => emp._id) });
+    }
+  }, [state.activeTab, state.selectedUsers, filteredAssignedEmployees, filteredAvailableEmployees]);
+
+  const handleSearchChange = useCallback((query) => {
+    dispatch({ type: ACTION_TYPES.SET_SEARCH_QUERY, payload: query });
+  }, []);
+
+  const handleTabChange = useCallback((tab) => {
+    dispatch({ type: ACTION_TYPES.SET_ACTIVE_TAB, payload: tab });
+  }, []);
+
+  const handleCreateDepartment = useCallback(async (e) => {
+    e.preventDefault();
+    if (!state.formData.name.trim()) {
+      showToast('Department name is required', 'warning');
+      return;
+    }
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    try {
+      await createDepartment(state.formData.name, state.formData.description, state.formData.managers.length > 0 ? state.formData.managers : [user._id]);
+      dispatch({ type: ACTION_TYPES.CLOSE_CREATE_MODAL });
+      dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
+      showToast('Department created successfully!', 'success');
+    } catch (error) {
+      showToast('Failed to create department', 'error');
+    } finally {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [state.formData, user, createDepartment, showToast]);
+
+  const handleEditDepartment = useCallback(async (e) => {
+    e.preventDefault();
+    if (!state.formData.name.trim()) {
+      showToast('Department name is required', 'warning');
+      return;
+    }
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    try {
+      await updateDepartment(state.currentDepartment._id, state.formData);
+      dispatch({ type: ACTION_TYPES.CLOSE_EDIT_MODAL });
+      dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
+      showToast('Department updated successfully!', 'success');
+    } catch (error) {
+      showToast('Failed to update department', 'error');
+    } finally {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [state.formData, state.currentDepartment, updateDepartment, showToast]);
+
+  const handleAssignUsers = useCallback(async () => {
+    if (!state.selectedUsers.length || !state.currentDepartment) {
+      showToast('Please select at least one employee', 'warning');
+      return;
+    }
+
+    const employeesToCheck = state.employees.filter(emp => state.selectedUsers.includes(emp._id));
+    const employeesWithOtherAssignments = employeesToCheck.filter(emp =>
+      emp.department && emp.department.length > 0 &&
+      !emp.department.some(dept => (typeof dept === 'string' ? dept : dept._id || dept) === state.currentDepartment._id)
+    );
+
+    if (employeesWithOtherAssignments.length > 0) {
+      const employee = employeesWithOtherAssignments[0];
+      const otherDepartments = employee.department.filter(dept =>
+        (typeof dept === 'string' ? dept : dept._id || dept) !== state.currentDepartment._id
+      );
+      const otherDeptNames = departments
+        .filter(dept => otherDepartments.some(otherDept =>
+          (typeof otherDept === 'string' ? otherDept : otherDept._id || otherDept) === dept._id
+        ))
+        .map(dept => dept.name)
+        .join(', ');
+
+      dispatch({
+        type: ACTION_TYPES.SET_REASSIGN_DATA,
+        payload: {
+          employee,
+          otherDeptNames,
+          selectedDepartment: state.currentDepartment.name,
+          selectedUsers: state.selectedUsers,
+          currentDepartment: state.currentDepartment
+        }
+      });
+      dispatch({ type: ACTION_TYPES.OPEN_REASSIGN_MODAL });
+      return;
+    }
+
+    await performAssignment(state.selectedUsers, state.currentDepartment);
+  }, [state.selectedUsers, state.currentDepartment, state.employees, departments, showToast]);
+
+  const performAssignment = useCallback(async (userIds, department) => {
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    try {
+      // Optimistic update
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds, departmentId: department._id, assign: true }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds, assign: true }
+      });
+
+      // API calls
+      for (const userId of userIds) {
+        await assignUserToDepartment(userId, department._id);
+      }
+
+      dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+      const employeeNames = state.employees.filter(emp => userIds.includes(emp._id)).map(emp => emp.name).join(', ');
+      showToast(`Employees ${employeeNames} successfully assigned to ${department.name}.`, 'success');
+      
+      await loadUsers();
+      dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: department });
+      dispatch({ type: ACTION_TYPES.SET_ACTIVE_TAB, payload: 'assigned' });
+    } catch (error) {
+      showToast('Failed to assign users', 'error');
+      // Revert optimistic updates
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds, departmentId: department._id, assign: false }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds, departmentId: department._id, assign: false }
+      });
+    } finally {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [state.employees, assignUserToDepartment, loadUsers, showToast]);
+
+  const handleReassignConfirm = useCallback(async () => {
+    if (!state.reassignData) return;
+    dispatch({ type: ACTION_TYPES.CLOSE_REASSIGN_MODAL });
+    await performAssignment(state.reassignData.selectedUsers, state.reassignData.currentDepartment);
+    dispatch({ type: ACTION_TYPES.SET_REASSIGN_DATA, payload: null });
+  }, [state.reassignData, performAssignment]);
+
+  const handleReassignCancel = useCallback(() => {
+    dispatch({ type: ACTION_TYPES.CLOSE_REASSIGN_MODAL });
+    dispatch({ type: ACTION_TYPES.SET_REASSIGN_DATA, payload: null });
+    dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+  }, []);
+
+  const handleUnassignUsers = useCallback(async () => {
+    if (!state.selectedUsers.length || !state.currentDepartment) {
+      showToast('Please select at least one employee', 'warning');
+      return;
+    }
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    try {
+      // Optimistic update
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds: state.selectedUsers, departmentId: state.currentDepartment._id, assign: false }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds: state.selectedUsers, assign: false }
+      });
+
+      for (const userId of state.selectedUsers) {
+        await unassignUserFromDepartment(userId, state.currentDepartment._id);
+      }
+      dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+      showToast(`${state.selectedUsers.length} employee(s) unassigned successfully!`, 'success');
+      await loadUsers();
+    } catch (error) {
+      showToast('Failed to unassign users', 'error');
+      // Revert optimistic updates
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds: state.selectedUsers, departmentId: state.currentDepartment._id, assign: true }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds: state.selectedUsers, assign: true }
+      });
+    } finally {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [state.selectedUsers, state.currentDepartment, unassignUserFromDepartment, loadUsers, showToast]);
+
+  const handleOpenEditModal = useCallback((dept) => {
+    dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: dept });
+    setCurrentDepartment(dept);
+    dispatch({
+      type: ACTION_TYPES.UPDATE_FORM_DATA,
+      payload: {
+        name: dept.name,
+        description: dept.description || '',
+        managers: dept.managers || []
+      }
+    });
+    dispatch({ type: ACTION_TYPES.OPEN_EDIT_MODAL });
+  }, [setCurrentDepartment]);
+
+  // Handle creating a new custom role
+  const handleCreateRole = useCallback(async (roleData) => {
+    setCreateRoleLoading(true);
+    try {
+      await createRole(roleData);
+      setShowCreateRoleModal(false);
+      showToast(`Role "${roleData.name}" created successfully!`, 'success');
+    } catch (error) {
+      console.error('Error creating role:', error);
+      showToast(error.response?.data?.message || 'Failed to create role', 'error');
+    } finally {
+      setCreateRoleLoading(false);
+    }
+  }, [createRole, showToast]);
+
+  // Open Create Role modal from Add Member modal
+  const handleOpenCreateRoleModal = useCallback(() => {
+    setShowCreateRoleModal(true);
+  }, []);
+
+  const handleDeleteDepartment = useCallback(async () => {
+    if (!state.departmentToDelete) return;
+    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+    try {
+      await deleteDepartment(state.departmentToDelete._id);
+      dispatch({ type: ACTION_TYPES.CLOSE_DELETE_MODAL });
+      dispatch({ type: ACTION_TYPES.SET_DEPARTMENT_TO_DELETE, payload: null });
+      showToast('Department deleted successfully', 'success');
+    } catch (error) {
+      showToast('Failed to delete department', 'error');
+    } finally {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+    }
+  }, [state.departmentToDelete, deleteDepartment, showToast]);
+
+  const isAdmin = user && user.role === 'admin';
+  // Permission-driven, not role-name-driven — this page's own route guard
+  // (App.jsx) already lets Manager/Admin/HR through, but this internal gate
+  // used to hardcode admin/manager only, silently excluding HR (despite the
+  // route allowing it) and any custom role granted these permissions. Any
+  // one of this page's actual features (inviting, assigning members,
+  // approving join requests, creating departments) is enough to get in;
+  // each feature's own control is separately permission-gated underneath
+  // (e.g. the Invite button's existing <PermissionGate permission=
+  // "canInviteMembers">), so this is just the outer "does this person have
+  // ANY business being on this page at all" check.
+  const { canAny, loading: permissionsLoading } = usePermissions();
+  const canAccessTeamManagement = canAny(
+    'canInviteMembers', 'canAssignMembers', 'canApproveJoinRequests', 'canCreateDepartment'
+  );
+  // Delegated administration (brief 3.6): an Admin can grant a specific
+  // Manager (or custom role) the access_control.manage permission, which
+  // then unlocks this same Roles & Permissions tab for them — without
+  // making every Manager an implicit role-editor the way `isAdmin` alone
+  // would. Server-side, POST/PUT/DELETE /api/roles already accept this via
+  // requireAccessControlManage; this just lets a delegated Manager reach
+  // the same UI an Admin uses instead of hitting a 403 with no visible path.
+  const { canManageAccessControl } = useAccessControl();
+  const canManageRolesUI = isAdmin || canManageAccessControl;
+
+  if (departmentsLoading || state.isLoading || permissionsLoading) {
+    return <TeamManagementSkeleton />;
+  }
+
+  if (!canAccessTeamManagement) {
+    return (
+      <div className={`min-h-full ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
+          <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+            {/* ... */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={`${isDarkMode ? 'bg-gray-800/80 backdrop-blur-sm border-gray-700' : 'bg-white'} border-l-4 border-red-500 shadow-xl rounded-2xl p-8`}
+            >
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-red-100 rounded-full">
+                  <Shield className="text-red-600" size={28} />
+                </div>
+                <div>
+                  <p className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'} mb-2`}>Access Denied</p>
+                  <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'} leading-relaxed`}>
+                    Only administrators and managers can manage teams and departments. 
+                    Please contact your administrator for access.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`min-h-full ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
+        <main className="p-3 sm:p-4 md:p-6 lg:p-8 min-h-[calc(100vh-80px)]">
+          <ErrorBoundary>
+            {/* Header Section */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 md:mb-8"
+            >
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h1 className={`text-2xl sm:text-3xl md:text-4xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'} flex items-center gap-2 sm:gap-3 mb-2`}>
+                    <div className="p-1.5 sm:p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg sm:rounded-xl shadow-lg">
+                      <Building2 className="text-white" size={24} />
+                    </div>
+                    <span>Team Management</span>
+                  </h1>
+                  <p className={`text-sm sm:text-base ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} ml-10 sm:ml-11`}>Manage teams and departments</p>
+                </div>
+
+                {/* Roles, permissions, and per-user access now live in the
+                    centralized Access & Permissions module, not a tab here. */}
+                {canManageRolesUI && (
+                  <Link
+                    to="/access-control"
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all w-fit shadow-md border ${
+                      isDarkMode
+                        ? 'bg-gray-800/80 border-gray-700 text-gray-200 hover:bg-gray-700'
+                        : 'bg-white border-gray-100 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Shield size={18} className="text-purple-500" />
+                    Manage Roles & Permissions
+                  </Link>
+                )}
+
+                {/* Quick Stats - Hidden on mobile, visible on tablet+ */}
+                <div className="hidden md:block">
+                  <TeamStats stats={stats} isLoading={state.isLoading} />
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Show Stats on mobile in simplified form */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="md:hidden mb-6"
+            >
+              <TeamStats stats={stats} isLoading={state.isLoading} />
+            </motion.div>
+
+            {/* Departments & team assignment content */}
+            <AnimatePresence mode="wait">
+              {(
+                <motion.div
+                  key="departments"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.2 }}
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6"
+                >
+                  {/* Left Column - Department List */}
+                  <div className="md:col-span-1">
+                    <DepartmentList
+                      departments={departments}
+                      currentDepartment={state.currentDepartment}
+                      isLoading={state.isLoading}
+                      onSelectDepartment={handleSelectDepartment}
+                      onCreateClick={() => dispatch({ type: ACTION_TYPES.OPEN_CREATE_MODAL })}
+                      onEditClick={handleOpenEditModal}
+                      onDeleteClick={(dept) => {
+                        dispatch({ type: ACTION_TYPES.SET_DEPARTMENT_TO_DELETE, payload: dept });
+                        dispatch({ type: ACTION_TYPES.OPEN_DELETE_MODAL });
+                      }}
+                      isAdmin={isAdmin}
+                      isManager={user?.role === 'manager'}
+                    />
+                  </div>
+
+                  {/* Right Column - Assign Members */}
+                  <div className="md:col-span-1 lg:col-span-2">
+                    <EmployeeAssignment
+                    currentDepartment={state.currentDepartment}
+                    assignedEmployees={filteredAssignedEmployees}
+                    availableEmployees={filteredAvailableEmployees}
+                    selectedUsers={state.selectedUsers}
+                    searchQuery={state.searchQuery}
+                    activeTab={state.activeTab}
+                    isLoading={state.isLoading}
+                    isAdmin={isAdmin}
+                    departments={departments}
+                    currentPage={state.currentPage}
+                    itemsPerPage={state.itemsPerPage}
+                    onSelectUser={handleSelectUser}
+                    onSelectAll={handleSelectAll}
+                    onSearchChange={handleSearchChange}
+                    onTabChange={handleTabChange}
+                    onAddMemberClick={() => setShowInviteModal(true)}
+                    onManageInvitationsClick={() => setShowManageInvitations(true)}
+                    onAssignClick={handleAssignUsers}
+                    onUnassignClick={handleUnassignUsers}
+                    onClearSelection={() => dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS })}
+                    onPageChange={(page) => dispatch({ type: ACTION_TYPES.SET_CURRENT_PAGE, payload: page })}
+                    onItemsPerPageChange={(count) => dispatch({ type: ACTION_TYPES.SET_ITEMS_PER_PAGE, payload: count })}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </ErrorBoundary>
+      </main>
+
+      {/* Lazy-loaded Modals */}
+      <Suspense fallback={null}>
+        <CreateDepartmentModal
+          isOpen={state.showCreateModal}
+          isLoading={state.isLoading}
+          formData={state.formData}
+            managers={state.managers}
+            departments={departments}
+          onFormDataChange={(data) => dispatch({ type: ACTION_TYPES.UPDATE_FORM_DATA, payload: data })}
+          onSubmit={handleCreateDepartment}
+          onClose={() => dispatch({ type: ACTION_TYPES.CLOSE_CREATE_MODAL })}
+        />
+
+        <EditDepartmentModal
+          isOpen={state.showEditModal}
+          onClose={() => dispatch({ type: ACTION_TYPES.CLOSE_EDIT_MODAL })}
+          department={state.currentDepartment}
+          onDepartmentUpdated={async (updatedData) => {
+            dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
+            try {
+              await updateDepartment(state.currentDepartment._id, updatedData);
+              dispatch({ type: ACTION_TYPES.CLOSE_EDIT_MODAL });
+              dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
+              showToast('Department updated successfully!', 'success');
+            } catch (error) {
+              showToast('Failed to update department', 'error');
+            } finally {
+              dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+            }
+          }}
+          managers={state.managers}
+          isLoading={state.isLoading}
+        />
+
+        <InviteMemberModal
+          isOpen={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
+          workspaceId={currentWorkspace?._id}
+          departmentOptions={departments}
+          roleOptions={activeRoles}
+          defaultDepartmentId={state.currentDepartment?._id}
+          onInvited={() => loadUsers()}
+          onBulkInvite={() => setShowBulkInvite(true)}
+        />
+
+        <ManageInvitationsModal
+          isOpen={showManageInvitations}
+          onClose={() => setShowManageInvitations(false)}
+          workspaceId={currentWorkspace?._id}
+        />
+
+        <BulkInviteModal
+          isOpen={showBulkInvite}
+          onClose={() => setShowBulkInvite(false)}
+          workspaceId={currentWorkspace?._id}
+          departmentOptions={departments}
+          roleOptions={activeRoles}
+          defaultDepartmentId={state.currentDepartment?._id}
+          onInvited={() => loadUsers()}
+        />
+
+        <CreateRoleModal
+          isOpen={showCreateRoleModal && customRolesAllowed}
+          isLoading={createRoleLoading}
+          onSubmit={handleCreateRole}
+          onClose={() => setShowCreateRoleModal(false)}
+          existingRoleNames={roles.map(r => r.name)}
+        />
+
+        <ReassignModal
+          isOpen={state.showReassignModal}
+          isLoading={state.isLoading}
+          reassignData={state.reassignData}
+          onConfirm={handleReassignConfirm}
+          onCancel={handleReassignCancel}
+        />
+
+        <DeleteConfirmationModal
+          isOpen={state.showDeleteModal}
+          isLoading={state.isLoading}
+          department={state.departmentToDelete}
+          onConfirm={handleDeleteDepartment}
+          onCancel={() => dispatch({ type: ACTION_TYPES.CLOSE_DELETE_MODAL })}
+        />
+      </Suspense>
+
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-[100] space-y-2">
+        <AnimatePresence>
+          {state.toast && (
+            <Toast
+              message={state.toast.message}
+              type={state.toast.type}
+              onClose={() => dispatch({ type: ACTION_TYPES.HIDE_TOAST })}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
+
+export default TeamManagement;

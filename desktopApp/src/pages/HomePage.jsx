@@ -1,0 +1,986 @@
+import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, useLayoutEffect } from 'react';
+import { useNavigationType, useLocation, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Plus, Eye, EyeOff, Building2, FolderKanban,
+  TrendingUp, Users, AlertCircle, Search, Filter,
+  Grid, List as ListIcon, ChevronDown, Sparkles, User, Shield
+} from 'lucide-react';
+import { toast } from 'react-toastify';
+import AuthContext from '../context/AuthContext';
+import Database from '../services/database';
+import ProjectCard from '../components/ProjectCard';
+import HomePageSkeleton from '../components/LoadingSkeleton';
+import NeonSparkText from '../components/NeonSparkText';
+import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import SortableDepartment, { DepartmentDragHandle } from '../components/SortableDepartment';
+import ProjectSearchInput from '../components/ProjectSearchInput';
+import useProjectSearch from '../hooks/useProjectSearch';
+import useWorkspacePreferences from '../hooks/useWorkspacePreferences';
+import WorkspaceContext from '../context/WorkspaceContext';
+import { PROJECT_SORT_OPTIONS, orderDepartments, promoteDepartments, sortProjects } from '../../../shared/projectView.mjs';
+import useProjectStore from '../store/projectStore';
+import useProjectSelection from '../hooks/useProjectSelection';
+import Avatar from '../components/Avatar';
+import { lazy, Suspense } from 'react';
+import AddProjectModal from '../components/AddProjectModal';
+import EditProjectModal from '../components/EditProjectModal';
+import ViewProjectModal from '../components/ViewProjectModal';
+import DeletePopup from '../components/ui/DeletePopup';
+import BulkDeleteModal from '../components/ui/BulkDeleteModal';
+import BulkActionToolbar from '../components/BulkActionToolbar';
+import WelcomeHeader from '../components/WelcomeHeader';
+import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
+
+// Memoized modal loading fallback
+const ModalLoadingFallback = memo(() => (
+  <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+    <div className="bg-white rounded-xl p-6 shadow-xl">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+      <p className="text-gray-600 mt-3 text-sm">Loading...</p>
+    </div>
+  </div>
+));
+ModalLoadingFallback.displayName = 'ModalLoadingFallback';
+
+const HomePage = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Store state
+  const { 
+    departments, 
+    membersWithAssignments, 
+    projectsWithMemberAssignments, 
+    loading, 
+    error,
+    fetchDepartments,
+    projectAdded,
+    projectUpdated,
+    projectDeleted,
+    projectsBulkDeleted,
+    projectsBulkRestored
+  } = useProjectStore(); // Using the new store
+
+  const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const { preferences, updatePreferences, error: preferenceError, retryPreferences, scopeKey } = useWorkspacePreferences();
+  const { query: searchQuery, result: searchResult, loading: searchLoading, error: searchError, search, invalidate } = useProjectSearch(departments, scopeKey);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const navType = useNavigationType();
+  // Removed local useState for departments, loading, error, members assignments
+
+  // Selection hook for multi-delete
+  const {
+    selectedProjectIds,
+    selectionDepartmentId,
+    isSelectionMode,
+    selectedCount,
+    toggleProject,
+    selectAll,
+    clearSelection,
+    isSelected
+  } = useProjectSelection();
+  
+  // Scroll Restoration Logic
+  useLayoutEffect(() => {
+    if (!loading) {
+      const scrollY = sessionStorage.getItem('home_scroll_y');
+      const scrollContainer = document.getElementById('main-scroll-container');
+
+      if (scrollContainer) {
+        if (navType === "POP" && scrollY) {
+          scrollContainer.scrollTo({ top: Number(scrollY), behavior: "auto" });
+          sessionStorage.removeItem('home_scroll_y');
+        } else if (navType !== "POP") {
+          scrollContainer.scrollTo({ top: 0, behavior: "auto" });
+          sessionStorage.removeItem('home_scroll_y');
+        }
+      }
+    }
+  }, [loading, departments.length, navType]);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedDepartment, setSelectedDepartment] = useState(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [expandedDepartments, setExpandedDepartments] = useState({});
+  const [viewMode, setViewMode] = useState('grid');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [projectSort, setProjectSort] = useState(preferences?.projectSort || 'default');
+  const [selectedMembers, setSelectedMembers] = useState({});
+
+  // Synchronize local sort state whenever preferences load or change from remote/cache
+  useEffect(() => {
+    if (preferences?.projectSort && preferences.projectSort !== projectSort) {
+      setProjectSort(preferences.projectSort);
+    }
+  }, [preferences?.projectSort]);
+
+  const handleSortChange = useCallback((newSort) => {
+    setProjectSort(newSort); // Instant 0ms update in UI
+    updatePreferences({ projectSort: newSort }); // Asynchronously sync to preferences
+  }, [updatePreferences]);
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [memberDropdownOpen, setMemberDropdownOpen] = useState({});
+  const [memberListExpanded, setMemberListExpanded] = useState({});
+  const [showDeletePopup, setShowDeletePopup] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Bulk delete state
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deletingProjectIds, setDeletingProjectIds] = useState(new Set());
+  
+  const statusDropdownRef = useRef(null);
+  const memberDropdownRefs = useRef({});
+  const memberListRefs = useRef({});
+
+  // Fetch departments on mount using store
+  // Note: Department visibility is controlled by the backend based on user role:
+  // - Admin users see ALL departments
+  // - Non-admin users see ONLY departments they're assigned to
+  useEffect(() => {
+    if (currentWorkspace?._id) fetchDepartments();
+  }, [fetchDepartments, currentWorkspace?._id]);
+
+  // Real-time refresh when access permissions are updated by admin
+  useEffect(() => {
+    const handleAccessUpdated = () => {
+      fetchDepartments(true);
+    };
+    
+    // Real-time refresh when a board/project is updated
+    const handleBoardUpdated = (e) => {
+      if (e.detail && e.detail.boardId && e.detail.updates) {
+        projectUpdated({ _id: e.detail.boardId, ...e.detail.updates });
+      }
+    };
+
+    // Real-time refresh when a task/subtask/nano-subtask assignee changes
+    // (employee gains or loses project access via assignment)
+    const handleProjectAccessChanged = () => {
+      fetchDepartments(true);
+    };
+
+    window.addEventListener('socket-user-access-updated', handleAccessUpdated);
+    window.addEventListener('socket-board-updated', handleBoardUpdated);
+    window.addEventListener('socket-user-project-access-changed', handleProjectAccessChanged);
+    
+    return () => {
+      window.removeEventListener('socket-user-access-updated', handleAccessUpdated);
+      window.removeEventListener('socket-board-updated', handleBoardUpdated);
+      window.removeEventListener('socket-user-project-access-changed', handleProjectAccessChanged);
+    };
+  }, [fetchDepartments, projectUpdated]);
+
+  // Handle outside click to close dropdown - optimized with useCallback
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
+        setStatusDropdownOpen(false);
+      }
+
+      // Close member dropdowns when clicking outside
+      Object.keys(memberDropdownRefs.current).forEach(deptId => {
+        if (memberDropdownRefs.current[deptId] && !memberDropdownRefs.current[deptId].contains(event.target)) {
+          setMemberDropdownOpen(prev => ({ ...prev, [deptId]: false }));
+          setMemberListExpanded(prev => ({ ...prev, [deptId]: false }));
+        }
+      });
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Removed local fetchDepartments function as it is now in the store
+
+  const handleAddProject = useCallback((departmentId) => {
+    setSelectedDepartment(departmentId);
+    setModalOpen(true);
+  }, []);
+
+  // Handle URL query parameters to open specific modals (like from WorkspaceOnboardingChecklist)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('openModal') === 'add-project') {
+      handleAddProject(null);
+      // Clean up the URL without triggering a full reload
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search, location.pathname, navigate, handleAddProject]);
+
+  // Use store action for optimistic update
+  const handleProjectAdded = useCallback((newProject, tempId = null, revert = false, targetDepartmentId = null) => {
+    if (revert) {
+        // Handle revert if needed - for now fetchDepartments is safest on error or specific rollback logic
+        // But since we are using store, we can just fetch fresh.
+        fetchDepartments(true);
+    } else if (newProject) {
+        // Optimistic add or replace
+        const deptId = targetDepartmentId || newProject.department?._id || newProject.department || selectedDepartment;
+        projectAdded(deptId, newProject, tempId);
+    }
+  }, [selectedDepartment, projectAdded, fetchDepartments]);
+
+  const handleEditProject = useCallback((project, departmentId) => {
+    setSelectedProject({ ...project, departmentId });
+    setEditModalOpen(true);
+  }, []);
+
+  const handleProjectUpdated = useCallback((updatedProject) => {
+    projectUpdated(updatedProject);
+  }, [projectUpdated]);
+
+  const handleDeleteProject = useCallback((project, departmentId) => {
+    setProjectToDelete({ project, departmentId });
+    setShowDeletePopup(true);
+  }, []);
+
+  const confirmDeleteProject = useCallback(async () => {
+    if (!projectToDelete) return;
+    const { project, departmentId } = projectToDelete;
+
+    setIsDeleting(true);
+    try {
+        // Optimistic delete
+        projectDeleted(departmentId, project._id);
+        await Database.deleteProject(project._id);
+        setShowDeletePopup(false);
+        setProjectToDelete(null);
+    } catch (error) {
+        console.error('Error deleting project:', error);
+        alert('Failed to delete project. Please try again.');
+        // Revert by fetching
+        fetchDepartments(true);
+        setShowDeletePopup(false);
+    } finally {
+        setIsDeleting(false);
+    }
+  }, [projectToDelete, projectDeleted, fetchDepartments]);
+
+  const handleViewProject = useCallback((projectId) => {
+    setSelectedProjectId(projectId);
+    setViewModalOpen(true);
+  }, []);
+
+  // ====== BULK DELETE HANDLERS ======
+
+  // Get projects data for the selected IDs (for modal display and undo snapshot)
+  const getSelectedProjectsData = useCallback(() => {
+    if (!selectionDepartmentId) return [];
+    const dept = departments.find(d => d._id === selectionDepartmentId);
+    if (!dept) return [];
+    const idSet = new Set(selectedProjectIds);
+    return (dept.projects || []).filter(p => idSet.has(p._id));
+  }, [departments, selectionDepartmentId, selectedProjectIds]);
+
+  const handleBulkDeleteClick = useCallback(() => {
+    if (selectedCount === 0) return;
+    setShowBulkDeleteModal(true);
+  }, [selectedCount]);
+
+  const confirmBulkDelete = useCallback(async () => {
+    if (selectedProjectIds.length === 0 || !selectionDepartmentId) return;
+
+    const projectsSnapshot = getSelectedProjectsData();
+    const idsToDelete = [...selectedProjectIds];
+    const deptId = selectionDepartmentId;
+
+    setIsBulkDeleting(true);
+    setDeletingProjectIds(new Set(idsToDelete));
+
+    // Optimistic UI: remove cards immediately
+    projectsBulkDeleted(deptId, idsToDelete);
+    clearSelection();
+    setShowBulkDeleteModal(false);
+
+    try {
+      const result = await Database.bulkDeleteProjects(idsToDelete);
+
+      setDeletingProjectIds(new Set());
+      setIsBulkDeleting(false);
+
+      // Success toast with undo
+      const successMsg = result.message || `${result.total} project(s) deleted successfully`;
+      
+      // Track if undo was already performed
+      let undoPerformed = false;
+
+      toast.success(
+        ({ closeToast }) => (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm">{successMsg}</span>
+            <button
+              onClick={async () => {
+                if (undoPerformed) return;
+                undoPerformed = true;
+                try {
+                  await Database.undoBulkDeleteProjects(idsToDelete);
+                  projectsBulkRestored(deptId, projectsSnapshot);
+                  toast.info(`${projectsSnapshot.length} project(s) restored`, { autoClose: 3000 });
+                } catch (err) {
+                  console.error('Undo failed:', err);
+                  toast.error('Failed to undo. Projects may have been permanently deleted.');
+                  fetchDepartments(true);
+                }
+                closeToast();
+              }}
+              className="px-3 py-1 text-xs font-semibold bg-white text-green-700 rounded-lg hover:bg-green-50 transition-all border border-green-200 whitespace-nowrap flex-shrink-0"
+            >
+              Undo
+            </button>
+          </div>
+        ),
+        { autoClose: 8000, closeOnClick: false }
+      );
+
+      // Show partial failure info
+      if (result.failed && result.failed.length > 0) {
+        toast.warn(
+          `${result.deleted.length} deleted successfully, ${result.failed.length} not found.`,
+          { autoClose: 5000 }
+        );
+      }
+    } catch (error) {
+      console.error('Bulk delete failed:', error);
+      // Rollback: restore all projects
+      projectsBulkRestored(deptId, projectsSnapshot);
+      setDeletingProjectIds(new Set());
+      setIsBulkDeleting(false);
+      toast.error(error.message || 'Failed to delete projects. Please try again.');
+    }
+  }, [
+    selectedProjectIds, selectionDepartmentId, getSelectedProjectsData,
+    projectsBulkDeleted, projectsBulkRestored, clearSelection, fetchDepartments
+  ]);
+
+  const toggleViewAllProjects = useCallback((departmentId, total) => {
+    setExpandedDepartments(prev => ({
+      ...prev,
+      [departmentId]: (prev[departmentId] || 6) >= total ? 6 : Math.min((prev[departmentId] || 6) + 24, total)
+    }));
+  }, []);
+
+  const orderedDepartments = useMemo(() => orderDepartments(departments, preferences.departmentOrder), [departments, preferences.departmentOrder]);
+  const sortedProjects = useMemo(() => Object.fromEntries(departments.map(department => [department._id, sortProjects(department.projects || [], projectSort)])), [departments, projectSort]);
+  const filteredProjectsByDepartment = useMemo(() => {
+    const result = {};
+    for (const department of departments) {
+      const selectedMember = selectedMembers[department._id];
+      const memberIds = selectedMember && selectedMember !== 'all'
+        ? new Set((projectsWithMemberAssignments[department._id]?.[selectedMember] || []).map(project => project._id)) : null;
+      const matchingIds = searchResult ? new Set(searchResult.projects[department._id] || []) : null;
+      result[department._id] = (sortedProjects[department._id] || []).filter(project =>
+        (!matchingIds || matchingIds.has(project._id)) &&
+        (filterStatus === 'all' || project.status?.toLowerCase() === filterStatus.toLowerCase()) &&
+        (!memberIds || memberIds.has(project._id))
+      );
+    }
+    return result;
+  }, [departments, sortedProjects, searchResult, filterStatus, selectedMembers, projectsWithMemberAssignments]);
+  const visibleDepartments = useMemo(() => searchQuery && searchResult
+    ? promoteDepartments(orderedDepartments, new Set(searchResult.matchingDepartments))
+    : orderedDepartments, [orderedDepartments, searchQuery, searchResult]);
+  const filterProjects = useCallback((_projects, departmentId) => filteredProjectsByDepartment[departmentId] || [], [filteredProjectsByDepartment]);
+  const matchingProjectCount = useMemo(() => Object.values(filteredProjectsByDepartment).reduce((total, projects) => total + projects.length, 0), [filteredProjectsByDepartment]);
+  const handleDepartmentDragEnd = useCallback(({ active, over }) => {
+    if (searchQuery || !over || active.id === over.id) return;
+    const ids = orderedDepartments.map(department => department._id);
+    const from = ids.indexOf(active.id), to = ids.indexOf(over.id);
+    if (from >= 0 && to >= 0) updatePreferences({ departmentOrder: arrayMove(ids, from, to) });
+  }, [searchQuery, orderedDepartments, updatePreferences]);
+  useEffect(() => {
+    setExpandedDepartments({});
+    setSelectedMembers({});
+    clearSelection();
+  }, [scopeKey, clearSelection]);
+
+  const canAddProject = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
+  const canSelectProjects = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
+
+  const handleSelectAllForDepartment = useCallback(() => {
+    if (!selectionDepartmentId) return;
+    const dept = departments.find(d => d._id === selectionDepartmentId);
+    if (!dept) return;
+    const filteredProjects = filterProjects(dept.projects, selectionDepartmentId);
+    const allIds = filteredProjects.map(p => p._id);
+    selectAll(allIds, selectionDepartmentId);
+  }, [selectionDepartmentId, departments, filterProjects, selectAll]);
+
+  // Get the total filterable projects count for the active selection department
+  const selectionDepartmentTotalProjects = useMemo(() => {
+    if (!selectionDepartmentId) return 0;
+    const dept = departments.find(d => d._id === selectionDepartmentId);
+    if (!dept) return 0;
+    return filterProjects(dept.projects, selectionDepartmentId).length;
+  }, [selectionDepartmentId, departments, filterProjects]);
+
+  // Get managers for the selected department (for Add/Edit Project modals)
+  const selectedDepartmentManagers = useMemo(() => {
+    if (!selectedDepartment) return [];
+    const dept = departments.find(d => d._id === selectedDepartment);
+    return dept?.managers || [];
+  }, [selectedDepartment, departments]);
+
+  // Get managers for the project being edited (based on project's departmentId)
+  const editProjectManagers = useMemo(() => {
+    if (!selectedProject?.departmentId) return [];
+    const dept = departments.find(d => d._id === selectedProject.departmentId);
+    return dept?.managers || [];
+  }, [selectedProject?.departmentId, departments]);
+
+  const getStatusLabel = useCallback((status) => {
+    const statusMap = {
+      'all': 'All Status',
+      'planning': 'Planning',
+      'in-progress': 'In Progress',
+      'completed': 'Completed',
+      'on-hold': 'On Hold'
+    };
+    return statusMap[status] || 'All Status';
+  }, []);
+
+  const handleStatusSelect = useCallback((status) => {
+    setFilterStatus(status);
+    setStatusDropdownOpen(false);
+  }, []);
+  
+  // ref for the hand emoji to trigger animations
+  const handRef = useRef(null);
+
+  const triggerShake = useCallback((ms) => {
+    const el = handRef.current;
+    if (!el) return;
+    // restart animation by removing and re-adding class
+    el.classList.remove('hand-shake');
+    // ensure duration is updated
+    el.style.animationDuration = `${ms}ms`;
+    // force reflow
+    // eslint-disable-next-line no-unused-expressions
+    el.offsetWidth;
+    el.classList.add('hand-shake');
+    // clear after duration
+    clearTimeout(el._shakeTimeout);
+    el._shakeTimeout = setTimeout(() => {
+      el.classList.remove('hand-shake');
+      el.style.animationDuration = '';
+    }, ms);
+  }, []);
+
+  // On mount: shake for 5 seconds
+  useEffect(() => {
+    // small delay so entrance animations don't conflict
+    const t = setTimeout(() => triggerShake(5000), 300);
+    return () => clearTimeout(t);
+  }, [triggerShake]);
+
+  if (loading) {
+    return <HomePageSkeleton />;
+  }
+
+    // Simplified error handling - rely on store state or toast if needed
+    // But currently using error state from store if we wanted to show full page error
+    // check if we have data to show even if error
+    
+    // Only show full page error if we have NO data.
+    if (error && departments.length === 0) {
+       return (
+         <div className="flex min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+            <div className="flex-1">
+               <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+                  <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
+                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <AlertCircle className="text-red-600" size={32} />
+                     </div>
+                     <h3 className="text-xl font-bold text-gray-900 text-center mb-2">Something went wrong</h3>
+                     <p className="text-gray-600 text-center mb-6">{error}</p>
+                     <button
+                        onClick={() => fetchDepartments(true)}
+                        className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-medium hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg"
+                     >
+                        Try Again
+                     </button>
+                  </div>
+               </div>
+            </div>
+         </div>
+       );
+    }
+
+  return (
+    <div className="min-h-full bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+      <main className="p-6 space-y-6">
+          {/* Welcome Header */}
+          <WelcomeHeader user={user} />
+
+          <WorkspaceSetupBanner variant="urgent" />
+
+          {/* Controls Bar */}
+          <div className="bg-white rounded-2xl shadow-lg p-4 border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              {/* Search */}
+              <div className="flex-1 w-full sm:w-auto min-w-[200px] sm:min-w-[300px]">
+                <ProjectSearchInput key={scopeKey} onSearch={search} onInvalidate={invalidate} />
+              </div>
+
+              {/* Filters and View Mode */}
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Status Filter */}
+                <div className="relative" ref={statusDropdownRef}>
+                  <div className="flex items-center justify-between pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl transition-all hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div 
+                      className="flex items-center gap-2 cursor-pointer"
+                      onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                    >
+                      <Filter className="text-gray-400" size={18} />
+                      <span className="text-gray-700 font-medium">{getStatusLabel(filterStatus)}</span>
+                    </div>
+                    <ChevronDown
+                      className={`text-gray-400 transition-transform duration-200 cursor-pointer ${statusDropdownOpen ? 'rotate-180' : ''}`}
+                      size={18}
+                      onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                    />
+                  </div>
+                  <AnimatePresence>
+                    {statusDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
+                      >
+                        <div className="py-1">
+                          {[
+                            { value: 'all', label: 'All Status' },
+                            { value: 'planning', label: 'Planning' },
+                            { value: 'in-progress', label: 'In Progress' },
+                            { value: 'completed', label: 'Completed' },
+                            { value: 'on-hold', label: 'On Hold' }
+                          ].map((option) => (
+                            <div
+                              key={option.value}
+                              className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 ${
+                                filterStatus === option.value ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                              }`}
+                              onClick={() => handleStatusSelect(option.value)}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium">{option.label}</span>
+                                {filterStatus === option.value && (
+                                  <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Sort By */}
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <span>Sort by</span>
+                  <select aria-label="Sort projects" value={projectSort}
+                    onChange={event => handleSortChange(event.target.value)}
+                    className="py-3 px-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                    {PROJECT_SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+
+                {/* View Mode Toggle */}
+                <div className="flex bg-gray-50 rounded-xl p-1 border border-gray-200">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setViewMode('grid')}
+                    className={`p-2 rounded-lg transition-all ${
+                      viewMode === 'grid'
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Grid size={20} />
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setViewMode('list')}
+                    className={`p-2 rounded-lg transition-all ${
+                      viewMode === 'list'
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <ListIcon size={20} />
+                  </motion.button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {preferenceError && <p role="status" className="mb-4 text-sm text-amber-700">{preferenceError} <button type="button" onClick={retryPreferences} className="underline">Retry</button></p>}
+          {searchLoading && <p role="status" className="mb-4 text-sm text-gray-500">Searching projects...</p>}
+          {searchError && <p role="alert" className="mb-4 text-sm text-amber-700">{searchError} <button type="button" onClick={() => search(searchQuery)} className="underline">Retry</button></p>}
+          {searchQuery && searchResult && !searchLoading && matchingProjectCount === 0 && <p role="status" className="mb-4 text-sm text-gray-600">No projects found matching your search.</p>}
+          {/* Departments Section */}
+          {departments.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow-lg p-12 text-center border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Building2 size={40} className="text-blue-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">No departments found</h3>
+              <p className="text-gray-600 mb-6">Contact your administrator to create departments and get started.</p>
+            </div>
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDepartmentDragEnd}>
+            <SortableContext items={visibleDepartments.map(department => department._id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-6">
+              {visibleDepartments.map((department) => {
+                const filteredProjects = filterProjects(department.projects, department._id);
+                const visibleCount = expandedDepartments[department._id] || 6;
+                const isExpanded = visibleCount >= filteredProjects.length;
+                const displayedProjects = filteredProjects.slice(0, visibleCount);
+                const hasMore = filteredProjects.length > 6;
+
+                // Get members assigned to this department
+                const departmentMembers = department.members || [];
+
+                return (
+                  <SortableDepartment
+                    key={department._id}
+                    id={department._id}
+                    name={department.name}
+                    disabled={!!searchQuery}
+                    className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden"
+                    style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 480px' }}
+                  >
+                    {/* Department Header */}
+                    <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-6 border-b border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <DepartmentDragHandle />
+                          <motion.div
+                            whileHover={{ rotate: 360 }}
+                            transition={{ duration: 0.5 }}
+                            className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg"
+                          >
+                            <Building2 className="text-white" size={24} />
+                          </motion.div>
+                          <div>
+                            <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                              {department.name}
+                              <span className="text-sm font-normal text-gray-500">
+                                ({filteredProjects.length} {filteredProjects.length === 1 ? 'project' : 'projects'})
+                              </span>
+                            </h2>
+                            {department.description && (
+                              <p className="text-gray-600 mt-1">{department.description}</p>
+                            )}
+                          </div>
+                          {/* Manager Avatars */}
+                          {department.managers && department.managers.length > 0 && (
+                            <div className="flex items-center gap-2 ml-4">
+                              <Shield size={20} className="text-gray-500" />
+                              <div className="flex -space-x-2">
+                                {department.managers.slice(0, 3).map((manager, index) => (
+                                  <Avatar
+                                    key={manager._id}
+                                    src={manager.avatar}
+                                    name={manager.name}
+                                    size="sm"
+                                    showBadge={false}
+                                    className=""
+                                  />
+                                ))}
+                                {department.managers.length > 3 && (
+                                  <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                    <span className="text-xs font-semibold text-white">
+                                      +{department.managers.length - 3}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* Member Avatars */}
+                          {(membersWithAssignments[department._id] || []).length > 0 && (
+                            <div 
+                              className="relative"
+                              ref={el => memberDropdownRefs.current[department._id] = el}
+                            >
+                              <div
+                                className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-all"
+                                onClick={() => setMemberListExpanded(prev => ({ ...prev, [department._id]: !prev[department._id] }))}
+                              >
+                                <div className="flex -space-x-2">
+                                  {(membersWithAssignments[department._id] || []).slice(0, 5).map((member, index) => (
+                                    <Avatar
+                                      key={member._id}
+                                      src={member.avatar}
+                                      name={member.name}
+                                      size="sm"
+                                      showBadge={false}
+                                      className=""
+                                    />
+                                  ))}
+                                  {(membersWithAssignments[department._id] || []).length > 5 && (
+                                    <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                      <span className="text-xs font-semibold text-white">
+                                        +{(membersWithAssignments[department._id] || []).length - 5}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                <ChevronDown
+                                  className={`text-gray-400 transition-transform duration-200 ${memberListExpanded[department._id] ? 'rotate-180' : ''}`}
+                                  size={16}
+                                />
+                              </div>
+                              {/* Expandable Member List */}
+                              <AnimatePresence>
+                                {memberListExpanded[department._id] && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden min-w-[200px]"
+                                  >
+                                    <div className="py-2">
+                                      <div
+                                        className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 flex items-center gap-3 ${
+                                          (selectedMembers[department._id] || 'all') === 'all' ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                                        }`}
+                                        onClick={() => {
+                                          setSelectedMembers(prev => ({ ...prev, [department._id]: 'all' }));
+                                          setMemberListExpanded(prev => ({ ...prev, [department._id]: false }));
+                                        }}
+                                      >
+                                        <Users size={16} />
+                                        <span className="font-medium">All Members</span>
+                                        {(selectedMembers[department._id] || 'all') === 'all' && (
+                                          <div className="w-2 h-2 bg-blue-600 rounded-full ml-auto"></div>
+                                        )}
+                                      </div>
+                                      {(membersWithAssignments[department._id] || []).map((member) => (
+                                        <div
+                                          key={member._id}
+                                          className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 flex items-center gap-3 ${
+                                            selectedMembers[department._id] === member._id ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                                          }`}
+                                          onClick={() => {
+                                            setSelectedMembers(prev => ({ ...prev, [department._id]: member._id }));
+                                            setMemberListExpanded(prev => ({ ...prev, [department._id]: false }));
+                                          }}
+                                        >
+                                          <Avatar
+                                            src={member.avatar}
+                                            name={member.name}
+                                            size="xs"
+                                            showBadge={false}
+                                          />
+                                          <span className="font-medium">{member.name}</span>
+                                          {selectedMembers[department._id] === member._id && (
+                                            <div className="w-2 h-2 bg-blue-600 rounded-full ml-auto"></div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
+                          {canAddProject && (
+                            <motion.button
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => handleAddProject(department._id)}
+                              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-medium hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl"
+                            >
+                              <Plus size={20} />
+                              <span>Add Project</span>
+                            </motion.button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Projects Grid/List */}
+                    <div className="p-6">
+                      {filteredProjects.length > 0 ? (
+                        <>
+                          <AnimatePresence mode="wait">
+                            <motion.div
+                              key={viewMode}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              className={
+                                viewMode === 'grid'
+                                  ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+                                  : 'space-y-4'
+                              }
+                            >
+                              {displayedProjects.map((project, index) => (
+                                <div
+                                  key={project._id}
+                                  className="animate-in fade-in slide-in-from-bottom-4 duration-300"
+                                  style={{ animationDelay: `${Math.min(index, 5) * 30}ms` }}
+                                >
+                                  <ProjectCard
+                                    project={project}
+                                    deptId={department._id}
+                                    projectId={project._id}
+                                    departmentManager={department.managers?.filter(manager => project.members?.some(m => (m._id ? String(m._id) : String(m)) === String(manager._id))).map(manager => manager.name).join(', ') || 'No Manager'}
+                                    showManager={true}
+                                    onEdit={() => handleEditProject(project, department._id)}
+                                    onDelete={() => handleDeleteProject(project, department._id)}
+                                    onView={() => handleViewProject(project._id)}
+                                    viewMode={viewMode}
+                                    isSelectable={canSelectProjects}
+                                    isSelected={isSelected(project._id)}
+                                    onSelect={() => toggleProject(project._id, department._id)}
+                                    isBulkDeleting={deletingProjectIds.has(project._id)}
+                                  />
+                                </div>
+                              ))}
+                            </motion.div>
+                          </AnimatePresence>
+
+                          {/* View More Button */}
+                          {hasMore && (
+                            <motion.div
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="flex justify-center mt-8"
+                            >
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => toggleViewAllProjects(department._id, filteredProjects.length)}
+                                className="flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-gray-50 to-blue-50 text-gray-700 rounded-xl hover:from-gray-100 hover:to-blue-100 transition-all border border-gray-200 shadow-sm hover:shadow-md font-medium"
+                              >
+                                {isExpanded ? (
+                                  <>
+                                    <EyeOff size={20} />
+                                    <span>Show Less</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Eye size={20} />
+                                    <span>Show More ({filteredProjects.length - displayedProjects.length} remaining)</span>
+                                  </>
+                                )}
+                              </motion.button>
+                            </motion.div>
+                          )}
+                        </>
+                      ) : (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="text-center py-16"
+                        >
+                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <FolderKanban size={32} className="text-gray-400" />
+                          </div>
+                          <p className="text-gray-500 text-lg">
+                            {searchQuery || filterStatus !== 'all' 
+                              ? 'No projects match your filters'
+                              : 'No projects in this department yet'}
+                          </p>
+                        </motion.div>
+                      )}
+                    </div>
+                  </SortableDepartment>
+                );
+              })}
+            </div>
+            </SortableContext>
+            </DndContext>
+          )}
+      </main>
+
+      {/* Modals - Render only when open for better performance */}
+      {modalOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <AddProjectModal
+            isOpen={modalOpen}
+            onClose={() => setModalOpen(false)}
+            departmentId={selectedDepartment}
+            onProjectAdded={handleProjectAdded}
+            departmentManagers={selectedDepartmentManagers}
+          />
+        </Suspense>
+      )}
+
+      {editModalOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <EditProjectModal
+            isOpen={editModalOpen}
+            onClose={() => setEditModalOpen(false)}
+            project={selectedProject}
+            onProjectUpdated={handleProjectUpdated}
+            departmentManagers={editProjectManagers}
+          />
+        </Suspense>
+      )}
+
+      {viewModalOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <ViewProjectModal
+            isOpen={viewModalOpen}
+            onClose={() => setViewModalOpen(false)}
+            projectId={selectedProjectId}
+            onEditProject={handleEditProject}
+          />
+        </Suspense>
+      )}
+
+      <DeletePopup
+        isOpen={showDeletePopup}
+        onCancel={() => {
+          setShowDeletePopup(false);
+          setProjectToDelete(null);
+        }}
+        onConfirm={confirmDeleteProject}
+        itemType="project"
+        isLoading={isDeleting}
+      />
+
+      {/* Bulk Delete Floating Toolbar */}
+      <BulkActionToolbar
+        isVisible={isSelectionMode}
+        selectedCount={selectedCount}
+        totalCount={selectionDepartmentTotalProjects}
+        onDelete={handleBulkDeleteClick}
+        onSelectAll={handleSelectAllForDepartment}
+        onCancel={clearSelection}
+        isDeleting={isBulkDeleting}
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <BulkDeleteModal
+        isOpen={showBulkDeleteModal}
+        projects={getSelectedProjectsData()}
+        onConfirm={confirmBulkDelete}
+        onCancel={() => setShowBulkDeleteModal(false)}
+        isLoading={isBulkDeleting}
+      />
+    </div>
+  );
+};
+
+export default memo(HomePage);

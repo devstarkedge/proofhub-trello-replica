@@ -1,0 +1,317 @@
+import React, { useState, useEffect } from 'react';
+import {
+  DollarSign,
+  FileCheck,
+  AlertCircle,
+  User,
+  FolderKanban,
+  TrendingUp,
+  RefreshCw
+} from 'lucide-react';
+import api from '../../services/api';
+import ProjectWorkflowLink from './ProjectWorkflowLink';
+
+/**
+ * SummaryCards - Reactive summary cards for Finance Dashboard
+ * Cards update instantly when filters change
+ * Clicking a card applies related filters
+ */
+const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null }) => {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch summary data
+  const fetchSummary = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const params = new URLSearchParams();
+      if (filters.startDate) params.append('startDate', filters.startDate);
+      if (filters.endDate) params.append('endDate', filters.endDate);
+      if (filters.departmentId) params.append('departmentId', filters.departmentId);
+      if (filters.billingType) params.append('billingType', filters.billingType);
+
+      const response = await api.get(`/api/finance/summary?${params.toString()}`);
+
+      if (response.data.success) {
+        setSummary(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching finance summary:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSummary();
+  }, [filters.startDate, filters.endDate, filters.departmentId, filters.billingType]);
+
+  // Format currency
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    }).format(amount || 0);
+  };
+
+  // Format time
+  const formatTime = (time) => {
+    if (!time) return '0h 0m';
+    return `${time.hours || 0}h ${time.minutes || 0}m`;
+  };
+
+  // Card configurations
+  const visibleSummary = summaryOverride || summary;
+  const cards = [
+    {
+      id: 'revenue',
+      title: 'Total Revenue',
+      value: visibleSummary ? formatCurrency(visibleSummary.totalRevenue) : '$0',
+      subtitle: visibleSummary ? `${visibleSummary.billableProjectCount || 0} billable projects` : null,
+      icon: DollarSign,
+      color: '#10b981',
+      bg: 'rgba(16, 185, 129, 0.12)',
+      filterAction: 'revenue'
+    },
+    {
+      id: 'fixedRevenue',
+      title: 'Fixed Amount Revenue',
+      value: visibleSummary ? formatCurrency(visibleSummary.fixedRevenue) : '$0',
+      icon: DollarSign,
+      color: '#14b8a6',
+      bg: 'rgba(20, 184, 166, 0.12)',
+      filterAction: 'fixedRevenue'
+    },
+    {
+      id: 'hourlyRevenue',
+      title: 'Hourly Revenue',
+      value: visibleSummary ? formatCurrency(visibleSummary.hourlyRevenue) : '$0',
+      icon: TrendingUp,
+      color: '#a855f7',
+      bg: 'rgba(168, 85, 247, 0.12)',
+      filterAction: 'hourlyRevenue'
+    },
+    {
+      id: 'milestoneRevenue',
+      title: 'Milestone Revenue',
+      value: visibleSummary ? formatCurrency(visibleSummary.milestoneRevenue) : '$0',
+      icon: FileCheck,
+      color: '#059669',
+      bg: 'rgba(5, 150, 105, 0.12)',
+      filterAction: 'milestoneRevenue'
+    },
+    {
+      id: 'billed',
+      title: 'Total Billed Time',
+      value: visibleSummary ? formatTime(visibleSummary.totalBilledTime) : '0h 0m',
+      icon: FileCheck,
+      color: '#8b5cf6',
+      bg: 'rgba(139, 92, 246, 0.12)',
+      filterAction: 'billed'
+    },
+    {
+      id: 'topUser',
+      title: 'Top Earning User',
+      value: visibleSummary?.topEarningUser?.userName || 'N/A',
+      subtitle: visibleSummary?.topEarningUser
+        ? formatTime({
+            hours: Math.floor(visibleSummary.topEarningUser.billedMinutes / 60),
+            minutes: visibleSummary.topEarningUser.billedMinutes % 60
+          })
+        : null,
+      icon: User,
+      color: '#ec4899',
+      bg: 'rgba(236, 72, 153, 0.12)',
+      filterAction: 'user',
+      filterValue: visibleSummary?.topEarningUser?.userId
+    },
+    {
+      id: 'topProject',
+      title: 'Top Revenue Project',
+      value: visibleSummary?.topRevenueProject?.name || 'N/A',
+      subtitle: visibleSummary?.topRevenueProject
+        ? formatCurrency(visibleSummary.topRevenueProject.payment)
+        : null,
+      icon: FolderKanban,
+      color: '#06b6d4',
+      bg: 'rgba(6, 182, 212, 0.12)',
+      departmentId: visibleSummary?.topRevenueProject?.departmentId,
+      projectId: visibleSummary?.topRevenueProject?.projectId
+    }
+  ];
+
+  // Skeleton loader
+  const SkeletonCard = () => (
+    <div
+      className="p-5 rounded-xl border animate-pulse"
+      style={{
+        backgroundColor: 'var(--color-bg-secondary)',
+        borderColor: 'var(--color-border-subtle)'
+      }}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div
+            className="h-4 w-24 rounded mb-3"
+            style={{ backgroundColor: 'var(--color-bg-muted)' }}
+          />
+          <div
+            className="h-8 w-32 rounded mb-2"
+            style={{ backgroundColor: 'var(--color-bg-muted)' }}
+          />
+        </div>
+        <div
+          className="w-10 h-10 rounded-lg"
+          style={{ backgroundColor: 'var(--color-bg-muted)' }}
+        />
+      </div>
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7 gap-4 mb-6">
+        {[...Array(7)].map((_, i) => (
+          <SkeletonCard key={i} />
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        className="p-4 rounded-xl border text-center mb-6"
+        style={{
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          borderColor: 'rgba(239, 68, 68, 0.3)',
+          color: '#ef4444'
+        }}
+      >
+        <AlertCircle className="w-5 h-5 mx-auto mb-2" />
+        <p className="text-sm">Failed to load summary: {error}</p>
+        <button
+          onClick={fetchSummary}
+          className="mt-2 text-xs flex items-center gap-1 mx-auto hover:underline"
+        >
+          <RefreshCw className="w-3 h-3" /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7 gap-4 mb-6">
+      {cards.map((card) => {
+        const Icon = card.icon;
+        const isProjectCard = card.id === 'topProject';
+        const shellClassName = `p-5 rounded-xl border transition-all duration-200 text-left group ${isProjectCard ? '' : 'hover:scale-[1.02]'}`.trim();
+        const shellStyle = {
+          backgroundColor: 'var(--color-bg-secondary)',
+          borderColor: 'var(--color-border-subtle)'
+        };
+        const shellContent = (
+          <>
+            <div className="flex items-start justify-between">
+              <div className="flex-1 min-w-0">
+                <p
+                  className="text-xs font-medium mb-1 truncate"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  {card.title}
+                </p>
+                {isProjectCard ? (
+                  <ProjectWorkflowLink
+                    departmentId={card.departmentId}
+                    projectId={card.projectId}
+                    className="text-xl font-bold truncate"
+                    title={card.value}
+                  >
+                    {card.value}
+                  </ProjectWorkflowLink>
+                ) : (
+                  <p
+                    className="text-xl font-bold truncate"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    {card.value}
+                  </p>
+                )}
+                {card.subtitle && (
+                  <p
+                    className="text-xs mt-1 truncate"
+                    style={{ color: card.color }}
+                  >
+                    {card.subtitle}
+                  </p>
+                )}
+              </div>
+              <div
+                className="p-2.5 rounded-lg flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
+                style={{ backgroundColor: card.bg }}
+              >
+                <Icon
+                  className="w-5 h-5"
+                  style={{ color: card.color }}
+                />
+              </div>
+            </div>
+
+            <div
+              className="flex items-center gap-1 mt-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+              style={{ color: card.color }}
+            >
+            </div>
+          </>
+        );
+
+        if (isProjectCard) {
+          return (
+            <div
+              key={card.id}
+              className={shellClassName}
+              style={shellStyle}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = card.color;
+                e.currentTarget.style.boxShadow = `0 4px 12px ${card.bg}`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--color-border-subtle)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              {shellContent}
+            </div>
+          );
+        }
+
+        return (
+          <button
+            key={card.id}
+            onClick={() => onCardClick?.(card.filterAction, card.filterValue)}
+            className={shellClassName}
+            style={shellStyle}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = card.color;
+              e.currentTarget.style.boxShadow = `0 4px 12px ${card.bg}`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--color-border-subtle)';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
+            {shellContent}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+export default SummaryCards;
