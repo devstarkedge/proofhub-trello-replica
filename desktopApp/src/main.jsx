@@ -42,7 +42,8 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>
 );
 
-if ('serviceWorker' in navigator) {
+// Electron ships its UI locally; a web service worker can retain stale bundles.
+if (!window.flowtaskDesktop?.isDesktop && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(registration => {
       console.log('SW registered: ', registration);

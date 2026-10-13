@@ -1,11 +1,25 @@
 {
-  "name": "frontend",
+  "name": "flowtask-desktop",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "FlowTask desktop application",
+  "author": "FlowTask",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/start-desktop.mjs",
     "build": "vite build",
+    "build:win": "node scripts/build-desktop.mjs win",
+    "build:mac": "node scripts/build-desktop.mjs mac",
+    "start": "node scripts/start-desktop.mjs",
+    "electron": "node scripts/start-desktop.mjs",
+    "electron:dev": "node scripts/start-desktop.mjs",
+    "electron:preview": "npm run build && node scripts/start-desktop.mjs --preview",
+    "electron:repair": "node scripts/repair-electron.mjs",
+    "electron:smoke": "npm run build && node scripts/start-desktop.mjs --preview --smoke-test",
+    "test:desktop": "node --test electron/tests/*.test.cjs",
+    "pack": "node scripts/build-desktop.mjs dir",
+    "dist:win": "npm run build:win",
     "lint": "eslint .",
     "preview": "vite preview",
     "analyze": "vite-bundle-analyzer dist"
@@ -81,6 +95,8 @@
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",
     "baseline-browser-mapping": "^2.9.7",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",
@@ -88,5 +104,31 @@
     "terser": "^5.44.0",
     "vite": "^7.1.7",
     "vite-bundle-analyzer": "^1.2.3"
+  },
+  "build": {
+    "appId": "com.flowtask.desktop",
+    "productName": "FlowTask",
+    "directories": { "app": "build/app", "output": "release" },
+    "files": ["dist/**/*", "electron/*.cjs", "package.json"],
+    "beforeBuild": "./scripts/before-build.cjs",
+    "win": {
+      "icon": "build/Fav.ico",
+      "signExecutable": false,
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "FlowTask-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "icon": "build/Fav.icns",
+      "target": ["dmg"],
+      "category": "public.app-category.business",
+      "artifactName": "FlowTask-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

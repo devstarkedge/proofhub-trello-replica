@@ -8,3 +8,4 @@ tests/
 .log
 .log*
 reports/
+*.md

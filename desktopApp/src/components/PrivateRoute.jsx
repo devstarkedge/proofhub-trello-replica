@@ -26,7 +26,7 @@ const PrivateRoute = ({ children, requiredRole }) => {
     // "/" is the only route an unauthenticated visitor sees a public page
     // for — every other protected path still redirects to /login exactly
     // as before.
-    if (location.pathname === '/') {
+    if (location.pathname === '/' && !window.flowtaskDesktop?.isDesktop) {
       return <LandingPage />;
     }
     return <Navigate to="/login" state={{ from: location }} replace />;

@@ -598,7 +598,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Push notification support
   const checkPushSupport = () => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    if (!window.flowtaskDesktop?.isDesktop && 'serviceWorker' in navigator && 'PushManager' in window) {
       setPushSupported(true);
       navigator.serviceWorker.ready.then(registration => {
         registration.pushManager.getSubscription().then(subscription => {
@@ -609,6 +609,7 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const checkAndPromptPush = async () => {
+    if (window.flowtaskDesktop?.isDesktop) return;
     if (!('Notification' in window)) return;
     const dismissedThisSession = sessionStorage.getItem('push_modal_dismissed') === 'true';
     if (dismissedThisSession) return;
@@ -617,7 +618,7 @@ export const NotificationProvider = ({ children }) => {
     
     // Dynamically check subscription to avoid stale state closures
     let hasSubscription = false;
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    if (!window.flowtaskDesktop?.isDesktop && 'serviceWorker' in navigator && 'PushManager' in window) {
       try {
         const registration = await navigator.serviceWorker.ready;
         if (registration) {
@@ -645,6 +646,7 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const enablePushNotifications = async (silent = false) => {
+    if (window.flowtaskDesktop?.isDesktop) return { success: false };
     try {
       if (Notification.permission === 'denied') {
         setPushPrompt({ isOpen: true, mode: 'blocked', isBusy: false });
