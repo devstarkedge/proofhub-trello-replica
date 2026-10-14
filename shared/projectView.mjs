@@ -40,11 +40,15 @@ export function promoteDepartments(departments, matchingIds) {
   ];
 }
 
+export const PROJECT_VIEW_MODES = Object.freeze(['grid', 'list']);
+export const isProjectViewMode = value => PROJECT_VIEW_MODES.includes(value);
+
 export function normalizePreferences(value) {
   return {
     departmentOrder: Array.isArray(value?.departmentOrder)
       ? [...new Set(value.departmentOrder.filter(id => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)))]
       : [],
     projectSort: isProjectSort(value?.projectSort) ? value.projectSort : 'default',
+    homeProjectView: isProjectViewMode(value?.homeProjectView) ? value.homeProjectView : 'grid',
   };
 }

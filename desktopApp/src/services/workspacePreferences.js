@@ -1,6 +1,7 @@
 import { normalizePreferences } from '../../../shared/projectView.mjs';
 
 export const preferenceCacheKey = (userId, workspaceId) => `flowtask:preferences:v1:${userId}:${workspaceId}`;
+export const PREFERENCE_FIELDS = ['departmentOrder', 'projectSort', 'homeProjectView'];
 
 // A serialized, coalescing write queue shared by every preference in a scope.
 // Dependencies are injected so storage/network failures can be exercised directly.
@@ -11,7 +12,7 @@ export function createPreferenceSession({ userId, workspaceId, api, storage, onE
   let preferences = normalizePreferences(cached?.version === 1 ? cached.preferences : null);
   let pending = {};
   if (cached?.version === 1 && cached.pending && typeof cached.pending === 'object') {
-    for (const field of ['departmentOrder', 'projectSort']) {
+    for (const field of PREFERENCE_FIELDS) {
       if (Object.hasOwn(cached.pending, field) && JSON.stringify(cached.pending[field]) === JSON.stringify(preferences[field])) pending[field] = preferences[field];
     }
   }
@@ -96,7 +97,7 @@ export function createPreferenceSession({ userId, workspaceId, api, storage, onE
       if (closed) return;
       const normalized = normalizePreferences({ ...preferences, ...patch });
       let changed = false;
-      for (const field of ['departmentOrder', 'projectSort']) {
+      for (const field of PREFERENCE_FIELDS) {
         if (Object.hasOwn(patch, field) && JSON.stringify(normalized[field]) !== JSON.stringify(preferences[field])) {
           pending[field] = normalized[field];
           changed = true;

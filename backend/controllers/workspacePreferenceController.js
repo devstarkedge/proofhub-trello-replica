@@ -1,7 +1,7 @@
 import asyncHandler from '../middleware/asyncHandler.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import Department from '../models/Department.js';
-import { isProjectSort, normalizePreferences } from '../../shared/projectView.mjs';
+import { isProjectSort, isProjectViewMode, normalizePreferences } from '../../shared/projectView.mjs';
 
 const scope = req => ({ user: req.user._id, workspace: req.workspaceId, status: 'active' });
 const denied = res => res.status(403).json({ success: false, message: 'An active workspace membership is required.' });
@@ -21,8 +21,12 @@ export const updateWorkspacePreferences = asyncHandler(async (req, res) => {
   if (!req.workspaceId) return denied(res);
   const body = req.body;
   const invalid = () => res.status(400).json({ success: false, message: 'Please provide valid display preferences.' });
-  if (!body || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).some(key => !['departmentOrder', 'projectSort'].includes(key))) return invalid();
+  if (!body || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).some(key => !['departmentOrder', 'projectSort', 'homeProjectView'].includes(key))) return invalid();
   const update = {};
+  if (Object.hasOwn(body, 'homeProjectView')) {
+    if (!isProjectViewMode(body.homeProjectView)) return invalid();
+    update['preferences.homeProjectView'] = body.homeProjectView;
+  }
   if (Object.hasOwn(body, 'projectSort')) {
     if (!isProjectSort(body.projectSort)) return invalid();
     update['preferences.projectSort'] = body.projectSort;

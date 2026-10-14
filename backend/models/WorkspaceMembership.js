@@ -76,7 +76,8 @@ const workspaceMembershipSchema = new mongoose.Schema({
   // Display preferences only; the existing unique workspace/user index owns scope.
   preferences: {
     departmentOrder: { type: [mongoose.Schema.Types.ObjectId], ref: 'Department', default: [] },
-    projectSort: { type: String, enum: PROJECT_SORT_OPTIONS.map(option => option.value), default: 'default' }
+    projectSort: { type: String, enum: PROJECT_SORT_OPTIONS.map(option => option.value), default: 'default' },
+    homeProjectView: { type: String, enum: ['grid', 'list'], default: 'grid' }
   },
   joinedAt: {
     type: Date,

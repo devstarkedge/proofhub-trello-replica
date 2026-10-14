@@ -10,6 +10,7 @@ import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import ProjectCard from '../components/ProjectCard';
+import ProjectListTable from '../components/ProjectListTable';
 import HomePageSkeleton from '../components/LoadingSkeleton';
 import NeonSparkText from '../components/NeonSparkText';
 import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
@@ -107,21 +108,29 @@ const HomePage = () => {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [expandedDepartments, setExpandedDepartments] = useState({});
-  const [viewMode, setViewMode] = useState('grid');
+  const [viewMode, setViewMode] = useState(preferences?.homeProjectView || 'grid');
   const [filterStatus, setFilterStatus] = useState('all');
   const [projectSort, setProjectSort] = useState(preferences?.projectSort || 'default');
   const [selectedMembers, setSelectedMembers] = useState({});
 
-  // Synchronize local sort state whenever preferences load or change from remote/cache
+  // Synchronize local sort & viewMode state whenever preferences load or change from remote/cache
   useEffect(() => {
     if (preferences?.projectSort && preferences.projectSort !== projectSort) {
       setProjectSort(preferences.projectSort);
     }
-  }, [preferences?.projectSort]);
+    if (preferences?.homeProjectView && preferences.homeProjectView !== viewMode) {
+      setViewMode(preferences.homeProjectView);
+    }
+  }, [preferences?.projectSort, preferences?.homeProjectView]);
 
   const handleSortChange = useCallback((newSort) => {
     setProjectSort(newSort); // Instant 0ms update in UI
     updatePreferences({ projectSort: newSort }); // Asynchronously sync to preferences
+  }, [updatePreferences]);
+
+  const handleViewModeChange = useCallback((newMode) => {
+    setViewMode(newMode); // Instant 0ms update in UI
+    updatePreferences({ homeProjectView: newMode }); // Asynchronously sync to preferences
   }, [updatePreferences]);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [memberDropdownOpen, setMemberDropdownOpen] = useState({});
@@ -158,6 +167,7 @@ const HomePage = () => {
       if (e.detail && e.detail.boardId && e.detail.updates) {
         projectUpdated({ _id: e.detail.boardId, ...e.detail.updates });
       }
+      fetchDepartments(true);
     };
 
     // Real-time refresh when a task/subtask/nano-subtask assignee changes
@@ -166,14 +176,34 @@ const HomePage = () => {
       fetchDepartments(true);
     };
 
+    // Debounced refresh when task assignments or status change
+    let debounceTimer = null;
+    const debouncedTaskRefresh = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchDepartments(true);
+      }, 300);
+    };
+
     window.addEventListener('socket-user-access-updated', handleAccessUpdated);
     window.addEventListener('socket-board-updated', handleBoardUpdated);
     window.addEventListener('socket-user-project-access-changed', handleProjectAccessChanged);
+    window.addEventListener('socket-card-created', debouncedTaskRefresh);
+    window.addEventListener('socket-card-updated', debouncedTaskRefresh);
+    window.addEventListener('socket-card-deleted', debouncedTaskRefresh);
+    window.addEventListener('socket-card-moved', debouncedTaskRefresh);
+    window.addEventListener('socket-task-assigned', debouncedTaskRefresh);
     
     return () => {
+      clearTimeout(debounceTimer);
       window.removeEventListener('socket-user-access-updated', handleAccessUpdated);
       window.removeEventListener('socket-board-updated', handleBoardUpdated);
       window.removeEventListener('socket-user-project-access-changed', handleProjectAccessChanged);
+      window.removeEventListener('socket-card-created', debouncedTaskRefresh);
+      window.removeEventListener('socket-card-updated', debouncedTaskRefresh);
+      window.removeEventListener('socket-card-deleted', debouncedTaskRefresh);
+      window.removeEventListener('socket-card-moved', debouncedTaskRefresh);
+      window.removeEventListener('socket-task-assigned', debouncedTaskRefresh);
     };
   }, [fetchDepartments, projectUpdated]);
 
@@ -236,7 +266,8 @@ const HomePage = () => {
 
   const handleProjectUpdated = useCallback((updatedProject) => {
     projectUpdated(updatedProject);
-  }, [projectUpdated]);
+    fetchDepartments(true);
+  }, [projectUpdated, fetchDepartments]);
 
   const handleDeleteProject = useCallback((project, departmentId) => {
     setProjectToDelete({ project, departmentId });
@@ -601,7 +632,7 @@ const HomePage = () => {
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => setViewMode('grid')}
+                    onClick={() => handleViewModeChange('grid')}
                     className={`p-2 rounded-lg transition-all ${
                       viewMode === 'grid'
                         ? 'bg-white text-blue-600 shadow-sm'
@@ -613,7 +644,7 @@ const HomePage = () => {
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => setViewMode('list')}
+                    onClick={() => handleViewModeChange('list')}
                     className={`p-2 rounded-lg transition-all ${
                       viewMode === 'list'
                         ? 'bg-white text-blue-600 shadow-sm'
@@ -818,7 +849,7 @@ const HomePage = () => {
                     </div>
 
                     {/* Projects Grid/List */}
-                    <div className="p-6">
+                    <div className={viewMode === 'list' ? 'p-2 sm:p-4' : 'p-6'}>
                       {filteredProjects.length > 0 ? (
                         <>
                           <AnimatePresence mode="wait">
@@ -827,35 +858,47 @@ const HomePage = () => {
                               initial={{ opacity: 0 }}
                               animate={{ opacity: 1 }}
                               exit={{ opacity: 0 }}
-                              className={
-                                viewMode === 'grid'
-                                  ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
-                                  : 'space-y-4'
-                              }
                             >
-                              {displayedProjects.map((project, index) => (
-                                <div
-                                  key={project._id}
-                                  className="animate-in fade-in slide-in-from-bottom-4 duration-300"
-                                  style={{ animationDelay: `${Math.min(index, 5) * 30}ms` }}
-                                >
-                                  <ProjectCard
-                                    project={project}
-                                    deptId={department._id}
-                                    projectId={project._id}
-                                    departmentManager={department.managers?.filter(manager => project.members?.some(m => (m._id ? String(m._id) : String(m)) === String(manager._id))).map(manager => manager.name).join(', ') || 'No Manager'}
-                                    showManager={true}
-                                    onEdit={() => handleEditProject(project, department._id)}
-                                    onDelete={() => handleDeleteProject(project, department._id)}
-                                    onView={() => handleViewProject(project._id)}
-                                    viewMode={viewMode}
-                                    isSelectable={canSelectProjects}
-                                    isSelected={isSelected(project._id)}
-                                    onSelect={() => toggleProject(project._id, department._id)}
-                                    isBulkDeleting={deletingProjectIds.has(project._id)}
-                                  />
+                              {viewMode === 'list' ? (
+                                <ProjectListTable
+                                  projects={displayedProjects}
+                                  department={department}
+                                  departmentManager={department.managers?.filter(manager => displayedProjects.some(p => p.members?.some(m => (m._id ? String(m._id) : String(m)) === String(manager._id)))).map(m => m.name).join(', ') || department.managers?.[0]?.name || 'No Manager'}
+                                  onEdit={(proj, deptId) => handleEditProject(proj, deptId || department._id)}
+                                  onDelete={(proj, deptId) => handleDeleteProject(proj, deptId || department._id)}
+                                  onView={(projId) => handleViewProject(projId)}
+                                  isSelectable={canSelectProjects}
+                                  isSelected={isSelected}
+                                  onSelect={(projId) => toggleProject(projId, department._id)}
+                                  deletingProjectIds={deletingProjectIds}
+                                />
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                  {displayedProjects.map((project, index) => (
+                                    <div
+                                      key={project._id}
+                                      className="animate-in fade-in slide-in-from-bottom-4 duration-300"
+                                      style={{ animationDelay: `${Math.min(index, 5) * 30}ms` }}
+                                    >
+                                      <ProjectCard
+                                        project={project}
+                                        deptId={department._id}
+                                        projectId={project._id}
+                                        departmentManager={department.managers?.filter(manager => project.members?.some(m => (m._id ? String(m._id) : String(m)) === String(manager._id))).map(manager => manager.name).join(', ') || 'No Manager'}
+                                        showManager={true}
+                                        onEdit={() => handleEditProject(project, department._id)}
+                                        onDelete={() => handleDeleteProject(project, department._id)}
+                                        onView={() => handleViewProject(project._id)}
+                                        viewMode={viewMode}
+                                        isSelectable={canSelectProjects}
+                                        isSelected={isSelected(project._id)}
+                                        onSelect={() => toggleProject(project._id, department._id)}
+                                        isBulkDeleting={deletingProjectIds.has(project._id)}
+                                      />
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
+                              )}
                             </motion.div>
                           </AnimatePresence>
 

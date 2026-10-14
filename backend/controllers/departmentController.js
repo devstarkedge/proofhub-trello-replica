@@ -4,6 +4,9 @@ import Department from "../models/Department.js";
 import User from "../models/User.js";
 import Board from "../models/Board.js";
 import Card from "../models/Card.js";
+import Subtask from "../models/Subtask.js";
+import SubtaskNano from "../models/SubtaskNano.js";
+import Role from "../models/Role.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { emitUserAssigned, emitUserUnassigned, emitBulkUsersAssigned, emitBulkUsersUnassigned } from "../realtime/index.js";
@@ -237,7 +240,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         from: 'users',
         localField: 'managers',
         foreignField: '_id',
-        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }],
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1, role: 1 } }],
         as: 'managers'
       }
     },
@@ -247,7 +250,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         from: 'users',
         localField: 'members',
         foreignField: '_id',
-        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }],
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1, role: 1 } }],
         as: 'members'
       }
     },
@@ -258,7 +261,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         let: { deptId: '$_id' },
         pipeline: [
           { $match: projectMatchFilter },
-          { $project: { name: 1, description: 1, background: 1, members: 1, status: 1, coverImage: 1, coverImageHistory: 1, dueDate: 1, projectCategory: 1, projectType: 1, createdAt: 1 } }
+          { $project: { name: 1, description: 1, background: 1, members: 1, managers: 1, status: 1, coverImage: 1, coverImageHistory: 1, startDate: 1, dueDate: 1, projectCategory: 1, projectType: 1, createdAt: 1 } }
         ],
         as: 'projects'
       }
@@ -444,6 +447,201 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
     { $project: { allCards: 0, _assignedMemberIds: 0 } },
     { $sort: { name: 1 } }
   ]);
+
+  // Populate authoritative projectManagers and taskMembers for each project
+  const allProjectIds = [];
+  const deptManagerIdSets = new Map(); // deptIdStr -> Set<userIdStr>
+
+  for (const dept of departments) {
+    const mgrSet = new Set((dept.managers || []).map(m => (m?._id || m)?.toString()).filter(Boolean));
+    deptManagerIdSets.set(dept._id.toString(), mgrSet);
+    for (const proj of dept.projects || []) {
+      if (proj._id) allProjectIds.push(proj._id);
+    }
+  }
+
+  if (allProjectIds.length > 0) {
+    const [cards, subtasks, nanos] = await Promise.all([
+      Card.find({ board: { $in: allProjectIds }, isArchived: { $ne: true } })
+        .select('board assignees members')
+        .lean(),
+      Subtask.find({ board: { $in: allProjectIds } })
+        .select('board assignees')
+        .lean(),
+      SubtaskNano.find({ board: { $in: allProjectIds } })
+        .select('board assignees')
+        .lean(),
+    ]);
+
+    const boardAssigneesMap = new Map();
+    const allReferencedUserIds = new Set();
+
+    const addAssignee = (boardId, userId) => {
+      if (!boardId || !userId) return;
+      const bKey = boardId.toString();
+      const uKey = (userId._id || userId).toString();
+      if (!boardAssigneesMap.has(bKey)) {
+        boardAssigneesMap.set(bKey, new Set());
+      }
+      boardAssigneesMap.get(bKey).add(uKey);
+      allReferencedUserIds.add(uKey);
+    };
+
+    for (const c of cards) {
+      if (Array.isArray(c.assignees)) c.assignees.forEach(u => addAssignee(c.board, u));
+      if (Array.isArray(c.members)) c.members.forEach(u => addAssignee(c.board, u));
+    }
+    for (const s of subtasks) {
+      if (Array.isArray(s.assignees)) s.assignees.forEach(u => addAssignee(s.board, u));
+    }
+    for (const n of nanos) {
+      if (Array.isArray(n.assignees)) n.assignees.forEach(u => addAssignee(n.board, u));
+    }
+
+    // Also collect all user IDs referenced in project.members, project.managers, dept.managers
+    for (const dept of departments) {
+      for (const proj of dept.projects || []) {
+        if (Array.isArray(proj.members)) {
+          for (const m of proj.members) {
+            const uid = (m?._id || m)?.toString();
+            if (uid) allReferencedUserIds.add(uid);
+          }
+        }
+        if (Array.isArray(proj.managers)) {
+          for (const m of proj.managers) {
+            const uid = (m?._id || m)?.toString();
+            if (uid) allReferencedUserIds.add(uid);
+          }
+        }
+      }
+      for (const m of dept.managers || []) {
+        const uid = (m?._id || m)?.toString();
+        if (uid) allReferencedUserIds.add(uid);
+      }
+    }
+
+    const validUserObjectIds = Array.from(allReferencedUserIds)
+      .filter(id => mongoose.Types.ObjectId.isValid(id))
+      .map(id => new mongoose.Types.ObjectId(id));
+
+    const workspaceId = req.workspaceId ? new mongoose.Types.ObjectId(req.workspaceId) : null;
+
+    const [userDocs, membershipDocs] = await Promise.all([
+      User.find({ _id: { $in: validUserObjectIds } })
+        .select('name email avatar role')
+        .lean(),
+      workspaceId
+        ? WorkspaceMembership.find({
+            workspace: workspaceId,
+            user: { $in: validUserObjectIds },
+            status: { $ne: 'removed' }
+          })
+            .select('user role roleId status')
+            .lean()
+        : []
+    ]);
+
+    const usersMap = new Map(userDocs.map(u => [u._id.toString(), u]));
+    const membershipsMap = new Map(membershipDocs.map(m => [m.user.toString(), m]));
+
+    const roleIds = Array.from(new Set(membershipDocs.map(m => m.roleId).filter(Boolean)));
+    const roleDocs = roleIds.length > 0
+      ? await Role.find({ _id: { $in: roleIds } }).select('slug templateKey permissions name').lean()
+      : [];
+    const rolesMap = new Map(roleDocs.map(r => [r._id.toString(), r]));
+
+    const isManagerOrAdmin = (userIdStr, deptIdStr) => {
+      if (!userIdStr) return false;
+      if (deptIdStr && deptManagerIdSets.get(deptIdStr)?.has(userIdStr)) {
+        return true;
+      }
+      const mem = membershipsMap.get(userIdStr);
+      if (mem) {
+        const memRole = (mem.role || '').toLowerCase();
+        if (memRole === 'admin' || memRole === 'manager') return true;
+        if (mem.roleId) {
+          const r = rolesMap.get(mem.roleId.toString());
+          if (r) {
+            const slug = (r.slug || '').toLowerCase();
+            const template = (r.templateKey || '').toLowerCase();
+            if (slug === 'admin' || slug === 'manager' || template === 'admin' || template === 'manager') {
+              return true;
+            }
+            if (r.permissions && (
+              r.permissions.canManageSystem ||
+              r.permissions.canManageRoles ||
+              r.permissions.canManageUsers ||
+              r.permissions.canCreateProject
+            )) {
+              return true;
+            }
+          }
+        }
+      }
+      const u = usersMap.get(userIdStr);
+      if (u) {
+        const userRole = (u.role || '').toLowerCase();
+        if (userRole === 'admin' || userRole === 'manager') return true;
+      }
+      return false;
+    };
+
+    for (const dept of departments) {
+      const deptIdStr = dept._id.toString();
+      for (const proj of dept.projects || []) {
+        // Resolve project managers: from proj.members & proj.managers eligible as managers
+        const managerIdSet = new Set();
+        if (Array.isArray(proj.members)) {
+          for (const m of proj.members) {
+            const mid = (m?._id || m)?.toString();
+            if (mid && (deptManagerIdSets.get(deptIdStr)?.has(mid) || isManagerOrAdmin(mid, deptIdStr))) {
+              managerIdSet.add(mid);
+            }
+          }
+        }
+        if (Array.isArray(proj.managers)) {
+          for (const m of proj.managers) {
+            const mid = (m?._id || m)?.toString();
+            if (mid) managerIdSet.add(mid);
+          }
+        }
+
+        const projectManagers = Array.from(managerIdSet).map(mid => {
+          const u = usersMap.get(mid) || (dept.managers || []).find(m => String(m._id) === mid);
+          if (!u) return null;
+          return {
+            _id: u._id || mid,
+            name: u.name || 'Manager',
+            email: u.email || '',
+            avatar: u.avatar || null,
+            role: 'manager'
+          };
+        }).filter(Boolean);
+
+        // Resolve task members: unique users assigned to tasks, excluding admins/managers
+        const assignedUserIds = boardAssigneesMap.get(proj._id.toString()) || new Set();
+        const taskMembers = Array.from(assignedUserIds)
+          .filter(uid => !isManagerOrAdmin(uid, deptIdStr))
+          .map(uid => {
+            const u = usersMap.get(uid);
+            if (!u) return null;
+            const mem = membershipsMap.get(uid);
+            return {
+              _id: u._id,
+              name: u.name || 'Member',
+              email: u.email || '',
+              avatar: u.avatar || null,
+              role: mem?.role || u.role || 'employee'
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        proj.projectManagers = projectManagers;
+        proj.taskMembers = taskMembers;
+      }
+    }
+  }
 
   if (req.query.compact === 'true') {
     // Home only needs assignment IDs; avoid repeating full project descriptions

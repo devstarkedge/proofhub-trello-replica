@@ -51,7 +51,7 @@ const useFieldVisibilityStore = create((set, get) => ({
   initialize: (projectId, userId) => {
     const saved = loadFromStorage(projectId, userId);
     set({
-      visibleFields: saved || getDefaults(),
+      visibleFields: saved ? { ...getDefaults(), ...saved } : getDefaults(),
       projectId,
       userId,
     });

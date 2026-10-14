@@ -256,6 +256,17 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
            )}
         </div>
 
+        {/* Task ID (Top Left Corner) */}
+        {visibleFields.taskId !== false && card._id && (
+          <div 
+            className="mb-1.5 text-[10px] font-mono text-gray-400 truncate pr-14 flex items-center"
+            title={`Task ID: ${card._id}`}
+          >
+            <Hash size={9} className="inline mr-0.5 flex-shrink-0" />
+            <span>{card._id.slice(-8)}</span>
+          </div>
+        )}
+
         {/* Labels (if no cover) */}
         {visibleFields.labels && !coverImageUrl && allLabels.length > 0 && renderLabels(false)}
 
@@ -275,16 +286,9 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
         )}
 
         {/* Title */}
-        <h4 className={`text-[14px] leading-snug font-medium text-gray-800 line-clamp-2 mb-3 group-hover/card:text-purple-700 transition-colors ${!coverImageUrl && allLabels.length === 0 ? 'mt-1' : ''}`}>
+        <h4 className={`text-[14px] leading-snug font-medium text-gray-800 line-clamp-2 mb-3 group-hover/card:text-purple-700 transition-colors ${!coverImageUrl && allLabels.length === 0 && (!visibleFields.taskId || !card._id) ? 'mt-1' : ''}`}>
           {card.title}
         </h4>
-
-        {/* Task ID */}
-        {visibleFields.taskId && card._id && (
-          <div className="mb-2 text-[10px] font-mono text-gray-400 truncate">
-            <Hash size={9} className="inline mr-0.5" />{card._id.slice(-8)}
-          </div>
-        )}
 
         {/* Start Date */}
         {visibleFields.startDate && card.startDate && (
