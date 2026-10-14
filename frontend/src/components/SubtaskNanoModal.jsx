@@ -13,6 +13,7 @@ import TabsContainer from "./CardDetailModal/TabsContainer";
 import CardSidebar from "./CardDetailModal/CardSidebar";
 import BreadcrumbNavigation from "./hierarchy/BreadcrumbNavigation";
 import useModalHierarchyStore from "../store/modalHierarchyStore";
+import useDepartmentStore from "../store/departmentStore";
 import CardActionMenu from "./CardDetailModal/CardActionMenu";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
 import DeletePopup from "./ui/DeletePopup";
@@ -87,6 +88,7 @@ const SubtaskNanoModal = ({
     });
   }, []);
   const [searchQuery, setSearchQuery] = useState("");
+  const [departments, setDepartments] = useState([]);
   const [groupedFilteredMembers, setGroupedFilteredMembers] = useState({});
   const [expandedDepartments, setExpandedDepartments] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -329,25 +331,80 @@ const SubtaskNanoModal = ({
   }, [title]);
 
   useEffect(() => {
+    useDepartmentStore.getState().loadDepartments().then(res => {
+      setDepartments(res || []);
+    }).catch(err => {
+      console.error("Error loading departments in nano subtask:", err);
+    });
+  }, []);
+
+  useEffect(() => {
     const groupMembers = (members) => {
       const grouped = {};
-      members.forEach((member) => {
-        const dept =
-          member.department &&
-          Array.isArray(member.department) &&
-          member.department.length > 0
-            ? member.department[0]
-            : null;
-        const deptId = (dept?._id || dept || "Unassigned") || "Unassigned";
-        const deptName = dept?.name || "Unassigned";
 
-        if (!grouped[deptId]) {
-          grouped[deptId] = {
-            department: { _id: deptId, name: deptName },
-            members: [],
-          };
+      const resolveMemberDepartments = (member) => {
+        const found = [];
+        const rawDept = member.department || member.departments;
+        const depts = Array.isArray(rawDept) ? rawDept : (rawDept ? [rawDept] : []);
+
+        for (const d of depts) {
+          if (d && typeof d === 'object' && d.name && d.name !== 'Unassigned') {
+            found.push({ _id: String(d._id || d.id), name: d.name });
+          } else if (typeof d === 'string') {
+            const match = (departments || []).find(dept => String(dept._id) === String(d));
+            if (match?.name) {
+              found.push({ _id: String(match._id), name: match.name });
+            }
+          }
         }
-        grouped[deptId].members.push(member);
+
+        if (found.length === 0 && departments && departments.length > 0) {
+          for (const dept of departments) {
+            const isMember = dept.members?.some(m => String(m._id || m) === String(member._id));
+            const isManager = dept.managers?.some(m => String(m._id || m) === String(member._id));
+            if (isMember || isManager) {
+              found.push({ _id: String(dept._id), name: dept.name });
+            }
+          }
+        }
+
+        const unique = [];
+        const seen = new Set();
+        for (const item of found) {
+          if (item._id && !seen.has(item._id)) {
+            seen.add(item._id);
+            unique.push(item);
+          }
+        }
+        return unique;
+      };
+
+      members.forEach((member) => {
+        const memberDepts = resolveMemberDepartments(member);
+
+        if (memberDepts.length === 0) {
+          const unassignedId = 'Unassigned';
+          if (!grouped[unassignedId]) {
+            grouped[unassignedId] = {
+              department: { _id: unassignedId, name: 'Unassigned' },
+              members: [],
+            };
+          }
+          grouped[unassignedId].members.push(member);
+        } else {
+          memberDepts.forEach((dept) => {
+            const deptId = dept._id;
+            if (!grouped[deptId]) {
+              grouped[deptId] = {
+                department: { _id: deptId, name: dept.name },
+                members: [],
+              };
+            }
+            if (!grouped[deptId].members.some(m => String(m._id) === String(member._id))) {
+              grouped[deptId].members.push(member);
+            }
+          });
+        }
       });
       return grouped;
     };
@@ -374,7 +431,7 @@ const SubtaskNanoModal = ({
     } else {
       setGroupedFilteredMembers({});
     }
-  }, [searchQuery, teamMembers, isDropdownOpen]);
+  }, [searchQuery, teamMembers, isDropdownOpen, departments]);
 
   const loadNano = async () => {
     try {
@@ -1284,6 +1341,7 @@ const SubtaskNanoModal = ({
                 assignees={assignees}
                 teamMembers={teamMembers}
                 assigneeDetailsById={assigneeDetailsById}
+                departments={departments}
                 priority={priority}
                 status={status}
                 dueDate={dueDate}

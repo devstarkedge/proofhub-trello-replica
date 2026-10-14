@@ -30,9 +30,18 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
     // Only Admin sees all departments
     // Non-admin users (including managers) see only departments they're assigned to
     if (user.role !== 'admin') {
-      // Get departments from user's assigned department array
-      const userDeptIds = Array.isArray(user.department) ? user.department : [];
-      query._id = { $in: userDeptIds };
+      const rawDept = user.department;
+      const userDeptIds = (Array.isArray(rawDept) ? rawDept : (rawDept ? [rawDept] : []))
+        .map(d => d?._id || d);
+      const uid = user._id || user.id;
+      query = {
+        isActive: true,
+        $or: [
+          { _id: { $in: userDeptIds } },
+          { members: uid },
+          { managers: uid }
+        ]
+      };
     }
   }
 

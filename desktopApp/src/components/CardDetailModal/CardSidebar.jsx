@@ -23,6 +23,7 @@ const CardSidebar = ({
   assignees,
   teamMembers,
   assigneeDetailsById = {},
+  departments = [],
   priority,
   status,
   dueDate,
@@ -99,16 +100,39 @@ const CardSidebar = ({
               <div className="mb-3">
                 <div className="flex flex-wrap gap-2">
                   {assignees.map((assigneeId, idx) => {
-                    // Resolve from the entity's own merged assignee-detail
-                    // map first (always authoritative — see
-                    // CardDetailModal's assigneeDetailsById), falling back to
-                    // the platform-wide teamMembers list only if genuinely
-                    // not found there yet (e.g. still loading).
-                    const assignee = assigneeDetailsById[assigneeId] || teamMembers.find(m => m._id === assigneeId);
-                    // Handle department as array (take first department name or 'Unassigned')
-                    const departmentName = assignee?.department && Array.isArray(assignee.department) && assignee.department.length > 0
-                      ? assignee.department[0].name || 'Unassigned'
-                      : 'Unassigned';
+                    const assignee = assigneeDetailsById[assigneeId] || teamMembers.find(m => String(m._id) === String(assigneeId));
+                    const resolveAssigneeDepartment = () => {
+                      const rawDept = assignee?.department || assignee?.departments;
+                      const depts = Array.isArray(rawDept) ? rawDept : (rawDept ? [rawDept] : []);
+                      for (const d of depts) {
+                        if (d && typeof d === 'object' && d.name && d.name !== 'Unassigned') return d.name;
+                        if (typeof d === 'string') {
+                          const match = (departments || []).find(dept => String(dept._id) === String(d));
+                          if (match?.name) return match.name;
+                        }
+                      }
+                      const member = teamMembers.find(m => String(m._id) === String(assigneeId));
+                      if (member && member !== assignee) {
+                        const mRawDept = member.department || member.departments;
+                        const mDepts = Array.isArray(mRawDept) ? mRawDept : (mRawDept ? [mRawDept] : []);
+                        for (const d of mDepts) {
+                          if (d && typeof d === 'object' && d.name && d.name !== 'Unassigned') return d.name;
+                          if (typeof d === 'string') {
+                            const match = (departments || []).find(dept => String(dept._id) === String(d));
+                            if (match?.name) return match.name;
+                          }
+                        }
+                      }
+                      if (departments && departments.length > 0) {
+                        const match = departments.find(dept =>
+                          dept.members?.some(m => String(m._id || m) === String(assigneeId)) ||
+                          dept.managers?.some(m => String(m._id || m) === String(assigneeId))
+                        );
+                        if (match?.name) return match.name;
+                      }
+                      return 'Unassigned';
+                    };
+                    const departmentName = resolveAssigneeDepartment();
                     const safeKey = String(assigneeId || `assignee-${idx}`).trim() || `assignee-${idx}`;
                     return (
                       <motion.div
@@ -150,26 +174,34 @@ const CardSidebar = ({
             {/* Search Bar & Dropdown - Only visible if has permission */}
             {canAssign && (
               <div className="mb-3 relative">
-                {/* Hidden dummy input to absorb browser autofill targeting */}
-                <input type="text" style={{ display: 'none' }} aria-hidden="true" tabIndex="-1" />
                 <input
                   ref={inputRef}
-                  type="text"
+                  type="search"
+                  name="assignee-search"
+                  id="assignee-search-input"
                   value={searchQuery}
                   onChange={(e) => onSearchQueryChange(e.target.value)}
                   onFocus={() => onIsDropdownOpenChange(true)}
                   onClick={() => onIsDropdownOpenChange(true)}
-                  placeholder="Search members by name or email..."
-                  autoComplete="new-password"
+                  placeholder="Search members..."
+                  autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck={false}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={isDropdownOpen}
+                  aria-controls="assignee-dropdown-list"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
                 />
 
                 {/* Search Results */}
                 {isDropdownOpen && (
-                  <div ref={dropdownRef} className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto z-50 custom-scrollbar">
+                  <div ref={dropdownRef} id="assignee-dropdown-list" role="listbox" className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto z-50 custom-scrollbar">
                     {Object.keys(groupedFilteredMembers).length > 0 ? (
                       Object.entries(groupedFilteredMembers)
                         .sort(([aId, aGroup], [bId, bGroup]) => {

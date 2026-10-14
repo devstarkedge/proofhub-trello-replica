@@ -1043,7 +1043,7 @@ export const promoteSubtask = asyncHandler(async (req, res, next) => {
 
   // Populate for response
   const populatedCard = await Card.findById(newCard._id)
-    .populate('assignees', 'name email avatar')
+    .populate({ path: 'assignees', select: 'name email avatar department', populate: { path: 'department', select: 'name' } })
     .populate('members', 'name email avatar')
     .populate('createdBy', 'name email avatar')
     .lean();

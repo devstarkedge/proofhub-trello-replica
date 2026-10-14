@@ -24,6 +24,7 @@ const StepDirectAdd = ({ workspaceId, departmentOptions, roleOptions, defaultDep
   const [requirePasswordChange, setRequirePasswordChange] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -65,7 +66,19 @@ const StepDirectAdd = ({ workspaceId, departmentOptions, roleOptions, defaultDep
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      autoComplete="off"
+      className="p-6 space-y-4"
+      onFocus={() => setUnlocked(true)}
+      onClick={() => setUnlocked(true)}
+    >
+      {/* Off-screen dummy inputs to absorb aggressive browser credential autofill */}
+      <div style={{ position: 'absolute', opacity: 0, zIndex: -1, width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+        <input type="text" name="dummy-username-trap" tabIndex={-1} autoComplete="off" />
+        <input type="password" name="dummy-password-trap" tabIndex={-1} autoComplete="new-password" />
+      </div>
+
       <button
         type="button"
         onClick={onBack}
@@ -78,11 +91,50 @@ const StepDirectAdd = ({ workspaceId, departmentOptions, roleOptions, defaultDep
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
           <label className={labelClass} style={{ color: 'var(--color-text-secondary)' }}>Full Name *</label>
-          <input className={inputClass} style={inputStyle} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" />
+          <input
+            className={inputClass}
+            style={inputStyle}
+            name="new_member_full_name"
+            id="new_member_full_name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            onFocus={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+            onClick={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+            readOnly={!unlocked}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-bwignore="true"
+            data-form-type="other"
+            placeholder="Jane Doe"
+          />
         </div>
         <div className="col-span-2">
           <label className={labelClass} style={{ color: 'var(--color-text-secondary)' }}>Email *</label>
-          <input type="email" className={inputClass} style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@company.com" />
+          <input
+            type="email"
+            className={inputClass}
+            style={inputStyle}
+            name="new_member_email_address"
+            id="new_member_email_address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onFocus={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+            onClick={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+            readOnly={!unlocked}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-bwignore="true"
+            data-form-type="other"
+            placeholder="jane@company.com"
+          />
         </div>
         <div>
           <label className={labelClass} style={{ color: 'var(--color-text-secondary)' }}>Department *</label>
@@ -103,17 +155,49 @@ const StepDirectAdd = ({ workspaceId, departmentOptions, roleOptions, defaultDep
         </div>
         <div className="col-span-2">
           <label className={labelClass} style={{ color: 'var(--color-text-secondary)' }}>Employee ID (optional)</label>
-          <input className={inputClass} style={inputStyle} value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder="EMP-1042" />
+          <input
+            className={inputClass}
+            style={inputStyle}
+            name="new_member_emp_id"
+            id="new_member_emp_id"
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+            onFocus={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+            onClick={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+            readOnly={!unlocked}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-bwignore="true"
+            data-form-type="other"
+            placeholder="EMP-1042"
+          />
         </div>
         <div>
           <label className={labelClass} style={{ color: 'var(--color-text-secondary)' }}>Temporary Password *</label>
           <div className="relative">
             <input 
               type={showPassword ? 'text' : 'password'} 
+              name="new_member_temp_pwd"
+              id="new_member_temp_pwd"
               className={`${inputClass} ${temporaryPassword.length > 0 ? 'pr-9' : ''}`} 
               style={inputStyle} 
               value={temporaryPassword} 
               onChange={(e) => setTemporaryPassword(e.target.value)} 
+              onFocus={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+              onClick={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+              readOnly={!unlocked}
+              autoComplete="new-password"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+              data-form-type="other"
               placeholder="Min 6 chars, upper/lower/number" 
             />
             {temporaryPassword.length > 0 && (
@@ -146,10 +230,23 @@ const StepDirectAdd = ({ workspaceId, departmentOptions, roleOptions, defaultDep
           <div className="relative">
             <input 
               type={showPassword ? 'text' : 'password'} 
+              name="new_member_confirm_pwd"
+              id="new_member_confirm_pwd"
               className={`${inputClass} ${confirmPassword.length > 0 ? 'pr-9' : ''}`} 
               style={inputStyle} 
               value={confirmPassword} 
               onChange={(e) => setConfirmPassword(e.target.value)} 
+              onFocus={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+              onClick={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+              readOnly={!unlocked}
+              autoComplete="new-password"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+              data-form-type="other"
               placeholder="Repeat password" 
             />
             {confirmPassword.length > 0 && (

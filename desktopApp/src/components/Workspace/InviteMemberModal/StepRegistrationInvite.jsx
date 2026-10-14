@@ -17,6 +17,7 @@ const StepRegistrationInvite = ({ workspaceId, departmentOptions, roleOptions, d
   const [role, setRole] = useState(roleOptions?.find((r) => r.slug === 'employee')?.slug || '');
   const [personalMessage, setPersonalMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -43,7 +44,18 @@ const StepRegistrationInvite = ({ workspaceId, departmentOptions, roleOptions, d
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      autoComplete="off"
+      className="p-6 space-y-4"
+      onFocus={() => setUnlocked(true)}
+      onClick={() => setUnlocked(true)}
+    >
+      {/* Off-screen dummy inputs to absorb aggressive browser credential autofill */}
+      <div style={{ position: 'absolute', opacity: 0, zIndex: -1, width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+        <input type="text" name="dummy-username-trap" tabIndex={-1} autoComplete="off" />
+      </div>
+
       <button
         type="button"
         onClick={onBack}
@@ -55,7 +67,27 @@ const StepRegistrationInvite = ({ workspaceId, departmentOptions, roleOptions, d
 
       <div>
         <label className={labelClass} style={{ color: 'var(--color-text-secondary)' }}>Email *</label>
-        <input type="email" className={inputClass} style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="contractor@example.com" />
+        <input
+          type="email"
+          className={inputClass}
+          style={inputStyle}
+          name="invitee_registration_email"
+          id="invitee_registration_email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onFocus={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+          onClick={(e) => { e.target.readOnly = false; setUnlocked(true); }}
+          readOnly={!unlocked}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-bwignore="true"
+          data-form-type="other"
+          placeholder="contractor@example.com"
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-3">

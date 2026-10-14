@@ -412,9 +412,9 @@ export const declineUser = asyncHandler(async (req, res, next) => {
 export const assignUser = asyncHandler(async (req, res, next) => {
   strictUpdate(req.body, ['departments', 'team', 'accessType', 'allowedProjects']);
   const patch = Object.fromEntries(Object.entries(req.body).map(([key, value]) => [key === 'departments' ? 'department' : key, value]));
-  const member = await updateMemberAccess({ workspaceId: req.workspaceId, userId: req.params.id, actor: req.user, patch });
-  const user = await User.findById(req.params.id).select('name email avatar title').lean();
-  res.json({ success: true, data: { ...user, role: member.role, roleId: member.roleId, department: member.department, team: member.team, accessType: member.accessType, allowedProjects: member.allowedProjects } });
+  await updateMemberAccess({ workspaceId: req.workspaceId, userId: req.params.id, actor: req.user, patch });
+  const user = await workspaceUserProfile(req.params.id, req.workspaceId);
+  res.json({ success: true, data: user });
 });
 
 // @desc    Change user's role
