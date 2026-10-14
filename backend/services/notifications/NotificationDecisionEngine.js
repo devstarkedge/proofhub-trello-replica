@@ -99,6 +99,7 @@ export async function evaluateAndDeliver({
     if (channels.inApp !== false) {
       try {
         results.inApp = await notificationService.createNotification({
+          ...metadata,
           type,
           title,
           message,
@@ -106,7 +107,8 @@ export async function evaluateAndDeliver({
           sender: actorUserId,
           entityId: entity?.id,
           entityType: entity?.type,
-          ...metadata,
+          metadata,
+          workspaceId,
         });
       } catch (err) {
         logger.error(`[NotificationDecisionEngine] in-app delivery failed for ${type}`, { error: err.message });

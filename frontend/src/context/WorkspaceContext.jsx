@@ -36,6 +36,19 @@ export const WorkspaceProvider = ({ children }) => {
   const loadedForUserId = useRef(null);
   const hasResolvedOnceRef = useRef(false);
 
+  // One connection per active identity; token refresh also reauthenticates it.
+  useEffect(() => {
+    if (isAuthenticated && user?._id && token && (currentWorkspace?._id || (user.isSuperAdmin && status === 'no-workspace'))) {
+      socketService.connect(user._id, token, currentWorkspace?._id);
+    }
+  }, [isAuthenticated, user?._id, user?.isSuperAdmin, token, currentWorkspace?._id, status]);
+
+  useEffect(() => {
+    const rejected = () => loadWorkspaces();
+    window.addEventListener('socket-workspace-rejected', rejected);
+    return () => window.removeEventListener('socket-workspace-rejected', rejected);
+  }, []);
+
   const persistActiveWorkspace = useCallback((ws) => {
     if (ws?._id) {
       localStorage.setItem("workspaceId", ws._id);

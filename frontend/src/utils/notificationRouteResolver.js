@@ -10,7 +10,7 @@
 
 const TASK_TYPES = new Set([
   'task_assigned', 'task_updated', 'task_created', 'task_completed',
-  'task_due_soon', 'task_overdue', 'task_moved', 'member_added',
+  'task_deleted', 'task_due_soon', 'task_overdue', 'task_moved', 'member_added',
   'deadline_approaching', 'status_change',
 ]);
 
@@ -46,11 +46,11 @@ const DEPARTMENT_TYPES = new Set([
 function extractId(notification, field) {
   // Try top-level field first
   const topLevel = notification?.[field];
-  if (topLevel) return typeof topLevel === 'object' ? (topLevel._id || topLevel) : topLevel;
+  if (topLevel) return typeof topLevel === 'object' ? (topLevel._id || null) : topLevel;
 
   // Fallback to metadata
   const fromMeta = notification?.metadata?.[field];
-  if (fromMeta) return typeof fromMeta === 'object' ? (fromMeta._id || fromMeta) : fromMeta;
+  if (fromMeta) return typeof fromMeta === 'object' ? (fromMeta._id || null) : fromMeta;
 
   return null;
 }
@@ -190,6 +190,7 @@ export function resolveNotificationRoute(notification) {
   }
 
   // ── Project notifications → /workflow/{deptId}/{projectId} ────
+  if (type === 'project_deleted' || type === 'project_access_removed') return fallback('/', 'This project is no longer available or you no longer have access.');
   if (PROJECT_TYPES.has(type)) {
     if (deptId && projectId) {
       return result(
@@ -219,7 +220,7 @@ export function resolveNotificationRoute(notification) {
   // ── Team notifications → /teams ───────────────────────────────
   if (TEAM_TYPES.has(type)) {
     return result(
-      notification?.metadata?.url || '/teams',
+      safeRoute(notification?.metadata?.url) || '/teams',
       null,
       notification.entityId || null,
       '/',
@@ -229,7 +230,7 @@ export function resolveNotificationRoute(notification) {
   // ── Department assignment → home ──────────────────────────────
   if (DEPARTMENT_TYPES.has(type)) {
     return result(
-      notification?.metadata?.url || '/',
+      safeRoute(notification?.metadata?.url) || '/',
       null,
       notification.entityId || null,
       '/',
@@ -239,7 +240,7 @@ export function resolveNotificationRoute(notification) {
   // ── Reminder types → /reminders ───────────────────────────────
   if (REMINDER_TYPES.has(type)) {
     return result(
-      notification?.metadata?.url || '/reminders',
+      safeRoute(notification?.metadata?.url) || '/reminders',
       null,
       notification.entityId || null,
       '/',
@@ -249,7 +250,7 @@ export function resolveNotificationRoute(notification) {
   // ── User verified/approved/declined → /teams or admin ─────────
   if (['user_verified', 'user_approved', 'user_declined'].includes(type)) {
     return result(
-      notification?.metadata?.url || '/',
+      safeRoute(notification?.metadata?.url) || '/',
       null,
       null,
       '/',
@@ -259,7 +260,7 @@ export function resolveNotificationRoute(notification) {
   // ── Module access (e.g., sales) ───────────────────────────────
   if (type === 'module_access') {
     return result(
-      notification?.metadata?.url || '/sales',
+      safeRoute(notification?.metadata?.url) || '/sales',
       null,
       null,
       '/',
@@ -269,7 +270,7 @@ export function resolveNotificationRoute(notification) {
   // ── System alerts → home ──────────────────────────────────────
   if (type === 'system_alert') {
     return result(
-      notification?.metadata?.url || '/',
+      safeRoute(notification?.metadata?.url) || '/',
       null,
       null,
       '/',
@@ -342,9 +343,13 @@ function fallback(route = '/', toastMessage = null) {
   };
 }
 
+function safeRoute(value) {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\') && ![...value].some(char => char.charCodeAt(0) <= 32) ? value : null;
+}
+
 function tryMetadataUrl(notification, defaultToast = null) {
   const url = notification?.metadata?.url;
-  if (url) {
+  if (safeRoute(url)) {
     return result(url, null, null, '/');
   }
   return fallback('/', defaultToast);

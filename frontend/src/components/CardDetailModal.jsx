@@ -1,3 +1,4 @@
+import { useLocation } from 'react-router-dom';
 import React, { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlignLeft, Tag, AlertCircle, MessageSquare, Activity, RefreshCw } from "lucide-react";
@@ -45,6 +46,7 @@ const CardDetailModal = React.memo(({
   onLabelUpdate
 }) => {
   const { user } = useContext(AuthContext);
+  const notificationLocation = useLocation();
   // Memoize card props to avoid unnecessary re-renders
   const initialCard = React.useMemo(() => card, [card]);
   const [title, setTitle] = useState(initialCard.title);
@@ -378,6 +380,17 @@ const CardDetailModal = React.memo(({
     [billedTime, newBilledHours, newBilledMinutes, newBilledDate, user._id]
   );
 
+  useEffect(() => {
+    const id = notificationLocation.state?.commentId;
+    if (!id || notificationLocation.state?.highlightEntity !== card._id) return;
+    setActiveTab('comments');
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById('flowtask-comment-' + id);
+      if (target) { target.scrollIntoView({ block: 'center' }); target.focus({ preventScroll: true }); }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [notificationLocation.key, notificationLocation.state, card._id, comments]);
+
   // Check if card has a real database ID (not temporary)
   const isRealCard = card._id && !card._id.toString().startsWith('temp-');
 
@@ -388,26 +401,36 @@ const CardDetailModal = React.memo(({
       return;
     }
 
+    let disposed = false, refreshVersion = 0;
+    let serverFields = { ...currentValuesRef.current };
+    const applyEditableFields = updates => {
+      const next = {};
+      for (const field of ['title', 'description', 'priority', 'status', 'labels']) {
+        if (updates[field] !== undefined && (field !== 'labels' || updates.labels.length === 0 || typeof updates.labels[0] === 'object')) next[field] = updates[field] ?? (field === 'labels' ? [] : '');
+      }
+      if (updates.assignees !== undefined) next.assignees = (updates.assignees || []).map(a => typeof a === 'object' ? a._id : a).filter(Boolean);
+      for (const field of ['dueDate', 'startDate']) if (updates[field] !== undefined) next[field] = updates[field] ? new Date(updates[field]).toISOString().split('T')[0] : '';
+      const setters = { title: setTitle, description: setDescription, priority: setPriority, status: setStatus, labels: setLabels, assignees: setAssignees, dueDate: setDueDate, startDate: setStartDate };
+      for (const [field, value] of Object.entries(next)) {
+        // A remote refresh advances untouched fields and preserves local drafts.
+        if (JSON.stringify(currentValuesRef.current[field]) === JSON.stringify(serverFields[field])) {
+          setters[field](value);
+          if (initialValuesRef.current) initialValuesRef.current[field] = value;
+        }
+        serverFields[field] = value;
+      }
+    };
+
     // Load fresh card data from server when modal opens
-    const loadFreshCardData = async () => {
-      setCardDataLoading(true);
+    const loadFreshCardData = async (foreground = true) => {
+      const version = ++refreshVersion;
+      if (foreground) setCardDataLoading(true);
       try {
         const freshCard = await useWorkflowStore.getState().getFreshCard(card._id);
+        if (disposed || version !== refreshVersion) return;
         if (freshCard) {
-          setTitle(freshCard.title);
-          setDescription(freshCard.description || "");
-
-          if (freshCard.assignees && freshCard.assignees.length > 0) {
-            const populated = freshCard.assignees.filter(a => typeof a === 'object' && a._id);
-            mergeAssigneeDetails(populated);
-          }
-
-          setAssignees(freshCard.assignees ? freshCard.assignees.map((a) => (typeof a === 'object' ? a._id : a)).filter(Boolean) : []);
-          setPriority(freshCard.priority || "");
-          setStatus(freshCard.status || "");
-          setDueDate(freshCard.dueDate ? new Date(freshCard.dueDate).toISOString().split("T")[0] : "");
-          setStartDate(freshCard.startDate ? new Date(freshCard.startDate).toISOString().split("T")[0] : "");
-          setLabels(freshCard.labels || []);
+          applyEditableFields(freshCard);
+          mergeAssigneeDetails((freshCard.assignees || []).filter(a => typeof a === 'object' && a._id));
           setEstimationEntries((freshCard.estimationTime || []).map((entry, idx) => {
             const id = String(entry.id || entry._id || `estimation-${idx}`).trim() || `estimation-${idx}`;
             return { ...entry, id };
@@ -430,7 +453,7 @@ const CardDetailModal = React.memo(({
       } catch (error) {
         console.error("Error loading fresh card data:", error);
       } finally {
-        setCardDataLoading(false);
+        if (!disposed && version === refreshVersion) setCardDataLoading(false);
       }
     };
 
@@ -462,46 +485,8 @@ const CardDetailModal = React.memo(({
       const handleCardUpdate = (event) => {
       const { cardId, updates } = event.detail;
       if (cardId === card._id) {
-        if (updates.title) setTitle(updates.title);
-        if (updates.description) setDescription(updates.description);
-        if (updates.status) setStatus(updates.status);
-        if (updates.priority) setPriority(updates.priority);
-        if (updates.dueDate) setDueDate(new Date(updates.dueDate).toISOString().split('T')[0]);
-        if (updates.startDate) setStartDate(new Date(updates.startDate).toISOString().split('T')[0]);
-        
-        // Smart update for labels to prevent overwriting rich objects with IDs
-        if (updates.labels) {
-           // If incoming is array of objects, safe to use
-           if (updates.labels.length > 0 && typeof updates.labels[0] === 'object') {
-             setLabels(updates.labels);
-           } 
-           // If incoming is IDs, only update if we don't have rich data or if count mismatch
-           // Ideally, we shouldn't downgrade from Objects to IDs
-           else if (updates.labels.length === 0) {
-             setLabels([]);
-           }
-           // Note: If updates.labels are IDs, we prefer NOT to overwrite our local rich state 
-           // unless we can re-hydrate them. For now, ignoring ID-only updates to prevent regression
-           // as the store/parent component should handle re-fetching or providing rich props.
-        }
-
-        // Smart update for assignees
-        if (updates.assignees) {
-          // If incoming is Objects (populated)
-          if (updates.assignees.length > 0 && typeof updates.assignees[0] === 'object') {
-             const populated = updates.assignees.filter(a => typeof a === 'object' && a._id);
-             mergeAssigneeDetails(populated);
-             setAssignees(updates.assignees.map(a => a._id).filter(Boolean));
-          }
-          // If incoming is IDs
-          else if (updates.assignees.length > 0 && typeof updates.assignees[0] === 'string') {
-             setAssignees(updates.assignees);
-          }
-           else if (updates.assignees.length === 0) {
-             setAssignees([]);
-          }
-        }
-
+        applyEditableFields(updates);
+        mergeAssigneeDetails((updates.assignees || []).filter(a => typeof a === 'object' && a._id));
 
         // Helper to ensure IDs for React keys
         const mapWithId = (entries, prefix) => (entries || []).map((entry, idx) => {
@@ -544,12 +529,16 @@ const CardDetailModal = React.memo(({
     };
 
     // Subscribe to events
+    const recoverDetails = () => { loadFreshCardData(false); commentService.invalidateCache('card', card._id); loadComments(); loadActivities(); };
+    window.addEventListener('flowtask:data-invalidated', recoverDetails);
     window.addEventListener('socket-card-updated', handleCardUpdate);
     window.addEventListener('socket-card-cover-updated', handleCardCoverUpdate);
     window.addEventListener('socket-activity-added', handleActivityAdded);
 
     // Cleanup
     return () => {
+      disposed = true; refreshVersion++;
+      window.removeEventListener('flowtask:data-invalidated', recoverDetails);
       window.removeEventListener('socket-card-updated', handleCardUpdate);
       window.removeEventListener('socket-card-cover-updated', handleCardCoverUpdate);
       window.removeEventListener('socket-activity-added', handleActivityAdded);

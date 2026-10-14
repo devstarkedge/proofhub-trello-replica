@@ -1,9 +1,10 @@
 import React, { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import WorkspaceContext from './WorkspaceContext';
+import { notificationBelongsTo, notificationMatches, mergeNotifications } from '../utils/notificationState';
 import AuthContext from './AuthContext';
 import Database from '../services/database';
-import socketService from '../services/socket';
 import { Bell } from 'lucide-react';
 import api from '../services/api';
 import { resolveNotificationRoute } from '../utils/notificationRouteResolver';
@@ -13,6 +14,21 @@ const NotificationContext = createContext();
 export const NotificationProvider = ({ children }) => {
   const { user, setUser } = useContext(AuthContext);
   const navigate = useNavigate();
+  const location = useLocation();
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const userId = user?._id || user?.id;
+  const workspaceId = currentWorkspace?._id;
+  const scope = String(userId || '') + ':' + String(workspaceId || '');
+  const scopeRef = useRef(scope); scopeRef.current = scope;
+  const seenRef = useRef(new Set());
+  const syncTimerRef = useRef(null);
+  const filterRef = useRef('all');
+  const clickRef = useRef(null);
+  const toastRef = useRef(null);
+  const inboxRequestRef = useRef(0);
+  const arrivalsRef = useRef(0);
+  const liveRef = useRef(new Map());
+  const countTimerRef = useRef(null);
   
   // Core state
   const [notifications, setNotifications] = useState([]);
@@ -48,31 +64,41 @@ export const NotificationProvider = ({ children }) => {
   // Initialize on user login - load notifications and setup background refresh
   // Note: Real-time socket listeners are handled in a separate useEffect below
   useEffect(() => {
-    if (user) {
+    inboxRequestRef.current++;
+    for (const id of seenRef.current) toast.dismiss(id);
+    setNotifications([]); setArchivedNotifications([]); setUnreadCount(0);
+    setIsOpen(false); setVerificationModal(null); setTabApprovalModal(null);
+    seenRef.current.clear(); liveRef.current.clear(); pendingActionsRef.current = [];
+    clearTimeout(countTimerRef.current);
+    skipRef.current = 0; archivedSkipRef.current = 0;
+    setIsLoading(false);
+    setIsLoadingArchived(false);
+    if (userId && workspaceId) {
       loadNotifications(true);
       checkPushSupport();
       startBackgroundRefresh();
       
-      // Auto prompt logic
-      setTimeout(() => checkAndPromptPush(), 1500);
+      if (!window.flowtaskDesktop?.isDesktop) checkAndPromptPush();
     }
 
     return () => {
       stopBackgroundRefresh();
     };
-  }, [user]);
+  }, [userId, workspaceId]);
 
   // Load notifications with pagination
   // filterOverride allows passing the new filter value directly to avoid stale closure issues
   const loadNotifications = async (reset = false, filterOverride = null) => {
-    if (isLoading) return;
+    if (!userId || !workspaceId || (!reset && isLoading)) return;
+    const requestScope = scope;
+    const requestId = ++inboxRequestRef.current;
+    const arrival = arrivalsRef.current;
     
     try {
       setIsLoading(true);
       
       if (reset) {
         skipRef.current = 0;
-        setNotifications([]);
       }
       
       // Use filterOverride if provided, otherwise use current filter state
@@ -85,17 +111,20 @@ export const NotificationProvider = ({ children }) => {
       };
       
       const response = await Database.getNotifications(params);
+      if (scopeRef.current !== requestScope || inboxRequestRef.current !== requestId) return;
       const { notifications: newNotifications, pagination, unreadCount: count } = response;
-      
-      setNotifications(prev => reset ? newNotifications : [...prev, ...newNotifications]);
+      for (const item of newNotifications) seenRef.current.add(String(item._id));
+      while (seenRef.current.size > 1000) seenRef.current.delete(seenRef.current.values().next().value);
+      const duringRead = [...liveRef.current.values()].filter(item => item.sequence > arrival && notificationMatches(item.notification, activeFilter)).map(item => item.notification);
+      setNotifications(prev => mergeNotifications(mergeNotifications(reset ? [] : prev, newNotifications), duringRead));
       setUnreadCount(count);
       setHasMore(pagination.hasMore);
-      skipRef.current = skipRef.current + newNotifications.length;
+      skipRef.current = (reset ? 0 : skipRef.current) + newNotifications.length;
       
     } catch (error) {
       console.error('Error loading notifications:', error);
     } finally {
-      setIsLoading(false);
+      if (scopeRef.current === requestScope && inboxRequestRef.current === requestId) setIsLoading(false);
     }
   };
 
@@ -108,86 +137,79 @@ export const NotificationProvider = ({ children }) => {
 
   // Stable handler for new notifications via socket - uses functional updates so no deps needed
   const handleNewNotification = useCallback((event) => {
+    if (scopeRef.current !== scope) return;
     const notification = event.detail;
-    if (!notification) return;
-    
-    console.log('[NotificationContext] Received socket notification:', notification?.title || notification?.type);
-    
-    // Use functional update to avoid stale state
-    setNotifications(prev => {
-      // Check for duplicates
-      const exists = prev.some(n => n._id === notification._id);
-      if (exists) return prev;
-      return [notification, ...prev];
-    });
-    
-    // Update unread count
-    setUnreadCount(prev => prev + 1);
-    
-    // Show toast (can safely call as it just triggers a toast)
-    showToast(notification);
-  }, []);
-
-  // Stable handler for task assigned events
-  const handleTaskAssigned = useCallback((event) => {
-    const data = event.detail;
-    if (!data) return;
-    
-    const notification = {
-      _id: data._id || Date.now().toString(),
-      type: 'task_assigned',
-      title: 'New Task Assigned',
-      message: data.message || 'You have been assigned to a new task',
-      createdAt: new Date().toISOString(),
-      isRead: false,
-      priority: 'medium',
-      ...data
-    };
-    
-    setNotifications(prev => {
-      const exists = prev.some(n => n._id === notification._id);
-      if (exists) return prev;
-      return [notification, ...prev];
-    });
-    setUnreadCount(prev => prev + 1);
-    showToast(notification);
-  }, []);
-
-  // Handle reconnection - sync missed notifications
-  const handleReconnect = useCallback(async () => {
-    console.log('[NotificationContext] Socket reconnected, syncing notifications...');
-    // Reload notifications on reconnect to get any missed ones
-    try {
-      skipRef.current = 0;
-      const response = await Database.getNotifications({ limit: LIMIT, skip: 0 });
-      const { notifications: newNotifications, pagination, unreadCount: count } = response;
-      setNotifications(newNotifications);
-      setUnreadCount(count);
-      setHasMore(pagination.hasMore);
-      skipRef.current = newNotifications.length;
-    } catch (error) {
-      console.error('[NotificationContext] Error syncing on reconnect:', error);
+    if (!notificationBelongsTo(notification, userId, workspaceId)) return;
+    const id = String(notification._id);
+    if (seenRef.current.has(id)) return;
+    seenRef.current.add(id);
+    liveRef.current.set(id, { notification, sequence: ++arrivalsRef.current });
+    if (liveRef.current.size > 500) liveRef.current.delete(liveRef.current.keys().next().value);
+    if (seenRef.current.size > 1000) seenRef.current.delete(seenRef.current.values().next().value);
+    if (notificationMatches(notification, filterRef.current)) {
+      setNotifications(prev => mergeNotifications(prev, [notification]));
+      skipRef.current++;
     }
-  }, []);
+    if (!notification.isRead && !notification.isArchived) setUnreadCount(prev => prev + 1);
+    clearTimeout(countTimerRef.current);
+    const sequence = arrivalsRef.current;
+    countTimerRef.current = setTimeout(() => {
+      Database.getUnreadCount().then(({ count }) => {
+        if (scopeRef.current === scope && arrivalsRef.current === sequence) setUnreadCount(count);
+      }).catch(() => {});
+    }, 150);
+    toastRef.current?.(notification);
+  }, [userId, workspaceId, scope]);
 
-  // Setup real-time listeners - stable references ensure listeners work across re-renders
+  const handleReconnect = useCallback(() => {
+    processPendingActions();
+    clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      if (scopeRef.current === scope && userId && workspaceId) {
+        loadNotifications(true, filterRef.current);
+        if (archivedSkipRef.current > 0) loadArchivedNotifications(true);
+      }
+    }, 100);
+  }, [scope, userId, workspaceId]);
+
   useEffect(() => {
-    if (!user) return;
-
-    console.log('[NotificationContext] Setting up real-time listeners for user:', user._id);
-    
-    // Add listeners
-    window.addEventListener('socket-notification', handleNewNotification);
-    window.addEventListener('socket-task-assigned', handleTaskAssigned);
-    window.addEventListener('socket-connected', handleReconnect);
-
-    return () => {
-      console.log('[NotificationContext] Cleaning up real-time listeners');
-      window.removeEventListener('socket-notification', handleNewNotification);
-      window.removeEventListener('socket-task-assigned', handleTaskAssigned);
-      window.removeEventListener('socket-connected', handleReconnect);
+    if (!userId || !workspaceId) return;
+    const stateChanged = event => {
+      if (notificationBelongsTo({ ...event.detail, user: event.detail?.recipientId }, userId, workspaceId)) handleReconnect();
     };
-  }, [user, handleNewNotification, handleTaskAssigned, handleReconnect]);
+    const recovery = ['socket-connected', 'online', 'focus', 'desktop-resume'];
+    window.addEventListener('socket-notification', handleNewNotification);
+    window.addEventListener('socket-notification-state-changed', stateChanged);
+    recovery.forEach(name => window.addEventListener(name, handleReconnect));
+    return () => {
+      clearTimeout(syncTimerRef.current);
+      clearTimeout(countTimerRef.current);
+      window.removeEventListener('socket-notification', handleNewNotification);
+      window.removeEventListener('socket-notification-state-changed', stateChanged);
+      recovery.forEach(name => window.removeEventListener(name, handleReconnect));
+    };
+  }, [userId, workspaceId, handleNewNotification, handleReconnect]);
+
+  useEffect(() => { setIsOpen(false); }, [location.key, scope]);
+  useEffect(() => {
+    const desktop = window.flowtaskDesktop?.notifications;
+    if (!desktop) return;
+    desktop.setSession(userId && workspaceId ? { userId, workspaceId, enabled: user?.settings?.notifications?.push !== false } : null).catch(() => {});
+    const openNotification = async id => {
+      const requestScope = scope;
+      try {
+        await desktop.takePendingClick();
+        const response = await api.get('/api/notifications/' + encodeURIComponent(id));
+        if (scopeRef.current === requestScope) clickRef.current?.(response.data);
+      } catch { if (scopeRef.current === requestScope) toast.info('This notification is no longer available in the current workspace.'); }
+    };
+    const remove = desktop.onClick(openNotification);
+    desktop.takePendingClick().then(id => { if (id && scopeRef.current === scope) openNotification(id); });
+    return () => { remove(); desktop.setSession(null).catch(() => {}); };
+  }, [scope, user?.settings?.notifications?.push]);
+
+  const addNotification = notification => handleNewNotification({ detail: notification });
+
 
   useEffect(() => {
     if (!user) return;
@@ -218,22 +240,13 @@ export const NotificationProvider = ({ children }) => {
     }
   };
 
-  // Add new notification to list
-  const addNotification = (notification) => {
-    setNotifications(prev => {
-      // Check for duplicates
-      const exists = prev.some(n => n._id === notification._id);
-      if (exists) return prev;
-      
-      setUnreadCount(count => count + 1);
-      return [notification, ...prev];
-    });
-
-    showToast(notification);
-  };
-
   // Show toast for new notification
   const showToast = (notification) => {
+    if (window.flowtaskDesktop?.notifications) {
+      window.flowtaskDesktop.notifications.show({ id: String(notification._id), userId: String(userId), workspaceId: String(workspaceId), title: notification.title || 'FlowTask', body: notification.message || '' }).catch(() => {});
+      if (!document.hasFocus()) return;
+    }
+    if (user?.settings?.notifications?.inApp === false) return;
     // sales_tab_approval has its own dedicated TabApprovalToast — skip generic toast.
     // sales_tab_alert has its own dedicated WatchAlertToast (driven by the
     // separate 'sales:tab:alert' socket event) — skip here too, otherwise a
@@ -250,10 +263,10 @@ export const NotificationProvider = ({ children }) => {
           <Bell size={18} className="text-white" />
         </div>
         <div className="flex-1">
-          <p className="font-semibold text-gray-900 text-sm mb-1">
+          <p className="font-semibold text-sm mb-1" style={{color:"var(--color-text-primary)"}}>
             {notification.title || 'New Notification'}
           </p>
-          <p className="text-gray-600 text-xs line-clamp-2">
+          <p className="text-xs line-clamp-2" style={{color:"var(--color-text-secondary)"}}>
             {notification.message}
           </p>
         </div>
@@ -267,14 +280,19 @@ export const NotificationProvider = ({ children }) => {
       closeOnClick: true,
       pauseOnHover: true,
       draggable: true,
-      className: 'bg-white shadow-lg rounded-lg border border-gray-200',
+      toastId: String(notification._id), onClick: () => handleNotificationClick(notification),
+      className: 'shadow-lg rounded-lg border',
       bodyClassName: 'p-0',
-      style: { padding: '12px' }
+      style: { padding: '12px', background: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }
     });
   };
 
+  toastRef.current = showToast;
+
   // Mark single notification as read (optimistic update)
   const markAsRead = async (notificationId) => {
+    if (notifications.find(item => item._id === notificationId)?.isRead) return;
+    const actionScope = scope;
     // Optimistic update
     setNotifications(prev =>
       prev.map(n =>
@@ -285,7 +303,9 @@ export const NotificationProvider = ({ children }) => {
 
     try {
       await Database.markNotificationAsRead(notificationId);
+      if (scopeRef.current !== actionScope) return;
     } catch (error) {
+      if (scopeRef.current !== actionScope) return;
       console.error('Error marking notification as read:', error);
       // Rollback on failure
       setNotifications(prev =>
@@ -299,6 +319,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Mark all as read
   const markAllAsRead = async () => {
+    const actionScope = scope;
     const previousNotifications = [...notifications];
     const previousCount = unreadCount;
 
@@ -308,8 +329,10 @@ export const NotificationProvider = ({ children }) => {
 
     try {
       await Database.markAllNotificationsAsRead();
+      if (scopeRef.current !== actionScope) return;
       toast.success('All notifications marked as read');
     } catch (error) {
+      if (scopeRef.current !== actionScope) return;
       console.error('Error marking all as read:', error);
       // Rollback
       setNotifications(previousNotifications);
@@ -320,6 +343,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Archive notification (optimistic)
   const archiveNotification = async (notificationId) => {
+    const actionScope = scope;
     const notification = notifications.find(n => n._id === notificationId);
     
     // Optimistic update - remove from active list
@@ -340,7 +364,9 @@ export const NotificationProvider = ({ children }) => {
 
     try {
       await Database.archiveNotification(notificationId);
+      if (scopeRef.current !== actionScope) return;
     } catch (error) {
+      if (scopeRef.current !== actionScope) return;
       console.error('Error archiving notification:', error);
       // Rollback - add back to active list
       if (notification) {
@@ -359,6 +385,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Delete notification
   const deleteNotification = async (notificationId) => {
+    const actionScope = scope;
     const notification = notifications.find(n => n._id === notificationId);
     
     // Optimistic update
@@ -369,8 +396,10 @@ export const NotificationProvider = ({ children }) => {
 
     try {
       await Database.deleteNotification(notificationId);
+      if (scopeRef.current !== actionScope) return;
       toast.success('Notification deleted');
     } catch (error) {
+      if (scopeRef.current !== actionScope) return;
       console.error('Error deleting notification:', error);
       // Rollback
       if (notification) {
@@ -387,6 +416,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Clear all notifications
   const clearAll = async () => {
+    const actionScope = scope;
     const previousNotifications = [...notifications];
     const previousCount = unreadCount;
 
@@ -396,8 +426,10 @@ export const NotificationProvider = ({ children }) => {
 
     try {
       await Database.clearAllNotifications();
+      if (scopeRef.current !== actionScope) return;
       toast.success('All notifications cleared');
     } catch (error) {
+      if (scopeRef.current !== actionScope) return;
       console.error('Error clearing notifications:', error);
       // Rollback
       setNotifications(previousNotifications);
@@ -408,6 +440,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Load archived notifications
   const loadArchivedNotifications = async (reset = false) => {
+    const actionScope = scope;
     if (isLoadingArchived) return;
     
     try {
@@ -424,6 +457,7 @@ export const NotificationProvider = ({ children }) => {
       };
       
       const response = await Database.getArchivedNotifications(params);
+      if (scopeRef.current !== actionScope) return;
       const { notifications: archivedItems, pagination } = response;
       
       setArchivedNotifications(prev => reset ? archivedItems : [...prev, ...archivedItems]);
@@ -431,14 +465,16 @@ export const NotificationProvider = ({ children }) => {
       archivedSkipRef.current = archivedSkipRef.current + archivedItems.length;
       
     } catch (error) {
+      if (scopeRef.current !== actionScope) return;
       console.error('Error loading archived notifications:', error);
     } finally {
-      setIsLoadingArchived(false);
+      if (scopeRef.current === actionScope) setIsLoadingArchived(false);
     }
   };
 
   // Restore notification from archive
   const restoreNotification = async (notificationId) => {
+    const actionScope = scope;
     const notification = archivedNotifications.find(n => n._id === notificationId);
     
     // Optimistic update - remove from archived
@@ -446,6 +482,7 @@ export const NotificationProvider = ({ children }) => {
 
     try {
       const response = await Database.restoreNotification(notificationId);
+      if (scopeRef.current !== actionScope) return;
       // Add to active notifications
       if (response.notification) {
         setNotifications(prev => [response.notification, ...prev].sort((a, b) => 
@@ -457,6 +494,7 @@ export const NotificationProvider = ({ children }) => {
       }
       toast.success('Notification restored');
     } catch (error) {
+      if (scopeRef.current !== actionScope) return;
       console.error('Error restoring notification:', error);
       // Rollback
       if (notification) {
@@ -470,6 +508,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Delete notification permanently
   const deletePermanently = async (notificationId) => {
+    const actionScope = scope;
     const notification = archivedNotifications.find(n => n._id === notificationId);
     
     // Optimistic update
@@ -477,8 +516,10 @@ export const NotificationProvider = ({ children }) => {
 
     try {
       await Database.deleteNotification(notificationId);
+      if (scopeRef.current !== actionScope) return;
       toast.success('Notification permanently deleted');
     } catch (error) {
+      if (scopeRef.current !== actionScope) return;
       console.error('Error deleting notification:', error);
       // Rollback
       if (notification) {
@@ -493,6 +534,7 @@ export const NotificationProvider = ({ children }) => {
   // Filter change handler
   // Pass newFilter directly to loadNotifications to avoid stale state from async setFilter
   const handleFilterChange = (newFilter) => {
+    filterRef.current = newFilter;
     setFilter(newFilter);
     skipRef.current = 0;
     loadNotifications(true, newFilter);  // Pass filter explicitly to avoid closure stale state
@@ -505,6 +547,8 @@ export const NotificationProvider = ({ children }) => {
 
   // Handle notification click
   const handleNotificationClick = (notification) => {
+    if (scopeRef.current !== scope) return;
+    setIsOpen(false);
     // Verification flow for admins/managers (special modal, no navigation)
     if (notification.type === 'user_registered' && (user?.role === 'admin' || user?.role === 'manager')) {
       setVerificationModal(notification);
@@ -558,6 +602,8 @@ export const NotificationProvider = ({ children }) => {
     }
   };
 
+  clickRef.current = handleNotificationClick;
+
   // Handle verification action
   const handleVerificationAction = async (action, userData) => {
     try {
@@ -586,7 +632,8 @@ export const NotificationProvider = ({ children }) => {
   // Background refresh
   const startBackgroundRefresh = () => {
     refreshIntervalRef.current = setInterval(() => {
-      loadNotifications(true);
+      const requestScope = scope;
+      Database.getUnreadCount().then(({ count }) => { if (scopeRef.current === requestScope) setUnreadCount(count); }).catch(() => {});
     }, 5 * 60 * 1000); // 5 minutes
   };
 
@@ -598,6 +645,7 @@ export const NotificationProvider = ({ children }) => {
 
   // Push notification support
   const checkPushSupport = () => {
+    if (window.flowtaskDesktop?.notifications) { setPushSupported(true); setPushEnabled(user?.settings?.notifications?.push !== false); return; }
     if (!window.flowtaskDesktop?.isDesktop && 'serviceWorker' in navigator && 'PushManager' in window) {
       setPushSupported(true);
       navigator.serviceWorker.ready.then(registration => {
@@ -646,7 +694,12 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const enablePushNotifications = async (silent = false) => {
-    if (window.flowtaskDesktop?.isDesktop) return { success: false };
+    if (window.flowtaskDesktop?.notifications) {
+      const notifications = { ...user.settings?.notifications, push: true };
+      await api.put('/api/users/settings', { notifications });
+      setUser(prev => ({ ...prev, settings: { ...prev.settings, notifications } }));
+      setPushEnabled(true); return { success: true };
+    }
     try {
       if (Notification.permission === 'denied') {
         setPushPrompt({ isOpen: true, mode: 'blocked', isBusy: false });
@@ -688,7 +741,7 @@ export const NotificationProvider = ({ children }) => {
         const bc = new BroadcastChannel('push_notification_sync');
         bc.postMessage({ type: 'SYNC_PUSH' });
         bc.close();
-      } catch (e) {
+      } catch {
         // ignore
       }
       return { success: true };
@@ -701,6 +754,12 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const disablePushNotifications = async () => {
+    if (window.flowtaskDesktop?.notifications) {
+      const notifications = { ...user.settings?.notifications, push: false };
+      await api.put('/api/users/settings', { notifications });
+      setUser(prev => ({ ...prev, settings: { ...prev.settings, notifications } }));
+      setPushEnabled(false); return;
+    }
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
@@ -742,6 +801,8 @@ export const NotificationProvider = ({ children }) => {
         clearAll,
         handleFilterChange,
         togglePanel,
+        addNotification,
+        closePanel: () => setIsOpen(false),
         handleNotificationClick,
         
         // Archived actions

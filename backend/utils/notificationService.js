@@ -75,10 +75,14 @@ class NotificationService {
 
       // Determine priority (explicit > auto-assigned)
       const priority = explicitPriority || this.getPriorityForType(type);
+      const targetType = entityType || (relatedCard ? 'Card' : relatedBoard ? 'Board' : relatedTeam ? 'Team' : null);
+      const targetId = entityId || relatedCard || relatedBoard || relatedTeam;
+      if (!type.endsWith('_deleted') && !await userCanAccessEntity({ userId: user, entityType: targetType, entityId: targetId })) return null;
 
       // Create the notification
       const notification = await Notification.create({
         workspaceId,
+        deliveryPending: true,
         type,
         title,
         message,
@@ -105,10 +109,16 @@ class NotificationService {
         .lean();
 
       // Send real-time notification via socket
-      emitNotification(user.toString(), populatedNotification);
+      try {
+        emitNotification(user.toString(), populatedNotification);
+        await Notification.updateOne({ _id: notification._id }, { $set: { deliveryPending: false } });
+      } catch {
+        // The persisted notification is the retry/outbox record. Never delete it
+        // or report creation failure merely because realtime transport is down.
+      }
 
       // Send email notification if enabled (in background)
-      if (userDoc.settings?.notifications?.email) {
+      if (options.email !== false && userDoc.settings?.notifications?.email) {
         this.sendEmailNotification(notification, userDoc).catch(err => 
           console.error('Background email notification error:', err)
         );
@@ -116,14 +126,10 @@ class NotificationService {
 
       // Send push notification if enabled and subscription exists (in background)
       const userPushSubscriptions = getUserPushSubscriptions(userDoc);
-      console.log(`[Push] Checking push for user ${userDoc.name}: enabled=${userDoc.settings?.notifications?.push}, subscriptions=${userPushSubscriptions.length}`);
-      if (userDoc.settings?.notifications?.push && userPushSubscriptions.length > 0) {
-        console.log(`[Push] Sending push notification to ${userDoc.name}`);
+      if (options.push !== false && userDoc.settings?.notifications?.push && userPushSubscriptions.length > 0) {
         this.sendPushNotification(notification, userDoc).catch(err => 
           console.error('Background push notification error:', err)
         );
-      } else {
-        console.log(`[Push] Skipped - push not enabled or no subscription`);
       }
 
       return populatedNotification;

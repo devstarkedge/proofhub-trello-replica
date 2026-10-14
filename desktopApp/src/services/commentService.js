@@ -1,4 +1,5 @@
 import Database from "./database";
+import { registerResettable } from "../store/resetRegistry";
 
 /**
  * Optimized Comment Service
@@ -24,6 +25,7 @@ class CommentService {
     // Track pending saves to avoid duplicate from socket events
     // Maps tempId -> { type, entityId, timestamp }
     this.pendingSaves = new Map();
+    this.generation = 0;
 
     // Subscribe to socket events for real-time updates
     this.initSocketListeners();
@@ -327,6 +329,7 @@ class CommentService {
       }
     }
 
+    const generation = this.generation;
     try {
       let comments;
 
@@ -344,6 +347,7 @@ class CommentService {
           throw new Error(`Unknown comment type: ${type}`);
       }
 
+      if (generation !== this.generation) return [];
       // Store in cache
       this.setInCache(type, entityId, comments);
 
@@ -469,6 +473,11 @@ class CommentService {
    * Clear all caches
    */
   clearAllCache() {
+    this.generation++;
+    this.pendingSaves.clear();
+    for (const timer of this.debounceTimers.values()) clearTimeout(timer);
+    this.debounceTimers.clear();
+    this.pendingRequests = [];
     this.cache = {
       card: {},
       subtask: {},
@@ -479,4 +488,5 @@ class CommentService {
 
 // Export singleton instance
 const commentService = new CommentService();
+registerResettable(() => commentService.clearAllCache());
 export default commentService;

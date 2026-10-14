@@ -1,6 +1,6 @@
 import Team from '../models/Team.js';
 import User from '../models/User.js';
-import Notification from '../models/Notification.js';
+import notificationService from '../utils/notificationService.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { slackHooks } from '../utils/slackHooks.js';
@@ -146,7 +146,7 @@ export const addMember = asyncHandler(async (req, res, next) => {
     await user.save();
 
     // Create notification
-    await Notification.create({
+    await notificationService.createNotification({
       type: 'team_member_added',
       title: 'Added to Team',
       message: `You have been added to ${team.name}`,
@@ -220,7 +220,7 @@ export const inviteUser = async (req, res) => {
       await team.save();
       await User.findByIdAndUpdate(user._id, { team: team._id });
 
-      await Notification.create({
+      await notificationService.createNotification({
         type: 'team_invite',
         title: 'Team Invitation',
         message: `You have been invited to join ${team.name}`,
@@ -255,7 +255,7 @@ export const joinTeam = async (req, res) => {
       await team.save();
       await User.findByIdAndUpdate(req.user.id, { team: team._id });
 
-      await Notification.create({
+      await notificationService.createNotification({
         type: 'team_member_added',
         title: 'Joined Team',
         message: `You joined ${team.name}`,

@@ -2,10 +2,12 @@ import React, { useContext, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
+import useRealtimeSync from '../hooks/useRealtimeSync';
 import AuthContext from '../context/AuthContext';
 import { runAttendanceLocationBootstrapOnce } from '../utils/attendanceLocationBootstrap';
 
 const MainLayout = () => {
+  useRealtimeSync();
   const { loading } = useContext(AuthContext);
 
   // MainLayout only ever mounts once PrivateRoute has confirmed both login

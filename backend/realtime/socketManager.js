@@ -1,4 +1,5 @@
 import Workspace from '../models/Workspace.js';
+import { userCanAccessEntity } from '../utils/entityAccess.js';
 import { hasResourceAction } from '../modules/permissions/permissionEngine.js';
 import { isSuperAdminEmailAllowed } from '../middleware/requireSuperAdmin.js';
 /**
@@ -63,6 +64,7 @@ function init(httpServer) {
       }
 
       const decodedUser = jwt.verify(token, config.jwt.secret);
+      socket.data.tokenExpiresAt = decodedUser.exp ? decodedUser.exp * 1000 : null;
       const userId = decodedUser?.id || decodedUser?._id;
       if (!userId) {
         return next(new Error('Invalid token payload'));
@@ -109,6 +111,7 @@ function init(httpServer) {
 
       const [account, workspace] = await Promise.all([User.findById(userId).select('isActive').lean(), Workspace.findById(requestedWorkspaceId).select('isActive').lean()]);
       if (!account?.isActive || !workspace?.isActive || membership.kind === 'guest') return next(new Error('Inactive account or workspace'));
+      socket.data.tokenExpiresAt = decodedUser.exp ? decodedUser.exp * 1000 : null;
       socket.data.membership = membership;
       socket.data.user = decodedUser;
       socket.data.workspaceId = requestedWorkspaceId;
@@ -145,73 +148,20 @@ function init(httpServer) {
 
     logger.debug('User connected', { userId });
 
+    const expiresIn = socket.data.tokenExpiresAt ? socket.data.tokenExpiresAt - Date.now() : null;
+    const expiryTimer = expiresIn == null ? null : setTimeout(() => socket.disconnect(true), Math.max(0, Math.min(expiresIn, 2147483647)));
+    expiryTimer?.unref();
+    socket.once('disconnect', () => clearTimeout(expiryTimer));
+
     // ── Card rooms ──
     socket.on('join-card', async (cardId) => {
       const fresh = await WorkspaceMembership.findOne({ workspace: socketWorkspaceId, user: userId, status: 'active' }).lean().catch(() => null);
       if (!fresh) { socket.disconnect(true); return; }
       try {
         await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
-        const Card = (await import('../models/Card.js')).default;
-        const card = await Card.findById(cardId).lean();
-        if (!card) {
-          if (config.isDev) logger.debug(`join-card: card not found ${cardId}`);
-          return;
-        }
-
-        // A stale/switched socket must not join another workspace's room —
-        // the plugin already filtered the query above to this workspace,
-        // so a non-null result here is already guaranteed to match, but the
-        // explicit check documents the invariant and stays correct even if
-        // this query is ever changed to bypass the plugin.
-        if (card.workspaceId?.toString() !== socketWorkspaceId) {
-          if (config.isDev) logger.debug(`join-card: workspace mismatch for card ${cardId}`);
-          return;
-        }
-
-        // Allow if admin
-        if (fresh.role === 'admin') {
+        if (await userCanAccessEntity({ userId, entityType: 'Card', entityId: cardId })) {
           socket.join(ROOM.card(cardId, socketWorkspaceId));
-          if (config.isDev) logger.debug(`User ${userId} joined card room (admin): card-${cardId}`);
-          return;
         }
-
-        // Direct card membership or assignee
-        const userIdStr = userId.toString();
-        if (Array.isArray(card.members) && card.members.map(m => m.toString()).includes(userIdStr)) {
-          socket.join(ROOM.card(cardId, socketWorkspaceId));
-          if (config.isDev) logger.debug(`User ${userId} joined card room (member): card-${cardId}`);
-          return;
-        }
-        if (Array.isArray(card.assignees) && card.assignees.map(a => a.toString()).includes(userIdStr)) {
-          socket.join(ROOM.card(cardId, socketWorkspaceId));
-          if (config.isDev) logger.debug(`User ${userId} joined card room (assignee): card-${cardId}`);
-          return;
-        }
-
-        // Fallback: check board membership/visibility
-        if (card.board) {
-          const Board = (await import('../models/Board.js')).default;
-          const board = await Board.findById(card.board).lean();
-          if (board) {
-            if (board.visibility === 'public') {
-              socket.join(ROOM.card(cardId, socketWorkspaceId));
-              if (config.isDev) logger.debug(`User ${userId} joined card room (public board): card-${cardId}`);
-              return;
-            }
-            if (board.owner?.toString() === userIdStr) {
-              socket.join(ROOM.card(cardId, socketWorkspaceId));
-              if (config.isDev) logger.debug(`User ${userId} joined card room (board owner): card-${cardId}`);
-              return;
-            }
-            if (Array.isArray(board.members) && board.members.map(m => m.toString()).includes(userIdStr)) {
-              socket.join(ROOM.card(cardId, socketWorkspaceId));
-              if (config.isDev) logger.debug(`User ${userId} joined card room (board member): card-${cardId}`);
-              return;
-            }
-          }
-        }
-
-        if (config.isDev) logger.debug(`join-card: user ${userId} unauthorized for card ${cardId}`);
         });
       } catch (error) {
         if (config.isDev) logger.error('join-card error', { error: error.message });
@@ -271,43 +221,9 @@ function init(httpServer) {
       if (!fresh) { socket.disconnect(true); return; }
       try {
         await workspaceContext.run({ workspaceId: socketWorkspaceId }, async () => {
-        const Board = (await import('../models/Board.js')).default;
-        const board = await Board.findById(boardId).lean();
-        if (!board) {
-          if (config.isDev) logger.debug(`join-board: board not found ${boardId}`);
-          return;
-        }
-
-        if (board.workspaceId?.toString() !== socketWorkspaceId) {
-          if (config.isDev) logger.debug(`join-board: workspace mismatch for board ${boardId}`);
-          return;
-        }
-
-        // Admins always allowed
-        if (fresh.role === 'admin') {
+        if (await userCanAccessEntity({ userId, entityType: 'Board', entityId: boardId })) {
           socket.join(ROOM.board(boardId, socketWorkspaceId));
-          if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (admin)`);
-          return;
         }
-
-        const userIdStr = userId.toString();
-        if (board.visibility === 'public') {
-          socket.join(ROOM.board(boardId, socketWorkspaceId));
-          if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (public)`);
-          return;
-        }
-        if (board.owner?.toString() === userIdStr) {
-          socket.join(ROOM.board(boardId, socketWorkspaceId));
-          if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (owner)`);
-          return;
-        }
-        if (Array.isArray(board.members) && board.members.map(m => m.toString()).includes(userIdStr)) {
-          socket.join(ROOM.board(boardId, socketWorkspaceId));
-          if (config.isDev) logger.debug(`User ${userId} joined board ${boardId} (member)`);
-          return;
-        }
-
-        if (config.isDev) logger.debug(`join-board: user ${userId} unauthorized for board ${boardId}`);
         });
       } catch (error) {
         if (config.isDev) logger.error('join-board error', { error: error.message });

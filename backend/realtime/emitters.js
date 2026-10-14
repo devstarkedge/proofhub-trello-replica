@@ -17,6 +17,7 @@ import {
   JOIN_REQUEST_REJECTED,
 } from './events.js';
 import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
+import { publishBoardEvent } from './boardPublication.js';
 
 // The Socket.IO server instance — set by socketManager.init()
 let _io = null;
@@ -43,8 +44,15 @@ export const getIO = () => {
 /** Emit notification to a specific user's personal room */
 export const emitNotification = (userId, notification) => {
   const io = getIO();
-  console.log(`[Socket] Emitting notification to user-${userId}:`, notification?.title || notification?.type);
-  io.to(ROOM.user(userId, notification?.workspaceId || getActiveWorkspaceId())).emit('notification', notification);
+  const workspaceId = notification?.workspaceId || getActiveWorkspaceId();
+  if (!workspaceId || !notification?._id) throw new Error('Notification identity and workspace are required');
+  if (String(notification.user?._id || notification.user) !== String(userId)) throw new Error('Notification recipient mismatch');
+  if (getActiveWorkspaceId() && String(getActiveWorkspaceId()) !== String(workspaceId)) throw new Error('Notification workspace mismatch');
+  io.to(ROOM.user(userId, workspaceId)).emit('notification', {
+    ...notification, eventId: String(notification._id), schemaVersion: 1,
+    workspaceId: String(workspaceId), recipientId: String(userId),
+    occurredAt: new Date(notification.createdAt || Date.now()).toISOString(),
+  });
 };
 
 /** Emit any event to a specific user */
@@ -59,7 +67,7 @@ export const emitToTeam = (teamId, event, data) => {
 
 /** Emit any event to a board room */
 export const emitToBoard = (boardId, event, data) => {
-  getIO().to(ROOM.board(boardId)).emit(event, data);
+  return publishBoardEvent(boardId, event, data);
 };
 
 /** Emit any event to all connected clients */
@@ -92,7 +100,7 @@ export const emitToUsers = (userIds, event, data) => {
 // ─── Card Emitters ──────────────────────────────────────────────────────────
 
 export const emitCardUpdate = (boardId, cardId, updates, userId, userName) => {
-  getIO().to(ROOM.board(boardId)).emit('card-updated', {
+  return emitToBoard(boardId, 'card-updated', {
     cardId,
     updates,
     updatedBy: { id: userId, name: userName }
@@ -100,35 +108,35 @@ export const emitCardUpdate = (boardId, cardId, updates, userId, userName) => {
 };
 
 export const emitCommentAdded = (boardId, cardId, comment) => {
-  getIO().to(ROOM.board(boardId)).emit('comment-added', { cardId, comment });
+  emitToBoard(boardId, 'comment-added', { cardId, comment });
 };
 
 export const emitCommentUpdated = (boardId, cardId, commentId, updates) => {
-  getIO().to(ROOM.board(boardId)).emit('comment-updated', { cardId, commentId, updates });
+  emitToBoard(boardId, 'comment-updated', { cardId, commentId, updates });
 };
 
 export const emitCommentDeleted = (boardId, cardId, commentId) => {
-  getIO().to(ROOM.board(boardId)).emit('comment-deleted', { cardId, commentId });
+  emitToBoard(boardId, 'comment-deleted', { cardId, commentId });
 };
 
 export const emitSubtaskUpdated = (boardId, cardId, subtaskId, updates) => {
-  getIO().to(ROOM.board(boardId)).emit('subtask-updated', { cardId, subtaskId, updates });
+  emitToBoard(boardId, 'subtask-updated', { cardId, subtaskId, updates });
 };
 
 export const emitAttachmentAdded = (boardId, cardId, attachment) => {
-  getIO().to(ROOM.board(boardId)).emit('attachment-added', { cardId, attachment });
+  emitToBoard(boardId, 'attachment-added', { cardId, attachment });
 };
 
 export const emitAttachmentDeleted = (boardId, cardId, attachmentId) => {
-  getIO().to(ROOM.board(boardId)).emit('attachment-deleted', { cardId, attachmentId });
+  emitToBoard(boardId, 'attachment-deleted', { cardId, attachmentId });
 };
 
 export const emitTimeLogged = (boardId, cardId, timeEntry) => {
-  getIO().to(ROOM.board(boardId)).emit('time-logged', { cardId, timeEntry });
+  emitToBoard(boardId, 'time-logged', { cardId, timeEntry });
 };
 
 export const emitEstimationUpdated = (boardId, cardId, estimationEntry) => {
-  getIO().to(ROOM.board(boardId)).emit('estimation-updated', { cardId, estimationEntry });
+  emitToBoard(boardId, 'estimation-updated', { cardId, estimationEntry });
 };
 
 // ─── User / Department Emitters ─────────────────────────────────────────────

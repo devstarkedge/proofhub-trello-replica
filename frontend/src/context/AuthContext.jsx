@@ -44,8 +44,7 @@ export const AuthProvider = ({ children }) => {
     setUser(normalizedUser);
     setIsAuthenticated(true);
 
-    // Connect socket after authentication
-    socketService.connect(normalizedUser._id, userToken);
+    // WorkspaceProvider opens the authenticated connection after workspace resolution.
   };
 
   const logoutUser = useCallback(() => {
@@ -97,8 +96,7 @@ export const AuthProvider = ({ children }) => {
       setUser(normalizedUser);
       setIsAuthenticated(true);
 
-      // Connect socket after session restore
-      socketService.connect(normalizedUser._id, savedToken);
+      // WorkspaceProvider reconnects with the verified token and resolved workspace.
 
       // Permissions/roles are NOT loaded here — they need the active
       // workspace resolved first (x-workspace-id persisted to localStorage),
@@ -120,6 +118,12 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     restoreSession();
+  }, [restoreSession]);
+
+  useEffect(() => {
+    const expired = () => restoreSession();
+    window.addEventListener('socket-auth-expired', expired);
+    return () => window.removeEventListener('socket-auth-expired', expired);
   }, [restoreSession]);
 
   // Listen for real-time role changes affecting the current user

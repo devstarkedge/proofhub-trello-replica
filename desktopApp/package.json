@@ -17,7 +17,7 @@
     "electron:preview": "npm run build && node scripts/start-desktop.mjs --preview",
     "electron:repair": "node scripts/repair-electron.mjs",
     "electron:smoke": "npm run build && node scripts/start-desktop.mjs --preview --smoke-test",
-    "test:desktop": "node --test electron/tests/*.test.cjs",
+    "test:desktop": "node --test electron/tests/*.test.cjs electron/notifications.test.cjs",
     "pack": "node scripts/build-desktop.mjs dir",
     "dist:win": "npm run build:win",
     "lint": "eslint .",

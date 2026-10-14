@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell, CheckCircle, Trash2, Archive, X, Filter,
@@ -168,7 +168,7 @@ const NotificationPanel = ({
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: 20, height: 0 }}
         transition={{ duration: 0.2, delay: index * 0.03 }}
-        className="group p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+        className="group p-4 border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-bg-muted)] transition-colors"
       >
         <div className="flex items-start gap-3">
           {/* Icon with type-based color */}
@@ -178,14 +178,14 @@ const NotificationPanel = ({
           
           {/* Content */}
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm line-clamp-1">
+            <p className="font-semibold text-[var(--color-text-primary)] text-sm line-clamp-1">
               {notification.title || 'Notification'}
             </p>
-            <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mt-0.5 leading-relaxed">
+            <p className="text-sm text-[var(--color-text-secondary)] line-clamp-2 mt-0.5 leading-relaxed">
               {notification.message}
             </p>
             <div className="flex items-center gap-2 mt-2">
-              <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
+              <span className="text-xs text-gray-400 dark:text-[var(--color-text-muted)] flex items-center gap-1">
                 <Archive size={12} />
                 Archived {new Date(notification.archivedAt).toLocaleDateString()}
               </span>
@@ -198,7 +198,7 @@ const NotificationPanel = ({
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={() => onRestoreNotification?.(notification._id)}
-              className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-colors"
+              className="p-2 text-[var(--color-text-muted)] hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-colors"
               title="Restore"
             >
               <RotateCcw size={16} />
@@ -207,7 +207,7 @@ const NotificationPanel = ({
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={() => onDeletePermanently?.(notification._id)}
-              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+              className="p-2 text-[var(--color-text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
               title="Delete permanently"
             >
               <Trash2 size={16} />
@@ -223,8 +223,8 @@ const NotificationPanel = ({
 
     return (
       <div key={label}>
-        <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700 sticky top-0 z-10">
-          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        <div className="px-4 py-2 bg-[var(--color-bg-muted)] border-b border-[var(--color-border-subtle)] sticky top-0 z-10">
+          <span className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
             {label}
           </span>
         </div>
@@ -250,24 +250,26 @@ const NotificationPanel = ({
 
   return (
     <motion.div
+      id="flowtask-notifications" role="region" aria-label="Notifications"
+      onKeyDown={event => { if (event.key === 'Escape') onClose(); }}
       initial={{ opacity: 0, y: -10, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -10, scale: 0.95 }}
-      className="notification-panel absolute right-0 sm:-right-4 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[420px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl z-50 overflow-hidden"
+      className="notification-panel absolute right-0 sm:-right-4 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[420px] bg-[var(--color-card-bg)] border border-[var(--color-border-default)] rounded-2xl shadow-2xl z-50 overflow-hidden max-h-[calc(100dvh-5rem)] flex flex-col"
     >
       {/* Header */}
       <div 
-        className="notification-header p-4 border-b border-gray-100 dark:border-gray-800"
+        className="notification-header p-4 border-b border-[var(--color-border-subtle)] "
         style={{
           background: showArchived 
             ? 'linear-gradient(to right, #6b7280, #4b5563, #374151)'
-            : 'linear-gradient(to right, #6366f1, #a855f7, #ec4899)'
+            : 'linear-gradient(to right, var(--color-primary), var(--color-primary-hover))'
         }}
       >
         <div>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+              <div className="p-2 bg-[var(--color-card-bg)]/20 rounded-lg backdrop-blur-sm">
                 {showArchived ? (
                   <Archive size={18} className="text-white" />
                 ) : (
@@ -279,12 +281,12 @@ const NotificationPanel = ({
               </h3>
             </div>
             {!showArchived && unreadCount > 0 && (
-              <span className="px-3 py-1 bg-white/20 backdrop-blur-sm text-white text-sm font-medium rounded-full border border-white/30">
+              <span className="px-3 py-1 bg-[var(--color-card-bg)]/20 backdrop-blur-sm text-white text-sm font-medium rounded-full border border-white/30">
                 {unreadCount} new
               </span>
             )}
             {showArchived && (
-              <span className="px-3 py-1 bg-white/20 backdrop-blur-sm text-white text-sm font-medium rounded-full border border-white/30">
+              <span className="px-3 py-1 bg-[var(--color-card-bg)]/20 backdrop-blur-sm text-white text-sm font-medium rounded-full border border-white/30">
                 {archivedNotifications.length} items
               </span>
             )}
@@ -296,7 +298,7 @@ const NotificationPanel = ({
               {unreadCount > 0 && (
                 <button
                   onClick={onMarkAllAsRead}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white text-xs font-medium rounded-lg transition-all border border-white/20"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-card-bg)]/20 hover:bg-[var(--color-card-bg)]/30 backdrop-blur-sm text-white text-xs font-medium rounded-lg transition-all border border-white/20"
                 >
                   <CheckCircle size={14} />
                   Mark all read
@@ -304,7 +306,7 @@ const NotificationPanel = ({
               )}
               <button
                 onClick={onClearAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-red-500/50 backdrop-blur-sm text-white text-xs font-medium rounded-lg transition-all border border-white/20"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-card-bg)]/10 hover:bg-red-500/50 backdrop-blur-sm text-white text-xs font-medium rounded-lg transition-all border border-white/20"
               >
                 <Archive size={14} />
                 Clear all
@@ -315,7 +317,7 @@ const NotificationPanel = ({
           {showArchived && (
             <button
               onClick={() => setShowArchived(false)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white text-xs font-medium rounded-lg transition-all border border-white/20"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-card-bg)]/20 hover:bg-[var(--color-card-bg)]/30 backdrop-blur-sm text-white text-xs font-medium rounded-lg transition-all border border-white/20"
             >
               <ArrowRight size={14} className="rotate-180" />
               Back to notifications
@@ -325,20 +327,20 @@ const NotificationPanel = ({
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-1 p-2 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700">
+      <div className="flex items-center gap-1 p-2 bg-[var(--color-bg-muted)] border-b border-[var(--color-border-subtle)] ">
         {!showArchived && filterTabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => onFilterChange(tab.id)}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
               filter === tab.id
-                ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                ? 'bg-[var(--color-card-bg)] text-[var(--color-primary)] shadow-sm'
+                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)] '
             }`}
           >
             {tab.label}
             {tab.count > 0 && (
-              <span className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 text-xs rounded-full">
+              <span className="px-1.5 py-0.5 bg-[var(--color-primary-subtle)] text-[var(--color-primary)] text-xs rounded-full">
                 {tab.count}
               </span>
             )}
@@ -347,8 +349,8 @@ const NotificationPanel = ({
         
         {showArchived && (
           <div className="flex items-center gap-2 px-2 py-1">
-            <Archive size={14} className="text-gray-500" />
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+            <Archive size={14} className="text-[var(--color-text-muted)]" />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)] ">
               Archived Notifications
             </span>
           </div>
@@ -361,7 +363,7 @@ const NotificationPanel = ({
           className={`flex items-center justify-center p-2 rounded-lg transition-all ${
             showArchived
               ? 'bg-gray-700 text-white shadow-sm'
-              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-300'
+              : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg-muted)] hover:text-gray-700 '
           }`}
           title={showArchived ? 'Back to notifications' : 'View archived'}
         >
@@ -376,12 +378,12 @@ const NotificationPanel = ({
       {/* Notification List */}
       <div
         ref={scrollContainerRef}
-        className="max-h-[450px] overflow-y-auto notification-scroll relative"
+        className="max-h-[min(450px,calc(100dvh-15rem))] overflow-y-auto notification-scroll relative"
       >
         {/* Loading overlay for filter switches (when we already have data) */}
         {currentLoading && hasInitiallyLoaded && (
-          <div className="absolute inset-0 bg-white/60 dark:bg-gray-900/60 backdrop-blur-[1px] z-20 flex items-center justify-center">
-            <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <div className="absolute inset-0 bg-[var(--color-card-bg)]/60 backdrop-blur-[1px] z-20 flex items-center justify-center">
+            <div className="w-8 h-8 border-3 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
           </div>
         )}
         
@@ -402,10 +404,10 @@ const NotificationPanel = ({
                 <Bell size={36} className="text-gray-400" />
               )}
             </div>
-            <p className="font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <p className="font-medium text-gray-700 mb-1">
               {showArchived ? 'No archived notifications' : getEmptyStateTitle()}
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-[var(--color-text-muted)] ">
               {showArchived 
                 ? 'Archived notifications will appear here' 
                 : getEmptyStateMessage()}
@@ -423,18 +425,18 @@ const NotificationPanel = ({
             {/* Loading more indicator */}
             {currentLoading && currentNotifications.length > 0 && (
               <div className="p-4 flex justify-center">
-                <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                <div className="w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
               </div>
             )}
 
             {/* End of list */}
             {!showArchived && !hasMore && currentNotifications.length > 0 && (
-              <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+              <div className="p-4 text-center text-sm text-[var(--color-text-muted)] ">
                 You've reached the end
               </div>
             )}
             {showArchived && !hasMoreArchived && currentNotifications.length > 0 && (
-              <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+              <div className="p-4 text-center text-sm text-[var(--color-text-muted)] ">
                 No more archived notifications
               </div>
             )}

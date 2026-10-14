@@ -5,12 +5,22 @@ const baseURL = import.meta.env.VITE_BACKEND_URL;
 class SocketService {
   constructor() {
     this.socket = null;
+    this.rooms = new Map();
     this.connected = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
   }
 
   connect(userId, token, workspaceId) {
+    const nextIdentity = JSON.stringify([userId, token || localStorage.getItem('token'), workspaceId || localStorage.getItem('workspaceId')]);
+    if (this.socket && this.identity !== nextIdentity) {
+      const previous = JSON.parse(this.identity);
+      const next = JSON.parse(nextIdentity);
+      const remembered = previous[0] === next[0] && previous[2] === next[2] ? new Map(this.rooms) : new Map();
+      this.disconnect();
+      this.rooms = remembered;
+    }
+    this.identity = nextIdentity;
     if (this.socket) {
       if (import.meta.env.DEV) console.log('Socket already initialized');
 
@@ -32,10 +42,11 @@ class SocketService {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      reconnectionAttempts: this.maxReconnectAttempts,
+      reconnectionAttempts: Infinity,
       transports: ['websocket', 'polling']
     });
 
+    this.socket.onAny((type, payload) => window.dispatchEvent(new CustomEvent('flowtask:realtime', { detail: { type, payload } })));
     this.setupEventListeners();
   }
 
@@ -54,11 +65,13 @@ class SocketService {
     if (!this.socket) return;
 
     // Connection events
+    this.socket.on('realtime-recover', () => window.dispatchEvent(new Event('socket-connected')));
     this.socket.on('connect', () => {
       if (import.meta.env.DEV) console.log('Socket connected successfully');
       this.connected = true;
       this.reconnectAttempts = 0;
 
+      for (const [event, value] of this.rooms) this.socket.emit(event.split('|')[0], value);
       // Dispatch custom event for connection
       window.dispatchEvent(new CustomEvent('socket-connected'));
     });
@@ -78,6 +91,12 @@ class SocketService {
     this.socket.on('connect_error', (error) => {
       if (import.meta.env.DEV) console.error('Socket connection error:', error);
       this.reconnectAttempts++;
+      if (/Invalid or expired token|Authentication required|Invalid token payload/.test(error.message)) {
+        window.dispatchEvent(new Event('socket-auth-expired'));
+      } else if (/Not a member|Inactive account or workspace/.test(error.message)) {
+        this.rooms.clear();
+        window.dispatchEvent(new Event('socket-workspace-rejected'));
+      }
 
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
         if (import.meta.env.DEV) console.error('Max reconnection attempts reached');
@@ -92,200 +111,201 @@ class SocketService {
 
     // Real-time data events
     this.socket.on('card-updated', (data) => {
-      console.log('Card updated:', data);
+      if (import.meta.env.DEV) console.log('Card updated:', data);
       window.dispatchEvent(new CustomEvent('socket-card-updated', { detail: data }));
     });
 
     this.socket.on('card-created', (data) => {
-      console.log('Card created:', data);
+      if (import.meta.env.DEV) console.log('Card created:', data);
       window.dispatchEvent(new CustomEvent('socket-card-created', { detail: data }));
     });
 
     this.socket.on('card-deleted', (data) => {
-      console.log('Card deleted:', data);
+      if (import.meta.env.DEV) console.log('Card deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-card-deleted', { detail: data }));
     });
 
     this.socket.on('card-moved', (data) => {
-      console.log('Card moved:', data);
+      if (import.meta.env.DEV) console.log('Card moved:', data);
       window.dispatchEvent(new CustomEvent('socket-card-moved', { detail: data }));
     });
 
     // Copy/Move cross-board events
     this.socket.on('task-copied', (data) => {
-      console.log('Task copied:', data);
+      if (import.meta.env.DEV) console.log('Task copied:', data);
       window.dispatchEvent(new CustomEvent('socket-task-copied', { detail: data }));
     });
 
     this.socket.on('task-moved-cross', (data) => {
-      console.log('Task moved cross-board:', data);
+      if (import.meta.env.DEV) console.log('Task moved cross-board:', data);
       window.dispatchEvent(new CustomEvent('socket-task-moved-cross', { detail: data }));
     });
 
     this.socket.on('comment-added', (data) => {
-      console.log('Comment added:', data);
+      if (import.meta.env.DEV) console.log('Comment added:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-added', { detail: data }));
     });
 
     this.socket.on('comment-updated', (data) => {
-      console.log('Comment updated:', data);
+      if (import.meta.env.DEV) console.log('Comment updated:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-updated', { detail: data }));
     });
 
     this.socket.on('comment-deleted', (data) => {
-      console.log('Comment deleted:', data);
+      if (import.meta.env.DEV) console.log('Comment deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-deleted', { detail: data }));
     });
 
     // New comment events
     this.socket.on('comment-reaction-added', (data) => {
-      console.log('Comment reaction added:', data);
+      if (import.meta.env.DEV) console.log('Comment reaction added:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-reaction-added', { detail: data }));
     });
 
     this.socket.on('comment-reaction-removed', (data) => {
-      console.log('Comment reaction removed:', data);
+      if (import.meta.env.DEV) console.log('Comment reaction removed:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-reaction-removed', { detail: data }));
     });
 
     this.socket.on('comment-pinned', (data) => {
-      console.log('Comment pinned:', data);
+      if (import.meta.env.DEV) console.log('Comment pinned:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-pinned', { detail: data }));
     });
 
     this.socket.on('comment-unpinned', (data) => {
-      console.log('Comment unpinned:', data);
+      if (import.meta.env.DEV) console.log('Comment unpinned:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-unpinned', { detail: data }));
     });
 
     this.socket.on('comment-reply-added', (data) => {
-      console.log('Comment reply added:', data);
+      if (import.meta.env.DEV) console.log('Comment reply added:', data);
       window.dispatchEvent(new CustomEvent('socket-comment-reply-added', { detail: data }));
     });
 
     this.socket.on('hierarchy-subtask-changed', (data) => {
-      console.log('Subtask hierarchy changed:', data);
+      if (import.meta.env.DEV) console.log('Subtask hierarchy changed:', data);
       window.dispatchEvent(new CustomEvent('socket-subtask-hierarchy', { detail: data }));
     });
 
     this.socket.on('hierarchy-nano-changed', (data) => {
-      console.log('Subtask-Nano hierarchy changed:', data);
+      if (import.meta.env.DEV) console.log('Subtask-Nano hierarchy changed:', data);
       window.dispatchEvent(new CustomEvent('socket-nano-hierarchy', { detail: data }));
     });
 
     this.socket.on('card-cover-updated', (data) => {
-      console.log('Card cover updated:', data);
+      if (import.meta.env.DEV) console.log('Card cover updated:', data);
       window.dispatchEvent(new CustomEvent('socket-card-cover-updated', { detail: data }));
     });
 
     this.socket.on('subtask-cover-updated', (data) => {
-      console.log('Subtask cover updated:', data);
+      if (import.meta.env.DEV) console.log('Subtask cover updated:', data);
       window.dispatchEvent(new CustomEvent('socket-subtask-cover-updated', { detail: data }));
     });
 
     this.socket.on('nanoSubtask-cover-updated', (data) => {
-      console.log('Nano-Subtask cover updated:', data);
+      if (import.meta.env.DEV) console.log('Nano-Subtask cover updated:', data);
       window.dispatchEvent(new CustomEvent('socket-nano-cover-updated', { detail: data }));
     });
 
     // Recurring task events
     this.socket.on('recurrence-created', (data) => {
-      console.log('Recurrence created:', data);
+      if (import.meta.env.DEV) console.log('Recurrence created:', data);
       window.dispatchEvent(new CustomEvent('socket-recurrence-created', { detail: data }));
     });
 
     this.socket.on('recurrence-updated', (data) => {
-      console.log('Recurrence updated:', data);
+      if (import.meta.env.DEV) console.log('Recurrence updated:', data);
       window.dispatchEvent(new CustomEvent('socket-recurrence-updated', { detail: data }));
     });
 
     this.socket.on('recurrence-stopped', (data) => {
-      console.log('Recurrence stopped:', data);
+      if (import.meta.env.DEV) console.log('Recurrence stopped:', data);
       window.dispatchEvent(new CustomEvent('socket-recurrence-stopped', { detail: data }));
     });
 
     this.socket.on('recurrence-triggered', (data) => {
-      console.log('Recurrence triggered:', data);
+      if (import.meta.env.DEV) console.log('Recurrence triggered:', data);
       window.dispatchEvent(new CustomEvent('socket-recurrence-triggered', { detail: data }));
     });
 
     this.socket.on('attachment-added', (data) => {
-      console.log('Attachment added:', data);
+      if (import.meta.env.DEV) console.log('Attachment added:', data);
       window.dispatchEvent(new CustomEvent('socket-attachment-added', { detail: data }));
     });
 
     this.socket.on('attachment-deleted', (data) => {
-      console.log('Attachment deleted:', data);
+      if (import.meta.env.DEV) console.log('Attachment deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-attachment-deleted', { detail: data }));
     });
 
     this.socket.on('attachment-restored', (data) => {
-      console.log('Attachment restored:', data);
+      if (import.meta.env.DEV) console.log('Attachment restored:', data);
       // Reuse the same consumer path as added
       window.dispatchEvent(new CustomEvent('socket-attachment-added', { detail: data }));
     });
 
     this.socket.on('attachment-permanently-deleted', (data) => {
-      console.log('Attachment permanently deleted:', data);
+      if (import.meta.env.DEV) console.log('Attachment permanently deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-attachment-permanently-deleted', { detail: data }));
     });
 
     this.socket.on('time-logged', (data) => {
-      console.log('Time logged:', data);
+      if (import.meta.env.DEV) console.log('Time logged:', data);
       window.dispatchEvent(new CustomEvent('socket-time-logged', { detail: data }));
     });
 
     this.socket.on('estimation-updated', (data) => {
-      console.log('Estimation updated:', data);
+      if (import.meta.env.DEV) console.log('Estimation updated:', data);
       window.dispatchEvent(new CustomEvent('socket-estimation-updated', { detail: data }));
     });
 
     this.socket.on('list-created', (data) => {
-      console.log('List created:', data);
+      if (import.meta.env.DEV) console.log('List created:', data);
       window.dispatchEvent(new CustomEvent('socket-list-created', { detail: data }));
     });
 
     this.socket.on('list-updated', (data) => {
-      console.log('List updated:', data);
+      if (import.meta.env.DEV) console.log('List updated:', data);
       window.dispatchEvent(new CustomEvent('socket-list-updated', { detail: data }));
     });
 
     this.socket.on('list-deleted', (data) => {
-      console.log('List deleted:', data);
+      if (import.meta.env.DEV) console.log('List deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-list-deleted', { detail: data }));
     });
 
     this.socket.on('board-updated', (data) => {
-      console.log('Board updated:', data);
+      if (import.meta.env.DEV) console.log('Board updated:', data);
       window.dispatchEvent(new CustomEvent('socket-board-updated', { detail: data }));
     });
 
     // Notification events
+    this.socket.on('notification-state-changed', (data) => window.dispatchEvent(new CustomEvent('socket-notification-state-changed', { detail: data })));
     this.socket.on('notification', (data) => {
-      console.log('New notification:', data);
+      if (import.meta.env.DEV) console.log('New notification:', data);
       window.dispatchEvent(new CustomEvent('socket-notification', { detail: data }));
     });
 
     this.socket.on('task-assigned', (data) => {
-      console.log('Task assigned:', data);
+      if (import.meta.env.DEV) console.log('Task assigned:', data);
       window.dispatchEvent(new CustomEvent('socket-task-assigned', { detail: data }));
     });
 
     // User verification events
     this.socket.on('user-verified', (data) => {
-      console.log('User verified:', data);
+      if (import.meta.env.DEV) console.log('User verified:', data);
       window.dispatchEvent(new CustomEvent('socket-user-verified', { detail: data }));
     });
 
     // User role change events
     this.socket.on('user-role-changed', (data) => {
-      console.log('User role changed:', data);
+      if (import.meta.env.DEV) console.log('User role changed:', data);
       window.dispatchEvent(new CustomEvent('socket-user-role-changed', { detail: data }));
     });
 
     // Access permission updated (SaaS access control)
     this.socket.on('user:access-updated', (data) => {
-      console.log('User access permissions updated:', data);
+      if (import.meta.env.DEV) console.log('User access permissions updated:', data);
       window.dispatchEvent(new CustomEvent('socket-user-access-updated', { detail: data }));
     });
 
@@ -296,41 +316,41 @@ class SocketService {
 
     // Department assignment events
     this.socket.on('user-assigned', (data) => {
-      console.log('User assigned to department:', data);
+      if (import.meta.env.DEV) console.log('User assigned to department:', data);
       window.dispatchEvent(new CustomEvent('socket-user-assigned', { detail: data }));
     });
 
     this.socket.on('user-unassigned', (data) => {
-      console.log('User unassigned from department:', data);
+      if (import.meta.env.DEV) console.log('User unassigned from department:', data);
       window.dispatchEvent(new CustomEvent('socket-user-unassigned', { detail: data }));
     });
 
     // Bulk department assignment events
     this.socket.on('department-bulk-assigned', (data) => {
-      console.log('Bulk users assigned to department:', data);
+      if (import.meta.env.DEV) console.log('Bulk users assigned to department:', data);
       window.dispatchEvent(new CustomEvent('socket-department-bulk-assigned', { detail: data }));
     });
 
     this.socket.on('department-bulk-unassigned', (data) => {
-      console.log('Bulk users unassigned from department:', data);
+      if (import.meta.env.DEV) console.log('Bulk users unassigned from department:', data);
       window.dispatchEvent(new CustomEvent('socket-department-bulk-unassigned', { detail: data }));
     });
 
     // Avatar update event
     this.socket.on('avatar-updated', (data) => {
-      console.log('Avatar updated:', data);
+      if (import.meta.env.DEV) console.log('Avatar updated:', data);
       window.dispatchEvent(new CustomEvent('socket-avatar-updated', { detail: data }));
     });
 
     // Workspace icon update event — lets every member's switcher update
     // live without a refresh, per the branding requirement.
     this.socket.on('workspace-icon-updated', (data) => {
-      console.log('Workspace icon updated:', data);
+      if (import.meta.env.DEV) console.log('Workspace icon updated:', data);
       window.dispatchEvent(new CustomEvent('socket-workspace-icon-updated', { detail: data }));
     });
 
     this.socket.on('workspace-updated', (data) => {
-      console.log('Workspace metadata updated:', data);
+      if (import.meta.env.DEV) console.log('Workspace metadata updated:', data);
       window.dispatchEvent(new CustomEvent('socket-workspace-updated', { detail: data }));
     });
 
@@ -338,7 +358,7 @@ class SocketService {
     // session (HR Panel add-member, invite accept) — refreshes their
     // switcher's workspace list live, no logout/refresh required.
     this.socket.on('workspace-membership-added', (data) => {
-      console.log('Workspace membership added:', data);
+      if (import.meta.env.DEV) console.log('Workspace membership added:', data);
       window.dispatchEvent(new CustomEvent('socket-workspace-membership-added', { detail: data }));
     });
 
@@ -346,134 +366,134 @@ class SocketService {
     // change (entitlementService.js#notifyWorkspacePlanUpdated) — lets
     // Open Chat become available/hidden live, no logout/login required.
     this.socket.on('workspace-plan-updated', (data) => {
-      console.log('Workspace plan updated:', data);
+      if (import.meta.env.DEV) console.log('Workspace plan updated:', data);
       window.dispatchEvent(new CustomEvent('socket-workspace-plan-updated', { detail: data }));
     });
 
     // Finance page events - for real-time finance updates
     this.socket.on('finance:page:pending', (data) => {
-      console.log('Finance page pending approval:', data);
+      if (import.meta.env.DEV) console.log('Finance page pending approval:', data);
       window.dispatchEvent(new CustomEvent('socket-finance-page-pending', { detail: data }));
     });
 
     this.socket.on('finance:page:published', (data) => {
-      console.log('Finance page published:', data);
+      if (import.meta.env.DEV) console.log('Finance page published:', data);
       window.dispatchEvent(new CustomEvent('socket-finance-page-published', { detail: data }));
     });
 
     this.socket.on('finance:page:status-changed', (data) => {
-      console.log('Finance page status changed:', data);
+      if (import.meta.env.DEV) console.log('Finance page status changed:', data);
       window.dispatchEvent(new CustomEvent('socket-finance-page-status', { detail: data }));
     });
 
     this.socket.on('finance:page:updated', (data) => {
-      console.log('Finance page updated:', data);
+      if (import.meta.env.DEV) console.log('Finance page updated:', data);
       window.dispatchEvent(new CustomEvent('socket-finance-page-updated', { detail: data }));
     });
 
     this.socket.on('finance:page:deleted', (data) => {
-      console.log('Finance page deleted:', data);
+      if (import.meta.env.DEV) console.log('Finance page deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-finance-page-deleted', { detail: data }));
     });
 
     // Finance data refresh event (for real-time data changes)
     this.socket.on('finance:data:refresh', (data) => {
-      console.log('Finance data refresh:', data);
+      if (import.meta.env.DEV) console.log('Finance data refresh:', data);
       window.dispatchEvent(new CustomEvent('socket-finance-refresh', { detail: data }));
     });
 
     // Finance permissions update (admin changed access for a user)
     this.socket.on('finance:permissions:updated', (data) => {
-      console.log('Finance permissions updated via socket:', data);
+      if (import.meta.env.DEV) console.log('Finance permissions updated via socket:', data);
       window.dispatchEvent(new CustomEvent('socket-finance-permissions-updated', { detail: data }));
     });
 
     // My Shortcuts real-time events
     this.socket.on('my-shortcuts:summary-updated', (data) => {
-      console.log('My Shortcuts summary updated:', data);
+      if (import.meta.env.DEV) console.log('My Shortcuts summary updated:', data);
       window.dispatchEvent(new CustomEvent('socket-my-shortcuts-summary', { detail: data }));
     });
 
     this.socket.on('my-shortcuts:new-activity', (data) => {
-      console.log('My Shortcuts new activity:', data);
+      if (import.meta.env.DEV) console.log('My Shortcuts new activity:', data);
       window.dispatchEvent(new CustomEvent('socket-my-shortcuts-activity', { detail: data }));
     });
 
     this.socket.on('my-shortcuts:task-count-changed', (data) => {
-      console.log('My Shortcuts task count changed:', data);
+      if (import.meta.env.DEV) console.log('My Shortcuts task count changed:', data);
       window.dispatchEvent(new CustomEvent('socket-my-shortcuts-task-count', { detail: data }));
     });
 
     this.socket.on('my-shortcuts:time-logged', (data) => {
-      console.log('My Shortcuts time logged:', data);
+      if (import.meta.env.DEV) console.log('My Shortcuts time logged:', data);
       window.dispatchEvent(new CustomEvent('socket-my-shortcuts-time', { detail: data }));
     });
 
     this.socket.on('my-shortcuts:announcement', (data) => {
-      console.log('My Shortcuts announcement:', data);
+      if (import.meta.env.DEV) console.log('My Shortcuts announcement:', data);
       window.dispatchEvent(new CustomEvent('socket-my-shortcuts-announcement', { detail: data }));
     });
 
     // Sales real-time events
     this.socket.on('sales:row:created', (data) => {
-      console.log('Sales row created:', data);
+      if (import.meta.env.DEV) console.log('Sales row created:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-row-created', { detail: data }));
     });
 
     this.socket.on('sales:row:updated', (data) => {
-      console.log('Sales row updated:', data);
+      if (import.meta.env.DEV) console.log('Sales row updated:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-row-updated', { detail: data }));
     });
 
     this.socket.on('sales:row:deleted', (data) => {
-      console.log('Sales row deleted:', data);
+      if (import.meta.env.DEV) console.log('Sales row deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-row-deleted', { detail: data }));
     });
 
     this.socket.on('sales:rows:bulk-updated', (data) => {
-      console.log('Sales rows bulk updated:', data);
+      if (import.meta.env.DEV) console.log('Sales rows bulk updated:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-rows-bulk-updated', { detail: data }));
     });
 
     this.socket.on('sales:rows:bulk-deleted', (data) => {
-      console.log('Sales rows bulk deleted:', data);
+      if (import.meta.env.DEV) console.log('Sales rows bulk deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-rows-bulk-deleted', { detail: data }));
     });
 
     this.socket.on('sales:row:locked', (data) => {
-      console.log('Sales row locked:', data);
+      if (import.meta.env.DEV) console.log('Sales row locked:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-row-locked', { detail: data }));
     });
 
     this.socket.on('sales:row:unlocked', (data) => {
-      console.log('Sales row unlocked:', data);
+      if (import.meta.env.DEV) console.log('Sales row unlocked:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-row-unlocked', { detail: data }));
     });
 
     this.socket.on('sales:dropdown:updated', (data) => {
-      console.log('Sales dropdown updated:', data);
+      if (import.meta.env.DEV) console.log('Sales dropdown updated:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-dropdown-updated', { detail: data }));
     });
 
     this.socket.on('sales:column:created', (data) => {
-      console.log('Sales column created:', data);
+      if (import.meta.env.DEV) console.log('Sales column created:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-column-created', { detail: data }));
     });
 
     this.socket.on('sales:column:deleted', (data) => {
-      console.log('Sales column deleted:', data);
+      if (import.meta.env.DEV) console.log('Sales column deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-column-deleted', { detail: data }));
     });
 
     this.socket.on('sales:rows:imported', (data) => {
-      console.log('Sales rows imported:', data);
+      if (import.meta.env.DEV) console.log('Sales rows imported:', data);
       window.dispatchEvent(new CustomEvent('socket-sales-rows-imported', { detail: data }));
     });
     
     // Unified access-control update (admin changed any resource override,
     // via the centralized Access & Permissions engine)
     this.socket.on('access-control:updated', (data) => {
-      console.log('Access control updated via socket:', data);
+      if (import.meta.env.DEV) console.log('Access control updated via socket:', data);
       window.dispatchEvent(new CustomEvent('socket-access-control-updated', { detail: data }));
     });
     this.socket.on('authz:changed', (data) => {
@@ -482,7 +502,7 @@ class SocketService {
 
     // Sales permissions update (admin changed access for a user)
     this.socket.on('sales:permissions:updated', (data) => {
-      console.log('Sales permissions updated via socket:', data);
+      if (import.meta.env.DEV) console.log('Sales permissions updated via socket:', data);
       // Dispatch both socket-prefixed and generic event to support components listening for either
       window.dispatchEvent(new CustomEvent('socket-sales-permissions-updated', { detail: data }));
 
@@ -570,47 +590,47 @@ class SocketService {
 
     // Announcement events
     this.socket.on('announcement-created', (data) => {
-      console.log('Announcement created:', data);
+      if (import.meta.env.DEV) console.log('Announcement created:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-created', { detail: data }));
     });
 
     this.socket.on('announcement-updated', (data) => {
-      console.log('Announcement updated:', data);
+      if (import.meta.env.DEV) console.log('Announcement updated:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-updated', { detail: data }));
     });
 
     this.socket.on('announcement-deleted', (data) => {
-      console.log('Announcement deleted:', data);
+      if (import.meta.env.DEV) console.log('Announcement deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-deleted', { detail: data }));
     });
 
     this.socket.on('announcement-archived', (data) => {
-      console.log('Announcement archived:', data);
+      if (import.meta.env.DEV) console.log('Announcement archived:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-archived', { detail: data }));
     });
 
     this.socket.on('announcement-comment-added', (data) => {
-      console.log('Announcement comment added:', data);
+      if (import.meta.env.DEV) console.log('Announcement comment added:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-comment-added', { detail: data }));
     });
 
     this.socket.on('announcement-comment-deleted', (data) => {
-      console.log('Announcement comment deleted:', data);
+      if (import.meta.env.DEV) console.log('Announcement comment deleted:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-comment-deleted', { detail: data }));
     });
 
     this.socket.on('announcement-reaction-added', (data) => {
-      console.log('Announcement reaction added:', data);
+      if (import.meta.env.DEV) console.log('Announcement reaction added:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-reaction-added', { detail: data }));
     });
 
     this.socket.on('announcement-reaction-removed', (data) => {
-      console.log('Announcement reaction removed:', data);
+      if (import.meta.env.DEV) console.log('Announcement reaction removed:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-reaction-removed', { detail: data }));
     });
 
     this.socket.on('announcement-pin-toggled', (data) => {
-      console.log('Announcement pin toggled:', data);
+      if (import.meta.env.DEV) console.log('Announcement pin toggled:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-pin-toggled', { detail: data }));
     });
 
@@ -647,6 +667,7 @@ class SocketService {
   }
 
   disconnect() {
+    this.rooms.clear();
     if (this.socket) {
       if (import.meta.env.DEV) console.log('Disconnecting socket...');
       this.socket.disconnect();
@@ -655,108 +676,74 @@ class SocketService {
     }
   }
 
+  subscribeRoom(event, value) {
+    this.rooms.set(event + '|' + (value || ''), value);
+    if (this.socket?.connected) this.socket.emit(event, value);
+  }
+  unsubscribeRoom(event, value) {
+    this.rooms.delete(event.replace('leave-', 'join-') + '|' + (value || ''));
+    if (this.socket?.connected) this.socket.emit(event, value);
+  }
   // Room management
   joinBoard(boardId) {
-    if (this.socket && this.connected) {
-      console.log('Joining board:', boardId);
-      this.socket.emit('join-board', boardId);
-    }
+    this.subscribeRoom('join-board', boardId);
   }
 
   leaveBoard(boardId) {
-    if (this.socket && this.connected) {
-      console.log('Leaving board:', boardId);
-      this.socket.emit('leave-board', boardId);
-    }
+    this.unsubscribeRoom('leave-board', boardId);
   }
 
   joinRoom(roomId) {
-    if (this.socket && this.connected) {
-      console.log('Joining room:', roomId);
-      this.socket.emit('join-room', roomId);
-    }
+    this.subscribeRoom('join-room', roomId);
   }
 
   leaveRoom(roomId) {
-    if (this.socket && this.connected) {
-      console.log('Leaving room:', roomId);
-      this.socket.emit('leave-room', roomId);
-    }
+    this.unsubscribeRoom('leave-room', roomId);
   }
 
   // Finance room management
   joinFinance() {
-    if (this.socket && this.connected) {
-      console.log('Joining finance room');
-      this.socket.emit('join-finance');
-    }
+    this.subscribeRoom('join-finance');
   }
 
   leaveFinance() {
-    if (this.socket && this.connected) {
-      console.log('Leaving finance room');
-      this.socket.emit('leave-finance');
-    }
+    this.unsubscribeRoom('leave-finance');
   }
 
   // My Shortcuts room management
   joinMyShortcuts() {
-    if (this.socket && this.connected) {
-      console.log('Joining my-shortcuts room');
-      this.socket.emit('join-my-shortcuts');
-    }
+    this.subscribeRoom('join-my-shortcuts');
   }
 
   leaveMyShortcuts() {
-    if (this.socket && this.connected) {
-      console.log('Leaving my-shortcuts room');
-      this.socket.emit('leave-my-shortcuts');
-    }
+    this.unsubscribeRoom('leave-my-shortcuts');
   }
 
   // Announcement room management
   joinAnnouncements() {
-    if (this.socket && this.connected) {
-      console.log('Joining announcements room');
-      this.socket.emit('join-announcements');
-    }
+    this.subscribeRoom('join-announcements');
   }
 
   leaveAnnouncements() {
-    if (this.socket && this.connected) {
-      console.log('Leaving announcements room');
-      this.socket.emit('leave-announcements');
-    }
+    this.unsubscribeRoom('leave-announcements');
   }
 
   // Super Admin room management
   joinSuperAdmin() {
-    if (this.socket && this.connected) {
-      console.log('Joining super-admin room');
-      this.socket.emit('join-super-admin');
-    }
+    this.subscribeRoom('join-super-admin');
   }
 
   leaveSuperAdmin() {
-    if (this.socket && this.connected) {
-      console.log('Leaving super-admin room');
-      this.socket.emit('leave-super-admin');
-    }
+    this.unsubscribeRoom('leave-super-admin');
   }
 
   // Sales room management
   joinSales() {
-    if (this.socket && this.connected) {
-      console.log('Joining sales room');
-      this.socket.emit('join-sales');
-    }
+    this.subscribeRoom('join-sales');
   }
 
   leaveSales() {
-    if (this.socket && this.connected) {
-      console.log('Leaving sales room');
-      this.socket.emit('leave-sales');
-    }
+    this.unsubscribeRoom('leave-sales');
   }
 
   // Emit events

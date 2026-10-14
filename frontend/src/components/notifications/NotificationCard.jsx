@@ -92,14 +92,14 @@ const NotificationCard = ({
         damping: 30,
         delay: index * 0.02
       }}
-      className={`group relative p-4 border-b border-gray-50 dark:border-gray-800 cursor-pointer transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-inset ${priorityStyle} ${
+      className={`group relative p-4 border-b border-[var(--color-border-subtle)] cursor-pointer transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-inset ${priorityStyle} ${
         !notification.isRead
-          ? 'bg-gradient-to-r from-blue-50/80 to-indigo-50/50 dark:from-blue-900/20 dark:to-indigo-900/10'
-          : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
+          ? 'bg-[var(--color-primary-subtle)]'
+          : 'hover:bg-[var(--color-bg-muted)] '
       }`}
       tabIndex={0}
       role="button"
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(notification); } }}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick(notification); } }}
       onClick={() => onClick(notification)}
     >
       <div className="flex items-start gap-3">
@@ -112,7 +112,7 @@ const NotificationCard = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
-              <p className={`text-sm font-semibold ${!notification.isRead ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'} line-clamp-1`}>
+              <p className={`text-sm font-semibold ${!notification.isRead ? 'text-[var(--color-text-primary)] dark:text-white' : 'text-[var(--color-text-primary)] '} line-clamp-1`}>
                 {notification.title}
               </p>
               {notification.priority === 'critical' && (
@@ -127,26 +127,26 @@ const NotificationCard = ({
               )}
             </div>
             {!notification.isRead && (
-              <span className="flex-shrink-0 w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full animate-pulse ring-2 ring-blue-200 dark:ring-blue-400/30 shadow-md shadow-blue-500/40 dark:shadow-blue-500/50" />
+              <span className="flex-shrink-0 w-3 h-3 bg-[var(--color-primary)] rounded-full animate-pulse ring-2 ring-[var(--color-primary-subtle)] shadow-md" />
             )}
           </div>
 
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5 line-clamp-2 leading-relaxed">
             {notification.message}
           </p>
 
           <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
+            <span className="text-xs text-[var(--color-text-muted)] flex items-center gap-1">
               <Clock size={12} />
               {formatTimeAgo(notification.createdAt)}
             </span>
             {notification.sender?.name && (
-              <span className="text-xs text-gray-400 dark:text-gray-500">
+              <span className="text-xs text-[var(--color-text-muted)]">
                 by {notification.sender.name}
               </span>
             )}
             {routeHint && (
-              <span className="text-xs text-indigo-400 dark:text-indigo-500 ml-auto">
+              <span className="text-xs text-[var(--color-primary)] ml-auto">
                 → {routeHint}
               </span>
             )}
@@ -175,8 +175,8 @@ const NotificationCard = ({
               }}
               className="p-2 rounded-lg transition-colors"
               style={{
-                backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                color: '#2563eb'
+                backgroundColor: 'var(--color-primary-subtle)',
+                color: 'var(--color-primary)'
               }}
               title="Mark as read"
             >
@@ -192,8 +192,8 @@ const NotificationCard = ({
             }}
             className="p-2 rounded-lg transition-colors"
             style={{
-              backgroundColor: 'rgba(107, 114, 128, 0.15)',
-              color: '#4b5563'
+              backgroundColor: 'var(--color-bg-muted)',
+              color: 'var(--color-text-secondary)'
             }}
             title="Archive"
           >

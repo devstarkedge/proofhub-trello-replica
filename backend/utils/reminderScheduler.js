@@ -2,9 +2,8 @@ import { workspaceAdmins } from '../services/workspaceAudience.js';
 import Reminder from '../models/Reminder.js';
 import Board from '../models/Board.js';
 import User from '../models/User.js';
-import Notification from '../models/Notification.js';
+import notificationService from './notificationService.js';
 import { sendEmail } from './email.js';
-import { emitNotification } from '../realtime/index.js';
 import { runBackground } from './backgroundTasks.js';
 import { slackHooks } from './slackHooks.js';
 
@@ -28,7 +27,7 @@ export const sendReminderNotification = async (reminder) => {
     }
 
     // Create in-app notification
-    const notification = await Notification.create({
+    await notificationService.createNotification({
       type: 'reminder_due_soon',
       title: 'Reminder Due Soon',
       message: `Reminder for project "${reminder.project?.name || 'Unknown'}" is due in 24 hours. Client: ${reminder.client?.name || 'N/A'}`,
@@ -41,10 +40,7 @@ export const sendReminderNotification = async (reminder) => {
         projectName: reminder.project?.name,
         url: '/reminders'
       }
-    });
-
-    // Emit real-time notification
-    emitNotification(user._id.toString(), notification);
+    }, { email: false });
 
     // Send email notification
     await sendReminderEmail(reminder, user);
@@ -242,7 +238,7 @@ export const checkAndTagAwaitingResponse = async (reminder) => {
       const admins = await workspaceAdmins(reminder.workspaceId);
       
       for (const admin of admins) {
-        const notification = await Notification.create({
+        await notificationService.createNotification({
           type: 'awaiting_client_response',
           title: 'Project Awaiting Client Response',
           message: `Project "${reminder.project?.name || 'Unknown'}" has had ${reminder.reminderCount} reminders sent without client response.`,
@@ -255,9 +251,7 @@ export const checkAndTagAwaitingResponse = async (reminder) => {
             projectName: reminder.project?.name,
             url: '/reminders'
           }
-        });
-
-        emitNotification(admin._id.toString(), notification);
+        });
       }
 
       console.log(`Project ${reminder.project._id || reminder.project} tagged as awaiting client response`);

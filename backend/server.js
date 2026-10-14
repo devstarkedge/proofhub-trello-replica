@@ -8,6 +8,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import config from './config/index.js';
 import logger from './utils/logger.js';
+import { configureRealtimeCluster, closeRealtimeCluster } from './realtime/cluster.js';
+import { stopBoardPublication } from './realtime/boardPublication.js';
+import { startNotificationPublication, stopNotificationPublication } from './realtime/notificationPublication.js';
 import { socketManager } from './realtime/index.js';
 // Re-export emitters for any remaining legacy imports
 export {
@@ -260,6 +263,9 @@ mongoose.connect(config.db.uri, {
   .then(async () => {
     logger.info('Connected to MongoDB with connection pooling');
 
+    await configureRealtimeCluster(socketManager.getIO());
+    startNotificationPublication();
+
     // Seed admin user and system roles (app initialization, not migration).
     // Runs inside unscoped context — no ambient request/workspace context
     // at boot time. seedAdmin() already wraps itself internally too.
@@ -322,6 +328,9 @@ const gracefulShutdown = async (signal) => {
     await Promise.allSettled([
       shutdownSlackServices(),
       shutdownQueues(),
+      closeRealtimeCluster(),
+        stopBoardPublication(),
+      Promise.resolve(stopNotificationPublication()),
       Promise.resolve(stopAnalyticsReportScheduler()),
     ]);
   } catch (err) {

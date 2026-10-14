@@ -1,5 +1,6 @@
 import { rateLimiter } from '../middleware/rateLimiter.js';
 import express from 'express';
+import mongoose from 'mongoose';
 import { 
   getNotifications, 
   getUnreadCount,
@@ -30,6 +31,18 @@ router.get('/unread-count', protect, getUnreadCount);
 
 // Get archived notifications
 router.get('/archived', protect, getArchivedNotifications);
+// Native clicks resolve one persisted recipient-owned notification, not an
+// arbitrary renderer URL or a bounded first-page search that can miss it.
+router.get('/:id', protect, async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid notification reference' });
+    const { default: Notification } = await import('../models/Notification.js');
+    const notification = await Notification.findOne({ _id: req.params.id, user: req.user.id, workspaceId: req.workspaceId })
+      .populate('sender', 'name avatar').populate('relatedCard', 'title').populate('relatedBoard', 'name').lean();
+    if (!notification) return res.status(404).json({ message: 'Notification is no longer available' });
+    res.json(notification);
+  } catch (error) { next(error); }
+});
 
 // Mark single notification as read
 router.put('/:id/read', protect, markAsRead);

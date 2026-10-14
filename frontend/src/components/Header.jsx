@@ -23,7 +23,7 @@ const navIconColors = {
   '/': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }, // Blue - Board
   '/list-view': { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }, // Purple - List
   '/calendar': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Calendar
-  '/analytics': { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' }, // Amber - Analytics
+  '/analytics': { color: 'var(--color-primary)', bg: 'rgba(245, 158, 11, 0.12)' }, // Amber - Analytics
 };
 
 // User menu icon colors
@@ -42,6 +42,7 @@ const Header = ({ boardName }) => {
   const { user, logoutUser } = useContext(AuthContext);
   const { currentTeam, currentDepartment, teams, departments, hasNoDepartments, setCurrentTeam, setCurrentDepartment } = useContext(DepartmentContext);
   const { 
+    isOpen: showNotifications, togglePanel: toggleNotifications, closePanel: closeNotifications,
     notifications, 
     unreadCount, 
     isLoading,
@@ -69,7 +70,7 @@ const Header = ({ boardName }) => {
   } = useContext(NotificationContext);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   
-  const [showNotifications, setShowNotifications] = useState(false);
+  const setShowNotifications = value => { if (value === false) closeNotifications(); else if (value !== showNotifications) toggleNotifications(); };
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
   const [showDepartmentSelector, setShowDepartmentSelector] = useState(false);
@@ -84,6 +85,14 @@ const Header = ({ boardName }) => {
   const deptRef = useRef(null);
   const viewSwitcherRef = useRef(null);
 
+  useEffect(() => {
+    closeNotifications();
+  }, [location.key]);
+  useEffect(() => {
+    const escape = event => { if (event.key === 'Escape' && showNotifications) { closeNotifications(); notificationRef.current?.querySelector('button')?.focus(); } };
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [showNotifications]);
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -503,10 +512,13 @@ const Header = ({ boardName }) => {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
+                aria-label="Notifications"
+                aria-expanded={showNotifications}
+                aria-controls="flowtask-notifications"
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="relative p-2.5 rounded-xl transition-all duration-200"
                 style={{
-                  backgroundColor: showNotifications ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                  backgroundColor: showNotifications ? 'var(--color-primary-subtle)' : 'transparent',
                   color: showNotifications ? '#f59e0b' : 'var(--color-text-secondary)',
                 }}
                 onMouseEnter={(e) => {
@@ -568,7 +580,7 @@ const Header = ({ boardName }) => {
                       onClearAll={clearAll}
                       onLoadMore={loadMore}
                       onClose={() => setShowNotifications(false)}
-                      onNotificationClick={handleNotificationClick}
+                      onNotificationClick={notification => { closeNotifications(); handleNotificationClick(notification); }}
                       archivedNotifications={archivedNotifications}
                       isLoadingArchived={isLoadingArchived}
                       hasMoreArchived={hasMoreArchived}

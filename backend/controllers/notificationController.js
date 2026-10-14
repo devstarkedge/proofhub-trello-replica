@@ -1,6 +1,7 @@
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import { emitNotification } from '../realtime/index.js';
+import { publishInboxChange } from '../realtime/notificationEvents.js';
 import notificationService from '../utils/notificationService.js';
 
 // Get paginated notifications
@@ -15,7 +16,7 @@ export const getNotifications = async (req, res) => {
       includeArchived = false 
     } = req.query;
     
-    const query = { user: req.user.id };
+    const query = { user: req.user.id, workspaceId: req.workspaceId };
     
     // Filter by archived status
     if (!includeArchived || includeArchived === 'false') {
@@ -58,15 +59,17 @@ export const getNotifications = async (req, res) => {
       query.priority = priority;
     }
     
+    const pageLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
+    const pageSkip = Math.min(10000, Math.max(0, Number.parseInt(skip, 10) || 0));
     const [notifications, total, unreadCount] = await Promise.all([
       Notification.find(query)
         .populate('relatedCard', 'title')
         .populate('relatedBoard', 'name')
         .populate('relatedTeam', 'name')
         .populate('sender', 'name email avatar')
-        .sort({ createdAt: -1 })
-        .skip(parseInt(skip))
-        .limit(parseInt(limit))
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(pageSkip)
+        .limit(pageLimit)
         .lean(),
       Notification.countDocuments(query),
       Notification.countDocuments({ user: req.user.id, isRead: false, isArchived: { $ne: true } })
@@ -76,9 +79,9 @@ export const getNotifications = async (req, res) => {
       notifications,
       pagination: {
         total,
-        limit: parseInt(limit),
-        skip: parseInt(skip),
-        hasMore: parseInt(skip) + notifications.length < total
+        limit: pageLimit,
+        skip: pageSkip,
+        hasMore: pageSkip + notifications.length < total
       },
       unreadCount
     });
@@ -113,6 +116,7 @@ export const markAsRead = async (req, res) => {
     notification.isRead = true;
     notification.readAt = new Date();
     await notification.save();
+    publishInboxChange(req.user.id, { action: 'read', notificationId: String(notification._id) });
     res.json(notification);
   } catch (err) {
     console.error(err.message);
@@ -127,6 +131,7 @@ export const markAllAsRead = async (req, res) => {
       { user: req.user.id, isRead: false, isArchived: { $ne: true } }, 
       { isRead: true, readAt: new Date() }
     );
+    publishInboxChange(req.user.id, { action: 'read-all' });
     res.json({ msg: 'All notifications marked as read', modified: result.modifiedCount });
   } catch (err) {
     console.error(err.message);
@@ -144,6 +149,7 @@ export const archiveNotification = async (req, res) => {
     notification.isArchived = true;
     notification.archivedAt = new Date();
     await notification.save();
+    publishInboxChange(req.user.id, { action: 'archive' });
     res.json({ msg: 'Notification archived', notification });
   } catch (err) {
     console.error(err.message);
@@ -164,6 +170,7 @@ export const bulkArchive = async (req, res) => {
       { isArchived: true, archivedAt: new Date() }
     );
     
+    publishInboxChange(req.user.id, { action: 'archive-many' });
     res.json({ msg: 'Notifications archived', modified: result.modifiedCount });
   } catch (err) {
     console.error(err.message);
@@ -175,6 +182,8 @@ export const bulkArchive = async (req, res) => {
 export const getArchivedNotifications = async (req, res) => {
   try {
     const { limit = 20, skip = 0 } = req.query;
+    const pageLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
+    const pageSkip = Math.min(10000, Math.max(0, Number.parseInt(skip, 10) || 0));
     
     const [notifications, total] = await Promise.all([
       Notification.find({ user: req.user.id, isArchived: true })
@@ -182,8 +191,8 @@ export const getArchivedNotifications = async (req, res) => {
         .populate('relatedBoard', 'name')
         .populate('sender', 'name email avatar')
         .sort({ archivedAt: -1 })
-        .skip(parseInt(skip))
-        .limit(parseInt(limit))
+        .skip(pageSkip)
+        .limit(pageLimit)
         .lean(),
       Notification.countDocuments({ user: req.user.id, isArchived: true })
     ]);
@@ -192,9 +201,9 @@ export const getArchivedNotifications = async (req, res) => {
       notifications,
       pagination: {
         total,
-        limit: parseInt(limit),
-        skip: parseInt(skip),
-        hasMore: parseInt(skip) + notifications.length < total
+        limit: pageLimit,
+        skip: pageSkip,
+        hasMore: pageSkip + notifications.length < total
       }
     });
   } catch (err) {
@@ -213,6 +222,7 @@ export const restoreNotification = async (req, res) => {
     notification.isArchived = false;
     notification.archivedAt = null;
     await notification.save();
+    publishInboxChange(req.user.id, { action: 'restore' });
     res.json({ msg: 'Notification restored', notification });
   } catch (err) {
     console.error(err.message);
@@ -228,6 +238,7 @@ export const deleteNotification = async (req, res) => {
     if (notification.user.toString() !== req.user.id) return res.status(403).json({ msg: 'Not authorized' });
 
     await Notification.findByIdAndDelete(req.params.id);
+    publishInboxChange(req.user.id, { action: 'delete' });
     res.json({ msg: 'Notification deleted' });
   } catch (err) {
     console.error(err.message);
@@ -248,6 +259,7 @@ export const bulkDelete = async (req, res) => {
       user: req.user.id
     });
     
+    publishInboxChange(req.user.id, { action: 'delete-many' });
     res.json({ msg: 'Notifications deleted', deleted: result.deletedCount });
   } catch (err) {
     console.error(err.message);
@@ -262,6 +274,7 @@ export const clearAll = async (req, res) => {
       { user: req.user.id, isArchived: { $ne: true } },
       { isArchived: true, archivedAt: new Date() }
     );
+    publishInboxChange(req.user.id, { action: 'clear' });
     res.json({ msg: 'All notifications cleared', modified: result.modifiedCount });
   } catch (err) {
     console.error(err.message);

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { readBackendURL } = require('./config.cjs');
 const { startDesktopServer } = require('./server.cjs');
+const { installDesktopNotifications } = require('./notifications.cjs');
 
 app.setName('FlowTask');
 if (process.platform === 'win32') app.setAppUserModelId('com.flowtask.desktop');
@@ -59,6 +60,7 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
+      backgroundThrottling: false,
     },
   });
   mainWindow.once('ready-to-show', () => mainWindow.show());
@@ -135,6 +137,7 @@ else {
     if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); }
   });
   app.whenReady().then(async () => {
+    installDesktopNotifications(() => mainWindow, () => rendererOrigin);
     if (!app.isPackaged && process.env.FLOWTASK_DEV_URL) {
       const url = new URL(process.env.FLOWTASK_DEV_URL);
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Development URL must be local.');

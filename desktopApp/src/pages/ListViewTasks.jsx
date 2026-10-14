@@ -114,6 +114,20 @@ const ListViewTasks = () => {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false, generation = 0;
+    const refresh = async () => {
+      if (!currentDepartment?._id) return;
+      const request = ++generation;
+      try {
+        const response = await Database.getCardsByDepartment(currentDepartment._id);
+        if (!cancelled && request === generation) setCards(response.data || []);
+      } catch { /* Keep the current list; reconnect performs another authorized read. */ }
+    };
+    window.addEventListener('flowtask:data-invalidated', refresh);
+    return () => { cancelled = true; generation++; window.removeEventListener('flowtask:data-invalidated', refresh); };
+  }, [currentDepartment?._id]);
+
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadCards();

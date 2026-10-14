@@ -12,7 +12,7 @@ await fs.rm(stage, { recursive: true, force: true });
 await fs.mkdir(path.join(stage, 'electron'), { recursive: true });
 await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
 for (const filename of await fs.readdir(path.join(root, 'electron'))) {
-  if (filename.endsWith('.cjs')) await fs.copyFile(path.join(root, 'electron', filename), path.join(stage, 'electron', filename));
+  if (filename.endsWith('.cjs') && !filename.endsWith('.test.cjs')) await fs.copyFile(path.join(root, 'electron', filename), path.join(stage, 'electron', filename));
 }
 // React dependencies are already in dist. The main process uses only Node and
 // Electron built-ins, so the installed app needs no renderer node_modules.

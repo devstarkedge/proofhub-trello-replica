@@ -194,6 +194,8 @@ const notificationSchema = new mongoose.Schema({
       ref: 'Comment'
     }
   },
+  deliveryPending: { type: Boolean, default: false },
+  deliveryLeaseUntil: { type: Date, default: null },
   createdAt: {
     type: Date,
     default: Date.now
@@ -202,6 +204,7 @@ const notificationSchema = new mongoose.Schema({
   timestamps: true
 });
 
+notificationSchema.index({ deliveryPending: 1, deliveryLeaseUntil: 1, createdAt: 1 }, { partialFilterExpression: { deliveryPending: true } });
 // Indexes for efficient queries
 notificationSchema.index({ workspaceId: 1, user: 1, createdAt: -1 });
 notificationSchema.index({ workspaceId: 1, user: 1, isRead: 1 });
