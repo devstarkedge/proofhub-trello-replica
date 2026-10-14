@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { toast } from 'react-toastify';
+import { normalizeLeaveDashboardResponse } from '../utils/leaveDashboardResponse';
+import { createLeaveSummaryReader } from '../utils/leaveSummaryReader';
 
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 
@@ -23,8 +25,14 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    const message = error.response?.data?.message || 'An error occurred';
-    if (!axios.isCancel(error) && ![403, 423].includes(error.response?.status)) toast.error(message);
+    const status = error.response?.status;
+    const message = error.response?.data?.message ||
+      (error.code === 'ECONNABORTED' ? 'The leave service took too long to respond. Please refresh to retry.' :
+        !error.response ? 'Unable to reach the leave service. Check your connection and refresh to retry.' :
+          `The leave service could not complete this request (HTTP ${status}). Please refresh to retry.`);
+    error.message = message;
+    if (!axios.isCancel(error) && ![403, 423].includes(error.response?.status) &&
+      !(status === 404 && error.config?.suppressNotFoundToast)) toast.error(message);
     return Promise.reject(error);
   }
 );
@@ -55,8 +63,9 @@ export const archiveDefaultPolicy = async (policyId) => (await api.post(`/polici
 export const deleteArchivedPolicy = async (policyId, kind = 'default') => (await api.delete(`/policies/${kind}/${policyId}`)).data;
 const readOptions = ({ signal, workspaceId } = {}) => ({ signal, ...(workspaceId ? { headers: { 'x-workspace-id': workspaceId } } : {}) });
 export const getCalendarEvents = async (params, options) => (await api.get('/calendar/events', { params, ...readOptions(options) })).data;
-export const getDashboardRecords = async (params, options) => (await api.get('/dashboard/records', { params, ...readOptions(options) })).data;
-export const getDashboardSummary = async (params = {}, options) => (await api.get('/dashboard/summary', { params, ...readOptions(options) })).data;
+export const getDashboardRecords = async (params, options) => normalizeLeaveDashboardResponse((await api.get('/dashboard/records', { params, ...readOptions(options) })).data);
+const readDashboardSummary = createLeaveSummaryReader((url, config) => api.get(url, config));
+export const getDashboardSummary = (params = {}, options) => readDashboardSummary(params, readOptions(options));
 
 // ─── Override (department/role/employee-specific) Policies ─────────────────
 export const getOverridePolicies = async () => (await api.get('/policies/overrides')).data;

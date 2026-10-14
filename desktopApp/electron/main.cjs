@@ -140,7 +140,7 @@ else {
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Development URL must be local.');
       rendererOrigin = url.origin;
     } else {
-      localServer = await startDesktopServer({ dist: path.join(root, 'dist'), backendURL: readBackendURL(root) });
+      localServer = await startDesktopServer({ dist: path.join(root, 'dist'), backendURL: readBackendURL(root), port: smokeTest ? 0 : 47831 });
       rendererOrigin = localServer.origin;
     }
     Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([

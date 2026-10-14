@@ -22,7 +22,7 @@ export default function LeaveRequestCenter({ workspaceId, personal = false, rend
   const statistics = useLeaveQuery('summary', {}, leaveApi.getDashboardSummary, { enabled: !personal });
   const data = records.isError ? null : records.data, loading = records.isPending;
   const summary = statistics.isError ? null : statistics.data?.summary;
-  const error = records.error?.response?.data?.message || (records.isError ? 'Unable to load leave requests. Use Refresh to retry.' : '');
+  const error = records.isError ? records.error?.response?.data?.message || records.error?.message || 'Unable to load leave requests. Use Refresh to retry.' : '';
   const load = () => { records.refetch(); if (!personal) statistics.refetch(); };
   useEffect(() => {
     const resetFilters = (event) => {

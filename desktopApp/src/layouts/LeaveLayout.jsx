@@ -9,6 +9,7 @@ import useLeaveStore from '../store/leaveStore';
 import { LEAVE_SCOPE_REFRESH_EVENTS, subscribeLeaveRefresh } from '../utils/leaveRequestSync';
 import { useQueryClient } from '@tanstack/react-query';
 import { registerResettable } from '../store/resetRegistry';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 const MAIN_LEAVE_ROUTES = ['/leave', '/leave/my', '/leave/calendar', '/leave/reports'];
 
@@ -103,10 +104,10 @@ const LeaveLayout = () => {
       )}
 
       {isSettings ? (
-        <Outlet />
+        <ErrorBoundary key={location.pathname}><Outlet /></ErrorBoundary>
       ) : (
         <LeaveContentContainer className={isCalendar ? 'flex-1 flex flex-col min-h-0 !py-2 sm:!py-2.5 lg:!py-3' : ''}>
-          <Outlet />
+          <ErrorBoundary key={location.pathname}><Outlet /></ErrorBoundary>
         </LeaveContentContainer>
       )}
     </div>
