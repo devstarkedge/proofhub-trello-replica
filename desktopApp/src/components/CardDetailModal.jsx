@@ -749,14 +749,19 @@ const CardDetailModal = React.memo(({
       setHierarchyProject({ _id: null, name: "Project" });
       return;
     }
+    // Optimistic fallback: if card.board already has a name, initialize hierarchy immediately
+    if (typeof card.board === 'object' && card.board?.name) {
+      setHierarchyProject(card.board);
+    }
     try {
       const response = await Database.getProject(boardId);
       const projectData = response.data;
-      const fallbackName = projectData?.name || "Unknown Project";
+      const fallbackName = projectData?.name || (typeof card.board === 'object' ? card.board?.name : null) || "Unknown Project";
       setHierarchyProject(projectData || { _id: boardId, name: fallbackName });
     } catch (error) {
-      console.error("Error loading project name:", error);
-      setHierarchyProject({ _id: boardId, name: "Project" });
+      console.warn("Could not fetch full project details, using card board fallback:", error?.message);
+      const fallbackName = (typeof card.board === 'object' ? card.board?.name : null) || "Project";
+      setHierarchyProject({ _id: boardId, name: fallbackName });
     }
   };
 

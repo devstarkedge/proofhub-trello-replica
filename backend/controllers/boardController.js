@@ -393,6 +393,113 @@ export const getWorkflowData = asyncHandler(async (req, res, next) => {
   });
 });
 
+/**
+ * Determines whether a user is authorized to view / access a board.
+ * Grants access if:
+ * 1. User is an admin or possesses the VIEW_ALL_PROJECTS capability
+ * 2. User is the board's direct owner
+ * 3. User is explicitly in the board's members list
+ * 4. The board has public visibility
+ * 5. User has this board in their allowedProjects whitelist
+ * 6. User belongs to the department that owns the board (or is a member/manager of the dept)
+ * 7. User belongs to the same team assigned to the board
+ * 8. User is assigned to any card, subtask, or nano-subtask in this board
+ */
+export async function canUserAccessBoard(board, user) {
+  if (!board || !user) return false;
+
+  // 1. Admin or capability VIEW_ALL_PROJECTS
+  if (user.role === 'admin' || userHasCapability(user, CAPABILITIES.VIEW_ALL_PROJECTS)) {
+    return true;
+  }
+
+  const userId = (user._id || user.id)?.toString();
+  if (!userId) return false;
+
+  // 2. Direct owner
+  const ownerId = (typeof board.owner === 'object' ? board.owner?._id : board.owner)?.toString();
+  if (ownerId && ownerId === userId) {
+    return true;
+  }
+
+  // 3. Direct board members
+  if (board.members && Array.isArray(board.members)) {
+    if (board.members.some((m) => (m?._id || m)?.toString() === userId)) {
+      return true;
+    }
+  }
+
+  // 4. Public board
+  if (board.visibility === 'public') {
+    return true;
+  }
+
+  // 5. Allowed projects whitelist
+  if (user.allowedProjects && Array.isArray(user.allowedProjects)) {
+    const allowed = user.allowedProjects.map((p) => (p?._id || p)?.toString());
+    if (allowed.includes(board._id.toString())) {
+      return true;
+    }
+  }
+
+  // 6. Department matching
+  const boardDeptId = (typeof board.department === 'object' ? board.department?._id : board.department)?.toString();
+  if (boardDeptId) {
+    const userDeptIds = Array.isArray(user.department)
+      ? user.department.map(d => (typeof d === 'object' ? d._id?.toString() || d.toString() : d.toString()))
+      : user.department ? [(typeof user.department === 'object' ? user.department._id?.toString() || user.department.toString() : user.department.toString())] : [];
+    if (userDeptIds.includes(boardDeptId)) {
+      return true;
+    }
+    // Also check department roster in DB (members or managers)
+    try {
+      const deptDoc = await Department.findOne({
+        _id: boardDeptId,
+        $or: [
+          { members: user._id || user.id },
+          { managers: user._id || user.id }
+        ]
+      }).select('_id').lean();
+      if (deptDoc) {
+        return true;
+      }
+    } catch {
+      // Continue to next check
+    }
+  }
+
+  // 7. Team matching
+  const boardTeamId = (typeof board.team === 'object' ? board.team?._id : board.team)?.toString();
+  const userTeamId = (typeof user.team === 'object' ? user.team?._id : user.team)?.toString();
+  if (boardTeamId && userTeamId && boardTeamId === userTeamId) {
+    return true;
+  }
+
+  // 8. Assignment-based: check if user is assigned to any card, subtask, or nano on this board
+  try {
+    const assignedBoardIds = await getAssignmentBasedBoardIds(userId);
+    if (assignedBoardIds.some(id => id.toString() === board._id.toString())) {
+      return true;
+    }
+  } catch {
+    // Fall back to direct check
+  }
+
+  // Direct card/subtask/nano assignee check for this specific board
+  try {
+    const hasCardAssignment = await Card.exists({ board: board._id, assignees: user._id || user.id });
+    if (hasCardAssignment) return true;
+    const hasSubtaskAssignment = await Subtask.exists({ board: board._id, assignees: user._id || user.id });
+    if (hasSubtaskAssignment) return true;
+    const hasNanoAssignment = await SubtaskNano.exists({ board: board._id, assignees: user._id || user.id });
+    if (hasNanoAssignment) return true;
+  } catch {
+    // End of checks
+  }
+
+  return false;
+}
+
 // @desc    Get single board
 // @route   GET /api/boards/:id
 // @access  Private
@@ -408,14 +515,8 @@ export const getBoard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Board not found", 404));
   }
 
-  // Check access
-  const ownerId =
-    (typeof board.owner === "object" && board.owner?._id) ||
-    board.owner;
-  const hasAccess =
-    ownerId?.toString() === req.user.id ||
-    board.members?.some((m) => m?._id?.toString() === req.user.id) ||
-    board.visibility === "public";
+  // Check access using unified, permission-aware authorization
+  const hasAccess = await canUserAccessBoard(board, req.user);
 
   if (!hasAccess) {
     return next(new ErrorResponse("Not authorized to access this board", 403));
