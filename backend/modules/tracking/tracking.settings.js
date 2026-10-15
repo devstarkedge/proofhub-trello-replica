@@ -13,7 +13,13 @@ export function validateConfiguration(body){
   if(retentionDays===null&&body.noFlushConfirmed!==true)fail('Confirm the No Flush storage usage warning');
   if(!Number.isInteger(idleThresholdSeconds)||idleThresholdSeconds<15||idleThresholdSeconds>900||!['primary','all'].includes(monitors)||[blur,monitoringEnabled,personalPauseEnabled,remindersEnabled].some(v=>typeof v!=='boolean'))fail('Complete the monitoring configuration');
   if(!Number.isInteger(reminderDelayMinutes)||reminderDelayMinutes<1||reminderDelayMinutes>240||!Number.isInteger(reminderCooldownMinutes)||reminderCooldownMinutes<15||reminderCooldownMinutes>1440)fail('Reminder delay must be 1–240 and cooldown 15–1440 minutes');
-  return {intervalSeconds,retentionDays,idleThresholdSeconds,monitors,blur,monitoringEnabled,personalPauseEnabled,remindersEnabled,reminderDelayMinutes,reminderCooldownMinutes};
+  const exclusions={};
+  for(const key of ['excludedDisplayIds','excludeWindowTitles']){
+    const values=body[key]||[];
+    if(!Array.isArray(values)||values.length>20||values.some(v=>typeof v!=='string'||!v.trim()||v.length>100))fail('Privacy exclusions must contain at most 20 values of 1–100 characters');
+    exclusions[key]=[...new Set(values.map(v=>v.trim()))];
+  }
+  return {intervalSeconds,retentionDays,idleThresholdSeconds,monitors,blur,monitoringEnabled,personalPauseEnabled,remindersEnabled,reminderDelayMinutes,reminderCooldownMinutes,...exclusions};
 }
 export async function updateSettings(workspaceId,userId,body,health){
   await requireTrackingAdmin(workspaceId,userId);const previous=await policyFor(workspaceId);

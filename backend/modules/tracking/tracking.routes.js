@@ -15,7 +15,7 @@ import AttendanceDay from '../attendance/attendanceDay.model.js';
 import { emitToUser } from '../../realtime/emitters.js';
 import { WorkSession, ActivityInterval, TrackingScreenshot, TrackingPolicy, TrackingDevice } from './tracking.models.js';
 import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, reconcileSession } from './tracking.service.js';
-import { registerDevice, savePreferences, heartbeat, recordInterval, prepareScreenshot, completeScreenshot, ownedDevice, retryScreenshot } from './tracking.device.js';
+import { registerDevice, acceptMonitoringNotice, releaseDevice, heartbeat, recordInterval, prepareScreenshot, completeScreenshot, retryScreenshot } from './tracking.device.js';
 import { readPrivateScreenshot, storageHealth } from './tracking.storage.js';
 import { trackingVisibility, historicalDepartmentScope } from './tracking.visibility.js';
 import { migrateLegacyScreenshot } from './tracking.legacyStorage.js';
@@ -87,14 +87,16 @@ router.put('/policy', asyncHandler(async (req,res) => {
 }));
 router.post('/devices/register', asyncHandler(async (req,res) => send(res, await registerDevice({ ...req.body, ...actor(req) }))));
 router.put('/devices/:deviceId/preferences', asyncHandler(async (req,res) => {
-  const data = await savePreferences({ ...actor(req), deviceId: req.params.deviceId, preferences: req.body?.preferences, consentRevision: req.body?.consentRevision });
-  if (!data.preferences.enabled) await TrackingDevice.updateOne({ _id: data._id }, { $set: { activeSession: null } });
-  await audit(req, 'TRACKING_CONSENT_UPDATED', 'TrackingDevice', data._id, { enabled: data.preferences.enabled, consentRevision: data.consentRevision });
+  fail('Desktop capture settings are controlled by workspace Admin. Update the desktop app to review its monitoring notice.',410,'WORKSPACE_CONTROLLED');
+}));
+router.post('/devices/:deviceId/notice',asyncHandler(async(req,res)=>{
+  const data=await acceptMonitoringNotice({...actor(req),deviceId:req.params.deviceId,noticeVersion:req.body?.noticeVersion,policyRevision:req.body?.policyRevision});
+  await audit(req,'TRACKING_NOTICE_ACCEPTED','TrackingDevice',data._id,{noticeVersion:data.noticeVersion,policyRevision:data.consentRevision});
   send(res, data);
 }));
+router.post('/devices/:deviceId/release',asyncHandler(async(req,res)=>send(res,await releaseDevice({...actor(req),deviceId:req.params.deviceId}))));
 router.post('/devices/:deviceId/revoke', asyncHandler(async (req,res) => {
-  await ownedDevice(req.workspaceId, req.user.id, req.params.deviceId);
-  await TrackingDevice.updateOne({ _id: req.params.deviceId }, { $set: { revokedAt: new Date(), activeSession: null, 'preferences.enabled': false } });
+  await releaseDevice({...actor(req),deviceId:req.params.deviceId,revoke:true});
   await audit(req, 'TRACKING_DEVICE_REVOKED', 'TrackingDevice', req.params.deviceId); send(res, { revoked: true });
 }));
 router.post('/devices/:deviceId/heartbeat', asyncHandler(async (req,res) => send(res, await heartbeat({ ...actor(req), deviceId: req.params.deviceId, sessionId: req.body?.sessionId, state: req.body?.state }))));

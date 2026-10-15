@@ -21,6 +21,7 @@ export const TrackingPolicy = model('TrackingPolicy', {
   idleThresholdSeconds: { type: Number, default: 60, min: 15, max: 900 },
   retentionDays: { type: Number, default: 365, min: 7, max: 365 },
   monitors:{type:String,enum:['primary','all'],default:'primary'},blur:{type:Boolean,default:false},personalPauseEnabled:{type:Boolean,default:true},
+  excludedDisplayIds: {type:[String],default:[]}, excludeWindowTitles: {type:[String],default:[]},
   remindersEnabled:{type:Boolean,default:false},reminderDelayMinutes:{type:Number,default:15},reminderCooldownMinutes:{type:Number,default:60},
   includePreAssignment: { type: Boolean, default: false },
   revision: { type: Number, default: 1 }, updatedBy: oid('User')
@@ -60,9 +61,14 @@ export const WorkSession = model('WorkSession', {
 export const TrackingDevice = model('TrackingDevice', {
   user: oid('User', true), installationId: { type: String, required: true }, name: String,
   platform: String, appVersion: String, lastSeenAt: Date, revokedAt: Date,
+  releasedAt: Date,
   consentRevision: { type: Number, default: 0 }, consentAt: Date,
+  noticeVersion: Number,
+  noticeHistory: [{ _id:false, version:Number, policyRevision:Number, acceptedAt:Date }],
+  // Backward-compatible delivery cache, replaced from workspace policy on
+  // every heartbeat. These fields are never employee-controlled authority.
   preferences: {
-    enabled: { type: Boolean, default: false }, intervalSeconds: { type: Number, default: 300 },
+    enabled: { type: Boolean, default: false }, intervalSeconds: { type: Number, default: 600 },
     monitors: { type: String, enum: ['primary', 'all'], default: 'primary' },
     excludedDisplayIds: [String], excludeWindowTitles: [String], blur: { type: Boolean, default: false }
   },

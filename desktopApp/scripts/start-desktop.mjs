@@ -20,7 +20,7 @@ try {
   const env = electronEnvironment();
   delete env.FLOWTASK_DEV_URL;
   if (server) env.FLOWTASK_DEV_URL = `http://127.0.0.1:${server.config.server.port}`;
-  child = spawn(executable, ['.', ...(smoke ? ['--smoke-test'] : [])], { cwd: root, env, stdio: 'inherit', windowsHide: false });
+  child = spawn(executable, ['.', ...(smoke ? ['--smoke-test'] : []),...(process.argv.includes('--isolated-test-profile')?['--isolated-test-profile']:[])], { cwd: root, env, stdio: 'inherit', windowsHide: false });
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
   const code = await new Promise((resolve, reject) => {

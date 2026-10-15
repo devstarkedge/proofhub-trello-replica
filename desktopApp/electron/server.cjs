@@ -3,6 +3,7 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const { validateBackendURL } = require('./config.cjs');
+const { contentSecurityPolicy } = require('./security-policy.cjs');
 
 const types = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -79,7 +80,7 @@ async function startDesktopServer({ dist, backendURL, port = 47831 }) {
         'Content-Length': stat.size,
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://accounts.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https: http://localhost:* http://127.0.0.1:*; font-src 'self' data: https:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* ws://127.0.0.1:* wss:; frame-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+        'Content-Security-Policy': contentSecurityPolicy,
       });
       if (req.method === 'HEAD') res.end();
       else fs.createReadStream(filename).on('error', () => res.destroy()).pipe(res);

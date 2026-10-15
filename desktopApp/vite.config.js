@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 const desktopConfig = createRequire(import.meta.url)('./electron/config.cjs')
+const { contentSecurityPolicy } = createRequire(import.meta.url)('./electron/security-policy.cjs')
 
 // https://vite.dev/config/
 export default ({ mode, command }) => {
@@ -45,12 +46,14 @@ export default ({ mode, command }) => {
       port: 5175,
       strictPort: true,
       cors: false,
+      headers: { 'Content-Security-Policy': contentSecurityPolicy },
       proxy: {
         '/api': { ...proxyOptions },
         '/uploads': { ...proxyOptions },
         '/socket.io': { ...proxyOptions },
       },
     },
+    preview: { headers: { 'Content-Security-Policy': contentSecurityPolicy } },
     build: {
       // Enable minification
       minify: 'terser',

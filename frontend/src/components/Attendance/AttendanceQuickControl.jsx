@@ -199,7 +199,7 @@ const AttendanceQuickControl = () => {
 
   const handleCheckIn = async () => {try{const tracking=await getTrackingState();if(tracking.policy.enabled&&tracking.canTrack){setShowWorkSelection(true);return;}}catch{/* Attendance remains independently available */}await runAction(attendanceApi.checkIn,'Checked in',{requestedWorkMode:selectedWorkMode});};
   const confirmCheckIn = (workSelection, idempotencyKey) => runAction(attendanceApi.checkIn, 'Checked in', { requestedWorkMode: selectedWorkMode, workSelection, idempotencyKey });
-  const handleCheckOut = () => runAction(attendanceApi.checkOut, 'Checked out');
+  const handleCheckOut = async () => { await window.flowtaskDesktop?.tracking?.stop?.(); try { await runAction(attendanceApi.checkOut, 'Checked out'); } finally { await window.flowtaskDesktop?.tracking?.refresh(); } };
 
   const isBusy = phase === 'locating' || phase === 'submitting';
   const busyLabel = phase === 'locating' ? 'Locating…' : status.activeSession ? 'Checking Out…' : 'Checking In…';

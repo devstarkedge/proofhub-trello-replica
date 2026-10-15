@@ -14,10 +14,14 @@ await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true
 for (const filename of await fs.readdir(path.join(root, 'electron'))) {
   if (filename.endsWith('.cjs') && !filename.endsWith('.test.cjs')) await fs.copyFile(path.join(root, 'electron', filename), path.join(stage, 'electron', filename));
 }
-// React dependencies are already in dist. The main process uses only Node and
-// Electron built-ins, so the installed app needs no renderer node_modules.
+for (const dependency of ['uiohook-napi', 'node-gyp-build','sharp','@img','detect-libc','semver','socket.io-client','socket.io-parser','engine.io-client','engine.io-parser','@socket.io/component-emitter','debug','ms','ws','xmlhttprequest-ssl']) {
+  await fs.cp(path.join(root,'node_modules',dependency),path.join(stage,'node_modules',dependency),{recursive:true});
+}
+// React dependencies are already in dist. Only native monitoring, image
+// encoding, and the existing Socket.IO transport need main-process packages.
 await fs.writeFile(path.join(stage, 'package.json'), JSON.stringify({
   name: manifest.name, version: manifest.version, description: manifest.description,
   author: manifest.author, main: manifest.main, private: true,
+  dependencies: { 'uiohook-napi': manifest.dependencies['uiohook-napi'],sharp:manifest.dependencies.sharp,'socket.io-client':manifest.dependencies['socket.io-client'] },
 }, null, 2));
 console.log('Prepared desktop package:', stage);

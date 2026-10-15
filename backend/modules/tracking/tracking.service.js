@@ -27,7 +27,7 @@ export async function contextFor(workspaceId, userId) {
   return ctx;
 }
 export async function policyFor(workspaceId, dbSession = null) {
-  const defaults={workspaceId,monitoringEnabled:true,intervalSeconds:600,idleThresholdSeconds:60,retentionDays:365,includePreAssignment:false,revision:1,monitors:'primary',blur:false,personalPauseEnabled:true,remindersEnabled:false,reminderDelayMinutes:15,reminderCooldownMinutes:60};
+  const defaults={workspaceId,monitoringEnabled:true,intervalSeconds:600,idleThresholdSeconds:60,retentionDays:365,includePreAssignment:false,revision:1,monitors:'primary',blur:false,excludedDisplayIds:[],excludeWindowTitles:[],personalPauseEnabled:true,remindersEnabled:false,reminderDelayMinutes:15,reminderCooldownMinutes:60};
   const stored=await TrackingPolicy.findOne({workspaceId}).session(dbSession).lean();
   const policy={...defaults,...stored};
   if(!policy.configuredAt){policy.intervalSeconds=600;policy.retentionDays=365;}
@@ -89,7 +89,7 @@ function pushAudit(session, type, at, actor, detail = '') {
 }
 export async function emitChanged(session) {
   if (!session) return;
-  try { emitToUser(session.user, 'tracking:changed', { workspaceId: session.workspaceId, sessionId: session._id, revision: session.revision }, session.workspaceId); } catch { /* persisted state is recovered on read */ }
+  try { emitToUser(session.user, 'tracking:changed', { workspaceId: session.workspaceId, sessionId: session._id, revision: session.revision, status:session.status }, session.workspaceId); } catch { /* persisted state is recovered on read */ }
   // Reuse personal workspace rooms; report updates never broadcast private
   // task/session identifiers to unrelated employees or custom roles.
   try{
@@ -202,7 +202,7 @@ export async function currentState(workspaceId, userId) {
   let session = await WorkSession.findOne({ workspaceId, user: userId, ...(attendance ? { attendanceSession: attendance._id } : {}) }).sort({ startedAt: -1 }).lean();
   if (session) session = await reconcileSession(session._id);
   const devices = await TrackingDevice.find({ workspaceId, user: userId, revokedAt: null }).select('-anchor -anchors').lean();
-  return { workspaceId, serverNow: new Date(), policy, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),
+  return { workspaceId, userId:String(userId), serverNow: new Date(), policy, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),
     canManagePolicy: await trackingRole(await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),workspaceId)==='admin'&&can(ctx,'tracking.manage_policy',{workspaceId}), canViewReports: can(ctx, 'tracking.view_reports'),
     attendance: attendance ? { _id: attendance._id, checkInAt: attendance.checkInAt, cutoffAt: attendance.missedCheckoutCutoffAt } : null,
     session: session ? { ...session, totals: summarize(session) } : null,

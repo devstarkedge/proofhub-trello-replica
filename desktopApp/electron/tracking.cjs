@@ -1,4 +1,4 @@
-const { app, ipcMain, desktopCapturer, screen, powerMonitor, safeStorage, systemPreferences } = require('electron');
+const { app, ipcMain, desktopCapturer, screen, powerMonitor, safeStorage, systemPreferences, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -16,12 +16,14 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   let locked=false,suspended=false,lastCapture=0,lastState='unavailable',lastError='',lastCaptureAllowed=false;
   let leaseDeadlineMono=0;
   let realtime=null,haltRevision=0,captureEpoch=0;
+  let noticeRequired=false,noticeVersion=1;
   const counters = new ActivityCounters();
   const trusted = event => { const window=getWindow();
     return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && new URL(event.senderFrame.url).origin===getOrigin(); };
   const publish = (state=lastState,error=lastError) => {
     lastState=state;lastError=error;
-    const value={state,error,deviceId:device?._id||null,pending:queue?.files().length||0,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion()};
+    const value={state,error,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,pending:queue?.files().length||0,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
+      policy:policy?{revision:policy.revision,enabled:policy.enabled,intervalSeconds:policy.intervalSeconds,retentionDays:policy.retentionDays,monitors:policy.monitors,blur:policy.blur}:null};
     const window=getWindow(); if(window&&!window.isDestroyed())window.webContents.send('desktop-tracking:status',value);
     if(window&&!window.isDestroyed())window.setTitle(state==='monitoring'?'FlowTask · Monitoring active':state==='offline'?'FlowTask · Monitoring offline':'FlowTask');
     return value;
@@ -45,8 +47,11 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   function haltPolicy(value){
     if(value?.enabled!==false)return;
     haltRevision=Math.max(haltRevision,Number(value.revision)||0);captureEpoch++;
-    capturing=false;lastCaptureAllowed=false;leaseDeadlineMono=0;stopInput();counters.reset();
+    capturing=false;lastCaptureAllowed=false;leaseDeadlineMono=0;noticeRequired=false;stopInput();counters.reset();
     publish('unavailable','Time Tracking disabled by workspace Admin');
+  }
+  function haltCapture(message='Desktop monitoring stopped'){
+    captureEpoch++;capturing=false;lastCaptureAllowed=false;leaseDeadlineMono=0;noticeRequired=false;stopInput();counters.reset();publish('unavailable',message);
   }
   function connectRealtime(){
     realtime?.disconnect();realtime=null;if(!credentials)return;
@@ -54,10 +59,14 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       let client;try{client=require('socket.io-client');}catch(error){if(!app.isPackaged)throw error;client=require(path.join(process.resourcesPath,'node_modules','socket.io-client'));}
       realtime=client.io(getBackendURL(),{auth:{...credentials},transports:['websocket','polling'],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:5000});
       realtime.on('tracking:policy-updated',value=>{haltPolicy(value);return sync();});
-      for(const event of ['connect','tracking:changed','attendance:checked-in','attendance:checked-out','realtime-recover'])realtime.on(event,()=>sync());
+      realtime.on('tracking:changed',value=>{if(String(value?.sessionId)===String(work?._id)&&['PAUSED','CLOSED'].includes(value?.status))haltCapture('Work is not running');return sync();});
+      realtime.on('attendance:checked-out',value=>{if(String(value?.userId)===String(credentials?.userId))haltCapture('Checked out');return sync();});
+      realtime.on('tracking:device-updated',value=>{if(String(value?.deviceId)===String(device?._id)&&value?.revoked)haltCapture('This desktop device was revoked');return sync();});
+      for(const event of ['connect','attendance:checked-in','realtime-recover','user-role-changed','department-bulk-assigned','department-bulk-unassigned','access-permissions-updated','workspace-membership-added'])realtime.on(event,()=>sync());
     }catch{/* Existing 15-second heartbeat remains the recovery transport. */}
   }
   function startInput() {
+    if(process.platform==='darwin'&&!systemPreferences.isTrustedAccessibilityClient(false))return false;
     if(!hook) {
       try {
         let inputModule;
@@ -82,7 +91,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   function begin() {
     if(capturing||locked||suspended||performance.now()>=leaseDeadlineMono)return;
     if(!queue?.available()){publish('unavailable','Encrypted offline storage is unavailable');return;}
-    if(process.platform==='darwin'&&systemPreferences.getMediaAccessStatus('screen')!=='granted'){publish('unavailable','Allow Screen Recording in macOS System Settings, then restart FlowTask');return;}
+    if(process.platform==='darwin'&&systemPreferences.getMediaAccessStatus('screen')!=='granted'){publish('permission-required','Allow Screen Recording in macOS System Settings, then restart FlowTask');return;}
     capturing=true;counters.reset();lastCapture=performance.now();
     const input=startInput();
     if(!sampler)sampler=setInterval(()=>{if(capturing)counters.sample(isIdle());},1000);
@@ -90,7 +99,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   }
   async function boundary(reason=null) {
     if(!capturing||!work||!device||anchorMono===null)return;
-    const activeWork=work,activeDevice=device,activeQueue=queue,activeGeneration=generation,activeEpoch=captureEpoch;
+    const activeWork=work,activeDevice=device,activeQueue=queue,activeGeneration=generation,activeEpoch=++captureEpoch;
     let coverage=reason||'captured',images=[];
     try {
       if(!reason&&!locked&&!suspended) {
@@ -98,6 +107,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
         const exclusions=preferences.excludeWindowTitles||[];
         if(exclusions.length){const windows=await desktopCapturer.getSources({types:['window'],thumbnailSize:{width:0,height:0}});
           if(windows.some(w=>exclusions.some(word=>w.name.toLocaleLowerCase().includes(word.toLocaleLowerCase()))))coverage='excluded';}
+        if(activeEpoch!==captureEpoch||locked||suspended)return;
         if(coverage==='captured'){
           const all=screen.getAllDisplays(),primary=screen.getPrimaryDisplay();
           const displays=all.filter(d=>(preferences.monitors==='all'||d.id===primary.id)&&!(preferences.excludedDisplayIds||[]).includes(String(d.id)));
@@ -106,6 +116,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
             const sources=await desktopCapturer.getSources({types:['screen'],fetchWindowIcons:false,thumbnailSize:{
               width:Math.max(...displays.map(d=>Math.round(d.size.width*d.scaleFactor))),height:Math.max(...displays.map(d=>Math.round(d.size.height*d.scaleFactor)))}});
             for(const display of displays){const source=sources.find(s=>s.display_id===String(display.id));
+              if(activeEpoch!==captureEpoch||locked||suspended)return;
               if(!source||source.thumbnail.isEmpty()){coverage='unavailable';continue;}
               let image=source.thumbnail;const size=image.getSize();
               if(preferences.blur)image=image.resize({width:Math.max(1,Math.round(size.width/40)),height:Math.max(1,Math.round(size.height/40)),quality:'good'}).resize({...size,quality:'good'});
@@ -154,9 +165,11 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
           for(const image of entry.images)if(image.format!=='webp'){
             const original=Buffer.from(image.data,'base64');if(checksum(original)!==image.checksum)throw new Error('Offline screenshot checksum mismatch');
             const encoded=await encodeWebP(original);Object.assign(image,{data:encoded.data.toString('base64'),bytes:encoded.data.length,width:encoded.width,height:encoded.height,format:'webp',mimeType:'image/webp',quality:85,checksum:checksum(encoded.data),contentMd5:checksum(encoded.data,'md5'),conversionPending:false});
+            if(scope!==generation)return;
             activeQueue.update(name,entry);
           }
           for(const image of entry.images){const bytes=Buffer.from(image.data,'base64');
+            if(scope!==generation)return;
             if(checksum(bytes)!==image.checksum||checksum(bytes,'md5')!==image.contentMd5)throw new Error('Offline screenshot checksum mismatch');
             const {data:ignored,...metadata}=image;
             const prepared=await request(`/devices/${deviceId}/screenshots/prepare`,{intervalId:interval._id,image:metadata});
@@ -168,6 +181,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
                 await request(`/devices/${deviceId}/screenshots/${prepared.screenshotId}/retry`,{}).catch(()=>{});
                 throw new Error('Screenshot upload failed; retrying the same capture');
               }
+              if(scope!==generation)return;
               await request(`/devices/${deviceId}/screenshots/${prepared.screenshotId}/complete`,{});
             }
           }
@@ -199,14 +213,15 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       if(capturing&&(anchorChanged||changedSession||!next.canCapture||next.device.preferences.intervalSeconds!==device.preferences.intervalSeconds||JSON.stringify(next.device.preferences)!==JSON.stringify(device.preferences))){await stopCapture();}
       if(anchorChanged)anchorMono=(beforeHeartbeat+performance.now())/2;
       work=next.session;policy=next.policy;device=next.device;
+      noticeVersion=next.noticeVersion||1;noticeRequired=Boolean(next.needsNotice&&work?.status==='RUNNING');
       leaseDeadlineMono=next.canCapture?beforeHeartbeat+Math.max(0,+new Date(device.leaseUntil)-+new Date(next.serverNow)):0;
-      if(device.revokedAt){await stopCapture();queue?.clear();publish('unavailable','This desktop device was revoked');return;}
+      if(device.revokedAt){haltCapture('This desktop device was revoked');return;}
       if(next.canCapture){lastCaptureAllowed=true;begin();if(capturing)publish('monitoring',hookStarted?'':'System input counters unavailable');}
-      else{await stopCapture();publish('unavailable',next.reason||'Monitoring unavailable');}
+      else{await stopCapture();const state=!policy.enabled||!policy.monitoringEnabled?'disabled':work?.status==='PAUSED'?'paused':!work||work.status!=='RUNNING'?'ready':'unavailable';publish(noticeRequired?'notice-required':state,next.reason||'Monitoring unavailable');}
       await flush();
     }catch(error){
       if(scope!==generation)return;
-      if(error.status===401||error.status===403){await stopCapture();queue?.clear();publish('unavailable',error.message);}
+      if([401,403,404].includes(error.status)){haltCapture(error.message);}
       else if(error.status===409){await stopCapture();publish('unavailable',error.message);}
       else{publish('offline',error.message);
         // Capture may continue offline only under the last authorized session,
@@ -218,12 +233,16 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   async function configure(value) {
     if(value&&(!/^[a-f\d]{24}$/i.test(value.userId)||!/^[a-f\d]{24}$/i.test(value.workspaceId)||typeof value.token!=='string'||value.token.length<16||value.token.length>8192))throw new Error('Invalid tracking identity');
     if(credentials?.userId===value?.userId&&credentials?.workspaceId===value?.workspaceId){const changed=credentials?.token!==value?.token;credentials=value;if(changed)connectRealtime();return publish();}
-    realtime?.disconnect();realtime=null;await stopCapture();generation++;queue?.clear();credentials=value;device=null;work=null;policy=null;queue=null;anchorMono=null;haltRevision=0;captureEpoch++;
+    // End capture synchronously before awaiting network or changing identity.
+    // Completed encrypted entries remain in their user/workspace directory.
+    haltCapture();generation++;realtime?.disconnect();realtime=null;
+    if(credentials&&device&&!device.revokedAt)await request(`/devices/${device._id}/release`,{}).catch(()=>{});
+    credentials=value;device=null;work=null;policy=null;queue=null;anchorMono=null;haltRevision=0;noticeRequired=false;lastState='unavailable';lastError='';publish();
     clearInterval(timer);timer=null;clearInterval(syncTimer);syncTimer=null;
     if(value){const queueMB=Math.min(4096,Math.max(50,Number(process.env.FLOWTASK_SCREENSHOT_QUEUE_MAX_MB)||500));queue=new DurableQueue(path.join(root,checksum(`${value.workspaceId}:${value.userId}`)),safeStorage,queueMB*1024*1024);
       timer=setInterval(async()=>{
         if(capturing&&performance.now()>=leaseDeadlineMono){capturing=false;stopInput();counters.reset();publish('unavailable','Capture lease expired. Reconnect to renew monitoring authorization.');return;}
-        if(capturing&&performance.now()-lastCapture>=(device.preferences.intervalSeconds||300)*1000&&!busy){busy=true;try{await boundary();await flush();}finally{busy=false;}}
+        if(capturing&&performance.now()-lastCapture>=policy.intervalSeconds*1000&&!busy){busy=true;try{await boundary();await flush();}finally{busy=false;}}
       },1000);
       // Native session polling is independent of the React route/window focus.
       syncTimer=setInterval(()=>sync(),15000);syncTimer.unref();
@@ -234,10 +253,28 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   let configureChain=Promise.resolve();
   ipcMain.handle('desktop-tracking:configure',(event,value)=>{
     if(!trusted(event))throw new Error('Untrusted tracking sender');
-    if(!value){capturing=false;stopInput();generation++;queue?.clear();}
+    if(credentials?.userId!==value?.userId||credentials?.workspaceId!==value?.workspaceId){haltCapture();generation++;}
     configureChain=configureChain.catch(()=>{}).then(()=>configure(value));return configureChain;
   });
   ipcMain.handle('desktop-tracking:status',event=>{if(!trusted(event))throw new Error('Untrusted tracking sender');return publish();});
+  ipcMain.handle('desktop-tracking:stop',event=>{if(!trusted(event))throw new Error('Untrusted tracking sender');haltCapture();return publish();});
+  ipcMain.handle('desktop-tracking:notice',async(event,value)=>{
+    if(!trusted(event))throw new Error('Untrusted tracking sender');
+    if(!noticeRequired||value?.deviceId!==device?._id||value?.workspaceId!==credentials?.workspaceId||value?.userId!==credentials?.userId||value?.policyRevision!==policy?.revision)throw new Error('Desktop identity or policy changed. Review the current notice.');
+    const scope=generation;
+    await request(`/devices/${device._id}/notice`,{noticeVersion,policyRevision:policy.revision});
+    if(scope!==generation)throw new Error('Desktop identity changed');
+    noticeRequired=false;await sync();return publish();
+  });
+  ipcMain.handle('desktop-tracking:permissions',async event=>{
+    if(!trusted(event))throw new Error('Untrusted tracking sender');
+    if(!credentials||!device||noticeRequired||!work||work.status!=='RUNNING')throw new Error('Start authorized work and review the monitoring notice first');
+    if(process.platform==='darwin'){
+      systemPreferences.isTrustedAccessibilityClient(true);
+      if(systemPreferences.getMediaAccessStatus('screen')!=='granted')await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+    }
+    await sync();return publish();
+  });
   ipcMain.handle('desktop-tracking:refresh',async event=>{if(!trusted(event))throw new Error('Untrusted tracking sender');await sync();return publish();});
   ipcMain.handle('desktop-tracking:policy',async(event,value)=>{
     if(!trusted(event))throw new Error('Untrusted tracking sender');

@@ -24,7 +24,6 @@ export const getScreenshotUrl = async screenshotId => {
   const response=await api.get(`/screenshots/${screenshotId}/content`,{responseType:'blob'});
   return {url:URL.createObjectURL(response.data)};
 };
-export const saveDevicePreferences = (deviceId, payload) => data(api.put(`/devices/${deviceId}/preferences`, payload));
 export const revokeDevice = deviceId => data(api.post(`/devices/${deviceId}/revoke`));
 export const saveTrackingPolicy = payload => data(api.put('/policy', payload));
 export const errorMessage = error => error.response?.data?.message || error.message || 'Unable to update work tracking';

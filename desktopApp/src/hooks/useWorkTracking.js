@@ -19,7 +19,7 @@ export default function useWorkTracking() {
     let active = true;
     const refresh = () => { if (active) reload(); };
     refresh(); const timer = setInterval(refresh, 15000);
-    const realtime = event => { if (/^(tracking:|attendance:)/.test(event.detail?.type || '')) refresh(); };
+    const realtime = event => { if (/^(tracking:|attendance:)|user-role-changed|department-bulk-|permissions.*updated|access.*updated/.test(event.detail?.type || '')) refresh(); };
     window.addEventListener('flowtask:realtime', realtime);
     window.addEventListener('flowtask:tracking-refresh', refresh);
     window.addEventListener('online', refresh);

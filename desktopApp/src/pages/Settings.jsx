@@ -12,6 +12,7 @@ import NotificationContext from '../context/NotificationContext';
 import Loading from '../components/Loading';
 import SlackSettings from '../components/SlackSettings';
 import ChatIntegrationSettings from '../components/ChatIntegrationSettings';
+import TrackingDeviceSecurity from '../components/Tracking/TrackingDeviceSecurity';
 import { validateField, validatePasswordMatch, validateForm, validationRules } from '../utils/validationUtils';
 
 const Settings = () => {
@@ -438,6 +439,7 @@ const Settings = () => {
             </motion.div>
 
             {/* Save Button */}
+            <TrackingDeviceSecurity />
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

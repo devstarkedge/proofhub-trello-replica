@@ -70,7 +70,9 @@ async function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
   const contents = mainWindow.webContents;
   const rendererErrors = [];
+  const securityWarnings = [];
   contents.on('console-message', (event) => {
+    if (/Electron Security Warning|Insecure Content-Security-Policy/i.test(event.message)) securityWarnings.push(event.message);
     if (event.level === 'error') {
       rendererErrors.push(event.message);
       console.error('Renderer:', event.message);
@@ -109,8 +111,10 @@ async function createWindow() {
         if (document.querySelector('input[type="email"]') && document.querySelector('input[type="password"]')) {
           try {
             const response = await fetch('/api/health');
+            const page = await fetch('/', { method: 'HEAD' });
             resolve({ title: document.title, path: location.pathname, desktop: window.flowtaskDesktop?.isDesktop,
               nodeDisabled: typeof window.require === 'undefined', backendStatus: response.status,
+              contentSecurityPolicy: page.headers.get('content-security-policy'),
               backendHealth: await response.json() });
           } catch (error) { reject(error); }
         } else if (Date.now() > deadline) resolve({ error: 'Login screen did not render within 30 seconds', path: location.pathname, body: document.body.innerText.slice(0, 2000) });
@@ -121,6 +125,7 @@ async function createWindow() {
     const artifactDir = path.join(app.isPackaged ? process.cwd() : root, 'artifacts');
     fs.mkdirSync(artifactDir, { recursive: true });
     result.rendererErrors = rendererErrors;
+    result.securityWarnings = securityWarnings;
     result.packaged = app.isPackaged;
     result.electronVersion = process.versions.electron;
     Object.assign(result, await require('./verify-window.cjs')(mainWindow));
@@ -129,7 +134,7 @@ async function createWindow() {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     fs.writeFileSync(path.join(artifactDir, 'desktop-smoke.png'), (await contents.capturePage()).toPNG());
     console.log('FlowTask desktop smoke test:', JSON.stringify(result));
-    if (!result.desktop || !result.nodeDisabled || result.backendStatus !== 200) throw new Error('Desktop smoke test failed. See artifacts/smoke-test.json.');
+    if (!result.desktop || !result.nodeDisabled || result.backendStatus !== 200 || !result.contentSecurityPolicy || result.contentSecurityPolicy.includes("'unsafe-eval'") || result.securityWarnings.length) throw new Error('Desktop smoke test failed. See artifacts/smoke-test.json.');
     app.quit();
   }
 }

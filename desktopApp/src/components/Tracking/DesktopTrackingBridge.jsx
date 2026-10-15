@@ -1,11 +1,14 @@
-import { useContext, useEffect } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
+import DesktopMonitoringNotice from './DesktopMonitoringNotice';
 
 export default function DesktopTrackingBridge() {
   const { user, token, isAuthenticated } = useContext(AuthContext);
   const { currentWorkspace } = useContext(WorkspaceContext) || {};
   const userId = user?._id || user?.id, workspaceId = currentWorkspace?._id;
+  const [status,setStatus]=useState(null);
+  useEffect(()=>{const tracking=window.flowtaskDesktop?.tracking;if(!tracking)return;tracking.getStatus().then(setStatus).catch(()=>{});return tracking.onStatus(setStatus);},[]);
   useEffect(() => {
     const tracking = window.flowtaskDesktop?.tracking;
     if (!tracking) return;
@@ -18,5 +21,6 @@ export default function DesktopTrackingBridge() {
     window.addEventListener('online',refresh);
     return () => { window.removeEventListener('flowtask:realtime',refresh);window.removeEventListener('flowtask:tracking-refresh',refresh);window.removeEventListener('online',refresh); };
   },[isAuthenticated,userId,workspaceId,token]);
-  return null;
+  const scoped=status?.userId===String(userId)&&status?.workspaceId===String(workspaceId)&&isAuthenticated?status:null;
+  return <DesktopMonitoringNotice status={scoped}/>;
 }

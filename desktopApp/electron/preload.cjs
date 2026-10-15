@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
     getStatus: () => ipcRenderer.invoke('desktop-tracking:status'),
     refresh: () => ipcRenderer.invoke('desktop-tracking:refresh'),
     policyChanged: value => ipcRenderer.invoke('desktop-tracking:policy',value),
+    stop: () => ipcRenderer.invoke('desktop-tracking:stop'),
+    acceptNotice: value => ipcRenderer.invoke('desktop-tracking:notice',value),
+    recoverPermissions: () => ipcRenderer.invoke('desktop-tracking:permissions'),
     onStatus: callback => {
       const listener = (_event, value) => callback(value);
       ipcRenderer.on('desktop-tracking:status', listener);
