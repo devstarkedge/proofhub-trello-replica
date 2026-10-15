@@ -60,6 +60,8 @@ import salesPermissionsRoutes from './routes/salesPermissions.js';
 import salesTabRoutes from './modules/salesTabs/salesTab.routes.js';
 import leaveRoutes from './modules/leave/leave.routes.js';
 import attendanceRoutes from './modules/attendance/attendance.routes.js';
+import trackingRoutes from './modules/tracking/tracking.routes.js';
+import { startTrackingMaintenance, stopTrackingMaintenance } from './modules/tracking/tracking.maintenance.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
 import workspaceRoutes from './routes/workspaces.js';
 import workspaceMemberRoutes from './routes/workspaceMembers.js';
@@ -204,6 +206,7 @@ app.use('/api/sales-permissions', salesPermissionsRoutes);
 app.use('/api/sales-tabs', salesTabRoutes);
 app.use('/api/leave', leaveRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/tracking', trackingRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 app.use('/api/workspaces', workspaceRoutes);
 // Second router at the same prefix — the centralized Invite Member system's
@@ -295,6 +298,7 @@ mongoose.connect(config.db.uri, {
     logger.info(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
 
     startAnalyticsReportScheduler();
+    startTrackingMaintenance();
 
     // Independent of BullMQ/Redis — the accrual/expiry repeat jobs above
     // don't run at all while Redis is down (no in-process fallback for
@@ -332,6 +336,7 @@ const gracefulShutdown = async (signal) => {
         stopBoardPublication(),
       Promise.resolve(stopNotificationPublication()),
       Promise.resolve(stopAnalyticsReportScheduler()),
+      Promise.resolve(stopTrackingMaintenance()),
     ]);
   } catch (err) {
     logger.error('Error during service shutdown', { error: err.message });

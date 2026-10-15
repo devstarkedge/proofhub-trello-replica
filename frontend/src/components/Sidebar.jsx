@@ -94,6 +94,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       { path: '/announcements', icon: Bell, label: 'Announcements' },
       { path: '/leave', icon: CalendarDays, label: 'Leave' },
       { path: '/attendance', icon: Fingerprint, label: 'Attendance' },
+      { path: '/time-tracking', icon: Fingerprint, label: 'Time Tracking' },
     ];
 
     // If no user yet, return base

@@ -9,3 +9,11 @@ tests/
 .log*
 reports/
 *.md
+!backend/tests/
+backend/tests/*
+!backend/tests/tracking/
+!backend/tests/tracking/*.test.js
+!desktopApp/electron/tests/
+desktopApp/electron/tests/*
+!desktopApp/electron/tests/tracking.test.cjs
+!desktopApp/electron/tests/screenshot-encoder.test.cjs

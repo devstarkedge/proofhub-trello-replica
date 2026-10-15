@@ -29,6 +29,8 @@ import { runPlanCatalogV2Migration } from './migratePlanCatalogV2.js';
 import { runRetireLegacyPlanMigration } from './migrateRetireLegacyPlan.js';
 import { runSalesWatchBaselineMigration } from './migrateSalesWatchBaseline.js';
 import { runAttendanceIdempotencyIndexMigration } from './migrateAttendanceIdempotencyIndex.js';
+import { runWorkTrackingMigration } from './migrateWorkTracking.js';
+import {runTrackingConfigurationMigration} from './migrateTrackingConfiguration.js';
 
 // ─── Migration definitions ──────────────────────────────────────────────────
 // Order matters: migrations run in the order listed here.
@@ -99,6 +101,12 @@ const MIGRATIONS = [
     description: 'Replace sparse unique index with partial unique index on AttendanceSession.idempotencyKey (fixes false ALREADY_CHECKED_IN on a brand new day)',
     run: runAttendanceIdempotencyIndexMigration,
   },
+  {
+    name: 'work_tracking', version: '20261014',
+    description: 'Add tracking/device/activity/private-screenshot indexes and tracking grants to uncustomized system roles',
+    run: runWorkTrackingMigration,
+  },
+  {name:'tracking_workspace_configuration_agendas',version:'20261015',description:'Require explicit Admin activation and seed workspace agendas without changing historical retention',run:runTrackingConfigurationMigration},
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

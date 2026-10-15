@@ -1,6 +1,7 @@
 import { periodDateRange, isValidDateRange } from '../../utils/workspaceDateRange';
 import { formatHours } from '../../utils/duration';
 import { attendanceCsv } from '../../utils/attendanceExport';
+import TrackingReports from '../../components/Tracking/TrackingReports';
 import React, { useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Users } from 'lucide-react';
 import PresenceStatusBadge from '../../components/Attendance/PresenceStatusBadge';
@@ -176,6 +177,7 @@ const TeamAttendanceContent = () => {
           </div>
         )}
       </section>
+      <TrackingReports team />
     </div>
   );
 };

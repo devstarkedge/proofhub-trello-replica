@@ -96,6 +96,7 @@ export function resolveNotificationRoute(notification) {
   }
 
   const type = notification.type;
+  if(type==='reminder_sent'&&notification.action==='tracking_start')return result('/time-tracking?start=1',null,null,'/time-tracking');
   if (type?.startsWith('leave_')) {
     const requestId = notification.entity?.id || notification.metadata?.requestId || notification.metadata?.entityId || notification.entityId;
     return result(requestId ? `/leave?request=${encodeURIComponent(requestId)}` : '/leave', null, requestId || null, '/leave');

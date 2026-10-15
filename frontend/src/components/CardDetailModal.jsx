@@ -12,6 +12,7 @@ import useModalHierarchyStore from "../store/modalHierarchyStore";
 import useAttachmentStore, { getEntityKey } from "../store/attachmentStore";
 import CardDescription from "./CardDetailModal/CardDescription";
 import TimeTrackingSection from "./CardDetailModal/TimeTrackingSection";
+import TaskLiveTimeSummary from "./Tracking/TaskLiveTimeSummary";
 import SubtasksSection from "./CardDetailModal/SubtasksSection";
 import AttachmentsSection from "./CardDetailModal/AttachmentsSection";
 import CommentsSection from "./CardDetailModal/CommentsSection";
@@ -2025,6 +2026,7 @@ const CardDetailModal = React.memo(({
                 />
 
                 {/* Time Tracking Component */}
+                <TaskLiveTimeSummary taskId={card._id} />
                 <TimeTrackingSection
                   estimationEntries={estimationEntries}
                   loggedTime={loggedTime}

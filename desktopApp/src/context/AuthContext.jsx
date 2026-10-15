@@ -48,6 +48,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logoutUser = useCallback(() => {
+    window.flowtaskDesktop?.tracking?.configure(null).catch(() => {});
     // Only remove token from localStorage
     localStorage.removeItem("token");
     localStorage.removeItem("workspaceId");

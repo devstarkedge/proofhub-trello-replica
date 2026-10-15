@@ -4,12 +4,15 @@ const path = require('node:path');
 const { readBackendURL } = require('./config.cjs');
 const { startDesktopServer } = require('./server.cjs');
 const { installDesktopNotifications } = require('./notifications.cjs');
+const { installDesktopTracking } = require('./tracking.cjs');
 
 app.setName('FlowTask');
 if (process.platform === 'win32') app.setAppUserModelId('com.flowtask.desktop');
 const smokeTest = process.argv.includes('--smoke-test');
+const isolatedTestProfile = !app.isPackaged && process.argv.includes('--isolated-test-profile');
 // Smoke verification must not reuse or modify a person's saved desktop session.
 if (smokeTest) app.setPath('userData', path.join(app.getPath('temp'), `flowtask-smoke-${process.pid}`));
+else if(isolatedTestProfile)app.setPath('userData',path.join(app.getPath('temp'),`flowtask-live-test-${process.pid}`));
 let mainWindow;
 let localServer;
 let rendererOrigin;
@@ -138,6 +141,7 @@ else {
   });
   app.whenReady().then(async () => {
     installDesktopNotifications(() => mainWindow, () => rendererOrigin);
+    installDesktopTracking(() => mainWindow, () => rendererOrigin, () => rendererOrigin);
     if (!app.isPackaged && process.env.FLOWTASK_DEV_URL) {
       const url = new URL(process.env.FLOWTASK_DEV_URL);
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Development URL must be local.');

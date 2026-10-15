@@ -63,6 +63,7 @@ import ProjectTrash from "./pages/ProjectTrash";
 import SelectWorkspacePage from "./pages/SelectWorkspacePage";
 import NoWorkspacePage from "./pages/NoWorkspacePage";
 import InvitePage from "./pages/InvitePage";
+import TimeTrackingPage from "./pages/TimeTrackingPage";
 import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
 import CreateWorkspacePublicPage from './pages/CreateWorkspacePublicPage';
 import ContactSalesPage from './pages/ContactSalesPage';
@@ -95,11 +96,14 @@ import SuperAdminWorkspacesPage from "./pages/SuperAdmin/SuperAdminWorkspacesPag
 import SuperAdminWorkspaceDetailPage from "./pages/SuperAdmin/SuperAdminWorkspaceDetailPage";
 import SuperAdminAuditLogPage from "./pages/SuperAdmin/SuperAdminAuditLogPage";
 
+import DesktopTrackingBridge from './components/Tracking/DesktopTrackingBridge';
+
 function App() {
   return (
     <AuthProvider>
       <MeProvider>
         <WorkspaceProvider>
+        <DesktopTrackingBridge />
         <TeamProvider>
           <NotificationProvider>
             <ClientInfoProvider>
@@ -130,6 +134,7 @@ function App() {
                   }
                 />
                 <Route path="/my-shortcuts" element={<MyShortcutsPage />} />
+                <Route path="/time-tracking" element={<TimeTrackingPage />} />
                 <Route path="/workspace-settings" element={<WorkspaceSettingsPage />} />
                 <Route path="/workflow/:deptId/:projectId" element={<WorkFlow />} />
                 <Route path="/workflow/:deptId/:projectId/:taskId" element={<WorkFlow />} />

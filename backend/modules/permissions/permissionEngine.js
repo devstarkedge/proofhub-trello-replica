@@ -122,6 +122,13 @@ export async function resolveResourceAccess(user, resource, workspaceId) {
     };
   }
 
+  // Self work tracking follows attendance's self-service floor. Explicit
+  // resource denies above remain authoritative; reports/screenshots/policy
+  // never receive this floor and need their normal scoped permission.
+  if (key === 'tracking') {
+    return { resource: key, actions: { ...allActionsAs(key, false), log: true }, scope: 'own', source: 'self-service' };
+  }
+
   // 6. Default deny.
   return { resource: key, actions: allActionsAs(key, false), scope: 'none', source: 'default-deny' };
 }

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { validateSelection, startWithAttendance, finalizeAttendanceWork } from '../tracking/tracking.service.js';
 import AttendanceSession from './attendanceSession.model.js';
 import AttendanceDay from './attendanceDay.model.js';
 import AttendanceLocation from './attendanceLocation.model.js';
@@ -270,7 +271,7 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
   };
 }
 
-export async function checkIn({ workspaceId, userId, membership, workspace, gps = null, idempotencyKey = null, ipAddress = null, requestedWorkMode = null, actorName = null }) {
+export async function checkIn({ workspaceId, userId, membership, workspace, gps = null, idempotencyKey = null, ipAddress = null, requestedWorkMode = null, actorName = null, workSelection = null }) {
   if (idempotencyKey) {
     const replay = await AttendanceSession.findOne({ workspaceId, user: userId, idempotencyKey }).lean();
     if (replay) return { session: replay, replay: true };
@@ -349,6 +350,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
   let result;
   try {
     await dbSession.withTransaction(async () => {
+      const selectedWork = await validateSelection({ workspaceId, userId, selection: workSelection, dbSession });
       // The Day shell must exist BEFORE the session so the session can
       // carry a real, permanent attendanceDay reference from the moment
       // it's created — AttendanceSession's immutability guard only allows
@@ -407,6 +409,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
         calendar: ctx.calendar, leave: ctx.leave, workModeResolution: ctx.workModeResolution, policyVersion: ctx.policyVersion,
         shift: ctx.shift, officeHours: ctx.officeHours, sessions: [...ctx.sessions, created.toObject()], serverNow: ctx.serverNow, dbSession
       });
+      await startWithAttendance({ attendance: created, selection: selectedWork, dbSession });
       result = { session: created, replay: false, attendanceDay: day };
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
   } finally {
@@ -569,6 +572,7 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
         // Lost a race with a concurrent checkout for the same session —
         // the end state both callers wanted (closed) already holds.
         const nowClosed = await AttendanceSession.findById(existing._id).session(dbSession).lean();
+        await finalizeAttendanceWork(nowClosed, dbSession);
         result = { session: nowClosed, replay: true };
         return;
       }
@@ -590,6 +594,7 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
         workModeResolution, policyVersion, shift, officeHours, sessions: daySessions, serverNow, dbSession
       });
 
+      await finalizeAttendanceWork(closed, dbSession);
       result = { session: closed, replay: false, attendanceDay: day };
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
   } catch (err) {

@@ -74,7 +74,7 @@ export const clearAuthCache = () => {
 };
 
 export const protect = async (req, res, next) => {
-  if (req.user && req.workspaceId) return workspaceContext.run({ workspaceId: req.workspaceId }, next);
+  if (req.user && req.workspaceId) return workspaceContext.run({ workspaceId: req.workspaceId, actorId: req.user.id || req.user._id }, next);
   try {
     let token;
 
@@ -229,7 +229,7 @@ export const protect = async (req, res, next) => {
       };
       req.workspaceId = requestedWorkspaceId;
 
-      workspaceContext.run({ workspaceId: requestedWorkspaceId }, next);
+      workspaceContext.run({ workspaceId: requestedWorkspaceId, actorId: req.user.id || req.user._id }, next);
     } catch (error) {
       return res.status(401).json({
         success: false,

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { finalizeAttendanceWork } from '../tracking/tracking.service.js';
 import { DateTime } from 'luxon';
 import AttendanceSession from './attendanceSession.model.js';
 import AttendanceDay from './attendanceDay.model.js';
@@ -127,6 +128,7 @@ export function calculateMissedCheckoutCutoff({
  * @param {string} [params.reason] - Closure reason
  * @returns {Promise<Object|null>} Updated session, or null if already closed
  */
+// Tracking closes at the existing policy cutoff; attendance status remains policy-owned.
 export async function reconcileOverdueSession({
   session,
   workspace = null,
@@ -160,6 +162,7 @@ export async function reconcileOverdueSession({
       return null;
     }
 
+    await finalizeAttendanceWork(updated, dbSession);
     const workspaceDoc = workspace || await Workspace.findById(targetWsId).select('attendanceModuleEnabled timezone').session(dbSession).lean();
     const membership = await WorkspaceMembership.findOne({ workspace: targetWsId, user: session.user }).session(dbSession).lean();
 

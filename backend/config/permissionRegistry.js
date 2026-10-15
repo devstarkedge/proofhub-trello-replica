@@ -15,6 +15,16 @@
  */
 
 export const RESOURCES = {
+  tracking: {
+    label: 'Work Tracking and Monitoring',
+    description: 'Project/task timers, workspace reports, screenshot access, and monitoring policy. Desktop capture additionally requires employee consent.',
+    actions: [
+      { key: 'log', label: 'Track Own Work', description: 'Start and change authorized project/task timers', legacyField: null },
+      { key: 'view_reports', label: 'View Work Reports', description: 'View authorized employee work timesheets', legacyField: null },
+      { key: 'view_screenshots', label: 'View Screenshots', description: 'View private screenshots for authorized employees and projects', legacyField: null },
+      { key: 'manage_policy', label: 'Manage Tracking Policy', description: 'Configure monitoring, retention and time attribution', legacyField: null }
+    ]
+  },
   sales: {
     label: 'Sales',
     description: 'Sales module — deal rows, dropdowns, exports/imports.',

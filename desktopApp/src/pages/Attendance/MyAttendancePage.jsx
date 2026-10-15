@@ -8,6 +8,8 @@ import { resolveDisplayStatus } from '../../utils/attendanceStatus';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import * as attendanceApi from '../../services/attendanceApi';
+import TrackingPanel from '../../components/Tracking/TrackingPanel';
+import TrackingReports from '../../components/Tracking/TrackingReports';
 
 const inputClass = 'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
 const inputStyle = { backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' };
@@ -203,6 +205,9 @@ const MyAttendancePage = () => {
         </div>
         <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>Use the Check In / Check Out control on your Home page to record attendance.</p>
       </Panel>
+
+      <TrackingPanel key={currentWorkspace?._id} />
+      <TrackingReports key={`reports:${currentWorkspace?._id}`} />
 
       <Panel
         title="Work From Home Requests"

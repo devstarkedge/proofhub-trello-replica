@@ -3,6 +3,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { MapPin, LogIn, LogOut, CheckCircle2, Loader2 } from 'lucide-react';
 import * as attendanceApi from '../../services/attendanceApi';
+import WorkSelectionModal from '../Tracking/WorkSelectionModal';
+import {getTrackingState} from '../../services/trackingApi';
+import TrackingPanel from '../Tracking/TrackingPanel';
 
 const GEO_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
 
@@ -96,6 +99,7 @@ async function captureGps() {
  */
 const AttendanceQuickControl = () => {
   const [status, setStatus] = useState(null);
+  const [showWorkSelection, setShowWorkSelection] = useState(false);
   const [phase, setPhase] = useState('loading'); // loading | idle | locating | submitting
   const [liveMinutes, setLiveMinutes] = useState(0);
   const [selectedWorkMode, setSelectedWorkMode] = useState(null);
@@ -181,15 +185,20 @@ const AttendanceQuickControl = () => {
 
     setPhase('submitting');
     try {
-      await apiCall({ ...(gps || {}), ...extraPayload });
+      const response=await apiCall({ ...(gps || {}), ...extraPayload });
+      if(response.trackingStartup?.state==='FAILED')toast.warning(`Attendance is checked in. Work did not start: ${response.trackingStartup.message}. Use Start work to retry.`);
       toast.success(successMessage);
       await load();
+      window.dispatchEvent(new Event('flowtask:tracking-refresh'));
+      return true;
     } catch {
       setPhase('idle');
+      return false;
     }
   };
 
-  const handleCheckIn = () => runAction(attendanceApi.checkIn, 'Checked in', { requestedWorkMode: selectedWorkMode });
+  const handleCheckIn = async () => {try{const tracking=await getTrackingState();if(tracking.policy.enabled&&tracking.canTrack){setShowWorkSelection(true);return;}}catch{/* Attendance remains independently available */}await runAction(attendanceApi.checkIn,'Checked in',{requestedWorkMode:selectedWorkMode});};
+  const confirmCheckIn = (workSelection, idempotencyKey) => runAction(attendanceApi.checkIn, 'Checked in', { requestedWorkMode: selectedWorkMode, workSelection, idempotencyKey });
   const handleCheckOut = () => runAction(attendanceApi.checkOut, 'Checked out');
 
   const isBusy = phase === 'locating' || phase === 'submitting';
@@ -224,7 +233,7 @@ const AttendanceQuickControl = () => {
           <LogOut className="h-4 w-4" /> Check Out
         </button>
         <span className="text-xs text-white/70">Checked in · {formatHours(liveMinutes)}</span>
-        <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{status.activeSession.workMode}</span></span>
+        <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{status.activeSession.workMode||status.activeSession.checkIn?.workMode||status.defaultWorkMode}</span></span>
       </div>
     );
   } else if (status.canCheckIn) {
@@ -271,6 +280,8 @@ const AttendanceQuickControl = () => {
   return (
     <div className="flex flex-col items-end gap-1">
       {content}
+      {status.activeSession && <TrackingPanel compact />}
+      {showWorkSelection && <WorkSelectionModal checkingIn onClose={() => setShowWorkSelection(false)} onConfirm={confirmCheckIn} />}
       {status.unresolvedMissedCheckout && (
         <span className="text-[11px] font-medium text-amber-300">
           Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance

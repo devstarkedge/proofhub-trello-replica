@@ -38,6 +38,7 @@ const attendanceSessionSchema = new mongoose.Schema({
   status: { type: String, enum: ['ACTIVE', 'CLOSED', 'COMPLETED', 'MISSED_CHECKOUT'], default: 'ACTIVE' },
   checkInAt: { type: Date, required: true }, // server timestamp, always
   checkOutAt: { type: Date, default: null },
+  trackingReminderAt: {type:Date,default:null},
 
   checkIn: { type: evidenceSchema, required: true },
   checkOut: { type: evidenceSchema, default: null },
@@ -106,7 +107,7 @@ attendanceSessionSchema.plugin(workspaceScopePlugin);
 // system reconciliation, or a missed-checkout lifecycle event legitimately
 // needs to write.
 const MUTABLE_AFTER_CREATE_PATHS = new Set([
-  'status', 'checkOutAt', 'checkOut', 'systemGeneratedCheckout', 'updatedAt',
+  'status', 'checkOutAt', 'checkOut', 'systemGeneratedCheckout', 'updatedAt', 'trackingReminderAt',
   'missedCheckoutCutoffAt', 'effectiveShiftEndAt', 'closureReason',
   'reconciledAt', 'missedCheckoutDetectedAt', 'regularizationStatus', 'provisionalMinutes'
 ]);

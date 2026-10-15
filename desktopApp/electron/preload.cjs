@@ -3,6 +3,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
   isDesktop: true,
   platform: process.platform,
+  tracking: Object.freeze({
+    configure: value => ipcRenderer.invoke('desktop-tracking:configure', value),
+    getStatus: () => ipcRenderer.invoke('desktop-tracking:status'),
+    refresh: () => ipcRenderer.invoke('desktop-tracking:refresh'),
+    policyChanged: value => ipcRenderer.invoke('desktop-tracking:policy',value),
+    onStatus: callback => {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on('desktop-tracking:status', listener);
+      return () => ipcRenderer.removeListener('desktop-tracking:status', listener);
+    },
+  }),
   notifications: Object.freeze({
     setSession: value => ipcRenderer.invoke('desktop-notifications:session', value),
     show: value => ipcRenderer.invoke('desktop-notifications:show', value),

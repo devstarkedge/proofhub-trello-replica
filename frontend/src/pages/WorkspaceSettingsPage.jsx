@@ -13,6 +13,7 @@ import useDepartmentStore from '../store/departmentStore';
 import useRoleStore from '../store/roleStore';
 import Avatar from '../components/Avatar';
 import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
+import TrackingPolicySettings from '../components/Tracking/TrackingPolicySettings';
 import WorkspacePlanSettings from '../components/Workspace/WorkspacePlanSettings';
 import PermissionGate from '../components/PermissionGate';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
@@ -498,6 +499,7 @@ const WorkspaceSettingsPage = () => {
             )}
           </div>
         </motion.div>
+        <TrackingPolicySettings />
       </main>
 
       <InviteMemberModal

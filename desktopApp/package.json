@@ -81,10 +81,12 @@
     "react-window": "^2.2.2",
     "react-window-infinite-loader": "^2.0.0",
     "recharts": "^3.3.0",
+    "sharp": "^0.35.5",
     "socket.io-client": "^4.8.1",
     "tailwindcss": "^4.1.14",
     "three": "^0.181.2",
     "tippy.js": "^6.3.7",
+    "uiohook-napi": "1.5.5",
     "xlsx": "^0.18.5",
     "zod": "^4.3.6",
     "zustand": "^5.0.8"
@@ -108,18 +110,98 @@
   "build": {
     "appId": "com.flowtask.desktop",
     "productName": "FlowTask",
-    "directories": { "app": "build/app", "output": "release" },
-    "files": ["dist/**/*", "electron/*.cjs", "package.json"],
+    "directories": {
+      "app": "build/app",
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/*.cjs",
+      "package.json",
+      "node_modules/uiohook-napi/**/*",
+      "node_modules/node-gyp-build/**/*"
+    ],
     "beforeBuild": "./scripts/before-build.cjs",
+    "extraResources": [
+      {
+        "from": "build/app/node_modules/sharp",
+        "to": "node_modules/sharp"
+      },
+      {
+        "from": "build/app/node_modules/@img",
+        "to": "node_modules/@img"
+      },
+      {
+        "from": "build/app/node_modules/detect-libc",
+        "to": "node_modules/detect-libc"
+      },
+      {
+        "from": "build/app/node_modules/semver",
+        "to": "node_modules/semver"
+      },
+      {
+        "from": "build/app/node_modules/uiohook-napi",
+        "to": "node_modules/uiohook-napi"
+      },
+      {
+        "from": "build/app/node_modules/node-gyp-build",
+        "to": "node_modules/node-gyp-build"
+      },
+      {
+        "from": "build/app/node_modules/socket.io-client",
+        "to": "node_modules/socket.io-client"
+      },
+      {
+        "from": "build/app/node_modules/socket.io-parser",
+        "to": "node_modules/socket.io-parser"
+      },
+      {
+        "from": "build/app/node_modules/engine.io-client",
+        "to": "node_modules/engine.io-client"
+      },
+      {
+        "from": "build/app/node_modules/engine.io-parser",
+        "to": "node_modules/engine.io-parser"
+      },
+      {
+        "from": "build/app/node_modules/@socket.io/component-emitter",
+        "to": "node_modules/@socket.io/component-emitter"
+      },
+      {
+        "from": "build/app/node_modules/debug",
+        "to": "node_modules/debug"
+      },
+      {
+        "from": "build/app/node_modules/ms",
+        "to": "node_modules/ms"
+      },
+      {
+        "from": "build/app/node_modules/ws",
+        "to": "node_modules/ws"
+      },
+      {
+        "from": "build/app/node_modules/xmlhttprequest-ssl",
+        "to": "node_modules/xmlhttprequest-ssl"
+      }
+    ],
     "win": {
       "icon": "build/Fav.ico",
       "signExecutable": false,
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "FlowTask-Setup-${version}.${ext}"
     },
     "mac": {
       "icon": "build/Fav.icns",
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.business",
       "artifactName": "FlowTask-${version}-${arch}.${ext}"
     },
@@ -129,6 +211,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    }
+    },
+    "asarUnpack": [
+      "node_modules/uiohook-napi/prebuilds/**/*"
+    ]
   }
 }

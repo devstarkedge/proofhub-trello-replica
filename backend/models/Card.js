@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import mongoosePaginate from 'mongoose-paginate-v2';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
+import taskAssignmentPlugin from '../modules/tracking/taskAssignment.plugin.js';
 const mentionSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -54,6 +55,7 @@ const attachmentSchema = new mongoose.Schema({
 });
 
 const cardSchema = new mongoose.Schema({
+  trackingCreationId: { type: String, maxlength: 128 },
   workspaceId: {
     immutable: true,
     type: mongoose.Schema.Types.ObjectId,
@@ -285,5 +287,7 @@ cardSchema.virtual('totalLoggedTime').get(function() {
 // Add pagination plugin
 cardSchema.plugin(mongoosePaginate);
 cardSchema.plugin(workspaceScopePlugin);
+cardSchema.plugin(taskAssignmentPlugin);
+cardSchema.index({ workspaceId: 1, createdBy: 1, trackingCreationId: 1 }, { unique: true, partialFilterExpression: { trackingCreationId: { $type: 'string' } } });
 
 export default mongoose.model('Card', cardSchema);

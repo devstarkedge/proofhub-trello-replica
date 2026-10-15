@@ -50,6 +50,7 @@ class CardService {
     if (!cardList) throw new ErrorResponse('List not found', 404);
 
     const card = await Card.create({
+      trackingCreationId: data.trackingCreationId,
       title,
       description,
       list,

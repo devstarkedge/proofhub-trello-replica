@@ -1,0 +1,55 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const { createHash, randomUUID } = require('node:crypto');
+
+class ActivityCounters {
+  constructor(now = () => performance.now()) { this.now = now; this.reset(); }
+  reset() { this.start = this.last = this.now(); this.mouse = 0; this.keyboard = 0; this.active = 0; this.idle = 0; this.inputBuckets = new Set(); }
+  input() { this.inputBuckets.add(Math.floor(this.now()/1000)); }
+  mouseDown() { this.mouse++; this.input(); }
+  keyDown() { this.keyboard++; this.input(); }
+  sample(isIdle) {
+    const now = this.now(), seconds = Math.max(0, (now-this.last)/1000); this.last = now;
+    if (isIdle) this.idle += seconds; else this.active += seconds;
+  }
+  boundary(isIdle) {
+    this.sample(isIdle); const end = this.last;
+    let inputActiveSeconds = 0;
+    for (const bucket of this.inputBuckets) inputActiveSeconds += Math.max(0, Math.min(end,(bucket+1)*1000)-Math.max(this.start,bucket*1000))/1000;
+    const result = { startMono: this.start, endMono: end, mouseCount:this.mouse, keyboardCount:this.keyboard,
+      activeSeconds:this.active, idleSeconds:this.idle, inputActiveSeconds, inputEligibleSeconds: (end-this.start)/1000, activityBasis: 'distinct-input-seconds-v1' };
+    for (const bucket of this.inputBuckets) if ((bucket+1)*1000<=end) this.inputBuckets.delete(bucket);
+    this.start = this.last = end; this.mouse = this.keyboard = this.active = this.idle = 0;
+    return result;
+  }
+}
+class DurableQueue {
+  constructor(directory, encryption, maxBytes = 500*1024*1024) {
+    this.directory = path.resolve(directory); this.encryption = encryption; this.maxBytes = maxBytes;
+    fs.mkdirSync(this.directory,{recursive:true});
+    for(const name of fs.readdirSync(this.directory))if(/^[a-f\d-]+\.queue\.tmp$/.test(name))fs.rmSync(path.join(this.directory,name),{force:true});
+  }
+  files() { return fs.readdirSync(this.directory).filter(name=>/^[a-f\d-]+\.queue$/.test(name)).sort(); }
+  available() { return this.encryption.isEncryptionAvailable(); }
+  push(value) {
+    if (!this.available()) throw new Error('Encrypted offline storage is unavailable');
+    const bytes = this.encryption.encryptString(JSON.stringify(value));
+    const used = this.files().reduce((n,name)=>n+fs.statSync(path.join(this.directory,name)).size,0);
+    if (used+bytes.length>this.maxBytes) throw new Error('Offline screenshot queue is full; reconnect to upload');
+    const name = randomUUID()+'.queue'; this.write(name,bytes); return name;
+  }
+  write(name,bytes) {
+    const target = this.target(name), temp = target+'.tmp';
+    const handle = fs.openSync(temp,'w',0o600);
+    try { fs.writeFileSync(handle,bytes); fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
+    fs.renameSync(temp,target);
+  }
+  target(name) { if (!/^[a-f\d-]+\.queue$/.test(name)) throw new Error('Invalid queue entry'); return path.join(this.directory,name); }
+  read(name) { return JSON.parse(this.encryption.decryptString(fs.readFileSync(this.target(name)))); }
+  update(name,value) { this.write(name,this.encryption.encryptString(JSON.stringify(value))); }
+  remove(name) { fs.rmSync(this.target(name),{force:true}); }
+  clear() { for (const name of this.files()) this.remove(name); }
+  prune(now=Date.now()) { for(const name of this.files()){const value=this.read(name);if(value.expiresAt&&value.expiresAt<=now)this.remove(name);} }
+}
+const checksum = (data, algorithm='sha256') => createHash(algorithm).update(data).digest('hex');
+module.exports = { ActivityCounters, DurableQueue, checksum };

@@ -102,6 +102,16 @@ export const WorkspaceProvider = ({ children }) => {
       // safe to fetch role/permission data — it'll resolve against the
       // right workspace instead of racing ahead of this resolution.
       if (resolved) {
+        // Login returns identity data before a workspace is resolved. Hydrate
+        // the existing scoped membership overlay before rendering role-based UI.
+        const verified = await api.get('/api/auth/me', { headers: { 'x-workspace-id': resolved._id } });
+        const scoped = verified?.data?.data;
+        if (String(localStorage.getItem('workspaceId')) === String(resolved._id) && scoped?._id) {
+          setUser((prev) => prev && String(prev._id) === String(scoped._id) ? {
+            ...prev, role: scoped.role, roleId: scoped.roleId, department: scoped.department,
+            team: scoped.team, accessType: scoped.accessType, allowedProjects: scoped.allowedProjects,
+          } : prev);
+        }
         loadRoleAndPermissionData();
       }
 
@@ -119,7 +129,7 @@ export const WorkspaceProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [persistActiveWorkspace]);
+  }, [persistActiveWorkspace, setUser]);
 
   /**
    * Switches the active workspace: persists the new selection, clears every

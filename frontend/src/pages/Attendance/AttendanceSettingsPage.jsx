@@ -14,6 +14,7 @@ import WorkModeScheduleModal from '../../components/Attendance/WorkModeScheduleM
 import OfficeHoursOverrideFormModal from '../../components/Attendance/OfficeHoursOverrideFormModal';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';
 import * as attendanceApi from '../../services/attendanceApi';
+import TrackingPolicySettings from '../../components/Tracking/TrackingPolicySettings';
 
 const SettingsPanel = ({ title, description, action, children }) => (
   <section className="rounded-2xl border p-4 shadow-sm sm:p-6" style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}>
@@ -523,7 +524,7 @@ const SECTION_COMPONENTS = {
 const AttendanceSettingsPage = () => {
   const { section } = useParams();
   const ActiveSection = SECTION_COMPONENTS[section];
-  return ActiveSection ? <ActiveSection /> : <Navigate to="/attendance/settings/policy" replace />;
+  return ActiveSection ? <><ActiveSection />{section === 'policy' && <TrackingPolicySettings />}</> : <Navigate to="/attendance/settings/policy" replace />;
 };
 
 export default AttendanceSettingsPage;

@@ -3,6 +3,7 @@ import Workspace from '../../models/Workspace.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import { getTodayStatus, checkIn, checkOut } from './attendance.service.js';
 import { setupAttendanceModule } from './attendanceSetup.service.js';
+import {policyFor,currentState,changeWork} from '../tracking/tracking.service.js';
 
 /**
  * `req.user` already carries the active-workspace membership's role/
@@ -45,7 +46,7 @@ export const postCheckIn = asyncHandler(async (req, res) => {
 
   const result = await checkIn({
     workspaceId: req.workspaceId, userId: req.user.id, membership: membershipFromReq(req),
-    workspace, gps, idempotencyKey, ipAddress: req.ip, requestedWorkMode: requestedWorkMode || null, actorName: req.user.name
+    workspace, gps, idempotencyKey, ipAddress: req.ip, requestedWorkMode: requestedWorkMode || null, actorName: req.user.name, workSelection: null
   });
 
   if (!result.replay) {
@@ -56,7 +57,12 @@ export const postCheckIn = asyncHandler(async (req, res) => {
       category: 'attendance_management', meta: { workspaceId: req.workspaceId }
     });
   }
-  res.status(result.replay ? 200 : 201).json({ success: true, data: result.session, replay: result.replay });
+  let trackingStartup=null;
+  if(req.body?.workSelection&&req.body.workSelection.mode!=='ATTENDANCE_ONLY'&&(await policyFor(req.workspaceId)).enabled){
+    try{const state=await currentState(req.workspaceId,req.user.id);if(!state.session)await changeWork({workspaceId:req.workspaceId,userId:req.user.id,action:'start',selection:req.body.workSelection,operationId:`checkin-${result.session._id}`,expectedRevision:null});trackingStartup={state:state.session?.status||'RUNNING'};}
+    catch(error){trackingStartup={state:'FAILED',message:error.message,retryable:true};}
+  }
+  res.status(result.replay ? 200 : 201).json({ success: true, data: result.session, replay: result.replay,trackingStartup });
 });
 
 export const postCheckOut = asyncHandler(async (req, res) => {

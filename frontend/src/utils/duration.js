@@ -3,6 +3,12 @@ export function minutesToHours(minutes) {
   return minutes === '' || minutes == null ? '' : Number(minutes) / 60;
 }
 
+export function formatTrackingClock(seconds) {
+  const value = Math.floor(Math.max(0, seconds || 0));
+  return [Math.floor(value / 3600), Math.floor(value / 60) % 60, value % 60]
+    .map(part => String(part).padStart(2, '0')).join(':');
+}
+
 export function formatHours(minutes) {
   if (minutes == null || minutes === '' || !Number.isFinite(Number(minutes))) return '—';
   const hours = Number(minutes) / 60;
