@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
     configure: value => ipcRenderer.invoke('desktop-tracking:configure', value),
     getStatus: () => ipcRenderer.invoke('desktop-tracking:status'),
     refresh: () => ipcRenderer.invoke('desktop-tracking:refresh'),
+    retryUploads: () => ipcRenderer.invoke('desktop-tracking:retry-uploads'),
+    claimMonitoring: () => ipcRenderer.invoke('desktop-tracking:claim-monitoring'),
     policyChanged: value => ipcRenderer.invoke('desktop-tracking:policy',value),
     stop: () => ipcRenderer.invoke('desktop-tracking:stop'),
     acceptNotice: value => ipcRenderer.invoke('desktop-tracking:notice',value),

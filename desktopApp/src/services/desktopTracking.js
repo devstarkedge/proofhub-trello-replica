@@ -3,7 +3,7 @@ export const DESKTOP_RESTART_MESSAGE='Restart FlowTask desktop completely to loa
 export function normalizeDesktopTrackingStatus(status){
   // A refreshed preload/React page can be newer than its long-lived Electron
   // main process. Missing IPC handlers require a restart, not fake capture.
-  if(status?.protocolVersion!==2)return {state:'update-required',error:DESKTOP_RESTART_MESSAGE,updateRequired:true};
+  if(status?.protocolVersion!==2||!status.capabilities?.retryUploads||!status.capabilities?.claimMonitoring)return {state:'update-required',error:DESKTOP_RESTART_MESSAGE,updateRequired:true};
   return status;
 }
 

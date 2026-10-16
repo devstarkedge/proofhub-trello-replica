@@ -114,11 +114,14 @@ async function createWindow() {
             const page = await fetch('/', { method: 'HEAD' });
             const trackingStatus = await window.flowtaskDesktop.tracking.getStatus();
             const stopped = await window.flowtaskDesktop.tracking.stop();
+            const retryHandlerAvailable = await window.flowtaskDesktop.tracking.retryUploads().then(() => false, error => /Sign in to desktop tracking first/.test(error.message));
+            const claimHandlerAvailable = await window.flowtaskDesktop.tracking.claimMonitoring().then(() => false, error => /Sign in to desktop tracking first/.test(error.message));
             resolve({ title: document.title, path: location.pathname, desktop: window.flowtaskDesktop?.isDesktop,
               nodeDisabled: typeof window.require === 'undefined', backendStatus: response.status,
               contentSecurityPolicy: page.headers.get('content-security-policy'),
               trackingProtocolVersion: trackingStatus.protocolVersion,
               nativeStopAvailable: stopped.protocolVersion === 2,
+              retryHandlerAvailable, claimHandlerAvailable,
               backendHealth: await response.json() });
           } catch (error) { reject(error); }
         } else if (Date.now() > deadline) resolve({ error: 'Login screen did not render within 30 seconds', path: location.pathname, body: document.body.innerText.slice(0, 2000) });
@@ -138,7 +141,7 @@ async function createWindow() {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     fs.writeFileSync(path.join(artifactDir, 'desktop-smoke.png'), (await contents.capturePage()).toPNG());
     console.log('FlowTask desktop smoke test:', JSON.stringify(result));
-    if (!result.desktop || !result.nodeDisabled || result.backendStatus !== 200 || result.trackingProtocolVersion !== 2 || !result.nativeStopAvailable || !result.contentSecurityPolicy || result.contentSecurityPolicy.includes("'unsafe-eval'") || result.securityWarnings.length) throw new Error('Desktop smoke test failed. See artifacts/smoke-test.json.');
+    if (!result.desktop || !result.nodeDisabled || result.backendStatus !== 200 || result.trackingProtocolVersion !== 2 || !result.nativeStopAvailable || !result.retryHandlerAvailable || !result.claimHandlerAvailable || !result.contentSecurityPolicy || result.contentSecurityPolicy.includes("'unsafe-eval'") || result.securityWarnings.length) throw new Error('Desktop smoke test failed. See artifacts/smoke-test.json.');
     app.quit();
   }
 }

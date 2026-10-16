@@ -61,8 +61,9 @@ export const WorkSession = model('WorkSession', {
 export const TrackingDevice = model('TrackingDevice', {
   user: oid('User', true), installationId: { type: String, required: true }, name: String,
   platform: String, appVersion: String, lastSeenAt: Date, revokedAt: Date,
-  releasedAt: Date,
+  releasedAt: Date, monitoringDisplacedAt: Date,
   consentRevision: { type: Number, default: 0 }, consentAt: Date,
+  noticeAuthorizationHash: {type:String,select:false},
   noticeVersion: Number,
   noticeHistory: [{ _id:false, version:Number, policyRevision:Number, acceptedAt:Date }],
   // Backward-compatible delivery cache, replaced from workspace policy on
@@ -118,12 +119,13 @@ export const TrackingScreenshot = model('TrackingScreenshot', {
   checksum: String, contentMd5: String, bytes: Number, width: Number, height: Number,
   publicId: String, format: { type: String, default: 'webp' }, blurred: Boolean,
   pipelineVersion: Number, originalWidth: Number, originalHeight: Number, compressionStrategy: String, compressionException: String,
-  storageWorkspaceLabel: String, storageUserLabel: String,
+  storageWorkspaceLabel: String, storageDepartmentLabel: String, storageUserLabel: String,
+  storageDateKey: String, storageTimezone: String,
   thumbnail: {storageKey:String,bytes:Number,width:Number,height:Number,checksum:String,contentMd5:String,quality:Number,status:String,mimeType:String},
   storageProvider: String, storageKey: String, storageBucket: String, mimeType: String, quality: Number,
   departmentIdsAtCapture: {type:[mongoose.Schema.Types.ObjectId],default:undefined}, policyRevision: Number,
   uploadStatus: {type:String,enum:['PENDING','UPLOADING','UPLOADED','FAILED','RETRY_PENDING','EXPIRED','DELETED','SIZE_QUALITY_CONFLICT'],default:'PENDING'}, uploadedAt: Date,
-  lastUploadError: String,
+  lastUploadError: String, storageMissingAt: Date,
   status: { type: String, enum: ['PENDING', 'READY', 'DELETED', 'FAILED'], default: 'PENDING' },
   expiresAt: { type: Date, default:null }, deletedAt: Date
 }, [
@@ -134,7 +136,7 @@ export const TrackingScreenshot = model('TrackingScreenshot', {
   [{ expiresAt: 1, status: 1 }, {}]
 ]);
 export const TrackingStorageLabel=model('TrackingStorageLabel',{
-  kind:{type:String,enum:['workspace','user'],required:true},ownerId:{type:mongoose.Schema.Types.ObjectId,required:true},label:{type:String,required:true}
+  kind:{type:String,enum:['workspace','department','department-group','user'],required:true},ownerId:{type:mongoose.Schema.Types.ObjectId,required:true},label:{type:String,required:true}
 },[[{workspaceId:1,kind:1,ownerId:1},{unique:true}],[{workspaceId:1,kind:1,label:1},{unique:true}],[{kind:1,label:1},{unique:true,partialFilterExpression:{kind:'workspace'}}]]);
 export const TrackingAgenda=model('TrackingAgenda',{
   title:{type:String,required:true,maxlength:80},normalizedTitle:{type:String,required:true},createdBy:oid('User'),archivedAt:Date

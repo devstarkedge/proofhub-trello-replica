@@ -85,12 +85,16 @@ router.put('/policy', asyncHandler(async (req,res) => {
   await audit(req, 'TRACKING_POLICY_UPDATED', 'TrackingPolicy', data._id, { revision: data.revision });
   send(res, data);
 }));
-router.post('/devices/register', asyncHandler(async (req,res) => send(res, await registerDevice({ ...req.body, ...actor(req) }))));
+router.post('/devices/register', asyncHandler(async (req,res) => {
+  if(req.get('origin'))fail('Register devices in the FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
+  send(res,await registerDevice({...req.body,...actor(req)}));
+}));
 router.put('/devices/:deviceId/preferences', asyncHandler(async (req,res) => {
   fail('Desktop capture settings are controlled by workspace Admin. Update the desktop app to review its monitoring notice.',410,'WORKSPACE_CONTROLLED');
 }));
 router.post('/devices/:deviceId/notice',asyncHandler(async(req,res)=>{
-  const data=await acceptMonitoringNotice({...actor(req),deviceId:req.params.deviceId,noticeVersion:req.body?.noticeVersion,policyRevision:req.body?.policyRevision});
+  if(req.get('origin'))fail('Approve device access in the FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
+  const data=await acceptMonitoringNotice({...actor(req),deviceId:req.params.deviceId,noticeVersion:req.body?.noticeVersion,policyRevision:req.body?.policyRevision,noticeAuthorization:req.get('x-desktop-notice-authorization')});
   await audit(req,'TRACKING_NOTICE_ACCEPTED','TrackingDevice',data._id,{noticeVersion:data.noticeVersion,policyRevision:data.consentRevision});
   send(res, data);
 }));
@@ -100,6 +104,12 @@ router.post('/devices/:deviceId/revoke', asyncHandler(async (req,res) => {
   await audit(req, 'TRACKING_DEVICE_REVOKED', 'TrackingDevice', req.params.deviceId); send(res, { revoked: true });
 }));
 router.post('/devices/:deviceId/heartbeat', asyncHandler(async (req,res) => send(res, await heartbeat({ ...actor(req), deviceId: req.params.deviceId, sessionId: req.body?.sessionId, state: req.body?.state }))));
+router.post('/devices/:deviceId/claim',asyncHandler(async(req,res)=>{
+  if(req.get('origin'))fail('Switch monitoring in the FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
+  const result=await heartbeat({...actor(req),deviceId:req.params.deviceId,sessionId:req.body?.sessionId,state:'connected',takeover:true,noticeAuthorization:req.get('x-desktop-notice-authorization')});
+  await audit(req,'TRACKING_MONITORING_DEVICE_CLAIMED','TrackingDevice',req.params.deviceId,{sessionId:String(result.session._id),previousDeviceId:result.transferredFrom});
+  send(res,result);
+}));
 router.post('/devices/:deviceId/intervals', asyncHandler(async (req,res) => send(res, await recordInterval({ ...actor(req), deviceId: req.params.deviceId, payload: req.body }))));
 router.post('/devices/:deviceId/screenshots/prepare', asyncHandler(async (req,res) => send(res, await prepareScreenshot({ ...actor(req), deviceId: req.params.deviceId, intervalId: req.body?.intervalId, image: req.body?.image }))));
 router.post('/devices/:deviceId/screenshots/:screenshotId/complete', asyncHandler(async (req,res) => send(res, { _id: (await completeScreenshot({ ...actor(req), ...req.params }))._id })));
@@ -172,7 +182,7 @@ router.get('/screenshots/:screenshotId/details',asyncHandler(async(req,res)=>{
   res.set('Cache-Control','private, no-store');send(res,result);
 }));
 for(const kind of ['content','thumbnail'])router.get(`/screenshots/:screenshotId/${kind}`,asyncHandler(async(req,res)=>{
-  const {bytes,mimeType}=await screenshotContent(req.workspaceId,req.user.id,req.params.screenshotId,kind==='thumbnail');
+  const {bytes,mimeType}=await screenshotContent(req.workspaceId,req.user.id,req.params.screenshotId);
   await audit(req,'TRACKING_SCREENSHOT_VIEWED','TrackingScreenshot',req.params.screenshotId,{kind});
   res.set({'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Type':mimeType,'Content-Length':String(bytes.length)});res.send(bytes);
 }));

@@ -20,8 +20,8 @@ export const getAgentRelease = () => data(api.get('/agent-release'));
 export const getScreenshotStorageHealth = () => data(api.get('/storage-health'));
 export const getTaskTrackedTime = taskId => data(api.get(`/tasks/${taskId}/totals`));
 export const getTimeline = (sessionId, before, filters={}) => data(api.get(`/sessions/${sessionId}/timeline`, { params: { ...filters,before } }));
-export const getScreenshotUrl = async (screenshotId,signal,thumbnail=false) => {
-  const response=await api.get(`/screenshots/${screenshotId}/${thumbnail?'thumbnail':'content'}`,{responseType:'blob',signal});
+export const getScreenshotUrl = async (screenshotId,signal) => {
+  const response=await api.get(`/screenshots/${screenshotId}/content`,{responseType:'blob',signal});
   return {url:URL.createObjectURL(response.data)};
 };
 export const revokeDevice = deviceId => data(api.post(`/devices/${deviceId}/revoke`));

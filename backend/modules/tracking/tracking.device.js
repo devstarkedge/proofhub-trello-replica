@@ -1,10 +1,10 @@
 import mongoose from 'mongoose';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,createHash,timingSafeEqual } from 'node:crypto';
 import { TrackingDevice, WorkSession, ActivityInterval, TrackingScreenshot,TrackingCaptureLease,TrackingCaptureAnchor,TrackingPolicy } from './tracking.models.js';
 import { contextFor, policyFor, fail, digest, objectId, reconcileSession, authorizeRecord } from './tracking.service.js';
 import { can } from './tracking.authorization.js';
 import { overlapSeconds } from './tracking.timeline.js';
-import { signedUpload, verifyPrivateUpload, screenshotKey, privateStorage, storageLabels,createPrivateThumbnail,SCREENSHOT_MAX_BYTES } from './tracking.storage.js';
+import { signedUpload, verifyPrivateUpload, screenshotKey, privateStorage, storageLabels,SCREENSHOT_MAX_BYTES,privateScreenshotExists,missingStorageObject } from './tracking.storage.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { departmentsOf } from './tracking.visibility.js';
 import { emitToUser } from '../../realtime/emitters.js';
@@ -15,19 +15,28 @@ async function persistAnchor(device,anchor,dbSession=null){
   await TrackingCaptureAnchor.findOneAndUpdate({device:device._id,id:anchor.id},{$setOnInsert:{...anchor,workspaceId:device.workspaceId,user:device.user,device:device._id,purgeAt:anchor.capturePolicy.retentionDays===null?null:new Date(+new Date(anchor.expiresAt)+anchor.capturePolicy.retentionDays*86400000)}},{upsert:true,runValidators:true,session:dbSession});
 }
 
-export async function registerDevice({ workspaceId, userId, installationId, name, platform, appVersion }) {
+export async function registerDevice({ workspaceId, userId, installationId, name, platform, appVersion, noticeAuthorization }) {
   const ctx = await contextFor(workspaceId, userId);
   if (!can(ctx, 'tracking.log', { workspaceId, user: userId })) fail('Tracking permission required', 403);
   if (typeof installationId !== 'string' || !/^[\w-]{8,128}$/.test(installationId) || !['win32', 'darwin', 'linux'].includes(platform)) fail('Invalid desktop identity');
+  if(noticeAuthorization!==undefined&&(typeof noticeAuthorization!=='string'||!/^[a-f\d]{64}$/.test(noticeAuthorization)))fail('Invalid desktop authorization');
+  const hash=noticeAuthorization?createHash('sha256').update(noticeAuthorization).digest('hex'):null;
+  const existing=await TrackingDevice.findOne({workspaceId,user:userId,installationId}).select('+noticeAuthorizationHash').lean();
+  if(existing?.noticeAuthorizationHash&&existing.noticeAuthorizationHash!==hash)fail('Register this device from its original desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
   const now = new Date();
   const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean();
   const policy=await policyFor(workspaceId);
   const anchor = { id: randomUUID(), serverAt: now, expiresAt: new Date(+now + 86400000), departments:departmentsOf(member),policyRevision:policy.revision,capturePolicy:captureSnapshot(policy) };
-  const device=await TrackingDevice.findOneAndUpdate({ user: userId, installationId }, {
-    $set: { name: String(name || 'FlowTask Desktop').slice(0,80), platform, appVersion: String(appVersion || '').slice(0,30), lastSeenAt: now, anchor },
+  let device;
+  // workspaceScopePlugin adds the tenant predicate. A scalar credential CAS
+  // avoids ambiguous equality inference in MongoDB's upsert with nested $or.
+  try{device=await TrackingDevice.findOneAndUpdate({user:userId,installationId,noticeAuthorizationHash:existing?.noticeAuthorizationHash||null}, {
+    $set: { name: String(name || 'FlowTask Desktop').slice(0,80), platform, appVersion: String(appVersion || '').slice(0,30), lastSeenAt: now, anchor,...(hash?{noticeAuthorizationHash:hash}:{}) },
     $push: { anchors: { $each: [anchor], $slice: -8 } },
     $setOnInsert: { workspaceId, user: userId, installationId }
-  }, { upsert: true, new: true, runValidators: true }).lean();
+  }, { upsert: true, new: true, runValidators: true }).lean();}
+  catch(error){if(error.code===11000)fail('Device authorization changed; use the original desktop app.',409,'DESKTOP_DEVICE_REQUIRED');throw error;}
+  delete device.noticeAuthorizationHash;
   await persistAnchor(device,anchor);return device;
 }
 export async function ownedDevice(workspaceId, userId, deviceId) {
@@ -35,8 +44,11 @@ export async function ownedDevice(workspaceId, userId, deviceId) {
   if (!d) fail('Desktop device not found', 404);
   return d;
 }
-export async function acceptMonitoringNotice({ workspaceId, userId, deviceId, noticeVersion, policyRevision }) {
-  const d = await ownedDevice(workspaceId, userId, deviceId), policy = await policyFor(workspaceId);
+export async function acceptMonitoringNotice({ workspaceId, userId, deviceId, noticeVersion, policyRevision, noticeAuthorization }) {
+  const d = await TrackingDevice.findOne({_id:objectId(deviceId),workspaceId,user:userId,revokedAt:null}).select('+noticeAuthorizationHash').lean(), policy = await policyFor(workspaceId);
+  if(!d)fail('Desktop device not found',404);
+  if(!/^[a-f\d]{64}$/.test(noticeAuthorization||'')||!/^[a-f\d]{64}$/.test(d.noticeAuthorizationHash||'')||!timingSafeEqual(Buffer.from(d.noticeAuthorizationHash,'hex'),createHash('sha256').update(noticeAuthorization).digest()))fail('Approve device access in the updated FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
+  delete d.noticeAuthorizationHash;
   const ctx=await contextFor(workspaceId,userId);
   if(!can(ctx,'tracking.log',{workspaceId,user:userId}))fail('Tracking permission required',403);
   if(!policy.enabled||!policy.monitoringEnabled)fail('Desktop monitoring is disabled by workspace',409);
@@ -57,20 +69,21 @@ export async function releaseDevice({workspaceId,userId,deviceId,revoke=false}){
   try{emitToUser(userId,'tracking:device-updated',{deviceId:String(deviceId),revoked:revoke},workspaceId);}catch{/* polling recovers */}
   return {released:true,revoked:revoke};
 }
-export async function heartbeat({ workspaceId, userId, deviceId, sessionId, state }) {
+export async function heartbeat({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization }) {
   const ctx = await contextFor(workspaceId, userId), device = await ownedDevice(workspaceId, userId, deviceId);
   const policy = await policyFor(workspaceId), now = new Date();
   let session = sessionId ? await WorkSession.findOne({ _id: objectId(sessionId), workspaceId, user: userId }).lean() : null;
   if (session) session = await reconcileSession(session._id);
   const permitted = policy.enabled && policy.monitoringEnabled && hasMonitoringNotice(device) && can(ctx, 'tracking.log', { workspaceId, user: userId });
   const canCapture = Boolean(permitted && session?.status === 'RUNNING');
+  if(takeover){
+    const secret=await TrackingDevice.findOne({_id:device._id,workspaceId,user:userId,revokedAt:null}).select('+noticeAuthorizationHash').lean();
+    if(!/^[a-f\d]{64}$/.test(noticeAuthorization||'')||!/^[a-f\d]{64}$/.test(secret?.noticeAuthorizationHash||'')||!timingSafeEqual(Buffer.from(secret.noticeAuthorizationHash,'hex'),createHash('sha256').update(noticeAuthorization).digest()))fail('Switch monitoring from the authorized FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
+    if(!canCapture)fail('Start authorized work and review the monitoring notice first.',409,'CONSENT_REQUIRED');
+  }
   // A five-minute capture authorization bounds offline collection. Expired
   // ownership can be reclaimed without resetting the employee work session.
-  if (canCapture) {
-    await TrackingDevice.updateMany({workspaceId,activeSession:session._id,leaseUntil:{$lte:now}},{$set:{activeSession:null}});
-    const owner = await TrackingDevice.findOne({ workspaceId, activeSession: session._id, _id: { $ne: device._id }, revokedAt: null }).lean();
-    if (owner) fail('Another desktop owns monitoring for this work session. Disable it there before switching devices.', 409, 'DEVICE_CONFLICT');
-  }
+  if(canCapture&&device.monitoringDisplacedAt&&!takeover)fail('Monitoring was moved to another desktop. Choose Use this desktop to move it back.',409,'DEVICE_TRANSFERRED');
   const update = { lastSeenAt: now, state: String(state || 'connected').slice(0,40), activeSession: canCapture ? session._id : null };
   update.preferences=workspaceCapturePreferences(policy);
   const startsLease=canCapture&&(String(device.activeSession)!==String(session._id)||!device.leaseUntil||+new Date(device.leaseUntil)<=+now);
@@ -80,20 +93,32 @@ export async function heartbeat({ workspaceId, userId, deviceId, sessionId, stat
   // adjustments. Historical anchors remain durable for completed offline work.
   const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),departments=departmentsOf(member);
   if (startsLease || !device.anchor?.id || +new Date(device.anchor.expiresAt) <= +now || device.anchor.policyRevision!==policy.revision || JSON.stringify((device.anchor.departments||[]).map(String).sort())!==JSON.stringify([...departments].sort())) update.anchor = { id: randomUUID(), serverAt: now, expiresAt: new Date(+now + 86400000),departments,policyRevision:policy.revision,capturePolicy:captureSnapshot(policy) };
-  let saved;const dbSession=await mongoose.startSession();
+  let saved,transferredFrom=null;const dbSession=await mongoose.startSession();
   try{await dbSession.withTransaction(async()=>{
+    transferredFrom=null;
     if(canCapture){
       const authorized=await TrackingPolicy.updateOne({_id:policy._id,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
       if(!authorized.matchedCount)fail('Workspace configuration changed',409);
       const running=await WorkSession.updateOne({_id:session._id,status:'RUNNING'},{$inc:{evidenceRevision:1}},{session:dbSession});
       if(!running.matchedCount)fail('Work is no longer running',409);
+      // Include old records without a lease deadline so they cannot retain
+      // ownership forever. A recent legacy owner keeps the same five-minute grace.
+      await TrackingDevice.updateMany({workspaceId,user:userId,activeSession:session._id,$or:[{revokedAt:{$ne:null}},{leaseUntil:{$lte:now}},{leaseUntil:null,lastSeenAt:{$lte:new Date(+now-300000)}},{leaseUntil:null,lastSeenAt:null}]},{$set:{activeSession:null}},{session:dbSession});
+      const owner=await TrackingDevice.findOne({workspaceId,user:userId,activeSession:session._id,_id:{$ne:device._id}}).session(dbSession).lean();
+      if(owner){
+        if(!takeover)fail('Another desktop owns monitoring. Close it and wait up to 5 minutes, or choose Use this desktop.',409,'DEVICE_CONFLICT');
+        transferredFrom=String(owner._id);
+        await TrackingDevice.updateOne({_id:owner._id},{$set:{activeSession:null,leaseUntil:now,releasedAt:now,monitoringDisplacedAt:now,state:'displaced'}},{session:dbSession});
+        await TrackingCaptureLease.updateMany({device:owner._id,session:session._id,endedAt:{$gt:now}},{$set:{endedAt:now}},{session:dbSession});
+      }
     }
-    saved=await TrackingDevice.findOneAndUpdate({_id:device._id,revokedAt:null,releasedAt:device.releasedAt||null},{$set:update,...(update.anchor?{$push:{anchors:{$each:[update.anchor],$slice:-8}}}:{})},{new:true,session:dbSession}).lean();
+    saved=await TrackingDevice.findOneAndUpdate({_id:device._id,revokedAt:null,releasedAt:device.releasedAt||null},{$set:update,...(takeover?{$unset:{monitoringDisplacedAt:1}}:{}),...(update.anchor?{$push:{anchors:{$each:[update.anchor],$slice:-8}}}:{})},{new:true,session:dbSession}).lean();
     if(!saved)fail('Desktop device was revoked',403,'DEVICE_REVOKED');
     if(update.anchor)await persistAnchor(saved,update.anchor,dbSession);
     if(canCapture)await TrackingCaptureLease.findOneAndUpdate({device:device._id,version:saved.leaseVersion},{$set:{endedAt:saved.leaseUntil,expiresAt:policy.retentionDays===null?null:new Date(+saved.leaseUntil+policy.retentionDays*86400000)},$setOnInsert:{workspaceId,user:userId,session:session._id,startedAt:saved.leaseStartedAt}},{upsert:true,runValidators:true,session:dbSession});
-  });}finally{await dbSession.endSession();}
-  return { serverNow: now, device: saved, policy, session, canCapture,
+  });}catch(error){if(error.code===11000)fail('Another desktop owns monitoring. Choose Use this desktop to switch.',409,'DEVICE_CONFLICT');throw error;}finally{await dbSession.endSession();}
+  if(transferredFrom)try{emitToUser(userId,'tracking:device-updated',{deviceId:transferredFrom,displaced:true,replacementDeviceId:String(device._id)},workspaceId);}catch{/* polling recovers */}
+  return { serverNow: now, device: saved, policy, session, canCapture,transferredFrom,
     noticeVersion:MONITORING_NOTICE_VERSION,needsNotice:policy.enabled&&policy.monitoringEnabled&&!hasMonitoringNotice(device),
     reason: !policy.enabled ? 'Time Tracking disabled by workspace' : !policy.monitoringEnabled ? 'Monitoring disabled by workspace' : !session || session.status !== 'RUNNING' ? 'Work is not running' : !hasMonitoringNotice(device) ? 'Monitoring notice required' : !permitted?'Tracking permission required':null };
 }
@@ -229,12 +254,18 @@ export async function prepareScreenshot({ workspaceId, userId, deviceId, interva
     format:'webp',mimeType:'image/webp',quality:image.quality,pipelineVersion:2,originalWidth:image.originalWidth||image.width,originalHeight:image.originalHeight||image.height,compressionStrategy:String(image.compressionStrategy||'quality-85').slice(0,80),storageProvider:'cloudflare-r2',storageBucket:privateStorage().config.bucket,
     departmentIdsAtCapture:interval.departmentIdsAtCapture,policyRevision:interval.policyRevision,
     expiresAt: interval.expiresAt
-  };Object.assign(metadata,await storageLabels(workspaceId,userId));metadata.storageKey=screenshotKey(metadata);
+  };Object.assign(metadata,await storageLabels(workspaceId,userId,interval.departmentIdsAtCapture||[],interval.endedAt));metadata.storageKey=screenshotKey(metadata);
     try { screenshot=await TrackingScreenshot.create(metadata); }
     catch(error){if(error.code!==11000)throw error;screenshot=await TrackingScreenshot.findOne({workspaceId,interval:interval._id,displayId:image.displayId});if(!screenshot||screenshot.checksum!==image.checksum)fail('Screenshot retry differs from original',409);}
   }
   if (screenshot.status === 'DELETED') fail('Screenshot was removed', 410);
   if(screenshot.status==='FAILED')fail('Capture exceeded its size/readability limit',409,'SIZE_QUALITY_CONFLICT');
+  if(screenshot.status==='READY'&&screenshot.storageProvider==='cloudflare-r2'&&!await privateScreenshotExists(screenshot)){
+    // An R2 prefix can be deleted outside FlowTask. If the desktop still has
+    // this capture, reissue a conditional PUT at the SAME saved key and ID.
+    screenshot=await TrackingScreenshot.findOneAndUpdate({_id:screenshot._id,status:'READY'},{$set:{status:'PENDING',uploadStatus:'RETRY_PENDING',storageMissingAt:new Date(),lastUploadError:'Stored image was removed from R2; waiting for the desktop copy.'}},{new:true})||await TrackingScreenshot.findById(screenshot._id);
+  }
+  if(screenshot.status==='DELETED'||screenshot.expiresAt&&screenshot.expiresAt<=new Date())fail('Screenshot was removed',410);
   if(screenshot.status!=='READY'){screenshot.uploadStatus='UPLOADING';await screenshot.save();}
   return { screenshotId: screenshot._id, ready: screenshot.status === 'READY', upload: screenshot.status === 'READY' ? null : await signedUpload(screenshot) };
 }
@@ -243,14 +274,17 @@ export async function completeScreenshot({ workspaceId, userId, deviceId, screen
   if (!can(ctx,'tracking.log',{workspaceId,user:userId}) || !hasMonitoringNotice(device)) fail('Monitoring consent is no longer effective',403);
   const screenshot = await TrackingScreenshot.findOne({ _id: objectId(screenshotId), workspaceId, user: userId, device: deviceId });
   if (!screenshot || screenshot.status === 'DELETED' || screenshot.expiresAt && screenshot.expiresAt <= new Date()) fail('Screenshot not found', 404);
-  if (screenshot.status === 'READY') return screenshot;
+  if (screenshot.status === 'READY') {
+    if(screenshot.storageProvider!=='cloudflare-r2'||await privateScreenshotExists(screenshot))return screenshot;
+    await TrackingScreenshot.updateOne({_id:screenshot._id,status:'READY'},{$set:{status:'PENDING',uploadStatus:'RETRY_PENDING',storageMissingAt:new Date()}});
+    fail('Stored screenshot is missing; the desktop will upload its saved copy again.',503,'SCREENSHOT_OBJECT_MISSING');
+  }
   const interval=await ActivityInterval.findOne({_id:screenshot.interval,workspaceId,user:userId,device:deviceId}).lean();
   const work=await WorkSession.findOne({_id:screenshot.session,workspaceId,user:userId}).lean();
   if(!interval||!work||!interval.screenshotAvailable||+new Date(screenshot.capturedAt)!==+new Date(interval.endedAt)||work.endedAt&&+new Date(screenshot.capturedAt)>+new Date(work.endedAt)||!work.segments.some(s=>+new Date(s.startedAt)<+new Date(screenshot.capturedAt)&&(!s.endedAt||+new Date(s.endedAt)>=+new Date(screenshot.capturedAt))))fail('Capture no longer falls within authorized work time',409);
-  try{const verified=await verifyPrivateUpload(screenshot,{withBytes:true});
-    try{screenshot.thumbnail=(await createPrivateThumbnail(screenshot.toObject(),verified.data)).thumbnail;}catch{screenshot.thumbnail={status:'FAILED'};}
-  }catch(error){screenshot.uploadStatus='RETRY_PENDING';await screenshot.save();void notifyScreenshot(screenshot);throw error;}
-  screenshot.status = 'READY';screenshot.uploadStatus='UPLOADED';screenshot.uploadedAt=new Date();await screenshot.save();
+  try{await verifyPrivateUpload(screenshot);
+  }catch(error){screenshot.uploadStatus='RETRY_PENDING';await screenshot.save();void notifyScreenshot(screenshot);if(missingStorageObject(error))fail('Stored screenshot is missing; retry the saved capture.',503,'SCREENSHOT_OBJECT_MISSING');throw error;}
+  screenshot.status = 'READY';screenshot.uploadStatus='UPLOADED';screenshot.uploadedAt=new Date();screenshot.storageMissingAt=undefined;screenshot.lastUploadError=undefined;await screenshot.save();
   await TrackingDevice.updateOne({_id:deviceId},{$unset:{screenshotIssue:1,screenshotIssueAt:1}});
   void notifyScreenshot(screenshot);
   return screenshot;

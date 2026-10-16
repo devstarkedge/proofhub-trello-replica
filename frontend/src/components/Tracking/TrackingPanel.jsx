@@ -11,9 +11,10 @@ const style = { color:'var(--color-text-primary)',backgroundColor:'var(--color-c
 export default function TrackingPanel({ compact = false }) {
   const {state,error,reload} = useWorkTracking();
   const [clock,setClock] = useState(0), [selecting,setSelecting] = useState(()=>new URLSearchParams(window.location.search).get('start')==='1'?'work':false), [busy,setBusy] = useState(false);
-  const [native,setNative] = useState(null);
+  const isDesktop=window.flowtaskDesktop?.isDesktop===true;
+  const [native,setNative] = useState(null),[retrying,setRetrying]=useState(false);
   useEffect(()=>{ const timer=setInterval(()=>setClock(performance.now()),1000); return()=>clearInterval(timer); },[]);
-  useEffect(()=>{const tracking=window.flowtaskDesktop?.tracking;if(!tracking)return;const changed=value=>setNative(normalizeDesktopTrackingStatus(value));const outdated=()=>changed(null);tracking.getStatus().then(changed).catch(outdated);const unsubscribe=tracking.onStatus(changed);window.addEventListener('flowtask:desktop-update-required',outdated);return()=>{unsubscribe?.();window.removeEventListener('flowtask:desktop-update-required',outdated);};},[]);
+  useEffect(()=>{const tracking=window.flowtaskDesktop?.tracking;if(!isDesktop||!tracking)return;const changed=value=>setNative(normalizeDesktopTrackingStatus(value));const outdated=()=>changed(null);tracking.getStatus().then(changed).catch(outdated);const unsubscribe=tracking.onStatus(changed);window.addEventListener('flowtask:desktop-update-required',outdated);return()=>{unsubscribe?.();window.removeEventListener('flowtask:desktop-update-required',outdated);};},[isDesktop]);
   if (!state) return compact ? null : <p role="status">{error || 'Loading work tracking…'}</p>;
   const session = state.session, open = session?.segments.find(s=>!s.endedAt), latest = open || session?.segments.at(-1);
   const delta = Math.max(0,(clock-state.receivedAt)/1000);
@@ -21,7 +22,7 @@ export default function TrackingPanel({ compact = false }) {
   const officeSeconds = state.attendance ? Math.max(0,(Math.min(+new Date(state.serverNow)+delta*1000,state.attendance.cutoffAt?+new Date(state.attendance.cutoffAt):Infinity)-+new Date(state.attendance.checkInAt))/1000):0;
   const device = state.devices.find(d=>d.connected && d.activeSession===session?._id)||state.devices.find(d=>d.connected);
   const scopedNative=native?.updateRequired?native:native?.workspaceId===String(state.workspaceId)&&native?.userId===state.userId?native:null;
-  const capture = window.flowtaskDesktop ? scopedNative?.state || device?.state || 'unavailable' : device ? `Connected desktop · ${device.state}` : 'Capture unavailable · desktop app required';
+  const capture = isDesktop ? scopedNative?.state || device?.state || 'unavailable' : device ? `Connected desktop · ${device.state}` : 'Capture unavailable · desktop app required';
   const action = async (name,selection=null,operationId=crypto.randomUUID()) => {
     setBusy(true);try{if(name==='pause'&&!await stopDesktopCapture())toast.warning(DESKTOP_RESTART_MESSAGE);await changeWork(name,{selection,operationId,expectedRevision:session?.revision??null});await window.flowtaskDesktop?.tracking?.refresh();await reload();window.dispatchEvent(new Event('flowtask:tracking-refresh'));return true;}
     catch(e){toast.error(errorMessage(e));await window.flowtaskDesktop?.tracking?.refresh();await reload();return false;}finally{setBusy(false);}
@@ -37,10 +38,14 @@ export default function TrackingPanel({ compact = false }) {
       {session && session.status!=='CLOSED' && (session.status==='PAUSED'||state.policy.personalPauseEnabled!==false) && <Button size="sm" variant="outline" disabled={busy} onClick={()=>action(session.status==='RUNNING'?'pause':'resume')}>{session.status==='RUNNING'?'Take Break':'Resume Work'}</Button>}
     </div>}
     <p className="mt-2 text-xs" role="status">{capture.replaceAll('-',' ')}{scopedNative?.pending ? ` · ${scopedNative.pending} uploads pending`:''}</p>
+    {isDesktop&&scopedNative?.pending>0&&<p className="mt-1 text-xs">Pending screenshots retry automatically when connected.</p>}
+    {isDesktop&&scopedNative?.uploadError&&<p role="alert" className="mt-1 text-xs">Upload waiting: {scopedNative.uploadError}{scopedNative.nextUploadRetryAt?` Next retry ${new Date(scopedNative.nextUploadRetryAt).toLocaleTimeString()}.`:''}</p>}
+    {isDesktop&&scopedNative?.pending>0&&typeof window.flowtaskDesktop?.tracking?.retryUploads==='function'&&<button disabled={retrying} className="mt-2 text-xs underline" onClick={async()=>{setRetrying(true);try{setNative(normalizeDesktopTrackingStatus(await window.flowtaskDesktop.tracking.retryUploads()));}catch(e){toast.error(e.message);}finally{setRetrying(false);}}}>{retrying?'Retrying uploads…':'Retry uploads now'}</button>}
+    {isDesktop&&scopedNative?.protectedCopies>0&&<p className="mt-1 text-xs text-amber-600">{scopedNative.protectedCopies} captures exceeded the size/readability limit. Activity is recorded; these are not pending uploads.</p>}
     {scopedNative?.error&&<p className="mt-1 text-xs">{scopedNative.error}</p>}
     {device?.lastUploadError&&<p role="alert" className="mt-1 text-xs">Desktop upload: {device.lastUploadError}</p>}
-    {scopedNative?.noticeRequired&&<button className="mt-2 text-xs underline" onClick={()=>window.dispatchEvent(new Event('flowtask:monitoring-notice'))}>Review monitoring notice</button>}
-    {window.flowtaskDesktop&&!scopedNative?.noticeRequired&&(scopedNative?.state==='permission-required'||scopedNative?.state==='monitoring'&&scopedNative?.error)&&<button className="mt-2 text-xs underline" onClick={()=>window.flowtaskDesktop.tracking.recoverPermissions().catch(e=>toast.error(e.message))}>Review desktop permissions</button>}
+    {isDesktop&&scopedNative?.noticeRequired&&<button className="mt-2 text-xs underline" onClick={()=>window.dispatchEvent(new Event('flowtask:monitoring-notice'))}>Review monitoring notice</button>}
+    {isDesktop&&!scopedNative?.noticeRequired&&(scopedNative?.state==='permission-required'||scopedNative?.state==='monitoring'&&scopedNative?.error)&&<button className="mt-2 text-xs underline" onClick={()=>window.flowtaskDesktop.tracking.recoverPermissions().catch(e=>toast.error(e.message))}>Review desktop permissions</button>}
     {compact&&<Link className="mt-2 block text-xs underline" to="/time-tracking">Timesheets and screenshots</Link>}
     {error&&<p role="alert" className="mt-2 text-xs">{error}</p>}
     {selecting&&state.canTrack&&<WorkSelectionModal currentSession={session} linking={selecting==='link'} onClose={()=>setSelecting(false)} onConfirm={(selection,operationId)=>action(selecting==='link'?'link':session?'switch':'start',selection,operationId)} />}
