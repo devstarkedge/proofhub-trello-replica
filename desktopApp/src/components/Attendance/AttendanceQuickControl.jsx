@@ -2,7 +2,7 @@ import {stopDesktopCapture,DESKTOP_RESTART_MESSAGE} from '../../services/desktop
 import { formatHours } from '../../utils/duration';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
-import { MapPin, LogIn, LogOut, CheckCircle2, Loader2 } from 'lucide-react';
+import { MapPin, LogIn, LogOut, CheckCircle2, Loader2, BriefcaseBusiness, ChevronDown } from 'lucide-react';
 import * as attendanceApi from '../../services/attendanceApi';
 import WorkSelectionModal from '../Tracking/WorkSelectionModal';
 import {getTrackingState} from '../../services/trackingApi';
@@ -165,7 +165,8 @@ const AttendanceQuickControl = () => {
     return () => clearInterval(tickRef.current);
   }, [status?.activeSession?.checkInAt, status?.activeSession?.missedCheckoutCutoffAt, load]);
 
-  if (!status || !status.attendanceApplicable) return null;
+  if (!status) return <div className="welcome-controls welcome-tracking-panel" role="status"><p className="text-sm text-white/80">Loading attendance…</p></div>;
+  if (!status.attendanceApplicable) return null;
 
   // GPS is attempted ONLY when the backend's own resolution says today's
   // mode actually needs it (requiresGeofence/requiresGps, already
@@ -206,92 +207,32 @@ const AttendanceQuickControl = () => {
   const isBusy = phase === 'locating' || phase === 'submitting';
   const busyLabel = phase === 'locating' ? 'Locating…' : status.activeSession ? 'Checking Out…' : 'Checking In…';
 
+  const mode = status.activeSession?.workMode || status.activeSession?.checkIn?.workMode || selectedWorkMode || status.defaultWorkMode;
+  const modeControl = mode ? <label className="welcome-work-mode" title="Today's Work Mode">
+    <BriefcaseBusiness size={15} aria-hidden="true" />
+    {isDesktop && !status.activeSession && status.canCheckIn && status.allowedWorkModes?.length > 1
+      ? <><select aria-label="Today's Work Mode" disabled={isBusy} value={selectedWorkMode || ''} onChange={event => setSelectedWorkMode(event.target.value)}>{status.allowedWorkModes.map(value => <option key={value} value={value}>{value}</option>)}</select><ChevronDown size={13} aria-hidden="true" /></>
+      : <span>{mode}</span>}
+  </label> : null;
+  const attendanceDetails = <div className="space-y-2 text-xs">
+    {status.activeSession && <p>Checked in · {formatHours(liveMinutes)}</p>}
+    {mode && <p>Today's Work Mode: <strong>{mode}</strong></p>}
+    {status.completed && typeof status.workedMinutes === 'number' && <p>Worked {formatHours(status.workedMinutes)} today</p>}
+    {!isDesktop && !status.completed && (status.activeSession || status.canCheckIn) && <p>Use the FlowTask desktop app to check in and check out.</p>}
+    {status.unresolvedMissedCheckout && <p className="text-amber-700 dark:text-amber-300">Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance</p>}
+  </div>;
   let content;
-  if (isBusy && isDesktop) {
-    content = (
-      <button type="button" disabled className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white/80 bg-white/10 backdrop-blur-sm cursor-wait">
-        <Loader2 className="h-4 w-4 animate-spin" /> {busyLabel}
-      </button>
-    );
-  } else if (status.completed) {
-    content = (
-      <div className="flex flex-col items-end gap-1">
-        <div className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-white/15 backdrop-blur-sm">
-          <CheckCircle2 className="h-4 w-4" /> Attendance Completed
-        </div>
-        {typeof status.workedMinutes === 'number' && (
-          <span className="text-xs text-white/70">Worked {formatHours(status.workedMinutes)} today</span>
-        )}
-      </div>
-    );
-  } else if (status.activeSession) {
-    content = (
-      <div className="flex flex-col items-end gap-1.5">
-        {isDesktop && <button
-          type="button"
-          onClick={handleCheckOut}
-          className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-white/15 backdrop-blur-sm hover:bg-white/25 transition-colors"
-        >
-          <LogOut className="h-4 w-4" /> Check Out
-        </button>}
-        <span className="text-xs text-white/70">Checked in · {formatHours(liveMinutes)}</span>
-        <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{status.activeSession.workMode||status.activeSession.checkIn?.workMode||status.defaultWorkMode}</span></span>
-      </div>
-    );
-  } else if (status.canCheckIn) {
-    // Only ever offer a choice among modes the backend itself returned as
-    // currently eligible (spec §21) — never a static/local list. With just
-    // one allowed mode, no picker is shown at all and defaultWorkMode is
-    // used automatically (spec §38: always name today's mode, whether or
-    // not there's a real choice to make).
-    const showModePicker = isDesktop && status.allowedWorkModes?.length > 1;
-    content = (
-      <div className="flex flex-col items-end gap-1.5">
-        <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{selectedWorkMode}</span></span>
-        {showModePicker && (
-          <div className="flex gap-1 rounded-lg bg-white/10 p-1 backdrop-blur-sm">
-            {status.allowedWorkModes.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setSelectedWorkMode(mode)}
-                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${selectedWorkMode === mode ? 'bg-white text-indigo-700' : 'text-white/80 hover:bg-white/15'}`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-        )}
-        {isDesktop && <button
-          type="button"
-          onClick={handleCheckIn}
-          className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-white/15 backdrop-blur-sm hover:bg-white/25 transition-colors"
-        >
-          <LogIn className="h-4 w-4" /> Check In
-        </button>}
-      </div>
-    );
-  } else {
-    content = (
-      <div className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white/80 bg-white/10 backdrop-blur-sm">
-        <MapPin className="h-4 w-4" /> {friendlyBlockingLabel(status.blockingReason)}
-      </div>
-    );
-  }
+  if (isBusy && isDesktop) content = <button type="button" disabled className="welcome-action"><Loader2 size={15} className="animate-spin" />{busyLabel}</button>;
+  else if (status.completed) content = <span className="welcome-attendance-label"><CheckCircle2 size={15} />Attendance Completed</span>;
+  else if (status.activeSession) content = isDesktop ? <button type="button" onClick={handleCheckOut} className="welcome-action"><LogOut size={15} />Check Out</button> : null;
+  else if (status.canCheckIn) content = isDesktop ? <button type="button" onClick={handleCheckIn} className="welcome-action"><LogIn size={15} />Check In</button> : null;
+  else content = <span className="welcome-attendance-label"><MapPin size={15} />{friendlyBlockingLabel(status.blockingReason)}</span>;
 
-  return (
-    <div className="flex flex-col items-end gap-1">
-      {content}
-      {!isDesktop && !status.completed && (status.activeSession || status.canCheckIn) && <span className="text-xs text-white/70">Use the FlowTask desktop app to check in and check out.</span>}
-      {status.activeSession && <TrackingPanel compact />}
-      {isDesktop && showWorkSelection && <WorkSelectionModal checkingIn onClose={() => setShowWorkSelection(false)} onConfirm={confirmCheckIn} />}
-      {status.unresolvedMissedCheckout && (
-        <span className="text-[11px] font-medium text-amber-300">
-          Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance
-        </span>
-      )}
-    </div>
-  );
+  return <>
+    <TrackingPanel compact attendanceHeader={modeControl} attendanceActions={content} attendanceDetails={attendanceDetails} attendanceWarning={Boolean(status.unresolvedMissedCheckout)} />
+    {isDesktop && showWorkSelection && <WorkSelectionModal checkingIn onClose={() => setShowWorkSelection(false)} onConfirm={confirmCheckIn} />}
+  </>;
+
 };
 
 function friendlyBlockingLabel(code) {

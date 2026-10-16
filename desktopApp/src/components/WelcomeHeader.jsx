@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Moon, Sun } from 'lucide-react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { Sparkles } from 'lucide-react';
 import Snowfall from 'react-snowfall';
 import useThemeStore from '../store/themeStore';
 import NeonSparkText from './NeonSparkText';
 import AttendanceQuickControl from './Attendance/AttendanceQuickControl';
+import WorkspaceContext from '../context/WorkspaceContext';
+import './welcome.css';
 
 const WelcomeHeader = ({ user }) => {
-  const { effectiveMode } = useThemeStore();
+  const effectiveMode = useThemeStore(state => state.effectiveMode);
+  const { currentWorkspace } = useContext(WorkspaceContext) || {};
   const isDarkMode = effectiveMode === 'dark';
   const [greeting, setGreeting] = useState('');
   const [snowOpacity, setSnowOpacity] = useState(0);
@@ -57,7 +59,7 @@ const WelcomeHeader = ({ user }) => {
 
   return (
     <div className={`
-      relative rounded-3xl p-8 shadow-2xl overflow-hidden
+      welcome-header relative rounded-3xl shadow-2xl overflow-hidden
       transition-all duration-700
       animate-in fade-in slide-in-from-top-4
       ${isDarkMode 
@@ -107,13 +109,13 @@ const WelcomeHeader = ({ user }) => {
       {/* ==========================================
           LAYER 2: CONTENT & FOREGROUND
           ========================================== */}
-      <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      <div className="welcome-layout relative z-10">
         
         {/* TEXT SECTION */}
-        <div className="flex-1">
+        <div className="welcome-copy">
           {/* Badge */}
           <div className={`
-             inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6
+             inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4
              backdrop-blur-md transition-all duration-300 shadow-lg border
              ${isDarkMode 
                ? 'bg-slate-900/50 border-indigo-500/30 text-indigo-300' 
@@ -127,16 +129,16 @@ const WelcomeHeader = ({ user }) => {
 
           {/* Heading */}
           <h1 className={`
-            text-4xl md:text-5xl font-bold mb-3 tracking-tight
+            welcome-heading font-bold mb-3 tracking-tight
             ${isDarkMode ? 'text-white drop-shadow-lg' : 'text-white'}
           `}>
             {greeting},{' '}
-            <div className="inline-block">
+            <span className="welcome-name" title={user?.name || 'User'}>
               <NeonSparkText 
                 text={user?.name || 'User'} 
                 className={isDarkMode ? 'text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-purple-300 to-indigo-300' : 'text-yellow-200'}
               />
-            </div>
+            </span>
             {' '}
             <span
               ref={handRef}
@@ -151,7 +153,7 @@ const WelcomeHeader = ({ user }) => {
 
           {/* Subtitle */}
           <p className={`
-            text-lg max-w-xl leading-relaxed py-2 pl-4 border-l-2
+            welcome-description max-w-xl leading-relaxed py-1 pl-4 border-l-2
             ${isDarkMode 
               ? 'text-indigo-200/80 border-indigo-500/30 bg-gradient-to-r from-indigo-900/20 to-transparent' 
               : 'text-blue-50 border-white/30'}
@@ -160,14 +162,17 @@ const WelcomeHeader = ({ user }) => {
           </p>
         </div>
 
+        <AttendanceQuickControl key={`${currentWorkspace?._id || ''}:${user?._id || user?.id || ''}`} />
+      </div>
+
         {/* REALISTIC MOON (CSS ART) */}
         {isDarkMode && (
-          <div className="hidden md:block relative mr-12 perspective-1000">
+          <div className="welcome-moon pointer-events-none perspective-1000">
              {/* Glow behind moon */}
              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl z-0"></div>
              
              {/* The Moon */}
-             <div className="moon-container relative w-32 h-32 z-10 animate-float-slow">
+             <div className="moon-container relative w-16 h-16 z-10 animate-float-slow">
                 <div className="moon-surface w-full h-full rounded-full overflow-hidden relative shadow-[inset_-10px_-10px_30px_rgba(0,0,0,0.8),0_0_20px_rgba(200,200,255,0.4)]">
                   {/* Craters */}
                   <div className="absolute top-[20%] left-[25%] w-6 h-6 rounded-full bg-slate-400/20 shadow-[inset_2px_2px_4px_rgba(0,0,0,0.4)]"></div>
@@ -182,8 +187,6 @@ const WelcomeHeader = ({ user }) => {
           </div>
         )}
 
-        <AttendanceQuickControl />
-      </div>
 
       <style jsx="true">{`
         .perspective-1000 { perspective: 1000px; }
@@ -252,4 +255,4 @@ const WelcomeHeader = ({ user }) => {
   );
 };
 
-export default WelcomeHeader;
+export default React.memo(WelcomeHeader);
