@@ -75,7 +75,8 @@ export const TrackingDevice = model('TrackingDevice', {
   activeSession: oid('WorkSession'), leaseUntil: Date, leaseStartedAt: Date, leaseVersion: {type:Number,default:0},
   anchor: { id: String, serverAt: Date, expiresAt: Date, departments:[mongoose.Schema.Types.ObjectId], policyRevision:Number,capturePolicy:mongoose.Schema.Types.Mixed },
   anchors: [{ _id: false, id: String, serverAt: Date, expiresAt: Date, departments:[mongoose.Schema.Types.ObjectId], policyRevision:Number,capturePolicy:mongoose.Schema.Types.Mixed }],
-  state: { type: String, default: 'unavailable' }
+  state: { type: String, default: 'unavailable' },
+  lastUploadError: String, lastUploadErrorCode: String, lastUploadErrorAt: Date
 }, [
   [{ workspaceId: 1, user: 1, installationId: 1 }, { unique: true }],
   [{ workspaceId: 1, activeSession: 1 }, { unique: true, partialFilterExpression: { activeSession: { $type: 'objectId' } } }]

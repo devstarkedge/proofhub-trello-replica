@@ -203,7 +203,7 @@ const MyAttendancePage = () => {
           {today.activeSession && <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Checked in at {new Date(today.activeSession.checkInAt).toLocaleTimeString()}</span>}
           {typeof today.workedMinutes === 'number' && today.workedMinutes > 0 && <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{formatHours(today.workedMinutes)} worked</span>}
         </div>
-        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>Use the Check In / Check Out control on your Home page to record attendance.</p>
+        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{window.flowtaskDesktop?.isDesktop === true ? 'Use the Check In / Check Out control on your Home page to record attendance.' : 'Use the FlowTask desktop app to check in and check out. Attendance status and history are available here.'}</p>
       </Panel>
 
       <TrackingPanel key={currentWorkspace?._id} />

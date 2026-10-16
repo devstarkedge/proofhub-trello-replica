@@ -1,3 +1,4 @@
+import {stopDesktopCapture,DESKTOP_RESTART_MESSAGE} from '../../services/desktopTracking';
 import { formatHours } from '../../utils/duration';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
@@ -98,6 +99,7 @@ async function captureGps() {
  * action needs it, never on mount/page load.
  */
 const AttendanceQuickControl = () => {
+  const isDesktop = window.flowtaskDesktop?.isDesktop === true;
   const [status, setStatus] = useState(null);
   const [showWorkSelection, setShowWorkSelection] = useState(false);
   const [phase, setPhase] = useState('loading'); // loading | idle | locating | submitting
@@ -199,13 +201,13 @@ const AttendanceQuickControl = () => {
 
   const handleCheckIn = async () => {try{const tracking=await getTrackingState();if(tracking.policy.enabled&&tracking.canTrack){setShowWorkSelection(true);return;}}catch{/* Attendance remains independently available */}await runAction(attendanceApi.checkIn,'Checked in',{requestedWorkMode:selectedWorkMode});};
   const confirmCheckIn = (workSelection, idempotencyKey) => runAction(attendanceApi.checkIn, 'Checked in', { requestedWorkMode: selectedWorkMode, workSelection, idempotencyKey });
-  const handleCheckOut = async () => { await window.flowtaskDesktop?.tracking?.stop?.(); try { await runAction(attendanceApi.checkOut, 'Checked out'); } finally { await window.flowtaskDesktop?.tracking?.refresh(); } };
+  const handleCheckOut = async () => { if(!await stopDesktopCapture())toast.warning(DESKTOP_RESTART_MESSAGE); try { await runAction(attendanceApi.checkOut, 'Checked out'); } finally { await window.flowtaskDesktop?.tracking?.refresh(); } };
 
   const isBusy = phase === 'locating' || phase === 'submitting';
   const busyLabel = phase === 'locating' ? 'Locating…' : status.activeSession ? 'Checking Out…' : 'Checking In…';
 
   let content;
-  if (isBusy) {
+  if (isBusy && isDesktop) {
     content = (
       <button type="button" disabled className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white/80 bg-white/10 backdrop-blur-sm cursor-wait">
         <Loader2 className="h-4 w-4 animate-spin" /> {busyLabel}
@@ -225,13 +227,13 @@ const AttendanceQuickControl = () => {
   } else if (status.activeSession) {
     content = (
       <div className="flex flex-col items-end gap-1.5">
-        <button
+        {isDesktop && <button
           type="button"
           onClick={handleCheckOut}
           className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-white/15 backdrop-blur-sm hover:bg-white/25 transition-colors"
         >
           <LogOut className="h-4 w-4" /> Check Out
-        </button>
+        </button>}
         <span className="text-xs text-white/70">Checked in · {formatHours(liveMinutes)}</span>
         <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{status.activeSession.workMode||status.activeSession.checkIn?.workMode||status.defaultWorkMode}</span></span>
       </div>
@@ -242,7 +244,7 @@ const AttendanceQuickControl = () => {
     // one allowed mode, no picker is shown at all and defaultWorkMode is
     // used automatically (spec §38: always name today's mode, whether or
     // not there's a real choice to make).
-    const showModePicker = status.allowedWorkModes?.length > 1;
+    const showModePicker = isDesktop && status.allowedWorkModes?.length > 1;
     content = (
       <div className="flex flex-col items-end gap-1.5">
         <span className="text-xs text-white/70">Today's Work Mode: <span className="font-semibold text-white">{selectedWorkMode}</span></span>
@@ -260,13 +262,13 @@ const AttendanceQuickControl = () => {
             ))}
           </div>
         )}
-        <button
+        {isDesktop && <button
           type="button"
           onClick={handleCheckIn}
           className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-white/15 backdrop-blur-sm hover:bg-white/25 transition-colors"
         >
           <LogIn className="h-4 w-4" /> Check In
-        </button>
+        </button>}
       </div>
     );
   } else {
@@ -280,8 +282,9 @@ const AttendanceQuickControl = () => {
   return (
     <div className="flex flex-col items-end gap-1">
       {content}
+      {!isDesktop && !status.completed && (status.activeSession || status.canCheckIn) && <span className="text-xs text-white/70">Use the FlowTask desktop app to check in and check out.</span>}
       {status.activeSession && <TrackingPanel compact />}
-      {showWorkSelection && <WorkSelectionModal checkingIn onClose={() => setShowWorkSelection(false)} onConfirm={confirmCheckIn} />}
+      {isDesktop && showWorkSelection && <WorkSelectionModal checkingIn onClose={() => setShowWorkSelection(false)} onConfirm={confirmCheckIn} />}
       {status.unresolvedMissedCheckout && (
         <span className="text-[11px] font-medium text-amber-300">
           Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance

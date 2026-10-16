@@ -51,7 +51,7 @@ export async function workOptions(workspaceId, userId, projectId = null) {
   if (!project) fail('Project not found', 404);
   const tasks = await Card.find({ workspaceId, board: projectId, isArchived: { $ne: true } }).sort({ title: 1 }).lean();
   result.tasks = tasks.filter(t => can(ctx, 'task.view', { ...t, project, taskResource: t })).map(t => ({
-    _id: t._id, title: t.title, assigned: t.assignees.some(u => id(u) === id(userId)), unassigned: !t.assignees.length
+    _id: t._id, title: t.title, assigned: (t.assignees||[]).some(u => id(u) === id(userId)), unassigned: !(t.assignees||[]).length
   }));
   result.lists = await List.find({ workspaceId, board: projectId }).select('_id title').sort({ position: 1 }).lean();
   return result;
@@ -76,7 +76,7 @@ export async function validateSelection({ workspaceId, userId, selection, dbSess
     task = await Card.findOne({ _id: objectId(taskId), workspaceId, board: project._id, isArchived: { $ne: true } }).select('+assignmentEvents').session(dbSession).lean();
     if (!task || !can(ctx, 'task.view', { ...task, project, taskResource: task })) fail('Task not found', 404);
   }
-  if (selection.mode === 'ASSIGNED' && (!task || !task.assignees.some(u => id(u) === id(userId)) || !can(ctx, 'time.log', { ...task, project, taskResource: task }))) fail('Choose a task currently assigned to you', 403);
+  if (selection.mode === 'ASSIGNED' && (!task || !(task.assignees||[]).some(u => id(u) === id(userId)) || !can(ctx, 'time.log', { ...task, project, taskResource: task }))) fail('Choose a task currently assigned to you', 403);
   if (selection.mode === 'INDIVIDUAL' && task?.assignees?.length) fail('Candidate task must be unassigned; select Assigned task to work on an assigned task');
   const assignment=selection.mode==='ASSIGNED'?[...(task.assignmentEvents||[])].reverse().find(e=>e.type==='ASSIGNED'&&id(e.user)===id(userId)&&id(e.project)===id(project._id)):null;
   return { kind: selection.mode === 'ASSIGNED' ? 'TASK' : 'INDIVIDUAL', project: project._id, projectName: project.name,
@@ -173,7 +173,7 @@ export async function reconcileSession(sessionId) {
         const ctx = await contextFor(session.workspaceId, session.user), project = open ? await Board.findById(open.project).lean() : null;
         const task = open?.kind === 'TASK' ? tasks.find(t => id(t._id) === id(open.task)) : null;
         permitted = policy.enabled && can(ctx, 'tracking.log', { workspaceId: session.workspaceId, user: session.user }) && (open?.agenda || project && can(ctx, 'project.view', project))
-          && (open.kind !== 'TASK' || task && !task.isArchived && id(task.board) === id(open.project) && task.assignees.some(u => id(u) === id(session.user)) && can(ctx, 'time.log', { ...task, project, taskResource: task }));
+          && (open.kind !== 'TASK' || task && !task.isArchived && id(task.board) === id(open.project) && (task.assignees||[]).some(u => id(u) === id(session.user)) && can(ctx, 'time.log', { ...task, project, taskResource: task }));
       } catch (e) { if (e.statusCode !== 403) throw e; }
       if (!permitted && open) {
         open.endedAt = new Date(Math.max(!policy.enabled&&policy.disabledAt?+new Date(policy.disabledAt):Date.now(), +new Date(open.startedAt))); session.status = 'PAUSED';

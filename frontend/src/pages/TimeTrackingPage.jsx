@@ -6,8 +6,13 @@ import TrackingPanel from '../components/Tracking/TrackingPanel';
 import TrackingReports from '../components/Tracking/TrackingReports';
 import {formatTrackingClock as duration} from '../utils/duration';
 import {Button} from '../components/ui/button';
+import {summarizeDesktopDevices} from '../services/desktopTracking';
 const style={backgroundColor:'var(--color-card-bg)',color:'var(--color-text-primary)',borderColor:'var(--color-border-default)'};
 const initial={period:'today',type:'',projectId:'',taskId:'',departmentId:'',role:'',status:'',userId:'',search:'',agendaId:'',description:'',linked:'',fromDate:'',toDate:'',page:1};
+function AgentStatus({user}){
+  const agent=summarizeDesktopDevices(user.devices,user.session?._id);
+  return <>{agent.connected?'Connected':user.devices.length?'Connection Offline':'Agent unavailable'}{user.trackingStatus==='RUNNING'&&agent.needsAttention&&<p className="text-red-600">Attention Required</p>}<p className="text-xs">Last seen {agent.lastSeenAt?new Date(agent.lastSeenAt).toLocaleString():'unknown'}</p></>;
+}
 export default function TimeTrackingPage(){
   const {currentWorkspace}=useContext(WorkspaceContext)||{};const workspaceId=currentWorkspace?._id;
   const [filters,setFilters]=useState(initial),[response,setData]=useState(null),[error,setError]=useState(''),[selected,setSelected]=useState(null),[projects,setProjects]=useState([]),[tasks,setTasks]=useState([]),[agendas,setAgendas]=useState([]);const generation=useRef(0);
@@ -30,7 +35,7 @@ export default function TimeTrackingPage(){
       <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{['User / departments','Attendance','Tracking context','Work / office','Agent / sync','Activity','Details'].map(h=><th key={h} className="p-3">{h}</th>)}</tr></thead><tbody>{data?.users.map(u=><tr key={u.userId} className="border-t" style={style}>
         <td className="p-3"><div className="flex items-center gap-2"><Avatar src={u.avatar} name={u.name} role={u.role} size="sm"/><p className="font-semibold">{u.name}</p></div><p className="text-xs">{u.role} · {u.departments.map(d=>d.name).join(', ')}</p></td><td className="p-3">{u.attendanceStatus}</td>
         <td className="p-3"><span className={u.trackingStatus==='RUNNING'?'text-green-600':u.trackingStatus==='PAUSED'?'text-amber-600':'text-gray-500'}>{u.trackingStatus==='RUNNING'?'● Actively Tracking':u.trackingStatus==='PAUSED'?'● Personal Pause':'● Not Tracking'}</span><p className="text-xs">{u.title}</p></td>
-        <td className="p-3 tabular-nums">{duration(u.workSeconds)} / {duration(u.officeSeconds)}</td><td className="p-3">{u.devices.some(d=>d.connected)?'Connected':u.devices.length?'Connection Offline':'Agent unavailable'}{u.trackingStatus==='RUNNING'&&u.devices.some(d=>d.connected&&['unavailable','notice-required','permission-required'].includes(d.state))&&<p className="text-red-600">Attention Required</p>}<p className="text-xs">Last seen {u.devices[0]?.lastSeenAt?new Date(u.devices[0].lastSeenAt).toLocaleString():'unknown'}</p></td>
+        <td className="p-3 tabular-nums">{duration(u.workSeconds)} / {duration(u.officeSeconds)}</td><td className="p-3"><AgentStatus user={u}/></td>
         <td className="p-3">{u.evidence.activityPercent===null?'N/A':`${u.evidence.activityPercent.toFixed(1)}%`}<p className="text-xs">Keys {u.evidence.keyboardCount??'N/A'} · Mouse {u.evidence.mouseCount??'N/A'} · Captures {u.evidence.capturedWindows}/{u.evidence.eligibleWindows} · Pending {u.evidence.pendingScreenshots}</p></td><td className="p-3"><Button size="sm" variant="outline" onClick={()=>setSelected(u)}>Open</Button></td>
       </tr>)}</tbody></table></div>{data&&!data.users.length&&<p>No authorized users match.</p>}
       {data&&<div className="flex justify-end gap-2"><Button variant="outline" disabled={filters.page<=1} onClick={()=>setFilters({...filters,page:filters.page-1})}>Previous</Button><span>Page {filters.page}</span><Button variant="outline" disabled={filters.page*data.pageSize>=data.total} onClick={()=>setFilters({...filters,page:filters.page+1})}>Next</Button></div>}

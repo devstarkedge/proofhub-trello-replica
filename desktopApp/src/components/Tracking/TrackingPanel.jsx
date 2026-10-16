@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import useWorkTracking from '../../hooks/useWorkTracking';
+import {normalizeDesktopTrackingStatus,stopDesktopCapture,DESKTOP_RESTART_MESSAGE} from '../../services/desktopTracking';
 import { changeWork, errorMessage } from '../../services/trackingApi';
 import { Button } from '../ui/button';
 import WorkSelectionModal from './WorkSelectionModal';
@@ -12,17 +13,17 @@ export default function TrackingPanel({ compact = false }) {
   const [clock,setClock] = useState(0), [selecting,setSelecting] = useState(()=>new URLSearchParams(window.location.search).get('start')==='1'?'work':false), [busy,setBusy] = useState(false);
   const [native,setNative] = useState(null);
   useEffect(()=>{ const timer=setInterval(()=>setClock(performance.now()),1000); return()=>clearInterval(timer); },[]);
-  useEffect(()=>{const tracking=window.flowtaskDesktop?.tracking;tracking?.getStatus().then(setNative).catch(()=>{});return tracking?.onStatus(setNative);},[]);
+  useEffect(()=>{const tracking=window.flowtaskDesktop?.tracking;if(!tracking)return;const changed=value=>setNative(normalizeDesktopTrackingStatus(value));const outdated=()=>changed(null);tracking.getStatus().then(changed).catch(outdated);const unsubscribe=tracking.onStatus(changed);window.addEventListener('flowtask:desktop-update-required',outdated);return()=>{unsubscribe?.();window.removeEventListener('flowtask:desktop-update-required',outdated);};},[]);
   if (!state) return compact ? null : <p role="status">{error || 'Loading work tracking…'}</p>;
   const session = state.session, open = session?.segments.find(s=>!s.endedAt), latest = open || session?.segments.at(-1);
   const delta = Math.max(0,(clock-state.receivedAt)/1000);
   const workSeconds = (session?.totals.workSeconds||0)+(session?.status==='RUNNING'?delta:0);
   const officeSeconds = state.attendance ? Math.max(0,(Math.min(+new Date(state.serverNow)+delta*1000,state.attendance.cutoffAt?+new Date(state.attendance.cutoffAt):Infinity)-+new Date(state.attendance.checkInAt))/1000):0;
   const device = state.devices.find(d=>d.connected && d.activeSession===session?._id)||state.devices.find(d=>d.connected);
-  const scopedNative=native?.workspaceId===String(state.workspaceId)&&native?.userId===state.userId?native:null;
+  const scopedNative=native?.updateRequired?native:native?.workspaceId===String(state.workspaceId)&&native?.userId===state.userId?native:null;
   const capture = window.flowtaskDesktop ? scopedNative?.state || device?.state || 'unavailable' : device ? `Connected desktop · ${device.state}` : 'Capture unavailable · desktop app required';
   const action = async (name,selection=null,operationId=crypto.randomUUID()) => {
-    setBusy(true);try{if(name==='pause')await window.flowtaskDesktop?.tracking?.stop?.();await changeWork(name,{selection,operationId,expectedRevision:session?.revision??null});await window.flowtaskDesktop?.tracking?.refresh();await reload();window.dispatchEvent(new Event('flowtask:tracking-refresh'));return true;}
+    setBusy(true);try{if(name==='pause'&&!await stopDesktopCapture())toast.warning(DESKTOP_RESTART_MESSAGE);await changeWork(name,{selection,operationId,expectedRevision:session?.revision??null});await window.flowtaskDesktop?.tracking?.refresh();await reload();window.dispatchEvent(new Event('flowtask:tracking-refresh'));return true;}
     catch(e){toast.error(errorMessage(e));await window.flowtaskDesktop?.tracking?.refresh();await reload();return false;}finally{setBusy(false);}
   };
   return <div className={compact?'mt-2 max-w-sm rounded-xl bg-white/10 p-3 text-left':'rounded-2xl border p-5 text-left'} style={compact?undefined:style}>
@@ -37,6 +38,7 @@ export default function TrackingPanel({ compact = false }) {
     </div>}
     <p className="mt-2 text-xs" role="status">{capture.replaceAll('-',' ')}{scopedNative?.pending ? ` · ${scopedNative.pending} uploads pending`:''}</p>
     {scopedNative?.error&&<p className="mt-1 text-xs">{scopedNative.error}</p>}
+    {device?.lastUploadError&&<p role="alert" className="mt-1 text-xs">Desktop upload: {device.lastUploadError}</p>}
     {scopedNative?.noticeRequired&&<button className="mt-2 text-xs underline" onClick={()=>window.dispatchEvent(new Event('flowtask:monitoring-notice'))}>Review monitoring notice</button>}
     {window.flowtaskDesktop&&!scopedNative?.noticeRequired&&(scopedNative?.state==='permission-required'||scopedNative?.state==='monitoring'&&scopedNative?.error)&&<button className="mt-2 text-xs underline" onClick={()=>window.flowtaskDesktop.tracking.recoverPermissions().catch(e=>toast.error(e.message))}>Review desktop permissions</button>}
     {compact&&<Link className="mt-2 block text-xs underline" to="/time-tracking">Timesheets and screenshots</Link>}

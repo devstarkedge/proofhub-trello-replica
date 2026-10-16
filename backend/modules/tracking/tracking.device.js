@@ -73,10 +73,13 @@ export async function heartbeat({ workspaceId, userId, deviceId, sessionId, stat
   }
   const update = { lastSeenAt: now, state: String(state || 'connected').slice(0,40), activeSession: canCapture ? session._id : null };
   update.preferences=workspaceCapturePreferences(policy);
-  if(canCapture){update.leaseUntil=new Date(+now+300000);if(String(device.activeSession)!==String(session._id)||!device.leaseUntil||+new Date(device.leaseUntil)<=+now){update.leaseStartedAt=now;update.leaseVersion=(device.leaseVersion||0)+1;}}
-  // Do not rotate an anchor while queued intervals still reference it.
+  const startsLease=canCapture&&(String(device.activeSession)!==String(session._id)||!device.leaseUntil||+new Date(device.leaseUntil)<=+now);
+  if(canCapture){update.leaseUntil=new Date(+now+300000);if(startsLease){update.leaseStartedAt=now;update.leaseVersion=(device.leaseVersion||0)+1;}}
+  // A new capture lease needs a fresh server/monotonic origin. Reusing an
+  // overnight origin can put the first window before its lease after clock
+  // adjustments. Historical anchors remain durable for completed offline work.
   const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),departments=departmentsOf(member);
-  if (!device.anchor?.id || +new Date(device.anchor.expiresAt) <= +now || device.anchor.policyRevision!==policy.revision || JSON.stringify((device.anchor.departments||[]).map(String).sort())!==JSON.stringify([...departments].sort())) update.anchor = { id: randomUUID(), serverAt: now, expiresAt: new Date(+now + 86400000),departments,policyRevision:policy.revision,capturePolicy:captureSnapshot(policy) };
+  if (startsLease || !device.anchor?.id || +new Date(device.anchor.expiresAt) <= +now || device.anchor.policyRevision!==policy.revision || JSON.stringify((device.anchor.departments||[]).map(String).sort())!==JSON.stringify([...departments].sort())) update.anchor = { id: randomUUID(), serverAt: now, expiresAt: new Date(+now + 86400000),departments,policyRevision:policy.revision,capturePolicy:captureSnapshot(policy) };
   let saved;const dbSession=await mongoose.startSession();
   try{await dbSession.withTransaction(async()=>{
     if(canCapture){
@@ -95,7 +98,22 @@ export async function heartbeat({ workspaceId, userId, deviceId, sessionId, stat
     reason: !policy.enabled ? 'Time Tracking disabled by workspace' : !policy.monitoringEnabled ? 'Monitoring disabled by workspace' : !session || session.status !== 'RUNNING' ? 'Work is not running' : !hasMonitoringNotice(device) ? 'Monitoring notice required' : !permitted?'Tracking permission required':null };
 }
 function numeric(value, max = 1e9) { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max; }
-export async function recordInterval({ workspaceId, userId, deviceId, payload }) {
+export async function recordInterval(args) {
+  const {workspaceId,userId,deviceId}=args;
+  const filter={_id:deviceId,workspaceId,user:userId};
+  try {
+    const saved=await saveInterval(args);
+    await TrackingDevice.updateOne(filter,{$unset:{lastUploadError:1,lastUploadErrorCode:1,lastUploadErrorAt:1}}).catch(()=>{});
+    return saved;
+  } catch(error) {
+    // Keep the reason visible across heartbeat/status refreshes. Never persist
+    // input payloads, image data, tokens or internal error/stack details.
+    const message=error.statusCode>=400&&error.statusCode<500?error.message:'Desktop upload unavailable; retry shortly';
+    await TrackingDevice.updateOne(filter,{$set:{lastUploadError:String(message).slice(0,300),lastUploadErrorCode:String(error.code||'UPLOAD_UNAVAILABLE').slice(0,80),lastUploadErrorAt:new Date()}}).catch(()=>{});
+    throw error;
+  }
+}
+async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   const device = await ownedDevice(workspaceId, userId, deviceId), policy = await policyFor(workspaceId);
   const ctx = await contextFor(workspaceId, userId);
   if (!can(ctx, 'tracking.log', { workspaceId, user: userId })) fail('Tracking permission required', 403);
