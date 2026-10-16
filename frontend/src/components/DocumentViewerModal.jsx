@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
   Download, 
@@ -16,6 +16,7 @@ import {
   Loader,
   Share2
 } from 'lucide-react';
+import {createPortal} from 'react-dom';
 import { toast } from 'react-toastify';
 
 const DocumentViewerModal = ({ 
@@ -23,7 +24,8 @@ const DocumentViewerModal = ({
   attachments = [], 
   onClose, 
   onNavigate,
-  initialIndex = 0 
+  initialIndex = 0,
+  loadAttachment, privateContent = false, onViewDetails 
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -31,26 +33,24 @@ const DocumentViewerModal = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const currentAttachment = attachments.length > 0 
+  const selectedAttachment = attachments.length > 0 
     ? attachments[currentIndex] 
     : attachment;
 
+  const [resolved,setResolved]=useState(null),dialogRef=useRef(null);
+  const currentAttachment=useMemo(()=>loadAttachment?{...selectedAttachment,...resolved}:selectedAttachment,[loadAttachment,selectedAttachment,resolved]);
+  useEffect(()=>{
+    if(!loadAttachment)return;
+    const controller=new AbortController();let result;
+    setResolved(null);setLoading(true);setError(null);
+    loadAttachment(selectedAttachment,controller.signal).then(value=>{result=value;if(controller.signal.aborted){URL.revokeObjectURL(value.url);return;}setResolved(value);}).catch(e=>{if(!controller.signal.aborted){setLoading(false);setError(e.response?.status===404?'Screenshot expired or access changed.':e.message||'Unable to load screenshot');}});
+    return()=>{controller.abort();if(result?.url)URL.revokeObjectURL(result.url);};
+  },[loadAttachment,selectedAttachment]);
+  useEffect(()=>{const previous=document.activeElement;dialogRef.current?.querySelector('[title="Close"]')?.focus();const trap=e=>{if(e.key!=='Tab')return;const items=[...dialogRef.current.querySelectorAll('button:not(:disabled),[tabindex="0"]')];if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===items.at(-1)){e.preventDefault();items[0]?.focus();}};document.addEventListener('keydown',trap);return()=>{document.removeEventListener('keydown',trap);previous?.focus?.();};},[]);
   const canNavigate = attachments.length > 1;
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < attachments.length - 1;
 
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowLeft' && hasPrev) handlePrev();
-      if (e.key === 'ArrowRight' && hasNext) handleNext();
-      if (e.key === '+' || e.key === '=') handleZoomIn();
-      if (e.key === '-') handleZoomOut();
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, hasPrev, hasNext]);
 
   const handlePrev = useCallback(() => {
     if (hasPrev) {
@@ -81,6 +81,19 @@ const DocumentViewerModal = ({
   const handleZoomOut = useCallback(() => {
     setZoom(prev => Math.max(prev - 0.25, 0.5));
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {e.stopPropagation();onClose();}
+      if (e.key === 'ArrowLeft' && hasPrev) handlePrev();
+      if (e.key === 'ArrowRight' && hasNext) handleNext();
+      if (e.key === '+' || e.key === '=') handleZoomIn();
+      if (e.key === '-') handleZoomOut();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hasPrev,hasNext,handlePrev,handleNext,handleZoomIn,handleZoomOut,onClose]);
 
   const handleRotate = useCallback(() => {
     setRotation(prev => (prev + 90) % 360);
@@ -126,7 +139,7 @@ const DocumentViewerModal = ({
         try {
           await navigator.clipboard.writeText(url);
           toast.success('Link copied to clipboard');
-        } catch (error) {
+        } catch {
           toast.error('Failed to copy link');
         }
       }
@@ -142,14 +155,14 @@ const DocumentViewerModal = ({
       );
     }
 
-    const { fileType, mimeType, secureUrl, url, thumbnailUrl, previewUrl } = currentAttachment;
+    const { fileType, mimeType, secureUrl, url } = currentAttachment;
     const displayUrl = secureUrl || url;
 
     // Image preview
     if (fileType === 'image') {
       return (
-        <div className="flex items-center justify-center h-full overflow-hidden">
-          <motion.img
+        <div className="flex items-center justify-center h-full overflow-auto">
+          {displayUrl&&<Motion.img
             src={displayUrl}
             alt={currentAttachment.originalName}
             className="max-w-full max-h-full object-contain transition-all duration-200"
@@ -162,7 +175,7 @@ const DocumentViewerModal = ({
               setError('Failed to load image');
             }}
             draggable={false}
-          />
+          />}
         </div>
       );
     }
@@ -281,7 +294,7 @@ const DocumentViewerModal = ({
               Text file preview
             </p>
             <div className="flex gap-3 justify-center">
-              <motion.button
+              <Motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleDownload}
@@ -289,8 +302,8 @@ const DocumentViewerModal = ({
               >
                 <Download size={18} />
                 Download
-              </motion.button>
-              <motion.button
+              </Motion.button>
+              <Motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleShare}
@@ -298,7 +311,7 @@ const DocumentViewerModal = ({
               >
                 <Share2 size={18} />
                 Share
-              </motion.button>
+              </Motion.button>
             </div>
           </div>
         </div>
@@ -322,7 +335,7 @@ const DocumentViewerModal = ({
             Preview not available for this file type
           </p>
           <div className="flex gap-3 justify-center">
-            <motion.button
+            <Motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleDownload}
@@ -330,8 +343,8 @@ const DocumentViewerModal = ({
             >
               <Download size={18} />
               Download
-            </motion.button>
-            <motion.button
+            </Motion.button>
+            <Motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleShare}
@@ -339,7 +352,7 @@ const DocumentViewerModal = ({
             >
               <Share2 size={18} />
               Share
-            </motion.button>
+            </Motion.button>
           </div>
         </div>
       </div>
@@ -354,9 +367,11 @@ const DocumentViewerModal = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  return (
+  return createPortal(
     <AnimatePresence>
-      <motion.div
+      <Motion.div
+        ref={dialogRef}
+        role="dialog" aria-modal="true" aria-label="Image preview"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -380,10 +395,11 @@ const DocumentViewerModal = ({
           </div>
           
           <div className="flex items-center gap-2">
+            {onViewDetails&&<button className="rounded-lg border border-white/30 px-3 py-2 text-sm text-white" onClick={()=>onViewDetails(selectedAttachment)}>View details</button>}
             {/* Zoom controls for images */}
             {currentAttachment?.fileType === 'image' && (
               <>
-                <motion.button
+                <Motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={handleZoomOut}
@@ -391,11 +407,12 @@ const DocumentViewerModal = ({
                   title="Zoom Out"
                 >
                   <ZoomOut size={20} />
-                </motion.button>
+                </Motion.button>
+<button title="Fit to screen" className="p-2 text-white hover:bg-white/10 rounded-lg" onClick={()=>{setZoom(1);setRotation(0);}}><Maximize2 size={20}/></button>
                 <span className="text-white text-sm min-w-[60px] text-center">
                   {Math.round(zoom * 100)}%
                 </span>
-                <motion.button
+                <Motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={handleZoomIn}
@@ -403,8 +420,8 @@ const DocumentViewerModal = ({
                   title="Zoom In"
                 >
                   <ZoomIn size={20} />
-                </motion.button>
-                <motion.button
+                </Motion.button>
+                <Motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={handleRotate}
@@ -412,12 +429,12 @@ const DocumentViewerModal = ({
                   title="Rotate"
                 >
                   <RotateCw size={20} />
-                </motion.button>
+                </Motion.button>
                 <div className="w-px h-6 bg-white/20 mx-2" />
               </>
             )}
             
-            <motion.button
+            <Motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={handleDownload}
@@ -425,8 +442,8 @@ const DocumentViewerModal = ({
               title="Download"
             >
               <Download size={20} />
-            </motion.button>
-            <motion.button
+            </Motion.button>
+            {!privateContent&&<Motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={handleShare}
@@ -434,8 +451,8 @@ const DocumentViewerModal = ({
               title="Share"
             >
               <Share2 size={20} />
-            </motion.button>
-            <motion.button
+            </Motion.button>}
+            <Motion.button
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={onClose}
@@ -443,7 +460,7 @@ const DocumentViewerModal = ({
               title="Close"
             >
               <X size={20} />
-            </motion.button>
+            </Motion.button>
           </div>
         </div>
 
@@ -454,29 +471,31 @@ const DocumentViewerModal = ({
         >
           {/* Navigation arrows */}
           {canNavigate && hasPrev && (
-            <motion.button
+            <Motion.button
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.1)' }}
               whileTap={{ scale: 0.9 }}
               onClick={handlePrev}
+              aria-label="Previous image"
               className="absolute left-4 z-10 p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
             >
               <ChevronLeft size={24} />
-            </motion.button>
+            </Motion.button>
           )}
           
           {canNavigate && hasNext && (
-            <motion.button
+            <Motion.button
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.1)' }}
               whileTap={{ scale: 0.9 }}
               onClick={handleNext}
+              aria-label="Next image"
               className="absolute right-4 z-10 p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
             >
               <ChevronRight size={24} />
-            </motion.button>
+            </Motion.button>
           )}
 
           {/* Loading overlay */}
@@ -491,14 +510,14 @@ const DocumentViewerModal = ({
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
               <div className="text-center text-white">
                 <p className="mb-4">{error}</p>
-                <motion.button
+                <Motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={handleDownload}
                   className="px-4 py-2 bg-blue-600 rounded-lg"
                 >
                   Download instead
-                </motion.button>
+                </Motion.button>
               </div>
             </div>
           )}
@@ -510,14 +529,14 @@ const DocumentViewerModal = ({
         </div>
 
         {/* Thumbnail strip for navigation */}
-        {canNavigate && (
+        {canNavigate && !loadAttachment && (
           <div 
             className="p-4 bg-black/50 overflow-x-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex gap-2 justify-center">
               {attachments.map((att, index) => (
-                <motion.button
+                <Motion.button
                   key={att._id}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -547,13 +566,13 @@ const DocumentViewerModal = ({
                       <FileText size={24} className="text-gray-400" />
                     </div>
                   )}
-                </motion.button>
+                </Motion.button>
               ))}
             </div>
           </div>
         )}
-      </motion.div>
-    </AnimatePresence>
+      </Motion.div>
+    </AnimatePresence>,document.body
   );
 };
 

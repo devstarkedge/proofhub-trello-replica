@@ -76,7 +76,8 @@ export const TrackingDevice = model('TrackingDevice', {
   anchor: { id: String, serverAt: Date, expiresAt: Date, departments:[mongoose.Schema.Types.ObjectId], policyRevision:Number,capturePolicy:mongoose.Schema.Types.Mixed },
   anchors: [{ _id: false, id: String, serverAt: Date, expiresAt: Date, departments:[mongoose.Schema.Types.ObjectId], policyRevision:Number,capturePolicy:mongoose.Schema.Types.Mixed }],
   state: { type: String, default: 'unavailable' },
-  lastUploadError: String, lastUploadErrorCode: String, lastUploadErrorAt: Date
+  lastUploadError: String, lastUploadErrorCode: String, lastUploadErrorAt: Date,
+  screenshotIssue: String, screenshotIssueAt: Date
 }, [
   [{ workspaceId: 1, user: 1, installationId: 1 }, { unique: true }],
   [{ workspaceId: 1, activeSession: 1 }, { unique: true, partialFilterExpression: { activeSession: { $type: 'objectId' } } }]
@@ -98,6 +99,7 @@ export const ActivityInterval = model('ActivityInterval', {
 }, [
   [{ workspaceId: 1, device: 1, operationId: 1 }, { unique: true }],
   [{ workspaceId: 1, session: 1, startedAt: 1 }, {}],
+  [{ workspaceId: 1, session: 1, endedAt: -1, _id: -1 }, {}],
   [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]
 ]);
 // Historical capture authorization survives device restart and lease renewal.
@@ -115,17 +117,25 @@ export const TrackingScreenshot = model('TrackingScreenshot', {
   interval: oid('ActivityInterval', true), displayId: String, capturedAt: Date,
   checksum: String, contentMd5: String, bytes: Number, width: Number, height: Number,
   publicId: String, format: { type: String, default: 'webp' }, blurred: Boolean,
+  pipelineVersion: Number, originalWidth: Number, originalHeight: Number, compressionStrategy: String, compressionException: String,
+  storageWorkspaceLabel: String, storageUserLabel: String,
+  thumbnail: {storageKey:String,bytes:Number,width:Number,height:Number,checksum:String,contentMd5:String,quality:Number,status:String,mimeType:String},
   storageProvider: String, storageKey: String, storageBucket: String, mimeType: String, quality: Number,
   departmentIdsAtCapture: {type:[mongoose.Schema.Types.ObjectId],default:undefined}, policyRevision: Number,
-  uploadStatus: {type:String,enum:['PENDING','UPLOADING','UPLOADED','FAILED','RETRY_PENDING','EXPIRED','DELETED'],default:'PENDING'}, uploadedAt: Date,
+  uploadStatus: {type:String,enum:['PENDING','UPLOADING','UPLOADED','FAILED','RETRY_PENDING','EXPIRED','DELETED','SIZE_QUALITY_CONFLICT'],default:'PENDING'}, uploadedAt: Date,
   lastUploadError: String,
-  status: { type: String, enum: ['PENDING', 'READY', 'DELETED'], default: 'PENDING' },
+  status: { type: String, enum: ['PENDING', 'READY', 'DELETED', 'FAILED'], default: 'PENDING' },
   expiresAt: { type: Date, default:null }, deletedAt: Date
 }, [
   [{ workspaceId: 1, interval: 1, displayId: 1 }, { unique: true }],
   [{ workspaceId: 1, session: 1, capturedAt: 1 }, {}],
+  [{ workspaceId: 1, user: 1, capturedAt: -1, _id: -1 }, {}],
+  [{ workspaceId: 1, session: 1, capturedAt: -1, _id: -1 }, {}],
   [{ expiresAt: 1, status: 1 }, {}]
 ]);
+export const TrackingStorageLabel=model('TrackingStorageLabel',{
+  kind:{type:String,enum:['workspace','user'],required:true},ownerId:{type:mongoose.Schema.Types.ObjectId,required:true},label:{type:String,required:true}
+},[[{workspaceId:1,kind:1,ownerId:1},{unique:true}],[{workspaceId:1,kind:1,label:1},{unique:true}],[{kind:1,label:1},{unique:true,partialFilterExpression:{kind:'workspace'}}]]);
 export const TrackingAgenda=model('TrackingAgenda',{
   title:{type:String,required:true,maxlength:80},normalizedTitle:{type:String,required:true},createdBy:oid('User'),archivedAt:Date
 },[[{workspaceId:1,normalizedTitle:1},{unique:true}]]);

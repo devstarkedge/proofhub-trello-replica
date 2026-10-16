@@ -7,6 +7,7 @@ import WorkspaceSwitcher from './Workspace/WorkspaceSwitcher';
 import useAccessControl from '../hooks/useAccessControl';
 import usePermissions from '../hooks/usePermissions';
 import useJoinRequestsLive from '../hooks/useJoinRequestsLive';
+import { getDefaultLeaveRouteForRole } from '../utils/leaveAccess';
 
 const MotionDiv = motion.div;
 const MotionAside = motion.aside;
@@ -26,6 +27,7 @@ const iconColors = {
   '/access-control': { color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.12)' }, // Violet - Access & Permissions
   '/join-requests': { color: '#0891b2', bg: 'rgba(8, 145, 178, 0.12)' }, // Cyan - Join Requests
   '/leave': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' }, // Orange - Leave
+  '/leave/my': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' }, // Orange - Leave (Employee default)
   '/attendance': { color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.12)' }, // Sky - Attendance
 };
 
@@ -87,20 +89,21 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   ];
 
   const getNavItems = () => {
+    const userRole = (user?.role || '').toLowerCase();
+    const leavePath = getDefaultLeaveRouteForRole(userRole);
+
     // Base navigation visible to all authenticated users
     const baseItems = [
       { path: '/', icon: Home, label: 'Home' },
       { path: '/my-shortcuts', icon: Zap, label: 'My Shortcuts' },
       { path: '/announcements', icon: Bell, label: 'Announcements' },
-      { path: '/leave', icon: CalendarDays, label: 'Leave' },
+      { path: leavePath, icon: CalendarDays, label: 'Leave', matchPrefix: '/leave', iconKey: '/leave' },
       { path: '/attendance', icon: Fingerprint, label: 'Attendance' },
       { path: '/time-tracking', icon: Fingerprint, label: 'Time Tracking' },
     ];
 
     // If no user yet, return base
     if (!user) return baseItems;
-
-    const userRole = (user.role || '').toLowerCase();
 
     // Start with base and conditionally add other items
     const items = [...baseItems];
@@ -167,7 +170,10 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
 
 
   // Get icon color configuration
-  const getIconConfig = (path) => iconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
+  const getIconConfig = (path) => {
+    if (path && path.startsWith('/leave')) return iconColors['/leave'];
+    return iconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
+  };
 
   // Render PM Sheet children
   const renderPMSheetChildren = (isDesktop = true) => {
@@ -269,9 +275,10 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       return renderPMSheetItem(item, isDesktop);
     }
 
-    const { path, icon: Icon, label, badge } = item;
-    const iconConfig = getIconConfig(path);
+    const { path, icon: Icon, label, badge, matchPrefix, iconKey } = item;
+    const iconConfig = getIconConfig(iconKey || path);
     const isHovered = hoveredItem === path;
+    const isItemActive = (routerActive) => (matchPrefix ? location.pathname.startsWith(matchPrefix) : routerActive);
 
     return (
       <NavLink
@@ -281,42 +288,48 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
         className="sidebar-nav-item flex items-center min-h-[44px] px-3 py-3 text-sm font-medium rounded-lg group relative overflow-hidden"
         onMouseEnter={() => setHoveredItem(path)}
         onMouseLeave={() => setHoveredItem(null)}
-        style={({ isActive }) => ({
-          touchAction: 'manipulation',
-          backgroundColor: isActive ? iconConfig.bg : isHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
-          color: isActive ? iconConfig.color : isHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-          borderLeft: isActive ? `3px solid ${iconConfig.color}` : '3px solid transparent',
-          marginLeft: '-3px',
-          paddingLeft: 'calc(0.75rem + 3px)',
-          transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
-          transform: isHovered && !isActive ? 'translateX(4px)' : 'translateX(0)',
-        })}
+        style={({ isActive: routerActive }) => {
+          const isActive = isItemActive(routerActive);
+          return {
+            touchAction: 'manipulation',
+            backgroundColor: isActive ? iconConfig.bg : isHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
+            color: isActive ? iconConfig.color : isHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+            borderLeft: isActive ? `3px solid ${iconConfig.color}` : '3px solid transparent',
+            marginLeft: '-3px',
+            paddingLeft: 'calc(0.75rem + 3px)',
+            transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+            transform: isHovered && !isActive ? 'translateX(4px)' : 'translateX(0)',
+          };
+        }}
       >
-        {({ isActive }) => (
-          <>
-            {/* Icon container with colored background */}
-            <div 
-              className="flex items-center justify-center w-8 h-8 rounded-lg mr-3 transition-all duration-200"
-              style={{
-                backgroundColor: isActive || isHovered ? iconConfig.bg : 'transparent',
-                transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-              }}
-            >
-              <Icon 
-                className="h-[18px] w-[18px] transition-all duration-200" 
-                style={{ 
-                  color: isActive || isHovered ? iconConfig.color : 'var(--color-text-muted)',
-                  strokeWidth: isActive ? 2.5 : 2,
+        {({ isActive: routerActive }) => {
+          const isActive = isItemActive(routerActive);
+          return (
+            <>
+              {/* Icon container with colored background */}
+              <div 
+                className="flex items-center justify-center w-8 h-8 rounded-lg mr-3 transition-all duration-200"
+                style={{
+                  backgroundColor: isActive || isHovered ? iconConfig.bg : 'transparent',
+                  transform: isHovered ? 'scale(1.1)' : 'scale(1)',
                 }}
-              />
-            </div>
-            
-            {/* Label */}
-            <span className="transition-all duration-200 flex-1" style={{
-              fontWeight: isActive ? 600 : 500,
-            }}>
-              {label}
-            </span>
+              >
+                <Icon 
+                  className="h-[18px] w-[18px] transition-all duration-200" 
+                  style={{ 
+                    color: isActive || isHovered ? iconConfig.color : 'var(--color-text-muted)',
+                    strokeWidth: isActive ? 2.5 : 2,
+                  }}
+                />
+              </div>
+              
+              {/* Label */}
+              <span className="transition-all duration-200 flex-1" style={{
+                fontWeight: isActive ? 600 : 500,
+              }}>
+                {label}
+              </span>
+
 
             {/* Live pending count (e.g. Join Requests) */}
             {!!badge && (
@@ -339,7 +352,8 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
               />
             )}
           </>
-        )}
+        );
+      }}
       </NavLink>
     );
   };

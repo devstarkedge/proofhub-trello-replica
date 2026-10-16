@@ -10,15 +10,19 @@ function legacyClient(){
   if(!CLOUDINARY_CLOUD_NAME||!CLOUDINARY_API_KEY||!CLOUDINARY_API_SECRET)throw Object.assign(new Error('Legacy screenshot migration requires the existing Cloudinary backend configuration'),{statusCode:503});
   cloudinary.config({cloud_name:CLOUDINARY_CLOUD_NAME,api_key:CLOUDINARY_API_KEY,api_secret:CLOUDINARY_API_SECRET,secure:true});return cloudinary;
 }
-export async function migrateLegacyScreenshot(screenshot){
-  if(screenshot.storageProvider==='cloudflare-r2')return screenshot;
-  if(screenshot.status!=='READY'||!screenshot.publicId)throw Object.assign(new Error('Legacy screenshot is not ready for migration'),{statusCode:409});
+export async function readLegacyScreenshot(screenshot){
   const url=legacyClient().utils.private_download_url(screenshot.publicId,screenshot.format||'jpg',{resource_type:'image',type:'authenticated',expires_at:Math.floor(Date.now()/1000)+60,attachment:false});
   const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(30000)});
   if(!response.ok)throw Object.assign(new Error('Legacy private screenshot download failed'),{statusCode:503});
   const chunks=[];let length=0;for await(const chunk of response.body){length+=chunk.length;if(length>15*1024*1024)throw new Error('Legacy screenshot exceeds supported size');chunks.push(chunk);}
   const original=Buffer.concat(chunks);
   if(createHash('sha256').update(original).digest('hex')!==screenshot.checksum)throw new Error('Legacy screenshot failed integrity validation');
+  return original;
+}
+export async function migrateLegacyScreenshot(screenshot){
+  if(screenshot.storageProvider==='cloudflare-r2')return screenshot;
+  if(screenshot.status!=='READY'||!screenshot.publicId)throw Object.assign(new Error('Legacy screenshot is not ready for migration'),{statusCode:409});
+  const original=await readLegacyScreenshot(screenshot);
   const {data,info}=await sharp(original).webp({quality:85}).toBuffer({resolveWithObject:true});
   const next={...screenshot,storageProvider:'cloudflare-r2',format:'webp',mimeType:'image/webp',quality:85,width:info.width,height:info.height,bytes:data.length,checksum:createHash('sha256').update(data).digest('hex'),contentMd5:createHash('md5').update(data).digest('hex'),uploadStatus:'UPLOADED',uploadedAt:new Date()};
   next.storageBucket=privateStorage().config.bucket;next.storageKey=screenshotKey(next);const upload=await signedUpload(next);

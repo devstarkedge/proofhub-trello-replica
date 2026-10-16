@@ -2,7 +2,7 @@ import Workspace from '../../models/Workspace.js';
 import { run } from '../workspaces/workspaceContext.js';
 import { TrackingScreenshot, ActivityInterval } from './tracking.models.js';
 import { reconcileWorkspaceSessions, policyFor } from './tracking.service.js';
-import { removePrivateScreenshot } from './tracking.storage.js';
+import { removePrivateScreenshot,removePrivateThumbnail } from './tracking.storage.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import {removeLegacyScreenshot} from './tracking.legacyStorage.js';
 import {finishDisable} from './tracking.settings.js';
@@ -21,7 +21,7 @@ export async function trackingMaintenance() {
         // so a PUT issued before expiry cannot recreate an abandoned object.
         const expired = await TrackingScreenshot.find({ workspaceId: workspace._id, expiresAt:{$ne:null,$lte:new Date()},$or:[{status:{$ne:'DELETED'}},{deletedAt:{$gte:new Date(Date.now()-300000)}}] }).limit(100).lean();
         for (const screenshot of expired) {
-          try { if(screenshot.storageProvider==='cloudflare-r2')await removePrivateScreenshot(screenshot);
+          try { if(screenshot.storageProvider==='cloudflare-r2')await removePrivateScreenshot(screenshot);else if(screenshot.thumbnail?.storageKey)await removePrivateThumbnail(screenshot);
             await removeLegacyScreenshot(screenshot);
             if(screenshot.status!=='DELETED'){
               await TrackingScreenshot.updateOne({ _id: screenshot._id }, { $set: { status: 'DELETED', uploadStatus:'DELETED', deletedAt: new Date() } });

@@ -4,7 +4,7 @@ export function summarizeEvidence(intervals, screenshots = []) {
   let activeInputSeconds=0, eligibleInputSeconds=0, mouseCount=0, keyboardCount=0;
   let knownMouse=false,knownKeyboard=false;
   let knownSeconds=0, excludedSeconds=0, eligibleWindows=0, capturedWindows=0;
-  const outcomes={};
+  const outcomes={},ready=new Set(screenshots.filter(s=>s.status==='READY').map(s=>String(s.interval))); 
   for (const interval of intervals) {
     const seconds=Math.max(0,(+new Date(interval.endedAt)-+new Date(interval.startedAt))/1000);
     const excluded=['excluded','locked','sleep'].includes(interval.coverage);
@@ -13,7 +13,7 @@ export function summarizeEvidence(intervals, screenshots = []) {
     outcomes[interval.coverage]=(outcomes[interval.coverage]||0)+1;
     if(!excluded){
       eligibleWindows++;
-      if(screenshots.some(s=>String(s.interval)===String(interval._id)&&s.status==='READY'))capturedWindows++;
+      if(ready.has(String(interval._id)))capturedWindows++;
       if(interval.activityBasis==='distinct-input-seconds-v1'&&Number.isFinite(interval.inputActiveSeconds)&&Number.isFinite(interval.inputEligibleSeconds)){
         activeInputSeconds+=interval.inputActiveSeconds;eligibleInputSeconds+=interval.inputEligibleSeconds;
       }

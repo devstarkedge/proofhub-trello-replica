@@ -1,21 +1,16 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import WorkspaceContext from '../../context/WorkspaceContext';
-import { toast } from 'react-toastify';
-import { getReports, getReportMembers, getTimeline, getScreenshotUrl, errorMessage } from '../../services/trackingApi';
+import { getReports, getReportMembers, getTimeline, errorMessage } from '../../services/trackingApi';
 import { formatTrackingClock as duration } from '../../utils/duration';
 import { Button } from '../ui/button';
+import ScreenshotGallery from './ScreenshotGallery';
+import useTrackingScope from './useTrackingScope';
 const style = { color:'var(--color-text-primary)',backgroundColor:'var(--color-card-bg)',borderColor:'var(--color-border-default)' };
 const dateTime = (value, timezone) => new Date(value).toLocaleString(undefined,{timeZone:timezone || 'UTC'});
 const workTitle=s=>s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle} (origin: ${s.agendaTitle} — ${s.description})`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName} / ${s.taskTitle||'Individual'}`;
 function SessionTimeline({session,timezone,filterKey}) {
-  const requestVersion=useRef(0),previewVersion=useRef(0);
-  const [data,setData] = useState(null), [preview,setPreview] = useState(null), [error,setError] = useState('');
-  useEffect(()=>()=>{if(preview?.url)URL.revokeObjectURL(preview.url);},[preview]);
-  const load = useCallback(async before=>{const version=++requestVersion.current;try{const next=await getTimeline(session._id,before,JSON.parse(filterKey));if(version!==requestVersion.current)return;setData(previous=>before&&previous?{...next,intervals:[...previous.intervals,...next.intervals],screenshots:[...previous.screenshots,...next.screenshots]}:next);}catch(e){if(version===requestVersion.current){setData(null);setError(errorMessage(e));}}},[session._id,filterKey]);
-  useEffect(()=>{const version=requestVersion;load();return()=>{version.current++;};},[load]);
-  useEffect(()=>{const invalidate=()=>{requestVersion.current++;previewVersion.current++;};const refresh=()=>{previewVersion.current++;setPreview(null);setData(null);load();};window.addEventListener('flowtask:realtime',refresh);const timer=setInterval(refresh,15000);return()=>{invalidate();window.removeEventListener('flowtask:realtime',refresh);clearInterval(timer);};},[load]);
-  useEffect(()=>{const escape=e=>{if(e.key==='Escape')setPreview(null);};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape);},[]);
-  const show = async screenshot=>{const version=++previewVersion.current;try{const result=await getScreenshotUrl(screenshot._id);if(version!==previewVersion.current){URL.revokeObjectURL(result.url);return;}setPreview({...result,screenshot});}catch(e){toast.error(errorMessage(e));}};
+  const [data,setData]=useState(null),[error,setError]=useState('');
+  useEffect(()=>{let live=true;getTimeline(session._id,undefined,{...JSON.parse(filterKey),summaryOnly:true}).then(next=>live&&setData(next)).catch(e=>live&&setError(errorMessage(e)));return()=>{live=false;};},[session._id,filterKey,session.revision]);
   return <div className="mt-3 space-y-3 border-t pt-3" style={style}>
     <p className="text-xs">Times shown in {timezone}. Input counts measure interaction, not output or a productivity score.</p>
     {session.segments.map((s,i)=><p className="text-xs" key={s._id||i}>{workTitle(s)} · {dateTime(s.startedAt,timezone)} – {s.endedAt?dateTime(s.endedAt,timezone):'running'}{s.assignedAt?` · assigned ${dateTime(s.assignedAt,timezone)}`:''}{s.attributedAt?` · explicitly included ${dateTime(s.attributedAt,timezone)}`:''}</p>)}
@@ -24,33 +19,26 @@ function SessionTimeline({session,timezone,filterKey}) {
     {(session.pauses||[]).map((p,i)=><p className="text-xs" key={`pause-${i}`}>Personal Pause · {dateTime(p.startedAt,timezone)} – {p.endedAt?dateTime(p.endedAt,timezone):'ongoing'}</p>)}
     {!!data?.coverageGaps?.length && <details><summary className="cursor-pointer text-sm">{data.coverageGaps.length} desktop coverage gaps (work time is preserved)</summary>{data.coverageGaps.map((gap,i)=><p className="text-xs" key={i}>{dateTime(gap.startedAt,timezone)} – {dateTime(gap.endedAt,timezone)}</p>)}</details>}
     {data&&!data.intervals.length&&<p className="text-sm">No desktop coverage uploaded for this session. Work and attendance time are still recorded.</p>}
-    {data?.intervals.map(interval=>{
-      const images=data.screenshots.filter(s=>s.interval===interval._id),seconds=interval.inputEligibleSeconds;
-      return <div className="rounded-lg border p-3 text-sm" style={style} key={interval._id}>
-        <p>{dateTime(interval.startedAt,timezone)} – {dateTime(interval.endedAt,timezone)} · {interval.coverage}</p><p className="text-xs">{interval.contexts?.map(c=>c.title).join(' → ')}{interval.contexts?.length>1?' · Mixed interval: counts are not split across tasks.':''}</p>
-        <p className="mt-1 text-xs">Mouse presses: {interval.mouseCount??'unavailable'} · Keyboard keydowns: {interval.keyboardCount??'unavailable'} · Active: {interval.activeSeconds==null?'unknown':duration(interval.activeSeconds)} · Idle: {interval.idleSeconds==null?'unknown':duration(interval.idleSeconds)} · Activity {seconds>0?`${Math.round(interval.inputActiveSeconds/seconds*100)}%`:'N/A'} · policy {interval.policyRevision??'legacy'}</p>
-        <div className="mt-2 flex flex-wrap gap-2">{images.map(s=><Button size="sm" variant="outline" key={s._id} disabled={s.status!=='READY'} onClick={()=>show(s)}>Screen {s.displayId} · {s.uploadStatus||s.status}{s.blurred?' · blurred':''}</Button>)}{!images.length&&<span className="text-xs">Screenshot unavailable, pending, excluded, expired, or outside your access.</span>}</div>
-      </div>;
-    })}
-    {data?.nextBefore&&<Button variant="outline" onClick={()=>load(data.nextBefore)}>Earlier intervals</Button>}
-    {preview&&<div role="dialog" aria-modal="true" aria-label="Private screenshot preview" className="fixed inset-0 z-[100] overflow-auto space-y-2 p-4" style={style}><Button autoFocus variant="outline" onClick={()=>setPreview(null)}>Close screenshot</Button><img className="max-h-[90vh] w-full rounded-lg object-contain" src={preview.url} alt={`Monitor ${preview.screenshot.displayId} at ${dateTime(preview.screenshot.capturedAt,timezone)}`} onError={()=>setError('Preview expired. Open the screenshot again.')} /></div>}
-    <details><summary className="cursor-pointer text-sm">Immutable work history</summary>{session.audit.map(a=><p key={a.id} className="text-xs">{dateTime(a.at,timezone)} · {a.type}</p>)}</details>
+    <ScreenshotGallery sessionId={session._id} timezone={timezone} filters={JSON.parse(filterKey)}/>
+    <details><summary className="cursor-pointer text-sm">Immutable work history</summary>{(session.audit||[]).map(a=><p key={a.id} className="text-xs">{dateTime(a.at,timezone)} · {a.type}</p>)}</details>
   </div>;
 }
 export default function TrackingReports({team=false,initialFilters={}}) {
   const {currentWorkspace}=useContext(WorkspaceContext)||{};const workspaceId=currentWorkspace?._id;
-  const requestVersion=useRef(0);
+  const requestVersion=useRef(0),scope=useTrackingScope();
   const [response,setData]=useState(null),[error,setError]=useState(''),[expanded,setExpanded]=useState('');
   const [fromDate,setFromDate]=useState(initialFilters.fromDate||''),[toDate,setToDate]=useState(initialFilters.toDate||''),[userId,setUserId]=useState(initialFilters.userId||'');
   const data=String(response?.workspaceId)===String(workspaceId)?response:null;
   const [members,setMembers]=useState([]);
   useEffect(()=>{if(team)getReportMembers().then(setMembers).catch(()=>{});},[team]);
   const filterKey=JSON.stringify(initialFilters);
-  const load=useCallback(async cursor=>{const version=++requestVersion.current;try{const next=await getReports({...JSON.parse(filterKey),team,fromDate,toDate,userId:userId||undefined,cursor});if(String(next.workspaceId)!==String(workspaceId))return;if(version!==requestVersion.current)return;setData(old=>cursor&&old?{...next,sessions:[...old.sessions,...next.sessions]}:next);setError('');}catch(e){if(version===requestVersion.current){setData(null);setError(errorMessage(e));}}},[team,fromDate,toDate,userId,filterKey,workspaceId]);
+  const load=useCallback(async cursor=>{if(!scope)return;const version=++requestVersion.current;try{const next=await getReports({...JSON.parse(filterKey),team,fromDate,toDate,userId:userId||undefined,cursor});if(String(next.workspaceId)!==String(workspaceId))return;if(version!==requestVersion.current)return;setData(old=>old?{...next,sessions:cursor?[...old.sessions,...next.sessions]:[...next.sessions,...old.sessions.filter(s=>!next.sessions.some(n=>n._id===s._id))],nextCursor:cursor?next.nextCursor:old.nextCursor}:next);setExpanded(old=>old||next.sessions[0]?._id||'');setError('');}catch(e){if(version===requestVersion.current){setData(null);setError(errorMessage(e));}}},[team,fromDate,toDate,userId,filterKey,workspaceId,scope]);
   useEffect(()=>{const version=requestVersion;load();return()=>{version.current++;};},[load]);
-  useEffect(()=>{const refresh=()=>{setExpanded('');setData(null);load();if(team)getReportMembers().then(setMembers).catch(()=>setMembers([]));};window.addEventListener('flowtask:realtime',refresh);return()=>window.removeEventListener('flowtask:realtime',refresh);},[load,team]);
+  useEffect(()=>{setData(null);setExpanded('');},[scope]);
+  useEffect(()=>{let timer;const refresh=e=>{if(!/^(tracking:|attendance:)/.test(e.detail?.type||''))return;clearTimeout(timer);timer=setTimeout(()=>load(),750);};window.addEventListener('flowtask:realtime',refresh);return()=>{clearTimeout(timer);window.removeEventListener('flowtask:realtime',refresh);};},[load]);
+
   return <section className="rounded-2xl border p-5" style={style}>
-    <h2 className="mb-3 text-base font-bold">{team?'Team work timesheets':'My work timesheets'} and activity</h2>
+    <h2 className="mb-3 text-base font-bold">{team?'Team daily timeline':'Daily work timeline'}</h2>
     <div className="mb-3 flex flex-wrap items-center gap-3 text-sm"><label>From <input aria-label="Work reports from" className="rounded border p-2" style={style} type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} /></label><label>To <input aria-label="Work reports to" className="rounded border p-2" style={style} type="date" value={toDate} onChange={e=>setToDate(e.target.value)} /></label>{team&&<label>Member <select className="rounded border p-2" style={style} value={userId} onChange={e=>setUserId(e.target.value)}><option value="">All authorized members</option>{members.map(member=><option value={member._id} key={member._id}>{member.name}</option>)}</select></label>}<Button variant="outline" onClick={()=>load()}>Refresh</Button></div>
     {error&&<p role="alert" className="text-sm">{error}</p>}
     {data&&!data.sessions.length&&<p className="text-sm">No work sessions in this range.</p>}

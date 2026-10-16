@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { CalendarDays } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import LeaveContentContainer from '../components/Leave/LeaveContentContainer';
-import { isMyLeaveBlockedForRole, canAccessLeaveDashboard } from '../utils/leaveAccess';
+import { isMyLeaveBlockedForRole, canAccessLeaveDashboard, getDefaultLeaveRouteForRole } from '../utils/leaveAccess';
 import WorkspaceContext from '../context/WorkspaceContext';
 import useLeaveStore from '../store/leaveStore';
 import { LEAVE_SCOPE_REFRESH_EVENTS, subscribeLeaveRefresh } from '../utils/leaveRequestSync';
@@ -69,7 +69,7 @@ const LeaveLayout = () => {
         >
           <LeaveContentContainer className="!py-0">
             <div className="flex min-h-14 lg:min-h-16 flex-col gap-2 py-2.5 lg:py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
-              <NavLink to="/leave" className="flex flex-none items-center gap-2.5 rounded-lg py-1">
+              <NavLink to={getDefaultLeaveRouteForRole(role)} className="flex flex-none items-center gap-2.5 rounded-lg py-1">
                 <span
                   className="flex h-9 w-9 items-center justify-center rounded-xl"
                   style={{ backgroundColor: 'var(--color-primary-subtle)', color: 'var(--color-primary-600)' }}

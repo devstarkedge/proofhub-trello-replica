@@ -131,15 +131,16 @@ export async function finalizeAttendanceWork(attendance, dbSession = null) {
   if (!dbSession) emitChanged(saved);
   return saved;
 }
-export async function reconcileSession(sessionId) {
+export async function reconcileSession(sessionId,prepared=null) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const session = await WorkSession.findById(sessionId).lean();
+    const cached=attempt===0?prepared:null;
+    const session = cached?.session || await WorkSession.findById(sessionId).lean();
     if (!session) return null;
     const taskIds = [...new Set(session.segments.flatMap(s => [s.candidateTask, s.task]).filter(Boolean).map(id))];
-    const tasks = await Card.find({ _id: { $in: taskIds } }).select('+assignmentEvents').lean();
+    const tasks = cached?.tasks ? cached.tasks.filter(t=>taskIds.includes(id(t._id))).map(t=>({...t})) : await Card.find({ _id: { $in: taskIds } }).select('+assignmentEvents').lean();
     const missing=taskIds.filter(taskId=>!tasks.some(t=>id(t._id)===taskId));
     if(missing.length){
-      const archived=await TaskAssignmentEvent.find({task:{$in:missing}}).sort({at:1,sequence:1}).lean();
+      const archived=cached?.archived ? cached.archived.filter(e=>missing.includes(id(e.task))) : await TaskAssignmentEvent.find({task:{$in:missing}}).sort({at:1,sequence:1}).lean();
       for(const taskId of missing){const events=archived.filter(e=>id(e.task)===taskId);if(events.length)tasks.push({_id:taskId,
         title:events.at(-1).taskTitle,board:events[0].project,isArchived:true,assignees:[],assignmentEvents:events.map(e=>({...e,id:e.eventId}))});}
     }
@@ -152,8 +153,8 @@ export async function reconcileSession(sessionId) {
       if (JSON.stringify(linked) === before) continue;
       // Permission is resolved fresh, never inferred from the outbox alone.
       if (event.type === 'ASSIGNED') {
-        const ctx = await contextFor(session.workspaceId, session.user);
-        const project = await Board.findById(event.project).lean();
+        const ctx = cached?.ownerContext||await contextFor(session.workspaceId, session.user);
+        const project = cached?.projects?cached.projects.get(id(event.project)):await Board.findById(event.project).lean();
         if (!project || !can(ctx, 'task.view', { ...task, project, taskResource: task }) || !can(ctx, 'time.log', { ...task, project, taskResource: task })) continue;
       }
       session.segments = linked;
@@ -161,16 +162,16 @@ export async function reconcileSession(sessionId) {
       session.audit.push({ id: event.id, type: event.type === 'ASSIGNED' ? 'CANDIDATE_ASSIGNED' : 'TASK_UNASSIGNED', at: event.at, actor: session.user, detail: id(task._id) });
       changed = true;
     }
-    const attendance = await AttendanceSession.findById(session.attendanceSession).lean();
+    const attendance = cached?.attendance!==undefined?cached.attendance:await AttendanceSession.findById(session.attendanceSession).lean();
     if (session.status !== 'CLOSED' && attendance && (attendance.status !== 'ACTIVE' || attendance.missedCheckoutCutoffAt && +new Date(attendance.missedCheckoutCutoffAt) <= Date.now())) {
       closeTimeline(session, attendance.checkOutAt || attendance.missedCheckoutCutoffAt || attendance.reconciledAt);
       pushAudit(session, 'ATTENDANCE_CLOSED', session.endedAt, session.user); changed = true;
     }
     if (session.status === 'RUNNING') {
-      const open = session.segments.find(s => !s.endedAt), policy = await policyFor(session.workspaceId);
+      const open = session.segments.find(s => !s.endedAt), policy = cached?.policy||await policyFor(session.workspaceId);
       let permitted = false;
       try {
-        const ctx = await contextFor(session.workspaceId, session.user), project = open ? await Board.findById(open.project).lean() : null;
+        const ctx = cached?.ownerContext||await contextFor(session.workspaceId, session.user), project = open?.project ? cached?.projects?cached.projects.get(id(open.project)):await Board.findById(open.project).lean() : null;
         const task = open?.kind === 'TASK' ? tasks.find(t => id(t._id) === id(open.task)) : null;
         permitted = policy.enabled && can(ctx, 'tracking.log', { workspaceId: session.workspaceId, user: session.user }) && (open?.agenda || project && can(ctx, 'project.view', project))
           && (open.kind !== 'TASK' || task && !task.isArchived && id(task.board) === id(open.project) && (task.assignees||[]).some(u => id(u) === id(session.user)) && can(ctx, 'time.log', { ...task, project, taskResource: task }));
@@ -186,6 +187,18 @@ export async function reconcileSession(sessionId) {
     if (saved) { emitChanged(saved); return saved; }
   }
   fail('Work session is busy; retry', 409);
+}
+export async function reconcileReadSessions(sessions,ctx,scope,attendanceRows=null){
+  if(!sessions.length)return [];
+  const taskIds=[...new Set(sessions.flatMap(s=>s.segments.flatMap(v=>[v.task,v.candidateTask])).filter(Boolean).map(id))];
+  const [tasks,attendance,policy]=await Promise.all([taskIds.length?Card.find({_id:{$in:taskIds}}).select('+assignmentEvents').lean():[],
+    attendanceRows||AttendanceSession.find({_id:{$in:sessions.map(s=>s.attendanceSession)}}).lean(),policyFor(ctx.workspaceId)]);
+  const missing=taskIds.filter(key=>!tasks.some(t=>id(t)===key));
+  const archived=missing.length?await TaskAssignmentEvent.find({task:{$in:missing}}).sort({at:1,sequence:1}).lean():[];
+  const result=[];
+  // Bounded writes/reconciliation; closed history uses batched dependencies.
+  for(let offset=0;offset<sessions.length;offset+=4){result.push(...await Promise.all(sessions.slice(offset,offset+4).map(session=>reconcileSession(session._id,{session,tasks,archived,attendance:attendance.find(a=>id(a)===id(session.attendanceSession))||null,policy,projects:scope.projectMap,ownerContext:id(session.user)===id(ctx.userId)?ctx:null}))));}
+  return result.filter(Boolean);
 }
 export async function reconcileWorkspaceSessions(workspaceId = getActiveWorkspaceId()) {
   if (!workspaceId || mongoose.connection.readyState !== 1) return;
@@ -327,6 +340,7 @@ export async function createWorkTask({ workspaceId, userId, user, projectId, lis
 }
 
 export async function authorizeRecord(ctx, session, permission = 'tracking.view_reports') {
+  if(ctx.trackingReadScope){if(!ctx.trackingReadScope.canRecord(session,permission))fail('Record not found',404);return;}
   if (!session || id(session.workspaceId) !== id(ctx.workspaceId)) fail('Record not found', 404);
   if(!await trackingVisibility(ctx.workspaceId,ctx.userId,session.user,session.departmentIdsAtStart))fail('Record not found',404);
   if (id(session.user) === id(ctx.userId)) return;

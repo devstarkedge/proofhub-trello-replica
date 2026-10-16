@@ -35,6 +35,7 @@ export async function trackingContext(workspaceId,userId) {
   }
   const {canUserAccessBoard}=await import('../../controllers/boardController.js');
   const projects=await Board.find({workspaceId,isDeleted:{$ne:true}}).lean();
+  ctx.trackingProjectRecords=projects;
   const visible=[];
   for(const project of projects){
     // Preserve the existing selected-project restriction even where the

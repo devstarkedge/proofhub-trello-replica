@@ -21,3 +21,14 @@ export function isMyLeaveBlockedForRole(role) {
 export function canAccessLeaveDashboard() {
   return true;
 }
+
+/**
+ * Resolves the default leave landing route for a given user role.
+ * For Employee role users, opening Leave defaults to "My Leave" (/leave/my).
+ * For administrative or managerial roles (Admin, HR, Manager, etc.), defaults to Dashboard (/leave).
+ */
+export function getDefaultLeaveRouteForRole(role) {
+  const normalized = String(role || '').toLowerCase();
+  return normalized === 'employee' ? '/leave/my' : '/leave';
+}
+

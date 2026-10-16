@@ -14,11 +14,12 @@ import AttendanceSession from '../attendance/attendanceSession.model.js';
 import AttendanceDay from '../attendance/attendanceDay.model.js';
 import { emitToUser } from '../../realtime/emitters.js';
 import { WorkSession, ActivityInterval, TrackingScreenshot, TrackingPolicy, TrackingDevice } from './tracking.models.js';
-import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, reconcileSession } from './tracking.service.js';
+import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, reconcileSession, reconcileReadSessions } from './tracking.service.js';
 import { registerDevice, acceptMonitoringNotice, releaseDevice, heartbeat, recordInterval, prepareScreenshot, completeScreenshot, retryScreenshot } from './tracking.device.js';
-import { readPrivateScreenshot, storageHealth } from './tracking.storage.js';
+import { storageHealth } from './tracking.storage.js';
 import { trackingVisibility, historicalDepartmentScope } from './tracking.visibility.js';
-import { migrateLegacyScreenshot } from './tracking.legacyStorage.js';
+import {gallery,screenshotDetails,screenshotContent} from './tracking.gallery.js';
+import {readVisibilityScope} from './tracking.visibility.js';
 import { summarize, coverageGaps,overlapSeconds } from './tracking.timeline.js';
 import { summarizeEvidence } from './tracking.evidence.js';
 import {updateSettings,requireTrackingAdmin,listAgendas,createAgenda} from './tracking.settings.js';
@@ -49,8 +50,7 @@ router.get('/agent-release', asyncHandler(async (req,res) => {
 }));
 router.get('/report-members',asyncHandler(async(req,res)=>{
   const ctx=await contextFor(req.workspaceId,req.user.id);
-  const members=await WorkspaceMembership.find({workspace:req.workspaceId,status:'active'}).lean();
-  const permitted=[];for(const member of members)if(await trackingVisibility(req.workspaceId,req.user.id,member.user,null,false) && (id(member.user)===id(req.user.id)||can(ctx,'tracking.view_reports',{workspaceId:req.workspaceId,user:member.user,departments:member.departments||member.department||[]})))permitted.push(member);
+  const scope=await readVisibilityScope(ctx),permitted=scope.members.filter(m=>scope.canOwner(m.user));
   send(res,await User.find({_id:{$in:permitted.map(m=>m.user)}}).select('_id name').sort({name:1}).lean());
 }));
 router.post('/tasks', asyncHandler(async (req,res) => {
@@ -115,22 +115,27 @@ router.get('/reports', asyncHandler(async (req,res) => {
     ...(fromDate || toDate ? { workDateKey: { ...(fromDate ? { $gte: fromDate } : {}), ...(toDate ? { $lte: toDate } : {}) } } : {}),
     ...(cursor ? { _id: { $lt: objectId(cursor) } } : {}) };
   const sf=segmentFilter(req.query);if(Object.keys(sf).length)filter.segments={$elemMatch:sf};
-  const candidates = await WorkSession.find(filter).sort({ _id: -1 }).limit(50).lean();
-  const data = [];
-  for (let session of candidates) {
-    try { await authorizeRecord(ctx, session); } catch (e) { if (e.statusCode === 404 && !userId) continue; throw e; }
-    session = await reconcileSession(session._id);
-    const attendance = await AttendanceSession.findById(session.attendanceSession).lean();
-    const day = attendance ? await AttendanceDay.findById(attendance.attendanceDay).select('presenceState attendanceStatus workedMinutes').lean() : null;
-    const officeEnd = attendance?.checkOutAt || (attendance?.status === 'ACTIVE' ? new Date(Math.min(Date.now(), attendance.missedCheckoutCutoffAt ? +new Date(attendance.missedCheckoutCutoffAt) : Infinity)) : null);
-    const subject=await User.findById(session.user).select('name').lean();
+  const scope=await readVisibilityScope(ctx);
+  if(userId&&!scope.canOwner(userId))fail('Record not found',404);
+  if(!userId&&team==='true')filter.user={$in:scope.members.filter(m=>scope.canOwner(m.user)).map(m=>m.user)};
+  const candidates=await WorkSession.find(filter).sort({_id:-1}).limit(20).select('-operations').lean();
+  await scope.markMixed(candidates);
+  const visible=candidates.filter(s=>scope.canRecord(s));
+  if(userId&&candidates.length&&!visible.length)fail('Record not found',404);
+  const sessions=await reconcileReadSessions(visible,ctx,scope);
+  const [attendanceRows,subjects]=await Promise.all([
+    AttendanceSession.find({workspaceId:req.workspaceId,_id:{$in:sessions.map(s=>s.attendanceSession)}}).lean(),
+    User.find({_id:{$in:sessions.map(s=>s.user)}}).select('name').lean()
+  ]);
+  const days=await AttendanceDay.find({workspaceId:req.workspaceId,_id:{$in:attendanceRows.map(a=>a.attendanceDay).filter(Boolean)}}).select('presenceState attendanceStatus workedMinutes').lean();
+  const data=sessions.map(session=>{
+    const attendance=attendanceRows.find(a=>id(a)===id(session.attendanceSession)),day=attendance?days.find(d=>id(d)===id(attendance.attendanceDay)):null;
+    const officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(Date.now(),attendance.missedCheckoutCutoffAt?+attendance.missedCheckoutCutoffAt:Infinity)):null);
     const filtered={...session,segments:session.segments.filter(s=>matchesSegment(s,req.query))};
-    data.push({ ...filtered, userName:subject?.name || 'Former member', totals: summarize(filtered), attendance: { status: attendance?.status, day,
-      checkInAt: attendance?.checkInAt, checkOutAt: attendance?.checkOutAt,
-      measuredOfficeSeconds: officeEnd ? Math.max(0,(+new Date(officeEnd) - +new Date(attendance.checkInAt))/1000) : null } });
-  }
+    return {...filtered,userName:subjects.find(u=>id(u)===id(session.user))?.name||'Former member',totals:summarize(filtered),attendance:{status:attendance?.status,day,checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null}};
+  });
   const workspace = await Workspace.findById(req.workspaceId).select('timezone').lean();
-  send(res, { workspaceId:req.workspaceId,sessions: data, timezone: workspace?.timezone || 'UTC', nextCursor: candidates.length === 50 ? id(candidates.at(-1)._id) : null });
+  send(res, { workspaceId:req.workspaceId,sessions: data, timezone: workspace?.timezone || 'UTC', nextCursor: candidates.length === 20 ? id(candidates.at(-1)._id) : null });
 }));
 router.get('/sessions/:sessionId/timeline', asyncHandler(async (req,res) => {
   const ctx = await contextFor(req.workspaceId, req.user.id), session = await WorkSession.findById(objectId(req.params.sessionId)).lean();
@@ -145,33 +150,30 @@ router.get('/sessions/:sessionId/timeline', asyncHandler(async (req,res) => {
   if (before && !Number.isFinite(+before)) fail('Invalid timeline cursor');
   const validExpiry={$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]};
   const cutoff=new Date(0);
-  const intervals = await ActivityInterval.find({ ...history,...segmentBounds,$and:[validExpiry],session: session._id, endedAt: { $gte:cutoff,...(before?{$lt:before}:{}) } }).sort({ endedAt: -1 }).limit(100).select('-digest').lean();
-  let screenshots = [];
+  const intervals = await ActivityInterval.find({ ...history,...segmentBounds,$and:[validExpiry],session: session._id, endedAt: { $gte:cutoff,...(before?{$lt:before}:{}) } }).sort({ endedAt: -1 }).limit(20).select('-digest').lean();
+  let screenshots = []; 
   try { await authorizeRecord(ctx, session, 'tracking.view_screenshots');
-    screenshots = await TrackingScreenshot.find({ ...history,...validExpiry,session: session._id, interval: { $in: intervals.map(i => i._id) }, status: {$ne:'DELETED'} }).select('_id interval displayId capturedAt width height blurred uploadStatus status').lean();
+    if(req.query.summaryOnly!=='true')screenshots = await TrackingScreenshot.find({ ...history,...validExpiry,session: session._id, interval: { $in: intervals.map(i => i._id) }, status: {$ne:'DELETED'} }).select('_id interval displayId capturedAt width height blurred uploadStatus status').lean();
   } catch (e) { if (e.statusCode !== 404) throw e; }
-  const allCoverage=await ActivityInterval.find({...history,...segmentBounds,$and:[validExpiry],session:session._id,endedAt:{$gte:cutoff}}).lean();
+  const allCoverage=await ActivityInterval.find({...history,...segmentBounds,$and:[validExpiry],session:session._id,endedAt:{$gte:cutoff}}).select('_id startedAt endedAt coverage activityBasis inputActiveSeconds inputEligibleSeconds mouseCount keyboardCount').lean();
   const imageStates=await TrackingScreenshot.find({...history,...validExpiry,session:session._id,interval:{$in:allCoverage.map(i=>i._id)},status:{$ne:'DELETED'}}).select('interval status displayId').lean();
   const contexts=intervals.map(interval=>({...interval,contexts:session.segments.filter(s=>+new Date(s.startedAt)<+new Date(interval.endedAt)&&(!s.endedAt||+new Date(s.endedAt)>+new Date(interval.startedAt))).map(s=>({segmentId:s._id,title:s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle}`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName} / ${s.taskTitle||'Individual'}`,origin:s.agenda?`${s.agendaTitle} — ${s.description}`:null,task:s.attributedTask||s.task,attributedAt:s.attributedAt}))}));
   const fullyCovered=allCoverage.filter(i=>overlapSeconds(i.startedAt,i.endedAt,segments)>=(+i.endedAt-+i.startedAt)/1000-0.001);
-  send(res, { intervals:contexts, screenshots, evidence:summarizeEvidence(fullyCovered,imageStates), coverageGaps:coverageGaps(segments,allCoverage), nextBefore: intervals.length === 100 ? intervals.at(-1).endedAt : null });
+  send(res, { intervals:contexts, screenshots, evidence:summarizeEvidence(fullyCovered,imageStates), coverageGaps:coverageGaps(segments,allCoverage), nextBefore: intervals.length === 20 ? intervals.at(-1).endedAt : null });
 }));
 router.get('/storage-health',asyncHandler(async(req,res)=>{
   await requireTrackingAdmin(req.workspaceId,req.user.id);
   send(res,await storageHealth());
 }));
-router.get('/screenshots/:screenshotId/content', asyncHandler(async (req,res) => {
-  const ctx = await contextFor(req.workspaceId, req.user.id);
-  let screenshot = await TrackingScreenshot.findOne({ _id: objectId(req.params.screenshotId), status: 'READY', $or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}] }).lean();
-  if (!screenshot) fail('Screenshot not found', 404);
-  const session=await WorkSession.findById(screenshot.session).lean();
-  await authorizeRecord(ctx, session?{...session,departmentIdsAtStart:screenshot.departmentIdsAtCapture}:null, 'tracking.view_screenshots');
-  await audit(req, 'TRACKING_SCREENSHOT_VIEWED', 'TrackingScreenshot', screenshot._id);
-  if(screenshot.storageProvider!=='cloudflare-r2')screenshot=await migrateLegacyScreenshot(screenshot);
-  const bytes=await readPrivateScreenshot(screenshot);
-  // Recheck after storage IO in case departments/role changed during fetch.
-  const fresh=await contextFor(req.workspaceId,req.user.id);
-  await authorizeRecord(fresh,session?{...session,departmentIdsAtStart:screenshot.departmentIdsAtCapture}:null,'tracking.view_screenshots');
-  res.set({'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Type':screenshot.mimeType||'image/webp','Content-Length':String(bytes.length)});res.send(bytes);
+router.get('/screenshots',asyncHandler(async(req,res)=>send(res,await gallery(req.workspaceId,req.user.id,req.query))));
+router.get('/screenshots/:screenshotId/details',asyncHandler(async(req,res)=>{
+  const result=await screenshotDetails(req.workspaceId,req.user.id,req.params.screenshotId);
+  await audit(req,'TRACKING_SCREENSHOT_VIEWED','TrackingScreenshot',req.params.screenshotId,{kind:'details'});
+  res.set('Cache-Control','private, no-store');send(res,result);
+}));
+for(const kind of ['content','thumbnail'])router.get(`/screenshots/:screenshotId/${kind}`,asyncHandler(async(req,res)=>{
+  const {bytes,mimeType}=await screenshotContent(req.workspaceId,req.user.id,req.params.screenshotId,kind==='thumbnail');
+  await audit(req,'TRACKING_SCREENSHOT_VIEWED','TrackingScreenshot',req.params.screenshotId,{kind});
+  res.set({'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Type':mimeType,'Content-Length':String(bytes.length)});res.send(bytes);
 }));
 export default router;

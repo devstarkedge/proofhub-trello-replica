@@ -2,16 +2,15 @@ import {DateTime} from 'luxon';
 import Workspace from '../../models/Workspace.js';
 import User from '../../models/User.js';
 import Department from '../../models/Department.js';
-import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import AttendanceSession from '../attendance/attendanceSession.model.js';
-import {WorkSession,TrackingDevice,ActivityInterval,TrackingScreenshot} from './tracking.models.js';
-import {contextFor,authorizeRecord,fail,objectId,reconcileSession} from './tracking.service.js';
-import {trackingVisibility,departmentsOf} from './tracking.visibility.js';
-import {roleFor} from './tracking.settings.js';
-import {summarize,overlapSeconds} from './tracking.timeline.js';
+import {WorkSession,TrackingDevice} from './tracking.models.js';
+import {contextFor,fail,objectId,reconcileReadSessions} from './tracking.service.js';
+import {readVisibilityScope,departmentsOf} from './tracking.visibility.js';
+import {summarize} from './tracking.timeline.js';
+import {evidenceByUser} from './tracking.evidenceRead.js';
 import {summarizeEvidence} from './tracking.evidence.js';
-import {can} from './tracking.authorization.js';
 const id=v=>String(v?._id||v||'');
+const literal=value=>Array.from(value).map(c=>'\\^$.*+?()[]{}|'.includes(c)?'\\'+c:c).join('');
 export function reportDates(query,timezone){
   const now=DateTime.now().setZone(timezone);let start,end=now.endOf('day');
   if(query.period==='yesterday'){start=now.minus({days:1}).startOf('day');end=start.endOf('day');}
@@ -26,7 +25,7 @@ export function segmentFilter(query){
   if(query.type)filter.kind=query.type;
   for(const [key,fields]of [['projectId',['project','attributedProject']],['taskId',['task','attributedTask','linkedTask']],['agendaId',['agenda']]])if(query[key]){objectId(query[key]);(filter.$and||=[]).push({$or:fields.map(field=>({[field]:query[key]}))});}
   if(query.linked==='true')filter.attributionIncluded=true;if(query.linked==='false')filter.attributionIncluded={$ne:true};
-  if(query.description){if(String(query.description).length>100)fail('Description search is too long');filter.description={$regex:String(query.description).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),$options:'i'};}
+  if(query.description){if(String(query.description).length>100)fail('Description search is too long');filter.description={$regex:literal(String(query.description)),$options:'i'};}
   return filter;
 }
 export function matchesSegment(segment,query){
@@ -40,43 +39,44 @@ export function selectedSegments(session,query,start=new Date(0),end=new Date())
   return session.segments.filter(s=>matchesSegment(s,query)).map(s=>({...s,startedAt:new Date(Math.max(+new Date(s.startedAt),+start)),endedAt:new Date(Math.min(+(s.endedAt||end),+end))})).filter(s=>+s.endedAt>+s.startedAt);
 }
 export async function dashboard(workspaceId,userId,query){
-  const ctx=await contextFor(workspaceId,userId),role=await roleFor(workspaceId,userId),workspace=await Workspace.findById(workspaceId).select('timezone').lean();
-  const timezone=workspace?.timezone||'UTC',dates=reportDates(query,timezone),filter={workspace:workspaceId,status:'active',kind:{$ne:'guest'}};
-  if(role==='manager'){
-    const departments=await Department.find({workspaceId,managers:userId,isActive:{$ne:false}}).select('_id').lean();
-    filter.$or=[{user:userId},{$or:[{department:{$in:departments.map(d=>d._id)}},{departments:{$in:departments.map(d=>d._id)}}],role:{$nin:['manager','admin']}}];
-  }else if(role!=='admin')filter.user=userId;
-  if(query.userId){objectId(query.userId);filter.user=query.userId;if(!await trackingVisibility(workspaceId,userId,query.userId,null,false))fail('User not found',404);}
-  if(query.departmentId){objectId(query.departmentId);filter.$and=[{$or:[{department:query.departmentId},{departments:query.departmentId}]}];}
-  if(query.role)filter.role=String(query.role).slice(0,80);
-  if(query.search){const search=String(query.search).trim().slice(0,80).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');const users=await User.find({name:{$regex:search,$options:'i'}}).select('_id').lean();filter.$and=[...(filter.$and||[]),{user:{$in:users.map(u=>u._id)}}];}
-  const members=await WorkspaceMembership.find(filter).sort({_id:1}).lean();
-  const rows=[];const sf=segmentFilter(query);
-  const allSessions=await WorkSession.find({workspaceId,user:{$in:members.map(m=>m.user)},startedAt:{$lte:dates.end},$or:[{endedAt:null},{endedAt:{$gte:dates.start}}],...(Object.keys(sf).length?{segments:{$elemMatch:sf}}:{})}).sort({startedAt:-1}).lean();
-  const page=Math.max(1,Math.min(100000,Number(query.page)||1)),limit=25;
-  // Authorize before counting or pagination. Requests cannot enumerate peers
-  // through total counts or filters that happen to produce empty work results.
-  for(const member of members){
-    if(!await trackingVisibility(workspaceId,userId,member.user,null,false))continue;
-    if(id(member.user)!==id(userId)&&!can(ctx,'tracking.view_reports',{workspaceId,user:member.user,departments:departmentsOf(member)}))continue;
-    const sessions=[];for(let s of allSessions.filter(s=>id(s.user)===id(member.user))){
-      try{await authorizeRecord(ctx,s);}catch(e){if(e.statusCode===404)continue;throw e;}s=await reconcileSession(s._id);sessions.push(s);
-    }
-    if(Object.keys(sf).length&&!sessions.length)continue;
-    const current=sessions.find(s=>!s.endedAt),last=current||sessions[0],trackingStatus=current?.status==='RUNNING'?'RUNNING':current?.status==='PAUSED'&&current.pauses?.some(p=>!p.endedAt)?'PAUSED':'NOT_TRACKING';
-    if(query.status&&query.status!==trackingStatus)continue;
-    rows.push({member,sessions,last,trackingStatus});
+  const ctx=await contextFor(workspaceId,userId),scope=await readVisibilityScope(ctx),workspace=await Workspace.findById(workspaceId).select('timezone').lean();
+  const timezone=workspace?.timezone||'UTC',dates=reportDates(query,timezone),sf=segmentFilter(query),now=new Date();
+  if(query.userId){objectId(query.userId);if(!scope.canOwner(query.userId))fail('User not found',404);}
+  if(query.departmentId)objectId(query.departmentId);
+  let members=scope.members.filter(m=>scope.canOwner(m.user)&&(!query.userId||id(m.user)===id(query.userId))&&(!query.departmentId||departmentsOf(m).includes(id(query.departmentId)))&&(!query.role||m.role===query.role));
+  if(query.search){const search=literal(String(query.search).trim().slice(0,80));const matches=await User.find({_id:{$in:members.map(m=>m.user)},name:{$regex:search,$options:'i'}}).select('_id').lean();const names=new Set(matches.map(id));members=members.filter(m=>names.has(id(m.user)));}
+  const bounds={workspaceId,startedAt:{$lte:dates.end},$or:[{endedAt:null},{endedAt:{$gte:dates.start}}]};
+  if(Object.keys(sf).length||query.status){
+    if(query.status&&!['RUNNING','PAUSED','NOT_TRACKING'].includes(query.status))fail('Invalid tracking status');
+    const candidates=await WorkSession.find({...bounds,user:{$in:members.map(m=>m.user)},...(Object.keys(sf).length?{segments:{$elemMatch:sf}}:{})}).select('-operations -audit').lean();
+    await scope.markMixed(candidates);const visible=candidates.filter(s=>scope.canRecord(s));
+    if(Object.keys(sf).length){const owners=new Set(visible.filter(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))).length).map(s=>id(s.user)));members=members.filter(m=>owners.has(id(m.user)));}
+    if(query.status){const statuses=new Map(visible.filter(s=>!s.endedAt).map(s=>[id(s.user),s.status==='RUNNING'?'RUNNING':s.status==='PAUSED'&&s.pauses?.some(p=>!p.endedAt)?'PAUSED':'NOT_TRACKING']));members=members.filter(m=>(statuses.get(id(m.user))||'NOT_TRACKING')===query.status);}
   }
-  const selected=rows.slice((page-1)*limit,page*limit),users=await User.find({_id:{$in:selected.map(r=>r.member.user)}}).select('name avatar').lean();
-  const departmentIds=selected.flatMap(r=>departmentsOf(r.member)),departmentDocs=await Department.find({_id:{$in:departmentIds},workspaceId}).select('name').lean();
-  const data=[];for(const row of selected){
-    const owner=users.find(u=>id(u)===id(row.member.user)),devices=await TrackingDevice.find({workspaceId,user:row.member.user,revokedAt:null}).select('state lastSeenAt activeSession').lean();
-    const attendance=await AttendanceSession.find({workspaceId,user:row.member.user,workDateKey:{$gte:dates.fromDate,$lte:dates.toDate}}).select('status checkInAt checkOutAt missedCheckoutCutoffAt').lean();
-    const ids=row.sessions.map(s=>s._id),segments=row.sessions.flatMap(s=>selectedSegments(s,query,dates.start,new Date(Math.min(Date.now(),+dates.end)))),intervals=(await ActivityInterval.find({workspaceId,session:{$in:ids},startedAt:{$gte:dates.start},endedAt:{$lte:dates.end},$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]}).lean()).filter(i=>overlapSeconds(i.startedAt,i.endedAt,segments)>=(+i.endedAt-+i.startedAt)/1000-0.001),images=await TrackingScreenshot.find({workspaceId,interval:{$in:intervals.map(i=>i._id)},status:{$ne:'DELETED'},$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]}).select('interval status').lean();
-    const evidence=summarizeEvidence(intervals,images),workSeconds=summarize({segments,endedAt:new Date()}).workSeconds;
-    const officeSeconds=attendance.reduce((n,a)=>n+Math.max(0,(+(a.checkOutAt||new Date(Math.min(Date.now(),a.missedCheckoutCutoffAt?+a.missedCheckoutCutoffAt:Infinity)))-+a.checkInAt)/1000),0);
-    const latest=row.last?.segments.at(-1);
-    data.push({userId:row.member.user,name:owner?.name||'Member',avatar:owner?.avatar,role:row.member.role,departments:departmentsOf(row.member).map(d=>({_id:d,name:departmentDocs.find(v=>id(v)===d)?.name||'Department'})),trackingStatus:row.trackingStatus,attendanceStatus:attendance.some(a=>a.status==='ACTIVE')?'Checked in':attendance.length?'Checked out':'No attendance',title:latest?.agenda?`${latest.agendaTitle} — ${latest.description}`:latest?`${latest.projectName} / ${latest.taskTitle||'Individual'}`:'No work selected',workSeconds,officeSeconds,evidence,session:row.last,devices:devices.map(d=>({...d,connected:Date.now()-+new Date(d.lastSeenAt||0)<45000}))});
-  }
-  return {workspaceId,users:data,total:rows.length,page,pageSize:limit,timezone,dates,serverNow:new Date()};
+  members.sort((a,b)=>id(a).localeCompare(id(b)));
+  const total=members.length,limit=20;
+  if(query.cursor){objectId(query.cursor);members=members.filter(m=>id(m)>id(query.cursor));}
+  const selected=members.slice(0,limit),owners=selected.map(m=>m.user);
+  const [rawSessions,attendance,devices,users,departmentDocs]=await Promise.all([
+    WorkSession.find({...bounds,user:{$in:owners}}).select('-operations').sort({startedAt:-1}).lean(),
+    AttendanceSession.find({workspaceId,user:{$in:owners},workDateKey:{$gte:dates.fromDate,$lte:dates.toDate}}).lean(),
+    TrackingDevice.find({workspaceId,user:{$in:owners},revokedAt:null}).select('user state lastSeenAt activeSession screenshotIssue lastUploadError').lean(),
+    User.find({_id:{$in:owners}}).select('name avatar').lean(),
+    Department.find({workspaceId,_id:{$in:selected.flatMap(departmentsOf)}}).select('name').lean()
+  ]);
+  await scope.markMixed(rawSessions);
+  const sessions=await reconcileReadSessions(rawSessions.filter(s=>scope.canRecord(s)),ctx,scope,attendance);
+  const evidenceSegments=sessions.flatMap(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))).map(segment=>({session:s._id,startedAt:segment.startedAt,endedAt:segment.endedAt})));
+  const evidenceMap=await evidenceByUser(workspaceId,sessions,evidenceSegments,dates.start,dates.end);
+  const data=selected.map(member=>{
+    const own=sessions.filter(s=>id(s.user)===id(member.user)),last=own.find(s=>!s.endedAt)||own[0],status=last&&!last.endedAt&&last.status==='RUNNING'?'RUNNING':last&&!last.endedAt&&last.status==='PAUSED'&&last.pauses?.some(p=>!p.endedAt)?'PAUSED':'NOT_TRACKING';
+    const segments=own.flatMap(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))));
+    const evidence=evidenceMap.get(id(member.user))||summarizeEvidence([]);
+    const office=attendance.filter(a=>id(a.user)===id(member.user)),latest=last?.segments.filter(s=>matchesSegment(s,query)).at(-1),owner=users.find(u=>id(u)===id(member.user));
+    return {userId:member.user,name:owner?.name||'Member',avatar:owner?.avatar,role:member.role,departments:departmentsOf(member).map(d=>({_id:d,name:departmentDocs.find(v=>id(v)===d)?.name||'Department'})),trackingStatus:status,
+      attendanceStatus:office.some(a=>a.status==='ACTIVE')?'Checked in':office.length?'Checked out':'No attendance',title:latest?.agenda?latest.agendaTitle+' — '+latest.description:latest?(latest.projectName||'Project')+' / '+(latest.taskTitle||'Individual'):'No work selected',
+      workSeconds:summarize({segments,endedAt:now}).workSeconds,officeSeconds:office.reduce((n,a)=>n+Math.max(0,(+(a.checkOutAt||new Date(Math.min(+now,a.missedCheckoutCutoffAt?+a.missedCheckoutCutoffAt:Infinity)))-+a.checkInAt)/1000),0),evidence,
+      session:last?{_id:last._id,status:last.status,startedAt:last.startedAt,revision:last.revision}:null,devices:devices.filter(d=>id(d.user)===id(member.user)).map(d=>({...d,connected:+now-+new Date(d.lastSeenAt||0)<45000}))};
+  });
+  return {workspaceId,users:data,total,pageSize:limit,nextCursor:members.length>limit?id(selected.at(-1)):null,timezone,dates,serverNow:now};
 }

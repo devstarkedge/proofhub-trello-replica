@@ -5,6 +5,7 @@ const os = require('node:os');
 const { randomUUID } = require('node:crypto');
 const { ActivityCounters, DurableQueue, checksum } = require('./tracking-core.cjs');
 const {encodeWebP}=require('./screenshot-encoder.cjs');
+const encodedFields=e=>({width:e.width,height:e.height,originalWidth:e.originalWidth,originalHeight:e.originalHeight,quality:e.quality,pipelineVersion:e.pipelineVersion,compressionStrategy:e.compressionStrategy});
 
 function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   const root = path.join(app.getPath('userData'),'tracking'); fs.mkdirSync(root,{recursive:true});
@@ -120,13 +121,13 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
               if(!source||source.thumbnail.isEmpty()){coverage='unavailable';continue;}
               let image=source.thumbnail;const size=image.getSize();
               if(preferences.blur)image=image.resize({width:Math.max(1,Math.round(size.width/40)),height:Math.max(1,Math.round(size.height/40)),quality:'good'}).resize({...size,quality:'good'});
-              let encoded;try{encoded=await encodeWebP(image.toPNG());}catch{
-                const original=image.toPNG();images.push({displayId:String(display.id),format:'png',conversionPending:true,checksum:checksum(original),contentMd5:checksum(original,'md5'),bytes:original.length,width:size.width,height:size.height,blurred:preferences.blur,data:original.toString('base64')});
-                publish('unavailable','WebP encoding failed; protected original queued for retry');continue;
+              let encoded;try{encoded=await encodeWebP(image.toPNG());}catch(error){
+                const original=image.toPNG();images.push({displayId:String(display.id),format:'png',conversionPending:error.code!=='SIZE_QUALITY_CONFLICT',exceptionCode:error.code==='SIZE_QUALITY_CONFLICT'?error.code:undefined,measurement:error.measurement,protectedUntil:Date.now()+3600000,checksum:checksum(original),contentMd5:checksum(original,'md5'),bytes:original.length,width:size.width,height:size.height,blurred:preferences.blur,data:original.toString('base64')});
+                publish('monitoring',error.code==='SIZE_QUALITY_CONFLICT'?'Screenshot exceeds 70 KiB within the readability floor; activity is still recorded':'WebP encoding failed; protected original queued for retry');continue;
               }
               const bytes=encoded.data;
               images.push({displayId:String(display.id),checksum:checksum(bytes),contentMd5:checksum(bytes,'md5'),bytes:bytes.length,
-                width:encoded.width,height:encoded.height,format:'webp',mimeType:'image/webp',quality:85,blurred:preferences.blur,data:bytes.toString('base64')});
+                ...encodedFields(encoded),format:'webp',mimeType:'image/webp',blurred:preferences.blur,data:bytes.toString('base64')});
             }
           }
         }
@@ -139,7 +140,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       mouseCount:hookStarted?count.mouseCount:null,keyboardCount:hookStarted?count.keyboardCount:null,
       activeSeconds:count.activeSeconds,idleSeconds:count.idleSeconds,coverage,
       inputActiveSeconds:count.inputActiveSeconds,inputEligibleSeconds:count.inputEligibleSeconds,activityBasis:count.activityBasis,
-      inputAvailable:hookStarted && coverage!=='excluded',screenshotAvailable:images.length>0};
+      inputAvailable:hookStarted && coverage!=='excluded',screenshotAvailable:images.some(image=>!image.exceptionCode)};
     if (coverage==='excluded') { payload.mouseCount=null;payload.keyboardCount=null; }
     if(payload.endOffsetMs-payload.startOffsetMs<1)return;
     try{activeQueue.push({payload,images,createdAt:Date.now(),expiresAt:policy?.retentionDays===null?null:+new Date(activeDevice.anchor.serverAt)+payload.endOffsetMs+(policy?.retentionDays||365)*86400000,attempts:0,nextAttempt:0});}
@@ -162,17 +163,28 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
         try{
           const interval=await request(`/devices/${deviceId}/intervals`,entry.payload);
           if(scope!==generation)return;
-          for(const image of entry.images)if(image.format!=='webp'){
+          for(const image of entry.images)if(image.format!=='webp'&&!image.exceptionCode){
             const original=Buffer.from(image.data,'base64');if(checksum(original)!==image.checksum)throw new Error('Offline screenshot checksum mismatch');
-            const encoded=await encodeWebP(original);Object.assign(image,{data:encoded.data.toString('base64'),bytes:encoded.data.length,width:encoded.width,height:encoded.height,format:'webp',mimeType:'image/webp',quality:85,checksum:checksum(encoded.data),contentMd5:checksum(encoded.data,'md5'),conversionPending:false});
+            let encoded;try{encoded=await encodeWebP(original);}catch(error){if(error.code!=='SIZE_QUALITY_CONFLICT')throw error;Object.assign(image,{exceptionCode:error.code,measurement:error.measurement,conversionPending:false,protectedUntil:Date.now()+3600000});activeQueue.update(name,entry);continue;}Object.assign(image,{data:encoded.data.toString('base64'),bytes:encoded.data.length,...encodedFields(encoded),format:'webp',mimeType:'image/webp',checksum:checksum(encoded.data),contentMd5:checksum(encoded.data,'md5'),conversionPending:false});
             if(scope!==generation)return;
             activeQueue.update(name,entry);
           }
-          for(const image of entry.images){const bytes=Buffer.from(image.data,'base64');
+          for(const image of entry.images){if(image.exceptionReported)continue;let bytes=Buffer.from(image.data,'base64');
             if(scope!==generation)return;
             if(checksum(bytes)!==image.checksum||checksum(bytes,'md5')!==image.contentMd5)throw new Error('Offline screenshot checksum mismatch');
             const {data:ignored,...metadata}=image;
-            const prepared=await request(`/devices/${deviceId}/screenshots/prepare`,{intervalId:interval._id,image:metadata});
+            let prepared;
+            try{prepared=await request(`/devices/${deviceId}/screenshots/prepare`,{intervalId:interval._id,image:metadata});}
+            catch(error){
+              // Existing pending legacy captures keep their exact checksum. Only
+              // a new oversized legacy-queue capture is converted after rejection.
+              if(error.code!=='AGENT_UPDATE_REQUIRED')throw error;
+              try{const encoded=await encodeWebP(bytes);bytes=encoded.data;Object.assign(image,encodedFields(encoded),{bytes:bytes.length,data:bytes.toString('base64'),checksum:checksum(bytes),contentMd5:checksum(bytes,'md5')});}
+              catch(encodingError){if(encodingError.code!=='SIZE_QUALITY_CONFLICT')throw encodingError;Object.assign(image,{exceptionCode:encodingError.code,measurement:encodingError.measurement,protectedUntil:Date.now()+3600000});}
+              activeQueue.update(name,entry);const {data:unused,...updated}=image;prepared=await request(`/devices/${deviceId}/screenshots/prepare`,{intervalId:interval._id,image:updated});
+            }
+            if(prepared.exceptionRecorded){image.exceptionReported=true;image.protectedUntil||=Date.now()+3600000;activeQueue.update(name,entry);continue;}
+
             if(scope!==generation)return;
             if(!prepared.ready){const url=new URL(prepared.upload.url);
               if(url.protocol!=='https:'||!/(^|\.)r2\.cloudflarestorage\.com$/.test(url.hostname)||prepared.upload.method!=='PUT')throw new Error('Untrusted screenshot upload destination');
@@ -185,7 +197,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
               await request(`/devices/${deviceId}/screenshots/${prepared.screenshotId}/complete`,{});
             }
           }
-          if(scope===generation)activeQueue.remove(name);
+          if(scope===generation){entry.images=entry.images.filter(image=>image.exceptionReported&&image.protectedUntil>Date.now());if(entry.images.length){entry.nextAttempt=Date.now()+60000;activeQueue.update(name,entry);}else activeQueue.remove(name);}
         }catch(error){
           if(scope!==generation)return;
           if([403,404,410].includes(error.status)){activeQueue.remove(name);publish('unavailable',error.message);}
