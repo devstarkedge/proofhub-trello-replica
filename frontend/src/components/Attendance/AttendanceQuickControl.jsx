@@ -102,20 +102,25 @@ const AttendanceQuickControl = () => {
   const isDesktop = window.flowtaskDesktop?.isDesktop === true;
   const [status, setStatus] = useState(null);
   const [showWorkSelection, setShowWorkSelection] = useState(false);
-  const [phase, setPhase] = useState('loading'); // loading | idle | locating | submitting
+  const [attendanceOnly, setAttendanceOnly] = useState(false);
+  // A ref guards even clicks in the same render; choosing work is not a check-in.
+  const operationRef = useRef(null), loadGeneration = useRef(0);
+  const [phase, setPhase] = useState('loading'); // loading | idle | preparing | locating | submitting
   const [liveMinutes, setLiveMinutes] = useState(0);
   const [selectedWorkMode, setSelectedWorkMode] = useState(null);
   const tickRef = useRef(null);
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     try {
       const { data } = await attendanceApi.getMyTodayStatus();
+      if (generation !== loadGeneration.current) return;
       setStatus(data);
-      setSelectedWorkMode(data.defaultWorkMode || null);
+      if (!operationRef.current) setSelectedWorkMode(data.defaultWorkMode || null);
     } catch {
-      setStatus({ attendanceApplicable: false });
+      if (generation === loadGeneration.current) setStatus(previous => previous || { attendanceApplicable: false });
     } finally {
-      setPhase('idle');
+      setPhase(previous => previous === 'loading' ? 'idle' : previous);
     }
   }, []);
 
@@ -165,7 +170,7 @@ const AttendanceQuickControl = () => {
     return () => clearInterval(tickRef.current);
   }, [status?.activeSession?.checkInAt, status?.activeSession?.missedCheckoutCutoffAt, load]);
 
-  if (!status) return <div className="welcome-controls welcome-tracking-panel" role="status"><p className="text-sm text-white/80">Loading attendance…</p></div>;
+  if (!status) return <div className="welcome-controls welcome-check-in" role="status"><p className="text-sm text-white/80">Loading attendance…</p></div>;
   if (!status.attendanceApplicable) return null;
 
   // GPS is attempted ONLY when the backend's own resolution says today's
@@ -190,22 +195,66 @@ const AttendanceQuickControl = () => {
     try {
       const response=await apiCall({ ...(gps || {}), ...extraPayload });
       if(response.trackingStartup?.state==='FAILED')toast.warning(`Attendance is checked in. Work did not start: ${response.trackingStartup.message}. Use Start work to retry.`);
+      // Use the successful server response immediately, even if the status refresh fails.
+      if (response.data?.checkInAt) {
+        ++loadGeneration.current;
+        const checkedIn = response.data.status === 'ACTIVE';
+        setStatus(previous => ({ ...previous, canCheckIn: false, completed: ['CLOSED', 'COMPLETED'].includes(response.data.status), activeSession: checkedIn ? response.data : null, workedMinutes: undefined }));
+      }
       toast.success(successMessage);
       await load();
       window.dispatchEvent(new Event('flowtask:tracking-refresh'));
       return true;
     } catch {
-      setPhase('idle');
       return false;
+    } finally {
+      setPhase('idle');
     }
   };
 
-  const handleCheckIn = async () => {try{const tracking=await getTrackingState();if(tracking.policy.enabled&&tracking.canTrack){setShowWorkSelection(true);return;}}catch{/* Attendance remains independently available */}await runAction(attendanceApi.checkIn,'Checked in',{requestedWorkMode:selectedWorkMode});};
-  const confirmCheckIn = (workSelection, idempotencyKey) => runAction(attendanceApi.checkIn, 'Checked in', { requestedWorkMode: selectedWorkMode, workSelection, idempotencyKey });
-  const handleCheckOut = async () => { if(!await stopDesktopCapture())toast.warning(DESKTOP_RESTART_MESSAGE); try { await runAction(attendanceApi.checkOut, 'Checked out'); } finally { await window.flowtaskDesktop?.tracking?.refresh(); } };
+  const handleCheckIn = async () => {
+    if (operationRef.current) return;
+    operationRef.current = 'preparing';
+    setPhase('preparing');
+    let workAvailable = false;
+    try {
+      const tracking = await getTrackingState();
+      workAvailable = Boolean(tracking.policy.enabled && tracking.canTrack);
+    } catch { /* Attendance remains available when tracking is unavailable. */ }
+    setAttendanceOnly(!workAvailable);
+    operationRef.current = 'selecting';
+    setShowWorkSelection(true);
+    setPhase('idle');
+  };
+  const closeWorkSelection = () => {
+    if (operationRef.current === 'submitting') return;
+    operationRef.current = null;
+    setShowWorkSelection(false);
+    setPhase('idle');
+  };
+  const confirmCheckIn = async (workSelection, idempotencyKey) => {
+    if (operationRef.current !== 'selecting') return false;
+    operationRef.current = 'submitting';
+    const success = await runAction(attendanceApi.checkIn, 'Checked in', { requestedWorkMode: selectedWorkMode, workSelection, idempotencyKey });
+    operationRef.current = success ? null : 'selecting';
+    return success;
+  };
+  const handleCheckOut = async () => {
+    if (operationRef.current) return;
+    operationRef.current = 'submitting';
+    setPhase('submitting');
+    try {
+      if (!await stopDesktopCapture()) toast.warning(DESKTOP_RESTART_MESSAGE);
+      await runAction(attendanceApi.checkOut, 'Checked out');
+    } finally {
+      operationRef.current = null;
+      setPhase('idle');
+      await window.flowtaskDesktop?.tracking?.refresh();
+    }
+  };
 
-  const isBusy = phase === 'locating' || phase === 'submitting';
-  const busyLabel = phase === 'locating' ? 'Locating…' : status.activeSession ? 'Checking Out…' : 'Checking In…';
+  const isBusy = ['preparing', 'locating', 'submitting'].includes(phase);
+  const busyLabel = phase === 'locating' ? 'Locating…' : showWorkSelection || !status.activeSession ? 'Checking In…' : 'Checking Out…';
 
   const mode = status.activeSession?.workMode || status.activeSession?.checkIn?.workMode || selectedWorkMode || status.defaultWorkMode;
   const modeControl = mode ? <label className="welcome-work-mode" title="Today's Work Mode">
@@ -216,21 +265,25 @@ const AttendanceQuickControl = () => {
   </label> : null;
   const attendanceDetails = <div className="space-y-2 text-xs">
     {status.activeSession && <p>Checked in · {formatHours(liveMinutes)}</p>}
-    {mode && <p>Today's Work Mode: <strong>{mode}</strong></p>}
     {status.completed && typeof status.workedMinutes === 'number' && <p>Worked {formatHours(status.workedMinutes)} today</p>}
     {!isDesktop && !status.completed && (status.activeSession || status.canCheckIn) && <p>Use the FlowTask desktop app to check in and check out.</p>}
-    {status.unresolvedMissedCheckout && <p className="text-amber-700 dark:text-amber-300">Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance</p>}
+    {status.unresolvedMissedCheckout && <p>Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance</p>}
   </div>;
   let content;
-  if (isBusy && isDesktop) content = <button type="button" disabled className="welcome-action"><Loader2 size={15} className="animate-spin" />{busyLabel}</button>;
+  if (isBusy && isDesktop) content = <button type="button" disabled aria-busy="true" className="welcome-action"><Loader2 size={15} className="animate-spin" />{busyLabel}</button>;
   else if (status.completed) content = <span className="welcome-attendance-label"><CheckCircle2 size={15} />Attendance Completed</span>;
   else if (status.activeSession) content = isDesktop ? <button type="button" onClick={handleCheckOut} className="welcome-action"><LogOut size={15} />Check Out</button> : null;
   else if (status.canCheckIn) content = isDesktop ? <button type="button" onClick={handleCheckIn} className="welcome-action"><LogIn size={15} />Check In</button> : null;
   else content = <span className="welcome-attendance-label"><MapPin size={15} />{friendlyBlockingLabel(status.blockingReason)}</span>;
 
   return <>
-    <TrackingPanel compact attendanceHeader={modeControl} attendanceActions={content} attendanceDetails={attendanceDetails} attendanceWarning={Boolean(status.unresolvedMissedCheckout)} />
-    {isDesktop && showWorkSelection && <WorkSelectionModal checkingIn onClose={() => setShowWorkSelection(false)} onConfirm={confirmCheckIn} />}
+    {status.activeSession
+      ? <TrackingPanel compact attendanceHeader={modeControl} attendanceActions={content} attendanceDetails={attendanceDetails} attendanceWarning={Boolean(status.unresolvedMissedCheckout)} />
+      : (content || !isDesktop || status.unresolvedMissedCheckout) && <div className="welcome-controls welcome-check-in">
+          {content}
+          {(status.completed || status.unresolvedMissedCheckout || !isDesktop) && attendanceDetails}
+        </div>}
+    {isDesktop && showWorkSelection && <WorkSelectionModal checkingIn attendanceOnly={attendanceOnly} workModeControl={modeControl} onClose={closeWorkSelection} onConfirm={confirmCheckIn} />}
   </>;
 
 };

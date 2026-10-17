@@ -60,3 +60,19 @@
 @media (prefers-reduced-motion: reduce) {
   .welcome-header *, .welcome-header *::before { animation: none !important; transition: none !important; }
 }
+
+/* Before server-confirmed attendance, reserve space only for the attendance action. */
+.welcome-check-in { container-type: normal; display: flex; flex-direction: column; align-items: flex-start; gap: .65rem; color: #fff; }
+.welcome-attendance-info, .welcome-work-provenance { margin-top: .65rem; color: #ffffffbf; font-size: .7rem; overflow-wrap: anywhere; }
+.welcome-attendance-info .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: .35rem; }
+.welcome-secondary-actions { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; }
+.welcome-secondary-actions > a, .welcome-secondary-actions > button { padding: .6rem; border-radius: .5rem; text-align: left; }
+.welcome-secondary-actions > a:hover, .welcome-secondary-actions > button:hover { background: var(--color-hover-bg, #64748b15); }
+.welcome-check-in-mode .welcome-work-mode { color: var(--color-text-primary); background: var(--color-card-bg); border: 1px solid var(--color-border-default); font-size: .875rem; }
+@container (min-width: 880px) {
+  .welcome-layout:has(.welcome-check-in) { grid-template-columns: minmax(0, 1fr) auto; }
+  .welcome-layout:has(.welcome-check-in) .welcome-copy { border-right: 0; padding-right: 0; }
+  .welcome-check-in { align-items: flex-end; max-width: 22rem; }
+}
+
+.welcome-check-in > .welcome-action { white-space: nowrap; }

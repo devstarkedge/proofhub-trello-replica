@@ -12,7 +12,7 @@ import { formatTrackingClock as duration } from '../../utils/duration';
 const style = { color:'var(--color-text-primary)',backgroundColor:'var(--color-card-bg)',borderColor:'var(--color-border-default)' };
 export default function TrackingPanel({ compact = false, attendanceHeader, attendanceActions, attendanceDetails, attendanceWarning = false }) {
   const {state,error,reload} = useWorkTracking();
-  const [detailsOpen,setDetailsOpen] = useState(false), detailsId = useId(), detailsFocus = useRef(null);
+  const [detailsOpen,setDetailsOpen] = useState(false), [detailsView,setDetailsView] = useState('actions'), detailsId = useId(), detailsFocus = useRef(null);
   useEffect(()=>{setDetailsOpen(false);},[state?.workspaceId]);
   const [clock,setClock] = useState(0), [selecting,setSelecting] = useState(()=>new URLSearchParams(window.location.search).get('start')==='1'?'work':false), [busy,setBusy] = useState(false);
   const isDesktop=window.flowtaskDesktop?.isDesktop===true;
@@ -31,6 +31,7 @@ export default function TrackingPanel({ compact = false, attendanceHeader, atten
     setBusy(true);try{if(name==='pause'&&!await stopDesktopCapture())toast.warning(DESKTOP_RESTART_MESSAGE);await changeWork(name,{selection,operationId,expectedRevision:session?.revision??null});await window.flowtaskDesktop?.tracking?.refresh();await reload();window.dispatchEvent(new Event('flowtask:tracking-refresh'));return true;}
     catch(e){toast.error(errorMessage(e));await window.flowtaskDesktop?.tracking?.refresh();await reload();return false;}finally{setBusy(false);}
   };
+  const nativeError = compact && !scopedNative?.errorCode && session?.status !== 'RUNNING' && scopedNative?.error === 'Work is not running' ? '' : scopedNative?.error;
   const diagnostics = <>
     <p className="mt-2 text-xs" role="status">{capture.replaceAll('-',' ')}{scopedNative?.pending ? ` · ${scopedNative.pending} uploads pending`:''}</p>
     {isDesktop&&scopedNative?.pending>0&&<p className="mt-1 text-xs">Pending screenshots retry automatically when connected.</p>}
@@ -38,28 +39,26 @@ export default function TrackingPanel({ compact = false, attendanceHeader, atten
     {isDesktop&&scopedNative?.pending>0&&!scopedNative.updateRequired&&scopedNative.capabilities?.retryUploads&&typeof window.flowtaskDesktop?.tracking?.retryUploads==='function'&&<button disabled={retrying} className="mt-2 text-xs underline" onClick={async()=>{setRetrying(true);try{setNative(normalizeDesktopTrackingStatus(await window.flowtaskDesktop.tracking.retryUploads()));}catch(e){toast.error(e.message);}finally{setRetrying(false);}}}>{retrying?'Retrying uploads…':'Retry uploads now'}</button>}
     {isDesktop&&!scopedNative?.updateRequired&&['DEVICE_CONFLICT','DEVICE_TRANSFERRED'].includes(scopedNative?.errorCode)&&typeof window.flowtaskDesktop?.tracking?.claimMonitoring==='function'&&<div className="mt-2 space-y-1 text-xs"><p>Move monitoring here and stop it on your other desktop. Saved uploads and work time are preserved.</p><button disabled={claiming} className="underline" onClick={async()=>{setClaiming(true);try{setNative(normalizeDesktopTrackingStatus(await window.flowtaskDesktop.tracking.claimMonitoring()));await reload();}catch(e){toast.error(e.message);}finally{setClaiming(false);}}}>{claiming?'Moving monitoring…':'Use this desktop'}</button></div>}
     {isDesktop&&scopedNative?.protectedCopies>0&&<p className="mt-1 text-xs text-amber-600">{scopedNative.protectedCopies} captures exceeded the size/readability limit. Activity is recorded; these are not pending uploads.</p>}
-    {scopedNative?.error&&<p className="mt-1 text-xs">{scopedNative.error}</p>}
+    {nativeError&&<p className="mt-1 text-xs">{nativeError}</p>}
     {device?.lastUploadError&&<p role="alert" className="mt-1 text-xs">Desktop upload: {device.lastUploadError}</p>}
     {isDesktop&&scopedNative?.noticeRequired&&<button className="mt-2 text-xs underline" onClick={()=>window.dispatchEvent(new Event('flowtask:monitoring-notice'))}>Review monitoring notice</button>}
     {isDesktop&&!scopedNative?.noticeRequired&&(scopedNative?.state==='permission-required'||scopedNative?.state==='monitoring'&&scopedNative?.error)&&<button className="mt-2 text-xs underline" onClick={()=>window.flowtaskDesktop.tracking.recoverPermissions().catch(e=>toast.error(e.message))}>Review desktop permissions</button>}
-    {compact&&<Link className="mt-2 block text-xs underline" to="/time-tracking">Timesheets and screenshots</Link>}
     {error&&<p role="alert" className="mt-2 text-xs">{error}</p>}
 
   </>;
   const workModal = selecting && state.canTrack && <WorkSelectionModal currentSession={session} linking={selecting==='link'} onClose={()=>setSelecting(false)} onConfirm={(selection,operationId)=>action(selecting==='link'?'link':session?'switch':'start',selection,operationId)} />;
   if (compact) {
-    const moduleStatus = state.policy.activationState?.replaceAll('_',' ') || (state.policy.enabled ? 'ENABLED' : 'DISABLED');
     const running = state.policy.enabled && session?.status === 'RUNNING', paused = session?.status === 'PAUSED';
     const label = !state.policy.enabled ? 'Disabled' : running ? 'Running' : paused ? 'Paused' : 'Enabled';
     const project = latest ? latest.attributedProjectName || (latest.agenda ? `${latest.agendaTitle} — ${latest.description}` : latest.projectName) : 'No work selected';
     const task = latest ? latest.attributedTaskTitle || (latest.kind === 'TASK' ? latest.taskTitle : 'Individual agenda work') : 'Start work after checking in';
-    const warning = Boolean(attendanceWarning || error || scopedNative?.error || scopedNative?.uploadError || device?.lastUploadError || scopedNative?.protectedCopies);
-    const showDetails = event => {detailsFocus.current = event.currentTarget;setDetailsOpen(true);};
+    const warning = Boolean(attendanceWarning || error || nativeError || scopedNative?.uploadError || device?.lastUploadError || scopedNative?.protectedCopies);
+    const showDetails = event => {detailsFocus.current = event.currentTarget;setDetailsView('monitoring');setDetailsOpen(true);};
     return <div className="welcome-controls welcome-tracking-panel">
       <Popover.Root open={detailsOpen} onOpenChange={setDetailsOpen}>
         <div className="welcome-tracking-header">
           <div className="welcome-tracking-state"><span className={`welcome-status-dot ${running?'is-running':paused?'is-paused':''}`} aria-hidden="true"/><span>Time Tracking</span><span className={`welcome-state-badge ${running?'is-running':''}`}>{label}</span></div>
-          <div className="welcome-header-actions">{attendanceHeader}<Popover.Trigger asChild><button type="button" className="welcome-more" aria-label="Attendance and tracking details" onClick={event=>{detailsFocus.current=event.currentTarget;}}><MoreHorizontal size={19}/></button></Popover.Trigger></div>
+          <div className="welcome-header-actions">{attendanceHeader}<Popover.Trigger asChild><button type="button" className="welcome-more" aria-label="More tracking actions" onClick={event=>{detailsFocus.current=event.currentTarget;setDetailsView('actions');}}><MoreHorizontal size={19}/></button></Popover.Trigger></div>
         </div>
         <div className="welcome-tracking-context">
           <div className="welcome-project"><span className="welcome-project-icon"><FolderKanban size={20}/></span><div className="min-w-0"><p title={project} className="welcome-project-name">{project}</p><p title={task} className="welcome-task-name">{task}</p></div></div>
@@ -73,20 +72,21 @@ export default function TrackingPanel({ compact = false, attendanceHeader, atten
           </>}
           {attendanceActions}
         </div>
+        <div className="welcome-attendance-info">{attendanceDetails}</div>
+        {latest?.agenda && latest.attributedTask && <p className="welcome-work-provenance">Origin: {latest.agendaTitle} — {latest.description} · Task attribution: {latest.attributionIncluded ? 'Yes' : 'No'}</p>}
+        {latest?.assignedAt && <p className="welcome-work-provenance">Assigned {new Date(latest.assignedAt).toLocaleString()} · pre-assignment {duration(session.totals.preAssignmentSeconds)} · assigned {duration(session.totals.assignedSeconds+(running&&open?.kind==='TASK'?delta:0))}</p>}
         <div className="welcome-monitoring-summary" role="status"><span className="welcome-capture-label" title={capture}>{capture.replaceAll('-',' ')}</span>
           {scopedNative?.pending>0 && <button type="button" className="welcome-status-chip" onClick={showDetails} aria-expanded={detailsOpen} aria-controls={detailsId} aria-haspopup="dialog"><CloudUpload size={13}/>{scopedNative.pending} uploads pending</button>}
           {warning && <button type="button" className="welcome-status-chip welcome-warning-chip" onClick={showDetails} aria-expanded={detailsOpen} aria-controls={detailsId} aria-haspopup="dialog"><TriangleAlert size={13}/>Needs attention</button>}
         </div>
-        <Popover.Portal><Popover.Content id={detailsId} sideOffset={10} collisionPadding={12} align="end" className="welcome-details-popover" aria-label="Attendance and tracking details" onCloseAutoFocus={event=>{if(detailsFocus.current?.isConnected){event.preventDefault();detailsFocus.current.focus();}}}>
-          <h2 className="mb-3 text-sm font-semibold">Attendance &amp; tracking details</h2>
-          <p className="mb-3 text-xs">Time Tracking · {moduleStatus}{session ? ` · ${session.status.toLowerCase()}` : ''}</p>
-          {latest && <div className="mb-3 space-y-1 break-words text-sm"><p className="font-semibold">{project}</p><p>{task}</p></div>}
-          {latest?.agenda && latest.attributedTask && <p className="mb-3 text-xs">Origin: {latest.agendaTitle} — {latest.description} · Task attribution: {latest.attributionIncluded ? 'Yes' : 'No'}</p>}
-          {attendanceDetails}
-          {latest?.assignedAt && <p className="mt-3 text-xs">Assigned {new Date(latest.assignedAt).toLocaleString()} · pre-assignment {duration(session.totals.preAssignmentSeconds)} · assigned {duration(session.totals.assignedSeconds+(running&&open?.kind==='TASK'?delta:0))}</p>}
-          {state.canManagePolicy && <Link className="mt-3 block text-xs underline" to="/workspace-settings">Workspace tracking configuration</Link>}
-          {latest?.kind==='INDIVIDUAL' && session?.status!=='CLOSED' && state.attendance && state.canTrack && <button type="button" className="mt-3 text-xs underline" disabled={busy} onClick={()=>{setDetailsOpen(false);setSelecting('link');}}>Link assigned task</button>}
-          <div className="welcome-diagnostics">{diagnostics}</div>
+        <Popover.Portal><Popover.Content id={detailsId} sideOffset={10} collisionPadding={12} align="end" className="welcome-details-popover" aria-label={detailsView === 'actions' ? 'More tracking actions' : 'Monitoring status'} onCloseAutoFocus={event=>{if(detailsFocus.current?.isConnected){event.preventDefault();detailsFocus.current.focus();}}}>
+          <h2 className="mb-3 text-sm font-semibold">{detailsView === 'actions' ? 'More actions' : 'Monitoring status'}</h2>
+          {detailsView === 'actions' ? <nav aria-label="Tracking actions" className="welcome-secondary-actions">
+            <Link to="/time-tracking">Timesheets and screenshots</Link>
+            {state.canManagePolicy && <Link to="/workspace-settings">Workspace tracking configuration</Link>}
+            {latest?.kind==='INDIVIDUAL' && session?.status!=='CLOSED' && state.attendance && state.canTrack && <button type="button" disabled={busy} onClick={()=>{setDetailsOpen(false);setSelecting('link');}}>Link assigned task</button>}
+            <button type="button" onClick={()=>setDetailsView('monitoring')}>Monitoring status and recovery</button>
+          </nav> : <>{diagnostics}<button type="button" className="mt-3 text-xs underline" onClick={()=>setDetailsView('actions')}>Back to actions</button></>}
         </Popover.Content></Popover.Portal>
       </Popover.Root>
       {workModal}
