@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
     retryUploads: () => ipcRenderer.invoke('desktop-tracking:retry-uploads'),
     claimMonitoring: () => ipcRenderer.invoke('desktop-tracking:claim-monitoring'),
     policyChanged: value => ipcRenderer.invoke('desktop-tracking:policy',value),
+    finalizeSession: value => ipcRenderer.invoke('desktop-tracking:finalize-session',value),
     stop: () => ipcRenderer.invoke('desktop-tracking:stop'),
     acceptNotice: value => ipcRenderer.invoke('desktop-tracking:notice',value),
     recoverPermissions: () => ipcRenderer.invoke('desktop-tracking:permissions'),

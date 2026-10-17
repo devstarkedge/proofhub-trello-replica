@@ -54,6 +54,7 @@ const attendanceDaySchema = new mongoose.Schema({
   effectiveOfficeHoursGraceMinutes: { type: Number, default: null },
   effectiveOfficeHoursSource: { type: String, default: null },
 
+  evaluationRevision: { type: Number, default: 0 },
   presenceState: {
     type: String,
     enum: ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'ABSENT', 'MISSING_CHECKOUT'],

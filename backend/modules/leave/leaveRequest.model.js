@@ -74,6 +74,7 @@ const leaveRequestSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 leaveRequestSchema.index({ workspaceId: 1, requester: 1, status: 1 });
+leaveRequestSchema.index({workspaceId:1,requester:1,status:1,startDate:1,endDate:1},{name:'leave_attendance_coverage'});
 leaveRequestSchema.index({ workspaceId: 1, status: 1, startDate: 1 });
 leaveRequestSchema.index({ workspaceId: 1, requesterDepartmentIds: 1, status: 1 });
 // Stable newest/oldest pages for workspace, personal, and department OR scopes.

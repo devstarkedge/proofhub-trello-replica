@@ -18,6 +18,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   let locked=false,suspended=false,lastCapture=0,lastState='unavailable',lastError='',lastErrorCode='',lastCaptureAllowed=false;
   let leaseDeadlineMono=0;
   let realtime=null,haltRevision=0,captureEpoch=0;
+  const closedSessions=new Map(),closedAttendance=new Map();
   let noticeRequired=false,noticeVersion=1;
   let uploadError='',uploadErrorCode='',nextUploadRetryAt=null;
   const protectedEntries=new Set();
@@ -26,7 +27,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && new URL(event.senderFrame.url).origin===getOrigin(); };
   const publish = (state=lastState,error=lastError,code=error===lastError?lastErrorCode:'') => {
     lastState=state;lastError=error;lastErrorCode=code;
-    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size,uploadError,uploadErrorCode,nextUploadRetryAt,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
+    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size,uploadError,uploadErrorCode,nextUploadRetryAt,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
       policy:policy?{revision:policy.revision,enabled:policy.enabled,intervalSeconds:policy.intervalSeconds,retentionDays:policy.retentionDays,monitors:policy.monitors,blur:policy.blur}:null};
     const window=getWindow(); if(window&&!window.isDestroyed())window.webContents.send('desktop-tracking:status',value);
     if(window&&!window.isDestroyed())window.setTitle(state==='monitoring'?'FlowTask · Monitoring active':state==='offline'?'FlowTask · Monitoring offline':'FlowTask');
@@ -57,14 +58,26 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   function haltCapture(message='Desktop monitoring stopped'){
     captureEpoch++;capturing=false;lastCaptureAllowed=false;leaseDeadlineMono=0;noticeRequired=false;stopInput();counters.reset();publish('unavailable',message);
   }
+  function rememberClosure(value) {
+    const attendanceId=value.attendanceSessionId;
+    const ids=[...(value.workSessionIds||[])];
+    if(attendanceId){closedAttendance.set(String(attendanceId),value.cutoffAt||null);if(String(work?.attendanceSession)===String(attendanceId)&&work?._id)ids.push(String(work._id));}
+    for(const id of ids)closedSessions.set(String(id),value.cutoffAt||null);
+    for(const map of [closedSessions,closedAttendance])while(map.size>256)map.delete(map.keys().next().value);
+    if(work&&(closedSessions.has(String(work._id))||closedAttendance.has(String(work.attendanceSession)))){
+      // Do not fabricate a final screenshot/counter window at a past boundary.
+      // Previously completed encrypted entries continue through flush().
+      haltCapture('Checked out');work={...work,status:'CLOSED',...(value.cutoffAt?{endedAt:value.cutoffAt}:{})};
+    }
+  }
   function connectRealtime(){
     realtime?.disconnect();realtime=null;if(!credentials)return;
     try{
       let client;try{client=require('socket.io-client');}catch(error){if(!app.isPackaged)throw error;client=require(path.join(process.resourcesPath,'node_modules','socket.io-client'));}
       realtime=client.io(getBackendURL(),{auth:{...credentials},transports:['websocket','polling'],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:5000});
       realtime.on('tracking:policy-updated',value=>{haltPolicy(value);return sync();});
-      realtime.on('tracking:changed',value=>{if(String(value?.sessionId)===String(work?._id)&&['PAUSED','CLOSED'].includes(value?.status))haltCapture('Work is not running');return sync();});
-      realtime.on('attendance:checked-out',value=>{if(String(value?.userId)===String(credentials?.userId))haltCapture('Checked out');return sync();});
+      realtime.on('tracking:changed',value=>{if(value?.status==='CLOSED')rememberClosure({workSessionIds:[value.sessionId],cutoffAt:value.endedAt});else if(String(value?.sessionId)===String(work?._id)&&value?.status==='PAUSED')haltCapture('Work is not running');return sync();});
+      realtime.on('attendance:checked-out',value=>{if(String(value?.userId)===String(credentials?.userId)&&value?.session?._id)rememberClosure({attendanceSessionId:value.session._id,cutoffAt:value.session.checkOutAt});return sync();});
       realtime.on('tracking:device-updated',value=>{if(String(value?.deviceId)===String(device?._id)){if(value?.revoked)haltCapture('This desktop device was revoked');else if(value?.displaced)haltCapture('Monitoring was moved to another desktop');}return sync();});
       for(const event of ['attendance:checked-in','user-role-changed','department-bulk-assigned','department-bulk-unassigned','access-permissions-updated','workspace-membership-added'])realtime.on(event,()=>sync());
       for(const event of ['connect','realtime-recover'])realtime.on(event,async()=>{await sync();await retryQueuedUploads();});
@@ -208,7 +221,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
         }catch(error){
           if(scope!==generation)return;
           if([403,404,410].includes(error.status)){activeQueue.remove(name);publish('unavailable',error.message);}
-          else if(error.status===409&&error.code==='TRACKING_INVALID'){activeQueue.remove(name);publish('unavailable','Conflicting interval rejected; coverage gap recorded');}
+          else if(error.status===409&&['TRACKING_INVALID','CAPTURE_AFTER_CHECKOUT'].includes(error.code)){activeQueue.remove(name);publish('unavailable','Conflicting interval rejected; coverage gap recorded');}
           else {entry.attempts++;entry.nextAttempt=Date.now()+Math.min(60000,1000*2**Math.min(entry.attempts,6));entry.lastUploadError=error.status>=500?'Screenshot service could not finish the upload. Saved captures will retry.':String(error.message||'Upload unavailable').slice(0,300);entry.lastUploadErrorCode=String(error.code||'UPLOAD_UNAVAILABLE').slice(0,80);uploadError=entry.lastUploadError;uploadErrorCode=entry.lastUploadErrorCode;nextUploadRetryAt=entry.nextAttempt;activeQueue.update(name,entry);publish(lastState,lastError);break;}
         }
       }
@@ -239,6 +252,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       const beforeHeartbeat=performance.now();
       const next=await request(`/devices/${device._id}/heartbeat`,{sessionId:current.session?._id||null,state:lastState});if(scope!==generation)return;
       if(next.policy.revision<haltRevision)next.canCapture=false;
+      if(next.session&&(closedSessions.has(String(next.session._id))||closedAttendance.has(String(next.session.attendanceSession)))){next.canCapture=false;next.session={...next.session,status:'CLOSED'};}
       const anchorChanged=next.device.anchor.id!==device.anchor.id;
       const changedSession=work?._id!==next.session?._id;
       if(capturing&&(anchorChanged||changedSession||!next.canCapture||next.device.preferences.intervalSeconds!==device.preferences.intervalSeconds||JSON.stringify(next.device.preferences)!==JSON.stringify(device.preferences))){await stopCapture();}
@@ -266,7 +280,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     if(credentials?.userId===value?.userId&&credentials?.workspaceId===value?.workspaceId){const changed=credentials?.token!==value?.token;credentials=value;if(changed)connectRealtime();return publish();}
     // End capture synchronously before awaiting network or changing identity.
     // Completed encrypted entries remain in their user/workspace directory.
-    haltCapture();generation++;realtime?.disconnect();realtime=null;
+    haltCapture();generation++;closedSessions.clear();closedAttendance.clear();realtime?.disconnect();realtime=null;
     if(credentials&&device&&!device.revokedAt)await request(`/devices/${device._id}/release`,{}).catch(()=>{});
     credentials=value;device=null;work=null;policy=null;queue=null;anchorMono=null;uploadError='';uploadErrorCode='';nextUploadRetryAt=null;protectedEntries.clear();haltRevision=0;noticeRequired=false;lastState='unavailable';lastError='';lastErrorCode='';publish();
     clearInterval(timer);timer=null;clearInterval(syncTimer);syncTimer=null;clearInterval(uploadTimer);uploadTimer=null;
@@ -328,6 +342,15 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       if(scope!==generation)throw new Error('Desktop identity changed');
     }finally{busy=false;}
     await sync();await retryQueuedUploads();return publish();
+  });
+  ipcMain.handle('desktop-tracking:finalize-session',async(event,value)=>{
+    if(!trusted(event))throw new Error('Untrusted tracking sender');
+    if(!credentials||!value||!/^[a-f\d]{24}$/i.test(value.attendanceSessionId)||!Array.isArray(value.workSessionIds)||value.workSessionIds.some(id=>!/^[a-f\d]{24}$/i.test(id))||!Number.isFinite(Date.parse(value.cutoffAt)))throw new Error('Invalid completed attendance session');
+    rememberClosure(value);
+    const targetActive=work&&(closedSessions.has(String(work._id))||closedAttendance.has(String(work.attendanceSession)));
+    if(targetActive)publish('ready','');
+    flush().catch(()=>{});
+    return {stopped:!targetActive||!capturing,attendanceSessionId:value.attendanceSessionId,cutoffAt:value.cutoffAt,status:publish()};
   });
   ipcMain.handle('desktop-tracking:refresh',async event=>{if(!trusted(event))throw new Error('Untrusted tracking sender');await sync();return publish();});
   ipcMain.handle('desktop-tracking:policy',async(event,value)=>{

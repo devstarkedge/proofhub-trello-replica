@@ -1,4 +1,7 @@
 import mongoose from 'mongoose';
+import AuditLog from '../../models/AuditLog.js';
+import { evaluateCheckout, assertCheckoutConfirmation } from './attendanceCheckout.service.js';
+import { enqueueAttendanceEvent, processAttendanceEvents } from './attendanceEvents.service.js';
 import { validateSelection, startWithAttendance, finalizeAttendanceWork } from '../tracking/tracking.service.js';
 import AttendanceSession from './attendanceSession.model.js';
 import AttendanceDay from './attendanceDay.model.js';
@@ -140,7 +143,7 @@ function evaluateCheckInBlockers(ctx) {
 /** Computes today's multi-dimensional status and upserts AttendanceDay to match — the one place either check-in or check-out writes that document. */
 export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, dbSession }) {
   const status = resolveAttendanceStatus({
-    eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, isDayOver: false
+    eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, isDayOver: false, workDateKey
   });
   const day = await AttendanceDay.findOneAndUpdate(
     { user: userId, workDateKey }, // workspaceId deliberately omitted from the filter — workspaceScopePlugin injects it; see attendanceMemberProfile.service.js for why duplicating it here would break the upsert.
@@ -197,24 +200,26 @@ export async function recomputeAttendanceDayForDate({ workspaceId, userId, membe
     : null;
 
   const eligibility = await resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy: policyVersion });
-  const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone });
-  const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant });
-  const workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion });
+  const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone, dbSession });
+  const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant, dbSession });
+  let workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion });
   // Resolved fresh, scoped to `dayInstant` — same treatment as
   // workModeResolution above, never pinned to a prior snapshot, since an
   // Office Hours Override is date-scoped (effectiveFrom/effectiveUntil)
   // the same way a Work Mode Override already is (spec §35: recompute
   // using the configuration applicable TO THAT DATE, not "current" state).
-  const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift });
+  const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift, dbSession });
 
   const rawSessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
+  const recordedMode = rawSessions.find(session=>session.checkIn?.workMode)?.checkIn.workMode;
+  if(recordedMode && recordedMode !== 'HYBRID')workModeResolution={...workModeResolution,workMode:recordedMode,effectiveMode:recordedMode};
   const approvedRegularizations = await AttendanceRegularization.find({ workspaceId, requester: userId, workDateKey, status: 'APPROVED' }).session(dbSession).lean();
   const sessions = approvedRegularizations.length
     ? applyRegularizationOverlay({ sessions: rawSessions, approvedRegularizations })
     : rawSessions;
 
   return computeAndUpsertDay({
-    workspaceId, userId, workDateKey, eligibility, timezone, calendar, leave, workModeResolution,
+    workspaceId, userId, workDateKey, eligibility: existingDay ? {...eligibility,attendanceRequired:true} : eligibility, timezone, calendar, leave, workModeResolution,
     policyVersion, shift, officeHours, sessions, serverNow: new Date(), dbSession
   });
 }
@@ -232,7 +237,7 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
   const status = resolveAttendanceStatus({
     eligibility: ctx.eligibility, timezone: ctx.timezone, calendar: ctx.calendar, leave: ctx.leave,
     workModeResolution: ctx.workModeResolution, policyVersion: ctx.policyVersion, shift: ctx.shift, officeHours: ctx.officeHours,
-    sessions: ctx.sessions, serverNow: ctx.serverNow, isDayOver: false
+    sessions: ctx.sessions, serverNow: ctx.serverNow, isDayOver: false, workDateKey: ctx.workDateKey
   });
   const checkInBlocker = evaluateCheckInBlockers(ctx);
 
@@ -424,90 +429,33 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
   return result;
 }
 
-export async function checkOut({ workspaceId, userId, membership, workspace, gps = null, ipAddress = null, actorName = null }) {
-  const serverNow = new Date();
+export async function checkOut({ workspaceId, userId, membership, workspace, gps = null, ipAddress = null, actorName = null, attendanceSessionId = null, operationId = null, previewToken = null }) {
   const timezone = getWorkspaceTimezone(workspace);
-
-  // Reconcile overdue sessions for this user on demand before processing check-out
-  const reconciled = await reconcileOverdueSessionsForUser({ workspaceId, userId, workspace });
-  if (reconciled?.length > 0) {
-    const expiredSession = reconciled[0];
-    throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'), 400, 'MISSED_CHECKOUT_EXPIRED', {
-      workDateKey: expiredSession.workDateKey,
-      sessionId: expiredSession._id,
-      missedCheckoutCutoffAt: expiredSession.missedCheckoutCutoffAt
-    });
-  }
-
-  let overdueSessionToReconcile = null;
+  if (attendanceSessionId && !mongoose.isValidObjectId(attendanceSessionId)) throw codedError('Invalid attendance session',400,'INVALID_ATTENDANCE_SESSION');
+  if (operationId !== null && (typeof operationId !== 'string' || !/^[\w-]{8,128}$/.test(operationId))) throw codedError('Invalid checkout operation',400,'INVALID_CHECKOUT_OPERATION');
+  let overdueSessionToReconcile = null, result;
   const dbSession = await mongoose.startSession();
-  let result;
   try {
     await dbSession.withTransaction(async () => {
-      const existing = await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).session(dbSession);
-
-      if (!existing) {
-        // Check if there was a recent MISSED_CHECKOUT session (within last 5 minutes)
-        const recentMissed = await AttendanceSession.findOne({
-          workspaceId,
-          user: userId,
-          status: 'MISSED_CHECKOUT'
-        }).sort({ updatedAt: -1 }).session(dbSession).lean();
-
-        if (recentMissed && (serverNow.getTime() - new Date(recentMissed.updatedAt).getTime() < 300000)) {
-          throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'), 400, 'MISSED_CHECKOUT_EXPIRED', {
-            workDateKey: recentMissed.workDateKey,
-            sessionId: recentMissed._id,
-            missedCheckoutCutoffAt: recentMissed.missedCheckoutCutoffAt
-          });
-        }
-
-        // Idempotent-replay safety net (spec §85): a repeat checkout call
-        // for a session that's already closed today reads back as the
-        // same success, not an error (e.g. a network failure hid the
-        // first response and the client retried).
-        const mostRecent = await AttendanceSession.findOne({ workspaceId, user: userId }).sort({ checkInAt: -1 }).session(dbSession).lean();
-        const todaysKey = resolveWorkDateKey({ nowInstant: serverNow, timezone, shift: null });
-        if (['CLOSED', 'COMPLETED'].includes(mostRecent?.status) && mostRecent.workDateKey === todaysKey) {
-          result = { session: mostRecent, replay: true };
-          return;
-        }
-        throw codedError(friendlyAttendanceMessage('NO_ACTIVE_SESSION'), 400, 'NO_ACTIVE_SESSION');
+      const serverNow = new Date();
+      let existing = await AttendanceSession.findOne({workspaceId,user:userId,...(attendanceSessionId?{_id:attendanceSessionId}:{status:'ACTIVE'})}).session(dbSession);
+      if (!existing && !attendanceSessionId) {
+        const recent = await AttendanceSession.findOne({workspaceId,user:userId}).sort({checkInAt:-1}).session(dbSession);
+        if (recent && ['CLOSED','COMPLETED'].includes(recent.status) && recent.workDateKey === resolveWorkDateKey({nowInstant:serverNow,timezone,shift:null})) existing=recent;
       }
-
-      // Check if session passed cutoff inside transaction
-      let cutoff = existing.missedCheckoutCutoffAt;
-      if (!cutoff) {
-        const policyVersionDoc = await AttendancePolicyVersion.findById(existing.policyVersion).session(dbSession).lean();
-        const shiftDoc = existing.shift ? await AttendanceShift.findById(existing.shift).session(dbSession).lean() : null;
-        const dayInstant = dateOnlyToInstant(existing.workDateKey, timezone);
-        const officeHours = await resolveEffectiveOfficeHours({
-          workspaceId, userId, membership, date: dayInstant, policyVersion: policyVersionDoc, shift: shiftDoc
-        });
-        const resolved = calculateMissedCheckoutCutoff({
-          checkInAt: existing.checkInAt,
-          workDateKey: existing.workDateKey,
-          timezone,
-          policyVersion: policyVersionDoc,
-          shift: shiftDoc,
-          officeHours
-        });
-        cutoff = resolved.missedCheckoutCutoffAt;
+      if (!existing) throw codedError('No active attendance session. Refresh your attendance status.',409,'NO_ACTIVE_SESSION');
+      if (['CLOSED','COMPLETED'].includes(existing.status)) {
+        await finalizeAttendanceWork(existing,dbSession);
+        result={session:existing,replay:true,summary:existing.checkoutSummary||null};return;
       }
-
-      if (cutoff && serverNow.getTime() >= new Date(cutoff).getTime()) {
-        overdueSessionToReconcile = existing;
-        throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'), 400, 'MISSED_CHECKOUT_EXPIRED', {
-          workDateKey: existing.workDateKey,
-          sessionId: existing._id,
-          missedCheckoutCutoffAt: cutoff,
-          isOverdueSession: true
-        });
-      }
-
-      const policyVersion = await AttendancePolicyVersion.findById(existing.policyVersion).session(dbSession).lean();
-      const shift = existing.shift ? await AttendanceShift.findById(existing.shift).session(dbSession).lean() : null;
-
+      if (existing.status !== 'ACTIVE') throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'),409,'MISSED_CHECKOUT_EXPIRED');
+      // Leave approvals/cancellations update this same row in their transaction.
+      await AttendanceDay.updateOne({_id:existing.attendanceDay,workspaceId},{$inc:{evaluationRevision:1}},{session:dbSession});
+      const evaluation = await evaluateCheckout({workspaceId,userId,membership,workspace,attendance:existing.toObject(),at:serverNow,dbSession});
+      const {policyVersion,shift}=evaluation.context;
+      const cutoff=existing.missedCheckoutCutoffAt || calculateMissedCheckoutCutoff({checkInAt:existing.checkInAt,workDateKey:existing.workDateKey,timezone,policyVersion,shift,officeHours:evaluation.context.officeHours}).missedCheckoutCutoffAt;
+      if (+serverNow >= +new Date(cutoff)) { overdueSessionToReconcile=existing;throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'),409,'MISSED_CHECKOUT_EXPIRED'); }
+      assertCheckoutConfirmation(previewToken,evaluation,userId,workspaceId);
       let checkOutEvidence = {
         workMode: existing.checkIn.workMode, location: null, coordinates: null, reportedAccuracyMeters: null,
         capturedAt: null, distanceMeters: null, allowedRadiusMeters: null, ipAddress
@@ -556,64 +504,22 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
         }
       }
 
-      const closed = await AttendanceSession.findOneAndUpdate(
-        { _id: existing._id, workspaceId, status: 'ACTIVE' },
-        {
-          $set: {
-            status: 'COMPLETED',
-            closureReason: 'NORMAL_CHECKOUT',
-            checkOutAt: serverNow,
-            checkOut: checkOutEvidence
-          }
-        },
-        { session: dbSession, new: true }
-      );
-      if (!closed) {
-        // Lost a race with a concurrent checkout for the same session —
-        // the end state both callers wanted (closed) already holds.
-        const nowClosed = await AttendanceSession.findById(existing._id).session(dbSession).lean();
-        await finalizeAttendanceWork(nowClosed, dbSession);
-        result = { session: nowClosed, replay: true };
-        return;
-      }
 
-      const eligibility = await resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy: policyVersion });
-      const dayInstant = dateOnlyToInstant(closed.workDateKey, timezone);
-      const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone });
-      const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant });
-      const workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion });
-      // Pinned policyVersion/shift (captured at check-in) + a fresh,
-      // date-scoped Office Hours Override resolution — identical treatment
-      // to workModeResolution just above (see recomputeAttendanceDayForDate's
-      // own comment for why this is safe/correct, not a history leak).
-      const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift });
-      const daySessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey: closed.workDateKey }).session(dbSession).lean();
-
-      const { day } = await computeAndUpsertDay({
-        workspaceId, userId, workDateKey: closed.workDateKey, eligibility, timezone, calendar, leave,
-        workModeResolution, policyVersion, shift, officeHours, sessions: daySessions, serverNow, dbSession
-      });
-
-      await finalizeAttendanceWork(closed, dbSession);
-      result = { session: closed, replay: false, attendanceDay: day };
-    }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
-  } catch (err) {
-    if (overdueSessionToReconcile) {
-      try {
-        await reconcileOverdueSession({ session: overdueSessionToReconcile, workspace, reason: 'LATE_CHECKOUT_ATTEMPT' });
-      } catch (recErr) {
-        console.error('[Attendance] Late checkout attempt reconciliation error:', recErr.message);
-      }
-    }
-    throw err;
-  } finally {
-    await dbSession.endSession();
-  }
-  if (!result.replay) {
-    try {
-      const observerUserIds = await resolveAttendanceObserverUserIds({ workspaceId, subjectUserId: userId, subjectDepartmentIds: membership.department });
-      attendanceHooks.onCheckedOut(userId, result.session, result.attendanceDay, observerUserIds);
-    } catch (error) { console.error('[Attendance] check-out realtime hook error:', error.message); }
-  }
+      const {context:_,fingerprint:__,...summary}=evaluation;
+      const closed=await AttendanceSession.findOneAndUpdate({_id:existing._id,workspaceId,user:userId,status:'ACTIVE'},{$set:{status:'COMPLETED',closureReason:'NORMAL_CHECKOUT',checkOutAt:serverNow,checkOut:checkOutEvidence,checkoutOperationId:operationId,checkoutSummary:summary}},{new:true,session:dbSession});
+      if(!closed)throw codedError('Attendance changed concurrently. Retry checkout.',409,'ATTENDANCE_CHANGED');
+      const {day}=await computeAndUpsertDay({...evaluation.context,dbSession});
+      await finalizeAttendanceWork(closed,dbSession);
+      await AuditLog.create([{workspace:workspaceId,actor:userId,actorName,actorRole:membership.role,action:'ATTENDANCE_CHECKED_OUT',category:'attendance_management',targetType:'AttendanceSession',targetId:closed._id,
+        resourceLabel:`Attendance check-out: ${actorName||'Employee'}`,summary:`${actorName||'Employee'} checked out`,changes:{after:{workDateKey:closed.workDateKey,checkOutAt:serverNow,policyVersion:policyVersion._id,outcome:summary.outcome,approvedLeaveIds:summary.approvedLeaves.map(l=>l.requestId)}}}],{session:dbSession});
+      await enqueueAttendanceEvent({workspaceId,user:userId,key:`checkout-${closed._id}`,kind:'CHECKED_OUT',attendanceSession:closed._id,workDateKey:closed.workDateKey},dbSession);
+      result={session:closed,replay:false,attendanceDay:day,summary};
+    },{readConcern:{level:'snapshot'},writeConcern:{w:'majority'}});
+  } catch(error) {
+    if(overdueSessionToReconcile)await reconcileOverdueSession({session:overdueSessionToReconcile,workspace,reason:'LATE_CHECKOUT_ATTEMPT'}).catch(e=>console.error('[Attendance] overdue checkout recovery:',e.message));
+    throw error;
+  } finally {await dbSession.endSession();}
+  // Transport delivery is recoverable; a committed checkout is never reopened.
+  await processAttendanceEvents(workspaceId,{limit:2}).catch(error=>console.error('[Attendance] checkout delivery will retry:',error.message));
   return result;
 }

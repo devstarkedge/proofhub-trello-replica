@@ -9,7 +9,7 @@ import { id } from '../../authz/engine.js';
 import { can, projectVisibilityFilter, trackingContext } from './tracking.authorization.js';
 import { getActiveWorkspaceId, run } from '../workspaces/workspaceContext.js';
 import { emitToUser } from '../../realtime/emitters.js';
-import { TrackingPolicy, WorkSession, TrackingDevice, TaskAssignmentEvent, ActivityInterval,TrackingAgenda } from './tracking.models.js';
+import { TrackingPolicy, WorkSession, TrackingDevice, TrackingCaptureLease, TaskAssignmentEvent, ActivityInterval,TrackingAgenda } from './tracking.models.js';
 import { assertTimeline, closeTimeline, linkAssignment, endAssignment, summarize } from './tracking.timeline.js';
 import { trackingVisibility, departmentsOf, historicalDepartmentScope,trackingRole } from './tracking.visibility.js';
 
@@ -89,7 +89,7 @@ function pushAudit(session, type, at, actor, detail = '') {
 }
 export async function emitChanged(session) {
   if (!session) return;
-  try { emitToUser(session.user, 'tracking:changed', { workspaceId: session.workspaceId, sessionId: session._id, revision: session.revision, status:session.status }, session.workspaceId); } catch { /* persisted state is recovered on read */ }
+  try { emitToUser(session.user, 'tracking:changed', { workspaceId: session.workspaceId, sessionId: session._id, revision: session.revision, status:session.status,endedAt:session.endedAt }, session.workspaceId); } catch { /* persisted state is recovered on read */ }
   // Reuse personal workspace rooms; report updates never broadcast private
   // task/session identifiers to unrelated employees or custom roles.
   try{
@@ -119,16 +119,29 @@ export async function startWithAttendance({ attendance, selection, dbSession }) 
   return created;
 }
 export async function finalizeAttendanceWork(attendance, dbSession = null) {
-  const session = await WorkSession.findOne({ workspaceId: attendance.workspaceId, attendanceSession: attendance._id, endedAt: null }).session(dbSession).lean();
-  if (!session) return null;
+  if(!dbSession){
+    const transaction=await mongoose.startSession();let saved;
+    try{await transaction.withTransaction(async()=>{saved=await finalizeAttendanceWork(attendance,transaction);});}finally{await transaction.endSession();}
+    if(saved)await emitChanged(saved);return saved;
+  }
   const at = attendance.checkOutAt || attendance.missedCheckoutCutoffAt || attendance.reconciledAt;
-  if (!at) fail('Attendance closure requires an authoritative cutoff', 500);
-  closeTimeline(session, at);
-  pushAudit(session, 'ATTENDANCE_CLOSED', session.endedAt, session.user, attendance.closureReason || attendance.status);
-  const saved = await WorkSession.findOneAndUpdate({ _id: session._id, workspaceId: session.workspaceId, revision: session.revision },
-    { $set: { segments: session.segments, pauses: session.pauses || [], status: session.status, endedAt: session.endedAt, audit: session.audit }, $inc: { revision: 1 } }, { new: true, session: dbSession });
-  if (!saved) fail('Work session changed concurrently; retry checkout', 409);
-  if (!dbSession) emitChanged(saved);
+  if (!at) fail('Attendance closure requires an authoritative cutoff',500);
+  const sessions=await WorkSession.find({workspaceId:attendance.workspaceId,attendanceSession:attendance._id}).session(dbSession).lean();
+  let saved=null;
+  for(const session of sessions){
+    if(session.status!=='CLOSED'||!session.endedAt||session.segments.some(s=>!s.endedAt)||(session.pauses||[]).some(p=>!p.endedAt)){
+      session.audit ||= [];
+      closeTimeline(session,new Date(Math.min(+new Date(at),session.endedAt?+new Date(session.endedAt):Infinity)));
+      if(!session.audit.some(a=>a.type==='ATTENDANCE_CLOSED'))pushAudit(session,'ATTENDANCE_CLOSED',session.endedAt,session.user,attendance.closureReason||attendance.status);
+      saved=await WorkSession.findOneAndUpdate({_id:session._id,workspaceId:session.workspaceId,revision:session.revision??{$exists:false}},
+        {$set:{segments:session.segments,pauses:session.pauses||[],status:session.status,endedAt:session.endedAt,audit:session.audit},$inc:{revision:1}},{new:true,session:dbSession});
+      if(!saved)fail('Work session changed concurrently; retry checkout',409);
+    }
+  }
+  const ids=sessions.map(s=>s._id);
+  await TrackingDevice.updateMany({workspaceId:attendance.workspaceId,user:attendance.user,activeSession:{$in:ids}},{$set:{activeSession:null,leaseUntil:at,releasedAt:at,state:'awaiting-stop'}},{session:dbSession});
+  // Retain the historical lease rows; only their future authorization is cut.
+  await TrackingCaptureLease.updateMany({workspaceId:attendance.workspaceId,user:attendance.user,session:{$in:ids},endedAt:{$gt:at}},{$set:{endedAt:at}},{session:dbSession});
   return saved;
 }
 export async function reconcileSession(sessionId,prepared=null) {
@@ -184,7 +197,7 @@ export async function reconcileSession(sessionId,prepared=null) {
     if (!changed) return session;
     const saved = await WorkSession.findOneAndUpdate({ _id: session._id, revision: session.revision },
       { $set: { segments: session.segments, pauses: session.pauses || [], audit: session.audit, status: session.status, endedAt: session.endedAt }, $inc: { revision: 1 } }, { new: true }).lean();
-    if (saved) { emitChanged(saved); return saved; }
+    if (saved) { if(saved.status==='CLOSED'&&attendance)await finalizeAttendanceWork(attendance);emitChanged(saved);return saved; }
   }
   fail('Work session is busy; retry', 409);
 }

@@ -61,22 +61,22 @@ export function buildContextFromRows({ timezone, holidays = [], workspaceCalenda
  * worth of Teams-grid cells, a report — never re-queries per cell.
  * Single-date callers should use `classifyDate` below instead.
  */
-export async function buildCalendarContext({ timezone, departmentIds = [], startDate, endDate }) {
+export async function buildCalendarContext({ timezone, departmentIds = [], startDate, endDate, dbSession = null }) {
   const uniqueDepartmentIds = Array.from(new Set((departmentIds || []).filter(Boolean).map(String)));
   const range = startDate && endDate ? { $gte: dateOnlyToInstant(startDate, timezone), $lte: dateOnlyToInstant(endDate, timezone) } : null;
 
   const [holidays, workspaceCalendars, departmentCalendars, recurringRules, dateOverrides] = await Promise.all([
-    Holiday.find(range ? { $or: [{ date: range }, { recurrenceRule: 'ANNUAL_SAME_DATE' }] } : {}).lean(),
-    WorkCalendar.find({ scope: 'workspace', isActive: true }).sort({ effectiveFrom: -1 }).lean(),
+    Holiday.find(range ? { $or: [{ date: range }, { recurrenceRule: 'ANNUAL_SAME_DATE' }] } : {}).session(dbSession).lean(),
+    WorkCalendar.find({ scope: 'workspace', isActive: true }).sort({ effectiveFrom: -1 }).session(dbSession).lean(),
     uniqueDepartmentIds.length
       ? WorkCalendar.find({ scope: 'department', departmentId: { $in: uniqueDepartmentIds }, isActive: true })
           .sort({ effectiveFrom: -1 })
-          .lean()
+          .session(dbSession).lean()
       : Promise.resolve([]),
     // Workspace-scoped only (no per-department recurring rules/overrides in
     // this pass — see workCalendarRule.model.js).
-    WorkCalendarRule.find({ isActive: true }).lean(),
-    WorkCalendarDateOverride.find(range ? { date: range } : {}).lean()
+    WorkCalendarRule.find({ isActive: true }).session(dbSession).lean(),
+    WorkCalendarDateOverride.find(range ? { date: range } : {}).session(dbSession).lean()
   ]);
 
   return buildContextFromRows({ timezone, holidays, workspaceCalendars, departmentCalendars, recurringRules, dateOverrides });

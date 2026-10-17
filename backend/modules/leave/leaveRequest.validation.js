@@ -81,10 +81,21 @@ export function assertDayTypeMatchesLeaveTypeCategory({ leaveType, dayType }) {
   }
 }
 
-export function assertShortLeaveDuration({ leaveType, policyRule, durationMinutes }) {
+export function shortLeaveWindowMinutes(start, end) {
+  const pattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!pattern.test(start || '') || !pattern.test(end || '') || start === end) return null;
+  const minutes = value => { const [h,m] = value.split(':').map(Number); return h*60+m; };
+  return (minutes(end)-minutes(start)+1440)%1440;
+}
+
+export function assertShortLeaveDuration({ leaveType, policyRule, durationMinutes, startLocalTime, endLocalTime }) {
   if (leaveType.category !== 'SHORT_LEAVE') return;
   if (!durationMinutes || durationMinutes <= 0) {
     throw new ErrorResponse('A short leave request must include a valid duration', 400);
+  }
+  if (startLocalTime !== undefined || endLocalTime !== undefined) {
+    const actual = shortLeaveWindowMinutes(startLocalTime,endLocalTime);
+    if (actual === null || Math.abs(actual-Number(durationMinutes)) > 0.01) throw new ErrorResponse('Short Leave start, end and duration must describe the same valid time window',400);
   }
   const max = policyRule?.maxDurationMinutesPerInstance;
   if (max && durationMinutes > max) {

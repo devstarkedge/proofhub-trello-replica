@@ -3,7 +3,7 @@ import { body } from 'express-validator';
 import { protect } from '../../middleware/authMiddleware.js';
 import { validate } from '../../middleware/validation.js';
 import { rateLimiter } from '../../middleware/rateLimiter.js';
-import { getMyTodayStatus, postCheckIn, postCheckOut } from './attendance.controller.js';
+import { getMyTodayStatus, postCheckIn, postCheckOut, previewCheckOut } from './attendance.controller.js';
 
 const router = express.Router();
 router.use(protect);
@@ -21,6 +21,7 @@ const checkInOutLimiter = rateLimiter({ windowMs: 5 * 60 * 1000, maxRequests: 30
 // never is) is decided server-side by attendance.service.js's eligibility
 // check, never by a route-level permission gate standing in for it.
 router.get('/me/today', getMyTodayStatus);
+router.get('/check-out/preview', previewCheckOut);
 router.post(
   '/check-in',
   checkInOutLimiter,
@@ -35,7 +36,7 @@ router.post(
 router.post(
   '/check-out',
   checkInOutLimiter,
-  [body('coordinates').optional().isArray({ min: 2, max: 2 }), body('reportedAccuracyMeters').optional().isNumeric(), validate],
+  [body('coordinates').optional().isArray({ min: 2, max: 2 }), body('reportedAccuracyMeters').optional().isNumeric(), body('attendanceSessionId').optional().isMongoId(), body('operationId').optional().isString().matches(/^[\w-]{8,128}$/), body('previewToken').optional().isString().isLength({max:4096}), validate],
   postCheckOut
 );
 

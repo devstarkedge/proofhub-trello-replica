@@ -1,4 +1,4 @@
-import LeaveRequest from '../leave/leaveRequest.model.js';
+import LeaveRequest, { APPROVED_STATUSES } from '../leave/leaveRequest.model.js';
 import LeaveRequestDay from '../leave/leaveRequestDay.model.js';
 
 /**
@@ -26,48 +26,23 @@ const DAY_TYPE_TO_LEAVE_STATE = {
 };
 
 /** The approved leave (if any) in effect for this user on this exact business date. `dayInstant` must already be a workspace-tz-midnight instant (dateOnlyToInstant), not a bare `new Date()`. */
-export async function resolveLeaveContextForDate({ workspaceId, userId, dayInstant }) {
-  const approvedRequests = await LeaveRequest.find({
-    workspaceId, requester: userId, status: 'APPROVED',
-    startDate: { $lte: dayInstant }, endDate: { $gte: dayInstant }
-  }).select('_id').lean();
-  if (!approvedRequests.length) return NONE_RESULT;
-
-  const requestIds = approvedRequests.map((r) => r._id);
-  const day = await LeaveRequestDay.findOne({ workspaceId, date: dayInstant, request: { $in: requestIds } })
-    .populate({ path: 'request', select: 'leaveType', populate: { path: 'leaveType', select: 'name category' } })
-    .lean();
-  if (!day) return NONE_RESULT;
-
-  const leaveState = DAY_TYPE_TO_LEAVE_STATE[day.dayType] || 'NONE';
-  if (leaveState === 'NONE') return NONE_RESULT;
-
-  const base = {
-    leaveState,
-    leaveTypeName: day.request?.leaveType?.name || null,
-    leaveTypeCategory: day.request?.leaveType?.category || null,
-    shortLeaveWindow: null
-  };
-
-  if (leaveState === 'FULL_LEAVE') {
-    return { ...base, attendanceExpected: false, presenceFractionCap: 0, leaveFraction: 1 };
-  }
-  if (leaveState === 'HALF_LEAVE_FIRST' || leaveState === 'HALF_LEAVE_SECOND') {
-    return { ...base, attendanceExpected: true, presenceFractionCap: 0.5, leaveFraction: 0.5 };
-  }
-  // SHORT_LEAVE never reduces the day's presence/leave fraction on its own
-  // — it only excuses the specific covered window from a late/early-exit
-  // flag. Callers use `shortLeaveWindow` for that check (see
-  // isTimeWithinShortLeaveWindow below); Short Leave's own duration
-  // validity was already enforced by the Leave module at submission time.
-  return {
-    ...base, attendanceExpected: true, presenceFractionCap: 1, leaveFraction: 0,
-    shortLeaveWindow: {
-      startLocalTime: day.shortLeaveStartTime,
-      endLocalTime: day.shortLeaveEndTime,
-      durationMinutes: day.shortLeaveDurationMinutes
-    }
-  };
+export async function resolveLeaveContextForDate({ workspaceId, userId, dayInstant, dbSession = null }) {
+  const requests = await LeaveRequest.find({ workspaceId, requester:userId, status:{$in:APPROVED_STATUSES}, startDate:{$lte:dayInstant}, endDate:{$gte:dayInstant} })
+    .select('_id leaveType status').session(dbSession).populate({path:'leaveType',select:'name category',options:{session:dbSession}}).lean();
+  if (!requests.length) return { ...NONE_RESULT, approvedLeaves:[] };
+  const days = await LeaveRequestDay.find({workspaceId,date:dayInstant,request:{$in:requests.map(r=>r._id)}}).session(dbSession).lean();
+  const approvedLeaves = days.map(day => {
+    const request=requests.find(r=>String(r._id)===String(day.request));
+    return {requestId:request._id,status:request.status,dayType:day.dayType,leaveTypeName:request.leaveType?.name||'Approved leave',leaveTypeCategory:request.leaveType?.category,
+      startLocalTime:day.shortLeaveStartTime,endLocalTime:day.shortLeaveEndTime,durationMinutes:day.shortLeaveDurationMinutes};
+  });
+  const full=days.some(d=>d.dayType==='FULL_DAY'), first=days.some(d=>d.dayType==='HALF_DAY_FIRST_HALF'),second=days.some(d=>d.dayType==='HALF_DAY_SECOND_HALF');
+  const leaveFraction=full||first&&second?1:first||second?0.5:0;
+  const short=approvedLeaves.find(d=>d.dayType==='SHORT_LEAVE');
+  return {leaveState:leaveFraction===1?'FULL_LEAVE':first?'HALF_LEAVE_FIRST':second?'HALF_LEAVE_SECOND':short?'SHORT_LEAVE':'NONE',
+    attendanceExpected:leaveFraction<1,presenceFractionCap:1-leaveFraction,leaveFraction,
+    leaveTypeName:approvedLeaves[0]?.leaveTypeName||null,leaveTypeCategory:approvedLeaves[0]?.leaveTypeCategory||null,
+    shortLeaveWindow:short?{startLocalTime:short.startLocalTime,endLocalTime:short.endLocalTime,durationMinutes:short.durationMinutes}:null,approvedLeaves};
 }
 
 /** 'HH:mm' string comparison — mirrors the same lexicographic convention used by attendanceShiftResolver.service.js. */

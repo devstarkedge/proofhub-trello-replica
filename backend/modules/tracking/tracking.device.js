@@ -151,9 +151,10 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   const session = await WorkSession.findOne({ _id: objectId(payload.sessionId), workspaceId, user: userId }).lean();
   if (!session) fail('Work session not found', 404);
   const conflicting = await TrackingDevice.findOne({ workspaceId, activeSession: session._id, _id: { $ne: device._id } }).lean();
-  const anchor = (device.anchors || [device.anchor]).find(a => a?.id === payload.anchorId)||await TrackingCaptureAnchor.findOne({device:device._id,id:payload.anchorId}).lean();
+  const anchor = (device.anchors?.length ? device.anchors : [device.anchor]).find(a => a?.id === payload.anchorId)||await TrackingCaptureAnchor.findOne({device:device._id,id:payload.anchorId}).lean();
   if (!anchor || !numeric(payload.startOffsetMs, 86400000) || !numeric(payload.endOffsetMs, 86400000) || payload.endOffsetMs <= payload.startOffsetMs) fail('Invalid monotonic interval anchor');
   const startedAt = new Date(+new Date(anchor.serverAt) + payload.startOffsetMs), endedAt = new Date(+new Date(anchor.serverAt) + payload.endOffsetMs);
+  if(session.endedAt && +endedAt>+new Date(session.endedAt))fail('Activity was recorded after attendance checkout',409,'CAPTURE_AFTER_CHECKOUT');
   const nextVersion=(policy.versions||[]).filter(v=>v.revision>anchor.policyRevision).sort((a,b)=>a.revision-b.revision)[0];
   if(nextVersion&&+endedAt>+new Date(nextVersion.effectiveAt))fail('Capture crosses a workspace configuration boundary',403);
   if(anchor.capturePolicy && (!anchor.capturePolicy.enabled||!anchor.capturePolicy.monitoringEnabled)||policy.disabledAt&&+endedAt>+new Date(policy.disabledAt)&&!policy.enabled)fail('Capture was not authorized by the effective workspace policy',403);
@@ -184,6 +185,8 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   if (!numeric(payload.activeSeconds, seconds + 0.05) || !numeric(payload.idleSeconds, seconds + 0.05) || Math.abs(payload.activeSeconds + payload.idleSeconds - seconds) > 0.1) fail('Active and idle measurements must cover the exact interval');
   const dbSession = await mongoose.startSession(); let saved;
   try { await dbSession.withTransaction(async () => {
+    const current=await WorkSession.findOne({_id:session._id,workspaceId,user:userId}).session(dbSession).lean();
+    if(!current||current.endedAt&&+endedAt>+new Date(current.endedAt))fail('Activity was recorded after attendance checkout',409,'CAPTURE_AFTER_CHECKOUT');
     // A device row write serializes concurrent interval submissions; the
     // overlap query alone would allow two inserts under snapshot isolation.
     await WorkSession.updateOne({ _id: session._id }, { $inc: { evidenceRevision: 1 } }, { session: dbSession });

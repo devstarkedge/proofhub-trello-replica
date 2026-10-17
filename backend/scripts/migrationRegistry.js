@@ -1,3 +1,4 @@
+import { runSmartCheckoutMigration } from './migrateSmartCheckout.js';
 /**
  * Migration Registry
  *
@@ -107,6 +108,7 @@ const MIGRATIONS = [
     run: runWorkTrackingMigration,
   },
   {name:'tracking_workspace_configuration_agendas',version:'20261015',description:'Require explicit Admin activation and seed workspace agendas without changing historical retention',run:runTrackingConfigurationMigration},
+  {name:'smart_checkout_indexes',version:'20261017',description:'Add durable attendance event and approved-leave coverage indexes without changing historical attendance',run:runSmartCheckoutMigration},
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

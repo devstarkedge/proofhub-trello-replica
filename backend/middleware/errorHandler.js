@@ -12,7 +12,9 @@ const errorHandler = (err, req, res, next) => {
   error.message = err.message;
 
   // Log error for debugging
-  console.error('Error:', err);
+  // A refreshed checkout preview contains a short-lived confirmation proof.
+  // Keep it in the caller's response, never in application logs.
+  console.error('Error:', err.code === 'CHECKOUT_RECONFIRM_REQUIRED' ? { code: err.code, message: err.message } : err);
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
@@ -63,6 +65,7 @@ const errorHandler = (err, req, res, next) => {
     // ALREADY_CHECKED_IN) — set via `err.code = '...'` at the throw site;
     // every existing caller that never sets it is unaffected.
     ...(err.code && { code: err.code }),
+    ...(err.code === 'CHECKOUT_RECONFIRM_REQUIRED' && err.checkoutPreview && { data: { checkoutPreview: err.checkoutPreview } }),
     ...(process.env.NODE_ENV === 'development' && err.code !== 11000 && { stack: err.stack })
   });
 };

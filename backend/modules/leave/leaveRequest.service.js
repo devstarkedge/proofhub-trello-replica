@@ -1,3 +1,4 @@
+import { enqueueLeaveAttendanceChanges } from '../attendance/attendanceEvents.service.js';
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
 import { normalizeLeaveClientId, isLeaveClientIdDuplicate } from '../../utils/leaveRequestIdentity.js';
@@ -110,7 +111,7 @@ export async function submitLeaveRequest({
 
   assertDayTypeMatchesLeaveTypeCategory({ leaveType, dayType });
   if (leaveType.category === 'SHORT_LEAVE') {
-    assertShortLeaveDuration({ leaveType, policyRule, durationMinutes: shortLeaveDurationMinutes });
+    assertShortLeaveDuration({ leaveType, policyRule, durationMinutes: shortLeaveDurationMinutes, startLocalTime: shortLeaveStartTime, endLocalTime: shortLeaveEndTime });
   }
   assertHalfDayAllowed({ leaveType, policyRule, dayType });
 
@@ -373,6 +374,7 @@ async function finalizeApprovedCancellation({ workspaceId, request, actor, reaso
     finalReason: reason || ''
   };
   await request.save({ session });
+  await enqueueLeaveAttendanceChanges(request,session);
 
   await AuditLog.create([auditEntry({
     workspaceId, actor: actorId, action: `LEAVE_${resultingStatus}`, targetId: request._id,

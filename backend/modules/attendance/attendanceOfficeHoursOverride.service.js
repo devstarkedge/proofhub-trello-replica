@@ -41,14 +41,14 @@ async function scopeName(scopeType, scopeId) {
 }
 
 /** Highest-precedence matching override for (userId, date), or null — same algorithm as resolveEffectiveWorkModePolicy. */
-async function resolveWinningOverride({ workspaceId, userId, membership, date }) {
+async function resolveWinningOverride({ workspaceId, userId, membership, date, dbSession = null }) {
   const roleId = await resolveEffectiveRoleId({ workspaceId, membership });
   const departmentIds = (membership?.department || []).map(String);
 
   const candidates = await AttendanceOfficeHoursOverride.find({
     workspaceId, isActive: true, effectiveFrom: { $lte: date },
     $or: [{ effectiveUntil: null }, { effectiveUntil: { $gte: date } }]
-  }).lean();
+  }).session(dbSession).lean();
 
   const matching = candidates.filter((o) => {
     if (o.scopeType === 'USER') return String(o.scopeId) === String(userId);
@@ -85,8 +85,8 @@ function firstDefined(...values) {
  * function never re-resolves either, keeping each concern owned by exactly
  * one file (same architecture as attendanceStatusResolver.service.js).
  */
-export async function resolveEffectiveOfficeHours({ workspaceId, userId, membership, date, policyVersion, shift = null }) {
-  const winner = await resolveWinningOverride({ workspaceId, userId, membership, date });
+export async function resolveEffectiveOfficeHours({ workspaceId, userId, membership, date, policyVersion, shift = null, dbSession = null }) {
+  const winner = await resolveWinningOverride({ workspaceId, userId, membership, date, dbSession });
 
   const shiftValues = {
     startLocalTime: shift?.startLocalTime ?? null,

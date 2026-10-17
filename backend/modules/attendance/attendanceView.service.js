@@ -59,7 +59,8 @@ function buildDayFilter({ workspaceId, userIdFilter, startDate, endDate, status,
     if (startDate) filter.workDateKey.$gte = startDate;
     if (endDate) filter.workDateKey.$lte = endDate;
   }
-  if (status) filter.presenceState = status;
+  if (status==='ON_LEAVE')filter.leaveState='FULL_LEAVE';
+  else if(status){filter.presenceState=status;filter.leaveState={$ne:'FULL_LEAVE'};}
   if (workMode) filter.workMode = workMode;
   return filter;
 }
@@ -90,7 +91,7 @@ export async function getAttendanceView({ viewer, workspaceId, startDate, endDat
   return { scope: access.scope, records };
 }
 
-const SUMMARY_STATES = ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'ABSENT', 'MISSING_CHECKOUT'];
+const SUMMARY_STATES = ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'ABSENT', 'MISSING_CHECKOUT', 'ON_LEAVE'];
 
 /**
  * Dashboard summary counts (spec §10-12), scoped identically to
@@ -112,7 +113,7 @@ export async function getAttendanceDashboardSummary({ viewer, workspaceId, start
 
   const rows = await AttendanceDay.aggregate([
     { $match: filter },
-    { $group: { _id: '$presenceState', count: { $sum: 1 } } }
+    { $group: { _id: { $cond:[{$eq:['$leaveState','FULL_LEAVE']},'ON_LEAVE','$presenceState'] }, count: { $sum: 1 } } }
   ]);
   rows.forEach((row) => {
     if (row._id in counts) counts[row._id] = row.count;
@@ -146,6 +147,11 @@ export async function getAttendanceSessionDetail({ viewer, workspaceId, sessionI
 
   const isSelf = String(viewerId) === String(targetUserId);
   if (isSelf) return session;
+
+  // Attendance visibility does not grant access to the subject's private
+  // checkout receipt, work-session IDs or approved-leave request references.
+  delete session.checkoutSummary;
+  delete session.checkoutOperationId;
 
   const access = await resolveAttendanceAccess({ viewer, workspaceId });
   if (access.reportPermissions?.canViewAudit) return session;

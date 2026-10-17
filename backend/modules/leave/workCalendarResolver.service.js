@@ -22,9 +22,9 @@ async function resolveTimezone(workspaceId) {
 }
 
 /** One date, fully resolved — the shape the spec calls resolveWorkspaceDay(workspaceId, date). */
-export async function resolveWorkspaceDay({ workspaceId, date, departmentId = null, timezone = null }) {
+export async function resolveWorkspaceDay({ workspaceId, date, departmentId = null, timezone = null, dbSession = null }) {
   const tz = timezone || await resolveTimezone(workspaceId);
-  const context = await buildCalendarContext({ timezone: tz, departmentIds: departmentId ? [departmentId] : [] });
+  const context = await buildCalendarContext({ timezone: tz, departmentIds: departmentId ? [departmentId] : [], startDate:instantToDateOnlyKey(date,tz), endDate:instantToDateOnlyKey(date,tz), dbSession });
   const result = classifyDateWithContext(context, date, departmentId);
   return {
     date: instantToDateOnlyKey(date, tz),

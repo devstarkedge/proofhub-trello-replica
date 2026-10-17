@@ -30,3 +30,17 @@ export async function stopDesktopCapture(){
     return false;
   }
 }
+
+// Only called after the server has durably closed this attendance cycle.
+export async function finalizeDesktopCapture(summary){
+  const tracking=window.flowtaskDesktop?.tracking;
+  if(!tracking)return false;
+  try{
+    const status=await tracking.getStatus();
+    if(!status.capabilities?.finalizeSession||typeof tracking.finalizeSession!=='function'){
+      await stopDesktopCapture();return false;
+    }
+    const result=await tracking.finalizeSession(summary);
+    return result?.stopped===true;
+  }catch{return false;}
+}

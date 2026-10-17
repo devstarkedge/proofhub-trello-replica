@@ -20,7 +20,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const message = error.response?.data?.message || 'An error occurred';
-    if (![403, 423].includes(error.response?.status)) toast.error(message);
+    if (![403, 423].includes(error.response?.status) && error.response?.data?.code !== 'CHECKOUT_RECONFIRM_REQUIRED') toast.error(message);
     return Promise.reject(error);
   }
 );
@@ -31,6 +31,7 @@ export const setupAttendanceModule = async () => (await api.post('/setup')).data
 // ─── Self-service (check-in/out) ───────────────────────────────────────────
 export const getMyTodayStatus = async () => (await api.get('/me/today')).data;
 export const checkIn = async (payload) => (await api.post('/check-in', payload)).data;
+export const getCheckoutPreview = async () => (await api.get('/check-out/preview', { headers: { 'Cache-Control':'no-cache' } })).data;
 export const checkOut = async (payload) => (await api.post('/check-out', payload)).data;
 
 // ─── Policy ─────────────────────────────────────────────────────────────────

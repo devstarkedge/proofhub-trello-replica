@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { isTimeWithinShortLeaveWindow } from './attendanceLeaveReconciliation.service.js';
+import { attendanceIntervals, intervalMinutes, subtractIntervals, scheduleForDay, resolveLeaveCoverage } from './attendanceIntervals.js';
 
 /**
  * The single centralized status resolver (spec §31-32). Every dashboard,
@@ -23,7 +23,7 @@ import { isTimeWithinShortLeaveWindow } from './attendanceLeaveReconciliation.se
  */
 export function resolveAttendanceStatus({
   eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift = null, officeHours = null,
-  sessions = [], serverNow = new Date(), isDayOver = false
+  sessions = [], serverNow = new Date(), isDayOver = false, workDateKey = null
 }) {
   if (!eligibility?.attendanceRequired) {
     throw new Error('resolveAttendanceStatus must never be called for a member who is not attendance-required — callers must short-circuit on eligibility first.');
@@ -59,8 +59,8 @@ export function resolveAttendanceStatus({
   // part of that chain itself.
   const officeHoursApplicable = resolvedModeForGating === 'OFFICE' && Boolean(officeHours?.startLocalTime && officeHours?.endLocalTime);
 
-  const effectiveGraceMinutes = officeHours?.graceMinutes ?? policyVersion.graceMinutes;
-  const effectiveEarlyExitGraceMinutes = officeHours?.earlyExitGraceMinutes ?? policyVersion.earlyExitGraceMinutes;
+  const effectiveGraceMinutes = officeHours?.graceMinutes ?? policyVersion.graceMinutes ?? 0;
+  const effectiveEarlyExitGraceMinutes = officeHours?.earlyExitGraceMinutes ?? policyVersion.earlyExitGraceMinutes ?? 0;
   // Full/half-day DURATION tiering stays mode-agnostic (unchanged, pre-
   // existing behavior) — only the clock-time late/early-exit verdict is
   // OFFICE-gated above; see this file's own module-level note on scope.
@@ -78,28 +78,15 @@ export function resolveAttendanceStatus({
   const closedCheckOuts = closedSessions.map((s) => s.checkOutAt).filter(Boolean);
   const lastCheckOutAt = closedCheckOuts.length ? new Date(Math.max(...closedCheckOuts.map((d) => new Date(d).getTime()))) : null;
 
-  const workedMinutes = sessions.reduce((sum, s) => {
-    if (!s.checkInAt) return sum;
-    const start = new Date(s.checkInAt).getTime();
-    if (['CLOSED', 'COMPLETED'].includes(s.status) && s.checkOutAt) {
-      const end = new Date(s.checkOutAt).getTime();
-      return sum + Math.max(0, end - start) / 60000;
-    }
-    if (s.status === 'ACTIVE' && !isDayOver) {
-      let activeEnd = serverNow.getTime();
-      if (s.missedCheckoutCutoffAt) {
-        const cutoffTime = new Date(s.missedCheckoutCutoffAt).getTime();
-        if (activeEnd > cutoffTime) {
-          activeEnd = cutoffTime;
-        }
-      }
-      return sum + Math.max(0, activeEnd - start) / 60000;
-    }
-    // MISSED_CHECKOUT or overdue active session contributes 0 verified minutes
-    return sum;
-  }, 0);
+  const attended = attendanceIntervals(sessions.filter(s=>!(isDayOver&&s.status==='ACTIVE')),serverNow);
+  const workedMinutes = intervalMinutes(attended);
+  const dayKey = workDateKey || (firstCheckInAt && DateTime.fromJSDate(firstCheckInAt).setZone(timezone).toISODate());
+  const schedule = scheduleForDay({workDateKey:dayKey,timezone,officeHours,shift});
+  const coverage = resolveLeaveCoverage(leave,schedule);
+  const excusedShortMinutes = intervalMinutes(subtractIntervals(coverage.shortIntervals,attended));
 
   const exceptionFlags = [];
+  if (coverage.unresolved) exceptionFlags.push('LEAVE_COVERAGE_UNRESOLVED');
   if (workedOnOffDay) exceptionFlags.push('WORKED_ON_OFF_DAY');
   if (sessions.some((s) => s.systemGeneratedCheckout)) exceptionFlags.push('SYSTEM_GENERATED_CHECKOUT');
   if (leave.leaveState === 'FULL_LEAVE' && sessions.length > 0) exceptionFlags.push('LEAVE_APPROVED_AFTER_ATTENDANCE');
@@ -148,31 +135,12 @@ export function resolveAttendanceStatus({
     };
   }
 
-  // Late arrival / early exit — computed from wall-clock minute-of-day in
-  // the workspace timezone, suppressed for any window validly covered by
-  // an approved Short Leave (spec §30, §46), and only ever computed at all
-  // when Office Hours actually apply to today's effective work mode.
-  let lateMinutes = 0;
-  let earlyExitMinutes = 0;
-  if (officeHoursApplicable && firstCheckInAt) {
-    const checkInLocal = DateTime.fromJSDate(firstCheckInAt, { zone: 'utc' }).setZone(timezone);
-    const checkInTimeStr = checkInLocal.toFormat('HH:mm');
-    const graceEndMinutes = minutesSinceMidnight(officeHours.startLocalTime) + effectiveGraceMinutes;
-    const checkInMinutes = checkInLocal.hour * 60 + checkInLocal.minute;
-    const isWithinShortLeave = leave.shortLeaveWindow && isTimeWithinShortLeaveWindow(leave.shortLeaveWindow, checkInTimeStr);
-    if (checkInMinutes > graceEndMinutes && !isWithinShortLeave) {
-      lateMinutes = checkInMinutes - graceEndMinutes;
-    }
-  }
-  if (officeHoursApplicable && lastCheckOutAt) {
-    const checkOutLocal = DateTime.fromJSDate(lastCheckOutAt, { zone: 'utc' }).setZone(timezone);
-    const checkOutTimeStr = checkOutLocal.toFormat('HH:mm');
-    const earlyExitBoundaryMinutes = minutesSinceMidnight(officeHours.endLocalTime) - effectiveEarlyExitGraceMinutes;
-    const checkOutMinutes = checkOutLocal.hour * 60 + checkOutLocal.minute;
-    const isWithinShortLeave = leave.shortLeaveWindow && isTimeWithinShortLeaveWindow(leave.shortLeaveWindow, checkOutTimeStr);
-    if (checkOutMinutes < earlyExitBoundaryMinutes && !isWithinShortLeave && !hasActiveSession) {
-      earlyExitMinutes = earlyExitBoundaryMinutes - checkOutMinutes;
-    }
+  // Only uncovered scheduled time can trigger punctuality penalties. UTC
+  // boundaries avoid minute-of-day errors on overnight shifts and DST dates.
+  let lateMinutes = 0, earlyExitMinutes = 0;
+  if (officeHoursApplicable && schedule && leave.leaveState !== 'FULL_LEAVE') {
+    if (firstCheckInAt) lateMinutes = Math.max(0,intervalMinutes(subtractIntervals([[+schedule.startedAt,Math.min(+firstCheckInAt,+schedule.endedAt)]],coverage.intervals))-effectiveGraceMinutes);
+    if (lastCheckOutAt && !hasActiveSession) earlyExitMinutes = Math.max(0,intervalMinutes(subtractIntervals([[Math.max(+lastCheckOutAt,+schedule.startedAt),+schedule.endedAt]],coverage.intervals))-effectiveEarlyExitGraceMinutes);
   }
 
   const punctualityState = hasActiveSession
@@ -191,8 +159,8 @@ export function resolveAttendanceStatus({
   // evidence for authorized review, which spec §84 explicitly forbids.
   const leaveCap = leave.presenceFractionCap ?? 1;
   let durationTier;
-  if (workedMinutes >= effectiveMinFullDayMinutes) durationTier = 'FULL';
-  else if (workedMinutes >= effectiveMinHalfDayMinutes) durationTier = 'HALF';
+  if (workedMinutes >= Math.max(0,effectiveMinFullDayMinutes-excusedShortMinutes)) durationTier = 'FULL';
+  else if (workedMinutes >= Math.max(0,effectiveMinHalfDayMinutes-excusedShortMinutes)) durationTier = 'HALF';
   else durationTier = 'INSUFFICIENT';
   if (leaveCap === 0.5 && durationTier === 'FULL') durationTier = 'HALF'; // a half-leave day can never present as a full day
 
@@ -204,7 +172,11 @@ export function resolveAttendanceStatus({
   if (durationTier === 'FULL' && (lateDemotes || earlyDemotes)) durationTier = 'HALF';
 
   let presenceState;
-  if (hasActiveSession) {
+  if (leave.leaveState === 'FULL_LEAVE') {
+    // Presence evidence is retained, but no attendance credit or absence penalty
+    // is manufactured for a day already fully covered by approved leave.
+    presenceState = workedMinutes > 0 || hasActiveSession ? 'PRESENT' : 'NOT_STARTED';
+  } else if (hasActiveSession) {
     presenceState = 'PRESENT'; // provisional — still mid-shift, not yet finalized
   } else if (durationTier === 'INSUFFICIENT') {
     presenceState = 'ABSENT';
@@ -215,21 +187,16 @@ export function resolveAttendanceStatus({
     presenceState = 'PRESENT';
   }
 
-  // Derived directly from the final presenceState (not re-computed from
-  // durationTier/leaveCap independently) so the two can never disagree.
-  const presenceFraction = presenceState === 'ABSENT' ? 0 : presenceState === 'HALF_PRESENT' ? 0.5 : 1;
+  // Approved full leave keeps all credit on the leave dimension, while
+  // actual presence timestamps/duration remain independently available.
+  const presenceFraction = leave.leaveState === 'FULL_LEAVE' || presenceState === 'NOT_STARTED' ? 0 : presenceState === 'ABSENT' ? 0 : presenceState === 'HALF_PRESENT' ? 0.5 : 1;
 
   return {
     calendarDayType, isCalendarWorkingDay, workMode,
     firstCheckInAt, lastCheckOutAt, workedMinutes: Math.round(workedMinutes), shiftExpectedMinutes: effectiveMinFullDayMinutes,
     lateMinutes: Math.round(lateMinutes), earlyExitMinutes: Math.round(earlyExitMinutes), ...officeHoursSnapshot,
-    presenceState, punctualityState,
+    presenceState, punctualityState: leave.leaveState === 'FULL_LEAVE' ? null : punctualityState,
     leaveState: leave.leaveState, presenceFraction, leaveFraction: leave.leaveFraction,
     exceptionFlags
   };
-}
-
-function minutesSinceMidnight(hhmm) {
-  const [h, m] = hhmm.split(':').map(Number);
-  return h * 60 + m;
 }

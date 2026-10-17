@@ -9,9 +9,9 @@ import { resolveResourceAccess } from '../permissions/permissionEngine.js';
 // Respect the application's rollout mode. The existing Board access helper is
 // the authority for legacy visibility; V2 remains the authority in enforce
 // mode. Both paths use active WorkspaceMembership, never global User.role.
-export async function trackingContext(workspaceId,userId) {
+export async function trackingContext(workspaceId,userId,{includeProjects=true}={}) {
   const ctx=await buildContext(userId,workspaceId,{allowLegacy:process.env.AUTHZ_V2!=='enforce'});
-  await loadAssignments(ctx);
+  if(includeProjects)await loadAssignments(ctx);
   if(process.env.AUTHZ_V2==='enforce'||ctx.status!=='active'||ctx.kind==='guest')return ctx;
   const membership=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean();
   if(!membership)return ctx;
@@ -33,6 +33,7 @@ export async function trackingContext(workspaceId,userId) {
     (ctx.grants[`tracking.${action}`]||=[]).push({scope,
       ...(resource.scopedResourceIds?.length?{scopeIds:resource.scopedResourceIds}:{}),sources:[`legacy:${resource.source}`]});
   }
+  if(!includeProjects)return ctx;
   const {canUserAccessBoard}=await import('../../controllers/boardController.js');
   const projects=await Board.find({workspaceId,isDeleted:{$ne:true}}).lean();
   ctx.trackingProjectRecords=projects;

@@ -21,6 +21,7 @@ let inProcessSweeperInterval = null;
  * Register BullMQ repeatable sweep on cleanupQueue.
  */
 export async function registerAttendanceMaintenanceJobs() {
+  await cleanupQueue.add('attendance-event-delivery',{}, {repeat:{every:15000},jobId:'repeat:attendance-event-delivery',removeOnComplete:true,removeOnFail:{count:50}});
   await cleanupQueue.add(
     'attendance-missed-checkout-sweep',
     {},

@@ -1,3 +1,4 @@
+import { enqueueLeaveAttendanceChanges } from '../attendance/attendanceEvents.service.js';
 import mongoose from 'mongoose';
 import LeaveApproval from './leaveApproval.model.js';
 import LeaveRequest, { LEAVE_REQUEST_STATUSES, PENDING_STATUSES } from './leaveRequest.model.js';
@@ -147,6 +148,7 @@ export async function decideApproval({ workspaceId, approvalId, actor, decision,
         request.status = LEAVE_REQUEST_STATUSES.PARTIALLY_APPROVED;
       }
       await request.save({ session });
+      if(finalOutcome==='APPROVED')await enqueueLeaveAttendanceChanges(request,session);
 
       await AuditLog.create([auditEntry({
         workspaceId, actor: actorId, action: `LEAVE_APPROVAL_${decision}`, targetId: request._id,

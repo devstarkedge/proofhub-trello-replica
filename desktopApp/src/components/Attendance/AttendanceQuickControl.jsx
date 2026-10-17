@@ -1,4 +1,4 @@
-import {stopDesktopCapture,DESKTOP_RESTART_MESSAGE} from '../../services/desktopTracking';
+import {finalizeDesktopCapture} from '../../services/desktopTracking';
 import { formatHours } from '../../utils/duration';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
@@ -7,6 +7,7 @@ import * as attendanceApi from '../../services/attendanceApi';
 import WorkSelectionModal from '../Tracking/WorkSelectionModal';
 import {getTrackingState} from '../../services/trackingApi';
 import TrackingPanel from '../Tracking/TrackingPanel';
+import CheckOutConfirmationModal from './CheckOutConfirmationModal';
 
 const GEO_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
 
@@ -102,13 +103,15 @@ const AttendanceQuickControl = () => {
   const isDesktop = window.flowtaskDesktop?.isDesktop === true;
   const [status, setStatus] = useState(null);
   const [showWorkSelection, setShowWorkSelection] = useState(false);
+  const [showCheckOut,setShowCheckOut] = useState(false);
+  const checkoutInactive=useCallback(()=>{setShowCheckOut(false);window.dispatchEvent(new Event('socket-attendance-updated'));},[]);
   const [attendanceOnly, setAttendanceOnly] = useState(false);
   // A ref guards even clicks in the same render; choosing work is not a check-in.
   const operationRef = useRef(null), loadGeneration = useRef(0);
   const [phase, setPhase] = useState('loading'); // loading | idle | preparing | locating | submitting
   const [liveMinutes, setLiveMinutes] = useState(0);
   const [selectedWorkMode, setSelectedWorkMode] = useState(null);
-  const tickRef = useRef(null);
+  const tickRef = useRef(null), checkoutSessionRef=useRef(null);
 
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current;
@@ -183,7 +186,7 @@ const AttendanceQuickControl = () => {
   // location IS required, this stays best-effort: the backend remains the
   // sole authority and rejects with LOCATION_PERMISSION_REQUIRED (a
   // friendly toast via the API interceptor) if capture still fails.
-  const runAction = async (apiCall, successMessage, extraPayload = {}) => {
+  const runAction = async (apiCall, successMessage, extraPayload = {}, options = {}) => {
     const needsLocation = Boolean(status.requiresGeofence || status.requiresGps);
     setPhase(needsLocation ? 'locating' : 'submitting');
     let gps = null;
@@ -201,11 +204,13 @@ const AttendanceQuickControl = () => {
         const checkedIn = response.data.status === 'ACTIVE';
         setStatus(previous => ({ ...previous, canCheckIn: false, completed: ['CLOSED', 'COMPLETED'].includes(response.data.status), activeSession: checkedIn ? response.data : null, workedMinutes: undefined }));
       }
+      if(options.onResponse)await options.onResponse(response);
       toast.success(successMessage);
       await load();
       window.dispatchEvent(new Event('flowtask:tracking-refresh'));
-      return true;
-    } catch {
+      return response;
+    } catch (error) {
+      if(options.propagateError)throw error;
       return false;
     } finally {
       setPhase('idle');
@@ -239,22 +244,23 @@ const AttendanceQuickControl = () => {
     operationRef.current = success ? null : 'selecting';
     return success;
   };
-  const handleCheckOut = async () => {
-    if (operationRef.current) return;
-    operationRef.current = 'submitting';
-    setPhase('submitting');
+  const handleCheckOut = () => {if(!operationRef.current){checkoutSessionRef.current=status.activeSession?._id;setShowCheckOut(true);}};
+  const confirmCheckOut = async (preview,operationId) => {
+    if(operationRef.current)return false;
+    operationRef.current='submitting';
     try {
-      if (!await stopDesktopCapture()) toast.warning(DESKTOP_RESTART_MESSAGE);
-      await runAction(attendanceApi.checkOut, 'Checked out');
+      return await runAction(attendanceApi.checkOut,'Checked out',{attendanceSessionId:preview.attendanceSessionId,operationId,previewToken:preview.previewToken},{propagateError:true,onResponse:async response=>{
+        const stopped=await finalizeDesktopCapture({attendanceSessionId:String(response.data._id),workSessionIds:response.summary?.workSessionIds||preview.workSessionIds,cutoffAt:response.data.checkOutAt});
+        if(!stopped)toast.warning('Attendance is checked out. Desktop monitoring stop is awaiting acknowledgment; saved screenshots can still sync. Restart an outdated desktop app.');
+      }});
     } finally {
-      operationRef.current = null;
-      setPhase('idle');
-      await window.flowtaskDesktop?.tracking?.refresh();
+      operationRef.current=null;setPhase('idle');
+      window.flowtaskDesktop?.tracking?.refresh().catch(()=>{});
     }
   };
 
   const isBusy = ['preparing', 'locating', 'submitting'].includes(phase);
-  const busyLabel = phase === 'locating' ? 'Locating…' : showWorkSelection || !status.activeSession ? 'Checking In…' : 'Checking Out…';
+  const busyLabel = phase === 'locating' ? 'Locating…' : showCheckOut ? 'Checking Out…' : 'Checking In…';
 
   const mode = status.activeSession?.workMode || status.activeSession?.checkIn?.workMode || selectedWorkMode || status.defaultWorkMode;
   const modeControl = mode ? <label className="welcome-work-mode" title="Today's Work Mode">
@@ -283,6 +289,7 @@ const AttendanceQuickControl = () => {
           {content}
           {(status.completed || status.unresolvedMissedCheckout || !isDesktop) && attendanceDetails}
         </div>}
+    {isDesktop && showCheckOut && <CheckOutConfirmationModal attendanceSessionId={status.activeSession?._id || checkoutSessionRef.current} onClose={()=>setShowCheckOut(false)} onInactive={checkoutInactive} onConfirm={confirmCheckOut} />}
     {isDesktop && showWorkSelection && <WorkSelectionModal checkingIn attendanceOnly={attendanceOnly} workModeControl={modeControl} onClose={closeWorkSelection} onConfirm={confirmCheckIn} />}
   </>;
 

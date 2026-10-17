@@ -1,3 +1,4 @@
+import { processAttendanceEvents } from '../attendance/attendanceEvents.service.js';
 import Workspace from '../../models/Workspace.js';
 import { run } from '../workspaces/workspaceContext.js';
 import { TrackingScreenshot, ActivityInterval } from './tracking.models.js';
@@ -14,6 +15,7 @@ export async function trackingMaintenance() {
   try {
     for await (const workspace of Workspace.find({}).select('_id').cursor()) {
       await run({ workspaceId: workspace._id }, async () => {
+        await processAttendanceEvents(workspace._id);
         await reconcileWorkspaceSessions(workspace._id);
         const policy=await policyFor(workspace._id);if(policy.disableRecoveryPending)await finishDisable(workspace._id,policy);
         await sendTrackingReminders(workspace._id,policy);

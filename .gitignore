@@ -17,3 +17,10 @@ backend/tests/*
 desktopApp/electron/tests/*
 !desktopApp/electron/tests/tracking.test.cjs
 !desktopApp/electron/tests/screenshot-encoder.test.cjs
+!backend/tests/attendance/
+backend/tests/attendance/*
+!backend/tests/attendance/smartCheckoutPolicy.test.js
+!backend/tests/attendance/smartCheckoutIntegration.test.js
+!desktopApp/electron/tests/tracking-lifecycle.test.cjs
+!backend/tests/attendance/smartCheckout.browser.mjs
+!backend/tests/attendance/smartCheckout.electron.cjs

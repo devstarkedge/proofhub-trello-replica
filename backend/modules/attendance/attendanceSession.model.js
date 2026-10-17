@@ -68,6 +68,8 @@ const attendanceSessionSchema = new mongoose.Schema({
   systemGeneratedCheckout: { type: Boolean, default: false },
   idempotencyKey: { type: String, trim: true, minlength: 8, maxlength: 128, default: null },
 
+  checkoutOperationId: { type: String, maxlength:128, default:null },
+  checkoutSummary: { type: mongoose.Schema.Types.Mixed, default:null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' } // usually === user; distinct only for an authorized manual correction path
 }, { timestamps: true });
 
@@ -107,7 +109,7 @@ attendanceSessionSchema.plugin(workspaceScopePlugin);
 // system reconciliation, or a missed-checkout lifecycle event legitimately
 // needs to write.
 const MUTABLE_AFTER_CREATE_PATHS = new Set([
-  'status', 'checkOutAt', 'checkOut', 'systemGeneratedCheckout', 'updatedAt', 'trackingReminderAt',
+  'checkoutOperationId', 'checkoutSummary', 'status', 'checkOutAt', 'checkOut', 'systemGeneratedCheckout', 'updatedAt', 'trackingReminderAt',
   'missedCheckoutCutoffAt', 'effectiveShiftEndAt', 'closureReason',
   'reconciledAt', 'missedCheckoutDetectedAt', 'regularizationStatus', 'provisionalMinutes'
 ]);

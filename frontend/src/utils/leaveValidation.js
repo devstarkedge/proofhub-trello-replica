@@ -26,8 +26,8 @@ export const leaveRequestSchema = z.object({
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Start and end time are required for a short leave', path: ['shortLeaveStartTime'] });
     } else if (!data.shortLeaveDurationMinutes || data.shortLeaveDurationMinutes <= 0) {
       // Duration is derived from start/end time (see LeaveRequestForm's
-      // effect) — reaching here means end time isn't after start time.
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'End time must be after start time', path: ['shortLeaveEndTime'] });
+      // effect), including intervals crossing midnight.
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Start and end time must describe a non-zero interval', path: ['shortLeaveEndTime'] });
     }
   }
 });

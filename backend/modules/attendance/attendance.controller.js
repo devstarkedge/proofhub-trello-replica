@@ -1,3 +1,4 @@
+import { getCheckoutPreview } from './attendanceCheckout.service.js';
 import asyncHandler from '../../middleware/asyncHandler.js';
 import Workspace from '../../models/Workspace.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
@@ -12,7 +13,7 @@ import {policyFor,currentState,changeWork} from '../tracking/tracking.service.js
  * reconstructing this shape here needs no extra query.
  */
 function membershipFromReq(req) {
-  return { role: req.user.role, department: req.user.department, status: 'active' };
+  return { role: req.user.role, roleId: req.user.roleId, department: req.user.department, status: 'active' };
 }
 
 /** attendance.service.js needs the real Workspace doc (attendanceModuleEnabled + timezone), not just the bare id protect() attaches. */
@@ -65,6 +66,12 @@ export const postCheckIn = asyncHandler(async (req, res) => {
   res.status(result.replay ? 200 : 201).json({ success: true, data: result.session, replay: result.replay,trackingStartup });
 });
 
+export const previewCheckOut = asyncHandler(async (req,res) => {
+  const workspace=await loadWorkspace(req);
+  const data=await getCheckoutPreview({workspaceId:req.workspaceId,userId:req.user.id,membership:membershipFromReq(req),workspace});
+  res.set('Cache-Control','no-store');res.json({success:true,data});
+});
+
 export const postCheckOut = asyncHandler(async (req, res) => {
   const { coordinates, reportedAccuracyMeters, capturedAt } = req.body || {};
   const gps = coordinates ? { coordinates, reportedAccuracyMeters, capturedAt: capturedAt ? new Date(capturedAt) : new Date() } : null;
@@ -72,16 +79,8 @@ export const postCheckOut = asyncHandler(async (req, res) => {
 
   const result = await checkOut({
     workspaceId: req.workspaceId, userId: req.user.id, membership: membershipFromReq(req),
-    workspace, gps, ipAddress: req.ip, actorName: req.user.name
+    workspace, gps, ipAddress: req.ip, actorName: req.user.name, attendanceSessionId:req.body?.attendanceSessionId, operationId:req.body?.operationId, previewToken:req.body?.previewToken
   });
 
-  if (!result.replay) {
-    await recordAuditLog({
-      actor: req.user, action: 'ATTENDANCE_CHECKED_OUT', targetType: 'AttendanceSession', targetId: result.session._id,
-      resourceLabel: `Attendance check-out: ${req.user.name}`, summary: `${req.user.name} checked out`,
-      before: null, after: { workDateKey: result.session.workDateKey, checkOutAt: result.session.checkOutAt },
-      category: 'attendance_management', meta: { workspaceId: req.workspaceId }
-    });
-  }
-  res.json({ success: true, data: result.session, replay: result.replay });
+  res.json({ success: true, data: result.session, replay: result.replay, summary:result.summary });
 });

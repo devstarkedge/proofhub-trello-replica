@@ -108,7 +108,7 @@ const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
     if (shape !== 'SHORT_LEAVE' || !shortLeaveStartTime || !shortLeaveEndTime) return;
     const [startH, startM] = shortLeaveStartTime.split(':').map(Number);
     const [endH, endM] = shortLeaveEndTime.split(':').map(Number);
-    const minutes = (endH * 60 + endM) - (startH * 60 + startM);
+    const minutes = ((endH * 60 + endM) - (startH * 60 + startM) + 1440) % 1440;
     setValue('shortLeaveDurationMinutes', minutes > 0 ? minutes : null, { shouldValidate: true });
   }, [shape, shortLeaveStartTime, shortLeaveEndTime, setValue]);
 
@@ -205,9 +205,10 @@ const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
               <input type="time" className={selectClass} style={selectStyle} {...register('shortLeaveEndTime')} />
             </div>
           </div>
+          {shortLeaveStartTime && shortLeaveEndTime && shortLeaveEndTime < shortLeaveStartTime && <p className="mt-2 text-xs">Ends on the following calendar date.</p>}
           {watch('shortLeaveDurationMinutes') > 0 && <p className="mt-2 text-xs">Duration: {formatHours(watch('shortLeaveDurationMinutes'))}</p>}
           {shortLeaveStartTime && shortLeaveEndTime && !watch('shortLeaveDurationMinutes') && (
-            <p className="text-xs mt-1" style={{ color: 'var(--color-error-text)' }}>End time must be after start time.</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--color-error-text)' }}>Start and end time must be different.</p>
           )}
         </div>
       )}
