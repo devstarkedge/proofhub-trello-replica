@@ -19,6 +19,17 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   let leaseDeadlineMono=0;
   let realtime=null,haltRevision=0,captureEpoch=0;
   const closedSessions=new Map(),closedAttendance=new Map();
+  const transitions=new Map();
+  function acceptTransition(value){
+    const key=String(value?.sessionId||value?._id||'');
+    if(!key||!Number.isInteger(value.revision)||!['RUNNING','PAUSED','CLOSED'].includes(value.status))return;
+    const previous=transitions.get(key);
+    if(previous&&value.revision<previous.revision)return;
+    transitions.set(key,{revision:value.revision,status:value.status});
+    while(transitions.size>256)transitions.delete(transitions.keys().next().value);
+    if(value.status==='CLOSED')rememberClosure({workSessionIds:[key],cutoffAt:value.endedAt});
+    else if(String(work?._id)===key&&value.status==='PAUSED'){work={...work,status:'PAUSED',revision:value.revision};haltCapture('Work is not running');}
+  }
   let noticeRequired=false,noticeVersion=1;
   let uploadError='',uploadErrorCode='',nextUploadRetryAt=null;
   const protectedEntries=new Set();
@@ -27,7 +38,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && new URL(event.senderFrame.url).origin===getOrigin(); };
   const publish = (state=lastState,error=lastError,code=error===lastError?lastErrorCode:'') => {
     lastState=state;lastError=error;lastErrorCode=code;
-    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size,uploadError,uploadErrorCode,nextUploadRetryAt,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
+    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size,uploadError,uploadErrorCode,nextUploadRetryAt,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
       policy:policy?{revision:policy.revision,enabled:policy.enabled,intervalSeconds:policy.intervalSeconds,retentionDays:policy.retentionDays,monitors:policy.monitors,blur:policy.blur}:null};
     const window=getWindow(); if(window&&!window.isDestroyed())window.webContents.send('desktop-tracking:status',value);
     if(window&&!window.isDestroyed())window.setTitle(state==='monitoring'?'FlowTask · Monitoring active':state==='offline'?'FlowTask · Monitoring offline':'FlowTask');
@@ -76,7 +87,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       let client;try{client=require('socket.io-client');}catch(error){if(!app.isPackaged)throw error;client=require(path.join(process.resourcesPath,'node_modules','socket.io-client'));}
       realtime=client.io(getBackendURL(),{auth:{...credentials},transports:['websocket','polling'],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:5000});
       realtime.on('tracking:policy-updated',value=>{haltPolicy(value);return sync();});
-      realtime.on('tracking:changed',value=>{if(value?.status==='CLOSED')rememberClosure({workSessionIds:[value.sessionId],cutoffAt:value.endedAt});else if(String(value?.sessionId)===String(work?._id)&&value?.status==='PAUSED')haltCapture('Work is not running');return sync();});
+      realtime.on('tracking:changed',value=>{acceptTransition(value);return sync();});
       realtime.on('attendance:checked-out',value=>{if(String(value?.userId)===String(credentials?.userId)&&value?.session?._id)rememberClosure({attendanceSessionId:value.session._id,cutoffAt:value.session.checkOutAt});return sync();});
       realtime.on('tracking:device-updated',value=>{if(String(value?.deviceId)===String(device?._id)){if(value?.revoked)haltCapture('This desktop device was revoked');else if(value?.displaced)haltCapture('Monitoring was moved to another desktop');}return sync();});
       for(const event of ['attendance:checked-in','user-role-changed','department-bulk-assigned','department-bulk-unassigned','access-permissions-updated','workspace-membership-added'])realtime.on(event,()=>sync());
@@ -253,6 +264,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       const next=await request(`/devices/${device._id}/heartbeat`,{sessionId:current.session?._id||null,state:lastState});if(scope!==generation)return;
       if(next.policy.revision<haltRevision)next.canCapture=false;
       if(next.session&&(closedSessions.has(String(next.session._id))||closedAttendance.has(String(next.session.attendanceSession)))){next.canCapture=false;next.session={...next.session,status:'CLOSED'};}
+      if(next.session){const known=transitions.get(String(next.session._id));if(known&&(next.session.revision<known.revision||next.session.revision===known.revision&&known.status!==next.session.status)){next.canCapture=false;next.session={...next.session,...known};}else acceptTransition(next.session);}
       const anchorChanged=next.device.anchor.id!==device.anchor.id;
       const changedSession=work?._id!==next.session?._id;
       if(capturing&&(anchorChanged||changedSession||!next.canCapture||next.device.preferences.intervalSeconds!==device.preferences.intervalSeconds||JSON.stringify(next.device.preferences)!==JSON.stringify(device.preferences))){await stopCapture();}
@@ -280,7 +292,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     if(credentials?.userId===value?.userId&&credentials?.workspaceId===value?.workspaceId){const changed=credentials?.token!==value?.token;credentials=value;if(changed)connectRealtime();return publish();}
     // End capture synchronously before awaiting network or changing identity.
     // Completed encrypted entries remain in their user/workspace directory.
-    haltCapture();generation++;closedSessions.clear();closedAttendance.clear();realtime?.disconnect();realtime=null;
+    haltCapture();generation++;closedSessions.clear();closedAttendance.clear();transitions.clear();realtime?.disconnect();realtime=null;
     if(credentials&&device&&!device.revokedAt)await request(`/devices/${device._id}/release`,{}).catch(()=>{});
     credentials=value;device=null;work=null;policy=null;queue=null;anchorMono=null;uploadError='';uploadErrorCode='';nextUploadRetryAt=null;protectedEntries.clear();haltRevision=0;noticeRequired=false;lastState='unavailable';lastError='';lastErrorCode='';publish();
     clearInterval(timer);timer=null;clearInterval(syncTimer);syncTimer=null;clearInterval(uploadTimer);uploadTimer=null;
@@ -309,6 +321,10 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   });
   ipcMain.handle('desktop-tracking:status',event=>{if(!trusted(event))throw new Error('Untrusted tracking sender');return publish();});
   ipcMain.handle('desktop-tracking:stop',event=>{if(!trusted(event))throw new Error('Untrusted tracking sender');haltCapture();return publish();});
+  ipcMain.handle('desktop-tracking:transition',async(event,value)=>{
+    if(!trusted(event)||!credentials||String(value?.workspaceId)!==String(credentials.workspaceId)||String(value?.userId)!==String(credentials.userId))throw new Error('Untrusted tracking transition');
+    acceptTransition(value);await sync();return publish();
+  });
   ipcMain.handle('desktop-tracking:notice',async(event,value)=>{
     if(!trusted(event))throw new Error('Untrusted tracking sender');
     if(!noticeRequired||value?.deviceId!==device?._id||value?.workspaceId!==credentials?.workspaceId||value?.userId!==credentials?.userId||value?.policyRevision!==policy?.revision)throw new Error('Desktop identity or policy changed. Review the current notice.');

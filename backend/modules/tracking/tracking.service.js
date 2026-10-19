@@ -12,6 +12,7 @@ import { emitToUser } from '../../realtime/emitters.js';
 import { TrackingPolicy, WorkSession, TrackingDevice, TrackingCaptureLease, TaskAssignmentEvent, ActivityInterval,TrackingAgenda } from './tracking.models.js';
 import { assertTimeline, closeTimeline, linkAssignment, endAssignment, summarize } from './tracking.timeline.js';
 import { trackingVisibility, departmentsOf, historicalDepartmentScope,trackingRole } from './tracking.visibility.js';
+import {enqueueAttendanceEvent} from '../attendance/attendanceEvents.service.js';
 
 export function fail(message, statusCode = 400, code = 'TRACKING_INVALID') {
   const error = new Error(message); Object.assign(error, { statusCode, code }); throw error;
@@ -21,8 +22,8 @@ export const objectId = value => {
   if (!mongoose.isValidObjectId(value)) fail('Invalid record identifier');
   return value;
 };
-export async function contextFor(workspaceId, userId) {
-  const ctx = await trackingContext(workspaceId, userId);
+export async function contextFor(workspaceId, userId, options) {
+  const ctx = await trackingContext(workspaceId, userId, options);
   if (ctx.status !== 'active' || ctx.kind === 'guest') fail('Active workspace membership required', 403);
   return ctx;
 }
@@ -40,7 +41,7 @@ export async function workOptions(workspaceId, userId, projectId = null) {
   const own = { workspaceId, user: userId };
   const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),role=await trackingRole(member,workspaceId);
   if (!can(ctx, 'tracking.log', own)) return { projects: [], tasks: [], lists: [], canTrack: false };
-  const projects = (await Board.find(projectVisibilityFilter(ctx)).sort({ name: 1 }).lean()).filter(p => can(ctx, 'project.view', p));
+  const projects = (ctx.trackingProjectRecords || await Board.find(projectVisibilityFilter(ctx)).lean()).filter(p => can(ctx, 'project.view', p)).sort((a,b)=>a.name.localeCompare(b.name));
   const assigned = await Card.distinct('board', { workspaceId, assignees: userId, isArchived: { $ne: true }, board: { $in: projects.map(p => p._id) } });
   const result = { canTrack: true, projects: projects.map(p => ({ _id: p._id, name: p.name,
     hasAssignedTasks: assigned.some(b => id(b) === id(p._id)),
@@ -56,10 +57,10 @@ export async function workOptions(workspaceId, userId, projectId = null) {
   result.lists = await List.find({ workspaceId, board: projectId }).select('_id title').sort({ position: 1 }).lean();
   return result;
 }
-export async function validateSelection({ workspaceId, userId, selection, dbSession = null }) {
+export async function validateSelection({ workspaceId, userId, selection, dbSession = null, context = null, policy: resolvedPolicy = null }) {
   if (!selection || selection.mode === 'ATTENDANCE_ONLY') return null;
   if (!['ASSIGNED', 'INDIVIDUAL'].includes(selection.mode)) fail('Select assigned task, individual work, or attendance only');
-  const ctx = await contextFor(workspaceId, userId), policy = await policyFor(workspaceId, dbSession);
+  const ctx = context || await contextFor(workspaceId, userId, {includeProjects:selection.mode!=='INDIVIDUAL'||!selection.agendaId}), policy = resolvedPolicy || await policyFor(workspaceId, dbSession);
   if (!policy.enabled || !can(ctx, 'tracking.log', { workspaceId, user: userId })) fail('Work tracking is not permitted', 403);
   if(selection.mode==='INDIVIDUAL'&&selection.agendaId){
     const agenda=await TrackingAgenda.findOne({_id:objectId(selection.agendaId),workspaceId,archivedAt:null}).session(dbSession).lean();
@@ -87,9 +88,9 @@ export async function validateSelection({ workspaceId, userId, selection, dbSess
 function pushAudit(session, type, at, actor, detail = '') {
   session.audit.push({ id: randomUUID(), type, at, actor, detail });
 }
-export async function emitChanged(session) {
+export async function emitChanged(session,{strict=false}={}) {
   if (!session) return;
-  try { emitToUser(session.user, 'tracking:changed', { workspaceId: session.workspaceId, sessionId: session._id, revision: session.revision, status:session.status,endedAt:session.endedAt }, session.workspaceId); } catch { /* persisted state is recovered on read */ }
+  try { emitToUser(session.user, 'tracking:changed', { workspaceId: session.workspaceId, userId:session.user, sessionId: session._id, revision: session.revision, status:session.status,endedAt:session.endedAt }, session.workspaceId); } catch(error) { if(strict)throw error; }
   // Reuse personal workspace rooms; report updates never broadcast private
   // task/session identifiers to unrelated employees or custom roles.
   try{
@@ -97,10 +98,10 @@ export async function emitChanged(session) {
       try{
         if(!await trackingVisibility(session.workspaceId,member.user,session.user,session.departmentIdsAtStart))continue;
         await authorizeRecord(await contextFor(session.workspaceId,member.user),session);
-        emitToUser(member.user,'tracking:changed',{workspaceId:session.workspaceId,sessionId:session._id,revision:session.revision},session.workspaceId);
-      }catch{/* recipient access changed or transport unavailable */}
+        emitToUser(member.user,'tracking:changed',{workspaceId:session.workspaceId,userId:session.user,sessionId:session._id,revision:session.revision},session.workspaceId);
+      }catch(error){if(strict&&!error.statusCode)throw error;}
     }
-  }catch{/* polling recovers from temporary database/transport failures */}
+  }catch(error){if(strict)throw error;}
 }
 // Called inside the ORIGINAL attendance transaction, never instead of checkIn.
 export async function startWithAttendance({ attendance, selection, dbSession }) {
@@ -221,17 +222,25 @@ export async function reconcileWorkspaceSessions(workspaceId = getActiveWorkspac
     for (const s of recent) { try { await reconcileSession(s._id); } catch (e) { console.error('[Tracking] reconciliation:', e.message); } }
   });
 }
+export function publicWorkSession(session) {
+  if(!session)return null;
+  const {operations:_,audit:__,evidenceRevision:___,...visible}=session;
+  return {...visible,totals:summarize(session)};
+}
 export async function currentState(workspaceId, userId) {
-  const ctx = await contextFor(workspaceId, userId);
-  const policy = await policyFor(workspaceId);
-  const attendance = await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).lean();
+  const [policy,attendance,devices,member]=await Promise.all([
+    policyFor(workspaceId),AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).select('_id status checkInAt checkOutAt missedCheckoutCutoffAt').lean(),
+    TrackingDevice.find({workspaceId,user:userId,revokedAt:null}).select('-anchor -anchors -noticeHistory').lean(),
+    WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean()
+  ]);
   let session = await WorkSession.findOne({ workspaceId, user: userId, ...(attendance ? { attendanceSession: attendance._id } : {}) }).sort({ startedAt: -1 }).lean();
-  if (session) session = await reconcileSession(session._id);
-  const devices = await TrackingDevice.find({ workspaceId, user: userId, revokedAt: null }).select('-anchor -anchors').lean();
-  return { workspaceId, userId:String(userId), serverNow: new Date(), policy, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),
-    canManagePolicy: await trackingRole(await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),workspaceId)==='admin'&&can(ctx,'tracking.manage_policy',{workspaceId}), canViewReports: can(ctx, 'tracking.view_reports'),
+  const ctx = await contextFor(workspaceId,userId,{includeProjects:Boolean(session?.segments.some(s=>s.project||s.attributedProject))});
+  if (session) session = await reconcileSession(session._id,{session,policy,attendance:attendance||undefined,ownerContext:ctx});
+  const {versions:_,...publicPolicy}=policy;
+  return { workspaceId, userId:String(userId), serverNow: new Date(), policy:publicPolicy, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),
+    canManagePolicy: await trackingRole(member,workspaceId)==='admin'&&can(ctx,'tracking.manage_policy',{workspaceId}), canViewReports: can(ctx, 'tracking.view_reports'),
     attendance: attendance ? { _id: attendance._id, checkInAt: attendance.checkInAt, cutoffAt: attendance.missedCheckoutCutoffAt } : null,
-    session: session ? { ...session, totals: summarize(session) } : null,
+    session: publicWorkSession(session),
     devices: devices.map(d => ({ ...d, connected: Date.now() - +new Date(d.lastSeenAt || 0) < 45000 })) };
 }
 export async function changeWork({ workspaceId, userId, action, selection, operationId, expectedRevision }) {
@@ -242,18 +251,22 @@ export async function changeWork({ workspaceId, userId, action, selection, opera
   try { await dbSession.withTransaction(async () => {
     const attendance = await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).session(dbSession).lean();
     if (!attendance || attendance.missedCheckoutCutoffAt && +new Date(attendance.missedCheckoutCutoffAt) <= Date.now()) fail('Check in before starting or changing work', 409);
-    let session = await WorkSession.findOne({ workspaceId, attendanceSession: attendance._id }).session(dbSession).lean();
-    const replay = session?.operations.find(op => op.id === operationId);
+    let session = await WorkSession.findOne({ workspaceId, attendanceSession: attendance._id }).select('-operations -audit').session(dbSession).lean();
+    const previous = session ? await WorkSession.findOne({_id:session._id,'operations.id':operationId}).select('operations.$').session(dbSession).lean() : null;
+    const replay = previous?.operations?.[0];
     if (replay) { if (replay.digest !== operationDigest) fail('Operation ID was already used for different work', 409); result = session; return; }
     if (session && session.status === 'CLOSED') fail('Work session has ended', 409);
+    if(session && await WorkSession.exists({_id:session._id,'operations.4999':{$exists:true}}).session(dbSession))fail('Daily work change limit reached',429);
     const policy=await policyFor(workspaceId,dbSession);
     if(!policy.enabled)fail('Time Tracking is disabled',403);
-    await TrackingPolicy.updateOne({_id:policy._id,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
+    const allowed=await TrackingPolicy.updateOne({_id:policy._id,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
+    if(!allowed.matchedCount)fail('Tracking configuration changed; refresh and retry',409,'TRACKING_CONFLICT');
     if(action==='pause'&&policy.personalPauseEnabled===false)fail('Personal Pause is disabled by workspace policy',403);
     if (session && expectedRevision !== session.revision) fail('Work changed on another device; refresh and retry', 409, 'TRACKING_CONFLICT');
+    if(session){session.operations=[];session.audit=[];}
     const at = new Date(Math.max(Date.now(), session ? +new Date(session.segments.at(-1)?.startedAt || session.startedAt) : +new Date(attendance.checkInAt)));
     if (action === 'pause') {
-      if (!session) fail('No work session to pause', 409);
+      if (!session || session.status!=='RUNNING') fail('No running work session to pause', 409);
       const open = session.segments.find(s => !s.endedAt); if (open) open.endedAt = at;
       if (session.status === 'RUNNING') { session.pauses ||= []; session.pauses.push({startedAt:at,endedAt:null,reason:'PERSONAL_PAUSE'}); }
       session.status = 'PAUSED';
@@ -264,7 +277,7 @@ export async function changeWork({ workspaceId, userId, action, selection, opera
         const last = session.segments.at(-1);
         chosen = { mode: last.kind === 'TASK' || last.linkedTask ? 'ASSIGNED' : 'INDIVIDUAL', projectId: last.project, taskId: last.task || last.linkedTask, candidateTaskId: last.candidateTask,agendaId:last.agenda,description:last.description };
       }
-      const valid = await validateSelection({ workspaceId, userId, selection: chosen, dbSession });
+      const valid = await validateSelection({ workspaceId, userId, selection: chosen, dbSession, policy });
       if (!valid) fail('Select work before starting a timer');
       if (!session) {
         const policy = await policyFor(workspaceId, dbSession);
@@ -316,14 +329,19 @@ export async function changeWork({ workspaceId, userId, action, selection, opera
     assertTimeline(session.segments);
     if (session.operations.length > 5000 || session.segments.length > 5000) fail('Daily work change limit reached', 429);
     result = await WorkSession.findOneAndUpdate({ _id: session._id, revision: session.revision }, {
-      $set: { segments: session.segments, pauses: session.pauses || [], status: session.status, operations: session.operations, audit: session.audit },
+      $set: { segments: session.segments, pauses: session.pauses || [], status: session.status },
+      $push: {operations:{$each:session.operations},audit:{$each:session.audit}},
       $setOnInsert: { workspaceId, user: userId, attendanceSession: attendance._id, workDateKey: attendance.workDateKey,
         startedAt: session.startedAt, endedAt: null, policyRevision:session.policyRevision, includePreAssignment: session.includePreAssignment,departmentIdsAtStart:session.departmentIdsAtStart },
       $inc: { revision: 1 }
-    }, { new: true, upsert: session.revision === 0, runValidators: true, session: dbSession }).lean();
+    }, { new: true, upsert: session.revision === 0, runValidators: true, session: dbSession }).select('-operations -audit').lean();
     if (!result) fail('Work changed concurrently', 409);
+    await enqueueAttendanceEvent({workspaceId,user:userId,key:`work-${result._id}-${result.revision}`,kind:'WORK_CHANGED',workSession:result._id,workRevision:result.revision,workDateKey:result.workDateKey},dbSession);
   }); } finally { await dbSession.endSession(); }
-  emitChanged(result); return result;
+  // The initiating employee/agent gets a small committed invalidation now.
+  // Workspace observers and retries use the transactional outbox.
+  try{emitToUser(userId,'tracking:changed',{workspaceId,userId,sessionId:result._id,revision:result.revision,status:result.status,endedAt:result.endedAt},workspaceId);}catch{/* durable retry */}
+  return result;
 }
 
 export async function createWorkTask({ workspaceId, userId, user, projectId, listId, title, description = '', operationId }) {

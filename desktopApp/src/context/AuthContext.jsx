@@ -1,6 +1,7 @@
-import React, { createContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useState, useEffect, useCallback, useRef } from "react";
 import api from "../services/api";
 import socketService from "../services/socket";
+import { BACKEND_UNAVAILABLE_MESSAGE, getSafeAuthDiagnostic, isAuthenticationRejection, isTransientBackendError } from "../services/authErrors";
 import useRoleStore from "../store/roleStore";
 import { resetAllOnWorkspaceSwitch } from "../store/resetRegistry";
 import { clearAttendanceLocationBootstrapState } from "../utils/attendanceLocationBootstrap";
@@ -12,6 +13,12 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("token"));
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(null);
+  const restoreRetryCount = useRef(0);
+  const restoreRetryTimer = useRef(null);
+  const restoreSessionRef = useRef(null);
+  const restoreInFlightRef = useRef(null);
+  const sessionErrorRef = useRef(null);
 
   const normalizeUser = useCallback((userData) => {
     if (!userData || typeof userData !== "object") {
@@ -43,6 +50,11 @@ export const AuthProvider = ({ children }) => {
     setToken(userToken);
     setUser(normalizedUser);
     setIsAuthenticated(true);
+    setSessionError(null);
+    sessionErrorRef.current = null;
+    restoreRetryCount.current = 0;
+    if (restoreRetryTimer.current) clearTimeout(restoreRetryTimer.current);
+    restoreRetryTimer.current = null;
 
     // WorkspaceProvider opens the authenticated connection after workspace resolution.
   };
@@ -65,6 +77,11 @@ export const AuthProvider = ({ children }) => {
     });
 
     setIsAuthenticated(false);
+    setSessionError(null);
+    sessionErrorRef.current = null;
+    restoreRetryCount.current = 0;
+    if (restoreRetryTimer.current) clearTimeout(restoreRetryTimer.current);
+    restoreRetryTimer.current = null;
 
     // Disconnect socket on logout
     socketService.disconnect();
@@ -74,28 +91,38 @@ export const AuthProvider = ({ children }) => {
     resetAllOnWorkspaceSwitch();
   }, []);
 
-  const restoreSession = useCallback(async () => {
-    const savedToken = localStorage.getItem("token");
+  const restoreSession = useCallback(() => {
+    if (restoreInFlightRef.current) return restoreInFlightRef.current;
 
-    if (!savedToken) {
-      setLoading(false);
-      return;
-    }
+    const operation = (async () => {
+      const savedToken = localStorage.getItem("token");
 
-    try {
+      if (!savedToken) {
+        setLoading(false);
+        return;
+      }
+
+      try {
       // Fetch fresh user data from API using the stored token
       const response = await api.get(`/api/auth/verify?_t=${Date.now()}`);
       const rawUser = response?.data?.data ?? response?.data?.user;
       const normalizedUser = normalizeUser(rawUser);
 
       if (!normalizedUser) {
-        throw new Error("Invalid session payload: user not found");
+        const payloadError = new Error("Invalid session payload: user not found");
+        payloadError.code = 'INVALID_SESSION_PAYLOAD';
+        throw payloadError;
       }
 
       // Re-hydrate state from verified data (user data in memory only)
       setToken(savedToken);
       setUser(normalizedUser);
       setIsAuthenticated(true);
+      setSessionError(null);
+      sessionErrorRef.current = null;
+      restoreRetryCount.current = 0;
+      if (restoreRetryTimer.current) clearTimeout(restoreRetryTimer.current);
+      restoreRetryTimer.current = null;
 
       // WorkspaceProvider reconnects with the verified token and resolved workspace.
 
@@ -109,17 +136,81 @@ export const AuthProvider = ({ children }) => {
       // dynamic": the fetch fires once, gets marked initialized, and nothing
       // ever re-fetches it even after the correct workspace resolves a
       // moment later. See WorkspaceContext.jsx's loadWorkspaces/switchWorkspace.
-    } catch (error) {
-      console.error("Session restore failed:", error);
-      logoutUser();
-    }
+      } catch (error) {
+      if (isAuthenticationRejection(error)) {
+        console.warn("Saved FlowTask session was rejected by the backend.", getSafeAuthDiagnostic(error));
+        logoutUser();
+      } else if (isTransientBackendError(error)) {
+        // A valid credential must survive a temporary proxy/backend outage.
+        // Retry only a bounded number of times so startup failures cannot
+        // become an infinite request loop.
+        console.warn("Session verification is temporarily unavailable.", getSafeAuthDiagnostic(error));
+        setSessionError(BACKEND_UNAVAILABLE_MESSAGE);
+        sessionErrorRef.current = BACKEND_UNAVAILABLE_MESSAGE;
+        const delays = [2000, 5000, 15000];
+        if (!restoreRetryTimer.current && restoreRetryCount.current < delays.length) {
+          const delay = delays[restoreRetryCount.current++];
+          restoreRetryTimer.current = setTimeout(() => {
+            restoreRetryTimer.current = null;
+            restoreSessionRef.current?.();
+          }, delay);
+        }
+      } else {
+        console.warn("Saved FlowTask session response was invalid.", getSafeAuthDiagnostic(error));
+        logoutUser();
+      }
+      }
 
-    setLoading(false);
+      setLoading(false);
+    })();
+
+    const tracked = operation.finally(() => {
+      if (restoreInFlightRef.current === tracked) restoreInFlightRef.current = null;
+    });
+    restoreInFlightRef.current = tracked;
+    return tracked;
   }, [logoutUser, normalizeUser]);
+
+  const retrySession = useCallback(() => {
+    if (!localStorage.getItem("token")) return;
+    restoreRetryCount.current = 0;
+    if (restoreRetryTimer.current) clearTimeout(restoreRetryTimer.current);
+    restoreRetryTimer.current = null;
+    setLoading(true);
+    restoreSessionRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    restoreSessionRef.current = restoreSession;
+  }, [restoreSession]);
 
   useEffect(() => {
     restoreSession();
+    return () => {
+      if (restoreRetryTimer.current) clearTimeout(restoreRetryTimer.current);
+    };
   }, [restoreSession]);
+
+  useEffect(() => {
+    const recover = () => {
+      if (sessionErrorRef.current && localStorage.getItem("token")) retrySession();
+    };
+    const clearRecoveredError = () => {
+      setSessionError(null);
+      sessionErrorRef.current = null;
+      restoreRetryCount.current = 0;
+      if (restoreRetryTimer.current) clearTimeout(restoreRetryTimer.current);
+      restoreRetryTimer.current = null;
+    };
+    window.addEventListener('online', recover);
+    window.addEventListener('desktop-resume', recover);
+    window.addEventListener('flowtask:backend-recovered', clearRecoveredError);
+    return () => {
+      window.removeEventListener('online', recover);
+      window.removeEventListener('desktop-resume', recover);
+      window.removeEventListener('flowtask:backend-recovered', clearRecoveredError);
+    };
+  }, [retrySession]);
 
   useEffect(() => {
     const expired = () => restoreSession();
@@ -150,11 +241,12 @@ export const AuthProvider = ({ children }) => {
       (response) => response,
       async (error) => {
         const originalRequest = error.config;
+        if (!originalRequest) return Promise.reject(error);
         // Prevent retry on refresh endpoint to avoid infinite loops
-        if (originalRequest.url && originalRequest.url.includes('/api/auth/refresh')) {
+        if (originalRequest.url?.includes('/api/auth/refresh')) {
           return Promise.reject(error);
         }
-        if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url.includes('/api/auth/login')) {
+        if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.includes('/api/auth/login')) {
           originalRequest._retry = true;
           try {
             const refreshResponse = await api.post("/api/auth/refresh");
@@ -164,8 +256,8 @@ export const AuthProvider = ({ children }) => {
             originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
             return api(originalRequest);
           } catch (refreshError) {
-            console.error("Token refresh failed:", refreshError);
-            logoutUser();
+            console.warn("Token refresh failed.", getSafeAuthDiagnostic(refreshError));
+            if (isAuthenticationRejection(refreshError)) logoutUser();
             return Promise.reject(refreshError);
           }
         }
@@ -227,6 +319,8 @@ export const AuthProvider = ({ children }) => {
         login,
         loginUser,
         logoutUser,
+        sessionError,
+        retrySession,
         register,
         setUser,
       }}

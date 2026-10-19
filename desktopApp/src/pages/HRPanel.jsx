@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useContext, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback, memo, useRef, lazy, Suspense } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Users,
   Filter,
@@ -16,7 +17,9 @@ import {
   User,
   ChevronDown,
   Loader2,
-  Ban
+  Ban,
+  Bell,
+  ChevronRight
 } from 'lucide-react';
 import { HRPanelSkeleton } from '../components/LoadingSkeleton';
 import api from '../services/api';
@@ -30,8 +33,27 @@ import UserAccessDialog from '../components/AccessControl/UserAccessDialog';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
 import BulkInviteModal from '../components/Workspace/BulkInviteModal/BulkInviteModal';
+const UserVerificationModal = lazy(() => import('../components/UserVerificationModal'));
 import PermissionGate from '../components/PermissionGate';
+import useJoinRequestsLive from '../hooks/useJoinRequestsLive';
+import usePermissions from '../hooks/usePermissions';
 import { getWorkspaceMembers, removeWorkspaceMember } from '../services/workspaceMembersApi';
+import { approveJoinRequest, rejectJoinRequest } from '../services/memberInvitationApi';
+
+const formatTimeAgo = (date) => {
+  if (!date) return '';
+  const now = new Date();
+  const past = new Date(date);
+  const diffMs = Math.max(0, now - past);
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return past.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
 
 // Membership rows from GET /api/workspaces/:id/members come shaped as
 // { _id: membershipId, user: {...}, role, department, isOwner, joinedAt } —
@@ -200,6 +222,70 @@ const HRPanel = () => {
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [loadingStates, setLoadingStates] = useState({});
+
+  const navigate = useNavigate();
+  const { can } = usePermissions();
+  const canApproveJoinRequests = can('canApproveJoinRequests');
+  const {
+    requests: joinRequests,
+    pendingCount: joinRequestsPendingCount,
+    removeRequest
+  } = useJoinRequestsLive();
+
+  const [isJoinRequestsOpen, setIsJoinRequestsOpen] = useState(false);
+  const [selectedJoinRequest, setSelectedJoinRequest] = useState(null);
+  const joinRequestsRef = useRef(null);
+
+  useEffect(() => {
+    if (!isJoinRequestsOpen) return;
+    const handleClickOutside = (e) => {
+      if (joinRequestsRef.current && !joinRequestsRef.current.contains(e.target)) {
+        setIsJoinRequestsOpen(false);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsJoinRequestsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isJoinRequestsOpen]);
+
+  const handleJoinRequestModalAction = async (action, userData) => {
+    if (!selectedJoinRequest || !currentWorkspace?._id) return;
+    const reqId = selectedJoinRequest._id;
+    const memberName = selectedJoinRequest.user?.name || 'User';
+
+    if (action === 'verify' || action === 'approve') {
+      try {
+        await approveJoinRequest(currentWorkspace._id, reqId, {
+          role: userData.role || undefined,
+          department: userData.department || undefined,
+        });
+        removeRequest(reqId);
+        showToast('success', `${memberName} has been approved`);
+        loadData();
+      } catch (err) {
+        console.error('Failed to approve join request:', err);
+        throw err;
+      }
+    } else if (action === 'decline' || action === 'reject') {
+      try {
+        await rejectJoinRequest(currentWorkspace._id, reqId, 'Registration declined');
+        removeRequest(reqId);
+        showToast('success', `${memberName}'s request was declined`);
+        loadData();
+      } catch (err) {
+        console.error('Failed to decline join request:', err);
+        throw err;
+      }
+    }
+  };
 
   const activeRoles = useMemo(() => (roles || []).filter((r) => r.isActive !== false), [roles]);
 
@@ -421,23 +507,110 @@ const HRPanel = () => {
                   <p className="text-gray-600 mt-1">Manage {currentWorkspace.name}&apos;s members, departments, and assignments</p>
                 </div>
               </div>
-              <PermissionGate permission="canInviteMembers">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowManageInvitations(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors duration-200 font-semibold shadow-sm"
-                  >
-                    Manage Invitations
-                  </button>
-                  <button
-                    onClick={() => setShowAddModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold shadow-md"
-                  >
-                    <UserPlus className="w-5 h-5" />
-                    Invite Member
-                  </button>
-                </div>
-              </PermissionGate>
+              <div className="flex items-center gap-3">
+                {canApproveJoinRequests && joinRequestsPendingCount > 0 && (
+                  <div className="relative" ref={joinRequestsRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsJoinRequestsOpen((prev) => !prev)}
+                      className="relative p-2.5 rounded-xl bg-white border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      aria-label={`Join Requests (${joinRequestsPendingCount} pending)`}
+                      aria-expanded={isJoinRequestsOpen}
+                    >
+                      <Bell className="w-[18px] h-[18px] animate-bell-shake text-gray-600" />
+                      <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-rose-500 rounded-full shadow-sm pointer-events-none">
+                        {joinRequestsPendingCount > 99 ? '99+' : joinRequestsPendingCount}
+                      </span>
+                    </button>
+
+                    {/* Popover */}
+                    {isJoinRequestsOpen && (
+                      <div
+                        className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl bg-white shadow-2xl border border-gray-100 z-50 overflow-hidden"
+                        style={{
+                          backgroundColor: 'var(--color-card-bg, #ffffff)',
+                          borderColor: 'var(--color-border-subtle, rgba(0,0,0,0.08))',
+                        }}
+                      >
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+                          <span className="font-bold text-sm text-gray-900 dark:text-gray-100">
+                            Join Requests ({joinRequestsPendingCount})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsJoinRequestsOpen(false);
+                              navigate('/join-requests');
+                            }}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline transition-colors cursor-pointer"
+                          >
+                            View All
+                          </button>
+                        </div>
+
+                        <div className="max-h-80 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800 p-1">
+                          {joinRequests.slice(0, 5).map((req) => (
+                            <div
+                              key={req._id}
+                              onClick={() => {
+                                setIsJoinRequestsOpen(false);
+                                setSelectedJoinRequest(req);
+                              }}
+                              className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-xl cursor-pointer transition-colors group"
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setIsJoinRequestsOpen(false);
+                                  setSelectedJoinRequest(req);
+                                }
+                              }}
+                            >
+                              <Avatar
+                                src={req.user?.avatar}
+                                name={req.user?.name}
+                                size="md"
+                                showBadge={false}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                                  {req.user?.name || 'Unnamed User'}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                  Request to join as {req.requestedRoleId?.name || req.requestedRole || 'Employee'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                                <span>{formatTimeAgo(req.createdAt)}</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-gray-400 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <PermissionGate permission="canInviteMembers">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowManageInvitations(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors duration-200 font-semibold shadow-sm"
+                    >
+                      Manage Invitations
+                    </button>
+                    <button
+                      onClick={() => setShowAddModal(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors duration-200 font-semibold shadow-md"
+                    >
+                      <UserPlus className="w-5 h-5" />
+                      Invite Member
+                    </button>
+                  </div>
+                </PermissionGate>
+              </div>
             </div>
           </div>
 
@@ -701,6 +874,16 @@ const HRPanel = () => {
             onInvited={() => loadData()}
           />
 
+          {selectedJoinRequest && (
+            <Suspense fallback={null}>
+              <UserVerificationModal
+                request={selectedJoinRequest}
+                onClose={() => setSelectedJoinRequest(null)}
+                onAction={handleJoinRequestModalAction}
+              />
+            </Suspense>
+          )}
+
           {/* Toast Notification */}
           {toast && (
             <div className={`fixed top-4 right-4 z-50 animate-fade-in`}>
@@ -721,6 +904,41 @@ const HRPanel = () => {
       </main>
 
       <style jsx="true">{`
+        @keyframes subtle-bell-shake {
+          0%, 65%, 100% {
+            transform: rotate(0deg);
+          }
+          70% {
+            transform: rotate(14deg);
+          }
+          75% {
+            transform: rotate(-12deg);
+          }
+          80% {
+            transform: rotate(10deg);
+          }
+          85% {
+            transform: rotate(-8deg);
+          }
+          90% {
+            transform: rotate(4deg);
+          }
+          95% {
+            transform: rotate(0deg);
+          }
+        }
+
+        .animate-bell-shake {
+          animation: subtle-bell-shake 4s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
+          transform-origin: top center;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .animate-bell-shake {
+            animation: none !important;
+          }
+        }
+
         @keyframes fade-in {
           from {
             opacity: 0;

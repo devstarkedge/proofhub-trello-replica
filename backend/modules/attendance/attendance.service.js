@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import AuditLog from '../../models/AuditLog.js';
 import { evaluateCheckout, assertCheckoutConfirmation } from './attendanceCheckout.service.js';
-import { enqueueAttendanceEvent, processAttendanceEvents } from './attendanceEvents.service.js';
+import { enqueueAttendanceEvent } from './attendanceEvents.service.js';
 import { validateSelection, startWithAttendance, finalizeAttendanceWork } from '../tracking/tracking.service.js';
 import AttendanceSession from './attendanceSession.model.js';
 import AttendanceDay from './attendanceDay.model.js';
@@ -23,7 +23,6 @@ import { resolveWorkspaceDay } from '../workCalendar/workCalendarFacade.js';
 import { getWorkspaceTimezone, dateOnlyToInstant } from '../leave/leaveTimezone.util.js';
 import { codedError } from './attendanceErrors.js';
 import { friendlyAttendanceMessage } from './attendanceErrorMessages.js';
-import { resolveAttendanceObserverUserIds } from './attendanceAuthorization.service.js';
 import {
   calculateMissedCheckoutCutoff,
   reconcileOverdueSessionsForUser,
@@ -415,6 +414,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
         shift: ctx.shift, officeHours: ctx.officeHours, sessions: [...ctx.sessions, created.toObject()], serverNow: ctx.serverNow, dbSession
       });
       await startWithAttendance({ attendance: created, selection: selectedWork, dbSession });
+      await enqueueAttendanceEvent({workspaceId,user:userId,key:`checkin-${created._id}`,kind:'CHECKED_IN',attendanceSession:created._id,workDateKey:created.workDateKey},dbSession);
       result = { session: created, replay: false, attendanceDay: day };
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
   } finally {
@@ -422,8 +422,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
   }
   if (!result.replay) {
     try {
-      const observerUserIds = await resolveAttendanceObserverUserIds({ workspaceId, subjectUserId: userId, subjectDepartmentIds: membership.department });
-      attendanceHooks.onCheckedIn(userId, result.session, result.attendanceDay, observerUserIds);
+      attendanceHooks.onCheckedIn(userId, result.session, result.attendanceDay, []);
     } catch (error) { console.error('[Attendance] check-in realtime hook error:', error.message); }
   }
   return result;
@@ -520,6 +519,8 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
     throw error;
   } finally {await dbSession.endSession();}
   // Transport delivery is recoverable; a committed checkout is never reopened.
-  await processAttendanceEvents(workspaceId,{limit:2}).catch(error=>console.error('[Attendance] checkout delivery will retry:',error.message));
+  // The durable outbox is drained by existing maintenance/BullMQ workers.
+  // Observer authorization and transport retries must not hold the response.
+  if(!result.replay)try{attendanceHooks.onCheckedOut(userId,result.session,result.attendanceDay,[]);}catch{/* durable retry */}
   return result;
 }

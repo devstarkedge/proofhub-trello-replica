@@ -59,7 +59,7 @@ export async function dashboard(workspaceId,userId,query){
   const selected=members.slice(0,limit),owners=selected.map(m=>m.user);
   const [rawSessions,attendance,devices,users,departmentDocs]=await Promise.all([
     WorkSession.find({...bounds,user:{$in:owners}}).select('-operations').sort({startedAt:-1}).lean(),
-    AttendanceSession.find({workspaceId,user:{$in:owners},workDateKey:{$gte:dates.fromDate,$lte:dates.toDate}}).lean(),
+    AttendanceSession.find({workspaceId,user:{$in:owners},workDateKey:{$gte:dates.fromDate,$lte:dates.toDate}}).select('_id user workDateKey status checkInAt checkOutAt missedCheckoutCutoffAt').lean(),
     TrackingDevice.find({workspaceId,user:{$in:owners},revokedAt:null}).select('user state lastSeenAt activeSession screenshotIssue lastUploadError').lean(),
     User.find({_id:{$in:owners}}).select('name avatar').lean(),
     Department.find({workspaceId,_id:{$in:selected.flatMap(departmentsOf)}}).select('name').lean()
@@ -67,16 +67,16 @@ export async function dashboard(workspaceId,userId,query){
   await scope.markMixed(rawSessions);
   const sessions=await reconcileReadSessions(rawSessions.filter(s=>scope.canRecord(s)),ctx,scope,attendance);
   const evidenceSegments=sessions.flatMap(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))).map(segment=>({session:s._id,startedAt:segment.startedAt,endedAt:segment.endedAt})));
-  const evidenceMap=await evidenceByUser(workspaceId,sessions,evidenceSegments,dates.start,dates.end);
+  const evidenceMap=query.summaryOnly==='true'?new Map():await evidenceByUser(workspaceId,sessions,evidenceSegments,dates.start,dates.end);
   const data=selected.map(member=>{
     const own=sessions.filter(s=>id(s.user)===id(member.user)),last=own.find(s=>!s.endedAt)||own[0],status=last&&!last.endedAt&&last.status==='RUNNING'?'RUNNING':last&&!last.endedAt&&last.status==='PAUSED'&&last.pauses?.some(p=>!p.endedAt)?'PAUSED':'NOT_TRACKING';
     const segments=own.flatMap(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))));
-    const evidence=evidenceMap.get(id(member.user))||summarizeEvidence([]);
+    const evidence=query.summaryOnly==='true'?null:evidenceMap.get(id(member.user))||summarizeEvidence([]);
     const office=attendance.filter(a=>id(a.user)===id(member.user)),latest=last?.segments.filter(s=>matchesSegment(s,query)).at(-1),owner=users.find(u=>id(u)===id(member.user));
     return {userId:member.user,name:owner?.name||'Member',avatar:owner?.avatar,role:member.role,departments:departmentsOf(member).map(d=>({_id:d,name:departmentDocs.find(v=>id(v)===d)?.name||'Department'})),trackingStatus:status,
       attendanceStatus:office.some(a=>a.status==='ACTIVE')?'Checked in':office.length?'Checked out':'No attendance',title:latest?.agenda?latest.agendaTitle+' — '+latest.description:latest?(latest.projectName||'Project')+' / '+(latest.taskTitle||'Individual'):'No work selected',
       workSeconds:summarize({segments,endedAt:now}).workSeconds,officeSeconds:office.reduce((n,a)=>n+Math.max(0,(+(a.checkOutAt||new Date(Math.min(+now,a.missedCheckoutCutoffAt?+a.missedCheckoutCutoffAt:Infinity)))-+a.checkInAt)/1000),0),evidence,
       session:last?{_id:last._id,status:last.status,startedAt:last.startedAt,revision:last.revision}:null,devices:devices.filter(d=>id(d.user)===id(member.user)).map(d=>({...d,connected:+now-+new Date(d.lastSeenAt||0)<45000}))};
   });
-  return {workspaceId,users:data,total,pageSize:limit,nextCursor:members.length>limit?id(selected.at(-1)):null,timezone,dates,serverNow:now};
+  return {workspaceId,users:query.evidenceOnly==='true'?data.map(({userId,evidence})=>({userId,evidence})):data,total,pageSize:limit,nextCursor:members.length>limit?id(selected.at(-1)):null,timezone,dates,serverNow:now};
 }

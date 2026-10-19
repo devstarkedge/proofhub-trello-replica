@@ -5,6 +5,7 @@ import Header from '../components/Header';
 import useRealtimeSync from '../hooks/useRealtimeSync';
 import AuthContext from '../context/AuthContext';
 import { runAttendanceLocationBootstrapOnce } from '../utils/attendanceLocationBootstrap';
+import SessionSynchronization from '../components/Attendance/SessionSynchronization';
 
 const MainLayout = () => {
   useRealtimeSync();
@@ -25,6 +26,7 @@ const MainLayout = () => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
+      <SessionSynchronization />
       {/* Sidebar - Fixed Position */}
       <Sidebar />
 

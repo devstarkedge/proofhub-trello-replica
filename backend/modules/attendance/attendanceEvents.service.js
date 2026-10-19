@@ -36,7 +36,15 @@ export async function processAttendanceEvents(workspaceId,{limit=20}={}) {
       const activeMembership=membership?.status==='active';
       const workspace=await Workspace.findById(workspaceId).lean();
       if(!workspace)throw new Error('Attendance workspace no longer exists');
-      if(event.kind==='RECALCULATE'){
+      if(event.kind==='WORK_CHANGED'){
+        const work=await WorkSession.findOne({_id:event.workSession,workspaceId,user:event.user}).select('-operations -audit').lean();
+        if(work&&activeMembership){
+          const {emitChanged}=await import('../tracking/tracking.service.js');await emitChanged(work,{strict:true});
+          // These jobs carry invalidations, not business mutations. One fresh
+          // delivery supersedes older revisions without dropping any audit.
+          await AttendanceEvent.updateMany({workspaceId,kind:'WORK_CHANGED',workSession:work._id,processedAt:null,workRevision:{$lte:work.revision}},{$set:{processedAt:new Date(),lastError:'',claimedUntil:new Date(0)}});
+        }
+      } else if(event.kind==='RECALCULATE'){
         if(!membership)throw new Error('Attendance member context is unavailable for recomputation');
         const {recomputeAttendanceDayForDate}=await import('./attendance.service.js');
         const transaction=await mongoose.startSession();
@@ -46,13 +54,13 @@ export async function processAttendanceEvents(workspaceId,{limit=20}={}) {
         });}finally{await transaction.endSession();}
       } else {
         const attendance=await AttendanceSession.findOne({_id:event.attendanceSession,workspaceId,user:event.user}).lean();
-        if(!attendance||attendance.status==='ACTIVE')throw new Error('Checkout event has no completed attendance');
+        if(!attendance||event.kind==='CHECKED_OUT'&&attendance.status==='ACTIVE')throw new Error('Attendance event has no matching state');
         const {finalizeAttendanceWork,emitChanged}=await import('../tracking/tracking.service.js');
-        await finalizeAttendanceWork(attendance);
+        if(event.kind==='CHECKED_OUT')await finalizeAttendanceWork(attendance);
         const day=await AttendanceDay.findOne({workspaceId,user:event.user,workDateKey:event.workDateKey}).lean();
         const observers=activeMembership?await resolveAttendanceObserverUserIds({workspaceId,subjectUserId:event.user,subjectDepartmentIds:membership.department}):[];
-        if(activeMembership)hooks.onCheckedOut(event.user,attendance,day,observers);
-        for(const work of await WorkSession.find({workspaceId,attendanceSession:attendance._id}).lean())await emitChanged(work);
+        if(activeMembership){if(event.kind==='CHECKED_IN'){if(attendance.status==='ACTIVE')hooks.onCheckedIn(event.user,attendance,day,observers);}else hooks.onCheckedOut(event.user,attendance,day,observers);}
+        for(const work of await WorkSession.find({workspaceId,attendanceSession:attendance._id}).select('-operations -audit').lean())await emitChanged(work,{strict:true});
       }
       if(event.kind==='RECALCULATE'&&activeMembership){
         const observers=await resolveAttendanceObserverUserIds({workspaceId,subjectUserId:event.user,subjectDepartmentIds:membership.department});

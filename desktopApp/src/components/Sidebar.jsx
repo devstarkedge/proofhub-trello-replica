@@ -119,14 +119,24 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
       items.push({ path: '/reminders', icon: CalendarClock, label: 'Client Reminders' });
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
-      items.push({ path: '/hr-panel', icon: UserCheck, label: 'HR Panel' });
+      items.push({
+        path: '/hr-panel',
+        icon: UserCheck,
+        label: 'HR Panel',
+        badge: (joinRequestsVisible && joinRequestsPendingCount > 0) ? joinRequestsPendingCount : null,
+      });
       items.push({ path: '/admin/settings', icon: Settings, label: 'Admin Settings' });
     } else if (userRole === 'hr') {
       if (salesVisible) {
         items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
       }
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
-      items.push({ path: '/hr-panel', icon: UserCheck, label: 'HR Panel' });
+      items.push({
+        path: '/hr-panel',
+        icon: UserCheck,
+        label: 'HR Panel',
+        badge: (joinRequestsVisible && joinRequestsPendingCount > 0) ? joinRequestsPendingCount : null,
+      });
     } else if (userRole === 'manager') {
       if (salesVisible) {
         items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
@@ -144,15 +154,6 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     // block above too, but this covers delegated non-admins.)
     if (accessControlVisible && !items.some((item) => item.path === '/access-control')) {
       items.push({ path: '/access-control', icon: ShieldCheck, label: 'Access & Permissions' });
-    }
-
-    if (joinRequestsVisible && !items.some((item) => item.path === '/join-requests')) {
-      items.push({
-        path: '/join-requests',
-        icon: ClipboardCheck,
-        label: 'Join Requests',
-        badge: joinRequestsPendingCount > 0 ? joinRequestsPendingCount : null,
-      });
     }
 
     return items;

@@ -8,10 +8,15 @@ const style={color:'var(--color-text-primary)',backgroundColor:'var(--color-card
 const field='block w-full rounded-lg border p-2 mt-1';
 export default function WorkSelectionDialog({onClose,onConfirm,checkingIn=false,linking=false,currentSession=null,attendanceOnly=false,workModeControl=null}){
   const [mode,setMode]=useState('ASSIGNED'),[options,setOptions]=useState({projects:[],tasks:[],lists:[]}),[agendas,setAgendas]=useState([]),[agendaId,setAgendaId]=useState(''),[projectId,setProjectId]=useState(''),[taskId,setTaskId]=useState(''),[listId,setListId]=useState(''),[title,setTitle]=useState(''),[description,setDescription]=useState(''),[agendaTitle,setAgendaTitle]=useState(''),[creatingAgenda,setCreatingAgenda]=useState(false),[includePrevious,setIncludePrevious]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [accessEpoch,setAccessEpoch]=useState(0);
+  useEffect(()=>{const changed=e=>{if(/role|permission|department|membership|access|workspace.*updated/.test(e.detail?.type||'')){setOptions({projects:[],tasks:[],lists:[]});setAgendas([]);setProjectId('');setTaskId('');setAccessEpoch(v=>v+1);}};window.addEventListener('flowtask:realtime',changed);return()=>window.removeEventListener('flowtask:realtime',changed);},[]);
   const operation=useRef(crypto.randomUUID()),creation=useRef(crypto.randomUUID()),heading=useRef(null),saving=useRef(false);
-  useEffect(()=>{if(attendanceOnly)return;let live=true;Promise.all([getWorkOptions(),getAgendas()]).then(([next,items])=>{if(!live)return;setOptions(next);setAgendas(items);setAgendaId(items.find(a=>a.title==='Learning')?._id||items[0]?._id||'');const first=next.projects.find(p=>p.hasAssignedTasks);setProjectId(first?._id||'');if(!first&&!linking)setMode('INDIVIDUAL');}).catch(e=>live&&setError(errorMessage(e)));return()=>{live=false;};},[linking,attendanceOnly]);
+  useEffect(()=>{if(attendanceOnly)return;let live=true;
+    getWorkOptions().then(next=>{if(!live)return;setOptions(next);const first=next.projects.find(p=>p.hasAssignedTasks);setProjectId(first?._id||'');if(!first&&!linking)setMode('INDIVIDUAL');}).catch(e=>live&&setError(errorMessage(e)));
+    getAgendas().then(items=>{if(!live)return;setAgendas(items);setAgendaId(items.find(a=>a.title==='Learning')?._id||items[0]?._id||'');}).catch(e=>live&&setError(errorMessage(e)));
+    return()=>{live=false;};},[linking,attendanceOnly,accessEpoch]);
   useEffect(()=>{const before=document.activeElement;heading.current?.focus();return()=>before?.focus?.();},[]);
-  useEffect(()=>{if(!projectId)return;let live=true;getWorkOptions(projectId).then(next=>{if(live){setOptions(next);setTaskId('');setListId(next.lists[0]?._id||'');}}).catch(e=>live&&setError(errorMessage(e)));return()=>{live=false;};},[projectId]);
+  useEffect(()=>{if(!projectId)return;let live=true;const controller=new AbortController();setTaskId('');setOptions(old=>({...old,tasks:[],lists:[]}));getWorkOptions(projectId,controller.signal).then(next=>{if(live){setOptions(next);setTaskId('');setListId(next.lists[0]?._id||'');}}).catch(e=>live&&setError(errorMessage(e)));return()=>{live=false;controller.abort();};},[projectId]);
   const project=options.projects.find(p=>p._id===projectId),last=currentSession?.segments.at(-1);
   const needsDecision=linking||Boolean(last?.agenda&&mode!=='INDIVIDUAL');
   let rangeStart=last?.startedAt,rangeSeconds=last?Math.max(0,((last.endedAt?+new Date(last.endedAt):Date.now())-+new Date(last.startedAt))/1000):0;

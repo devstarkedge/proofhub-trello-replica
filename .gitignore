@@ -24,3 +24,8 @@ backend/tests/attendance/*
 !desktopApp/electron/tests/tracking-lifecycle.test.cjs
 !backend/tests/attendance/smartCheckout.browser.mjs
 !backend/tests/attendance/smartCheckout.electron.cjs
+
+!backend/tests/tracking/performance.browser.mjs
+!desktopApp/electron/tests/tracking-runtime.test.cjs
+
+!backend/tests/tracking/navigation.browser.mjs

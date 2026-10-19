@@ -4,7 +4,8 @@ import Workspace from '../../models/Workspace.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import { getTodayStatus, checkIn, checkOut } from './attendance.service.js';
 import { setupAttendanceModule } from './attendanceSetup.service.js';
-import {policyFor,currentState,changeWork} from '../tracking/tracking.service.js';
+import {policyFor,changeWork} from '../tracking/tracking.service.js';
+import {WorkSession} from '../tracking/tracking.models.js';
 
 /**
  * `req.user` already carries the active-workspace membership's role/
@@ -36,7 +37,8 @@ export const getMyTodayStatus = asyncHandler(async (req, res) => {
   const status = await getTodayStatus({
     workspaceId: req.workspaceId, userId: req.user.id, membership: membershipFromReq(req), workspace
   });
-  res.json({ success: true, data: status });
+  res.set('Cache-Control','private, no-store');
+  res.json({ success: true, data: { ...status,workspaceId:req.workspaceId,userId:String(req.user.id),serverNow:new Date() } });
 });
 
 export const postCheckIn = asyncHandler(async (req, res) => {
@@ -60,10 +62,10 @@ export const postCheckIn = asyncHandler(async (req, res) => {
   }
   let trackingStartup=null;
   if(req.body?.workSelection&&req.body.workSelection.mode!=='ATTENDANCE_ONLY'&&(await policyFor(req.workspaceId)).enabled){
-    try{const state=await currentState(req.workspaceId,req.user.id);if(!state.session)await changeWork({workspaceId:req.workspaceId,userId:req.user.id,action:'start',selection:req.body.workSelection,operationId:`checkin-${result.session._id}`,expectedRevision:null});trackingStartup={state:state.session?.status||'RUNNING'};}
+    try{const work=await WorkSession.findOne({workspaceId:req.workspaceId,attendanceSession:result.session._id}).select('_id status').lean();if(!work)await changeWork({workspaceId:req.workspaceId,userId:req.user.id,action:'start',selection:req.body.workSelection,operationId:`checkin-${result.session._id}`,expectedRevision:null});trackingStartup={state:work?.status||'RUNNING'};}
     catch(error){trackingStartup={state:'FAILED',message:error.message,retryable:true};}
   }
-  res.status(result.replay ? 200 : 201).json({ success: true, data: result.session, replay: result.replay,trackingStartup });
+  res.status(result.replay ? 200 : 201).json({ success: true, data: result.session, replay: result.replay,trackingStartup,serverNow:new Date() });
 });
 
 export const previewCheckOut = asyncHandler(async (req,res) => {
@@ -82,5 +84,5 @@ export const postCheckOut = asyncHandler(async (req, res) => {
     workspace, gps, ipAddress: req.ip, actorName: req.user.name, attendanceSessionId:req.body?.attendanceSessionId, operationId:req.body?.operationId, previewToken:req.body?.previewToken
   });
 
-  res.json({ success: true, data: result.session, replay: result.replay, summary:result.summary });
+  res.json({ success: true, data: result.session, replay: result.replay, summary:result.summary,serverNow:new Date() });
 });

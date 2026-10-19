@@ -4,6 +4,8 @@ import { protect } from '../../middleware/authMiddleware.js';
 import { validate } from '../../middleware/validation.js';
 import { rateLimiter } from '../../middleware/rateLimiter.js';
 import { getMyTodayStatus, postCheckIn, postCheckOut, previewCheckOut } from './attendance.controller.js';
+import AttendanceSession from './attendanceSession.model.js';
+import asyncHandler from '../../middleware/asyncHandler.js';
 
 const router = express.Router();
 router.use(protect);
@@ -22,6 +24,12 @@ const checkInOutLimiter = rateLimiter({ windowMs: 5 * 60 * 1000, maxRequests: 30
 // check, never by a route-level permission gate standing in for it.
 router.get('/me/today', getMyTodayStatus);
 router.get('/check-out/preview', previewCheckOut);
+router.get('/operations/:operationId',asyncHandler(async(req,res)=>{
+  const operationId=req.params.operationId;
+  if(!/^[\w-]{8,128}$/.test(operationId))return res.status(400).json({success:false,message:'Invalid attendance operation'});
+  const session=await AttendanceSession.findOne({workspaceId:req.workspaceId,user:req.user.id,$or:[{idempotencyKey:operationId},{checkoutOperationId:operationId}]}).lean();
+  res.set('Cache-Control','no-store');res.json({success:true,data:{committed:Boolean(session),session}});
+}));
 router.post(
   '/check-in',
   checkInOutLimiter,

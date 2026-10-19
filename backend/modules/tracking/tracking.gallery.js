@@ -4,6 +4,7 @@ import {historicalDepartmentScope} from './tracking.visibility.js';
 import {segmentFilter,matchesSegment} from './tracking.dashboard.js';
 import {readPrivateScreenshot,missingStorageObject} from './tracking.storage.js';
 import {readLegacyScreenshot} from './tracking.legacyStorage.js';
+import {makeTrackingThumbnail} from './tracking.thumbnail.js';
 const id=v=>String(v?._id||v||'');
 const alive=()=>({$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]});
 export const contextTitle=s=>s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle}`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName||'Project'} / ${s.taskTitle||'Individual'}`;
@@ -16,7 +17,8 @@ function compact(s,interval,session){
     contexts:interval?contexts(session,interval):[]};
 }
 export async function gallery(workspaceId,userId,query){
-  const ctx=await contextFor(workspaceId,userId),session=await WorkSession.findOne({_id:objectId(query.sessionId),workspaceId}).select('-operations -audit').lean();
+  const session=await WorkSession.findOne({_id:objectId(query.sessionId),workspaceId}).select('-operations -audit').lean();
+  const ctx=await contextFor(workspaceId,userId,{includeProjects:id(session?.user)!==id(userId)});
   // Capture history can be visible after a department transfer even when the
   // session started elsewhere. Each image still requires its historical scope.
   const scope=await historicalDepartmentScope(workspaceId,userId,session?.user);
@@ -33,13 +35,14 @@ export async function gallery(workspaceId,userId,query){
     filter.$and=[{$or:[{capturedAt:{$lt:new Date(value.at)}},{capturedAt:new Date(value.at),_id:{$lt:objectId(value.id)}}]}];
   }
   const records=await TrackingScreenshot.find(filter).sort({capturedAt:-1,_id:-1}).limit(21).select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes compressionException').lean();
-  const page=records.slice(0,20),intervals=await ActivityInterval.find({workspaceId,_id:{$in:page.map(s=>s.interval)},...history,...alive()}).select('-digest -capturePolicy').lean();
+  const page=records.slice(0,20),intervals=await ActivityInterval.find({workspaceId,_id:{$in:page.map(s=>s.interval)},...history,...alive()}).select('_id startedAt endedAt coverage activityBasis inputEligibleSeconds inputActiveSeconds').lean();
   const byId=new Map(intervals.map(i=>[id(i),i])),last=page.at(-1);
   return {workspaceId,sessionId:session._id,screenshots:page.filter(s=>byId.has(id(s.interval))).map(s=>compact(s,byId.get(id(s.interval)),session)),nextCursor:records.length>20?Buffer.from(JSON.stringify({at:last.capturedAt,id:last._id})).toString('base64url'):null};
 }
 export async function authorizedScreenshot(workspaceId,userId,screenshotId,{ready=false}={}){
-  const ctx=await contextFor(workspaceId,userId),s=await TrackingScreenshot.findOne({workspaceId,_id:objectId(screenshotId),status:ready?'READY':{$ne:'DELETED'},...alive()}).lean();
+  const s=await TrackingScreenshot.findOne({workspaceId,_id:objectId(screenshotId),status:ready?'READY':{$ne:'DELETED'},...alive()}).lean();
   if(!s)fail('Screenshot not found',404);
+  const ctx=await contextFor(workspaceId,userId,{includeProjects:id(s.user)!==id(userId)});
   const session=await WorkSession.findOne({workspaceId,_id:s.session}).select('-operations -audit').lean();
   await authorizeRecord(ctx,session?{...session,departmentIdsAtStart:s.departmentIdsAtCapture}:null,'tracking.view_screenshots');
   return {s,session};
@@ -47,14 +50,15 @@ export async function authorizedScreenshot(workspaceId,userId,screenshotId,{read
 export async function screenshotDetails(workspaceId,userId,screenshotId){
   const {s,session}=await authorizedScreenshot(workspaceId,userId,screenshotId),interval=await ActivityInterval.findOne({workspaceId,_id:s.interval,...alive()}).select('-digest -capturePolicy').lean();
   return {...compact(s,interval,session),originalWidth:s.originalWidth||s.width,originalHeight:s.originalHeight||s.height,quality:s.quality,format:s.format,compressionStrategy:s.compressionStrategy,policyRevision:s.policyRevision,uploadedAt:s.uploadedAt,expiresAt:s.expiresAt,
-    thumbnail:{source:'original',width:s.width,height:s.height,bytes:s.bytes,quality:s.quality,status:s.status},
+    thumbnail:{source:'derived-in-memory',maxWidth:480,maxHeight:270,quality:65,status:s.status},
     activity:interval?{startedAt:interval.startedAt,endedAt:interval.endedAt,mouseCount:interval.mouseCount,keyboardCount:interval.keyboardCount,activeSeconds:interval.activeSeconds,idleSeconds:interval.idleSeconds,inputActiveSeconds:interval.inputActiveSeconds,inputEligibleSeconds:interval.inputEligibleSeconds,activityBasis:interval.activityBasis,timeBasis:interval.timeBasis}:null,
     minuteActivityAvailable:false};
 }
-export async function screenshotContent(workspaceId,userId,screenshotId){
+export async function screenshotContent(workspaceId,userId,screenshotId,{thumbnail=false}={}){
   const {s}=await authorizedScreenshot(workspaceId,userId,screenshotId,{ready:true});
   let bytes;
-  // Both /content and the legacy /thumbnail route read the same stored image.
+  // Both routes read the same stored image. Thumbnail bytes are derived only
+  // in memory; no second object or screenshot record is ever written.
   try{bytes=s.storageProvider==='cloudflare-r2'?await readPrivateScreenshot(s):await readLegacyScreenshot(s);}
   catch(error){if(s.storageProvider==='cloudflare-r2'&&missingStorageObject(error)){
     await TrackingScreenshot.updateOne({_id:s._id,status:'READY'},{$set:{status:'PENDING',uploadStatus:'RETRY_PENDING',storageMissingAt:new Date(),lastUploadError:'Image was removed from R2. A retained desktop copy is required to recover it.'}});
@@ -62,6 +66,7 @@ export async function screenshotContent(workspaceId,userId,screenshotId){
   }throw error;}
   // Membership, role, historical departments and expiration are checked again
   // after storage IO. No signed GET URL outlives this authorization decision.
+  const content=thumbnail?await makeTrackingThumbnail(bytes):{bytes,mimeType:s.mimeType||`image/${s.format||'jpeg'}`};
   await authorizedScreenshot(workspaceId,userId,screenshotId,{ready:true});
-  return {bytes,mimeType:s.mimeType||`image/${s.format||'jpeg'}`};
+  return content;
 }

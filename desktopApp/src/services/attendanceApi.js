@@ -5,7 +5,7 @@ const baseURL = import.meta.env.VITE_BACKEND_URL;
 
 const api = axios.create({
   baseURL: `${baseURL}/api/attendance`,
-  headers: { 'Content-Type': 'application/json' }
+  headers: { 'Content-Type': 'application/json' }, timeout:20000
 });
 
 api.interceptors.request.use((config) => {
@@ -13,11 +13,16 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   const workspaceId = localStorage.getItem('workspaceId');
   if (workspaceId) config.headers['x-workspace-id'] = workspaceId;
+  config.flowtaskIdentity={token,workspaceId};
   return config;
-});
+},undefined,{synchronous:true});
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const identity=response.config.flowtaskIdentity;
+    if(identity&&(identity.token!==localStorage.getItem('token')||identity.workspaceId!==localStorage.getItem('workspaceId')))throw new DOMException('Attendance identity changed','AbortError');
+    return response;
+  },
   (error) => {
     const message = error.response?.data?.message || 'An error occurred';
     if (![403, 423].includes(error.response?.status) && error.response?.data?.code !== 'CHECKOUT_RECONFIRM_REQUIRED') toast.error(message);
@@ -110,3 +115,5 @@ export const getAttendanceDashboard = async (params = {}) => (await api.get('/da
 export const getAttendanceSessionDetail = async (sessionId) => (await api.get(`/sessions/${sessionId}`)).data;
 
 export default api;
+
+export const getAttendanceOperation=async id=>(await api.get(`/operations/${id}`)).data.data;

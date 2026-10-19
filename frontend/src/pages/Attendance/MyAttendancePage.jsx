@@ -1,5 +1,6 @@
+import useAttendanceSession from '../../hooks/useAttendanceSession';
 import { formatHours } from '../../utils/duration';
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Plus, X, Ban } from 'lucide-react';
 import { Button } from '../../components/ui/button';
@@ -123,27 +124,24 @@ const RegularizationRequestForm = ({ onCancel, onSubmitted }) => {
 
 const MyAttendancePage = () => {
   const { currentWorkspace } = useContext(WorkspaceContext) || {};
-  const [today, setToday] = useState(undefined);
+  const {status:today,error:sessionError,reload:loadToday,scope}=useAttendanceSession();
   const [wfhRequests, setWfhRequests] = useState([]);
   const [regularizations, setRegularizations] = useState([]);
   const [showWfhForm, setShowWfhForm] = useState(false);
   const [showRegularizationForm, setShowRegularizationForm] = useState(false);
 
-  const loadToday = () => attendanceApi.getMyTodayStatus().then(({ data }) => setToday(data)).catch(() => setToday({ attendanceApplicable: false }));
-  const loadRequests = () => {
-    attendanceApi.getMyWfhRequests().then(({ data }) => setWfhRequests(data)).catch(() => {});
-    attendanceApi.getMyRegularizations().then(({ data }) => setRegularizations(data)).catch(() => {});
-  };
+  const requestGeneration=useRef(0),activeScope=useRef(scope);activeScope.current=scope;
+  const invalidateRequests=useCallback(()=>{requestGeneration.current++;},[]);
+  const loadRequests = useCallback(() => {
+    const generation=++requestGeneration.current,expectedScope=scope;
+    const current=()=>generation===requestGeneration.current&&activeScope.current===expectedScope;
+    attendanceApi.getMyWfhRequests().then(({ data }) => {if(current())setWfhRequests(data);}).catch(() => {});
+    attendanceApi.getMyRegularizations().then(({ data }) => {if(current())setRegularizations(data);}).catch(() => {});
+  },[scope]);
 
-  // Re-fetch whenever the ACTIVE workspace changes, not just on mount — this
-  // page's data is plain component state, not one of the Zustand stores
-  // resetAllOnWorkspaceSwitch() already clears on a switch (see
-  // WorkspaceContext#switchWorkspace), so without this it would keep
-  // showing the previous workspace's (or a previous 403's empty) data
-  // until the user happened to navigate away and back.
-  useEffect(() => { loadToday(); loadRequests(); }, [currentWorkspace?._id]);
+  useEffect(() => {setWfhRequests([]);setRegularizations([]);setShowWfhForm(false);setShowRegularizationForm(false);loadRequests();return invalidateRequests;}, [loadRequests,invalidateRequests,currentWorkspace?._id]);
   useEffect(() => {
-    const refresh = () => { loadToday(); loadRequests(); };
+    const refresh = () => { loadRequests(); };
     window.addEventListener('socket-attendance-checked-in', refresh);
     window.addEventListener('socket-attendance-checked-out', refresh);
     window.addEventListener('socket-attendance-missed-checkout', refresh);
@@ -162,7 +160,7 @@ const MyAttendancePage = () => {
       window.removeEventListener('socket-attendance-wfh-decided', refresh);
       window.removeEventListener('socket-attendance-regularization-decided', refresh);
     };
-  }, []);
+  }, [loadRequests]);
 
   const cancelWfh = async (request) => {
     try { await attendanceApi.cancelWfhRequest(request._id); toast.success('Request cancelled'); loadRequests(); } catch { /* interceptor */ }
@@ -171,7 +169,7 @@ const MyAttendancePage = () => {
     try { await attendanceApi.cancelRegularization(request._id); toast.success('Request cancelled'); loadRequests(); } catch { /* interceptor */ }
   };
 
-  if (today === undefined) return null;
+  if (!today) return <p role={sessionError?'alert':'status'}>{sessionError||'Loading attendance…'}{sessionError&&<button onClick={loadToday}>Retry</button>}</p>;
 
   if (!today.attendanceApplicable) {
     return <LeaveEmptyState title="Attendance doesn't apply to your account" description="You're not required to check in or out in this workspace." />;
@@ -179,6 +177,7 @@ const MyAttendancePage = () => {
 
   return (
     <div className="space-y-4">
+      {sessionError&&<p role="status">{sessionError} <button onClick={loadToday}>Retry</button></p>}
       {today.unresolvedMissedCheckout && (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>

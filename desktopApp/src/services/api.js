@@ -1,5 +1,9 @@
 import axios from 'axios';
 import { addMutation, processMutations } from './backgroundSync';
+import { createBackendConnectivityMonitor } from './backendConnectivity';
+import { shouldQueueOfflineRequest } from './requestPolicy';
+
+const backendConnectivity = createBackendConnectivityMonitor();
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_BACKEND_URL,
@@ -36,9 +40,13 @@ api.interceptors.request.use(
 
 // Add a response interceptor for offline handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    backendConnectivity.succeeded();
+    return response;
+  },
   async (error) => {
-    if (!navigator.onLine && error.config && !error.config.skipOfflineQueue) {
+    backendConnectivity.failed(error);
+    if (!navigator.onLine && shouldQueueOfflineRequest(error.config)) {
       // Store the failed request for later retry
       await addMutation({
         url: error.config.url,
@@ -50,6 +58,9 @@ api.interceptors.response.use(
       // Return a resolved promise to prevent the error from propagating
       return Promise.resolve({ data: { offline: true } });
     }
+    // Reads and authentication requests must remain errors. Treating an
+    // offline verify/login as a successful queued mutation can invalidate a
+    // valid session and can persist credentials that must never be queued.
     return Promise.reject(error);
   }
 );

@@ -1,3 +1,4 @@
+import useSessionAction from '../../hooks/useSessionAction';
 import {finalizeDesktopCapture} from '../../services/desktopTracking';
 import { formatHours } from '../../utils/duration';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -5,7 +6,9 @@ import { toast } from 'react-toastify';
 import { MapPin, LogIn, LogOut, CheckCircle2, Loader2, BriefcaseBusiness, ChevronDown } from 'lucide-react';
 import * as attendanceApi from '../../services/attendanceApi';
 import WorkSelectionModal from '../Tracking/WorkSelectionModal';
-import {getTrackingState} from '../../services/trackingApi';
+import {trackingStore} from '../../services/trackingState';
+import useAttendanceSession from '../../hooks/useAttendanceSession';
+import useSessionClock from '../../hooks/useSessionClock';
 import TrackingPanel from '../Tracking/TrackingPanel';
 import CheckOutConfirmationModal from './CheckOutConfirmationModal';
 
@@ -100,80 +103,23 @@ async function captureGps() {
  * action needs it, never on mount/page load.
  */
 const AttendanceQuickControl = () => {
+  const sessionAction=useSessionAction();
   const isDesktop = window.flowtaskDesktop?.isDesktop === true;
-  const [status, setStatus] = useState(null);
+  const {status,error:sessionError,reload:load,scope,workspaceId,expired}=useAttendanceSession();
   const [showWorkSelection, setShowWorkSelection] = useState(false);
   const [showCheckOut,setShowCheckOut] = useState(false);
   const checkoutInactive=useCallback(()=>{setShowCheckOut(false);window.dispatchEvent(new Event('socket-attendance-updated'));},[]);
   const [attendanceOnly, setAttendanceOnly] = useState(false);
   // A ref guards even clicks in the same render; choosing work is not a check-in.
-  const operationRef = useRef(null), loadGeneration = useRef(0);
-  const [phase, setPhase] = useState('loading'); // loading | idle | preparing | locating | submitting
-  const [liveMinutes, setLiveMinutes] = useState(0);
+  const operationRef = useRef(null);
+  const [phase, setPhase] = useState('idle'); // loading | idle | preparing | locating | submitting
   const [selectedWorkMode, setSelectedWorkMode] = useState(null);
-  const tickRef = useRef(null), checkoutSessionRef=useRef(null);
+  const checkoutSessionRef=useRef(null);
 
-  const load = useCallback(async () => {
-    const generation = ++loadGeneration.current;
-    try {
-      const { data } = await attendanceApi.getMyTodayStatus();
-      if (generation !== loadGeneration.current) return;
-      setStatus(data);
-      if (!operationRef.current) setSelectedWorkMode(data.defaultWorkMode || null);
-    } catch {
-      if (generation === loadGeneration.current) setStatus(previous => previous || { attendanceApplicable: false });
-    } finally {
-      setPhase(previous => previous === 'loading' ? 'idle' : previous);
-    }
-  }, []);
+  useEffect(()=>{if(!operationRef.current)setSelectedWorkMode(status?.defaultWorkMode||null);},[status?.defaultWorkMode,scope]);
+  useEffect(()=>{operationRef.current=null;setShowWorkSelection(false);setShowCheckOut(false);setPhase('idle');},[scope]);
 
-  useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    const onChanged = () => load();
-    window.addEventListener('socket-attendance-checked-in', onChanged);
-    window.addEventListener('socket-attendance-checked-out', onChanged);
-    window.addEventListener('socket-attendance-missed-checkout', onChanged);
-    window.addEventListener('socket-attendance-updated', onChanged);
-    window.addEventListener('socket-attendance-regularization-decided', onChanged);
-    // A Location was added/edited/activated/deactivated/deleted anywhere in
-    // this workspace — refetch so requiresGeofence/requiresGps (and thus
-    // whether GPS is even attempted below) reflects the current
-    // configuration immediately, not just on next page load (new spec §5).
-    window.addEventListener('socket-attendance-locations-updated', onChanged);
-    return () => {
-      window.removeEventListener('socket-attendance-checked-in', onChanged);
-      window.removeEventListener('socket-attendance-checked-out', onChanged);
-      window.removeEventListener('socket-attendance-missed-checkout', onChanged);
-      window.removeEventListener('socket-attendance-updated', onChanged);
-      window.removeEventListener('socket-attendance-regularization-decided', onChanged);
-      window.removeEventListener('socket-attendance-locations-updated', onChanged);
-    };
-  }, [load]);
-
-  useEffect(() => {
-    clearInterval(tickRef.current);
-    if (!status?.activeSession?.checkInAt) { setLiveMinutes(0); return undefined; }
-    const checkInAt = new Date(status.activeSession.checkInAt).getTime();
-    const cutoffAt = status.activeSession.missedCheckoutCutoffAt
-      ? new Date(status.activeSession.missedCheckoutCutoffAt).getTime()
-      : Infinity;
-
-    const tick = () => {
-      const now = Date.now();
-      if (now >= cutoffAt && cutoffAt !== Infinity) {
-        // Expired — trigger reload so state updates
-        load();
-      }
-      const effectiveEnd = Math.min(now, cutoffAt);
-      setLiveMinutes(Math.max(0, (effectiveEnd - checkInAt) / 60000));
-    };
-    tick();
-    tickRef.current = setInterval(tick, 30000);
-    return () => clearInterval(tickRef.current);
-  }, [status?.activeSession?.checkInAt, status?.activeSession?.missedCheckoutCutoffAt, load]);
-
-  if (!status) return <div className="welcome-controls welcome-check-in" role="status"><p className="text-sm text-white/80">Loading attendance…</p></div>;
+  if (!status) return <div className="welcome-controls welcome-check-in" role={sessionError?'alert':'status'}><p className="text-sm text-white/80">{sessionError||'Loading attendance…'}</p>{sessionError&&<button type="button" className="welcome-action" onClick={load}>Retry attendance</button>}</div>;
   if (!status.attendanceApplicable) return null;
 
   // GPS is attempted ONLY when the backend's own resolution says today's
@@ -196,21 +142,17 @@ const AttendanceQuickControl = () => {
 
     setPhase('submitting');
     try {
-      const response=await apiCall({ ...(gps || {}), ...extraPayload });
+      const payload={...(gps||{}),...extraPayload},checkingIn=apiCall===attendanceApi.checkIn;
+      const operationId=checkingIn?payload.idempotencyKey:payload.operationId;
+      const response=await sessionAction.run({kind:checkingIn?'attendance-checkin':'attendance-checkout',action:checkingIn?'checkin':'checkout',operationId,sessionId:status.activeSession?._id,payload},()=>apiCall(payload));
       if(response.trackingStartup?.state==='FAILED')toast.warning(`Attendance is checked in. Work did not start: ${response.trackingStartup.message}. Use Start work to retry.`);
-      // Use the successful server response immediately, even if the status refresh fails.
-      if (response.data?.checkInAt) {
-        ++loadGeneration.current;
-        const checkedIn = response.data.status === 'ACTIVE';
-        setStatus(previous => ({ ...previous, canCheckIn: false, completed: ['CLOSED', 'COMPLETED'].includes(response.data.status), activeSession: checkedIn ? response.data : null, workedMinutes: undefined }));
-      }
-      if(options.onResponse)await options.onResponse(response);
+      // The shared action receipt updates the session caches before native IO.
+      if(options.onResponse)Promise.resolve(options.onResponse(response)).catch(()=>{});
       toast.success(successMessage);
-      await load();
-      window.dispatchEvent(new Event('flowtask:tracking-refresh'));
       return response;
     } catch (error) {
       if(options.propagateError)throw error;
+      if([403,423].includes(error.response?.status))toast.error(error.response?.data?.message||error.message);
       return false;
     } finally {
       setPhase('idle');
@@ -218,13 +160,13 @@ const AttendanceQuickControl = () => {
   };
 
   const handleCheckIn = async () => {
-    if (operationRef.current) return;
+    if (operationRef.current || sessionAction.busy || sessionError) return;
     operationRef.current = 'preparing';
     setPhase('preparing');
     let workAvailable = false;
     try {
-      const tracking = await getTrackingState();
-      workAvailable = Boolean(tracking.policy.enabled && tracking.canTrack);
+      const tracking = await trackingStore(scope,workspaceId).ensure();
+      workAvailable = Boolean(tracking?.policy?.enabled && tracking.canTrack);
     } catch { /* Attendance remains available when tracking is unavailable. */ }
     setAttendanceOnly(!workAvailable);
     operationRef.current = 'selecting';
@@ -255,12 +197,13 @@ const AttendanceQuickControl = () => {
       }});
     } finally {
       operationRef.current=null;setPhase('idle');
-      window.flowtaskDesktop?.tracking?.refresh().catch(()=>{});
+      window.flowtaskDesktop?.tracking?.refresh?.()?.catch(()=>{});
     }
   };
 
-  const isBusy = ['preparing', 'locating', 'submitting'].includes(phase);
-  const busyLabel = phase === 'locating' ? 'Locating…' : showCheckOut ? 'Checking Out…' : 'Checking In…';
+  const isBusy = sessionAction.busy || Boolean(sessionError) || expired || ['preparing', 'locating', 'submitting'].includes(phase);
+  const attendancePending = ['preparing', 'locating', 'submitting'].includes(phase) || sessionAction.phase==='PENDING'&&sessionAction.kind?.startsWith('attendance-');
+  const busyLabel = phase === 'locating' ? 'Locating…' : showCheckOut || sessionAction.action==='checkout' ? 'Checking Out…' : 'Checking In…';
 
   const mode = status.activeSession?.workMode || status.activeSession?.checkIn?.workMode || selectedWorkMode || status.defaultWorkMode;
   const modeControl = mode ? <label className="welcome-work-mode" title="Today's Work Mode">
@@ -270,19 +213,21 @@ const AttendanceQuickControl = () => {
       : <span>{mode}</span>}
   </label> : null;
   const attendanceDetails = <div className="space-y-2 text-xs">
-    {status.activeSession && <p>Checked in · {formatHours(liveMinutes)}</p>}
+    {status.activeSession && <AttendanceElapsed status={status}/>}
     {status.completed && typeof status.workedMinutes === 'number' && <p>Worked {formatHours(status.workedMinutes)} today</p>}
     {!isDesktop && !status.completed && (status.activeSession || status.canCheckIn) && <p>Use the FlowTask desktop app to check in and check out.</p>}
     {status.unresolvedMissedCheckout && <p>Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance</p>}
   </div>;
   let content;
-  if (isBusy && isDesktop) content = <button type="button" disabled aria-busy="true" className="welcome-action"><Loader2 size={15} className="animate-spin" />{busyLabel}</button>;
+  if (attendancePending && isDesktop) content = <button type="button" disabled aria-busy="true" className="welcome-action"><Loader2 size={15} className="animate-spin" />{busyLabel}</button>;
   else if (status.completed) content = <span className="welcome-attendance-label"><CheckCircle2 size={15} />Attendance Completed</span>;
-  else if (status.activeSession) content = isDesktop ? <button type="button" onClick={handleCheckOut} className="welcome-action"><LogOut size={15} />Check Out</button> : null;
-  else if (status.canCheckIn) content = isDesktop ? <button type="button" onClick={handleCheckIn} className="welcome-action"><LogIn size={15} />Check In</button> : null;
+  else if (status.activeSession) content = isDesktop ? <button type="button" disabled={isBusy} onClick={handleCheckOut} className="welcome-action"><LogOut size={15} />Check Out</button> : null;
+  else if (status.canCheckIn) content = isDesktop ? <button type="button" disabled={isBusy} onClick={handleCheckIn} className="welcome-action"><LogIn size={15} />Check In</button> : null;
   else content = <span className="welcome-attendance-label"><MapPin size={15} />{friendlyBlockingLabel(status.blockingReason)}</span>;
 
   return <>
+    {sessionError&&<p role="status" className="text-xs">{sessionError} <button type="button" className="underline" onClick={load}>Retry</button></p>}
+    {sessionAction.phase==='RECONCILIATION_REQUIRED'&&<p role="alert" className="text-sm">{sessionAction.error} <button type="button" onClick={()=>sessionAction.recover()}>Verify status</button> <button type="button" onClick={()=>sessionAction.retry().catch(()=>{})}>Retry safely</button></p>}
     {status.activeSession
       ? <TrackingPanel compact attendanceHeader={modeControl} attendanceActions={content} attendanceDetails={attendanceDetails} attendanceWarning={Boolean(status.unresolvedMissedCheckout)} />
       : (content || !isDesktop || status.unresolvedMissedCheckout) && <div className="welcome-controls welcome-check-in">
@@ -294,6 +239,14 @@ const AttendanceQuickControl = () => {
   </>;
 
 };
+
+function AttendanceElapsed({status}){
+  const now=useSessionClock(),anchor=+new Date(status.serverNow),received=status.receivedAt??now;
+  const projected=Number.isFinite(anchor)?anchor+Math.max(0,(status.unconfirmedAt??now)-received):Date.now();
+  const cutoff=status.activeSession?.missedCheckoutCutoffAt?+new Date(status.activeSession.missedCheckoutCutoffAt):Infinity;
+  const minutes=Math.max(0,(Math.min(projected,cutoff)-+new Date(status.activeSession.checkInAt))/60000);
+  return <p>Checked in · {formatHours(minutes)}</p>;
+}
 
 function friendlyBlockingLabel(code) {
   const labels = {

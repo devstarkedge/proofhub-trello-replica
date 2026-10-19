@@ -14,7 +14,7 @@ import AttendanceSession from '../attendance/attendanceSession.model.js';
 import AttendanceDay from '../attendance/attendanceDay.model.js';
 import { emitToUser } from '../../realtime/emitters.js';
 import { WorkSession, ActivityInterval, TrackingScreenshot, TrackingPolicy, TrackingDevice } from './tracking.models.js';
-import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, reconcileSession, reconcileReadSessions } from './tracking.service.js';
+import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, reconcileSession, reconcileReadSessions, publicWorkSession } from './tracking.service.js';
 import { registerDevice, acceptMonitoringNotice, releaseDevice, heartbeat, recordInterval, prepareScreenshot, completeScreenshot, retryScreenshot } from './tracking.device.js';
 import { storageHealth } from './tracking.storage.js';
 import { trackingVisibility, historicalDepartmentScope } from './tracking.visibility.js';
@@ -22,6 +22,7 @@ import {gallery,screenshotDetails,screenshotContent} from './tracking.gallery.js
 import {readVisibilityScope} from './tracking.visibility.js';
 import { summarize, coverageGaps,overlapSeconds } from './tracking.timeline.js';
 import { summarizeEvidence } from './tracking.evidence.js';
+import {evidenceByUser} from './tracking.evidenceRead.js';
 import {updateSettings,requireTrackingAdmin,listAgendas,createAgenda} from './tracking.settings.js';
 import {dashboard,segmentFilter,matchesSegment} from './tracking.dashboard.js';
 
@@ -77,7 +78,15 @@ router.get('/tasks/:taskId/totals',asyncHandler(async(req,res)=>{
 }));
 router.post('/work/:action', asyncHandler(async (req,res) => {
   const { selection, operationId, expectedRevision } = req.body || {};
-  send(res, await changeWork({ ...actor(req), action: req.params.action, selection, operationId, expectedRevision }));
+  const work=await changeWork({ ...actor(req), action: req.params.action, selection, operationId, expectedRevision });
+  const session=publicWorkSession(work);
+  send(res,{...session,session,workspaceId:req.workspaceId,userId:String(req.user.id),operationId,serverNow:new Date()});
+}));
+router.get('/work/operations/:operationId',asyncHandler(async(req,res)=>{
+  await contextFor(req.workspaceId,req.user.id,{includeProjects:false});
+  if(!/^[\w-]{8,128}$/.test(req.params.operationId))fail('Invalid operation ID');
+  const work=await WorkSession.findOne({workspaceId:req.workspaceId,user:req.user.id,...(req.query.sessionId?{_id:objectId(req.query.sessionId)}:{}),'operations.id':req.params.operationId}).select('-operations -audit').lean();
+  res.set('Cache-Control','no-store');send(res,{workspaceId:req.workspaceId,userId:String(req.user.id),committed:Boolean(work),session:publicWorkSession(work),serverNow:new Date()});
 }));
 router.get('/policy', asyncHandler(async (req,res) => { await contextFor(req.workspaceId, req.user.id); send(res, await policyFor(req.workspaceId)); }));
 router.put('/policy', asyncHandler(async (req,res) => {
@@ -142,10 +151,18 @@ router.get('/reports', asyncHandler(async (req,res) => {
     const attendance=attendanceRows.find(a=>id(a)===id(session.attendanceSession)),day=attendance?days.find(d=>id(d)===id(attendance.attendanceDay)):null;
     const officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(Date.now(),attendance.missedCheckoutCutoffAt?+attendance.missedCheckoutCutoffAt:Infinity)):null);
     const filtered={...session,segments:session.segments.filter(s=>matchesSegment(s,req.query))};
-    return {...filtered,userName:subjects.find(u=>id(u)===id(session.user))?.name||'Former member',totals:summarize(filtered),attendance:{status:attendance?.status,day,checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null}};
+    const {audit:_,...summary}=filtered;
+    return {...summary,userName:subjects.find(u=>id(u)===id(session.user))?.name||'Former member',totals:summarize(filtered),attendance:{status:attendance?.status,day,checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null}};
   });
   const workspace = await Workspace.findById(req.workspaceId).select('timezone').lean();
   send(res, { workspaceId:req.workspaceId,sessions: data, timezone: workspace?.timezone || 'UTC', nextCursor: candidates.length === 20 ? id(candidates.at(-1)._id) : null });
+}));
+router.get('/sessions/:sessionId/history',asyncHandler(async(req,res)=>{
+  const ctx=await contextFor(req.workspaceId,req.user.id),session=await WorkSession.findById(objectId(req.params.sessionId)).select('-operations -audit').lean();
+  await authorizeRecord(ctx,session);const offset=Number(req.query.offset||0);
+  if(!Number.isInteger(offset)||offset<0||!Number.isSafeInteger(offset))fail('Invalid history offset');
+  const row=await WorkSession.findById(session._id).select({audit:{$slice:[offset,51]}}).lean();
+  send(res,{events:row.audit.slice(0,50),nextOffset:row.audit.length>50?offset+50:null});
 }));
 router.get('/sessions/:sessionId/timeline', asyncHandler(async (req,res) => {
   const ctx = await contextFor(req.workspaceId, req.user.id), session = await WorkSession.findById(objectId(req.params.sessionId)).lean();
@@ -160,16 +177,18 @@ router.get('/sessions/:sessionId/timeline', asyncHandler(async (req,res) => {
   if (before && !Number.isFinite(+before)) fail('Invalid timeline cursor');
   const validExpiry={$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]};
   const cutoff=new Date(0);
-  const intervals = await ActivityInterval.find({ ...history,...segmentBounds,$and:[validExpiry],session: session._id, endedAt: { $gte:cutoff,...(before?{$lt:before}:{}) } }).sort({ endedAt: -1 }).limit(20).select('-digest').lean();
+  const intervals = await ActivityInterval.find({ ...history,...segmentBounds,$and:[validExpiry],session: session._id, endedAt: { $gte:cutoff,...(before?{$lt:before}:{}) } }).sort({ endedAt: -1 }).limit(20).select('-digest -capturePolicy').lean();
   let screenshots = []; 
   try { await authorizeRecord(ctx, session, 'tracking.view_screenshots');
     if(req.query.summaryOnly!=='true')screenshots = await TrackingScreenshot.find({ ...history,...validExpiry,session: session._id, interval: { $in: intervals.map(i => i._id) }, status: {$ne:'DELETED'} }).select('_id interval displayId capturedAt width height blurred uploadStatus status').lean();
   } catch (e) { if (e.statusCode !== 404) throw e; }
-  const allCoverage=await ActivityInterval.find({...history,...segmentBounds,$and:[validExpiry],session:session._id,endedAt:{$gte:cutoff}}).select('_id startedAt endedAt coverage activityBasis inputActiveSeconds inputEligibleSeconds mouseCount keyboardCount').lean();
-  const imageStates=await TrackingScreenshot.find({...history,...validExpiry,session:session._id,interval:{$in:allCoverage.map(i=>i._id)},status:{$ne:'DELETED'}}).select('interval status displayId').lean();
+  const summaryOnly=req.query.summaryOnly==='true';
+  const allCoverage=await ActivityInterval.find({...history,...segmentBounds,$and:[validExpiry],session:session._id,endedAt:{$gte:cutoff}}).select(summaryOnly?'_id startedAt endedAt':'_id startedAt endedAt coverage activityBasis inputActiveSeconds inputEligibleSeconds mouseCount keyboardCount').lean();
+  const imageStates=summaryOnly?[]:await TrackingScreenshot.find({...history,...validExpiry,session:session._id,interval:{$in:allCoverage.map(i=>i._id)},status:{$ne:'DELETED'}}).select('interval status displayId').lean();
   const contexts=intervals.map(interval=>({...interval,contexts:session.segments.filter(s=>+new Date(s.startedAt)<+new Date(interval.endedAt)&&(!s.endedAt||+new Date(s.endedAt)>+new Date(interval.startedAt))).map(s=>({segmentId:s._id,title:s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle}`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName} / ${s.taskTitle||'Individual'}`,origin:s.agenda?`${s.agendaTitle} — ${s.description}`:null,task:s.attributedTask||s.task,attributedAt:s.attributedAt}))}));
   const fullyCovered=allCoverage.filter(i=>overlapSeconds(i.startedAt,i.endedAt,segments)>=(+i.endedAt-+i.startedAt)/1000-0.001);
-  send(res, { intervals:contexts, screenshots, evidence:summarizeEvidence(fullyCovered,imageStates), coverageGaps:coverageGaps(segments,allCoverage), nextBefore: intervals.length === 20 ? intervals.at(-1).endedAt : null });
+  const evidence=summaryOnly?(await evidenceByUser(req.workspaceId,[session],segments.map(s=>({session:session._id,startedAt:s.startedAt,endedAt:s.endedAt||new Date()})),cutoff,new Date())).get(id(session.user))||summarizeEvidence([]):summarizeEvidence(fullyCovered,imageStates);
+  send(res, { intervals:contexts, screenshots, evidence, coverageGaps:coverageGaps(segments,allCoverage), nextBefore: intervals.length === 20 ? intervals.at(-1).endedAt : null });
 }));
 router.get('/storage-health',asyncHandler(async(req,res)=>{
   await requireTrackingAdmin(req.workspaceId,req.user.id);
@@ -182,8 +201,9 @@ router.get('/screenshots/:screenshotId/details',asyncHandler(async(req,res)=>{
   res.set('Cache-Control','private, no-store');send(res,result);
 }));
 for(const kind of ['content','thumbnail'])router.get(`/screenshots/:screenshotId/${kind}`,asyncHandler(async(req,res)=>{
-  const {bytes,mimeType}=await screenshotContent(req.workspaceId,req.user.id,req.params.screenshotId);
+  const {bytes,mimeType,width,height}=await screenshotContent(req.workspaceId,req.user.id,req.params.screenshotId,{thumbnail:kind==='thumbnail'});
   await audit(req,'TRACKING_SCREENSHOT_VIEWED','TrackingScreenshot',req.params.screenshotId,{kind});
+  if(width&&height)res.set({'X-Image-Width':String(width),'X-Image-Height':String(height)});
   res.set({'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Type':mimeType,'Content-Length':String(bytes.length)});res.send(bytes);
 }));
 export default router;

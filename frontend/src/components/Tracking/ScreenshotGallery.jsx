@@ -1,7 +1,7 @@
 import {lazy,Suspense,memo,useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {useInfiniteQuery,useQuery,useQueryClient} from '@tanstack/react-query';
 import {Camera,Info,ImageOff,Loader2} from 'lucide-react';
-import {getScreenshotGallery,getScreenshotDetails,getScreenshotUrl,errorMessage} from '../../services/trackingApi';
+import {getScreenshotGallery,getScreenshotDetails,getScreenshotUrl,getScreenshotThumbnailUrl,errorMessage} from '../../services/trackingApi';
 const DocumentViewerModal=lazy(()=>import('../DocumentViewerModal'));
 import TrackingDialog from './TrackingDialog';
 import useTrackingScope from './useTrackingScope';
@@ -10,19 +10,19 @@ import {formatTrackingClock as duration} from '../../utils/duration';
 const time=(value,zone)=>value?new Date(value).toLocaleString(undefined,{timeZone:zone||'UTC'}):'—';
 const cardStyle={backgroundColor:'var(--color-card-bg)',borderColor:'var(--color-border-default)'};
 let active=0;const waiting=[];
-async function imageRequest(id,signal){if(active>=4)await new Promise(resolve=>waiting.push(resolve));else active++;try{if(signal.aborted)throw new DOMException('Aborted','AbortError');return await getScreenshotUrl(id,signal);}finally{const next=waiting.shift();if(next)next();else active--;}}
+async function imageRequest(id,signal){if(active>=4)await new Promise(resolve=>waiting.push(resolve));else active++;try{if(signal.aborted)throw new DOMException('Aborted','AbortError');return await getScreenshotThumbnailUrl(id,signal);}finally{const next=waiting.shift();if(next)next();else active--;}}
 const CaptureCard=memo(function CaptureCard({capture,timezone,onOpen,onDetails}){
-  const node=useRef(null),[url,setUrl]=useState(''),[error,setError]=useState('');
-  useEffect(()=>{if(capture.status!=='READY')return;const controller=new AbortController();let value;
+  const node=useRef(null),[url,setUrl]=useState(''),[error,setError]=useState(''),[retry,setRetry]=useState(0);
+  useEffect(()=>{setUrl('');setError('');if(capture.status!=='READY')return;const controller=new AbortController();let value;
     const observer=new IntersectionObserver(entries=>{if(!entries.some(e=>e.isIntersecting))return;observer.disconnect();imageRequest(capture._id,controller.signal).then(result=>{value=result.url;if(controller.signal.aborted)URL.revokeObjectURL(value);else setUrl(value);}).catch(e=>{if(!controller.signal.aborted)setError(e.response?.status===410?'Deleted from storage':errorMessage(e));});},{rootMargin:'150px'});observer.observe(node.current);
     return()=>{controller.abort();observer.disconnect();if(value)URL.revokeObjectURL(value);};
-  },[capture._id,capture.status]);
+  },[capture._id,capture.status,retry]);
   const rate=capture.activityPercent;
   return <article ref={node} className="overflow-hidden rounded-xl border shadow-sm" style={cardStyle}>
     <button className="relative flex aspect-video w-full items-center justify-center bg-slate-500/10 focus-visible:outline-2 focus-visible:outline-blue-500" disabled={capture.status!=='READY'} onClick={()=>onOpen(capture._id)} aria-label={`Open screenshot ${time(capture.capturedAt,timezone)}, monitor ${capture.displayId}`}>
       {url?<img src={url} alt={`Monitor ${capture.displayId}`} loading="lazy" decoding="async" className="h-full w-full object-contain" onError={()=>{setError('Thumbnail unavailable');setUrl('');}}/>:error||capture.status!=='READY'?<span className="flex flex-col items-center gap-2 px-3 text-xs"><ImageOff size={22}/>{error||capture.compressionException||capture.uploadStatus||'Thumbnail unavailable'}</span>:<Loader2 className="animate-spin opacity-40" size={20}/>}
     </button>
-    <div className="space-y-2 p-3"><div className="h-2 overflow-hidden rounded-sm bg-slate-400/20" role="meter" aria-label="Recorded input activity" aria-valuemin={0} aria-valuemax={100} {...(rate!==null?{'aria-valuenow':Math.round(rate)}:{'aria-valuetext':'Unavailable'})}><div className="h-full bg-emerald-500" style={{width:rate===null?'0%':`${rate}%`,backgroundImage:'repeating-linear-gradient(90deg,transparent 0,transparent 10px,var(--color-card-bg) 10px,var(--color-card-bg) 12px)'}}/></div>
+    <div className="space-y-2 p-3">{error&&capture.status==='READY'&&<button className="text-xs underline" onClick={()=>setRetry(v=>v+1)}>Retry thumbnail</button>}<div className="h-2 overflow-hidden rounded-sm bg-slate-400/20" role="meter" aria-label="Recorded input activity" aria-valuemin={0} aria-valuemax={100} {...(rate!==null?{'aria-valuenow':Math.round(rate)}:{'aria-valuetext':'Unavailable'})}><div className="h-full bg-emerald-500" style={{width:rate===null?'0%':`${rate}%`,backgroundImage:'repeating-linear-gradient(90deg,transparent 0,transparent 10px,var(--color-card-bg) 10px,var(--color-card-bg) 12px)'}}/></div>
       <div className="flex items-center justify-between text-xs"><span>{new Date(capture.capturedAt).toLocaleTimeString(undefined,{timeZone:timezone||'UTC',hour:'2-digit',minute:'2-digit'})}</span><span>{rate===null?'Activity N/A':`${Math.round(rate)}% activity`}</span></div>
       <button className="flex w-full items-center justify-between gap-2 text-left text-xs" onClick={()=>onDetails(capture._id)} aria-label={`Screenshot details ${time(capture.capturedAt,timezone)}`}><span className="min-w-0 truncate">Screen {capture.displayId} · {capture.status==='READY'?'Uploaded':capture.uploadStatus}{capture.blurred?' · blurred':''}</span><Info size={15} className="shrink-0"/></button>
     </div>

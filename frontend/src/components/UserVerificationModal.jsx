@@ -2,10 +2,23 @@ import React, { useState, useEffect, useContext } from 'react';
 import Database from '../services/database';
 import useRoleStore from '../store/roleStore';
 import AuthContext from '../context/AuthContext';
-import { FaUser, FaEnvelope, FaBriefcase, FaCheckCircle, FaTimesCircle, FaCalendarAlt, FaBuilding, FaExclamationTriangle, FaInfoCircle, FaSpinner } from 'react-icons/fa';
+import usePermissions from '../hooks/usePermissions';
+import { 
+  User, 
+  Mail, 
+  Briefcase, 
+  CheckCircle2, 
+  XCircle, 
+  Calendar, 
+  Building2, 
+  AlertTriangle, 
+  Info, 
+  Loader2 
+} from 'lucide-react';
 
-const UserVerificationModal = ({ notification, onClose, onAction }) => {
+const UserVerificationModal = ({ notification, request, onClose, onAction }) => {
   const { user: currentUser } = useContext(AuthContext);
+  const { can } = usePermissions();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [approveLoading, setApproveLoading] = useState(false);
@@ -18,8 +31,10 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
   const [validationErrors, setValidationErrors] = useState({});
   const [restrictedAction, setRestrictedAction] = useState({ show: false, x: 0, y: 0, message: '' });
 
+  const canApprove = currentUser?.role === 'admin' || can('canApproveJoinRequests');
+
   const handleRestrictedClick = (e, message) => {
-    if (currentUser?.role !== 'admin') {
+    if (!canApprove) {
       e.preventDefault();
       e.stopPropagation();
       
@@ -41,9 +56,22 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
   const initialized = useRoleStore((state) => state.initialized);
 
   useEffect(() => {
-    if (notification && notification.sender) {
+    if (request) {
+      if (currentUser && !canApprove && currentUser.role !== 'manager') {
+        setError("You don't have permission to perform verification.");
+        setLoading(false);
+        return;
+      }
+      const initialRole = request.requestedRoleId?.slug || request.requestedRole || 'employee';
+      setSelectedRole(initialRole);
+      const initialDept = request.requestedDepartment?.[0]?._id || request.requestedDepartment?.[0] || '';
+      setSelectedDepartment(initialDept);
+
+      loadUserDataForRequest(request);
+      loadDepartments();
+    } else if (notification && notification.sender) {
       // Permission check
-      if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'manager') {
+      if (currentUser && !canApprove && currentUser.role !== 'manager') {
         setError("You don't have permission to perform verification.");
         setLoading(false);
         return;
@@ -51,7 +79,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
       loadUserData();
       loadDepartments();
     }
-  }, [notification, currentUser]);
+  }, [request, notification, currentUser, canApprove]);
 
   // Load roles when component mounts
   useEffect(() => {
@@ -80,6 +108,60 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
     if (typeof user.department === 'object' && user.department.name) return user.department.name;
     return null;
   })();
+
+  const loadUserDataForRequest = async (req) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const targetUserId = req.user?._id || req.user;
+      if (targetUserId && typeof targetUserId === 'string') {
+        try {
+          const userData = await Database.getUser(targetUserId);
+          if (userData?.data) {
+            setUser({
+              ...userData.data,
+              department: req.requestedDepartment?.length ? req.requestedDepartment : userData.data.department,
+            });
+            return;
+          }
+        } catch (fetchErr) {
+          console.warn('Could not fetch user details from database, falling back to request data:', fetchErr);
+        }
+      }
+      if (req.user && typeof req.user === 'object') {
+        setUser({
+          _id: req.user._id,
+          name: req.user.name,
+          email: req.user.email,
+          avatar: req.user.avatar,
+          role: req.requestedRole || 'employee',
+          department: req.requestedDepartment || [],
+          createdAt: req.createdAt,
+          isVerified: false,
+          isActive: true,
+        });
+      }
+    } catch (err) {
+      console.error('Error loading request user data:', err);
+      if (req.user && typeof req.user === 'object') {
+        setUser({
+          _id: req.user._id,
+          name: req.user.name,
+          email: req.user.email,
+          avatar: req.user.avatar,
+          role: req.requestedRole || 'employee',
+          department: req.requestedDepartment || [],
+          createdAt: req.createdAt,
+          isVerified: false,
+          isActive: true,
+        });
+      } else {
+        setError('Failed to load user data. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -133,7 +215,8 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
       const userData = {
         userId: user._id,
         role: selectedRole,
-        department: selectedDepartment || null
+        department: selectedDepartment || null,
+        requestId: request?._id,
       };
       await onAction('verify', userData);
       setSuccessMessage('User approved and verified successfully!');
@@ -142,7 +225,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
       }, 1500);
     } catch (error) {
       console.error('Error approving user:', error);
-      setError('Failed to approve user. Please try again.');
+      setError(error?.response?.data?.message || error?.message || 'Failed to approve user. Please try again.');
     } finally {
       setApproveLoading(false);
     }
@@ -151,7 +234,10 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
   const handleDecline = async () => {
     if (!user) return;
 
-    if (!window.confirm('Are you sure you want to decline this user registration? This will permanently delete their data.')) {
+    const confirmMessage = request
+      ? 'Are you sure you want to decline this join request?'
+      : 'Are you sure you want to decline this user registration? This will permanently delete their data.';
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -161,7 +247,8 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
 
     try {
       const userData = {
-        userId: user._id
+        userId: user._id,
+        requestId: request?._id,
       };
       await onAction('decline', userData);
       setSuccessMessage('User declined and deleted successfully!');
@@ -170,7 +257,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
       }, 1500);
     } catch (error) {
       console.error('Error declining user:', error);
-      setError('Failed to decline user. Please try again.');
+      setError(error?.response?.data?.message || error?.message || 'Failed to decline user. Please try again.');
     } finally {
       setDeclineLoading(false);
     }
@@ -187,7 +274,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]">
         <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
           <div className="text-center">
-            <FaSpinner className="animate-spin text-blue-600 text-3xl mx-auto mb-4" />
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
             <p className="text-gray-700 font-medium">Loading user details...</p>
             <p className="text-sm text-gray-500 mt-2">Please wait while we fetch the user information</p>
           </div>
@@ -201,7 +288,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]">
         <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
           <div className="text-center">
-            <FaExclamationTriangle className="text-red-500 text-4xl mx-auto mb-4" />
+            <AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-red-600 mb-2">User Not Found</h3>
             <p className="text-gray-600 mb-6">The requested user could not be loaded.</p>
             <button
@@ -223,13 +310,13 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
         <div className="flex justify-between items-start mb-6 border-b pb-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-              <FaUser className="mr-3 text-blue-600" />
+              <User className="w-6 h-6 mr-3 text-blue-600" />
               User Verification
             </h2>
             {user.department && (
               <div className="mt-3 bg-blue-50 p-3 rounded-lg">
                 <p className="text-sm text-gray-700 flex items-center">
-                  <FaBuilding className="mr-2 text-blue-600" />
+                  <Building2 className="w-4 h-4 mr-2 text-blue-600 inline" />
                   <span className="font-medium">Department selected during registration:</span>
                   <span className="ml-2 text-blue-600 font-semibold">{departmentName || 'Department name not available'}</span>
                 </p>
@@ -249,14 +336,14 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
         {/* Error and Success Messages */}
         {error && (
           <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 rounded-md flex items-center">
-            <FaExclamationTriangle className="text-red-500 mr-2" />
+            <AlertTriangle className="w-4 h-4 text-red-500 mr-2 flex-shrink-0" />
             <span className="text-red-700 text-sm">{error}</span>
           </div>
         )}
 
         {successMessage && (
           <div className="mb-4 p-3 bg-green-50 border-l-4 border-green-500 rounded-md flex items-center">
-            <FaCheckCircle className="text-green-500 mr-2" />
+            <CheckCircle2 className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
             <span className="text-green-700 text-sm">{successMessage}</span>
           </div>
         )}
@@ -265,7 +352,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
           {/* User Details Section */}
           <div className="bg-gray-50 p-6 rounded-lg border">
             <h3 className="text-xl font-semibold mb-6 flex items-center text-gray-800 border-b pb-4">
-              <FaInfoCircle className="mr-3 text-blue-600" />
+              <Info className="w-5 h-5 mr-3 text-blue-600" />
               User Information
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
@@ -273,7 +360,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
               {/* Full Name */}
               <div className="flex items-start">
                 <div className="p-2 bg-white rounded-lg shadow-sm mr-4 border border-gray-100">
-                  <FaUser className="text-blue-500 text-lg" />
+                  <User className="w-5 h-5 text-blue-500" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Full Name</label>
@@ -284,7 +371,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
               {/* Current Role */}
               <div className="flex items-start">
                 <div className="p-2 bg-white rounded-lg shadow-sm mr-4 border border-gray-100">
-                  <FaBriefcase className="text-purple-500 text-lg" />
+                  <Briefcase className="w-5 h-5 text-purple-500" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Current Role</label>
@@ -295,7 +382,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
               {/* Email Address - Spans Full Width */}
               <div className="flex items-start md:col-span-2">
                 <div className="p-2 bg-white rounded-lg shadow-sm mr-4 border border-gray-100">
-                  <FaEnvelope className="text-indigo-500 text-lg" />
+                  <Mail className="w-5 h-5 text-indigo-500" />
                 </div>
                 <div className="w-full">
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Email Address</label>
@@ -306,7 +393,7 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
               {/* Registration Date */}
               <div className="flex items-start">
                 <div className="p-2 bg-white rounded-lg shadow-sm mr-4 border border-gray-100">
-                  <FaCalendarAlt className="text-orange-500 text-lg" />
+                  <Calendar className="w-5 h-5 text-orange-500" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Registration Date</label>
@@ -320,22 +407,27 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                 </div>
               </div>
 
-              {/* Status Section - Combined or Separate? Keeping separate for clarity */}
-              {/* Verification Status */}
+              {/* Status Section */}
               <div className="flex items-start">
-                <div className={`p-2 rounded-lg shadow-sm mr-4 border border-gray-100 ${user.isVerified ? 'bg-green-50' : 'bg-yellow-50'}`}>
-                  {user.isVerified ? (
-                    <FaCheckCircle className="text-green-500 text-lg" />
+                <div className={`p-2 rounded-lg shadow-sm mr-4 border border-gray-100 ${(!request && user.isVerified) || (request && request.status !== 'pending') ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                  {(!request && user.isVerified) || (request && request.status !== 'pending') ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
                   ) : (
-                    <FaTimesCircle className="text-yellow-500 text-lg" />
+                    <XCircle className="w-5 h-5 text-yellow-500" />
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Verification Status</label>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                    {request ? 'Request Status' : 'Verification Status'}
+                  </label>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    user.isVerified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                    (!request && user.isVerified) || (request && request.status !== 'pending')
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {user.isVerified ? 'Verified' : 'Pending Verification'}
+                    {request
+                      ? (request.status === 'pending' ? 'Pending Review' : (request.status === 'approved' ? 'Approved' : 'Rejected'))
+                      : (user.isVerified ? 'Verified' : 'Pending Verification')}
                   </span>
                 </div>
               </div>
@@ -344,9 +436,9 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
               <div className="flex items-start">
                 <div className={`p-2 rounded-lg shadow-sm mr-4 border border-gray-100 ${user.isActive ? 'bg-green-50' : 'bg-red-50'}`}>
                    {user.isActive ? (
-                    <FaCheckCircle className="text-green-500 text-lg" />
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
                   ) : (
-                    <FaTimesCircle className="text-red-500 text-lg" />
+                    <XCircle className="w-5 h-5 text-red-500" />
                   )}
                 </div>
                 <div>
@@ -358,6 +450,16 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                   </span>
                 </div>
               </div>
+
+              {/* Personal message if from join request */}
+              {request?.message && (
+                <div className="flex items-start md:col-span-2">
+                  <div className="w-full bg-blue-50/70 border border-blue-200/70 p-3.5 rounded-xl">
+                    <label className="block text-xs font-semibold text-blue-700 uppercase tracking-wider mb-1">Personal Message</label>
+                    <p className="text-gray-800 text-sm italic">&quot;{request.message}&quot;</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -381,16 +483,16 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
           {/* Approval Settings Section */}
           <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 relative">
             <h3 className="text-xl font-semibold mb-5 flex items-center text-gray-800">
-              <FaCheckCircle className="mr-2 text-blue-600" />
+              <CheckCircle2 className="w-5 h-5 mr-2 text-blue-600" />
               Approval Settings
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div 
                 className="relative"
-                onClick={(e) => handleRestrictedClick(e, "Only Admin has access to verify the user.")}
+                onClick={(e) => handleRestrictedClick(e, "Only authorized reviewers can assign roles.")}
               >
-                {/* Overlay for non-admins to capture clicks */}
-                {currentUser?.role !== 'admin' && (
+                {/* Overlay for unauthorized users to capture clicks */}
+                {!canApprove && (
                   <div className="absolute inset-0 z-10 cursor-not-allowed bg-transparent" />
                 )}
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -402,8 +504,8 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                     setSelectedRole(e.target.value);
                     setValidationErrors({...validationErrors, role: ''});
                   }}
-                  className={`w-full px-4 py-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900 ${validationErrors.role ? 'border-red-500' : 'border-gray-300'} ${currentUser?.role !== 'admin' ? 'cursor-not-allowed opacity-70' : ''}`}
-                  disabled={approveLoading || declineLoading || currentUser?.role !== 'admin'}
+                  className={`w-full px-4 py-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900 ${validationErrors.role ? 'border-red-500' : 'border-gray-300'} ${!canApprove ? 'cursor-not-allowed opacity-70' : ''}`}
+                  disabled={approveLoading || declineLoading || !canApprove}
                 >
                   {roles.length === 0 ? (
                     <option value="employee" disabled className="bg-white text-gray-500">Loading roles...</option>
@@ -424,17 +526,17 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                 </select>
                 {validationErrors.role && (
                   <p className="mt-1 text-xs text-red-600 flex items-center">
-                    <FaExclamationTriangle className="mr-1" />
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1" />
                     {validationErrors.role}
                   </p>
                 )}
               </div>
               <div 
                 className="relative"
-                onClick={(e) => handleRestrictedClick(e, "Only Admin has access to verify the user.")}
+                onClick={(e) => handleRestrictedClick(e, "Only authorized reviewers can assign departments.")}
               >
-                {/* Overlay for non-admins to capture clicks */}
-                {currentUser?.role !== 'admin' && (
+                {/* Overlay for unauthorized users to capture clicks */}
+                {!canApprove && (
                   <div className="absolute inset-0 z-10 cursor-not-allowed bg-transparent" />
                 )}
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -443,8 +545,8 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                 <select
                   value={selectedDepartment}
                   onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className={`w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900 ${currentUser?.role !== 'admin' ? 'cursor-not-allowed opacity-70' : ''}`}
-                  disabled={(approveLoading || declineLoading) || departments.length === 0 || currentUser?.role !== 'admin'}
+                  className={`w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 bg-white text-gray-900 ${!canApprove ? 'cursor-not-allowed opacity-70' : ''}`}
+                  disabled={(approveLoading || declineLoading) || departments.length === 0 || !canApprove}
                 >
                   <option value="" className="bg-white text-gray-900">No Department</option>
                   {departments.map((dept) => (
@@ -462,16 +564,20 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
 
           {/* Action Buttons Section */}
           <div className="bg-gray-50 p-6 rounded-lg border-t relative">
-            {user.isVerified ? (
+            {(!request && user.isVerified) || (request && request.status !== 'pending') ? (
               <div className="text-center py-2">
                 <div className="bg-green-50 text-green-700 p-6 rounded-lg border border-green-200 shadow-sm">
                   <div className="flex flex-col items-center justify-center">
                     <div className="p-3 bg-green-100 rounded-full mb-3">
-                      <FaCheckCircle className="text-3xl text-green-600" />
+                      <CheckCircle2 className="w-8 h-8 text-green-600" />
                     </div>
-                    <h4 className="text-xl font-bold mb-2 text-green-800">User Already Verified</h4>
+                    <h4 className="text-xl font-bold mb-2 text-green-800">
+                      {request ? 'Join Request Already Reviewed' : 'User Already Verified'}
+                    </h4>
                     <p className="text-green-700 max-w-md">
-                      This user has successfully been verified and already has access to the system. No further action is required.
+                      {request
+                        ? 'This request has already been processed.'
+                        : 'This user has successfully been verified and already has access to the system. No further action is required.'}
                     </p>
                   </div>
                 </div>
@@ -481,52 +587,50 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div 
                     className="w-full relative"
-                    onClick={(e) => handleRestrictedClick(e, "Only Admin can approve or decline user verification.")}
+                    onClick={(e) => handleRestrictedClick(e, "Only authorized reviewers can decline requests.")}
                   >
-                    {/* Overlay for non-admins to capture clicks */}
-                    {currentUser?.role !== 'admin' && (
+                    {!canApprove && (
                       <div className="absolute inset-0 z-10 cursor-not-allowed bg-transparent" />
                     )}
                   <button
                     onClick={handleDecline}
-                    disabled={declineLoading || currentUser?.role !== 'admin'}
-                    className={`w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 font-medium flex items-center justify-center space-x-2 ${declineLoading || currentUser?.role !== 'admin' ? 'cursor-not-allowed' : 'hover:shadow-md'}`}
+                    disabled={declineLoading || !canApprove}
+                    className={`w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 font-medium flex items-center justify-center space-x-2 ${declineLoading || !canApprove ? 'cursor-not-allowed' : 'hover:shadow-md'}`}
                   >
                     {declineLoading ? (
                       <>
-                        <FaSpinner className="animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                         <span>Processing...</span>
                       </>
                     ) : (
                       <>
-                        <FaTimesCircle />
-                        <span>Decline & Delete</span>
+                        <XCircle className="w-4 h-4" />
+                        <span>{request ? 'Decline Request' : 'Decline & Delete'}</span>
                       </>
                     )}
                   </button>
                   </div>
                   <div 
                     className="w-full relative"
-                    onClick={(e) => handleRestrictedClick(e, "Only Admin can approve or decline user verification.")}
+                    onClick={(e) => handleRestrictedClick(e, "Only authorized reviewers can approve requests.")}
                   >
-                    {/* Overlay for non-admins to capture clicks */}
-                    {currentUser?.role !== 'admin' && (
+                    {!canApprove && (
                       <div className="absolute inset-0 z-10 cursor-not-allowed bg-transparent" />
                     )}
                   <button
                     onClick={handleApprove}
-                    disabled={approveLoading || currentUser?.role !== 'admin'}
-                    className={`w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 font-medium flex items-center justify-center space-x-2 ${approveLoading || currentUser?.role !== 'admin' ? 'cursor-not-allowed' : 'hover:shadow-md'}`}
+                    disabled={approveLoading || !canApprove}
+                    className={`w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 font-medium flex items-center justify-center space-x-2 ${approveLoading || !canApprove ? 'cursor-not-allowed' : 'hover:shadow-md'}`}
                   >
                     {approveLoading ? (
                       <>
-                        <FaSpinner className="animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                         <span>Processing...</span>
                       </>
                     ) : (
                       <>
-                        <FaCheckCircle />
-                        <span>Approve & Verify</span>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{request ? 'Approve Member' : 'Approve & Verify'}</span>
                       </>
                     )}
                   </button>
@@ -535,8 +639,10 @@ const UserVerificationModal = ({ notification, onClose, onAction }) => {
 
                 <div className="mt-4 text-center">
                   <p className="text-xs text-gray-500">
-                    <FaInfoCircle className="inline mr-1" />
-                    Approving will verify the user and grant access. Declining will permanently delete the user account.
+                    <Info className="w-3.5 h-3.5 inline mr-1" />
+                    {request
+                      ? 'Approving will grant access to this workspace with the selected role and department.'
+                      : 'Approving will verify the user and grant access. Declining will permanently delete the user account.'}
                   </p>
                 </div>
               </>
