@@ -26,10 +26,10 @@ export async function enqueueLeaveAttendanceChanges(request,dbSession) {
   }
 }
 
-export async function processAttendanceEvents(workspaceId,{limit=20}={}) {
+export async function processAttendanceEvents(workspaceId,{limit=20,key=null}={}) {
   for(let i=0;i<limit;i++){
     const now=new Date();
-    const event=await AttendanceEvent.findOneAndUpdate({workspaceId,processedAt:null,availableAt:{$lte:now},claimedUntil:{$lte:now}},{$set:{claimedUntil:new Date(+now+60000)},$inc:{attempts:1}},{new:true,sort:{availableAt:1}}).lean();
+    const event=await AttendanceEvent.findOneAndUpdate({workspaceId,...(key?{key}:{}),processedAt:null,availableAt:{$lte:now},claimedUntil:{$lte:now}},{$set:{claimedUntil:new Date(+now+60000)},$inc:{attempts:1}},{new:true,sort:{availableAt:1}}).lean();
     if(!event)break;
     try {
       const membership=await WorkspaceMembership.findOne({workspace:workspaceId,user:event.user}).lean();
@@ -43,6 +43,14 @@ export async function processAttendanceEvents(workspaceId,{limit=20}={}) {
           // These jobs carry invalidations, not business mutations. One fresh
           // delivery supersedes older revisions without dropping any audit.
           await AttendanceEvent.updateMany({workspaceId,kind:'WORK_CHANGED',workSession:work._id,processedAt:null,workRevision:{$lte:work.revision}},{$set:{processedAt:new Date(),lastError:'',claimedUntil:new Date(0)}});
+        }
+      } else if(event.kind==='REGULARIZED'){
+        // Application already committed atomically with approval. Delivery only
+        // invalidates authorized readers and cannot replay attendance mutations.
+        if(activeMembership&&event.attendanceSession){
+          for(const work of await WorkSession.find({workspaceId,user:event.user,attendanceSession:event.attendanceSession}).select('-operations -audit').lean()){
+            const {emitChanged}=await import('../tracking/tracking.service.js');await emitChanged(work,{strict:true});
+          }
         }
       } else if(event.kind==='RECALCULATE'){
         if(!membership)throw new Error('Attendance member context is unavailable for recomputation');
@@ -62,7 +70,7 @@ export async function processAttendanceEvents(workspaceId,{limit=20}={}) {
         if(activeMembership){if(event.kind==='CHECKED_IN'){if(attendance.status==='ACTIVE')hooks.onCheckedIn(event.user,attendance,day,observers);}else hooks.onCheckedOut(event.user,attendance,day,observers);}
         for(const work of await WorkSession.find({workspaceId,attendanceSession:attendance._id}).select('-operations -audit').lean())await emitChanged(work,{strict:true});
       }
-      if(event.kind==='RECALCULATE'&&activeMembership){
+      if(['RECALCULATE','REGULARIZED'].includes(event.kind)&&activeMembership){
         const observers=await resolveAttendanceObserverUserIds({workspaceId,subjectUserId:event.user,subjectDepartmentIds:membership.department});
         const payload={workspaceId,userId:event.user,workDateKey:event.workDateKey,eventId:String(event._id)};
         emitToUser(event.user,'attendance:updated',payload,workspaceId);

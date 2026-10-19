@@ -104,9 +104,11 @@ export async function resolveAttendanceContext({ workspaceId, userId, membership
   const activeSession = sessions.find((s) => s.status === 'ACTIVE')
     || await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).lean();
 
+  const approvedRegularizations=await AttendanceRegularization.find({workspaceId,requester:userId,workDateKey,status:'APPROVED'}).sort({decidedAt:1,createdAt:1,_id:1}).lean();
+  const effectiveSessions=applyRegularizationOverlay({sessions,approvedRegularizations});
   return {
     attendanceApplicable: true, eligibility, profile, serverNow, timezone, policyVersion, shift,
-    workDateKey, dayInstant, calendar, leave, workModeResolution, officeHours, sessions, activeSession
+    workDateKey, dayInstant, calendar, leave, workModeResolution, officeHours, sessions:effectiveSessions, activeSession
   };
 }
 
@@ -181,8 +183,8 @@ export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, el
  * ALWAYS applies any APPROVED regularizations for this exact date through
  * attendanceRegularizationOverlay.js before computing status — every
  * caller of this function (not just the regularization service itself)
- * automatically gets a regularization-corrected day, with the real
- * AttendanceSession documents never touched.
+ * automatically gets the same effective approved interval. Original session
+ * evidence is preserved; successful application metadata is stored separately.
  */
 export async function recomputeAttendanceDayForDate({ workspaceId, userId, membership, workspace, workDateKey, dbSession = null }) {
   const timezone = getWorkspaceTimezone(workspace);
@@ -212,10 +214,8 @@ export async function recomputeAttendanceDayForDate({ workspaceId, userId, membe
   const rawSessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
   const recordedMode = rawSessions.find(session=>session.checkIn?.workMode)?.checkIn.workMode;
   if(recordedMode && recordedMode !== 'HYBRID')workModeResolution={...workModeResolution,workMode:recordedMode,effectiveMode:recordedMode};
-  const approvedRegularizations = await AttendanceRegularization.find({ workspaceId, requester: userId, workDateKey, status: 'APPROVED' }).session(dbSession).lean();
-  const sessions = approvedRegularizations.length
-    ? applyRegularizationOverlay({ sessions: rawSessions, approvedRegularizations })
-    : rawSessions;
+  const approvedRegularizations = await AttendanceRegularization.find({ workspaceId, requester: userId, workDateKey, status: 'APPROVED' }).sort({decidedAt:1,createdAt:1,_id:1}).session(dbSession).lean();
+  const sessions = applyRegularizationOverlay({ sessions: rawSessions, approvedRegularizations });
 
   return computeAndUpsertDay({
     workspaceId, userId, workDateKey, eligibility: existingDay ? {...eligibility,attendanceRequired:true} : eligibility, timezone, calendar, leave, workModeResolution,
@@ -223,10 +223,14 @@ export async function recomputeAttendanceDayForDate({ workspaceId, userId, membe
   });
 }
 
-/** GET /api/attendance/me/today's data source — read-only, never mutates. */
+/** Own status, including existing overdue reconciliation and targeted recovery
+ * of already-approved corrections that predate resolution metadata. */
 export async function getTodayStatus({ workspaceId, userId, membership, workspace }) {
   // Reconcile overdue sessions for this user on demand before querying status
   await reconcileOverdueSessionsForUser({ workspaceId, userId, workspace });
+
+  const {repairApprovedMissedCheckoutsForUser}=await import('./attendanceRegularizationApplication.service.js');
+  await repairApprovedMissedCheckoutsForUser({workspaceId,userId});
 
   const ctx = await resolveAttendanceContext({ workspaceId, userId, membership, workspace });
   if (!ctx.attendanceApplicable) {
@@ -245,7 +249,7 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
     workspaceId,
     user: userId,
     status: 'MISSED_CHECKOUT',
-    regularizationStatus: { $in: ['NONE', 'REJECTED'] }
+    'regularizationResolution.appliedAt': null
   }).sort({ checkInAt: -1 }).lean();
 
   return {

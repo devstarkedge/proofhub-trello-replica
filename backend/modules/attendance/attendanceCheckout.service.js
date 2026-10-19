@@ -64,9 +64,9 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
   // The mode actually authorized at check-in remains authoritative for this cycle.
   const storedMode=attendance.checkIn?.workMode;
   context.workModeResolution=storedMode&&storedMode!=='HYBRID'?{workMode:storedMode,effectiveMode:storedMode}:await resolveAuthorizedWorkMode({workspaceId,userId,membership,dayInstant,timezone,policyVersion,requestedWorkMode:storedMode});
-  const raw=await AttendanceSession.find({workspaceId,user:userId,workDateKey}).select('status checkInAt checkOutAt missedCheckoutCutoffAt systemGeneratedCheckout').session(dbSession).lean();
+  const raw=await AttendanceSession.find({workspaceId,user:userId,workDateKey}).select('status checkInAt checkOutAt missedCheckoutCutoffAt systemGeneratedCheckout regularizationResolution').session(dbSession).lean();
   const proposed=raw.map(s=>String(s._id)===String(attendance._id)?{...s,status:'COMPLETED',checkOutAt:at}:s);
-  const regularizations=await AttendanceRegularization.find({workspaceId,requester:userId,workDateKey,status:'APPROVED'}).select('attendanceSession finalCorrection').session(dbSession).lean();
+  const regularizations=await AttendanceRegularization.find({workspaceId,requester:userId,workDateKey,status:'APPROVED'}).sort({decidedAt:1,createdAt:1,_id:1}).select('attendanceSession finalCorrection').session(dbSession).lean();
   context.sessions=applyRegularizationOverlay({sessions:proposed,approvedRegularizations:regularizations});
   const outcome=resolveAttendanceStatus(context);
   const schedule=scheduleForDay(context),coverage=resolveLeaveCoverage(context.leave,schedule);

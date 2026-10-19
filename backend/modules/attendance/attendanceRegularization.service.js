@@ -1,26 +1,18 @@
+import mongoose from 'mongoose';
 import AttendanceRegularization from './attendanceRegularization.model.js';
 import AttendanceDay from './attendanceDay.model.js';
 import AttendanceSession from './attendanceSession.model.js';
-import Workspace from '../../models/Workspace.js';
-import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { resolveAttendanceEligibility } from './attendanceEligibility.service.js';
 import { resolveApplicablePolicyVersion } from './attendancePolicy.service.js';
 import { generateApprovalLevels, registerApprovalEntityHandler } from './attendanceApproval.service.js';
-import { recomputeAttendanceDayForDate } from './attendance.service.js';
 import { codedError } from './attendanceErrors.js';
+import {applyApprovedRegularization,deliverRegularizationUpdate} from './attendanceRegularizationApplication.service.js';
+import {correctedAttendanceInterval,effectiveAttendanceSession} from './attendanceRegularizationOverlay.js';
 import * as attendanceHooks from './attendanceHooks.js';
 
-/**
- * Regularization request submission and decision (spec §53-55). Approving
- * one never rewrites AttendanceSession — it snapshots what the day showed
- * (`originalSnapshot`), what the employee is asking for
- * (`proposedCorrection`), and — once approved — applies that as
- * `finalCorrection` through attendanceRegularizationOverlay.js purely at
- * computation time, recomputing AttendanceDay through the exact same
- * resolveAttendanceStatus every other Attendance surface reads.
- */
-
+/** Approved corrections preserve raw evidence while materializing a verified
+ * effective interval and resolution metadata in the same approval transaction. */
 export async function submitRegularization({ workspaceId, userId, membership, workspace, workDateKey, type, proposedCorrection, reason, createdBy }) {
   if (!reason?.trim()) throw new ErrorResponse('A reason is required', 400);
   if (!proposedCorrection?.checkInAt && !proposedCorrection?.checkOutAt) {
@@ -51,28 +43,30 @@ export async function submitRegularization({ workspaceId, userId, membership, wo
     checkOutAt: targetSession?.checkOutAt || null
   };
 
+  correctedAttendanceInterval(targetSession?effectiveAttendanceSession(targetSession):{},proposedCorrection);
   const requireApproval = Boolean(policyVersion.regularization.requireApproval);
-  const request = await AttendanceRegularization.create({
+  const dbSession=await mongoose.startSession();let request,approvalLevels=[];
+  try{await dbSession.withTransaction(async()=>{
+  [request] = await AttendanceRegularization.create([{
     workspaceId, requester: userId, workDateKey, attendanceDay: existingDay?._id || null,
     attendanceSession: targetSession?._id || null, type, originalSnapshot, proposedCorrection, reason,
     status: requireApproval ? 'PENDING_APPROVAL' : 'APPROVED',
     finalCorrection: requireApproval ? null : proposedCorrection,
     decidedAt: requireApproval ? null : new Date(), createdBy
-  });
-
-  let approvalLevels = [];
+  }],{session:dbSession});
   if (requireApproval) {
     approvalLevels = await generateApprovalLevels({
       workspaceId, entityType: 'REGULARIZATION_REQUEST', entityId: request._id, requesterId: userId,
-      requesterMembership: membership, approverLevels: policyVersion.regularization.approverLevels
+      requesterMembership: membership, approverLevels: policyVersion.regularization.approverLevels, session:dbSession
     });
   } else {
-    // A real business-logic step, not a notification — must never be
-    // silently swallowed, unlike the hooks below.
-    await recomputeAttendanceDayForDate({ workspaceId, userId, membership, workspace, workDateKey });
+    await applyApprovedRegularization(request,dbSession);
   }
 
+  if(requireApproval&&targetSession&&!targetSession.regularizationResolution?.appliedAt)await AttendanceSession.updateOne({_id:targetSession._id,workspaceId,user:userId},{$set:{regularizationStatus:'PENDING_APPROVAL'}},{session:dbSession});
+  });}finally{await dbSession.endSession();}
   try {
+    if(!requireApproval)await deliverRegularizationUpdate(request);
     await attendanceHooks.onRegularizationSubmitted(request, userId);
     if (approvalLevels.length) await attendanceHooks.onRegularizationApprovalRequired(request, approvalLevels, userId);
   } catch (error) {
@@ -117,13 +111,17 @@ export async function submitManualCorrection({ workspaceId, targetUserId, member
     checkOutAt: targetSession?.checkOutAt || null
   };
 
-  const record = await AttendanceRegularization.create({
+  correctedAttendanceInterval(targetSession?effectiveAttendanceSession(targetSession):{},correction);
+  const dbSession=await mongoose.startSession();let record;
+  try{await dbSession.withTransaction(async()=>{
+  [record] = await AttendanceRegularization.create([{
     workspaceId, requester: targetUserId, workDateKey, attendanceDay: existingDay?._id || null,
     attendanceSession: targetSession?._id || null, type, originalSnapshot, proposedCorrection: correction,
     finalCorrection: correction, reason, status: 'APPROVED', decidedAt: new Date(), createdBy: actorId
-  });
-
-  await recomputeAttendanceDayForDate({ workspaceId, userId: targetUserId, membership, workspace, workDateKey });
+  }],{session:dbSession});
+  await applyApprovedRegularization(record,dbSession);
+  });}finally{await dbSession.endSession();}
+  try{await deliverRegularizationUpdate(record);}catch(error){console.error('[Attendance] correction event delivery will retry:',error.message);}
   return record;
 }
 
@@ -144,12 +142,14 @@ registerApprovalEntityHandler('REGULARIZATION_REQUEST', {
     await entity.save({ session: dbSession });
 
     if (finalOutcome === 'APPROVED') {
-      const workspace = await Workspace.findById(entity.workspaceId).select('attendanceModuleEnabled timezone').session(dbSession).lean();
-      const membership = await WorkspaceMembership.findOne({ workspace: entity.workspaceId, user: entity.requester }).session(dbSession).lean();
-      await recomputeAttendanceDayForDate({ workspaceId: entity.workspaceId, userId: entity.requester, membership, workspace, workDateKey: entity.workDateKey, dbSession });
+      await applyApprovedRegularization(entity,dbSession);
+    } else if(entity.attendanceSession){
+      const pending=await AttendanceRegularization.exists({workspaceId:entity.workspaceId,requester:entity.requester,attendanceSession:entity.attendanceSession,status:'PENDING_APPROVAL'}).session(dbSession);
+      await AttendanceSession.updateOne({_id:entity.attendanceSession,workspaceId:entity.workspaceId,user:entity.requester,'regularizationResolution.appliedAt':null},{$set:{regularizationStatus:pending?'PENDING_APPROVAL':'REJECTED'}},{session:dbSession});
     }
   },
   afterCommit: async (result, actor) => {
-    await attendanceHooks.onRegularizationDecided(result, actor);
+    try{if(result.finalOutcome==='APPROVED')await deliverRegularizationUpdate(result.entity);}
+    finally{await attendanceHooks.onRegularizationDecided(result, actor);}
   }
 });

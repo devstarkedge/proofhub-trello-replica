@@ -4,7 +4,7 @@ import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
 const schema=new mongoose.Schema({
   workspaceId:{type:mongoose.Schema.Types.ObjectId,ref:'Workspace',required:true},
   user:{type:mongoose.Schema.Types.ObjectId,ref:'User',required:true},
-  key:{type:String,required:true},kind:{type:String,enum:['CHECKED_IN','CHECKED_OUT','RECALCULATE','WORK_CHANGED'],required:true},
+  key:{type:String,required:true},kind:{type:String,enum:['CHECKED_IN','CHECKED_OUT','RECALCULATE','WORK_CHANGED','REGULARIZED'],required:true},
   workSession:{type:mongoose.Schema.Types.ObjectId,ref:'WorkSession'},
   workRevision:Number,
   attendanceSession:{type:mongoose.Schema.Types.ObjectId,ref:'AttendanceSession'},workDateKey:String,

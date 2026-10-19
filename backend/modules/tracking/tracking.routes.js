@@ -12,6 +12,7 @@ import Card from '../../models/Card.js';
 import Board from '../../models/Board.js';
 import AttendanceSession from '../attendance/attendanceSession.model.js';
 import AttendanceDay from '../attendance/attendanceDay.model.js';
+import {effectiveAttendanceSession} from '../attendance/attendanceRegularizationOverlay.js';
 import { emitToUser } from '../../realtime/emitters.js';
 import { WorkSession, ActivityInterval, TrackingScreenshot, TrackingPolicy, TrackingDevice } from './tracking.models.js';
 import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, reconcileSession, reconcileReadSessions, publicWorkSession } from './tracking.service.js';
@@ -148,7 +149,7 @@ router.get('/reports', asyncHandler(async (req,res) => {
   ]);
   const days=await AttendanceDay.find({workspaceId:req.workspaceId,_id:{$in:attendanceRows.map(a=>a.attendanceDay).filter(Boolean)}}).select('presenceState attendanceStatus workedMinutes').lean();
   const data=sessions.map(session=>{
-    const attendance=attendanceRows.find(a=>id(a)===id(session.attendanceSession)),day=attendance?days.find(d=>id(d)===id(attendance.attendanceDay)):null;
+    const rawAttendance=attendanceRows.find(a=>id(a)===id(session.attendanceSession)),attendance=rawAttendance?effectiveAttendanceSession(rawAttendance):null,day=attendance?days.find(d=>id(d)===id(attendance.attendanceDay)):null;
     const officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(Date.now(),attendance.missedCheckoutCutoffAt?+attendance.missedCheckoutCutoffAt:Infinity)):null);
     const filtered={...session,segments:session.segments.filter(s=>matchesSegment(s,req.query))};
     const {audit:_,...summary}=filtered;

@@ -24,10 +24,10 @@ const evidenceSchema = new mongoose.Schema({
 
 /**
  * The actual Check-In -> Check-Out interval — separate from AttendanceDay
- * (the business-date summary, see that model) per spec §33. Regularization
- * never mutates this document (spec §34, §54): original evidence and
- * timestamps stay exactly as captured forever; an approved correction is a
- * layer the resolver applies on top, tracked on AttendanceRegularization.
+ * (the business-date summary, see that model). Regularization preserves
+ * original evidence and records its approved effective interval separately.
+ * A successful application marks the issue resolved without inventing GPS,
+ * input activity or a second attendance session.
  */
 const attendanceSessionSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
@@ -63,6 +63,15 @@ const attendanceSessionSchema = new mongoose.Schema({
     enum: ['NONE', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
     default: 'NONE'
   },
+  // Approved effective interval; original check-in/GPS and missed-checkout
+  // evidence stay intact. Only the successful application transaction writes it.
+  regularizationResolution: {
+    type: new mongoose.Schema({
+      request: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceRegularization', required: true },
+      checkInAt: { type: Date, required: true }, checkOutAt: { type: Date, required: true },
+      appliedAt: { type: Date, required: true }, originalStatus: String
+    }, { _id: false }), default: null
+  },
   provisionalMinutes: { type: Number, default: 0 },
 
   systemGeneratedCheckout: { type: Boolean, default: false },
@@ -86,6 +95,7 @@ attendanceSessionSchema.index({ workspaceId: 1, attendanceDay: 1 });
 attendanceSessionSchema.index({ workspaceId: 1, status: 1, missedCheckoutCutoffAt: 1 });
 attendanceSessionSchema.index({ status: 1, missedCheckoutCutoffAt: 1, workspaceId: 1 });
 attendanceSessionSchema.index({ workspaceId: 1, user: 1, status: 1 });
+attendanceSessionSchema.index({workspaceId:1,user:1,status:1,'regularizationResolution.appliedAt':1,checkInAt:-1});
 // `partialFilterExpression`, NOT `sparse` — a well-known Mongo gotcha: a
 // COMPOUND sparse index only excludes a document when EVERY indexed field
 // is missing. workspaceId/user always exist, so a plain `sparse: true`
@@ -111,7 +121,7 @@ attendanceSessionSchema.plugin(workspaceScopePlugin);
 const MUTABLE_AFTER_CREATE_PATHS = new Set([
   'checkoutOperationId', 'checkoutSummary', 'status', 'checkOutAt', 'checkOut', 'systemGeneratedCheckout', 'updatedAt', 'trackingReminderAt',
   'missedCheckoutCutoffAt', 'effectiveShiftEndAt', 'closureReason',
-  'reconciledAt', 'missedCheckoutDetectedAt', 'regularizationStatus', 'provisionalMinutes'
+  'reconciledAt', 'missedCheckoutDetectedAt', 'regularizationStatus', 'regularizationResolution', 'provisionalMinutes'
 ]);
 attendanceSessionSchema.pre('save', function guardImmutableEvidence(next) {
   if (this.isNew) return next();

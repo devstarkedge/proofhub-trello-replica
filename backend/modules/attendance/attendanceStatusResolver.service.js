@@ -86,6 +86,7 @@ export function resolveAttendanceStatus({
   const excusedShortMinutes = intervalMinutes(subtractIntervals(coverage.shortIntervals,attended));
 
   const exceptionFlags = [];
+  if (sessions.some(s=>s.regularized)) exceptionFlags.push('REGULARIZED');
   if (coverage.unresolved) exceptionFlags.push('LEAVE_COVERAGE_UNRESOLVED');
   if (workedOnOffDay) exceptionFlags.push('WORKED_ON_OFF_DAY');
   if (sessions.some((s) => s.systemGeneratedCheckout)) exceptionFlags.push('SYSTEM_GENERATED_CHECKOUT');

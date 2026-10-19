@@ -27,11 +27,13 @@ const attendanceRegularizationSchema = new mongoose.Schema({
   reason: { type: String, required: true, trim: true, maxlength: 1000 },
   status: { type: String, enum: ['PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CANCELLED'], default: 'PENDING_APPROVAL' },
   decidedAt: { type: Date, default: null },
+  appliedAt: { type: Date, default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 
 attendanceRegularizationSchema.index({ workspaceId: 1, requester: 1, workDateKey: 1 });
 attendanceRegularizationSchema.index({ workspaceId: 1, status: 1 });
+attendanceRegularizationSchema.index({ workspaceId: 1, requester: 1, attendanceSession: 1, status: 1 });
 
 attendanceRegularizationSchema.plugin(workspaceScopePlugin);
 
