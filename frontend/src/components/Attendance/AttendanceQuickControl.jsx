@@ -159,19 +159,11 @@ const AttendanceQuickControl = () => {
     }
   };
 
-  const handleCheckIn = async () => {
+  const handleCheckIn = () => {
     if (operationRef.current || sessionAction.busy || sessionError) return;
-    operationRef.current = 'preparing';
-    setPhase('preparing');
-    let workAvailable = false;
-    try {
-      const tracking = await trackingStore(scope,workspaceId).ensure();
-      workAvailable = Boolean(tracking?.policy?.enabled && tracking.canTrack);
-    } catch { /* Attendance remains available when tracking is unavailable. */ }
-    setAttendanceOnly(!workAvailable);
-    operationRef.current = 'selecting';
-    setShowWorkSelection(true);
-    setPhase('idle');
+    const tracking=trackingStore(scope,workspaceId).getSnapshot().state;
+    setAttendanceOnly(tracking ? !(tracking.policy?.enabled&&tracking.canTrack) : false);
+    operationRef.current='selecting';setShowWorkSelection(true);
   };
   const closeWorkSelection = () => {
     if (operationRef.current === 'submitting') return;

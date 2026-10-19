@@ -1,5 +1,6 @@
 import {trackingStore,clearTrackingStates} from './trackingState';
 import {attendanceStore,clearAttendanceStates} from './attendanceState';
+import {retainWorkSelectionPrefetch,invalidateWorkSelections} from './workSelectionState';
 const owners=new Map();
 export function retainSessionSynchronization(scope,workspaceId,authorizationKey){
   let entry=owners.get(scope);
@@ -10,7 +11,7 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
   const refresh=()=>{if(current()){tracking.reload();attendance.reload();}};
   const schedule=()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(refresh,100);};
   const invalidate=()=>{tracking.invalidate();attendance.invalidate();schedule();};
-  const secureRefresh=()=>{sessionToken=localStorage.getItem('token');tracking.clear();attendance.clear();tracking.invalidate();attendance.invalidate();schedule();};
+  const secureRefresh=()=>{sessionToken=localStorage.getItem('token');invalidateWorkSelections(scope,true);tracking.clear();attendance.clear();tracking.invalidate();attendance.invalidate();schedule();};
   const realtime=event=>{
     const {type='',payload={}}=event.detail||{};
     if(payload.workspaceId&&String(payload.workspaceId)!==String(workspaceId))return;
@@ -42,7 +43,7 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
   const events=[['flowtask:realtime',realtime],['flowtask:tracking-refresh',invalidate],['socket-attendance-updated',invalidate],['flowtask:session-committed',committed],['online',invalidate],['socket-connected',invalidate],['desktop-resume',invalidate],['socket-disconnected',disconnected],['socket-auth-expired',rejected],['socket-workspace-rejected',rejected],['storage',storage]];
   for(const [name,handler]of events)window.addEventListener(name,handler);
   const visibility=()=>{if(document.visibilityState==='visible'&&current()){tracking.ensure();attendance.ensure();}};document.addEventListener('visibilitychange',visibility);
-  const poll=setInterval(()=>{if(current())refresh();},60000),unsubscribers=[tracking.subscribe(boundary),attendance.subscribe(boundary)];
+  const poll=setInterval(()=>{if(current())refresh();},60000),unsubscribers=[tracking.subscribe(boundary),attendance.subscribe(boundary),retainWorkSelectionPrefetch(scope,workspaceId,tracking)];
   entry={count:1,authorizationKey,secureRefresh,ensure(){if(current()){tracking.ensure();attendance.ensure();}},close(){clearTimeout(refreshTimer);clearTimeout(workRefreshTimer);clearTimeout(boundaryTimer);clearInterval(poll);channel?.close();for(const unsubscribe of unsubscribers)unsubscribe();for(const [name,handler]of events)window.removeEventListener(name,handler);document.removeEventListener('visibilitychange',visibility);}};
   owners.set(scope,entry);tracking.ensure();attendance.ensure();boundary();return()=>release(scope,entry);
 }

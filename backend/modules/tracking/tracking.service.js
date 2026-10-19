@@ -6,7 +6,7 @@ import List from '../../models/List.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import AttendanceSession from '../attendance/attendanceSession.model.js';
 import { id } from '../../authz/engine.js';
-import { can, projectVisibilityFilter, trackingContext } from './tracking.authorization.js';
+import { can, projectVisibilityFilter, trackingContext,withTrackingProjects } from './tracking.authorization.js';
 import { getActiveWorkspaceId, run } from '../workspaces/workspaceContext.js';
 import { emitToUser } from '../../realtime/emitters.js';
 import { TrackingPolicy, WorkSession, TrackingDevice, TrackingCaptureLease, TaskAssignmentEvent, ActivityInterval,TrackingAgenda } from './tracking.models.js';
@@ -36,25 +36,34 @@ export async function policyFor(workspaceId, dbSession = null) {
   policy.activationState=policy.enabled?'ENABLED':policy.configuredAt?'CONFIGURED_DISABLED':'NOT_CONFIGURED';
   return policy;
 }
-export async function workOptions(workspaceId, userId, projectId = null) {
-  const ctx = await contextFor(workspaceId, userId);
-  const own = { workspaceId, user: userId };
+export async function workOptions(workspaceId, userId, projectId = null, page = {}) {
+  // Bound both the database materialization and the response. Authorization is
+  // still evaluated on every returned resource and again on work submission.
+  const base = await contextFor(workspaceId, userId, {includeProjects:false});
+  const result={workspaceId,userId,projects:[],tasks:[],lists:[],canTrack:false,canCreateTasks:false,nextProjectCursor:null,nextTaskCursor:null};
+  if (!can(base,'tracking.log',{workspaceId,user:userId}) || !(await policyFor(workspaceId)).enabled) return result;
   const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),role=await trackingRole(member,workspaceId);
-  if (!can(ctx, 'tracking.log', own)) return { projects: [], tasks: [], lists: [], canTrack: false };
-  const projects = (ctx.trackingProjectRecords || await Board.find(projectVisibilityFilter(ctx)).lean()).filter(p => can(ctx, 'project.view', p)).sort((a,b)=>a.name.localeCompare(b.name));
-  const assigned = await Card.distinct('board', { workspaceId, assignees: userId, isArchived: { $ne: true }, board: { $in: projects.map(p => p._id) } });
-  const result = { canTrack: true, projects: projects.map(p => ({ _id: p._id, name: p.name,
-    hasAssignedTasks: assigned.some(b => id(b) === id(p._id)),
-    canCreate: ['admin','manager'].includes(role)&&can(ctx, 'task.create', { workspaceId, project: p, board: p._id, createdBy: userId }) && can(ctx, 'task.assign', { workspaceId, project: p, board: p._id, createdBy: userId }) })), tasks: [], lists: [],canCreateTasks:['admin','manager'].includes(role) };
-  if (!projectId) return result;
-  objectId(projectId);
-  const project = projects.find(p => id(p._id) === id(projectId));
-  if (!project) fail('Project not found', 404);
-  const tasks = await Card.find({ workspaceId, board: projectId, isArchived: { $ne: true } }).sort({ title: 1 }).lean();
-  result.tasks = tasks.filter(t => can(ctx, 'task.view', { ...t, project, taskResource: t })).map(t => ({
-    _id: t._id, title: t.title, assigned: (t.assignees||[]).some(u => id(u) === id(userId)), unassigned: !(t.assignees||[]).length
-  }));
-  result.lists = await List.find({ workspaceId, board: projectId }).select('_id title').sort({ position: 1 }).lean();
+  result.canTrack=true;result.canCreateTasks=['admin','manager'].includes(role);
+  const create=page.mode==='CREATE'&&result.canCreateTasks;
+  const limit=50, cursor=page.cursor?objectId(page.cursor):null, taskCursor=page.taskCursor?objectId(page.taskCursor):null;
+  const assigned=projectId?[]:await Card.distinct('board',{workspaceId,assignees:userId,isArchived:{$ne:true}});
+  const query={workspaceId,isDeleted:{$ne:true},...(projectId?{_id:objectId(projectId)}:{_id:{...(!create?{$in:assigned}:{}),...(cursor?{$gt:cursor}:{})}})};
+  const candidates=await Board.find(query).select('_id workspaceId name visibility owner members managers guests department team').sort({_id:1}).limit(limit+1).lean();
+  const batch=candidates.slice(0,limit);
+  const ctx=await withTrackingProjects(base,batch);
+  const projects=batch.filter(p=>can(ctx,'project.view',p));
+  const canCreate=p=>result.canCreateTasks&&can(ctx,'task.create',{workspaceId,project:p,board:p._id,createdBy:userId})&&can(ctx,'task.assign',{workspaceId,project:p,board:p._id,createdBy:userId});
+  result.projects=projects.filter(p=>!create||canCreate(p)).map(p=>({_id:p._id,name:p.name,hasAssignedTasks:projectId?true:assigned.some(b=>id(b)===id(p._id)),canCreate:canCreate(p)}));
+  if(!projectId&&candidates.length>limit)result.nextProjectCursor=id(batch.at(-1)._id);
+  const eligible=projects.filter(p=>result.projects.some(option=>id(option._id)===id(p._id)));
+  const project=projectId?projects.find(p=>id(p._id)===id(projectId)):eligible.find(p=>assigned.some(b=>id(b)===id(p._id)))||(create?eligible[0]:null);
+  if(projectId&&!project)fail('Project not found',404);
+  if(!project)return result;
+  result.projectId=id(project._id);
+  const tasks=await Card.find({workspaceId,board:project._id,assignees:userId,isArchived:{$ne:true},...(taskCursor?{_id:{$gt:taskCursor}}:{})}).select('_id workspaceId board title assignees members createdBy').sort({_id:1}).limit(limit+1).lean();
+  result.tasks=tasks.slice(0,limit).filter(t=>can(ctx,'task.view',{...t,project,taskResource:t})&&can(ctx,'time.log',{...t,project,taskResource:t})).map(t=>({_id:t._id,title:t.title,assigned:true}));
+  if(tasks.length>limit)result.nextTaskCursor=id(tasks[limit-1]._id);
+  if(canCreate(project))result.lists=await List.find({workspaceId,board:project._id}).select('_id title').sort({position:1}).lean();
   return result;
 }
 export async function validateSelection({ workspaceId, userId, selection, dbSession = null, context = null, policy: resolvedPolicy = null }) {

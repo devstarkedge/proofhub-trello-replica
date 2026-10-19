@@ -9,13 +9,14 @@ import { resolveResourceAccess } from '../permissions/permissionEngine.js';
 // Respect the application's rollout mode. The existing Board access helper is
 // the authority for legacy visibility; V2 remains the authority in enforce
 // mode. Both paths use active WorkspaceMembership, never global User.role.
-export async function trackingContext(workspaceId,userId,{includeProjects=true}={}) {
+export async function trackingContext(workspaceId,userId,{includeProjects=true,projectRecords=null}={}) {
   const ctx=await buildContext(userId,workspaceId,{allowLegacy:process.env.AUTHZ_V2!=='enforce'});
   if(includeProjects)await loadAssignments(ctx);
   if(process.env.AUTHZ_V2==='enforce'||ctx.status!=='active'||ctx.kind==='guest')return ctx;
   const membership=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean();
   if(!membership)return ctx;
   const principal={...membership,_id:userId,id:userId,workspaceId};
+  ctx.trackingPrincipal=principal;
   const role=membership.roleId?await Role.findById(membership.roleId).lean():await Role.findResolvable(membership.role,workspaceId).lean();
   const permissions=role?.isSystem?Role.getDefaultPermissions(role.slug):role?.permissions||{};
   if(!role?.grants){
@@ -34,8 +35,18 @@ export async function trackingContext(workspaceId,userId,{includeProjects=true}=
       ...(resource.scopedResourceIds?.length?{scopeIds:resource.scopedResourceIds}:{}),sources:[`legacy:${resource.source}`]});
   }
   if(!includeProjects)return ctx;
+  return withTrackingProjects(ctx,projectRecords || await Board.find({workspaceId,isDeleted:{$ne:true}}).lean());
+}
+// Resolve only the candidate page using the already authenticated request
+// context. This avoids rebuilding membership, role and override state twice.
+export async function withTrackingProjects(ctx,projects){
+  await loadAssignments(ctx);
+  if(process.env.AUTHZ_V2==='enforce'||ctx.status!=='active'||ctx.kind==='guest')return ctx;
+  const principal=ctx.trackingPrincipal,workspaceId=ctx.workspaceId,userId=ctx.userId;
+  if(!principal)return ctx;
+  const membership=principal;
   const {canUserAccessBoard}=await import('../../controllers/boardController.js');
-  const projects=await Board.find({workspaceId,isDeleted:{$ne:true}}).lean();
+  projects=projects.filter(p=>id(p.workspaceId)===id(workspaceId));
   ctx.trackingProjectRecords=projects;
   const visible=[];
   for(const project of projects){

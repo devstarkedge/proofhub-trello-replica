@@ -218,6 +218,7 @@ cardSchema.index({ workspaceId: 1, board: 1, isArchived: 1 });
 cardSchema.index({ workspaceId: 1, board: 1, list: 1, status: 1 });
 cardSchema.index({ workspaceId: 1, board: 1, list: 1, position: 1 });
 cardSchema.index({ workspaceId: 1, board: 1, assignees: 1 });
+cardSchema.index({ workspaceId: 1, assignees: 1, board: 1, _id: 1, isArchived: 1 });
 cardSchema.index({ workspaceId: 1, board: 1, members: 1 });
 
 // Assignee-leading compounds (covers standalone { assignees: 1 })

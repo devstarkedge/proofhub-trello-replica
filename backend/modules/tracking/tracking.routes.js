@@ -36,7 +36,7 @@ const audit = (req, action, targetType, targetId, after = null) => recordAuditLo
   before: null, after, category: 'attendance_management', meta: { workspaceId: req.workspaceId }
 });
 router.get('/me', asyncHandler(async (req,res) => send(res, await currentState(req.workspaceId, req.user.id))));
-router.get('/options', asyncHandler(async (req,res) => send(res, await workOptions(req.workspaceId, req.user.id, req.query.projectId))));
+router.get('/options', asyncHandler(async (req,res) => {res.set('Cache-Control','private, no-store');send(res, await workOptions(req.workspaceId, req.user.id, req.query.projectId,req.query));}));
 router.get('/agendas',asyncHandler(async(req,res)=>send(res,await listAgendas(req.workspaceId,req.user.id))));
 router.get('/dashboard',asyncHandler(async(req,res)=>send(res,await dashboard(req.workspaceId,req.user.id,req.query))));
 router.post('/agendas',asyncHandler(async(req,res)=>send(res,await createAgenda(req.workspaceId,req.user.id,req.body?.title))));

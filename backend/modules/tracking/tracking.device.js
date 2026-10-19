@@ -16,7 +16,7 @@ async function persistAnchor(device,anchor,dbSession=null){
 }
 
 export async function registerDevice({ workspaceId, userId, installationId, name, platform, appVersion, noticeAuthorization }) {
-  const ctx = await contextFor(workspaceId, userId);
+  const ctx = await contextFor(workspaceId, userId,{includeProjects:false});
   if (!can(ctx, 'tracking.log', { workspaceId, user: userId })) fail('Tracking permission required', 403);
   if (typeof installationId !== 'string' || !/^[\w-]{8,128}$/.test(installationId) || !['win32', 'darwin', 'linux'].includes(platform)) fail('Invalid desktop identity');
   if(noticeAuthorization!==undefined&&(typeof noticeAuthorization!=='string'||!/^[a-f\d]{64}$/.test(noticeAuthorization)))fail('Invalid desktop authorization');
@@ -31,7 +31,7 @@ export async function registerDevice({ workspaceId, userId, installationId, name
   // workspaceScopePlugin adds the tenant predicate. A scalar credential CAS
   // avoids ambiguous equality inference in MongoDB's upsert with nested $or.
   try{device=await TrackingDevice.findOneAndUpdate({user:userId,installationId,noticeAuthorizationHash:existing?.noticeAuthorizationHash||null}, {
-    $set: { name: String(name || 'FlowTask Desktop').slice(0,80), platform, appVersion: String(appVersion || '').slice(0,30), lastSeenAt: now, anchor,...(hash?{noticeAuthorizationHash:hash}:{}) },
+    $set: { name: String(name || 'FlowTask Desktop').slice(0,80), platform, appVersion: String(appVersion || '').slice(0,30), lastSeenAt: now, anchor,...(hash?{noticeAuthorizationHash:hash}:{}),preferences:workspaceCapturePreferences(policy) },
     $push: { anchors: { $each: [anchor], $slice: -8 } },
     $setOnInsert: { workspaceId, user: userId, installationId }
   }, { upsert: true, new: true, runValidators: true }).lean();}
@@ -49,7 +49,7 @@ export async function acceptMonitoringNotice({ workspaceId, userId, deviceId, no
   if(!d)fail('Desktop device not found',404);
   if(!/^[a-f\d]{64}$/.test(noticeAuthorization||'')||!/^[a-f\d]{64}$/.test(d.noticeAuthorizationHash||'')||!timingSafeEqual(Buffer.from(d.noticeAuthorizationHash,'hex'),createHash('sha256').update(noticeAuthorization).digest()))fail('Approve device access in the updated FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
   delete d.noticeAuthorizationHash;
-  const ctx=await contextFor(workspaceId,userId);
+  const ctx=await contextFor(workspaceId,userId,{includeProjects:false});
   if(!can(ctx,'tracking.log',{workspaceId,user:userId}))fail('Tracking permission required',403);
   if(!policy.enabled||!policy.monitoringEnabled)fail('Desktop monitoring is disabled by workspace',409);
   if(noticeVersion!==MONITORING_NOTICE_VERSION||policyRevision!==policy.revision)fail('Monitoring notice changed; review the current notice',409,'CONSENT_REQUIRED');
@@ -70,7 +70,7 @@ export async function releaseDevice({workspaceId,userId,deviceId,revoke=false}){
   return {released:true,revoked:revoke};
 }
 export async function heartbeat({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization }) {
-  const ctx = await contextFor(workspaceId, userId), device = await ownedDevice(workspaceId, userId, deviceId);
+  const ctx = await contextFor(workspaceId, userId,{includeProjects:false}), device = await ownedDevice(workspaceId, userId, deviceId);
   const policy = await policyFor(workspaceId), now = new Date();
   let session = sessionId ? await WorkSession.findOne({ _id: objectId(sessionId), workspaceId, user: userId }).lean() : null;
   if (session) session = await reconcileSession(session._id);
@@ -140,7 +140,7 @@ export async function recordInterval(args) {
 }
 async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   const device = await ownedDevice(workspaceId, userId, deviceId), policy = await policyFor(workspaceId);
-  const ctx = await contextFor(workspaceId, userId);
+  const ctx = await contextFor(workspaceId, userId,{includeProjects:false});
   if (!can(ctx, 'tracking.log', { workspaceId, user: userId })) fail('Tracking permission required', 403);
   if (!payload || typeof payload.operationId !== 'string' || !/^[\w-]{8,128}$/.test(payload.operationId)) fail('Invalid activity operation');
   const allowed = ['operationId','sessionId','anchorId','startOffsetMs','endOffsetMs','mouseCount','keyboardCount','activeSeconds','idleSeconds','coverage','inputAvailable','screenshotAvailable','inputActiveSeconds','inputEligibleSeconds','activityBasis'];
@@ -213,7 +213,7 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
 }
 export async function prepareScreenshot({ workspaceId, userId, deviceId, intervalId, image }) {
   const device = await ownedDevice(workspaceId, userId, deviceId);
-  const ctx = await contextFor(workspaceId,userId);
+  const ctx = await contextFor(workspaceId,userId,{includeProjects:false});
   if (!can(ctx,'tracking.log',{workspaceId,user:userId})) fail('Tracking permission required',403);
   if (!hasMonitoringNotice(device)) fail('Monitoring consent required', 403);
   const interval = await ActivityInterval.findOne({ _id: objectId(intervalId), workspaceId, user: userId, device: device._id }).lean();
@@ -273,7 +273,7 @@ export async function prepareScreenshot({ workspaceId, userId, deviceId, interva
   return { screenshotId: screenshot._id, ready: screenshot.status === 'READY', upload: screenshot.status === 'READY' ? null : await signedUpload(screenshot) };
 }
 export async function completeScreenshot({ workspaceId, userId, deviceId, screenshotId }) {
-  const ctx = await contextFor(workspaceId, userId), device = await ownedDevice(workspaceId, userId, deviceId);
+  const ctx = await contextFor(workspaceId, userId,{includeProjects:false}), device = await ownedDevice(workspaceId, userId, deviceId);
   if (!can(ctx,'tracking.log',{workspaceId,user:userId}) || !hasMonitoringNotice(device)) fail('Monitoring consent is no longer effective',403);
   const screenshot = await TrackingScreenshot.findOne({ _id: objectId(screenshotId), workspaceId, user: userId, device: deviceId });
   if (!screenshot || screenshot.status === 'DELETED' || screenshot.expiresAt && screenshot.expiresAt <= new Date()) fail('Screenshot not found', 404);
@@ -293,7 +293,7 @@ export async function completeScreenshot({ workspaceId, userId, deviceId, screen
   return screenshot;
 }
 export async function retryScreenshot({workspaceId,userId,deviceId,screenshotId}){
-  await contextFor(workspaceId,userId);await ownedDevice(workspaceId,userId,deviceId);
+  await contextFor(workspaceId,userId,{includeProjects:false});await ownedDevice(workspaceId,userId,deviceId);
   const screenshot=await TrackingScreenshot.findOneAndUpdate({_id:objectId(screenshotId),workspaceId,user:userId,device:deviceId,status:'PENDING'},{$set:{uploadStatus:'RETRY_PENDING',lastUploadError:'Upload unavailable; the desktop will retry this capture'}},{new:true});
   if(screenshot)void notifyScreenshot(screenshot);return {retryPending:Boolean(screenshot)};
 }

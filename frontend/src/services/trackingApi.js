@@ -7,7 +7,7 @@ api.interceptors.request.use(config => {
 },undefined,{synchronous:true});
 const data = async request => {const workspaceId=localStorage.getItem('workspaceId'),token=localStorage.getItem('token');const result=(await request).data.data;if(workspaceId!==localStorage.getItem('workspaceId')||token!==localStorage.getItem('token')||result?.workspaceId&&String(result.workspaceId)!==String(workspaceId))throw new DOMException('Tracking identity changed','AbortError');return result;};
 export const getTrackingState = () => data(api.get('/me'));
-export const getWorkOptions = (projectId,signal) => data(api.get('/options', { params: { projectId },signal }));
+export const getWorkOptions = (projectId,signal,page={}) => data(api.get('/options', { params: { projectId,...page },signal }));
 export const getAgendas=()=>data(api.get('/agendas'));
 export const createAgenda=title=>data(api.post('/agendas',{title}));
 export const getTrackingDashboard=(params,signal)=>data(api.get('/dashboard',{params,signal}));

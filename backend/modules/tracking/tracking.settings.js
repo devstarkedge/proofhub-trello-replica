@@ -56,7 +56,7 @@ export async function finishDisable(workspaceId,policy){
   if(!await WorkSession.exists({workspaceId,endedAt:null,status:'RUNNING'}))await TrackingPolicy.updateOne({workspaceId,revision:policy.revision},{$set:{disableRecoveryPending:false}});
 }
 export async function listAgendas(workspaceId,userId){
-  const ctx=await contextFor(workspaceId,userId);if(!can(ctx,'tracking.log',{workspaceId,user:userId}))fail('Tracking permission required',403);
+  const ctx=await contextFor(workspaceId,userId,{includeProjects:false});if(!can(ctx,'tracking.log',{workspaceId,user:userId}))fail('Tracking permission required',403);
   try{await TrackingAgenda.findOneAndUpdate({normalizedTitle:'learning'},{$setOnInsert:{workspaceId,title:'Learning',normalizedTitle:'learning'}},{upsert:true});}catch(e){if(e.code!==11000)throw e;}
   return TrackingAgenda.find({workspaceId,archivedAt:null}).sort({title:1}).select('_id title').lean();
 }
