@@ -6,6 +6,7 @@ import { NetworkStatusProvider } from './context/NetworkStatusContext';
 import { ThemeProvider } from './context/ThemeProvider';
 import './index.css';
 import App from './App.jsx';
+import { screenshotCache } from './services/screenshotCache';
 
 // Create a client with optimized settings
 const queryClient = new QueryClient({
@@ -27,6 +28,8 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+screenshotCache(queryClient);
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

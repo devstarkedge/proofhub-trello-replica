@@ -12,7 +12,7 @@ function contexts(session,interval){return session.segments.filter(s=>+s.started
 function compact(s,interval,session){
   const eligible=interval&&!['excluded','locked','sleep'].includes(interval.coverage)&&interval.activityBasis==='distinct-input-seconds-v1'&&interval.inputEligibleSeconds>0&&Number.isFinite(interval.inputActiveSeconds);
   return {_id:s._id,session:s.session,user:s.user,interval:s.interval,capturedAt:s.capturedAt,displayId:s.displayId,status:s.status,uploadStatus:s.uploadStatus,blurred:s.blurred,
-    width:s.width,height:s.height,bytes:s.bytes,thumbnailReady:s.status==='READY',compressionException:s.compressionException,
+    width:s.width,height:s.height,bytes:s.bytes,imageVersion:s.checksum,thumbnailVersion:s.thumbnail?.checksum||s.checksum,expiresAt:s.expiresAt,thumbnailReady:s.status==='READY',compressionException:s.compressionException,
     coverage:interval?.coverage||'unavailable',activityPercent:eligible?Math.min(100,Math.max(0,interval.inputActiveSeconds/interval.inputEligibleSeconds*100)):null,
     contexts:interval?contexts(session,interval):[]};
 }
@@ -34,7 +34,7 @@ export async function gallery(workspaceId,userId,query){
     if(!value||!Number.isFinite(+new Date(value.at)))fail('Invalid screenshot cursor');objectId(value.id);
     filter.$and=[{$or:[{capturedAt:{$lt:new Date(value.at)}},{capturedAt:new Date(value.at),_id:{$lt:objectId(value.id)}}]}];
   }
-  const records=await TrackingScreenshot.find(filter).sort({capturedAt:-1,_id:-1}).limit(21).select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes compressionException').lean();
+  const records=await TrackingScreenshot.find(filter).sort({capturedAt:-1,_id:-1}).limit(21).select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes compressionException checksum thumbnail.checksum expiresAt').lean();
   const page=records.slice(0,20),intervals=await ActivityInterval.find({workspaceId,_id:{$in:page.map(s=>s.interval)},...history,...alive()}).select('_id startedAt endedAt coverage activityBasis inputEligibleSeconds inputActiveSeconds').lean();
   const byId=new Map(intervals.map(i=>[id(i),i])),last=page.at(-1);
   return {workspaceId,sessionId:session._id,screenshots:page.filter(s=>byId.has(id(s.interval))).map(s=>compact(s,byId.get(id(s.interval)),session)),nextCursor:records.length>20?Buffer.from(JSON.stringify({at:last.capturedAt,id:last._id})).toString('base64url'):null};

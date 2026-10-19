@@ -1,63 +1,20 @@
-import { lazy, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, Info, ImageOff, Loader2 } from 'lucide-react';
-import { getScreenshotGallery, getScreenshotUrl, getScreenshotThumbnailUrl, errorMessage } from '../../services/trackingApi';
+import { getScreenshotGallery, errorMessage } from '../../services/trackingApi';
 import useTrackingScope from './useTrackingScope';
 import { Button } from '../ui/button';
 import ScreenshotDetailsModal from './ScreenshotDetailsModal';
+import ScreenshotImagePreview from './ScreenshotImagePreview';
+import useScreenshotImage from './useScreenshotImage';
 
 const DocumentViewerModal = lazy(() => import('../DocumentViewerModal'));
 
 const time = (value, zone) => (value ? new Date(value).toLocaleString(undefined, { timeZone: zone || 'UTC' }) : '—');
 const cardStyle = { backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' };
 
-let active = 0;
-const waiting = [];
-async function imageRequest(id, signal) {
-  if (active >= 4) await new Promise((resolve) => waiting.push(resolve));
-  else active++;
-  try {
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    return await getScreenshotThumbnailUrl(id, signal);
-  } finally {
-    const next = waiting.shift();
-    if (next) next();
-    else active--;
-  }
-}
-
 const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
-  const node = useRef(null);
-  const [url, setUrl] = useState('');
-  const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
-
-  useEffect(() => {
-    setUrl('');
-    setError('');
-    if (capture.status !== 'READY') return;
-    const controller = new AbortController();
-    let value;
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((e) => e.isIntersecting)) return;
-      observer.disconnect();
-      imageRequest(capture._id, controller.signal)
-        .then((result) => {
-          value = result.url;
-          if (controller.signal.aborted) URL.revokeObjectURL(value);
-          else setUrl(value);
-        })
-        .catch((e) => {
-          if (!controller.signal.aborted) setError(e.response?.status === 410 ? 'Deleted from storage' : errorMessage(e));
-        });
-    }, { rootMargin: '150px' });
-    if (node.current) observer.observe(node.current);
-    return () => {
-      controller.abort();
-      observer.disconnect();
-      if (value) URL.revokeObjectURL(value);
-    };
-  }, [capture._id, capture.status, retry]);
+  const { node, url, error, retry } = useScreenshotImage(capture, 'thumbnail', true);
 
   const rate = capture.activityPercent;
   const timeStr = new Date(capture.capturedAt).toLocaleTimeString(undefined, {
@@ -90,10 +47,6 @@ const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
             loading="lazy"
             decoding="async"
             className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
-            onError={() => {
-              setError('Thumbnail unavailable');
-              setUrl('');
-            }}
           />
         ) : error || capture.status !== 'READY' ? (
           <span className="flex flex-col items-center gap-1.5 px-3 text-xs text-gray-500">
@@ -117,7 +70,7 @@ const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
               className="text-xs text-blue-500 underline mb-1"
               onClick={(e) => {
                 e.stopPropagation();
-                setRetry((v) => v + 1);
+                retry();
               }}
             >
               Retry thumbnail
@@ -178,7 +131,8 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
       getScreenshotGallery({ ...JSON.parse(filterKey), sessionId, cursor: pageParam || undefined }, signal),
     getNextPageParam: (last) => last.nextCursor || undefined,
     staleTime: 30000,
-    gcTime: 0,
+    gcTime: 5 * 60 * 1000,
+    refetchOnMount: false,
     retry: false
   });
 
@@ -202,41 +156,9 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
   }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    let timer;
-    const refresh = (event) => {
-      const type = event?.detail?.type || '';
-      const payload = event?.detail?.payload || {};
-      if (event && (!/^tracking:/.test(type) || (payload.sessionId && String(payload.sessionId) !== String(sessionId))))
-        return;
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        getScreenshotGallery({ ...JSON.parse(filterKey), sessionId }, controller.signal)
-          .then((next) =>
-            client.setQueryData(key, (old) => {
-              if (!old) return old;
-              const pages = [...old.pages];
-              const freshIds = new Set(next.screenshots.map((s) => s._id));
-              pages[0] = {
-                ...next,
-                screenshots: [...next.screenshots, ...pages[0].screenshots.filter((s) => !freshIds.has(s._id))],
-                nextCursor: pages.length > 1 ? pages[0].nextCursor : next.nextCursor
-              };
-              return { ...old, pages };
-            })
-          )
-          .catch(() => {});
-      }, 500);
-    };
-    window.addEventListener('flowtask:realtime', refresh);
-    const poll = setInterval(() => refresh(), 60000);
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-      clearInterval(poll);
-      window.removeEventListener('flowtask:realtime', refresh);
-    };
-  }, [client, key, sessionId, filterKey]);
+    const poll = setInterval(() => client.invalidateQueries({ queryKey: key }), 60000);
+    return () => clearInterval(poll);
+  }, [client, key]);
 
   const captures = useMemo(
     () => [...new Map((query.data?.pages || []).flatMap((p) => p.screenshots).map((s) => [s._id, s])).values()],
@@ -255,7 +177,6 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
     [captures, timezone]
   );
 
-  const loadImage = useCallback((s, signal) => getScreenshotUrl(s._id, signal), []);
 
   const groups = useMemo(() => {
     const result = new Map();
@@ -346,6 +267,7 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
       {selectedScreenshotId && (
         <ScreenshotDetailsModal
           screenshotId={selectedScreenshotId}
+          screenshot={captures.find(s => s._id === selectedScreenshotId)}
           timezone={timezone}
           isFullScreenOpen={Boolean(fullScreenScreenshotId)}
           onClose={() => setSelectedScreenshotId(null)}
@@ -360,7 +282,7 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
             key={`${scope}:${fullScreenScreenshotId}`}
             attachments={available}
             initialIndex={Math.max(0, available.findIndex((s) => s._id === fullScreenScreenshotId))}
-            loadAttachment={loadImage}
+            ImagePreview={ScreenshotImagePreview}
             privateContent
             onClose={() => setFullScreenScreenshotId(null)}
           />

@@ -1,4 +1,4 @@
-import React, { memo, useContext, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+import React, { memo, useContext, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Calendar, 
@@ -14,8 +14,6 @@ import WorkspaceContext from '../../context/WorkspaceContext';
 import { 
   getReports, 
   getReportMembers, 
-  getScreenshotThumbnailUrl, 
-  getScreenshotUrl,
   errorMessage 
 } from '../../services/trackingApi';
 import { formatTrackingClock as duration } from '../../utils/duration';
@@ -23,6 +21,8 @@ import { Button } from '../ui/button';
 import useTrackingScope from './useTrackingScope';
 import DailyTrackingDetailsModal from './DailyTrackingDetailsModal';
 import ScreenshotDetailsModal from './ScreenshotDetailsModal';
+import ScreenshotImagePreview from './ScreenshotImagePreview';
+import useScreenshotImage from './useScreenshotImage';
 
 const DocumentViewerModal = lazy(() => import('../DocumentViewerModal'));
 
@@ -36,58 +36,9 @@ const workTitle = s => s.attributedTaskTitle
   ? `${s.attributedProjectName} / ${s.attributedTaskTitle} (origin: ${s.agendaTitle} — ${s.description})`
   : s.agenda ? `${s.agendaTitle} — ${s.description}` : `${s.projectName || 'Project'} / ${s.taskTitle || 'Individual'}`;
 
-// Rate-limiting for concurrent thumbnail blob loads
-let activeThumbnailRequests = 0;
-const waitingThumbnailResolvers = [];
-async function imageRequest(id, signal) {
-  if (activeThumbnailRequests >= 4) {
-    await new Promise(resolve => waitingThumbnailResolvers.push(resolve));
-  } else {
-    activeThumbnailRequests++;
-  }
-  try {
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    return await getScreenshotThumbnailUrl(id, signal);
-  } finally {
-    const next = waitingThumbnailResolvers.shift();
-    if (next) next();
-    else activeThumbnailRequests--;
-  }
-}
-
 // Single lazy-loaded timeline thumbnail card with compact activity indicator
 const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone, onClick }) {
-  const node = useRef(null);
-  const [url, setUrl] = useState('');
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    setUrl('');
-    setError('');
-    if (screenshot.status !== 'READY') return;
-    const controller = new AbortController();
-    let value;
-    const observer = new IntersectionObserver((entries) => {
-      if (!entries.some(e => e.isIntersecting)) return;
-      observer.disconnect();
-      imageRequest(screenshot._id, controller.signal)
-        .then(result => {
-          value = result.url;
-          if (controller.signal.aborted) URL.revokeObjectURL(value);
-          else setUrl(value);
-        })
-        .catch(e => {
-          if (!controller.signal.aborted) setError(e.response?.status === 410 ? 'Deleted' : errorMessage(e));
-        });
-    }, { rootMargin: '120px' });
-
-    if (node.current) observer.observe(node.current);
-    return () => {
-      controller.abort();
-      observer.disconnect();
-      if (value) URL.revokeObjectURL(value);
-    };
-  }, [screenshot._id, screenshot.status]);
+  const { node, url, error } = useScreenshotImage(screenshot, 'thumbnail', true);
 
   const activityPercent = screenshot.activityPercent;
   const timeFormatted = screenshot.capturedAt
@@ -109,7 +60,6 @@ const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone
             loading="lazy"
             decoding="async"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-            onError={() => { setError('Error'); setUrl(''); }}
           />
         ) : error || screenshot.status !== 'READY' ? (
           <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 text-[9px] p-1 text-center">
@@ -494,6 +444,7 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
       {selectedScreenshotId && (
         <ScreenshotDetailsModal
           screenshotId={selectedScreenshotId}
+          screenshot={data?.sessions.flatMap(s => s.latestScreenshots || []).find(s => s._id === selectedScreenshotId)}
           timezone={data?.timezone || effectiveTimezone}
           isFullScreenOpen={Boolean(fullScreenScreenshotId)}
           onClose={() => setSelectedScreenshotId(null)}
@@ -506,9 +457,9 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
         <Suspense fallback={<p role="status">Opening image viewer…</p>}>
           <DocumentViewerModal
             key={`${scope}:${fullScreenScreenshotId}`}
-            attachments={[{ _id: fullScreenScreenshotId, fileType: 'image' }]}
+            attachments={[{ ...data?.sessions.flatMap(s => s.latestScreenshots || []).find(s => s._id === fullScreenScreenshotId), _id: fullScreenScreenshotId, fileType: 'image' }]}
             initialIndex={0}
-            loadAttachment={(att, signal) => getScreenshotUrl(att._id, signal)}
+            ImagePreview={ScreenshotImagePreview}
             privateContent
             onClose={() => setFullScreenScreenshotId(null)}
           />

@@ -323,7 +323,7 @@ async function notifyScreenshot(screenshot){
     const session=await WorkSession.findById(screenshot.session).lean();
     const scoped=session?{...session,departmentIdsAtStart:screenshot.departmentIdsAtCapture}:null;
     for await(const member of WorkspaceMembership.find({workspace:screenshot.workspaceId,status:'active'}).select('user').cursor()){
-      try{const ctx=await contextFor(screenshot.workspaceId,member.user);await authorizeRecord(ctx,scoped,'tracking.view_screenshots');emitToUser(member.user,'tracking:screenshot-updated',{sessionId:screenshot.session,screenshotId:screenshot._id,userId:screenshot.user,capturedAt:screenshot.capturedAt,status:screenshot.status},screenshot.workspaceId);}catch{/* forbidden or temporarily disconnected */}
+      try{const ctx=await contextFor(screenshot.workspaceId,member.user);await authorizeRecord(ctx,scoped,'tracking.view_screenshots');emitToUser(member.user,'tracking:screenshot-updated',{sessionId:screenshot.session,screenshotId:screenshot._id,userId:screenshot.user,capturedAt:screenshot.capturedAt,status:screenshot.status,imageVersion:screenshot.checksum,thumbnailVersion:screenshot.thumbnail?.checksum||screenshot.checksum},screenshot.workspaceId);}catch{/* forbidden or temporarily disconnected */}
     }
   }catch{/* saved status remains authoritative; polling recovers */}
 }

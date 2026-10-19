@@ -21,13 +21,12 @@ export const getAgentRelease = () => data(api.get('/agent-release'));
 export const getScreenshotStorageHealth = () => data(api.get('/storage-health'));
 export const getTaskTrackedTime = taskId => data(api.get(`/tasks/${taskId}/totals`));
 export const getTimeline = (sessionId, before, filters={},signal) => data(api.get(`/sessions/${sessionId}/timeline`, { params: { ...filters,before },signal }));
-export const getScreenshotUrl = async (screenshotId,signal) => {
-  const response=await api.get(`/screenshots/${screenshotId}/content`,{responseType:'blob',signal});
-  return {url:URL.createObjectURL(response.data)};
-};
-export const getScreenshotThumbnailUrl=async(screenshotId,signal)=>{
-  const response=await api.get(`/screenshots/${screenshotId}/thumbnail`,{responseType:'blob',signal});
-  return {url:URL.createObjectURL(response.data)};
+// Keep private R2 reads behind the existing authenticated backend proxy.
+export const getScreenshotBlob = async (screenshotId, variant, signal) => {
+  const workspaceId = localStorage.getItem('workspaceId'), token = localStorage.getItem('token');
+  const response = await api.get(`/screenshots/${screenshotId}/${variant === 'thumbnail' ? 'thumbnail' : 'content'}`, { responseType: 'blob', signal });
+  if (workspaceId !== localStorage.getItem('workspaceId') || token !== localStorage.getItem('token')) throw new DOMException('Tracking identity changed', 'AbortError');
+  return response.data;
 };
 export const revokeDevice = deviceId => data(api.post(`/devices/${deviceId}/revoke`));
 export const saveTrackingPolicy = payload => data(api.put('/policy', payload));

@@ -25,7 +25,7 @@ const DocumentViewerModal = ({
   onClose, 
   onNavigate,
   initialIndex = 0,
-  loadAttachment, privateContent = false, onViewDetails 
+  loadAttachment, ImagePreview, privateContent = false, onViewDetails
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -38,7 +38,9 @@ const DocumentViewerModal = ({
     : attachment;
 
   const [resolved,setResolved]=useState(null),dialogRef=useRef(null);
-  const currentAttachment=useMemo(()=>loadAttachment?{...selectedAttachment,...resolved}:selectedAttachment,[loadAttachment,selectedAttachment,resolved]);
+  const currentAttachment=useMemo(()=>loadAttachment || ImagePreview
+    ? {...selectedAttachment,...(!ImagePreview || resolved?._id === selectedAttachment?._id ? resolved : null)}
+    : selectedAttachment,[loadAttachment,ImagePreview,selectedAttachment,resolved]);
   useEffect(()=>{
     if(!loadAttachment)return;
     const controller=new AbortController();let result;
@@ -159,6 +161,9 @@ const DocumentViewerModal = ({
     const displayUrl = secureUrl || url;
 
     // Image preview
+    if (fileType === 'image' && ImagePreview) {
+      return <div className="flex items-center justify-center h-full overflow-auto"><ImagePreview attachment={selectedAttachment} zoom={zoom} rotation={rotation} onResolved={setResolved} /></div>;
+    }
     if (fileType === 'image') {
       return (
         <div className="flex items-center justify-center h-full overflow-auto">
@@ -499,7 +504,7 @@ const DocumentViewerModal = ({
           )}
 
           {/* Loading overlay */}
-          {loading && currentAttachment?.fileType === 'image' && (
+          {loading && !ImagePreview && currentAttachment?.fileType === 'image' && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
               <Loader size={32} className="text-white animate-spin" />
             </div>
@@ -529,7 +534,7 @@ const DocumentViewerModal = ({
         </div>
 
         {/* Thumbnail strip for navigation */}
-        {canNavigate && !loadAttachment && (
+        {canNavigate && !loadAttachment && !ImagePreview && (
           <div 
             className="p-4 bg-black/50 overflow-x-auto"
             onClick={e => e.stopPropagation()}

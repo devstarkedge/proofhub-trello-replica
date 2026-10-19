@@ -185,7 +185,7 @@ router.get('/reports', asyncHandler(async (req,res) => {
         TrackingScreenshot.find(sFilter)
           .sort({ capturedAt: -1, _id: -1 })
           .limit(4)
-          .select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes compressionException')
+          .select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes compressionException checksum thumbnail.checksum expiresAt')
           .lean(),
         TrackingScreenshot.countDocuments(sFilter)
       ]);
@@ -235,6 +235,10 @@ router.get('/reports', asyncHandler(async (req,res) => {
       return {
         _id: s._id,
         session: s.session,
+        user: s.user,
+        imageVersion: s.checksum,
+        thumbnailVersion: s.thumbnail?.checksum || s.checksum,
+        expiresAt: s.expiresAt,
         interval: s.interval,
         displayId: s.displayId,
         capturedAt: s.capturedAt,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { 
@@ -14,10 +14,11 @@ import {
   ImageOff, 
   Loader2 
 } from 'lucide-react';
-import { getScreenshotDetails, getScreenshotUrl, errorMessage } from '../../services/trackingApi';
+import { getScreenshotDetails, errorMessage } from '../../services/trackingApi';
 import { formatTrackingClock as duration } from '../../utils/duration';
 import { Button } from '../ui/button';
 import useTrackingScope from './useTrackingScope';
+import useScreenshotImage from './useScreenshotImage';
 
 const formatTimeRange = (start, end, timezone) => {
   if (!start) return '—';
@@ -43,6 +44,7 @@ const formatTimeRange = (start, end, timezone) => {
 
 export default function ScreenshotDetailsModal({
   screenshotId,
+  screenshot,
   timezone,
   onClose,
   onOpenFullScreen,
@@ -68,7 +70,7 @@ export default function ScreenshotDetailsModal({
   const detailsQuery = useQuery({
     queryKey: ['tracking-private', scope, 'details', screenshotId],
     queryFn: ({ signal }) => getScreenshotDetails(screenshotId, signal),
-    staleTime: 60000,
+    staleTime: 5 * 60 * 1000,
     retry: false
   });
 
@@ -76,44 +78,9 @@ export default function ScreenshotDetailsModal({
   const detailsError = detailsQuery.error ? errorMessage(detailsQuery.error) : '';
   const activity = details?.activity;
 
-  // Fetch full-resolution WebP image blob
-  const [imageUrl, setImageUrl] = useState('');
-  const [imageLoading, setImageLoading] = useState(true);
-  const [imageError, setImageError] = useState('');
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setImageLoading(true);
-    setImageError('');
-    setImageUrl('');
-    let blobUrl;
-
-    getScreenshotUrl(screenshotId, controller.signal)
-      .then((res) => {
-        blobUrl = res.url;
-        if (!controller.signal.aborted) {
-          setImageUrl(blobUrl);
-          setImageLoading(false);
-        } else {
-          URL.revokeObjectURL(blobUrl);
-        }
-      })
-      .catch((err) => {
-        if (!controller.signal.aborted) {
-          setImageLoading(false);
-          setImageError(
-            err.response?.status === 410
-              ? 'Screenshot was removed from storage.'
-              : err.response?.data?.message || err.message || 'Unable to load screenshot'
-          );
-        }
-      });
-
-    return () => {
-      controller.abort();
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [screenshotId]);
+  const { url: imageUrl, loading: imageLoading, error: imageError } = useScreenshotImage(
+    details || screenshot, 'original'
+  );
 
   const handleOpenFullScreen = useCallback(() => {
     if (onOpenFullScreen) {
