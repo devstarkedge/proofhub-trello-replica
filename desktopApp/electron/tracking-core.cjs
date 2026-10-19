@@ -27,19 +27,29 @@ class DurableQueue {
   constructor(directory, encryption, maxBytes = 500*1024*1024) {
     this.directory = path.resolve(directory); this.encryption = encryption; this.maxBytes = maxBytes;
     fs.mkdirSync(this.directory,{recursive:true});
-    for(const name of fs.readdirSync(this.directory))if(/^[a-f\d-]+\.queue\.tmp$/.test(name))fs.rmSync(path.join(this.directory,name),{force:true});
+    // A process can stop after fsync but before rename. Recover a complete
+    // encrypted checkpoint; retain damaged bytes for diagnosis instead of loss.
+    if(this.available())for(const name of fs.readdirSync(this.directory))if(/^[a-f\d-]+\.queue\.tmp$/.test(name)){
+      const temp=path.join(this.directory,name);
+      try{JSON.parse(this.encryption.decryptString(fs.readFileSync(temp)));fs.renameSync(temp,temp.slice(0,-4));}
+      catch{fs.renameSync(temp,temp+'.damaged');}
+    }
   }
   files() { return fs.readdirSync(this.directory).filter(name=>/^[a-f\d-]+\.queue$/.test(name)).sort(); }
   available() { return this.encryption.isEncryptionAvailable(); }
+  damagedFiles(){return fs.readdirSync(this.directory).filter(name=>/\.queue(?:\.tmp)?\.damaged$/.test(name));}
+  usedBytes(){return fs.readdirSync(this.directory).filter(name=>/\.queue(?:\.tmp)?(?:\.damaged)?$/.test(name)).reduce((n,name)=>n+fs.statSync(path.join(this.directory,name)).size,0);}
   push(value) {
     if (!this.available()) throw new Error('Encrypted offline storage is unavailable');
     const bytes = this.encryption.encryptString(JSON.stringify(value));
-    const used = this.files().reduce((n,name)=>n+fs.statSync(path.join(this.directory,name)).size,0);
+    const used = this.usedBytes();
     if (used+bytes.length>this.maxBytes) throw new Error('Offline screenshot queue is full; reconnect to upload');
     const name = randomUUID()+'.queue'; this.write(name,bytes); return name;
   }
   write(name,bytes) {
     const target = this.target(name), temp = target+'.tmp';
+    const oldSize=fs.existsSync(target)?fs.statSync(target).size:0;
+    if(this.usedBytes()-oldSize+bytes.length>this.maxBytes)throw new Error('Offline screenshot queue is full; saved captures retained');
     const handle = fs.openSync(temp,'w',0o600);
     try { fs.writeFileSync(handle,bytes); fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
     fs.renameSync(temp,target);
@@ -48,8 +58,9 @@ class DurableQueue {
   read(name) { return JSON.parse(this.encryption.decryptString(fs.readFileSync(this.target(name)))); }
   update(name,value) { this.write(name,this.encryption.encryptString(JSON.stringify(value))); }
   remove(name) { fs.rmSync(this.target(name),{force:true}); }
+  quarantine(name){fs.renameSync(this.target(name),this.target(name)+'.damaged');}
   clear() { for (const name of this.files()) this.remove(name); }
-  prune(now=Date.now()) { for(const name of this.files()){const value=this.read(name);if(value.expiresAt&&value.expiresAt<=now)this.remove(name);} }
+  prune(now=Date.now()) { if(!this.available())return;for(const name of this.files()){let value;try{value=this.read(name);}catch{this.quarantine(name);continue;}if(value.expiresAt&&value.expiresAt<=now)this.remove(name);} }
 }
 const checksum = (data, algorithm='sha256') => createHash(algorithm).update(data).digest('hex');
 module.exports = { ActivityCounters, DurableQueue, checksum };

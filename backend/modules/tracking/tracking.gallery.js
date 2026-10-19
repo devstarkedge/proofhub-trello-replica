@@ -2,7 +2,7 @@ import {WorkSession,ActivityInterval,TrackingScreenshot} from './tracking.models
 import {contextFor,authorizeRecord,objectId,fail} from './tracking.service.js';
 import {historicalDepartmentScope} from './tracking.visibility.js';
 import {segmentFilter,matchesSegment} from './tracking.dashboard.js';
-import {readPrivateScreenshot,missingStorageObject} from './tracking.storage.js';
+import {readPrivateScreenshot,thumbnailDescriptor,missingStorageObject} from './tracking.storage.js';
 import {readLegacyScreenshot} from './tracking.legacyStorage.js';
 import {makeTrackingThumbnail} from './tracking.thumbnail.js';
 const id=v=>String(v?._id||v||'');
@@ -50,15 +50,19 @@ export async function authorizedScreenshot(workspaceId,userId,screenshotId,{read
 export async function screenshotDetails(workspaceId,userId,screenshotId){
   const {s,session}=await authorizedScreenshot(workspaceId,userId,screenshotId),interval=await ActivityInterval.findOne({workspaceId,_id:s.interval,...alive()}).select('-digest -capturePolicy').lean();
   return {...compact(s,interval,session),originalWidth:s.originalWidth||s.width,originalHeight:s.originalHeight||s.height,quality:s.quality,format:s.format,compressionStrategy:s.compressionStrategy,policyRevision:s.policyRevision,uploadedAt:s.uploadedAt,expiresAt:s.expiresAt,
-    thumbnail:{source:'derived-in-memory',maxWidth:480,maxHeight:270,quality:65,status:s.status},
+    thumbnail:s.thumbnail?.storageKey?{source:'private-r2',bytes:s.thumbnail.bytes,width:s.thumbnail.width,height:s.thumbnail.height,quality:s.thumbnail.quality,status:s.thumbnail.status}:{source:'derived-in-memory',maxWidth:480,maxHeight:270,quality:65,status:s.status},
     activity:interval?{startedAt:interval.startedAt,endedAt:interval.endedAt,mouseCount:interval.mouseCount,keyboardCount:interval.keyboardCount,activeSeconds:interval.activeSeconds,idleSeconds:interval.idleSeconds,inputActiveSeconds:interval.inputActiveSeconds,inputEligibleSeconds:interval.inputEligibleSeconds,activityBasis:interval.activityBasis,timeBasis:interval.timeBasis}:null,
     minuteActivityAvailable:false};
 }
 export async function screenshotContent(workspaceId,userId,screenshotId,{thumbnail=false}={}){
   const {s}=await authorizedScreenshot(workspaceId,userId,screenshotId,{ready:true});
   let bytes;
-  // Both routes read the same stored image. Thumbnail bytes are derived only
-  // in memory; no second object or screenshot record is ever written.
+  // New captures read the small private representation directly. Historical
+  // original-only captures keep their authorized in-memory fallback.
+  if(thumbnail&&s.thumbnail?.status==='READY'){
+    try{const content={bytes:await readPrivateScreenshot(thumbnailDescriptor(s)),mimeType:'image/webp'};await authorizedScreenshot(workspaceId,userId,screenshotId,{ready:true});return content;}
+    catch(error){if(!missingStorageObject(error))throw error;}
+  }
   try{bytes=s.storageProvider==='cloudflare-r2'?await readPrivateScreenshot(s):await readLegacyScreenshot(s);}
   catch(error){if(s.storageProvider==='cloudflare-r2'&&missingStorageObject(error)){
     await TrackingScreenshot.updateOne({_id:s._id,status:'READY'},{$set:{status:'PENDING',uploadStatus:'RETRY_PENDING',storageMissingAt:new Date(),lastUploadError:'Image was removed from R2. A retained desktop copy is required to recover it.'}});

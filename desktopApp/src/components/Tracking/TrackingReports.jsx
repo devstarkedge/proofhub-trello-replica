@@ -1,61 +1,519 @@
-import {useInfiniteQuery,useQuery,useQueryClient} from '@tanstack/react-query';
-import { useContext, useEffect, useMemo, useState } from 'react';
+import React, { memo, useContext, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { 
+  Calendar, 
+  Camera, 
+  CameraOff, 
+  ChevronRight, 
+  Clock, 
+  ImageOff, 
+  Loader2, 
+  RefreshCw 
+} from 'lucide-react';
 import WorkspaceContext from '../../context/WorkspaceContext';
-import { getReports, getReportMembers, getTimeline, getWorkHistory, errorMessage } from '../../services/trackingApi';
+import { 
+  getReports, 
+  getReportMembers, 
+  getScreenshotThumbnailUrl, 
+  getScreenshotUrl,
+  errorMessage 
+} from '../../services/trackingApi';
 import { formatTrackingClock as duration } from '../../utils/duration';
 import { Button } from '../ui/button';
-import ScreenshotGallery from './ScreenshotGallery';
 import useTrackingScope from './useTrackingScope';
-const style = { color:'var(--color-text-primary)',backgroundColor:'var(--color-card-bg)',borderColor:'var(--color-border-default)' };
-const dateTime = (value, timezone) => new Date(value).toLocaleString(undefined,{timeZone:timezone || 'UTC'});
-const workTitle=s=>s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle} (origin: ${s.agendaTitle} — ${s.description})`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName} / ${s.taskTitle||'Individual'}`;
-function WorkHistory({sessionId,timezone}){
- const scope=useTrackingScope(),[open,setOpen]=useState(false);
- const query=useInfiniteQuery({queryKey:['tracking-private',scope,'work-history',sessionId],initialPageParam:0,enabled:open,queryFn:({pageParam,signal})=>getWorkHistory(sessionId,pageParam,signal),getNextPageParam:last=>last.nextOffset??undefined,staleTime:15000,retry:false});
- return <details onToggle={event=>setOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm">Immutable work history</summary>{query.isPending&&open&&<p role="status">Loading history...</p>}{query.error&&<p role="alert">{errorMessage(query.error)}</p>}{query.data?.pages.flatMap(p=>p.events).map(a=><p key={a.id} className="text-xs">{dateTime(a.at,timezone)} - {a.type}</p>)}{query.hasNextPage&&<Button disabled={query.isFetchingNextPage} onClick={()=>query.fetchNextPage()}>More history</Button>}</details>;
-}
-function SessionTimeline({session,timezone,filterKey}) {
-  const scope=useTrackingScope();
-  const query=useQuery({queryKey:['tracking-private',scope,'timeline',session._id,session.revision,filterKey],queryFn:({signal})=>getTimeline(session._id,undefined,{...JSON.parse(filterKey),summaryOnly:true},signal),staleTime:15000,retry:false});
-  const data=query.data,error=query.error?errorMessage(query.error):'';
-  return <div className="mt-3 space-y-3 border-t pt-3" style={style}>
-    <p className="text-xs">Times shown in {timezone}. Input counts measure interaction, not output or a productivity score.</p>
-    {session.segments.map((s,i)=><p className="text-xs" key={s._id||i}>{workTitle(s)} · {dateTime(s.startedAt,timezone)} – {s.endedAt?dateTime(s.endedAt,timezone):'running'}{s.assignedAt?` · assigned ${dateTime(s.assignedAt,timezone)}`:''}{s.attributedAt?` · explicitly included ${dateTime(s.attributedAt,timezone)}`:''}</p>)}
-    {query.isPending&&<p role="status">Loading work sessions...</p>}
-    {error&&<p role="alert">{error}</p>}
-    {data?.evidence && <div className="text-xs space-y-1"><p>Activity {data.evidence.activityPercent===null?'N/A':`${data.evidence.activityPercent.toFixed(1)}%`} · eligible input coverage {duration(data.evidence.eligibleInputSeconds)} · mouse presses {data.evidence.mouseCount??'N/A'} · keydowns {data.evidence.keyboardCount??'N/A'}</p><p>Uploaded capture windows {data.evidence.capturedWindows}/{data.evidence.eligibleWindows} · success {data.evidence.captureSuccessPercent===null?'N/A':`${data.evidence.captureSuccessPercent.toFixed(1)}%`} · images pending {data.evidence.pendingScreenshots}{data.evidence.provisional?' · provisional':''}</p><p>These totals cover recorded windows only. Missing agent periods remain unknown; monitor images do not multiply global counters.</p></div>}
-    {(session.pauses||[]).map((p,i)=><p className="text-xs" key={`pause-${i}`}>Personal Pause · {dateTime(p.startedAt,timezone)} – {p.endedAt?dateTime(p.endedAt,timezone):'ongoing'}</p>)}
-    {!!data?.coverageGaps?.length && <details><summary className="cursor-pointer text-sm">{data.coverageGaps.length} desktop coverage gaps (work time is preserved)</summary>{data.coverageGaps.map((gap,i)=><p className="text-xs" key={i}>{dateTime(gap.startedAt,timezone)} – {dateTime(gap.endedAt,timezone)}</p>)}</details>}
-    {data&&!data.intervals.length&&<p className="text-sm">No desktop coverage uploaded for this session. Work and attendance time are still recorded.</p>}
-    <ScreenshotGallery sessionId={session._id} timezone={timezone} filters={JSON.parse(filterKey)}/>
-    <WorkHistory sessionId={session._id} timezone={timezone}/>
-  </div>;
-}
-export default function TrackingReports({team=false,initialFilters={}}) {
-  const {currentWorkspace}=useContext(WorkspaceContext)||{};const workspaceId=currentWorkspace?._id;
-  const scope=useTrackingScope(),client=useQueryClient();
-  const [expanded,setExpanded]=useState(''),[fromDate,setFromDate]=useState(initialFilters.fromDate||''),[toDate,setToDate]=useState(initialFilters.toDate||''),[userId,setUserId]=useState(initialFilters.userId||'');
-  const filterKey=JSON.stringify(initialFilters),[members,setMembers]=useState([]);
-  useEffect(()=>{const controller=new AbortController();if(team)getReportMembers(controller.signal).then(setMembers).catch(()=>{});return()=>controller.abort();},[team,scope]);
-  const key=useMemo(()=>['tracking-private',scope,'reports',filterKey,team,fromDate,toDate,userId],[scope,filterKey,team,fromDate,toDate,userId]);
-  const query=useInfiniteQuery({queryKey:key,initialPageParam:null,queryFn:({pageParam,signal})=>getReports({...JSON.parse(filterKey),team,fromDate,toDate,userId:userId||undefined,cursor:pageParam||undefined},signal),getNextPageParam:last=>last.nextCursor||undefined,staleTime:15000,gcTime:60000,retry:false,enabled:Boolean(workspaceId)});
-  const data=useMemo(()=>!query.error&&query.data?{...query.data.pages[0],sessions:[...new Map(query.data.pages.flatMap(page=>page.sessions).map(session=>[session._id,session])).values()]}:null,[query.data,query.error]);
-  const error=query.error?errorMessage(query.error):'';
-  useEffect(()=>{setExpanded('');},[scope,filterKey,fromDate,toDate,userId]);
-  useEffect(()=>{let timer;const refresh=e=>{if(!/^(tracking:|attendance:)/.test(e.detail?.type||''))return;clearTimeout(timer);timer=setTimeout(()=>client.invalidateQueries({queryKey:key}),250);};window.addEventListener('flowtask:realtime',refresh);return()=>{clearTimeout(timer);window.removeEventListener('flowtask:realtime',refresh);};},[client,key]);
+import DailyTrackingDetailsModal from './DailyTrackingDetailsModal';
+import ScreenshotDetailsModal from './ScreenshotDetailsModal';
 
-  return <section className="rounded-2xl border p-5" style={style}>
-    <h2 className="mb-3 text-base font-bold">{team?'Team daily timeline':'Daily work timeline'}</h2>
-    <div className="mb-3 flex flex-wrap items-center gap-3 text-sm"><label>From <input aria-label="Work reports from" className="rounded border p-2" style={style} type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} /></label><label>To <input aria-label="Work reports to" className="rounded border p-2" style={style} type="date" value={toDate} onChange={e=>setToDate(e.target.value)} /></label>{team&&<label>Member <select className="rounded border p-2" style={style} value={userId} onChange={e=>setUserId(e.target.value)}><option value="">All authorized members</option>{members.map(member=><option value={member._id} key={member._id}>{member.name}</option>)}</select></label>}<Button variant="outline" onClick={()=>query.refetch()} disabled={query.isFetching}>Refresh</Button></div>
-    {error&&<p role="alert" className="text-sm">{error}</p>}
-    {query.isPending&&<p role="status">Loading work sessions...</p>}
-    {data&&!data.sessions.length&&<p className="text-sm">No work sessions in this range.</p>}
-    {data?.sessions.map(s=><article key={s._id} className="border-b py-3" style={style}>
-      <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">{s.workDateKey} · {workTitle(s.segments.at(-1)||{})} {team?`· ${s.userName || s.user}`:''}</p>
-        <p className="text-xs">Work {duration(s.totals.workSeconds)} · Office {s.attendance.measuredOfficeSeconds===null?'awaiting attendance resolution':duration(s.attendance.measuredOfficeSeconds)} · Individual {duration(s.totals.individualSeconds)} · Pre-assignment {duration(s.totals.preAssignmentSeconds)} · Assigned {duration(s.totals.assignedSeconds)}</p>
-        <p className="text-xs">Attendance {s.attendance.day?.attendanceStatus||s.attendance.day?.presenceState||s.attendance.status} · Personal Pause {duration(s.totals.personalPauseSeconds||0)} · Agenda attribution follows the recorded Yes/No decision. Candidate pre-assignment time is {s.includePreAssignment?'included in':'excluded from'} task totals</p></div><Button size="sm" variant="outline" onClick={()=>setExpanded(expanded===s._id?'':s._id)}>Timeline and screenshots</Button></div>
-      {expanded===s._id&&<SessionTimeline session={s} timezone={data.timezone} filterKey={filterKey} />}
-    </article>)}
-    {data?.nextCursor&&<Button variant="outline" disabled={query.isFetchingNextPage} onClick={()=>query.fetchNextPage()}>More sessions</Button>}
-  </section>;
+const DocumentViewerModal = lazy(() => import('../DocumentViewerModal'));
+
+const style = { 
+  color: 'var(--color-text-primary)', 
+  backgroundColor: 'var(--color-card-bg)', 
+  borderColor: 'var(--color-border-default)' 
+};
+
+const workTitle = s => s.attributedTaskTitle 
+  ? `${s.attributedProjectName} / ${s.attributedTaskTitle} (origin: ${s.agendaTitle} — ${s.description})`
+  : s.agenda ? `${s.agendaTitle} — ${s.description}` : `${s.projectName || 'Project'} / ${s.taskTitle || 'Individual'}`;
+
+// Rate-limiting for concurrent thumbnail blob loads
+let activeThumbnailRequests = 0;
+const waitingThumbnailResolvers = [];
+async function imageRequest(id, signal) {
+  if (activeThumbnailRequests >= 4) {
+    await new Promise(resolve => waitingThumbnailResolvers.push(resolve));
+  } else {
+    activeThumbnailRequests++;
+  }
+  try {
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    return await getScreenshotThumbnailUrl(id, signal);
+  } finally {
+    const next = waitingThumbnailResolvers.shift();
+    if (next) next();
+    else activeThumbnailRequests--;
+  }
+}
+
+// Single lazy-loaded timeline thumbnail card with compact activity indicator
+const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone, onClick }) {
+  const node = useRef(null);
+  const [url, setUrl] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setUrl('');
+    setError('');
+    if (screenshot.status !== 'READY') return;
+    const controller = new AbortController();
+    let value;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some(e => e.isIntersecting)) return;
+      observer.disconnect();
+      imageRequest(screenshot._id, controller.signal)
+        .then(result => {
+          value = result.url;
+          if (controller.signal.aborted) URL.revokeObjectURL(value);
+          else setUrl(value);
+        })
+        .catch(e => {
+          if (!controller.signal.aborted) setError(e.response?.status === 410 ? 'Deleted' : errorMessage(e));
+        });
+    }, { rootMargin: '120px' });
+
+    if (node.current) observer.observe(node.current);
+    return () => {
+      controller.abort();
+      observer.disconnect();
+      if (value) URL.revokeObjectURL(value);
+    };
+  }, [screenshot._id, screenshot.status]);
+
+  const activityPercent = screenshot.activityPercent;
+  const timeFormatted = screenshot.capturedAt
+    ? new Date(screenshot.capturedAt).toLocaleTimeString(undefined, { timeZone: timezone || 'UTC', hour: '2-digit', minute: '2-digit' })
+    : '—';
+
+  return (
+    <div
+      ref={node}
+      onClick={onClick}
+      className="group relative flex-shrink-0 flex flex-col w-28 sm:w-32 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xs hover:border-blue-500 hover:shadow-md transition-all cursor-pointer"
+      title={`Captured at ${timeFormatted} · Monitor ${screenshot.displayId || '1'} · Activity: ${activityPercent !== null ? Math.round(activityPercent) + '%' : 'N/A'}`}
+    >
+      <div className="relative w-full h-16 sm:h-18 bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center justify-center">
+        {url ? (
+          <img
+            src={url}
+            alt={`Screenshot ${timeFormatted}`}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+            onError={() => { setError('Error'); setUrl(''); }}
+          />
+        ) : error || screenshot.status !== 'READY' ? (
+          <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 text-[9px] p-1 text-center">
+            <ImageOff size={14} />
+            <span className="mt-0.5 truncate max-w-[90px]">{error || screenshot.uploadStatus || 'Unavailable'}</span>
+          </div>
+        ) : (
+          <Loader2 className="animate-spin text-gray-400" size={16} />
+        )}
+
+        {/* Small Monitor Tag */}
+        <span className="absolute top-1 left-1 px-1 py-0.2 rounded text-[9px] font-semibold bg-black/60 text-white backdrop-blur-xs">
+          M{screenshot.displayId || '1'}
+        </span>
+
+        {/* Capture Time Tag */}
+        <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded text-[9px] font-medium bg-black/60 text-white backdrop-blur-xs">
+          {timeFormatted}
+        </span>
+      </div>
+
+      {/* Activity indicator */}
+      <div className="px-2 py-1 flex items-center justify-between bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 text-[10px]">
+        <span className="text-gray-500 dark:text-gray-400 font-medium">Activity</span>
+        {activityPercent !== null ? (
+          <span className={`font-semibold ${
+            activityPercent >= 70 ? 'text-emerald-600 dark:text-emerald-400' :
+            activityPercent >= 30 ? 'text-blue-600 dark:text-blue-400' :
+            'text-amber-600 dark:text-amber-400'
+          }`}>
+            {Math.round(activityPercent)}%
+          </span>
+        ) : (
+          <span className="text-gray-400">N/A</span>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// Calculate date ranges in effective workspace timezone
+function getWorkspaceDateRange(period, timezone = 'UTC') {
+  const now = new Date();
+  const formatYMD = (d) => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    } catch {
+      return d.toISOString().slice(0, 10);
+    }
+  };
+
+  const todayKey = formatYMD(now);
+  const [y, m, d] = todayKey.split('-').map(Number);
+  const baseNoonUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+
+  if (period === 'today') {
+    return { fromDate: todayKey, toDate: todayKey };
+  }
+  if (period === 'yesterday') {
+    const prev = new Date(baseNoonUtc);
+    prev.setUTCDate(prev.getUTCDate() - 1);
+    const prevKey = prev.toISOString().slice(0, 10);
+    return { fromDate: prevKey, toDate: prevKey };
+  }
+  if (period === 'last7days' || period === '7days') {
+    // Today and the previous 6 calendar days = 7 days total
+    const start = new Date(baseNoonUtc);
+    start.setUTCDate(start.getUTCDate() - 6);
+    return { fromDate: start.toISOString().slice(0, 10), toDate: todayKey };
+  }
+  if (period === 'month' || period === 'thisMonth') {
+    const startKey = `${y}-${String(m).padStart(2, '0')}-01`;
+    return { fromDate: startKey, toDate: todayKey };
+  }
+  return { fromDate: todayKey, toDate: todayKey };
+}
+
+export default function TrackingReports({ team = false, initialFilters = {} }) {
+  const { currentWorkspace } = useContext(WorkspaceContext) || {};
+  const workspaceId = currentWorkspace?._id;
+  const effectiveTimezone = currentWorkspace?.timezone || 'UTC';
+  const scope = useTrackingScope();
+  const client = useQueryClient();
+
+  // Initialize with Last 7 Days by default
+  const defaultRange = useMemo(() => getWorkspaceDateRange('last7days', effectiveTimezone), [effectiveTimezone]);
+  const [activePreset, setActivePreset] = useState('last7days');
+  const [fromDate, setFromDate] = useState(defaultRange.fromDate);
+  const [toDate, setToDate] = useState(defaultRange.toDate);
+  const [userId, setUserId] = useState(initialFilters.userId || '');
+  const [members, setMembers] = useState([]);
+  const [selectedSessionForDetails, setSelectedSessionForDetails] = useState(null);
+  const [selectedScreenshotId, setSelectedScreenshotId] = useState(null);
+  const [fullScreenScreenshotId, setFullScreenScreenshotId] = useState(null);
+
+  const filterKey = JSON.stringify(initialFilters);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (team) getReportMembers(controller.signal).then(setMembers).catch(() => {});
+    return () => controller.abort();
+  }, [team, scope]);
+
+  const key = useMemo(
+    () => ['tracking-private', scope, 'reports', filterKey, team, fromDate, toDate, userId],
+    [scope, filterKey, team, fromDate, toDate, userId]
+  );
+
+  const query = useInfiniteQuery({
+    queryKey: key,
+    initialPageParam: null,
+    queryFn: ({ pageParam, signal }) =>
+      getReports(
+        { ...JSON.parse(filterKey), team, fromDate, toDate, userId: userId || undefined, cursor: pageParam || undefined },
+        signal
+      ),
+    getNextPageParam: last => last.nextCursor || undefined,
+    staleTime: 15000,
+    gcTime: 60000,
+    retry: false,
+    enabled: Boolean(workspaceId)
+  });
+
+  const data = useMemo(
+    () =>
+      !query.error && query.data
+        ? {
+            ...query.data.pages[0],
+            sessions: [...new Map(query.data.pages.flatMap(page => page.sessions).map(session => [session._id, session])).values()]
+          }
+        : null,
+    [query.data, query.error]
+  );
+
+  const error = query.error ? errorMessage(query.error) : '';
+
+  // Realtime updates
+  useEffect(() => {
+    let timer;
+    const refresh = e => {
+      if (!/^(tracking:|attendance:)/.test(e.detail?.type || '')) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => client.invalidateQueries({ queryKey: key }), 250);
+    };
+    window.addEventListener('flowtask:realtime', refresh);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('flowtask:realtime', refresh);
+    };
+  }, [client, key]);
+
+  const handlePresetClick = (presetId) => {
+    setActivePreset(presetId);
+    const range = getWorkspaceDateRange(presetId, data?.timezone || effectiveTimezone);
+    setFromDate(range.fromDate);
+    setToDate(range.toDate);
+  };
+
+  return (
+    <section className="rounded-2xl border p-5 space-y-4" style={style}>
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold">{team ? 'Team daily timeline' : 'Daily work timeline'}</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Click on any date to open the full tracking details and screenshot history.
+          </p>
+        </div>
+        {data?.timezone && (
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            Timezone: {data.timezone}
+          </span>
+        )}
+      </div>
+
+      {/* Date Filter Controls with Quick Filters */}
+      <div className="p-3 rounded-xl bg-gray-50/70 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Quick Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Date range quick filters">
+            {[
+              { id: 'last7days', label: 'Last 7 Days' },
+              { id: 'today', label: 'Today' },
+              { id: 'yesterday', label: 'Yesterday' },
+              { id: 'month', label: 'This Month' }
+            ].map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => handlePresetClick(preset.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  activePreset === preset.id
+                    ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
+            className="flex items-center gap-1.5 text-xs"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${query.isFetching ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </Button>
+        </div>
+
+        {/* Date Inputs & Member Filter */}
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+            <span>From</span>
+            <input
+              aria-label="Work reports from"
+              type="date"
+              value={fromDate}
+              onChange={(e) => {
+                setActivePreset('custom');
+                setFromDate(e.target.value);
+              }}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+            />
+          </label>
+
+          <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+            <span>To</span>
+            <input
+              aria-label="Work reports to"
+              type="date"
+              value={toDate}
+              onChange={(e) => {
+                setActivePreset('custom');
+                setToDate(e.target.value);
+              }}
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+            />
+          </label>
+
+          {team && (
+            <label className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+              <span>Member</span>
+              <select
+                className="px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+              >
+                <option value="">All authorized members</option>
+                {members.map((member) => (
+                  <option value={member._id} key={member._id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      </div>
+
+      {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {query.isPending && <p role="status" className="text-sm text-gray-500 dark:text-gray-400 py-3">Loading work sessions…</p>}
+      {data && !data.sessions.length && !query.isPending && (
+        <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center border border-dashed rounded-xl border-gray-200 dark:border-gray-800">
+          No work sessions in this range.
+        </p>
+      )}
+
+      {/* Sessions Timeline List */}
+      <div className="space-y-3.5">
+        {data?.sessions.map((s) => {
+          const screenshots = (s.latestScreenshots || []).slice(0, 4);
+          const hasScreenshots = screenshots.length > 0;
+          const remainingCount = (s.totalScreenshots || 0) - screenshots.length;
+
+          return (
+            <article
+              key={s._id}
+              className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 shadow-xs hover:border-gray-300 dark:hover:border-gray-700 transition-all space-y-3"
+            >
+              {/* Date & Context Header */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-gray-900 dark:text-gray-100">{s.workDateKey}</span>
+                  <span className="text-gray-400 dark:text-gray-500">·</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    {workTitle(s.segments?.at(-1) || {})} {team ? `· ${s.userName || s.user}` : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSessionForDetails(s)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline cursor-pointer"
+                >
+                  <span>View Day Details</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Work Summary Details */}
+              <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                <p>
+                  Work <strong className="text-gray-700 dark:text-gray-200 font-semibold">{duration(s.totals?.workSeconds || 0)}</strong> · 
+                  Office <strong className="text-gray-700 dark:text-gray-200 font-semibold">{s.attendance?.measuredOfficeSeconds === null ? 'awaiting attendance resolution' : duration(s.attendance?.measuredOfficeSeconds || 0)}</strong> · 
+                  Individual {duration(s.totals?.individualSeconds || 0)} · 
+                  Pre-assignment {duration(s.totals?.preAssignmentSeconds || 0)} · 
+                  Assigned {duration(s.totals?.assignedSeconds || 0)}
+                </p>
+                <p className="text-[11px] opacity-85">
+                  Attendance <strong className="text-gray-700 dark:text-gray-200 font-semibold">{s.attendance?.day?.attendanceStatus || s.attendance?.day?.presenceState || s.attendance?.status || 'N/A'}</strong> · 
+                  Personal Pause {duration(s.totals?.personalPauseSeconds || 0)} · 
+                  Agenda attribution follows the recorded Yes/No decision
+                </p>
+              </div>
+
+              {/* Screenshot Thumbnails Row (Replaces "Timeline and screenshots" button) */}
+              <div className="pt-1">
+                {hasScreenshots ? (
+                  <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 scrollbar-thin">
+                    {screenshots.map((sc) => (
+                      <TimelineThumbnail
+                        key={sc._id}
+                        screenshot={sc}
+                        timezone={data.timezone}
+                        onClick={() => setSelectedScreenshotId(sc._id)}
+                      />
+                    ))}
+                    {remainingCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSessionForDetails(s)}
+                        className="flex-shrink-0 flex flex-col items-center justify-center w-24 h-22 sm:w-28 sm:h-24 rounded-xl border border-dashed border-blue-300 dark:border-blue-800/80 bg-blue-50/50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100/60 dark:hover:bg-blue-900/30 transition-all cursor-pointer p-2 text-center"
+                        title="Click to view all screenshots for this date"
+                      >
+                        <span className="text-sm font-bold">+{remainingCount}</span>
+                        <span className="text-[10px] font-medium mt-0.5">more</span>
+                        <span className="text-[9px] opacity-75 mt-1 underline">View all →</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div 
+                    onClick={() => setSelectedSessionForDetails(s)}
+                    className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-gray-50/70 dark:bg-gray-800/40 text-xs text-gray-500 dark:text-gray-400 border border-dashed border-gray-200 dark:border-gray-800 cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-800/60 transition-colors"
+                  >
+                    <CameraOff className="w-4 h-4 text-gray-400 shrink-0" />
+                    <span>No screenshots available for this date</span>
+                    <span className="text-[11px] text-blue-600 dark:text-blue-400 ml-auto hover:underline">View tracking details →</span>
+                  </div>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {data?.nextCursor && (
+        <Button
+          variant="outline"
+          disabled={query.isFetchingNextPage}
+          onClick={() => query.fetchNextPage()}
+          className="w-full mt-2"
+        >
+          {query.isFetchingNextPage ? 'Loading more sessions…' : 'Load more sessions'}
+        </Button>
+      )}
+
+      {/* Daily Tracking Details Modal */}
+      {selectedSessionForDetails && (
+        <DailyTrackingDetailsModal
+          session={selectedSessionForDetails}
+          timezone={data?.timezone || effectiveTimezone}
+          filterKey={filterKey}
+          onClose={() => setSelectedSessionForDetails(null)}
+        />
+      )}
+
+      {/* Screenshot Details Modal (opened directly when clicking one of the 4 thumbnails) */}
+      {selectedScreenshotId && (
+        <ScreenshotDetailsModal
+          screenshotId={selectedScreenshotId}
+          timezone={data?.timezone || effectiveTimezone}
+          isFullScreenOpen={Boolean(fullScreenScreenshotId)}
+          onClose={() => setSelectedScreenshotId(null)}
+          onOpenFullScreen={(id) => setFullScreenScreenshotId(id)}
+        />
+      )}
+
+      {/* Full-Screen Image Preview Modal */}
+      {fullScreenScreenshotId && (
+        <Suspense fallback={<p role="status">Opening image viewer…</p>}>
+          <DocumentViewerModal
+            key={`${scope}:${fullScreenScreenshotId}`}
+            attachments={[{ _id: fullScreenScreenshotId, fileType: 'image' }]}
+            initialIndex={0}
+            loadAttachment={(att, signal) => getScreenshotUrl(att._id, signal)}
+            privateContent
+            onClose={() => setFullScreenScreenshotId(null)}
+          />
+        </Suspense>
+      )}
+    </section>
+  );
 }

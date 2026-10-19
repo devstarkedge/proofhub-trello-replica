@@ -7,11 +7,13 @@ import User from '../../models/User.js';
 import Department from '../../models/Department.js';
 import {DateTime} from 'luxon';
 import {TrackingStorageLabel} from './tracking.models.js';
-export const SCREENSHOT_MAX_BYTES=70*1024;
+export const SCREENSHOT_TARGET_BYTES=70*1024;
+export const SCREENSHOT_MAX_BYTES=Math.min(64*1024*1024,Math.max(128*1024,Number(process.env.FLOWTASK_SCREENSHOT_MAX_BYTES)||15*1024*1024));
+export const screenshotUploadLimits=()=>({maxScreenshotBytes:SCREENSHOT_MAX_BYTES,targetScreenshotBytes:SCREENSHOT_TARGET_BYTES,maxThumbnailBytes:SCREENSHOT_TARGET_BYTES});
 const failure = (message,statusCode=503) => Object.assign(new Error(message),{statusCode,code:'SCREENSHOT_STORAGE_UNAVAILABLE'});
 let cached;
 let inflight=0;const waiting=[];
-export async function storageIO(operation){if(inflight>=4)await new Promise(resolve=>waiting.push(resolve));else inflight++;try{return await operation();}finally{const next=waiting.shift();if(next)next();else inflight--;}}
+export async function storageIO(operation){if(inflight>=4){if(waiting.length>=64)throw failure('Screenshot storage is busy; retry shortly');await new Promise(resolve=>waiting.push(resolve));}else inflight++;try{return await operation();}finally{const next=waiting.shift();if(next)next();else inflight--;}}
 const send=(client,command)=>storageIO(()=>client.send(command,{abortSignal:AbortSignal.timeout(20000)}));
 export function storageSlug(name){return Array.from(String(name||'').normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu,'-').replace(/^-+|-+$/g,'')).slice(0,48).join('').replace(/-+$/,'')||'unnamed';}
 export async function storageLabels(workspaceId,userId,departmentIds=[],capturedAt=null){
@@ -75,7 +77,7 @@ export async function privateScreenshotExists(s){
 }
 export async function signedUpload(s) {
   assertR2(s);const {client,config}=privateStorage();
-  if(s.pipelineVersion>=2&&s.bytes>SCREENSHOT_MAX_BYTES)throw failure('Screenshot exceeds 70 KiB cap',409);
+  if(s.bytes>SCREENSHOT_MAX_BYTES)throw Object.assign(failure('Screenshot exceeds the operational upload limit; retain it for retry.',413),{code:'SCREENSHOT_UPLOAD_LIMIT'});
   const headers={'Content-Type':'image/webp','Content-MD5':Buffer.from(s.contentMd5,'hex').toString('base64'),'If-None-Match':'*',...Object.fromEntries(Object.entries(identity(s)).map(([k,v])=>[`x-amz-meta-${k}`,v]))};
   const command=new PutObjectCommand({Bucket:config.bucket,Key:s.storageKey,ContentType:'image/webp',ContentLength:s.bytes,ContentMD5:headers['Content-MD5'],IfNoneMatch:'*',Metadata:identity(s)});
   const url=await getSignedUrl(client,command,{expiresIn:config.expiresIn,unhoistableHeaders:new Set(Object.keys(headers).map(h=>h.toLowerCase())),signableHeaders:new Set(['content-type','content-length','content-md5','if-none-match'])});
@@ -86,7 +88,7 @@ export async function readPrivateScreenshot(s) {
   return storageIO(async()=>{
   const object=await client.send(new GetObjectCommand({Bucket:config.bucket,Key:s.storageKey}),{abortSignal:AbortSignal.timeout(20000)});
   const chunks=[];let length=0;
-  for await(const chunk of object.Body){length+=chunk.length;if(length>s.bytes||length>15*1024*1024){object.Body.destroy?.();throw failure('Screenshot object exceeds authorized size',409);}chunks.push(chunk);}
+  for await(const chunk of object.Body){length+=chunk.length;if(length>s.bytes||length>Math.max(SCREENSHOT_MAX_BYTES,15*1024*1024)){object.Body.destroy?.();throw failure('Screenshot object exceeds authorized size',409);}chunks.push(chunk);}
   const bytes=Buffer.concat(chunks);
   if(bytes.length!==s.bytes||object.ContentType!=='image/webp'||createHash('sha256').update(bytes).digest('hex')!==s.checksum)throw failure('Screenshot content failed integrity verification',409);
   return bytes;
@@ -94,7 +96,7 @@ export async function readPrivateScreenshot(s) {
 }
 export async function verifyPrivateUpload(s,{withBytes=false}={}) {
   assertR2(s);const {client,config}=privateStorage();
-  if(s.pipelineVersion>=2&&s.bytes>SCREENSHOT_MAX_BYTES)throw failure('Screenshot exceeds 70 KiB cap',409);
+  if(s.bytes>Math.max(SCREENSHOT_MAX_BYTES,15*1024*1024))throw failure('Screenshot exceeds the operational verification limit',413);
   const object=await send(client,new HeadObjectCommand({Bucket:config.bucket,Key:s.storageKey}));
   if(object.ContentLength!==s.bytes||object.ContentType!=='image/webp'||Object.entries(identity(s)).some(([k,v])=>object.Metadata?.[k]!==v))throw failure('Uploaded R2 screenshot metadata does not match',409);
   const bytes=await readPrivateScreenshot(s);
@@ -108,9 +110,20 @@ export async function removePrivateScreenshot(s) {
   assertR2(s);const {client,config}=privateStorage();await send(client,new DeleteObjectCommand({Bucket:config.bucket,Key:s.storageKey}));
   await removePrivateThumbnail(s);
 }
+export function thumbnailDescriptor(s){
+  const value=s.toObject?s.toObject():s;
+  return {...value,...value.thumbnail,storageProvider:'cloudflare-r2',format:'webp',variant:'thumbnail'};
+}
+export async function writePrivateThumbnail(s,bytes){
+  const descriptor=thumbnailDescriptor(s);assertR2(descriptor);
+  if(bytes.length>SCREENSHOT_TARGET_BYTES||bytes.length!==descriptor.bytes)throw failure('Invalid thumbnail size',413);
+  const {client,config}=privateStorage();
+  try{await send(client,new PutObjectCommand({Bucket:config.bucket,Key:descriptor.storageKey,Body:bytes,ContentLength:bytes.length,ContentType:'image/webp',ContentMD5:Buffer.from(descriptor.contentMd5,'hex').toString('base64'),IfNoneMatch:'*',Metadata:identity(descriptor)}));}
+  catch(error){if(![409,412].includes(error?.$metadata?.httpStatusCode))throw error;}
+  await verifyPrivateUpload(descriptor);
+}
 export async function removePrivateThumbnail(s){
-  // Historical derivatives still follow normal retention. New captures have
-  // only the original object and must not allocate or delete a second key.
+  // Both private representations share the original capture's retention.
   if(!s.thumbnail?.storageKey)return;
   const descriptor={...s,storageProvider:'cloudflare-r2',format:'webp',variant:'thumbnail',storageKey:s.thumbnail.storageKey};
   assertR2(descriptor);const {client,config}=privateStorage();

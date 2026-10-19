@@ -1,59 +1,371 @@
-import {lazy,Suspense,memo,useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {useInfiniteQuery,useQuery,useQueryClient} from '@tanstack/react-query';
-import {Camera,Info,ImageOff,Loader2} from 'lucide-react';
-import {getScreenshotGallery,getScreenshotDetails,getScreenshotUrl,getScreenshotThumbnailUrl,errorMessage} from '../../services/trackingApi';
-const DocumentViewerModal=lazy(()=>import('../DocumentViewerModal'));
-import TrackingDialog from './TrackingDialog';
+import { lazy, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { Camera, Info, ImageOff, Loader2 } from 'lucide-react';
+import { getScreenshotGallery, getScreenshotUrl, getScreenshotThumbnailUrl, errorMessage } from '../../services/trackingApi';
 import useTrackingScope from './useTrackingScope';
-import {Button} from '../ui/button';
-import {formatTrackingClock as duration} from '../../utils/duration';
-const time=(value,zone)=>value?new Date(value).toLocaleString(undefined,{timeZone:zone||'UTC'}):'—';
-const cardStyle={backgroundColor:'var(--color-card-bg)',borderColor:'var(--color-border-default)'};
-let active=0;const waiting=[];
-async function imageRequest(id,signal){if(active>=4)await new Promise(resolve=>waiting.push(resolve));else active++;try{if(signal.aborted)throw new DOMException('Aborted','AbortError');return await getScreenshotThumbnailUrl(id,signal);}finally{const next=waiting.shift();if(next)next();else active--;}}
-const CaptureCard=memo(function CaptureCard({capture,timezone,onOpen,onDetails}){
-  const node=useRef(null),[url,setUrl]=useState(''),[error,setError]=useState(''),[retry,setRetry]=useState(0);
-  useEffect(()=>{setUrl('');setError('');if(capture.status!=='READY')return;const controller=new AbortController();let value;
-    const observer=new IntersectionObserver(entries=>{if(!entries.some(e=>e.isIntersecting))return;observer.disconnect();imageRequest(capture._id,controller.signal).then(result=>{value=result.url;if(controller.signal.aborted)URL.revokeObjectURL(value);else setUrl(value);}).catch(e=>{if(!controller.signal.aborted)setError(e.response?.status===410?'Deleted from storage':errorMessage(e));});},{rootMargin:'150px'});observer.observe(node.current);
-    return()=>{controller.abort();observer.disconnect();if(value)URL.revokeObjectURL(value);};
-  },[capture._id,capture.status,retry]);
-  const rate=capture.activityPercent;
-  return <article ref={node} className="overflow-hidden rounded-xl border shadow-sm" style={cardStyle}>
-    <button className="relative flex aspect-video w-full items-center justify-center bg-slate-500/10 focus-visible:outline-2 focus-visible:outline-blue-500" disabled={capture.status!=='READY'} onClick={()=>onOpen(capture._id)} aria-label={`Open screenshot ${time(capture.capturedAt,timezone)}, monitor ${capture.displayId}`}>
-      {url?<img src={url} alt={`Monitor ${capture.displayId}`} loading="lazy" decoding="async" className="h-full w-full object-contain" onError={()=>{setError('Thumbnail unavailable');setUrl('');}}/>:error||capture.status!=='READY'?<span className="flex flex-col items-center gap-2 px-3 text-xs"><ImageOff size={22}/>{error||capture.compressionException||capture.uploadStatus||'Thumbnail unavailable'}</span>:<Loader2 className="animate-spin opacity-40" size={20}/>}
-    </button>
-    <div className="space-y-2 p-3">{error&&capture.status==='READY'&&<button className="text-xs underline" onClick={()=>setRetry(v=>v+1)}>Retry thumbnail</button>}<div className="h-2 overflow-hidden rounded-sm bg-slate-400/20" role="meter" aria-label="Recorded input activity" aria-valuemin={0} aria-valuemax={100} {...(rate!==null?{'aria-valuenow':Math.round(rate)}:{'aria-valuetext':'Unavailable'})}><div className="h-full bg-emerald-500" style={{width:rate===null?'0%':`${rate}%`,backgroundImage:'repeating-linear-gradient(90deg,transparent 0,transparent 10px,var(--color-card-bg) 10px,var(--color-card-bg) 12px)'}}/></div>
-      <div className="flex items-center justify-between text-xs"><span>{new Date(capture.capturedAt).toLocaleTimeString(undefined,{timeZone:timezone||'UTC',hour:'2-digit',minute:'2-digit'})}</span><span>{rate===null?'Activity N/A':`${Math.round(rate)}% activity`}</span></div>
-      <button className="flex w-full items-center justify-between gap-2 text-left text-xs" onClick={()=>onDetails(capture._id)} aria-label={`Screenshot details ${time(capture.capturedAt,timezone)}`}><span className="min-w-0 truncate">Screen {capture.displayId} · {capture.status==='READY'?'Uploaded':capture.uploadStatus}{capture.blurred?' · blurred':''}</span><Info size={15} className="shrink-0"/></button>
-    </div>
-  </article>;
-});
-function ScreenshotDetails({id,scope,timezone,onClose,onOpen}){
-  const query=useQuery({queryKey:['tracking-private',scope,'details',id],queryFn:({signal})=>getScreenshotDetails(id,signal),staleTime:0,gcTime:0,retry:false});
-  const s=query.data,a=s?.activity;
-  const rows=s?[['Captured',time(s.capturedAt,timezone)],['Interval',a?`${time(a.startedAt,timezone)} – ${time(a.endedAt,timezone)}`:'Unavailable'],['Interval duration',a?duration((+new Date(a.endedAt)-+new Date(a.startedAt))/1000):'N/A'],['Keyboard keydowns',a?.keyboardCount??'N/A'],['Mouse button presses',a?.mouseCount??'N/A'],['Input activity',s.activityPercent===null?'N/A':`${s.activityPercent.toFixed(1)}%`],['Active / idle',a&&a.activeSeconds!==null?`${duration(a.activeSeconds)} / ${duration(a.idleSeconds)}`:'N/A'],['Input-active / eligible seconds',a?.inputEligibleSeconds>0?`${a.inputActiveSeconds.toFixed(1)} / ${a.inputEligibleSeconds.toFixed(1)}`:'N/A'],['Capture / upload status',`${s.coverage} / ${s.uploadStatus}`],['Encoded dimensions',`${s.width} × ${s.height}`],['Original dimensions',`${s.originalWidth} × ${s.originalHeight}`],['Format / size',`${s.format} · ${(s.bytes/1024).toFixed(1)} KiB`],['Quality / strategy',`${s.quality??'Legacy'} / ${s.compressionStrategy||'Legacy'}`],['Gallery image','Uses the same stored screenshot'],['Policy revision',s.policyRevision??'Legacy'],['Retention',s.expiresAt?time(s.expiresAt,timezone):'No automatic flush']]:[];
-  return <TrackingDialog title="Screenshot details" onClose={onClose}>{query.isPending&&<p role="status">Loading capture details…</p>}{query.error&&<p role="alert">{errorMessage(query.error)}</p>}{s&&<div className="space-y-5"><div className="space-y-2">{s.contexts.map(c=><div key={c.segmentId}><p className="font-medium">{c.title}</p><p className="text-xs opacity-70">{time(c.startedAt,timezone)} – {c.endedAt?time(c.endedAt,timezone):'Running'}</p>{c.origin&&<p className="text-xs">Origin: {c.origin} · Task attribution: {c.attributionIncluded?'Yes':'No'}{c.attributedAt?` · ${time(c.attributedAt,timezone)}`:''}</p>}{c.assignedAt&&<p className="text-xs">Assigned {time(c.assignedAt,timezone)}</p>}</div>)}{s.contexts.length>1&&<p className="text-xs">This interval spans multiple work contexts. Counts cover the whole interval and are not split between tasks.</p>}</div><dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">{rows.map(([label,value])=><div key={label} className="rounded-lg bg-slate-500/5 p-3"><dt className="text-xs opacity-65">{label}</dt><dd className="mt-1 break-words text-sm font-medium">{value}</dd></div>)}</dl>{s.compressionException&&<p role="alert" className="text-sm text-amber-600">{s.compressionException}: this screen could not meet the 70 KiB cap within the readability floor. Activity remains recorded.</p>}<p className="text-xs opacity-70">Minute-level activity was not recorded. These are genuine interval totals. Activity measures interaction, not work quality.</p><Button disabled={s.status!=='READY'} onClick={()=>onOpen(s._id)}>Open full screenshot</Button></div>}</TrackingDialog>;
+import { Button } from '../ui/button';
+import ScreenshotDetailsModal from './ScreenshotDetailsModal';
+
+const DocumentViewerModal = lazy(() => import('../DocumentViewerModal'));
+
+const time = (value, zone) => (value ? new Date(value).toLocaleString(undefined, { timeZone: zone || 'UTC' }) : '—');
+const cardStyle = { backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' };
+
+let active = 0;
+const waiting = [];
+async function imageRequest(id, signal) {
+  if (active >= 4) await new Promise((resolve) => waiting.push(resolve));
+  else active++;
+  try {
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    return await getScreenshotThumbnailUrl(id, signal);
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else active--;
+  }
 }
-export default function ScreenshotGallery({sessionId,timezone,filters={}}){
-  const scope=useTrackingScope(),client=useQueryClient(),filterKey=JSON.stringify(filters),sentinel=useRef(null);
-  const [modal,setModal]=useState(null);const key=useMemo(()=>['tracking-private',scope,'gallery',sessionId,filterKey],[scope,sessionId,filterKey]);
-  const query=useInfiniteQuery({queryKey:key,initialPageParam:null,queryFn:({pageParam,signal})=>getScreenshotGallery({...JSON.parse(filterKey),sessionId,cursor:pageParam||undefined},signal),getNextPageParam:last=>last.nextCursor||undefined,staleTime:30000,gcTime:0,retry:false});
-  useEffect(()=>{setModal(null);},[scope,sessionId,filterKey]);
-  const {hasNextPage,isFetchingNextPage,isError,fetchNextPage}=query;
-  useEffect(()=>{if(!hasNextPage||isFetchingNextPage||isError)return;const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))fetchNextPage();},{rootMargin:'100px'});observer.observe(sentinel.current);return()=>observer.disconnect();},[hasNextPage,isFetchingNextPage,isError,fetchNextPage]);
-  useEffect(()=>{const controller=new AbortController();let timer;
-    const refresh=event=>{const type=event?.detail?.type||'',payload=event?.detail?.payload||{};if(event&&(!/^tracking:/.test(type)||payload.sessionId&&String(payload.sessionId)!==String(sessionId)))return;clearTimeout(timer);timer=setTimeout(()=>{getScreenshotGallery({...JSON.parse(filterKey),sessionId},controller.signal).then(next=>client.setQueryData(key,old=>{if(!old)return old;const pages=[...old.pages],freshIds=new Set(next.screenshots.map(s=>s._id));pages[0]={...next,screenshots:[...next.screenshots,...pages[0].screenshots.filter(s=>!freshIds.has(s._id))],nextCursor:pages.length>1?pages[0].nextCursor:next.nextCursor};return {...old,pages};})).catch(()=>{});},500);};
-    window.addEventListener('flowtask:realtime',refresh);const poll=setInterval(()=>refresh(),60000);return()=>{controller.abort();clearTimeout(timer);clearInterval(poll);window.removeEventListener('flowtask:realtime',refresh);};
-  },[client,key,sessionId,filterKey]);
-  const captures=useMemo(()=>[...new Map((query.data?.pages||[]).flatMap(p=>p.screenshots).map(s=>[s._id,s])).values()],[query.data]);
-  const available=useMemo(()=>captures.filter(s=>s.status==='READY').map(s=>({...s,fileType:'image',originalName:`${s.contexts.map(c=>c.title).join(' → ')} · ${time(s.capturedAt,timezone)}`})),[captures,timezone]);
-  const loadImage=useCallback((s,signal)=>getScreenshotUrl(s._id,signal),[]),close=useCallback(()=>setModal(null),[]),open=useCallback(id=>setModal({type:'preview',id}),[]),details=useCallback(id=>setModal({type:'details',id}),[]);
-  const groups=useMemo(()=>{const result=new Map();for(const s of captures){const date=new Date(s.capturedAt).toLocaleDateString(undefined,{timeZone:timezone||'UTC',weekday:'long',month:'long',day:'numeric'}),title=s.contexts.map(c=>c.title).join(' → ')||'Capture context unavailable',groupKey=`${date}:${s.contexts.map(c=>c.segmentId).join(',')}`;if(!result.has(groupKey))result.set(groupKey,{date,title,records:[]});result.get(groupKey).records.push(s);}return [...result.entries()];},[captures,timezone]);
-  return <section className="space-y-5" aria-label="Screenshot timeline"><header className="flex items-center gap-2"><Camera size={18}/><h3 className="font-semibold">Screenshot timeline</h3><span className="text-xs opacity-60">{captures.length} loaded</span></header>
-    {query.isPending&&<div role="status" className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[0,1,2].map(n=><div key={n} className="aspect-video animate-pulse rounded-xl bg-slate-400/15"/>)}</div>}{query.error&&<div role="alert" className="text-sm">{errorMessage(query.error)} <Button variant="outline" onClick={()=>query.refetch()}>Retry</Button></div>}{!query.isPending&&!captures.length&&!query.error&&<p className="rounded-xl border border-dashed p-6 text-sm opacity-70">No screenshot captures in this session and filter. Attendance and work time remain recorded.</p>}
-    {groups.map(([id,group])=><section key={id} className="space-y-3"><div><p className="text-sm font-semibold">{group.date}</p><p className="mt-1 text-xs opacity-70">{group.title}</p></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{group.records.map(s=><CaptureCard key={`${scope}:${s._id}`} capture={s} timezone={timezone} onOpen={open} onDetails={details}/>)}</div></section>)}
-    <div ref={sentinel} className="flex min-h-8 justify-center">{query.isFetchingNextPage?<p role="status" className="text-xs">Loading earlier captures…</p>:query.hasNextPage&&<Button variant="outline" onClick={()=>query.fetchNextPage()}>Load 20 earlier captures</Button>}</div>
-    {modal?.type==='preview'&&available.some(s=>s._id===modal.id)&&<Suspense fallback={<p role="status">Opening image viewer…</p>}><DocumentViewerModal key={`${scope}:${modal.id}`} attachments={available} initialIndex={available.findIndex(s=>s._id===modal.id)} loadAttachment={loadImage} privateContent onClose={close} onViewDetails={s=>details(s._id)}/></Suspense>}
-    {modal?.type==='details'&&<ScreenshotDetails id={modal.id} scope={scope} timezone={timezone} onClose={close} onOpen={open}/>}
-  </section>;
+
+const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
+  const node = useRef(null);
+  const [url, setUrl] = useState('');
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    setUrl('');
+    setError('');
+    if (capture.status !== 'READY') return;
+    const controller = new AbortController();
+    let value;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      observer.disconnect();
+      imageRequest(capture._id, controller.signal)
+        .then((result) => {
+          value = result.url;
+          if (controller.signal.aborted) URL.revokeObjectURL(value);
+          else setUrl(value);
+        })
+        .catch((e) => {
+          if (!controller.signal.aborted) setError(e.response?.status === 410 ? 'Deleted from storage' : errorMessage(e));
+        });
+    }, { rootMargin: '150px' });
+    if (node.current) observer.observe(node.current);
+    return () => {
+      controller.abort();
+      observer.disconnect();
+      if (value) URL.revokeObjectURL(value);
+    };
+  }, [capture._id, capture.status, retry]);
+
+  const rate = capture.activityPercent;
+  const timeStr = new Date(capture.capturedAt).toLocaleTimeString(undefined, {
+    timeZone: timezone || 'UTC',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  return (
+    <article
+      ref={node}
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(capture._id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(capture._id);
+        }
+      }}
+      className="group overflow-hidden rounded-xl border shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500 hover:border-blue-400 dark:hover:border-blue-600 select-none flex flex-col"
+      style={cardStyle}
+      aria-label={`Screenshot ${timeStr}, monitor ${capture.displayId}`}
+    >
+      <div className="relative flex aspect-video w-full items-center justify-center bg-slate-500/10 overflow-hidden">
+        {url ? (
+          <img
+            src={url}
+            alt={`Monitor ${capture.displayId}`}
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
+            onError={() => {
+              setError('Thumbnail unavailable');
+              setUrl('');
+            }}
+          />
+        ) : error || capture.status !== 'READY' ? (
+          <span className="flex flex-col items-center gap-1.5 px-3 text-xs text-gray-500">
+            <ImageOff size={20} />
+            <span className="text-[11px] truncate max-w-full">
+              {error || capture.compressionException || capture.uploadStatus || 'Thumbnail unavailable'}
+            </span>
+          </span>
+        ) : (
+          <Loader2 className="animate-spin opacity-40 text-blue-500" size={20} />
+        )}
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white p-1 rounded-md">
+          <Info size={13} />
+        </div>
+      </div>
+      <div className="space-y-2 p-3 flex-1 flex flex-col justify-between">
+        <div>
+          {error && capture.status === 'READY' && (
+            <button
+              type="button"
+              className="text-xs text-blue-500 underline mb-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRetry((v) => v + 1);
+              }}
+            >
+              Retry thumbnail
+            </button>
+          )}
+          <div
+            className="h-2 overflow-hidden rounded-sm bg-slate-400/20 mb-2"
+            role="meter"
+            aria-label="Recorded input activity"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            {...(rate !== null ? { 'aria-valuenow': Math.round(rate) } : { 'aria-valuetext': 'Unavailable' })}
+          >
+            <div
+              className="h-full bg-emerald-500 transition-all duration-300"
+              style={{
+                width: rate === null ? '0%' : `${rate}%`,
+                backgroundImage:
+                  'repeating-linear-gradient(90deg,transparent 0,transparent 10px,var(--color-card-bg) 10px,var(--color-card-bg) 12px)'
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+            <span className="font-medium">{timeStr}</span>
+            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+              {rate === null ? 'Activity N/A' : `${Math.round(rate)}% activity`}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 text-xs pt-2 text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-800/60">
+          <span className="min-w-0 truncate text-[11px]">
+            Screen {capture.displayId} · {capture.status === 'READY' ? 'Uploaded' : capture.uploadStatus}
+            {capture.blurred ? ' · blurred' : ''}
+          </span>
+          <Info size={13} className="shrink-0 text-gray-400 group-hover:text-blue-500 transition-colors" />
+        </div>
+      </div>
+    </article>
+  );
+});
+
+export default function ScreenshotGallery({ sessionId, timezone, filters = {}, hideDateHeader = false }) {
+  const scope = useTrackingScope();
+  const client = useQueryClient();
+  const filterKey = JSON.stringify(filters);
+  const sentinel = useRef(null);
+
+  const [selectedScreenshotId, setSelectedScreenshotId] = useState(null);
+  const [fullScreenScreenshotId, setFullScreenScreenshotId] = useState(null);
+
+  const key = useMemo(() => ['tracking-private', scope, 'gallery', sessionId, filterKey], [scope, sessionId, filterKey]);
+
+  const query = useInfiniteQuery({
+    queryKey: key,
+    initialPageParam: null,
+    queryFn: ({ pageParam, signal }) =>
+      getScreenshotGallery({ ...JSON.parse(filterKey), sessionId, cursor: pageParam || undefined }, signal),
+    getNextPageParam: (last) => last.nextCursor || undefined,
+    staleTime: 30000,
+    gcTime: 0,
+    retry: false
+  });
+
+  useEffect(() => {
+    setSelectedScreenshotId(null);
+    setFullScreenScreenshotId(null);
+  }, [scope, sessionId, filterKey]);
+
+  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = query;
+
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage || isError) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) fetchNextPage();
+      },
+      { rootMargin: '100px' }
+    );
+    if (sentinel.current) observer.observe(sentinel.current);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer;
+    const refresh = (event) => {
+      const type = event?.detail?.type || '';
+      const payload = event?.detail?.payload || {};
+      if (event && (!/^tracking:/.test(type) || (payload.sessionId && String(payload.sessionId) !== String(sessionId))))
+        return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        getScreenshotGallery({ ...JSON.parse(filterKey), sessionId }, controller.signal)
+          .then((next) =>
+            client.setQueryData(key, (old) => {
+              if (!old) return old;
+              const pages = [...old.pages];
+              const freshIds = new Set(next.screenshots.map((s) => s._id));
+              pages[0] = {
+                ...next,
+                screenshots: [...next.screenshots, ...pages[0].screenshots.filter((s) => !freshIds.has(s._id))],
+                nextCursor: pages.length > 1 ? pages[0].nextCursor : next.nextCursor
+              };
+              return { ...old, pages };
+            })
+          )
+          .catch(() => {});
+      }, 500);
+    };
+    window.addEventListener('flowtask:realtime', refresh);
+    const poll = setInterval(() => refresh(), 60000);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+      clearInterval(poll);
+      window.removeEventListener('flowtask:realtime', refresh);
+    };
+  }, [client, key, sessionId, filterKey]);
+
+  const captures = useMemo(
+    () => [...new Map((query.data?.pages || []).flatMap((p) => p.screenshots).map((s) => [s._id, s])).values()],
+    [query.data]
+  );
+
+  const available = useMemo(
+    () =>
+      captures
+        .filter((s) => s.status === 'READY')
+        .map((s) => ({
+          ...s,
+          fileType: 'image',
+          originalName: `${s.contexts.map((c) => c.title).join(' • ')} · ${time(s.capturedAt, timezone)}`
+        })),
+    [captures, timezone]
+  );
+
+  const loadImage = useCallback((s, signal) => getScreenshotUrl(s._id, signal), []);
+
+  const groups = useMemo(() => {
+    const result = new Map();
+    for (const s of captures) {
+      const date = new Date(s.capturedAt).toLocaleDateString(undefined, {
+        timeZone: timezone || 'UTC',
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric'
+      });
+      const title = s.contexts.map((c) => c.title).join(' • ') || 'Capture context unavailable';
+      const groupKey = `${date}:${s.contexts.map((c) => c.segmentId).join(',')}`;
+      if (!result.has(groupKey)) result.set(groupKey, { date, title, records: [] });
+      result.get(groupKey).records.push(s);
+    }
+    return [...result.entries()];
+  }, [captures, timezone]);
+
+  const hasMultipleDates = useMemo(() => new Set(groups.map(([, g]) => g.date)).size > 1, [groups]);
+
+  return (
+    <section className="space-y-5" aria-label="Screenshot timeline">
+      <header className="flex items-center gap-2">
+        <Camera size={18} />
+        <h3 className="font-semibold">Screenshot timeline</h3>
+        <span className="text-xs opacity-60">{captures.length} loaded</span>
+      </header>
+
+      {query.isPending && (
+        <div role="status" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {[0, 1, 2].map((n) => (
+            <div key={n} className="aspect-video animate-pulse rounded-xl bg-slate-400/15" />
+          ))}
+        </div>
+      )}
+
+      {query.error && (
+        <div role="alert" className="text-sm">
+          {errorMessage(query.error)}{' '}
+          <Button variant="outline" onClick={() => query.refetch()}>
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {!query.isPending && !captures.length && !query.error && (
+        <p className="rounded-xl border border-dashed p-6 text-sm opacity-70">
+          No screenshot captures in this session and filter. Attendance and work time remain recorded.
+        </p>
+      )}
+
+      {groups.map(([id, group]) => (
+        <section key={id} className="space-y-3">
+          <div>
+            {(!hideDateHeader || hasMultipleDates) && <p className="text-sm font-semibold">{group.date}</p>}
+            <p className={!hideDateHeader || hasMultipleDates ? 'mt-1 text-xs opacity-70' : 'text-xs font-semibold opacity-70'}>
+              {group.title}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            {group.records.map((s) => (
+              <CaptureCard
+                key={`${scope}:${s._id}`}
+                capture={s}
+                timezone={timezone}
+                onSelect={(id) => setSelectedScreenshotId(id)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <div ref={sentinel} className="flex min-h-8 justify-center">
+        {query.isFetchingNextPage ? (
+          <p role="status" className="text-xs">
+            Loading earlier captures…
+          </p>
+        ) : (
+          query.hasNextPage && (
+            <Button variant="outline" onClick={() => query.fetchNextPage()}>
+              Load 20 earlier captures
+            </Button>
+          )
+        )}
+      </div>
+
+      {/* Unified Screenshot Details Modal (z-[130]) */}
+      {selectedScreenshotId && (
+        <ScreenshotDetailsModal
+          screenshotId={selectedScreenshotId}
+          timezone={timezone}
+          isFullScreenOpen={Boolean(fullScreenScreenshotId)}
+          onClose={() => setSelectedScreenshotId(null)}
+          onOpenFullScreen={(id) => setFullScreenScreenshotId(id)}
+        />
+      )}
+
+      {/* Full-Screen Image Preview Modal (z-[140]) */}
+      {fullScreenScreenshotId && available.some((s) => s._id === fullScreenScreenshotId) && (
+        <Suspense fallback={<p role="status">Opening image viewer…</p>}>
+          <DocumentViewerModal
+            key={`${scope}:${fullScreenScreenshotId}`}
+            attachments={available}
+            initialIndex={Math.max(0, available.findIndex((s) => s._id === fullScreenScreenshotId))}
+            loadAttachment={loadImage}
+            privateContent
+            onClose={() => setFullScreenScreenshotId(null)}
+          />
+        </Suspense>
+      )}
+    </section>
+  );
 }

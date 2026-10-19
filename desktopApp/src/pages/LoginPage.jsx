@@ -19,7 +19,7 @@ const LoginPage = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState({});
-  const { login, sessionError, retrySession } = useContext(AuthContext);
+  const { login } = useContext(AuthContext);
   const { loadWorkspaces } = useContext(WorkspaceContext);
   const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const navigate = useNavigate();
@@ -187,22 +187,6 @@ const LoginPage = () => {
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Welcome Back</h2>
             <p className="text-white/70">Sign in to your account</p>
           </motion.div>
-
-          {sessionError && (
-            <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-300/40 bg-amber-500/15 p-4 text-sm text-amber-50" role="alert">
-              <AlertCircle className="mt-0.5 shrink-0" size={18} />
-              <div className="flex-1">
-                <p>{sessionError}</p>
-                <button
-                  type="button"
-                  onClick={retrySession}
-                  className="mt-2 font-semibold text-white underline decoration-white/50 underline-offset-4 hover:decoration-white"
-                >
-                  Retry saved session
-                </button>
-              </div>
-            </div>
-          )}
 
           <form onSubmit={onSubmit} className="space-y-4 sm:space-y-6" autoComplete="off">
             {/* 

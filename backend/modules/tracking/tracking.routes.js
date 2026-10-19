@@ -148,12 +148,120 @@ router.get('/reports', asyncHandler(async (req,res) => {
     User.find({_id:{$in:sessions.map(s=>s.user)}}).select('name').lean()
   ]);
   const days=await AttendanceDay.find({workspaceId:req.workspaceId,_id:{$in:attendanceRows.map(a=>a.attendanceDay).filter(Boolean)}}).select('presenceState attendanceStatus workedMinutes').lean();
-  const data=sessions.map(session=>{
-    const rawAttendance=attendanceRows.find(a=>id(a)===id(session.attendanceSession)),attendance=rawAttendance?effectiveAttendanceSession(rawAttendance):null,day=attendance?days.find(d=>id(d)===id(attendance.attendanceDay)):null;
-    const officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(Date.now(),attendance.missedCheckoutCutoffAt?+attendance.missedCheckoutCutoffAt:Infinity)):null);
-    const filtered={...session,segments:session.segments.filter(s=>matchesSegment(s,req.query))};
-    const {audit:_,...summary}=filtered;
-    return {...summary,userName:subjects.find(u=>id(u)===id(session.user))?.name||'Former member',totals:summarize(filtered),attendance:{status:attendance?.status,day,checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null}};
+  const validExpiry = { $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] };
+  const isFiltered = Object.keys(sf).length > 0;
+
+  const sessionScreenshotsList = await Promise.all(sessions.map(async (session) => {
+    try {
+      const histScope = await historicalDepartmentScope(req.workspaceId, req.user.id, session.user);
+      await authorizeRecord(ctx, session ? { ...session, departmentIdsAtStart: histScope ?? session.departmentIdsAtStart } : null, 'tracking.view_screenshots');
+      
+      const history = histScope === null ? {} : { departmentIdsAtCapture: { $in: histScope } };
+      let intervalConstraint = {};
+      if (isFiltered) {
+        const matchingSegments = session.segments.filter(s => matchesSegment(s, req.query));
+        const intervalFilter = matchingSegments.length ? {
+          $or: matchingSegments.map(s => ({ startedAt: { $lt: s.endedAt || new Date() }, endedAt: { $gt: s.startedAt } }))
+        } : { _id: { $in: [] } };
+        const matchingIntervalIds = await ActivityInterval.find({
+          workspaceId: req.workspaceId,
+          session: session._id,
+          ...history,
+          $and: [intervalFilter, validExpiry]
+        }).distinct('_id');
+        intervalConstraint = { interval: { $in: matchingIntervalIds } };
+      }
+
+      const sFilter = {
+        workspaceId: req.workspaceId,
+        session: session._id,
+        status: { $ne: 'DELETED' },
+        ...history,
+        ...validExpiry,
+        ...intervalConstraint
+      };
+
+      const [records, totalCount] = await Promise.all([
+        TrackingScreenshot.find(sFilter)
+          .sort({ capturedAt: -1, _id: -1 })
+          .limit(4)
+          .select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes compressionException')
+          .lean(),
+        TrackingScreenshot.countDocuments(sFilter)
+      ]);
+
+      return { sessionId: String(session._id), records, totalCount };
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 403) {
+        return { sessionId: String(session._id), records: [], totalCount: 0 };
+      }
+      throw e;
+    }
+  }));
+
+  const sessionScreenshotsMap = new Map(sessionScreenshotsList.map(item => [item.sessionId, item]));
+
+  const allIntervalIds = [
+    ...new Set(
+      sessionScreenshotsList.flatMap(item => item.records.map(r => String(r.interval)).filter(Boolean))
+    )
+  ];
+
+  const intervals = allIntervalIds.length > 0 ? await ActivityInterval.find({
+    workspaceId: req.workspaceId,
+    _id: { $in: allIntervalIds }
+  }).select('_id coverage activityBasis inputEligibleSeconds inputActiveSeconds keyboardCount mouseCount').lean() : [];
+  
+  const intervalMap = new Map(intervals.map(i => [String(i._id), i]));
+
+  const data = sessions.map(session => {
+    const rawAttendance = attendanceRows.find(a => id(a) === id(session.attendanceSession));
+    const attendance = rawAttendance ? effectiveAttendanceSession(rawAttendance) : null;
+    const day = attendance ? days.find(d => id(d) === id(attendance.attendanceDay)) : null;
+    const officeEnd = attendance?.checkOutAt || (attendance?.status === 'ACTIVE' ? new Date(Math.min(Date.now(), attendance.missedCheckoutCutoffAt ? +attendance.missedCheckoutCutoffAt : Infinity)) : null);
+    const filteredSegments = session.segments.filter(s => matchesSegment(s, req.query));
+    const filteredSession = { ...session, segments: filteredSegments };
+    const { audit: _, ...summary } = filteredSession;
+
+    const scData = sessionScreenshotsMap.get(String(session._id)) || { records: [], totalCount: 0 };
+    const latestScreenshots = scData.records.map(s => {
+      const interval = intervalMap.get(String(s.interval));
+      const eligible = interval && !['excluded', 'locked', 'sleep'].includes(interval.coverage) &&
+        interval.activityBasis === 'distinct-input-seconds-v1' &&
+        interval.inputEligibleSeconds > 0 &&
+        Number.isFinite(interval.inputActiveSeconds);
+      const activityPercent = eligible ? Math.min(100, Math.max(0, interval.inputActiveSeconds / interval.inputEligibleSeconds * 100)) : null;
+
+      return {
+        _id: s._id,
+        session: s.session,
+        interval: s.interval,
+        displayId: s.displayId,
+        capturedAt: s.capturedAt,
+        status: s.status,
+        uploadStatus: s.uploadStatus,
+        blurred: s.blurred,
+        activityPercent,
+        keyboardCount: interval?.keyboardCount ?? null,
+        mouseCount: interval?.mouseCount ?? null,
+        compressionException: s.compressionException
+      };
+    });
+
+    return {
+      ...summary,
+      userName: subjects.find(u => id(u) === id(session.user))?.name || 'Former member',
+      totals: summarize(filteredSession),
+      attendance: {
+        status: attendance?.status,
+        day,
+        checkInAt: attendance?.checkInAt,
+        checkOutAt: attendance?.checkOutAt,
+        measuredOfficeSeconds: officeEnd ? Math.max(0, (+officeEnd - +attendance.checkInAt) / 1000) : null
+      },
+      latestScreenshots,
+      totalScreenshots: scData.totalCount
+    };
   });
   const workspace = await Workspace.findById(req.workspaceId).select('timezone').lean();
   send(res, { workspaceId:req.workspaceId,sessions: data, timezone: workspace?.timezone || 'UTC', nextCursor: candidates.length === 20 ? id(candidates.at(-1)._id) : null });

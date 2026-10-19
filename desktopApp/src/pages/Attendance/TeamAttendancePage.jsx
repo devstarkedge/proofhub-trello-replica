@@ -1,7 +1,6 @@
 import { periodDateRange, isValidDateRange } from '../../utils/workspaceDateRange';
 import { formatHours } from '../../utils/duration';
 import { attendanceCsv } from '../../utils/attendanceExport';
-import TrackingReports from '../../components/Tracking/TrackingReports';
 import React, { useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Users } from 'lucide-react';
 import PresenceStatusBadge from '../../components/Attendance/PresenceStatusBadge';
@@ -160,24 +159,49 @@ const TeamAttendanceContent = () => {
           <LeaveEmptyState title="No attendance records for this range" compact />
         ) : (
           <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--color-border-default)' }}>
-            {records.map((record) => (
-              <div key={record._id} className="flex flex-col gap-1 border-b px-4 py-3 text-sm last:border-b-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: 'var(--color-border-subtle)' }}>
-                <div>
-                  <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{record.user?.name || 'Unknown'}</span>
-                  <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{record.workDateKey} · {record.workMode}</span>
+            {records.map((record) => {
+              const showCheckIn = Boolean(
+                record.firstCheckInAt && (
+                  record.presenceState === 'HALF_PRESENT' ||
+                  record.leaveState === 'SHORT_LEAVE' ||
+                  record.presenceState === 'MISSING_CHECKOUT' ||
+                  record.presenceState === 'ABSENT'
+                )
+              );
+              const checkInTime = record.firstCheckInAt ? new Date(record.firstCheckInAt).toLocaleTimeString([], {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+                timeZone: currentWorkspace?.timezone || undefined
+              }) : null;
+
+              return (
+                <div key={record._id} className="flex flex-col gap-1 border-b px-4 py-3 text-sm last:border-b-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: 'var(--color-border-subtle)' }}>
+                  <div>
+                    <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{record.user?.name || 'Unknown'}</span>
+                    <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{record.workDateKey} · {record.workMode}</span>
+                  </div>
+                  <div className="flex flex-col sm:items-end gap-1">
+                    <div className="flex items-center gap-2">
+                      {typeof record.workedMinutes === 'number' && record.workedMinutes > 0 && (
+                        <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-text-primary)' }}>
+                          Total: {formatHours(record.workedMinutes)}
+                        </span>
+                      )}
+                      <PresenceStatusBadge status={record.presenceState} />
+                    </div>
+                    {showCheckIn && checkInTime && (
+                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        Checked in: {checkInTime}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {typeof record.workedMinutes === 'number' && record.workedMinutes > 0 && (
-                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{formatHours(record.workedMinutes)}</span>
-                  )}
-                  <PresenceStatusBadge status={record.presenceState} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
-      <TrackingReports team />
     </div>
   );
 };

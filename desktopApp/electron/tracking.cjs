@@ -6,7 +6,7 @@ const { randomUUID } = require('node:crypto');
 const { ActivityCounters, DurableQueue, checksum } = require('./tracking-core.cjs');
 const {encodeWebP}=require('./screenshot-encoder.cjs');
 const {noticeAuthorization}=require('./monitoring-authorization.cjs');
-const encodedFields=e=>({width:e.width,height:e.height,originalWidth:e.originalWidth,originalHeight:e.originalHeight,quality:e.quality,pipelineVersion:e.pipelineVersion,compressionStrategy:e.compressionStrategy});
+const {uploadEntry,encodedFields}=require('./screenshot-upload.cjs');
 
 function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   const root = path.join(app.getPath('userData'),'tracking'); fs.mkdirSync(root,{recursive:true});
@@ -31,14 +31,14 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     else if(String(work?._id)===key&&value.status==='PAUSED'){work={...work,status:'PAUSED',revision:value.revision};haltCapture('Work is not running');}
   }
   let noticeRequired=false,noticeVersion=1;
-  let uploadError='',uploadErrorCode='',nextUploadRetryAt=null;
+  let uploadError='',uploadErrorCode='',nextUploadRetryAt=null,uploadLimits={};
   const protectedEntries=new Set();
   const counters = new ActivityCounters();
   const trusted = event => { const window=getWindow();
     return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && new URL(event.senderFrame.url).origin===getOrigin(); };
   const publish = (state=lastState,error=lastError,code=error===lastError?lastErrorCode:'') => {
     lastState=state;lastError=error;lastErrorCode=code;
-    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size,uploadError,uploadErrorCode,nextUploadRetryAt,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
+    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true,screenshotPipeline:3},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,syncStatus:queue?.damagedFiles().length?'capture-failed':uploadError?(uploadErrorCode==='SCREENSHOT_STORAGE_UNAVAILABLE'?'storage-unavailable':'retry-pending'):uploading?'uploading':queue?.files().length?'pending-sync':'synced',queueBytes:queue?.usedBytes()||0,queueCapacityBytes:queue?.maxBytes||0,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size+(queue?.damagedFiles().length||0),uploadError,uploadErrorCode,nextUploadRetryAt,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
       policy:policy?{revision:policy.revision,enabled:policy.enabled,monitoringEnabled:policy.monitoringEnabled,intervalSeconds:policy.intervalSeconds,retentionDays:policy.retentionDays,monitors:policy.monitors,blur:policy.blur,format:'webp',personalPauseEnabled:policy.personalPauseEnabled}:null};
     const window=getWindow(); if(window&&!window.isDestroyed())window.webContents.send('desktop-tracking:status',value);
     if(window&&!window.isDestroyed())window.setTitle(state==='monitoring'?'FlowTask · Monitoring active':state==='offline'?'FlowTask · Monitoring offline':'FlowTask');
@@ -149,12 +149,12 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
               if(!source||source.thumbnail.isEmpty()){coverage='unavailable';continue;}
               let image=source.thumbnail;const size=image.getSize();
               if(preferences.blur)image=image.resize({width:Math.max(1,Math.round(size.width/40)),height:Math.max(1,Math.round(size.height/40)),quality:'good'}).resize({...size,quality:'good'});
-              let encoded;try{encoded=await encodeWebP(image.toPNG());}catch(error){
-                const original=image.toPNG();images.push({displayId:String(display.id),format:'png',conversionPending:error.code!=='SIZE_QUALITY_CONFLICT',exceptionCode:error.code==='SIZE_QUALITY_CONFLICT'?error.code:undefined,measurement:error.measurement,protectedUntil:Date.now()+3600000,checksum:checksum(original),contentMd5:checksum(original,'md5'),bytes:original.length,width:size.width,height:size.height,blurred:preferences.blur,data:original.toString('base64')});
-                publish('monitoring',error.code==='SIZE_QUALITY_CONFLICT'?'Screenshot exceeds 70 KiB within the readability floor; activity is still recorded':'WebP encoding failed; protected original queued for retry');continue;
+              let encoded;try{encoded=await encodeWebP(image.toPNG(),{maxBytes:uploadLimits.maxScreenshotBytes});}catch(error){
+                const original=image.toPNG();images.push({captureId:randomUUID(),displayId:String(display.id),format:'png',conversionPending:true,checksum:checksum(original),contentMd5:checksum(original,'md5'),bytes:original.length,width:size.width,height:size.height,blurred:preferences.blur,data:original.toString('base64')});
+                uploadError=error.message;uploadErrorCode=error.code||'SCREENSHOT_ENCODING_FAILED';publish('monitoring');continue;
               }
               const bytes=encoded.data;
-              images.push({displayId:String(display.id),checksum:checksum(bytes),contentMd5:checksum(bytes,'md5'),bytes:bytes.length,
+              images.push({captureId:randomUUID(),displayId:String(display.id),checksum:checksum(bytes),contentMd5:checksum(bytes,'md5'),bytes:bytes.length,
                 ...encodedFields(encoded),format:'webp',mimeType:'image/webp',blurred:preferences.blur,data:bytes.toString('base64')});
             }
           }
@@ -171,7 +171,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       inputAvailable:hookStarted && coverage!=='excluded',screenshotAvailable:images.some(image=>!image.exceptionCode)};
     if (coverage==='excluded') { payload.mouseCount=null;payload.keyboardCount=null; }
     if(payload.endOffsetMs-payload.startOffsetMs<1)return;
-    try{activeQueue.push({payload,images,createdAt:Date.now(),expiresAt:policy?.retentionDays===null?null:+new Date(activeDevice.anchor.serverAt)+payload.endOffsetMs+(policy?.retentionDays||365)*86400000,attempts:0,nextAttempt:0});}
+    try{activeQueue.push({deviceId:activeDevice._id,payload,images,createdAt:Date.now(),expiresAt:policy?.retentionDays===null?null:+new Date(activeDevice.anchor.serverAt)+payload.endOffsetMs+(policy?.retentionDays||365)*86400000,attempts:0,nextAttempt:0});}
     catch(error){capturing=false;stopInput();publish('unavailable',error.message);}
     publish(lastState,lastError);
   }
@@ -180,63 +180,30 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     capturing=false;stopInput();counters.reset();lastCaptureAllowed=false;
   }
   async function flush() {
-    if(uploading||!credentials||!queue||!device)return; uploading=true;
+    if(uploading||!credentials||!queue||!device)return;if(!queue.available()){uploadError='Encrypted offline storage is unavailable; saved captures retained';uploadErrorCode='SCREENSHOT_LOCAL_STORAGE';publish();return;}uploading=true;
     const scope=generation,activeQueue=queue,deviceId=device._id;
-    try {
+    try{
+      let attempted=0;
       for(const name of activeQueue.files()){
         if(scope!==generation)return;
-        let entry;
-        try{entry=activeQueue.read(name);}catch{activeQueue.remove(name);publish('unavailable','A damaged offline interval could not be recovered');continue;}
-        const held=entry.images?.length&&entry.images.every(image=>image.exceptionReported);if(held)protectedEntries.add(name);else protectedEntries.delete(name);
-        if(entry.lastUploadError&&!held){uploadError=entry.lastUploadError;uploadErrorCode=entry.lastUploadErrorCode||'UPLOAD_UNAVAILABLE';nextUploadRetryAt=entry.nextAttempt||null;}
-        if(!held&&entry.nextAttempt>Date.now()+60000){entry.nextAttempt=Date.now()+60000;activeQueue.update(name,entry);nextUploadRetryAt=entry.nextAttempt;}
+        let entry;try{entry=activeQueue.read(name);}catch{activeQueue.quarantine(name);uploadError='Damaged encrypted capture retained for inspection';uploadErrorCode='SCREENSHOT_LOCAL_INTEGRITY';continue;}
+        if(entry.expiresAt&&entry.expiresAt<=Date.now()){activeQueue.remove(name);protectedEntries.delete(name);continue;}
+        protectedEntries.delete(name);
+        if(entry.nextAttempt>Date.now()+60000){entry.nextAttempt=Date.now()+60000;activeQueue.update(name,entry);}
         if(entry.nextAttempt>Date.now())continue;
+        if(attempted++>=4)break;
         try{
-          const interval=await request(`/devices/${deviceId}/intervals`,entry.payload);
+          await uploadEntry({entry,save:()=>activeQueue.update(name,entry),request,deviceId,maxBytes:uploadLimits.maxScreenshotBytes,isCurrent:()=>scope===generation});
           if(scope!==generation)return;
-          for(const image of entry.images)if(image.format!=='webp'&&!image.exceptionCode){
-            const original=Buffer.from(image.data,'base64');if(checksum(original)!==image.checksum)throw new Error('Offline screenshot checksum mismatch');
-            let encoded;try{encoded=await encodeWebP(original);}catch(error){if(error.code!=='SIZE_QUALITY_CONFLICT')throw error;Object.assign(image,{exceptionCode:error.code,measurement:error.measurement,conversionPending:false,protectedUntil:Date.now()+3600000});activeQueue.update(name,entry);continue;}Object.assign(image,{data:encoded.data.toString('base64'),bytes:encoded.data.length,...encodedFields(encoded),format:'webp',mimeType:'image/webp',checksum:checksum(encoded.data),contentMd5:checksum(encoded.data,'md5'),conversionPending:false});
-            if(scope!==generation)return;
-            activeQueue.update(name,entry);
-          }
-          for(const image of entry.images){if(image.exceptionReported)continue;let bytes=Buffer.from(image.data,'base64');
-            if(scope!==generation)return;
-            if(checksum(bytes)!==image.checksum||checksum(bytes,'md5')!==image.contentMd5)throw new Error('Offline screenshot checksum mismatch');
-            const {data:ignored,...metadata}=image;
-            let prepared;
-            try{prepared=await request(`/devices/${deviceId}/screenshots/prepare`,{intervalId:interval._id,image:metadata});}
-            catch(error){
-              // Existing pending legacy captures keep their exact checksum. Only
-              // a new oversized legacy-queue capture is converted after rejection.
-              if(error.code!=='AGENT_UPDATE_REQUIRED')throw error;
-              try{const encoded=await encodeWebP(bytes);bytes=encoded.data;Object.assign(image,encodedFields(encoded),{bytes:bytes.length,data:bytes.toString('base64'),checksum:checksum(bytes),contentMd5:checksum(bytes,'md5')});}
-              catch(encodingError){if(encodingError.code!=='SIZE_QUALITY_CONFLICT')throw encodingError;Object.assign(image,{exceptionCode:encodingError.code,measurement:encodingError.measurement,protectedUntil:Date.now()+3600000});}
-              activeQueue.update(name,entry);const {data:unused,...updated}=image;prepared=await request(`/devices/${deviceId}/screenshots/prepare`,{intervalId:interval._id,image:updated});
-            }
-            if(prepared.exceptionRecorded){image.exceptionReported=true;image.protectedUntil||=Date.now()+3600000;activeQueue.update(name,entry);continue;}
-
-            if(scope!==generation)return;
-            if(!prepared.ready){const url=new URL(prepared.upload.url);
-              if(url.protocol!=='https:'||!/(^|\.)r2\.cloudflarestorage\.com$/.test(url.hostname)||prepared.upload.method!=='PUT')throw new Error('Untrusted screenshot upload destination');
-              const response=await fetch(url,{method:'PUT',headers:{...prepared.upload.headers,'Content-Length':String(bytes.length)},redirect:'error',body:bytes,signal:AbortSignal.timeout(60000)});
-              if(!response.ok&&![409,412].includes(response.status)){
-                await request(`/devices/${deviceId}/screenshots/${prepared.screenshotId}/retry`,{}).catch(()=>{});
-                throw new Error('Screenshot upload failed; retrying the same capture');
-              }
-              if(scope!==generation)return;
-              await request(`/devices/${deviceId}/screenshots/${prepared.screenshotId}/complete`,{});
-            }
-          }
-          if(scope===generation){entry.images=entry.images.filter(image=>image.exceptionReported&&image.protectedUntil>Date.now());if(entry.images.length){protectedEntries.add(name);entry.nextAttempt=Date.now()+60000;activeQueue.update(name,entry);}else{protectedEntries.delete(name);activeQueue.remove(name);}}
+          if(entry.acknowledged)activeQueue.remove(name);
         }catch(error){
           if(scope!==generation)return;
-          if([403,404,410].includes(error.status)){activeQueue.remove(name);publish('unavailable',error.message);}
-          else if(error.status===409&&['TRACKING_INVALID','CAPTURE_AFTER_CHECKOUT'].includes(error.code)){activeQueue.remove(name);publish('unavailable','Conflicting interval rejected; coverage gap recorded');}
-          else {entry.attempts++;entry.nextAttempt=Date.now()+Math.min(60000,1000*2**Math.min(entry.attempts,6));entry.lastUploadError=error.status>=500?'Screenshot service could not finish the upload. Saved captures will retry.':String(error.message||'Upload unavailable').slice(0,300);entry.lastUploadErrorCode=String(error.code||'UPLOAD_UNAVAILABLE').slice(0,80);uploadError=entry.lastUploadError;uploadErrorCode=entry.lastUploadErrorCode;nextUploadRetryAt=entry.nextAttempt;activeQueue.update(name,entry);publish(lastState,lastError);break;}
+          entry.attempts=(entry.attempts||0)+1;entry.nextAttempt=Date.now()+Math.min(60000,1000*2**Math.min(entry.attempts,6));
+          entry.lastUploadError=String(error.message||'Saved capture will retry').slice(0,300);entry.lastUploadErrorCode=String(error.code||'UPLOAD_UNAVAILABLE').slice(0,80);
+          uploadError=entry.lastUploadError;uploadErrorCode=entry.lastUploadErrorCode;nextUploadRetryAt=entry.nextAttempt;activeQueue.update(name,entry);
         }
       }
-    }finally{uploading=false;if(scope===generation){const files=activeQueue.files();for(const name of protectedEntries)if(!files.includes(name))protectedEntries.delete(name);if(!files.some(name=>!protectedEntries.has(name))){uploadError='';uploadErrorCode='';nextUploadRetryAt=null;}}publish(lastState,lastError);}
+    }finally{uploading=false;if(scope===generation&&!activeQueue.files().length&&!activeQueue.damagedFiles().length){uploadError='';uploadErrorCode='';nextUploadRetryAt=null;}publish();}
   }
   async function retryQueuedUploads(){
     if(!credentials||!queue||!device||uploading)return publish();
@@ -246,7 +213,6 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     if(!queue)return;
     nextUploadRetryAt=null;
     for(const name of queue.files()){let entry;try{entry=queue.read(name);}catch{continue;}
-      if(entry.images?.length&&entry.images.every(image=>image.exceptionReported))continue;
       if(entry.nextAttempt){entry.nextAttempt=0;queue.update(name,entry);}
     }
   }
@@ -261,7 +227,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       }
       const current=await request('/me');if(scope!==generation)return;
       const beforeHeartbeat=performance.now();
-      const next=await request(`/devices/${device._id}/heartbeat`,{sessionId:current.session?._id||null,state:lastState});if(scope!==generation)return;
+      const next=await request(`/devices/${device._id}/heartbeat`,{sessionId:current.session?._id||null,state:lastState});if(scope!==generation)return;uploadLimits=next.uploadLimits||{};
       if(next.policy.revision<haltRevision)next.canCapture=false;
       if(next.session&&(closedSessions.has(String(next.session._id))||closedAttendance.has(String(next.session.attendanceSession)))){next.canCapture=false;next.session={...next.session,status:'CLOSED'};}
       if(next.session){const known=transitions.get(String(next.session._id));if(known&&(next.session.revision<known.revision||next.session.revision===known.revision&&known.status!==next.session.status)){next.canCapture=false;next.session={...next.session,...known};}else acceptTransition(next.session);}

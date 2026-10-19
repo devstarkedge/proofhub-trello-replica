@@ -204,12 +204,18 @@ const AttendanceQuickControl = () => {
       ? <><select aria-label="Today's Work Mode" disabled={isBusy} value={selectedWorkMode || ''} onChange={event => setSelectedWorkMode(event.target.value)}>{status.allowedWorkModes.map(value => <option key={value} value={value}>{value}</option>)}</select><ChevronDown size={13} aria-hidden="true" /></>
       : <span>{mode}</span>}
   </label> : null;
-  const attendanceDetails = <div className="space-y-2 text-xs">
-    {status.activeSession && <AttendanceElapsed status={status}/>}
+  const hasAttendanceDetails = Boolean(
+    status.activeSession?.checkInAt ||
+    (status.completed && typeof status.workedMinutes === 'number') ||
+    (!isDesktop && !status.completed && (status.activeSession || status.canCheckIn)) ||
+    status.unresolvedMissedCheckout
+  );
+  const attendanceDetails = hasAttendanceDetails ? <div className="space-y-2 text-xs">
+    {status.activeSession?.checkInAt && <AttendanceElapsed status={status}/>}
     {status.completed && typeof status.workedMinutes === 'number' && <p>Worked {formatHours(status.workedMinutes)} today</p>}
     {!isDesktop && !status.completed && (status.activeSession || status.canCheckIn) && <p>Use the FlowTask desktop app to check in and check out.</p>}
     {status.unresolvedMissedCheckout && <p>Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance</p>}
-  </div>;
+  </div> : null;
   let content;
   if (attendancePending && isDesktop) content = <button type="button" disabled aria-busy="true" className="welcome-action"><Loader2 size={15} className="animate-spin" />{busyLabel}</button>;
   else if (status.completed) content = <span className="welcome-attendance-label"><CheckCircle2 size={15} />Attendance Completed</span>;
@@ -233,11 +239,13 @@ const AttendanceQuickControl = () => {
 };
 
 function AttendanceElapsed({status}){
-  const now=useSessionClock(),anchor=+new Date(status.serverNow),received=status.receivedAt??now;
-  const projected=Number.isFinite(anchor)?anchor+Math.max(0,(status.unconfirmedAt??now)-received):Date.now();
-  const cutoff=status.activeSession?.missedCheckoutCutoffAt?+new Date(status.activeSession.missedCheckoutCutoffAt):Infinity;
-  const minutes=Math.max(0,(Math.min(projected,cutoff)-+new Date(status.activeSession.checkInAt))/60000);
-  return <p>Checked in · {formatHours(minutes)}</p>;
+  if (!status.activeSession?.checkInAt) return null;
+  const time = new Date(status.activeSession.checkInAt).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+  return <p>Checked in · {time}</p>;
 }
 
 function friendlyBlockingLabel(code) {

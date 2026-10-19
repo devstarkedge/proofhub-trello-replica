@@ -9,8 +9,6 @@ import { resolveDisplayStatus } from '../../utils/attendanceStatus';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import * as attendanceApi from '../../services/attendanceApi';
-import TrackingPanel from '../../components/Tracking/TrackingPanel';
-import TrackingReports from '../../components/Tracking/TrackingReports';
 
 const inputClass = 'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
 const inputStyle = { backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' };
@@ -199,14 +197,15 @@ const MyAttendancePage = () => {
       <Panel title="Today">
         <div className="flex flex-wrap items-center gap-3">
           <PresenceStatusBadge status={resolveDisplayStatus(today)} />
-          {today.activeSession && <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Checked in at {new Date(today.activeSession.checkInAt).toLocaleTimeString()}</span>}
+          {(today.activeSession?.checkInAt || today.firstCheckInAt) && (
+            <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Checked in at {new Date(today.activeSession?.checkInAt || today.firstCheckInAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}
+            </span>
+          )}
           {typeof today.workedMinutes === 'number' && today.workedMinutes > 0 && <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{formatHours(today.workedMinutes)} worked</span>}
         </div>
         <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{window.flowtaskDesktop?.isDesktop === true ? 'Use the Check In / Check Out control on your Home page to record attendance.' : 'Use the FlowTask desktop app to check in and check out. Attendance status and history are available here.'}</p>
       </Panel>
-
-      <TrackingPanel key={currentWorkspace?._id} />
-      <TrackingReports key={`reports:${currentWorkspace?._id}`} />
 
       <Panel
         title="Work From Home Requests"

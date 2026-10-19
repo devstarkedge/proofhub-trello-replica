@@ -51,10 +51,11 @@ export default function TrackingPanel({ compact = false, attendanceHeader, atten
   const diagnostics = <>
     {expired&&<p role="status" className="text-xs">Attendance cutoff reached. Revalidating session.</p>}
     <p className="mt-2 text-xs" role="status">{capture.replaceAll('-',' ')}{scopedNative?.pending ? ` · ${scopedNative.pending} uploads pending`:''}</p>
+    {isDesktop&&scopedNative?.syncStatus&&<p className="mt-1 text-xs" role="status">Screenshots: {scopedNative.syncStatus.replaceAll('-',' ')}{scopedNative.queueCapacityBytes>0?` · ${(scopedNative.queueBytes/1048576).toFixed(1)} / ${Math.round(scopedNative.queueCapacityBytes/1048576)} MiB queued`:''}</p>}
     {isDesktop&&scopedNative?.pending>0&&<p className="mt-1 text-xs">Pending screenshots retry automatically when connected.</p>}
     {isDesktop&&scopedNative?.uploadError&&<p role="alert" className="mt-1 text-xs">Upload waiting: {scopedNative.uploadError}{scopedNative.nextUploadRetryAt?` Next retry ${new Date(scopedNative.nextUploadRetryAt).toLocaleTimeString()}.`:''}</p>}
     {isDesktop&&scopedNative?.pending>0&&typeof window.flowtaskDesktop?.tracking?.retryUploads==='function'&&<button disabled={retrying} className="mt-2 text-xs underline" onClick={async()=>{setRetrying(true);try{setNative(normalizeDesktopTrackingStatus(await window.flowtaskDesktop.tracking.retryUploads()));}catch(e){toast.error(e.message);}finally{setRetrying(false);}}}>{retrying?'Retrying uploads…':'Retry uploads now'}</button>}
-    {isDesktop&&scopedNative?.protectedCopies>0&&<p className="mt-1 text-xs text-amber-600">{scopedNative.protectedCopies} captures exceeded the size/readability limit. Activity is recorded; these are not pending uploads.</p>}
+    {isDesktop&&scopedNative?.protectedCopies>0&&<p className="mt-1 text-xs text-amber-600">{scopedNative.protectedCopies} damaged local copies retained for inspection. Activity remains recorded.</p>}
     {nativeError&&<p className="mt-1 text-xs">{nativeError}</p>}
     {device?.lastUploadError&&<p role="alert" className="mt-1 text-xs">Desktop upload: {device.lastUploadError}</p>}
     {isDesktop&&scopedNative?.noticeRequired&&<button className="mt-2 text-xs underline" onClick={()=>window.dispatchEvent(new Event('flowtask:monitoring-notice'))}>Review monitoring notice</button>}
@@ -90,13 +91,15 @@ export default function TrackingPanel({ compact = false, attendanceHeader, atten
           {attendanceActions}
         </div>
         {transitionLabel&&<p role="status" className="text-xs">{sessionAction.action==='pause'?'Resume Work will be available once the pause is confirmed.':'Waiting for the server to confirm this change.'}</p>}{recovery}
-        <div className="welcome-attendance-info">{attendanceDetails}</div>
+        {attendanceDetails && <div className="welcome-attendance-info">{attendanceDetails}</div>}
         {latest?.agenda && latest.attributedTask && <p className="welcome-work-provenance">Origin: {latest.agendaTitle} — {latest.description} · Task attribution: {latest.attributionIncluded ? 'Yes' : 'No'}</p>}
         {latest?.assignedAt && <p className="welcome-work-provenance">Assigned {new Date(latest.assignedAt).toLocaleString()} · pre-assignment {duration(session.totals.preAssignmentSeconds)} · assigned <TrackingClock state={state} kind="assigned"/></p>}
-        <div className="welcome-monitoring-summary" role="status"><span className="welcome-capture-label" title={capture}>{capture.replaceAll('-',' ')}</span>
-          {scopedNative?.pending>0 && <button type="button" className="welcome-status-chip" onClick={showDetails} aria-expanded={detailsOpen} aria-controls={detailsId} aria-haspopup="dialog"><CloudUpload size={13}/>{scopedNative.pending} uploads pending</button>}
-          {warning && <button type="button" className="welcome-status-chip welcome-warning-chip" onClick={showDetails} aria-expanded={detailsOpen} aria-controls={detailsId} aria-haspopup="dialog"><TriangleAlert size={13}/>Needs attention</button>}
-        </div>
+        {(scopedNative?.pending > 0 || warning) && (
+          <div className="welcome-monitoring-summary" role="status">
+            {scopedNative?.pending > 0 && <button type="button" className="welcome-status-chip" onClick={showDetails} aria-expanded={detailsOpen} aria-controls={detailsId} aria-haspopup="dialog"><CloudUpload size={13}/>{scopedNative.pending} uploads pending</button>}
+            {warning && <button type="button" className="welcome-status-chip welcome-warning-chip" onClick={showDetails} aria-expanded={detailsOpen} aria-controls={detailsId} aria-haspopup="dialog"><TriangleAlert size={13}/>Needs attention</button>}
+          </div>
+        )}
         <Popover.Portal><Popover.Content id={detailsId} sideOffset={10} collisionPadding={12} align="end" className="welcome-details-popover" aria-label={detailsView === 'actions' ? 'More tracking actions' : 'Monitoring status'} onCloseAutoFocus={event=>{if(detailsFocus.current?.isConnected){event.preventDefault();detailsFocus.current.focus();}}}>
           <h2 className="mb-3 text-sm font-semibold">{detailsView === 'actions' ? 'More actions' : 'Monitoring status'}</h2>
           {detailsView === 'actions' ? <nav aria-label="Tracking actions" className="welcome-secondary-actions">

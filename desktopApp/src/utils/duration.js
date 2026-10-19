@@ -11,9 +11,15 @@ export function formatTrackingClock(seconds) {
 
 export function formatHours(minutes) {
   if (minutes == null || minutes === '' || !Number.isFinite(Number(minutes))) return '—';
-  const hours = Number(minutes) / 60;
-  const value = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(hours);
-  return `${value} ${hours === 1 ? 'hour' : 'hours'}`;
+  const totalMinutes = Math.round(Number(minutes));
+  const sign = totalMinutes < 0 ? '-' : '';
+  const absMinutes = Math.abs(totalMinutes);
+  const hours = Math.floor(absMinutes / 60);
+  const mins = absMinutes % 60;
+  if (!hours && !mins) return '0h';
+  if (!hours) return `${sign}${mins}m`;
+  if (!mins) return `${sign}${hours}h`;
+  return `${sign}${hours}h ${mins}m`;
 }
 
 export function hoursToMinutes(hours, { min = 0, max = 1440 } = {}) {
