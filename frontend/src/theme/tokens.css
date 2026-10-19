@@ -452,11 +452,14 @@
 .bg-surface-subtle { background-color: var(--color-bg-subtle); }
 .bg-surface-muted { background-color: var(--color-bg-muted); }
 .bg-surface-emphasis { background-color: var(--color-bg-emphasis); }
-.bg-primary { background-color: var(--color-primary); }
+.bg-primary { background-color: var(--color-primary); color: var(--color-text-on-primary, #ffffff); }
 .bg-primary-subtle { background-color: var(--color-primary-subtle); }
 
 /* Text utilities */
 .text-primary { color: var(--color-text-primary); }
+.text-primary-foreground { color: var(--color-text-on-primary, #ffffff) !important; }
+.text-destructive-foreground { color: #ffffff !important; }
+.text-secondary-foreground { color: var(--color-text-primary) !important; }
 .text-secondary { color: var(--color-text-secondary); }
 .text-muted { color: var(--color-text-muted); }
 .text-accent { color: var(--color-primary); }

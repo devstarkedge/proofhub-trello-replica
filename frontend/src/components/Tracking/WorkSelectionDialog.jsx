@@ -378,7 +378,8 @@ export default function WorkSelectionDialog({
                               setBusy(false);
                             }
                           }}
-                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+                          style={{ color: '#ffffff' }}
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
                         >
                           Create Agenda
                         </button>
@@ -677,10 +678,11 @@ export default function WorkSelectionDialog({
                 type="button"
                 disabled={busy || !valid || (needsDecision && includePrevious === null)}
                 onClick={() => confirm()}
-                className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition-all disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:border disabled:border-gray-200 dark:disabled:border-gray-700 disabled:cursor-not-allowed disabled:shadow-none cursor-pointer flex items-center gap-2"
+                style={(!busy && valid && (!needsDecision || includePrevious !== null)) ? { color: '#ffffff' } : undefined}
+                className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white shadow-md shadow-blue-500/20 transition-all disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:border disabled:border-gray-200 dark:disabled:border-gray-700 disabled:cursor-not-allowed disabled:shadow-none cursor-pointer flex items-center gap-2"
               >
                 {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />}
-                <span>
+                <span style={(!busy && valid && (!needsDecision || includePrevious !== null)) ? { color: '#ffffff' } : undefined}>
                   {busy
                     ? 'Saving…'
                     : checkingIn

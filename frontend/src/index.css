@@ -2534,10 +2534,10 @@ input:-webkit-autofill::first-line {
   color: #1f2937 !important;
 }
 
-:root:not([data-theme="dark"]) [class*="dropdown"] span,
-:root:not([data-theme="dark"]) [class*="dropdown"] div,
-:root:not([data-theme="dark"]) [class*="absolute"][class*="shadow"] span,
-:root:not([data-theme="dark"]) [class*="absolute"][class*="shadow"] div {
+:root:not([data-theme="dark"]) [class*="dropdown"] span:not(button *):not([class*="text-white"]),
+:root:not([data-theme="dark"]) [class*="dropdown"] div:not(button *):not([class*="text-white"]),
+:root:not([data-theme="dark"]) [class*="absolute"][class*="shadow"] span:not(button *):not([class*="text-white"]),
+:root:not([data-theme="dark"]) [class*="absolute"][class*="shadow"] div:not(button *):not([class*="text-white"]) {
   color: inherit;
 }
 
@@ -2670,4 +2670,81 @@ input:-webkit-autofill::first-line {
 :root[data-theme="dark"] .bg-gradient-to-br.from-pink-50.to-purple-50 textarea {
   background-color: var(--color-input-bg, #374151) !important;
   color: #f3f4f6 !important;
+}
+
+/* ==========================================================================
+   GLOBAL BUTTON CONTRAST & THEMING (Light & Dark Modes)
+   Ensures primary/blue buttons always render clear, readable white text across
+   the entire application, modules (Time Tracking, Attendance, Leave, etc.),
+   and inside dialogs/popovers/modals.
+   ========================================================================== */
+
+/* Primary / Blue Button Base Styles */
+button.bg-primary,
+button.bg-blue-600,
+button.bg-blue-500,
+button.bg-blue-700,
+button[class*="bg-blue-600"],
+button[class*="bg-primary"],
+.btn-primary {
+  color: #ffffff !important;
+}
+
+/* Ensure children (spans, icons, text nodes) of blue/primary buttons stay white */
+button.bg-primary:not(:disabled) span,
+button.bg-blue-600:not(:disabled) span,
+button.bg-blue-500:not(:disabled) span,
+button.bg-blue-700:not(:disabled) span,
+button[class*="bg-blue-600"]:not(:disabled) span,
+button[class*="bg-primary"]:not(:disabled) span,
+button[class*="text-white"]:not(:disabled) span,
+.btn-primary:not(:disabled) span {
+  color: #ffffff !important;
+}
+
+/* Light mode primary button overrides */
+:root:not([data-theme="dark"]) button.bg-blue-600:not(:disabled),
+:root:not([data-theme="dark"]) button.bg-primary:not(:disabled),
+:root:not([data-theme="dark"]) button[class*="bg-blue-600"]:not(:disabled),
+:root:not([data-theme="dark"]) button[class*="bg-primary"]:not(:disabled),
+:root:not([data-theme="dark"]) .btn-primary:not(:disabled) {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) button.bg-blue-600:not(:disabled):hover,
+:root:not([data-theme="dark"]) button.bg-primary:not(:disabled):hover,
+:root:not([data-theme="dark"]) button[class*="bg-blue-600"]:not(:disabled):hover,
+:root:not([data-theme="dark"]) button[class*="bg-primary"]:not(:disabled):hover,
+:root:not([data-theme="dark"]) .btn-primary:not(:disabled):hover {
+  background-color: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+
+/* Dark mode primary button overrides */
+:root[data-theme="dark"] button.bg-blue-600:not(:disabled),
+:root[data-theme="dark"] button.bg-primary:not(:disabled),
+:root[data-theme="dark"] button[class*="bg-blue-600"]:not(:disabled),
+:root[data-theme="dark"] button[class*="bg-primary"]:not(:disabled),
+:root[data-theme="dark"] .btn-primary:not(:disabled) {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] button.bg-blue-600:not(:disabled):hover,
+:root[data-theme="dark"] button.bg-primary:not(:disabled):hover,
+:root[data-theme="dark"] button[class*="bg-blue-600"]:not(:disabled):hover,
+:root[data-theme="dark"] button[class*="bg-primary"]:not(:disabled):hover,
+:root[data-theme="dark"] .btn-primary:not(:disabled):hover {
+  background-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+/* Disabled buttons contrast */
+button.bg-primary:disabled,
+button.bg-blue-600:disabled,
+button[class*="bg-blue-600"]:disabled,
+button[class*="bg-primary"]:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
 }
