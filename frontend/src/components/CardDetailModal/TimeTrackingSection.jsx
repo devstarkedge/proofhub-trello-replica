@@ -14,14 +14,16 @@ import {
   Calendar,
   Lock,
   Info,
+  CheckCircle2,
+  Plus,
 } from "lucide-react";
 import AuthContext from "../../context/AuthContext";
 import MilestoneApprovalPanel from "./MilestoneApprovalPanel";
 
 const TimeTrackingSection = ({
-  estimationEntries,
-  loggedTime,
-  billedTime,
+  estimationEntries = [],
+  loggedTime = [],
+  billedTime = [],
   newEstimationHours,
   newEstimationMinutes,
   newEstimationReason,
@@ -89,80 +91,59 @@ const TimeTrackingSection = ({
   onConfirmDeleteLoggedTime,
   onConfirmDeleteBilledTime,
   card,
-  // Validation props
   estimationValidationError,
   loggedValidationError,
   billedValidationError,
-  // Billed Time visibility props
-  canAccessBilledTime = true, // Default to true for backward compatibility
+  canAccessBilledTime = true,
   billedTimeHiddenReason = null,
   project,
   billingSource,
 }) => {
   const { user } = useContext(AuthContext);
-  const isMilestoneProject = String(project?.billingCycle || '').toLowerCase() === 'milestone';
-  const isEmployee = String(user?.role || '').toLowerCase() === 'employee';
+  const isMilestoneProject = String(project?.billingCycle || "").toLowerCase() === "milestone";
+  const isEmployee = String(user?.role || "").toLowerCase() === "employee";
 
-  // Get today's date in YYYY-MM-DD format for max date restriction
   const todayDate = useMemo(() => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    return today.toISOString().split("T")[0];
   }, []);
 
-  // Helper function to get user display name from time entry
-  // Handles both populated user objects and unpopulated user IDs
-  const getUserDisplayName = (entry) => {
-    // If entry.user is a populated object with name
-    if (entry.user && typeof entry.user === 'object' && entry.user.name) {
+  const getUserDisplayName = useCallback((entry) => {
+    if (entry?.user && typeof entry.user === "object" && entry.user.name) {
       return entry.user.name;
     }
-    // If entry.userName was explicitly stored
-    if (entry.userName) {
+    if (entry?.userName) {
       return entry.userName;
     }
-    // If entry.user is just an ID, check if it matches current user
-    if (entry.user && user) {
-      const entryUserId = typeof entry.user === 'object' ? entry.user._id : entry.user;
+    if (entry?.user && user) {
+      const entryUserId = typeof entry.user === "object" ? entry.user._id : entry.user;
       if (entryUserId === user._id || entryUserId === user.id) {
-        return user.name || user.email || 'You';
+        return user.name || user.email || "You";
       }
     }
-    // Fallback
-    return 'Unknown';
-  };
+    return "Unknown";
+  }, [user]);
 
-  /**
-   * Check if the current user owns a time entry
-   * Only owners can edit or delete their own entries
-   * @param {Object} entry - The time entry to check
-   * @returns {boolean} - True if current user owns the entry
-   */
   const userOwnsEntry = useCallback((entry) => {
     if (!entry || !user) return false;
-    
-    // Get the entry's user ID
     let entryUserId = null;
     if (entry.user) {
-      if (typeof entry.user === 'object' && entry.user._id) {
+      if (typeof entry.user === "object" && entry.user._id) {
         entryUserId = entry.user._id.toString();
-      } else if (typeof entry.user === 'string') {
+      } else if (typeof entry.user === "string") {
         entryUserId = entry.user;
       } else if (entry.user.id) {
         entryUserId = entry.user.id.toString();
       }
     }
-    
-    // Get current user ID
-    const currentUserId = (user._id || user.id || '').toString();
-    
+    const currentUserId = (user._id || user.id || "").toString();
     return entryUserId === currentUserId;
   }, [user]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeModalTab, setActiveModalTab] = useState("estimate");
 
   const normalizeTime = (hours, minutes) => {
-    const totalMinutes = parseInt(hours || 0) * 60 + parseInt(minutes || 0);
+    const totalMinutes = parseInt(hours || 0, 10) * 60 + parseInt(minutes || 0, 10);
     return {
       hours: Math.floor(totalMinutes / 60),
       minutes: totalMinutes % 60,
@@ -177,7 +158,9 @@ const TimeTrackingSection = ({
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return "";
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "";
     return date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -185,34 +168,80 @@ const TimeTrackingSection = ({
     });
   };
 
+  // Helper to extract timestamp for descending sorting (latest at top, oldest at bottom)
+  const getEntryTime = (entry) => {
+    if (!entry) return 0;
+    if (entry.date) {
+      const t = new Date(entry.date).getTime();
+      if (!isNaN(t)) return t;
+    }
+    if (entry.createdAt) {
+      const t = new Date(entry.createdAt).getTime();
+      if (!isNaN(t)) return t;
+    }
+    const id = entry._id || entry.id;
+    if (id && typeof id === "string" && id.length === 24) {
+      const t = parseInt(id.substring(0, 8), 16) * 1000;
+      if (!isNaN(t)) return t;
+    }
+    return 0;
+  };
+
+  // Sort helper: strictly puts latest entries at top and oldest at the bottom
+  const sortLatestFirst = useCallback((entries) => {
+    if (!Array.isArray(entries)) return [];
+    return entries
+      .map((entry, index) => ({ entry, originalIndex: index }))
+      .sort((a, b) => {
+        const timeA = getEntryTime(a.entry);
+        const timeB = getEntryTime(b.entry);
+        if (timeB !== timeA) return timeB - timeA;
+        return b.originalIndex - a.originalIndex;
+      })
+      .map((item) => item.entry);
+  }, []);
+
+  const sortedEstimationEntries = useMemo(
+    () => sortLatestFirst(estimationEntries),
+    [estimationEntries, sortLatestFirst]
+  );
+  const sortedLoggedTime = useMemo(
+    () => sortLatestFirst(loggedTime),
+    [loggedTime, sortLatestFirst]
+  );
+  const sortedBilledTime = useMemo(
+    () => sortLatestFirst(billedTime),
+    [billedTime, sortLatestFirst]
+  );
+
   const calculateTotalEstimation = () => {
-    const total = estimationEntries.reduce((acc, entry) => {
-      return acc + entry.hours * 60 + entry.minutes;
+    const total = (estimationEntries || []).reduce((acc, entry) => {
+      return acc + (parseInt(entry.hours, 10) || 0) * 60 + (parseInt(entry.minutes, 10) || 0);
     }, 0);
     return normalizeTime(Math.floor(total / 60), total % 60);
   };
 
   const calculateTotalLoggedTime = () => {
-    const total = loggedTime.reduce((acc, entry) => {
-      return acc + entry.hours * 60 + entry.minutes;
+    const total = (loggedTime || []).reduce((acc, entry) => {
+      return acc + (parseInt(entry.hours, 10) || 0) * 60 + (parseInt(entry.minutes, 10) || 0);
     }, 0);
     return normalizeTime(Math.floor(total / 60), total % 60);
   };
 
   const calculateTotalBilledTime = () => {
-    const total = billedTime.reduce((acc, entry) => {
-      return acc + entry.hours * 60 + entry.minutes;
+    const total = (billedTime || []).reduce((acc, entry) => {
+      return acc + (parseInt(entry.hours, 10) || 0) * 60 + (parseInt(entry.minutes, 10) || 0);
     }, 0);
     return normalizeTime(Math.floor(total / 60), total % 60);
   };
 
   const getTimeProgress = () => {
-    const totalLogged = loggedTime.reduce(
-      (acc, entry) => acc + entry.hours * 60 + entry.minutes,
+    const totalLogged = (loggedTime || []).reduce(
+      (acc, entry) => acc + (parseInt(entry.hours, 10) || 0) * 60 + (parseInt(entry.minutes, 10) || 0),
       0
     );
-    const totalEstimated = estimationEntries.reduce(
-      (acc, entry) => acc + entry.hours * 60 + entry.minutes,
+    const totalEstimated = (estimationEntries || []).reduce(
+      (acc, entry) => acc + (parseInt(entry.hours, 10) || 0) * 60 + (parseInt(entry.minutes, 10) || 0),
       0
     );
 
@@ -222,70 +251,74 @@ const TimeTrackingSection = ({
 
   const totalEstimation = calculateTotalEstimation();
   const totalLogged = calculateTotalLoggedTime();
+  const totalBilled = calculateTotalBilledTime();
   const timeProgress = getTimeProgress();
   const isOvertime = timeProgress > 100;
 
-  const openModal = (tab) => {
-    setActiveModalTab(tab);
-    setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-  };
+  const openModal = () => setIsModalOpen(true);
+  const closeModal = () => setIsModalOpen(false);
 
   return (
-    <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-xl p-4 border-2 border-indigo-200 shadow-lg">
-      {/* Compact View */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <motion.div
-            whileHover={{ rotate: 360 }}
-            transition={{ duration: 2, ease: "linear" }}
-            className="p-2 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-lg shadow-md"
-          >
-            <Timer size={20} className="text-white" />
-          </motion.div>
-          <div>
-            <h4 className="font-bold text-gray-800 text-lg">Time Tracking</h4>
-            <p className="text-xs text-gray-600">
-              {formatTime(totalLogged.hours, totalLogged.minutes)} logged /{" "}
-              {formatTime(totalEstimation.hours, totalEstimation.minutes)} est.
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-4 transition-all">
+      {/* Compact View outside modal */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 shrink-0">
+            <Timer size={18} />
+          </div>
+          <div className="min-w-0">
+            <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Time Tracking</h4>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+              <span className="font-medium text-gray-700 dark:text-gray-300">
+                {formatTime(totalLogged.hours, totalLogged.minutes)}
+              </span>{" "}
+              logged
+              {estimationEntries.length > 0 && (
+                <>
+                  {" "}·{" "}
+                  <span className="font-medium text-gray-700 dark:text-gray-300">
+                    {formatTime(totalEstimation.hours, totalEstimation.minutes)}
+                  </span>{" "}
+                  estimated
+                </>
+              )}
             </p>
           </div>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => openModal("log")}
-          className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-md text-sm font-semibold"
+        <button
+          type="button"
+          onClick={openModal}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-xs hover:shadow transition-all duration-150 cursor-pointer shrink-0"
+          style={{ color: '#ffffff' }}
         >
-          Add Time
-        </motion.button>
+          <Plus size={14} className="text-white shrink-0" />
+          <span>Add Time</span>
+        </button>
       </div>
 
-      {/* Progress Bar */}
+      {/* Progress Bar in Compact View */}
       {estimationEntries.length > 0 && (
-        <div className="mt-4">
-          <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden shadow-inner">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${Math.min(timeProgress, 100)}%` }}
-              className={`h-full ${
-                isOvertime
-                  ? "bg-gradient-to-r from-red-500 via-orange-500 to-red-600"
-                  : "bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600"
-              } shadow-md`}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-            />
+        <div className="mt-3.5 pt-3 border-t border-gray-100 dark:border-gray-800">
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="text-gray-500 dark:text-gray-400 font-medium">Progress</span>
+            <div className="flex items-center gap-1.5 font-mono">
+              <span className={`font-semibold ${isOvertime ? "text-rose-600 dark:text-rose-400" : "text-blue-600 dark:text-blue-400"}`}>
+                {timeProgress}%
+              </span>
+              {isOvertime && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-900 font-sans font-medium">
+                  Overtime
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex justify-between text-xs mt-1">
-            <span className="font-semibold text-gray-600">
-              {timeProgress}%
-            </span>
-            {isOvertime && (
-              <span className="font-semibold text-red-600">Overtime!</span>
-            )}
+          <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div
+              style={{ width: `${Math.min(timeProgress, 100)}%` }}
+              className={`h-full rounded-full transition-all duration-300 ${
+                isOvertime ? "bg-rose-500" : "bg-blue-600"
+              }`}
+            />
           </div>
         </div>
       )}
@@ -297,59 +330,84 @@ const TimeTrackingSection = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-4 md:p-6"
+            onClick={closeModal}
           >
             <motion.div
-              initial={{ scale: 0.9, y: -20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: -20 }}
-              className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+              initial={{ scale: 0.97, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.97, opacity: 0, y: 10 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden text-gray-900 dark:text-gray-100 text-left"
+              onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <h3 className="text-xl font-bold text-gray-800">
-                  Time Management
-                </h3>
-                <motion.button
-                  whileHover={{ scale: 1.1, rotate: 90 }}
-                  whileTap={{ scale: 0.9 }}
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
+                    <Clock size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">
+                      Time Management
+                    </h3>
+                    {card?.title && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs sm:max-w-md">
+                        {card.title}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
                   onClick={closeModal}
-                  className="p-2 rounded-full hover:bg-gray-100"
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  aria-label="Close modal"
                 >
-                  <X size={20} className="text-gray-600" />
-                </motion.button>
+                  <X size={18} />
+                </button>
               </div>
 
-              <div className="flex-grow overflow-y-auto p-2">
-                <div className={`grid grid-cols-1 gap-4 ${
-                  isMilestoneProject && isEmployee ? 'lg:grid-cols-2' : 'lg:grid-cols-3'
-                }`}>
-                  {/* Estimation Time */}
-                  <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-100">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Target size={16} className="text-indigo-600" />
-                      <h5 className="font-semibold text-gray-800">
-                        Estimated Time
-                      </h5>
+              {/* Main Content Grid */}
+              <div className="flex-grow overflow-y-auto p-4 sm:p-5">
+                <div
+                  className={`grid grid-cols-1 gap-4 sm:gap-5 ${
+                    isMilestoneProject && isEmployee ? "lg:grid-cols-2" : "lg:grid-cols-3"
+                  }`}
+                >
+                  {/* COLUMN 1: ESTIMATED TIME */}
+                  <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-850/30 p-4 flex flex-col">
+                    <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-gray-200/80 dark:border-gray-800">
+                      <div className="flex items-center gap-2">
+                        <Target size={16} className="text-indigo-600 dark:text-indigo-400" />
+                        <h4 className="font-semibold text-xs sm:text-sm text-gray-900 dark:text-gray-100">
+                          Estimated Time
+                        </h4>
+                      </div>
+                      {sortedEstimationEntries.length > 0 && (
+                        <span className="text-[11px] font-mono font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-900/40">
+                          {formatTime(totalEstimation.hours, totalEstimation.minutes)}
+                        </span>
+                      )}
                     </div>
-                    {/* Add Estimation Input */}
-                    <div className="flex flex-col gap-2 mb-3">
+
+                    {/* Add Estimation Inputs */}
+                    <div className="space-y-2 mb-3">
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <input
                             type="number"
                             min="0"
                             value={newEstimationHours}
-                            onChange={(e) =>
-                              onEstimationHoursChange(e.target.value)
-                            }
+                            onChange={(e) => onEstimationHoursChange(e.target.value)}
                             placeholder="0"
-                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                            className={`w-full px-2.5 py-1.5 pr-6 text-xs sm:text-sm rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none transition-colors ${
                               estimationValidationError
-                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
-                                : 'border-indigo-200 focus:ring-indigo-500'
+                                ? "border-rose-300 dark:border-rose-700 focus:ring-1 focus:ring-rose-500"
+                                : "border-gray-200 dark:border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                             }`}
                           />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium pointer-events-none">
                             h
                           </span>
                         </div>
@@ -358,79 +416,78 @@ const TimeTrackingSection = ({
                             type="number"
                             min="0"
                             value={newEstimationMinutes}
-                            onChange={(e) =>
-                              onEstimationMinutesChange(e.target.value)
-                            }
+                            onChange={(e) => onEstimationMinutesChange(e.target.value)}
                             placeholder="0"
-                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                            className={`w-full px-2.5 py-1.5 pr-6 text-xs sm:text-sm rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none transition-colors ${
                               estimationValidationError
-                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
-                                : 'border-indigo-200 focus:ring-indigo-500'
+                                ? "border-rose-300 dark:border-rose-700 focus:ring-1 focus:ring-rose-500"
+                                : "border-gray-200 dark:border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                             }`}
                           />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium pointer-events-none">
                             m
                           </span>
                         </div>
                       </div>
-                      {/* Date Picker for Estimation */}
-                      <div className="relative">
-                        <div className="flex items-center gap-2">
-                          <Calendar size={14} className="text-indigo-500" />
-                          <input
-                            type="date"
-                            value={newEstimationDate || todayDate}
-                            onChange={(e) => onEstimationDateChange(e.target.value)}
-                            max={todayDate}
-                            className="flex-1 p-2 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                          />
-                        </div>
+
+                      <div className="relative flex items-center">
+                        <Calendar size={13} className="absolute left-2.5 text-gray-400 pointer-events-none" />
+                        <input
+                          type="date"
+                          value={newEstimationDate || todayDate}
+                          onChange={(e) => onEstimationDateChange(e.target.value)}
+                          max={todayDate}
+                          className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                        />
                       </div>
+
                       <textarea
                         value={newEstimationReason}
-                        onChange={(e) =>
-                          onEstimationReasonChange(e.target.value)
-                        }
+                        onChange={(e) => onEstimationReasonChange(e.target.value)}
                         placeholder="Reason for estimation (mandatory)"
-                        className="w-full p-2 border-2 border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                        className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none"
                         rows="2"
                       />
-                      {/* Validation Error Message */}
+
                       {estimationValidationError && (
-                        <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                          <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-                          <span className="text-red-600 text-xs font-medium">
-                            {estimationValidationError}
-                          </span>
+                        <div className="flex items-center gap-1.5 p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg text-rose-600 dark:text-rose-400 text-xs">
+                          <AlertCircle size={14} className="shrink-0" />
+                          <span>{estimationValidationError}</span>
                         </div>
                       )}
-                      <motion.button
-                        whileHover={!estimationValidationError ? { scale: 1.05 } : {}}
-                        whileTap={!estimationValidationError ? { scale: 0.95 } : {}}
+
+                      <button
+                        type="button"
                         onClick={onAddEstimation}
                         disabled={!!estimationValidationError}
-                        className={`px-3 py-2 rounded-lg shadow-md text-sm font-semibold transition-all ${
+                        className={`w-full py-2 px-3 rounded-lg text-xs font-medium shadow-sm transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                           estimationValidationError
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700'
+                            ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border border-gray-200 dark:border-gray-700"
+                            : "bg-indigo-600 hover:bg-indigo-700 text-white"
                         }`}
                       >
                         Add Estimate
-                      </motion.button>
+                      </button>
                     </div>
-                    {/* Estimation Entries */}
-                    {estimationEntries.length > 0 && (
-                      <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
-                        <AnimatePresence>
-                          {estimationEntries.map((entry, index) => {
+
+                    {/* Estimation Entries List (Latest on top) */}
+                    <div className="flex-1 flex flex-col min-h-0">
+                      <div className="flex items-center justify-between text-[11px] font-medium text-gray-400 dark:text-gray-500 mb-1.5">
+                        <span>History (Latest first)</span>
+                        <span>{sortedEstimationEntries.length} {sortedEstimationEntries.length === 1 ? "entry" : "entries"}</span>
+                      </div>
+
+                      <div className="space-y-2 max-h-56 overflow-y-auto overflow-x-hidden pr-1 custom-scrollbar">
+                        <AnimatePresence initial={false}>
+                          {sortedEstimationEntries.map((entry, index) => {
                             const safeKey = entry._id || entry.id || `estimation-${index}`;
                             return (
                               <motion.div
                                 key={safeKey}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 20 }}
-                                className="group relative bg-indigo-50 rounded-lg p-3 border border-indigo-200 hover:border-indigo-300 transition-all text-xs"
+                                initial={{ opacity: 0, y: -6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                className="p-2.5 rounded-lg border border-gray-200 dark:border-gray-700/80 bg-white dark:bg-gray-800/90 shadow-2xs text-xs space-y-1.5"
                               >
                                 {editingEstimation === entry.id ? (
                                   <div className="space-y-2">
@@ -440,139 +497,102 @@ const TimeTrackingSection = ({
                                           type="number"
                                           min="0"
                                           value={editEstimationHours}
-                                          onChange={(e) =>
-                                            onEditEstimationHoursChange(
-                                              e.target.value
-                                            )
-                                          }
+                                          onChange={(e) => onEditEstimationHoursChange(e.target.value)}
                                           placeholder="0"
-                                          className="w-full p-1 pr-5 border border-indigo-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          className="w-full p-1 pr-5 border border-indigo-300 dark:border-indigo-700 rounded text-xs bg-white dark:bg-gray-800"
                                         />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          h
-                                        </span>
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">h</span>
                                       </div>
                                       <div className="relative flex-1">
                                         <input
                                           type="number"
                                           min="0"
                                           value={editEstimationMinutes}
-                                          onChange={(e) =>
-                                            onEditEstimationMinutesChange(
-                                              e.target.value
-                                            )
-                                          }
+                                          onChange={(e) => onEditEstimationMinutesChange(e.target.value)}
                                           placeholder="0"
-                                          className="w-full p-1 pr-5 border border-indigo-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          className="w-full p-1 pr-5 border border-indigo-300 dark:border-indigo-700 rounded text-xs bg-white dark:bg-gray-800"
                                         />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          m
-                                        </span>
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">m</span>
                                       </div>
                                     </div>
-                                    {/* Date Picker for Edit Estimation */}
-                                    <div className="relative">
-                                      <div className="flex items-center gap-2">
-                                        <Calendar size={12} className="text-indigo-500" />
-                                        <input
-                                          type="date"
-                                          value={editEstimationDate || todayDate}
-                                          onChange={(e) => onEditEstimationDateChange(e.target.value)}
-                                          max={todayDate}
-                                          className="flex-1 p-1 border border-indigo-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                        />
-                                      </div>
-                                    </div>
+                                    <input
+                                      type="date"
+                                      value={editEstimationDate || todayDate}
+                                      onChange={(e) => onEditEstimationDateChange(e.target.value)}
+                                      max={todayDate}
+                                      className="w-full p-1 border border-indigo-300 dark:border-indigo-700 rounded text-xs bg-white dark:bg-gray-800"
+                                    />
                                     <textarea
                                       value={editEstimationReason}
-                                      onChange={(e) =>
-                                        onEditEstimationReasonChange(
-                                          e.target.value
-                                        )
-                                      }
+                                      onChange={(e) => onEditEstimationReasonChange(e.target.value)}
                                       placeholder="Reason for estimation"
-                                      className="w-full p-1 border border-indigo-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                      className="w-full p-1 border border-indigo-300 dark:border-indigo-700 rounded text-xs bg-white dark:bg-gray-800"
                                       rows="2"
                                     />
-                                    <div className="flex gap-1">
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        onClick={() =>
-                                          onSaveEstimationEdit(entry.id)
-                                        }
-                                        className="px-2 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 transition-colors"
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => onSaveEstimationEdit(entry.id)}
+                                        className="px-2.5 py-1 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700 cursor-pointer"
                                       >
                                         Save
-                                      </motion.button>
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
+                                      </button>
+                                      <button
+                                        type="button"
                                         onClick={onCancelEstimationEdit}
-                                        className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors"
+                                        className="px-2.5 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs font-medium hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer"
                                       >
                                         Cancel
-                                      </motion.button>
+                                      </button>
                                     </div>
                                   </div>
                                 ) : (
                                   <>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-indigo-700 text-base">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-semibold text-indigo-600 dark:text-indigo-400 text-xs px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-900/50 font-mono">
                                           {formatTime(entry.hours, entry.minutes)}
                                         </span>
-                                        {/* Show lock icon for other users' entries */}
                                         {!userOwnsEntry(entry) && (
-                                          <span className="flex items-center gap-1 text-gray-400" title="You can only view this entry">
-                                            <Lock size={12} />
+                                          <span className="flex items-center text-gray-400" title="You can only view this entry">
+                                            <Lock size={11} />
                                           </span>
                                         )}
                                       </div>
                                       <div className="flex items-center gap-1">
                                         {userOwnsEntry(entry) ? (
                                           <>
-                                            <motion.button
-                                              whileHover={{ scale: 1.1 }}
-                                              whileTap={{ scale: 0.9 }}
-                                              onClick={() =>
-                                                onStartEditingEstimation(entry)
-                                              }
-                                              className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-md transition-all duration-200 border border-indigo-200 hover:border-indigo-300"
+                                            <button
+                                              type="button"
+                                              onClick={() => onStartEditingEstimation(entry)}
+                                              className="p-1 rounded text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                                               title="Edit estimation"
                                             >
-                                              <Pencil size={14} />
-                                            </motion.button>
-                                            <motion.button
-                                              whileHover={{ scale: 1.1 }}
-                                              whileTap={{ scale: 0.9 }}
-                                              onClick={() =>
-                                                onConfirmDeleteEstimation(entry.id)
-                                              }
-                                              className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
+                                              <Pencil size={13} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => onConfirmDeleteEstimation(entry.id)}
+                                              className="p-1 rounded text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                                               title="Delete estimation"
                                             >
-                                              <Trash2 size={14} />
-                                            </motion.button>
+                                              <Trash2 size={13} />
+                                            </button>
                                           </>
                                         ) : (
-                                          <span className="text-xs text-gray-400 italic px-2">View only</span>
+                                          <span className="text-[10px] text-gray-400 dark:text-gray-500 italic">View only</span>
                                         )}
                                       </div>
                                     </div>
-                                    <p className="text-gray-700 mb-1 p-1 bg-indigo-100 rounded">
-                                      Reason: {entry.reason}
+                                    <p className="text-xs text-gray-700 dark:text-gray-300 break-words leading-relaxed bg-gray-50 dark:bg-gray-850 p-2 rounded border border-gray-100 dark:border-gray-800">
+                                      {entry.reason}
                                     </p>
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-1 text-gray-500">
-                                        <User size={12} />
-                                        <span>
-                                          {getUserDisplayName(entry)}
-                                        </span>
+                                    <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 pt-0.5">
+                                      <div className="flex items-center gap-1.5 truncate max-w-[60%]">
+                                        <User size={12} className="shrink-0 text-gray-400" />
+                                        <span className="truncate">{getUserDisplayName(entry)}</span>
                                       </div>
-                                      <span className="text-gray-600">
-                                        {formatDate(entry.date)}
-                                      </span>
+                                      <span className="shrink-0 text-gray-400 dark:text-gray-500">{formatDate(entry.date)}</span>
                                     </div>
                                   </>
                                 )}
@@ -580,53 +600,60 @@ const TimeTrackingSection = ({
                             );
                           })}
                         </AnimatePresence>
+                        {sortedEstimationEntries.length === 0 && (
+                          <div className="py-6 text-center text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-200 dark:border-gray-800 rounded-lg">
+                            No estimates added yet
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {/* Total Estimation */}
-                    {estimationEntries.length > 0 && (
-                      <div className="pt-2 border-t-2 border-indigo-200">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-gray-700">
-                            Total Estimate:
-                          </span>
-                          <span className="text-lg font-bold text-indigo-600">
-                            {formatTime(
-                              totalEstimation.hours,
-                              totalEstimation.minutes
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                    </div>
+
+                    {/* Total Estimate Footer */}
+                    <div className="pt-3 mt-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between text-xs">
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Total Estimate:</span>
+                      <span className="font-bold text-sm font-mono text-indigo-600 dark:text-indigo-400">
+                        {formatTime(totalEstimation.hours, totalEstimation.minutes)}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Logged Time */}
-                  <div className="bg-white rounded-lg p-4 shadow-sm border border-green-100">
-                    <div className="flex items-center gap-2 mb-3">
-                      <PlayCircle size={16} className="text-green-600" />
-                      <h5 className="font-semibold text-gray-800">
-                        Logged Time
-                      </h5>
+                  {/* COLUMN 2: LOGGED TIME */}
+                  <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-850/30 p-4 flex flex-col">
+                    <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-gray-200/80 dark:border-gray-800">
+                      <div className="flex items-center gap-2">
+                        <PlayCircle size={16} className="text-emerald-600 dark:text-emerald-400" />
+                        <h4 className="font-semibold text-xs sm:text-sm text-gray-900 dark:text-gray-100">
+                          Logged Time
+                        </h4>
+                      </div>
+                      {sortedLoggedTime.length > 0 && (
+                        <span className={`text-[11px] font-mono font-medium px-2 py-0.5 rounded border ${
+                          isOvertime
+                            ? "text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-900/50"
+                            : "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-100 dark:border-emerald-900/40"
+                        }`}>
+                          {formatTime(totalLogged.hours, totalLogged.minutes)}
+                        </span>
+                      )}
                     </div>
-                    {/* Add Logged Time Input */}
-                    <div className="flex flex-col gap-2 mb-3">
+
+                    {/* Add Logged Time Inputs */}
+                    <div className="space-y-2 mb-3">
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <input
                             type="number"
                             min="0"
                             value={newLoggedHours}
-                            onChange={(e) =>
-                              onLoggedHoursChange(e.target.value)
-                            }
+                            onChange={(e) => onLoggedHoursChange(e.target.value)}
                             placeholder="0"
-                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                            className={`w-full px-2.5 py-1.5 pr-6 text-xs sm:text-sm rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none transition-colors ${
                               loggedValidationError
-                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
-                                : 'border-green-200 focus:ring-green-500'
+                                ? "border-rose-300 dark:border-rose-700 focus:ring-1 focus:ring-rose-500"
+                                : "border-gray-200 dark:border-gray-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                             }`}
                           />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium pointer-events-none">
                             h
                           </span>
                         </div>
@@ -635,79 +662,78 @@ const TimeTrackingSection = ({
                             type="number"
                             min="0"
                             value={newLoggedMinutes}
-                            onChange={(e) =>
-                              onLoggedMinutesChange(e.target.value)
-                            }
+                            onChange={(e) => onLoggedMinutesChange(e.target.value)}
                             placeholder="0"
-                            className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
+                            className={`w-full px-2.5 py-1.5 pr-6 text-xs sm:text-sm rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none transition-colors ${
                               loggedValidationError
-                                ? 'border-red-400 focus:ring-red-500 bg-red-50'
-                                : 'border-green-200 focus:ring-green-500'
+                                ? "border-rose-300 dark:border-rose-700 focus:ring-1 focus:ring-rose-500"
+                                : "border-gray-200 dark:border-gray-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                             }`}
                           />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium pointer-events-none">
                             m
                           </span>
                         </div>
                       </div>
-                      {/* Date Picker for Logged Time */}
-                      <div className="relative">
-                        <div className="flex items-center gap-2">
-                          <Calendar size={14} className="text-green-500" />
-                          <input
-                            type="date"
-                            value={newLoggedDate || todayDate}
-                            onChange={(e) => onLoggedDateChange(e.target.value)}
-                            max={todayDate}
-                            className="flex-1 p-2 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                          />
-                        </div>
+
+                      <div className="relative flex items-center">
+                        <Calendar size={13} className="absolute left-2.5 text-gray-400 pointer-events-none" />
+                        <input
+                          type="date"
+                          value={newLoggedDate || todayDate}
+                          onChange={(e) => onLoggedDateChange(e.target.value)}
+                          max={todayDate}
+                          className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                        />
                       </div>
+
                       <textarea
                         value={newLoggedDescription}
-                        onChange={(e) =>
-                          onLoggedDescriptionChange(e.target.value)
-                        }
+                        onChange={(e) => onLoggedDescriptionChange(e.target.value)}
                         placeholder="Description of work (mandatory)"
-                        className="w-full p-2 border-2 border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                        className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none"
                         rows="2"
                       />
-                      {/* Validation Error Message */}
+
                       {loggedValidationError && (
-                        <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                          <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-                          <span className="text-red-600 text-xs font-medium">
-                            {loggedValidationError}
-                          </span>
+                        <div className="flex items-center gap-1.5 p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg text-rose-600 dark:text-rose-400 text-xs">
+                          <AlertCircle size={14} className="shrink-0" />
+                          <span>{loggedValidationError}</span>
                         </div>
                       )}
-                      <motion.button
-                        whileHover={!loggedValidationError ? { scale: 1.05 } : {}}
-                        whileTap={!loggedValidationError ? { scale: 0.95 } : {}}
+
+                      <button
+                        type="button"
                         onClick={onAddLoggedTime}
                         disabled={!!loggedValidationError}
-                        className={`px-3 py-2 rounded-lg shadow-md text-sm font-semibold transition-all ${
+                        className={`w-full py-2 px-3 rounded-lg text-xs font-medium shadow-sm transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                           loggedValidationError
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700'
+                            ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border border-gray-200 dark:border-gray-700"
+                            : "bg-emerald-600 hover:bg-emerald-700 text-white"
                         }`}
                       >
                         Log Time
-                      </motion.button>
+                      </button>
                     </div>
-                    {/* Logged Time Entries */}
-                    {loggedTime.length > 0 && (
-                      <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
-                        <AnimatePresence>
-                          {loggedTime.map((entry, index) => {
+
+                    {/* Logged Time Entries List (Latest on top) */}
+                    <div className="flex-1 flex flex-col min-h-0">
+                      <div className="flex items-center justify-between text-[11px] font-medium text-gray-400 dark:text-gray-500 mb-1.5">
+                        <span>History (Latest first)</span>
+                        <span>{sortedLoggedTime.length} {sortedLoggedTime.length === 1 ? "entry" : "entries"}</span>
+                      </div>
+
+                      <div className="space-y-2 max-h-56 overflow-y-auto overflow-x-hidden pr-1 custom-scrollbar">
+                        <AnimatePresence initial={false}>
+                          {sortedLoggedTime.map((entry, index) => {
                             const safeKey = entry._id || entry.id || `logged-${index}`;
                             return (
                               <motion.div
                                 key={safeKey}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 20 }}
-                                className="group relative bg-green-50 rounded-lg p-3 border border-green-200 hover:border-green-300 transition-all text-xs"
+                                initial={{ opacity: 0, y: -6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                className="p-2.5 rounded-lg border border-gray-200 dark:border-gray-700/80 bg-white dark:bg-gray-800/90 shadow-2xs text-xs space-y-1.5"
                               >
                                 {editingLogged === entry.id ? (
                                   <div className="space-y-2">
@@ -717,146 +743,102 @@ const TimeTrackingSection = ({
                                           type="number"
                                           min="0"
                                           value={editLoggedHours}
-                                          onChange={(e) =>
-                                            onEditLoggedHoursChange(
-                                              e.target.value
-                                            )
-                                          }
+                                          onChange={(e) => onEditLoggedHoursChange(e.target.value)}
                                           placeholder="0"
-                                          className="w-full p-1 pr-5 border border-green-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
+                                          className="w-full p-1 pr-5 border border-emerald-300 dark:border-emerald-700 rounded text-xs bg-white dark:bg-gray-800"
                                         />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          h
-                                        </span>
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">h</span>
                                       </div>
                                       <div className="relative flex-1">
                                         <input
                                           type="number"
                                           min="0"
                                           value={editLoggedMinutes}
-                                          onChange={(e) =>
-                                            onEditLoggedMinutesChange(
-                                              e.target.value
-                                            )
-                                          }
+                                          onChange={(e) => onEditLoggedMinutesChange(e.target.value)}
                                           placeholder="0"
-                                          className="w-full p-1 pr-5 border border-green-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
+                                          className="w-full p-1 pr-5 border border-emerald-300 dark:border-emerald-700 rounded text-xs bg-white dark:bg-gray-800"
                                         />
-                                        <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                          m
-                                        </span>
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">m</span>
                                       </div>
                                     </div>
-                                    {/* Date Picker for Edit Logged Time */}
-                                    <div className="relative">
-                                      <div className="flex items-center gap-2">
-                                        <Calendar size={12} className="text-green-500" />
-                                        <input
-                                          type="date"
-                                          value={editLoggedDate || todayDate}
-                                          onChange={(e) => onEditLoggedDateChange(e.target.value)}
-                                          max={todayDate}
-                                          className="flex-1 p-1 border border-green-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
-                                        />
-                                      </div>
-                                    </div>
+                                    <input
+                                      type="date"
+                                      value={editLoggedDate || todayDate}
+                                      onChange={(e) => onEditLoggedDateChange(e.target.value)}
+                                      max={todayDate}
+                                      className="w-full p-1 border border-emerald-300 dark:border-emerald-700 rounded text-xs bg-white dark:bg-gray-800"
+                                    />
                                     <textarea
                                       value={editLoggedDescription}
-                                      onChange={(e) =>
-                                        onEditLoggedDescriptionChange(
-                                          e.target.value
-                                        )
-                                      }
+                                      onChange={(e) => onEditLoggedDescriptionChange(e.target.value)}
                                       placeholder="Description of work"
-                                      className="w-full p-1 border border-green-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
+                                      className="w-full p-1 border border-emerald-300 dark:border-emerald-700 rounded text-xs bg-white dark:bg-gray-800"
                                       rows="2"
                                     />
-                                    <div className="flex gap-1">
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
                                         onClick={() => onSaveLoggedEdit(entry.id)}
-                                        className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors"
+                                        className="px-2.5 py-1 bg-emerald-600 text-white rounded text-xs font-medium hover:bg-emerald-700 cursor-pointer"
                                       >
                                         Save
-                                      </motion.button>
-                                      <motion.button
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
+                                      </button>
+                                      <button
+                                        type="button"
                                         onClick={onCancelLoggedEdit}
-                                        className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors"
+                                        className="px-2.5 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs font-medium hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer"
                                       >
                                         Cancel
-                                      </motion.button>
+                                      </button>
                                     </div>
                                   </div>
                                 ) : (
                                   <>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <div className="flex items-center gap-2">
-                                        <Clock
-                                          size={12}
-                                          className="text-green-600"
-                                        />
-                                        <span className="font-bold text-green-700 text-base">
-                                          {formatTime(
-                                            entry.hours,
-                                            entry.minutes
-                                          )}
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900/50 font-mono">
+                                          {formatTime(entry.hours, entry.minutes)}
                                         </span>
-                                        {/* Show lock icon for other users' entries */}
                                         {!userOwnsEntry(entry) && (
-                                          <span className="flex items-center gap-1 text-gray-400" title="You can only view this entry">
-                                            <Lock size={12} />
+                                          <span className="flex items-center text-gray-400" title="You can only view this entry">
+                                            <Lock size={11} />
                                           </span>
                                         )}
                                       </div>
                                       <div className="flex items-center gap-1">
                                         {userOwnsEntry(entry) ? (
                                           <>
-                                            <motion.button
-                                              whileHover={{ scale: 1.1 }}
-                                              whileTap={{ scale: 0.9 }}
-                                              onClick={() =>
-                                                onStartEditingLogged(entry)
-                                              }
-                                              className="p-1.5 text-green-600 hover:bg-green-100 rounded-md transition-all duration-200 border border-green-200 hover:border-green-300"
+                                            <button
+                                              type="button"
+                                              onClick={() => onStartEditingLogged(entry)}
+                                              className="p-1 rounded text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                                               title="Edit logged time"
                                             >
-                                              <Pencil size={14} />
-                                            </motion.button>
-                                            <motion.button
-                                              whileHover={{ scale: 1.1 }}
-                                              whileTap={{ scale: 0.9 }}
-                                              onClick={() =>
-                                                onConfirmDeleteLoggedTime(
-                                                  entry.id
-                                                )
-                                              }
-                                              className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
+                                              <Pencil size={13} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => onConfirmDeleteLoggedTime(entry.id)}
+                                              className="p-1 rounded text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                                               title="Delete logged time"
                                             >
-                                              <Trash2 size={14} />
-                                            </motion.button>
+                                              <Trash2 size={13} />
+                                            </button>
                                           </>
                                         ) : (
-                                          <span className="text-xs text-gray-400 italic px-2">View only</span>
+                                          <span className="text-[10px] text-gray-400 dark:text-gray-500 italic">View only</span>
                                         )}
                                       </div>
                                     </div>
-                                    <p className="text-gray-700 mb-1 p-1 bg-green-100 rounded">
-                                      Desc: {entry.description}
+                                    <p className="text-xs text-gray-700 dark:text-gray-300 break-words leading-relaxed bg-gray-50 dark:bg-gray-850 p-2 rounded border border-gray-100 dark:border-gray-800">
+                                      {entry.description}
                                     </p>
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-1 text-gray-500">
-                                        <User size={12} />
-                                        <span>
-                                          {getUserDisplayName(entry)}
-                                        </span>
+                                    <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 pt-0.5">
+                                      <div className="flex items-center gap-1.5 truncate max-w-[60%]">
+                                        <User size={12} className="shrink-0 text-gray-400" />
+                                        <span className="truncate">{getUserDisplayName(entry)}</span>
                                       </div>
-                                      <span className="text-gray-600">
-                                        {formatDate(entry.date)}
-                                      </span>
+                                      <span className="shrink-0 text-gray-400 dark:text-gray-500">{formatDate(entry.date)}</span>
                                     </div>
                                   </>
                                 )}
@@ -864,365 +846,330 @@ const TimeTrackingSection = ({
                             );
                           })}
                         </AnimatePresence>
+                        {sortedLoggedTime.length === 0 && (
+                          <div className="py-6 text-center text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-200 dark:border-gray-800 rounded-lg">
+                            No time logged yet
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {/* Total Logged Time */}
-                    {loggedTime.length > 0 && (
-                      <div className="pt-2 border-t-2 border-green-200">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-gray-700">
-                            Total Logged:
-                          </span>
-                          <span
-                            className={`text-lg font-bold ${
-                              isOvertime ? "text-red-600" : "text-green-600"
-                            }`}
-                          >
-                            {formatTime(
-                              totalLogged.hours,
-                              totalLogged.minutes
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                    </div>
+
+                    {/* Total Logged Footer */}
+                    <div className="pt-3 mt-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between text-xs">
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Total Logged:</span>
+                      <span className={`font-bold text-sm font-mono ${isOvertime ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                        {formatTime(totalLogged.hours, totalLogged.minutes)}
+                      </span>
+                    </div>
                   </div>
 
-                  {!isEmployee && <MilestoneApprovalPanel project={project} source={billingSource} />}
-
-                  {/* Milestone projects recognize revenue through paid milestones, not manual billed-time entry. */}
-                  {!isMilestoneProject && (
-                  <div className="bg-white rounded-lg p-4 shadow-sm border border-yellow-100">
-                    <div className="flex items-center gap-2 mb-3">
-                      <DollarSign size={16} className="text-yellow-600" />
-                      <h5 className="font-semibold text-gray-800">
-                        Billed Time
-                      </h5>
-                    </div>
-                    
-                    {/* Show hidden reason message if user cannot access billed time */}
-                    {!canAccessBilledTime ? (
-                      <div className="flex items-start gap-3 p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-lg">
-                        <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
-                          <Info size={18} className="text-amber-600" />
+                  {/* COLUMN 3: BILLED TIME OR MILESTONE APPROVAL */}
+                  {!isEmployee && isMilestoneProject ? (
+                    <MilestoneApprovalPanel project={project} source={billingSource} />
+                  ) : !isMilestoneProject ? (
+                    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-850/30 p-4 flex flex-col">
+                      <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-gray-200/80 dark:border-gray-800">
+                        <div className="flex items-center gap-2">
+                          <DollarSign size={16} className="text-amber-600 dark:text-amber-400" />
+                          <h4 className="font-semibold text-xs sm:text-sm text-gray-900 dark:text-gray-100">
+                            Billed Time
+                          </h4>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-amber-800">Billed Time Unavailable</p>
-                          <p className="text-xs text-amber-600 mt-1">{billedTimeHiddenReason}</p>
-                        </div>
+                        {canAccessBilledTime && sortedBilledTime.length > 0 && (
+                          <span className="text-[11px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded border border-amber-100 dark:border-amber-900/40">
+                            {formatTime(totalBilled.hours, totalBilled.minutes)}
+                          </span>
+                        )}
                       </div>
-                    ) : (
-                      <>
-                        {/* Add Billed Time Input */}
-                        <div className="flex flex-col gap-2 mb-3">
-                          <div className="flex gap-2">
-                            <div className="relative flex-1">
-                              <input
-                                type="number"
-                                min="0"
-                                value={newBilledHours}
-                                onChange={(e) =>
-                                  onBilledHoursChange(e.target.value)
-                                }
-                                placeholder="0"
-                                className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
-                                  billedValidationError
-                                    ? 'border-red-400 focus:ring-red-500 bg-red-50'
-                                    : 'border-yellow-200 focus:ring-yellow-500'
-                                }`}
-                              />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                h
-                              </span>
-                            </div>
-                            <div className="relative flex-1">
-                              <input
-                                type="number"
-                                min="0"
-                                value={newBilledMinutes}
-                                onChange={(e) =>
-                                  onBilledMinutesChange(e.target.value)
-                                }
-                                placeholder="0"
-                                className={`w-full p-2 pr-7 border-2 rounded-lg focus:outline-none focus:ring-2 text-sm ${
-                                  billedValidationError
-                                    ? 'border-red-400 focus:ring-red-500 bg-red-50'
-                                    : 'border-yellow-200 focus:ring-yellow-500'
-                                }`}
-                              />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                m
-                              </span>
-                            </div>
+
+                      {!canAccessBilledTime ? (
+                        <div className="my-auto p-4 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/30 text-xs space-y-2">
+                          <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-semibold text-sm">
+                            <Info size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>Billed Time Unavailable</span>
                           </div>
-                          {/* Date Picker for Billed Time */}
-                          <div className="relative">
-                            <div className="flex items-center gap-2">
-                              <Calendar size={14} className="text-yellow-500" />
+                          <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                            {billedTimeHiddenReason || "You do not have permission to view billed time for this task."}
+                          </p>
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                            Billing metrics remain managed by authorized workspace managers.
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Add Billed Time Inputs */}
+                          <div className="space-y-2 mb-3">
+                            <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={newBilledHours}
+                                  onChange={(e) => onBilledHoursChange(e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full px-2.5 py-1.5 pr-6 text-xs sm:text-sm rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none transition-colors ${
+                                    billedValidationError
+                                      ? "border-rose-300 dark:border-rose-700 focus:ring-1 focus:ring-rose-500"
+                                      : "border-gray-200 dark:border-gray-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                                  }`}
+                                />
+                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium pointer-events-none">
+                                  h
+                                </span>
+                              </div>
+                              <div className="relative flex-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={newBilledMinutes}
+                                  onChange={(e) => onBilledMinutesChange(e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full px-2.5 py-1.5 pr-6 text-xs sm:text-sm rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none transition-colors ${
+                                    billedValidationError
+                                      ? "border-rose-300 dark:border-rose-700 focus:ring-1 focus:ring-rose-500"
+                                      : "border-gray-200 dark:border-gray-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                                  }`}
+                                />
+                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium pointer-events-none">
+                                  m
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="relative flex items-center">
+                              <Calendar size={13} className="absolute left-2.5 text-gray-400 pointer-events-none" />
                               <input
                                 type="date"
                                 value={newBilledDate || todayDate}
                                 onChange={(e) => onBilledDateChange(e.target.value)}
                                 max={todayDate}
-                                className="flex-1 p-2 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                                className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                               />
                             </div>
+
+                            <textarea
+                              value={newBilledDescription}
+                              onChange={(e) => onBilledDescriptionChange(e.target.value)}
+                              placeholder="Description of billable work (mandatory)"
+                              className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 resize-none"
+                              rows="2"
+                            />
+
+                            {billedValidationError && (
+                              <div className="flex items-center gap-1.5 p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg text-rose-600 dark:text-rose-400 text-xs">
+                                <AlertCircle size={14} className="shrink-0" />
+                                <span>{billedValidationError}</span>
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={onAddBilledTime}
+                              disabled={!!billedValidationError}
+                              className={`w-full py-2 px-3 rounded-lg text-xs font-medium shadow-sm transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                                billedValidationError
+                                  ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border border-gray-200 dark:border-gray-700"
+                                  : "bg-amber-600 hover:bg-amber-700 text-white"
+                              }`}
+                            >
+                              Add Billed Time
+                            </button>
                           </div>
-                          <textarea
-                            value={newBilledDescription}
-                            onChange={(e) =>
-                              onBilledDescriptionChange(e.target.value)
-                            }
-                            placeholder="Description of billable work (mandatory)"
-                            className="w-full p-2 border-2 border-yellow-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
-                            rows="2"
-                          />
-                          {/* Validation Error Message */}
-                          {billedValidationError && (
-                            <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-                              <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-                              <span className="text-red-600 text-xs font-medium">
-                                {billedValidationError}
-                              </span>
+
+                          {/* Billed Time Entries List (Latest on top) */}
+                          <div className="flex-1 flex flex-col min-h-0">
+                            <div className="flex items-center justify-between text-[11px] font-medium text-gray-400 dark:text-gray-500 mb-1.5">
+                              <span>History (Latest first)</span>
+                              <span>{sortedBilledTime.length} {sortedBilledTime.length === 1 ? "entry" : "entries"}</span>
                             </div>
-                          )}
-                          <motion.button
-                            whileHover={!billedValidationError ? { scale: 1.05 } : {}}
-                            whileTap={!billedValidationError ? { scale: 0.95 } : {}}
-                            onClick={onAddBilledTime}
-                            disabled={!!billedValidationError}
-                            className={`px-3 py-2 rounded-lg shadow-md text-sm font-semibold transition-all ${
-                              billedValidationError
-                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                : 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white hover:from-yellow-600 hover:to-orange-600'
-                            }`}
-                          >
-                            Add Billed Time
-                          </motion.button>
-                        </div>
-                        {/* Billed Time Entries */}
-                        {billedTime.length > 0 && (
-                          <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-2 custom-scrollbar">
-                            <AnimatePresence>
-                              {billedTime.map((entry, index) => {
-                                const safeKey = entry._id || entry.id || `billed-${index}`;
-                                return (
-                                  <motion.div
-                                    key={safeKey}
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: 20 }}
-                                    className="group relative bg-yellow-50 rounded-lg p-3 border border-yellow-200 hover:border-yellow-300 transition-all text-xs"
-                                  >
-                                    {editingBilled === entry.id ? (
-                                      <div className="space-y-2">
-                                        <div className="flex gap-2">
-                                          <div className="relative flex-1">
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              value={editBilledHours}
-                                              onChange={(e) =>
-                                                onEditBilledHoursChange(
-                                                  e.target.value
-                                                )
-                                              }
-                                              placeholder="0"
-                                              className="w-full p-1 pr-5 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
-                                            />
-                                            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                              h
-                                            </span>
+
+                            <div className="space-y-2 max-h-56 overflow-y-auto overflow-x-hidden pr-1 custom-scrollbar">
+                              <AnimatePresence initial={false}>
+                                {sortedBilledTime.map((entry, index) => {
+                                  const safeKey = entry._id || entry.id || `billed-${index}`;
+                                  return (
+                                    <motion.div
+                                      key={safeKey}
+                                      initial={{ opacity: 0, y: -6 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      exit={{ opacity: 0, scale: 0.95 }}
+                                      className="p-2.5 rounded-lg border border-gray-200 dark:border-gray-700/80 bg-white dark:bg-gray-800/90 shadow-2xs text-xs space-y-1.5"
+                                    >
+                                      {editingBilled === entry.id ? (
+                                        <div className="space-y-2">
+                                          <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                value={editBilledHours}
+                                                onChange={(e) => onEditBilledHoursChange(e.target.value)}
+                                                placeholder="0"
+                                                className="w-full p-1 pr-5 border border-amber-300 dark:border-amber-700 rounded text-xs bg-white dark:bg-gray-800"
+                                              />
+                                              <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">h</span>
+                                            </div>
+                                            <div className="relative flex-1">
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                value={editBilledMinutes}
+                                                onChange={(e) => onEditBilledMinutesChange(e.target.value)}
+                                                placeholder="0"
+                                                className="w-full p-1 pr-5 border border-amber-300 dark:border-amber-700 rounded text-xs bg-white dark:bg-gray-800"
+                                              />
+                                              <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">m</span>
+                                            </div>
                                           </div>
-                                          <div className="relative flex-1">
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              value={editBilledMinutes}
-                                              onChange={(e) =>
-                                                onEditBilledMinutesChange(
-                                                  e.target.value
-                                                )
-                                              }
-                                              placeholder="0"
-                                              className="w-full p-1 pr-5 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
-                                            />
-                                            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
-                                              m
-                                            </span>
-                                          </div>
-                                        </div>
-                                        {/* Date Picker for Edit Billed Time */}
-                                        <div className="relative">
-                                          <div className="flex items-center gap-2">
-                                            <Calendar size={12} className="text-yellow-500" />
-                                            <input
-                                              type="date"
-                                              value={editBilledDate || todayDate}
-                                              onChange={(e) => onEditBilledDateChange(e.target.value)}
-                                              max={todayDate}
-                                              className="flex-1 p-1 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
-                                            />
+                                          <input
+                                            type="date"
+                                            value={editBilledDate || todayDate}
+                                            onChange={(e) => onEditBilledDateChange(e.target.value)}
+                                            max={todayDate}
+                                            className="w-full p-1 border border-amber-300 dark:border-amber-700 rounded text-xs bg-white dark:bg-gray-800"
+                                          />
+                                          <textarea
+                                            value={editBilledDescription}
+                                            onChange={(e) => onEditBilledDescriptionChange(e.target.value)}
+                                            placeholder="Description of billable work"
+                                            className="w-full p-1 border border-amber-300 dark:border-amber-700 rounded text-xs bg-white dark:bg-gray-800"
+                                            rows="2"
+                                          />
+                                          <div className="flex items-center gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => onSaveBilledEdit(entry.id)}
+                                              className="px-2.5 py-1 bg-amber-600 text-white rounded text-xs font-medium hover:bg-amber-700 cursor-pointer"
+                                            >
+                                              Save
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={onCancelBilledEdit}
+                                              className="px-2.5 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs font-medium hover:bg-gray-300 dark:hover:bg-gray-600 cursor-pointer"
+                                            >
+                                              Cancel
+                                            </button>
                                           </div>
                                         </div>
-                                        <textarea
-                                          value={editBilledDescription}
-                                          onChange={(e) =>
-                                            onEditBilledDescriptionChange(
-                                              e.target.value
-                                            )
-                                          }
-                                          placeholder="Description of billable work"
-                                          className="w-full p-1 border border-yellow-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-yellow-500"
-                                          rows="2"
-                                        />
-                                        <div className="flex gap-1">
-                                          <motion.button
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            onClick={() =>
-                                              onSaveBilledEdit(entry.id)
-                                            }
-                                            className="px-2 py-1 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 transition-colors"
-                                          >
-                                            Save
-                                          </motion.button>
-                                          <motion.button
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            onClick={onCancelBilledEdit}
-                                            className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 transition-colors"
-                                          >
-                                            Cancel
-                                          </motion.button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <div className="flex items-center justify-between mb-1">
-                                          <div className="flex items-center gap-2">
-                                            <DollarSign
-                                              size={12}
-                                              className="text-yellow-600"
-                                            />
-                                            <span className="font-bold text-yellow-700 text-base">
-                                              {formatTime(
-                                                entry.hours,
-                                                entry.minutes
-                                              )}
-                                            </span>
-                                            {/* Show lock icon for other users' entries */}
-                                            {!userOwnsEntry(entry) && (
-                                              <span className="flex items-center gap-1 text-gray-400" title="You can only view this entry">
-                                                <Lock size={12} />
+                                      ) : (
+                                        <>
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="font-semibold text-amber-600 dark:text-amber-400 text-xs px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/50 border border-amber-100 dark:border-amber-900/50 font-mono">
+                                                {formatTime(entry.hours, entry.minutes)}
                                               </span>
-                                            )}
+                                              {!userOwnsEntry(entry) && (
+                                                <span className="flex items-center text-gray-400" title="You can only view this entry">
+                                                  <Lock size={11} />
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                              {userOwnsEntry(entry) ? (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => onStartEditingBilled(entry)}
+                                                    className="p-1 rounded text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                                                    title="Edit billed time"
+                                                  >
+                                                    <Pencil size={13} />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => onConfirmDeleteBilledTime(entry.id)}
+                                                    className="p-1 rounded text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                                                    title="Delete billed time"
+                                                  >
+                                                    <Trash2 size={13} />
+                                                  </button>
+                                                </>
+                                              ) : (
+                                                <span className="text-[10px] text-gray-400 dark:text-gray-500 italic">View only</span>
+                                              )}
+                                            </div>
                                           </div>
-                                          <div className="flex items-center gap-1">
-                                            {userOwnsEntry(entry) ? (
-                                              <>
-                                                <motion.button
-                                                  whileHover={{ scale: 1.1 }}
-                                                  whileTap={{ scale: 0.9 }}
-                                                  onClick={() =>
-                                                    onStartEditingBilled(entry)
-                                                  }
-                                                  className="p-1.5 text-yellow-600 hover:bg-yellow-100 rounded-md transition-all duration-200 border border-yellow-200 hover:border-yellow-300"
-                                                  title="Edit billed time"
-                                                >
-                                                  <Pencil size={14} />
-                                                </motion.button>
-                                                <motion.button
-                                                  whileHover={{ scale: 1.1 }}
-                                                  whileTap={{ scale: 0.9 }}
-                                                  onClick={() =>
-                                                    onConfirmDeleteBilledTime(
-                                                      entry.id
-                                                    )
-                                                  }
-                                                  className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-all duration-200 border border-red-200 hover:border-red-300"
-                                                  title="Delete billed time"
-                                                >
-                                                  <Trash2 size={14} />
-                                                </motion.button>
-                                              </>
-                                            ) : (
-                                              <span className="text-xs text-gray-400 italic px-2">View only</span>
-                                            )}
+                                          <p className="text-xs text-gray-700 dark:text-gray-300 break-words leading-relaxed bg-gray-50 dark:bg-gray-850 p-2 rounded border border-gray-100 dark:border-gray-800">
+                                            {entry.description}
+                                          </p>
+                                          <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 pt-0.5">
+                                            <div className="flex items-center gap-1.5 truncate max-w-[60%]">
+                                              <User size={12} className="shrink-0 text-gray-400" />
+                                              <span className="truncate">{getUserDisplayName(entry)}</span>
+                                            </div>
+                                            <span className="shrink-0 text-gray-400 dark:text-gray-500">{formatDate(entry.date)}</span>
                                           </div>
-                                        </div>
-                                        <p className="text-gray-700 mb-1 p-1 bg-yellow-100 rounded">
-                                          {entry.description}
-                                        </p>
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex items-center gap-1 text-gray-500">
-                                            <User size={12} />
-                                            <span>
-                                              {getUserDisplayName(entry)}
-                                            </span>
-                                          </div>
-                                          <span className="text-gray-600">
-                                            {formatDate(entry.date)}
-                                          </span>
-                                        </div>
-                                      </>
-                                    )}
-                                  </motion.div>
-                                );
-                              })}
-                            </AnimatePresence>
-                          </div>
-                        )}
-                        {/* Total Billed Time */}
-                        {billedTime.length > 0 && (
-                          <div className="pt-2 border-t-2 border-yellow-200">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-semibold text-gray-700">
-                                Total Billed:
-                              </span>
-                              <span className="text-lg font-bold text-yellow-600">
-                                {formatTime(
-                                  calculateTotalBilledTime().hours,
-                                  calculateTotalBilledTime().minutes
-                                )}
-                              </span>
+                                        </>
+                                      )}
+                                    </motion.div>
+                                  );
+                                })}
+                              </AnimatePresence>
+                              {sortedBilledTime.length === 0 && (
+                                <div className="py-6 text-center text-xs text-gray-400 dark:text-gray-500 border border-dashed border-gray-200 dark:border-gray-800 rounded-lg">
+                                  No billed time added yet
+                                </div>
+                              )}
                             </div>
                           </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  )}
+
+                          {/* Total Billed Footer */}
+                          <div className="pt-3 mt-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between text-xs">
+                            <span className="font-medium text-gray-600 dark:text-gray-400">Total Billed:</span>
+                            <span className="font-bold text-sm font-mono text-amber-600 dark:text-amber-400">
+                              {formatTime(totalBilled.hours, totalBilled.minutes)}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="p-4 border-t border-gray-200 bg-gray-50">
-                <div className="flex items-center justify-between">
+              {/* Modal Footer: Overall Progress */}
+              <div className="px-5 py-3.5 border-t border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-850/60 shrink-0">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h5 className="font-semibold text-gray-800 text-sm">
+                    <div className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Overall Progress
-                    </h5>
-                    <p className="text-xs text-gray-600">
-                      {formatTime(totalLogged.hours, totalLogged.minutes)} of{" "}
-                      {formatTime(
-                        totalEstimation.hours,
-                        totalEstimation.minutes
-                      )}
-                    </p>
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-0.5 font-mono">
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">
+                        {formatTime(totalLogged.hours, totalLogged.minutes)}
+                      </span>{" "}
+                      logged of{" "}
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">
+                        {formatTime(totalEstimation.hours, totalEstimation.minutes)}
+                      </span>{" "}
+                      estimated
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span
-                      className={`text-xl font-bold ${
-                        isOvertime ? "text-red-600" : "text-blue-600"
-                      }`}
-                    >
-                      {timeProgress}%
-                    </span>
-                    {isOvertime && (
-                      <p className="text-xs text-red-600 font-medium">
-                        Over estimate!
-                      </p>
-                    )}
+
+                  <div className="flex items-center gap-3">
+                    <div className="hidden sm:block w-36 md:w-48 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        style={{ width: `${Math.min(timeProgress, 100)}%` }}
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isOvertime ? "bg-rose-500" : "bg-blue-600"
+                        }`}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-base sm:text-lg font-bold font-mono ${
+                          isOvertime ? "text-rose-600 dark:text-rose-400" : "text-blue-600 dark:text-blue-400"
+                        }`}
+                      >
+                        {timeProgress}%
+                      </span>
+                      {isOvertime && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-900 font-medium">
+                          Over estimate
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1233,19 +1180,18 @@ const TimeTrackingSection = ({
 
       <style jsx="true">{`
         .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
+          width: 5px;
+          height: 5px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 10px;
+          background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #888;
-          border-radius: 10px;
+          background: rgba(156, 163, 175, 0.35);
+          border-radius: 9999px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #555;
+          background: rgba(156, 163, 175, 0.6);
         }
       `}</style>
     </div>
@@ -1253,4 +1199,3 @@ const TimeTrackingSection = ({
 };
 
 export default TimeTrackingSection;
-

@@ -57,6 +57,247 @@ const TrackingClock = memo(function TrackingClock({ state, kind }) {
   return <span>{duration(value)}</span>;
 });
 
+function MonitoringStatusDetails({
+  capture = '',
+  scopedNative = null,
+  isDesktop = false,
+  retrying = false,
+  onRetryUploads,
+  expired = false,
+  nativeError = '',
+  device = null,
+  error = null,
+  onBack,
+  hasBackButton = true
+}) {
+  const hasAttention = Boolean(
+    expired ||
+    scopedNative?.uploadError ||
+    scopedNative?.protectedCopies ||
+    scopedNative?.noticeRequired ||
+    scopedNative?.error ||
+    nativeError ||
+    device?.lastUploadError ||
+    error
+  );
+
+  return (
+    <div className="space-y-2.5 text-left">
+      {/* Header with back button & status pill */}
+      <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center gap-1.5">
+          {hasBackButton && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="p-1 -ml-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+              title="Back to actions"
+              aria-label="Back to actions"
+            >
+              <ArrowLeft size={15} />
+            </button>
+          )}
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Monitoring Status</h2>
+        </div>
+        <span
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+            hasAttention
+              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+              : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              hasAttention ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+            }`}
+          />
+          <span className="capitalize">{capture.replaceAll('-', ' ')}</span>
+        </span>
+      </div>
+
+      {/* Expired warning */}
+      {expired && (
+        <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 flex items-center gap-2">
+          <AlertCircle size={13} className="shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>Attendance cutoff reached. Revalidating session.</span>
+        </div>
+      )}
+
+      {/* Screenshots Buffer & Storage Card */}
+      {isDesktop && scopedNative && (
+        <div className="p-2.5 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-200/80 dark:border-gray-800 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+              <HardDrive size={13} className="text-gray-400 shrink-0" />
+              Screenshot Buffer
+            </span>
+            {scopedNative.queueCapacityBytes > 0 && (
+              <span className="text-[11px] font-mono text-gray-500 dark:text-gray-400">
+                {(scopedNative.queueBytes / 1048576).toFixed(1)} / {Math.round(scopedNative.queueCapacityBytes / 1048576)} MiB
+              </span>
+            )}
+          </div>
+
+          {scopedNative.queueCapacityBytes > 0 && (
+            <div className="w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  scopedNative.queueBytes / scopedNative.queueCapacityBytes > 0.85
+                    ? 'bg-amber-500'
+                    : 'bg-blue-500'
+                }`}
+                style={{
+                  width: `${Math.min(100, Math.max(3, (scopedNative.queueBytes / scopedNative.queueCapacityBytes) * 100))}%`
+                }}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 pt-0.5">
+            <span className="flex items-center gap-1">
+              Sync: <strong className="font-medium text-gray-700 dark:text-gray-200 capitalize">{scopedNative.syncStatus?.replaceAll('-', ' ') || 'Connected'}</strong>
+            </span>
+            {scopedNative.pending > 0 ? (
+              <span className="font-medium text-amber-600 dark:text-amber-400">
+                {scopedNative.pending} pending upload{scopedNative.pending === 1 ? '' : 's'}
+              </span>
+            ) : (
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                <CheckCircle2 size={11} className="text-emerald-500" /> All synced
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isDesktop && (
+        <div className="p-2.5 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-200/80 dark:border-gray-800 text-xs space-y-1">
+          <div className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+            <Monitor size={13} className="text-gray-400" />
+            <span>Web Interface</span>
+          </div>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            Desktop application is required for automated activity tracking and screenshot capture.
+          </p>
+        </div>
+      )}
+
+      {/* Upload Waiting Error / Notice Card */}
+      {isDesktop && scopedNative?.uploadError && (
+        <div className="p-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 space-y-1.5 text-xs">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={14} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-amber-900 dark:text-amber-200 text-[10px] uppercase tracking-wider">
+                Upload Waiting
+              </div>
+              <p className="text-[11px] text-amber-800 dark:text-amber-300/90 leading-relaxed mt-0.5">
+                {scopedNative.uploadError}
+              </p>
+            </div>
+          </div>
+          {scopedNative.nextUploadRetryAt && (
+            <div className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400 pl-5 font-medium">
+              <Clock size={11} />
+              <span>Next retry at {new Date(scopedNative.nextUploadRetryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pending uploads automatic retry notice */}
+      {isDesktop && scopedNative?.pending > 0 && !scopedNative?.uploadError && (
+        <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 text-[11px] text-blue-700 dark:text-blue-300">
+          <CloudUpload size={13} className="shrink-0" />
+          <span>Pending screenshots retry automatically once connected.</span>
+        </div>
+      )}
+
+      {/* Protected copies notice */}
+      {isDesktop && scopedNative?.protectedCopies > 0 && (
+        <div className="p-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/50 text-[11px] text-amber-800 dark:text-amber-300">
+          {scopedNative.protectedCopies} damaged local copies retained for inspection. Activity remains recorded.
+        </div>
+      )}
+
+      {/* Permission notice / Review notice */}
+      {isDesktop && scopedNative?.noticeRequired && (
+        <button
+          type="button"
+          className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
+          onClick={() => window.dispatchEvent(new Event('flowtask:monitoring-notice'))}
+        >
+          Review monitoring notice
+        </button>
+      )}
+
+      {/* Permission required / Denied */}
+      {isDesktop &&
+        !scopedNative?.noticeRequired &&
+        (scopedNative?.state === 'permission-required' ||
+          scopedNative?.state === 'permission-denied' ||
+          scopedNative?.permission === 'denied' ||
+          (scopedNative?.state === 'monitoring' && scopedNative?.error)) && (
+          <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs space-y-2">
+            <p className="text-[11px] text-amber-800 dark:text-amber-300">
+              Screen recording permission is required on this desktop. Review system preferences to continue tracking.
+            </p>
+            {typeof window.flowtaskDesktop?.tracking?.recoverPermissions === 'function' && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                onClick={() => window.flowtaskDesktop.tracking.recoverPermissions().catch(e => toast.error(e.message))}
+              >
+                Review desktop permissions
+              </button>
+            )}
+          </div>
+        )}
+
+      {/* Generic error alerts */}
+      {(nativeError || device?.lastUploadError || error || (scopedNative?.state === 'error' && scopedNative?.error)) && (
+        <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 text-xs space-y-1">
+          <div className="flex items-center gap-1.5 font-medium text-rose-700 dark:text-rose-400">
+            <AlertCircle size={13} className="shrink-0" />
+            <span>Monitoring Issue</span>
+          </div>
+          <p className="text-[11px] text-rose-600 dark:text-rose-300 pl-4.5">
+            {nativeError || device?.lastUploadError || error || scopedNative?.error || 'Restart the FlowTask desktop app if this persists.'}
+          </p>
+        </div>
+      )}
+
+      {/* Footer Actions */}
+      <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2">
+        {hasBackButton ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors cursor-pointer py-1 px-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+            onClick={onBack}
+          >
+            <ArrowLeft size={13} />
+            <span>Back to actions</span>
+          </button>
+        ) : (
+          <div />
+        )}
+
+        {isDesktop && scopedNative?.pending > 0 && typeof window.flowtaskDesktop?.tracking?.retryUploads === 'function' && (
+          <button
+            type="button"
+            disabled={retrying}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-50 cursor-pointer transition-colors"
+            onClick={onRetryUploads}
+          >
+            <RefreshCw size={12} className={retrying ? 'animate-spin' : ''} />
+            <span>{retrying ? 'Retrying…' : 'Retry uploads now'}</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function TrackingPanel({
   compact = false,
   attendanceHeader,
@@ -190,88 +431,31 @@ export default function TrackingPanel({
       ? ''
       : scopedNative?.error;
 
+  const handleRetryUploads = async () => {
+    if (typeof window.flowtaskDesktop?.tracking?.retryUploads !== 'function') return;
+    setRetrying(true);
+    try {
+      setNative(normalizeDesktopTrackingStatus(await window.flowtaskDesktop.tracking.retryUploads()));
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   const diagnostics = (
-    <>
-      {expired && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">Attendance cutoff reached. Revalidating session.</p>}
-      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400" role="status">
-        {capture.replaceAll('-', ' ')}
-        {scopedNative?.pending ? ` · ${scopedNative.pending} uploads pending` : ''}
-      </p>
-      {isDesktop && scopedNative?.syncStatus && (
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400" role="status">
-          Screenshots: {scopedNative.syncStatus.replaceAll('-', ' ')}
-          {scopedNative.queueCapacityBytes > 0
-            ? ` · ${(scopedNative.queueBytes / 1048576).toFixed(1)} / ${Math.round(
-                scopedNative.queueCapacityBytes / 1048576
-              )} MiB queued`
-            : ''}
-        </p>
-      )}
-      {isDesktop && scopedNative?.pending > 0 && (
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Pending screenshots retry automatically when connected.</p>
-      )}
-      {isDesktop && scopedNative?.uploadError && (
-        <p role="alert" className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-          Upload waiting: {scopedNative.uploadError}
-          {scopedNative.nextUploadRetryAt
-            ? ` Next retry ${new Date(scopedNative.nextUploadRetryAt).toLocaleTimeString()}.`
-            : ''}
-        </p>
-      )}
-      {isDesktop && scopedNative?.pending > 0 && typeof window.flowtaskDesktop?.tracking?.retryUploads === 'function' && (
-        <button
-          disabled={retrying}
-          className="mt-2 text-xs text-blue-600 dark:text-blue-400 underline cursor-pointer"
-          onClick={async () => {
-            setRetrying(true);
-            try {
-              setNative(normalizeDesktopTrackingStatus(await window.flowtaskDesktop.tracking.retryUploads()));
-            } catch (e) {
-              toast.error(e.message);
-            } finally {
-              setRetrying(false);
-            }
-          }}
-        >
-          {retrying ? 'Retrying uploads…' : 'Retry uploads now'}
-        </button>
-      )}
-      {isDesktop && scopedNative?.protectedCopies > 0 && (
-        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-          {scopedNative.protectedCopies} damaged local copies retained for inspection. Activity remains recorded.
-        </p>
-      )}
-      {nativeError && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{nativeError}</p>}
-      {device?.lastUploadError && (
-        <p role="alert" className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-          Desktop upload: {device.lastUploadError}
-        </p>
-      )}
-      {isDesktop && scopedNative?.noticeRequired && (
-        <button
-          className="mt-2 text-xs text-blue-600 dark:text-blue-400 underline cursor-pointer"
-          onClick={() => window.dispatchEvent(new Event('flowtask:monitoring-notice'))}
-        >
-          Review monitoring notice
-        </button>
-      )}
-      {isDesktop &&
-        !scopedNative?.noticeRequired &&
-        (scopedNative?.state === 'permission-required' ||
-          (scopedNative?.state === 'monitoring' && scopedNative?.error)) && (
-          <button
-            className="mt-2 text-xs text-blue-600 dark:text-blue-400 underline cursor-pointer"
-            onClick={() => window.flowtaskDesktop.tracking.recoverPermissions().catch(e => toast.error(e.message))}
-          >
-            Review desktop permissions
-          </button>
-        )}
-      {error && (
-        <p role="alert" className="mt-2 text-xs text-rose-600 dark:text-rose-400">
-          {error}
-        </p>
-      )}
-    </>
+    <MonitoringStatusDetails
+      capture={capture}
+      scopedNative={scopedNative}
+      isDesktop={isDesktop}
+      retrying={retrying}
+      onRetryUploads={handleRetryUploads}
+      expired={expired}
+      nativeError={nativeError}
+      device={device}
+      error={error}
+      hasBackButton={false}
+    />
   );
 
   const recovery = sessionAction.phase === 'RECONCILIATION_REQUIRED' && (
@@ -482,34 +666,67 @@ export default function TrackingPanel({
                 }
               }}
             >
-              <h2 className="mb-3 text-sm font-semibold">{detailsView === 'actions' ? 'More actions' : 'Monitoring status'}</h2>
               {detailsView === 'actions' ? (
-                <nav aria-label="Tracking actions" className="welcome-secondary-actions">
-                  <Link to="/time-tracking">Timesheets and screenshots</Link>
-                  {state.canManagePolicy && <Link to="/workspace-settings">Workspace tracking configuration</Link>}
-                  {latest?.kind === 'INDIVIDUAL' && session?.status !== 'CLOSED' && state.attendance && state.canTrack && (
+                <div>
+                  <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-gray-100 dark:border-gray-800">
+                    <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Tracking Actions</h2>
+                  </div>
+                  <nav aria-label="Tracking actions" className="welcome-secondary-actions">
+                    <Link to="/time-tracking" className="flex items-center gap-2.5">
+                      <Clock3 size={14} className="text-gray-400 shrink-0" />
+                      <span>Timesheets and screenshots</span>
+                    </Link>
+                    {state.canManagePolicy && (
+                      <Link to="/workspace-settings" className="flex items-center gap-2.5">
+                        <Settings size={14} className="text-gray-400 shrink-0" />
+                        <span>Workspace tracking configuration</span>
+                      </Link>
+                    )}
+                    {latest?.kind === 'INDIVIDUAL' && session?.status !== 'CLOSED' && state.attendance && state.canTrack && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setDetailsOpen(false);
+                          setSelecting('link');
+                        }}
+                        className="flex items-center gap-2.5 w-full text-left cursor-pointer"
+                      >
+                        <Link2 size={14} className="text-gray-400 shrink-0" />
+                        <span>Link assigned task</span>
+                      </button>
+                    )}
                     <button
                       type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setDetailsOpen(false);
-                        setSelecting('link');
-                      }}
+                      onClick={() => setDetailsView('monitoring')}
+                      className="flex items-center justify-between gap-2 w-full text-left cursor-pointer"
                     >
-                      Link assigned task
+                      <span className="flex items-center gap-2.5">
+                        <Monitor size={14} className="text-gray-400 shrink-0" />
+                        <span>Monitoring status & recovery</span>
+                      </span>
+                      {scopedNative?.pending > 0 && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                          {scopedNative.pending}
+                        </span>
+                      )}
                     </button>
-                  )}
-                  <button type="button" onClick={() => setDetailsView('monitoring')}>
-                    Monitoring status and recovery
-                  </button>
-                </nav>
+                  </nav>
+                </div>
               ) : (
-                <>
-                  {diagnostics}
-                  <button type="button" className="mt-3 text-xs underline cursor-pointer" onClick={() => setDetailsView('actions')}>
-                    Back to actions
-                  </button>
-                </>
+                <MonitoringStatusDetails
+                  capture={capture}
+                  scopedNative={scopedNative}
+                  isDesktop={isDesktop}
+                  retrying={retrying}
+                  onRetryUploads={handleRetryUploads}
+                  expired={expired}
+                  nativeError={nativeError}
+                  device={device}
+                  error={error}
+                  onBack={() => setDetailsView('actions')}
+                  hasBackButton={true}
+                />
               )}
             </Popover.Content>
           </Popover.Portal>
