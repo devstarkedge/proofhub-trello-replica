@@ -7,9 +7,9 @@ import User from '../../models/User.js';
 import Department from '../../models/Department.js';
 import {DateTime} from 'luxon';
 import {TrackingStorageLabel} from './tracking.models.js';
-export const SCREENSHOT_TARGET_BYTES=70*1024;
+export const SCREENSHOT_TARGET_BYTES=100*1024;
 export const SCREENSHOT_MAX_BYTES=Math.min(64*1024*1024,Math.max(128*1024,Number(process.env.FLOWTASK_SCREENSHOT_MAX_BYTES)||15*1024*1024));
-export const screenshotUploadLimits=()=>({maxScreenshotBytes:SCREENSHOT_MAX_BYTES,targetScreenshotBytes:SCREENSHOT_TARGET_BYTES,maxThumbnailBytes:SCREENSHOT_TARGET_BYTES});
+export const screenshotUploadLimits=()=>({maxScreenshotBytes:SCREENSHOT_MAX_BYTES,targetScreenshotBytes:SCREENSHOT_TARGET_BYTES});
 const failure = (message,statusCode=503) => Object.assign(new Error(message),{statusCode,code:'SCREENSHOT_STORAGE_UNAVAILABLE'});
 let cached;
 let inflight=0;const waiting=[];
@@ -113,14 +113,6 @@ export async function removePrivateScreenshot(s) {
 export function thumbnailDescriptor(s){
   const value=s.toObject?s.toObject():s;
   return {...value,...value.thumbnail,storageProvider:'cloudflare-r2',format:'webp',variant:'thumbnail'};
-}
-export async function writePrivateThumbnail(s,bytes){
-  const descriptor=thumbnailDescriptor(s);assertR2(descriptor);
-  if(bytes.length>SCREENSHOT_TARGET_BYTES||bytes.length!==descriptor.bytes)throw failure('Invalid thumbnail size',413);
-  const {client,config}=privateStorage();
-  try{await send(client,new PutObjectCommand({Bucket:config.bucket,Key:descriptor.storageKey,Body:bytes,ContentLength:bytes.length,ContentType:'image/webp',ContentMD5:Buffer.from(descriptor.contentMd5,'hex').toString('base64'),IfNoneMatch:'*',Metadata:identity(descriptor)}));}
-  catch(error){if(![409,412].includes(error?.$metadata?.httpStatusCode))throw error;}
-  await verifyPrivateUpload(descriptor);
 }
 export async function removePrivateThumbnail(s){
   // Both private representations share the original capture's retention.

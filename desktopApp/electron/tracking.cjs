@@ -4,9 +4,8 @@ const path = require('node:path');
 const os = require('node:os');
 const { randomUUID } = require('node:crypto');
 const { ActivityCounters, DurableQueue, checksum } = require('./tracking-core.cjs');
-const {encodeWebP}=require('./screenshot-encoder.cjs');
 const {noticeAuthorization}=require('./monitoring-authorization.cjs');
-const {uploadEntry,encodedFields}=require('./screenshot-upload.cjs');
+const {uploadEntry}=require('./screenshot-upload.cjs');
 
 function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   const root = path.join(app.getPath('userData'),'tracking'); fs.mkdirSync(root,{recursive:true});
@@ -120,6 +119,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   function begin() {
     if(capturing||locked||suspended||performance.now()>=leaseDeadlineMono)return;
     if(!queue?.available()){publish('unavailable','Encrypted offline storage is unavailable');return;}
+    if(queue.usedBytes()>=queue.maxBytes){publish('unavailable','Offline screenshot queue is full; reconnect to upload saved captures');return;}
     if(process.platform==='darwin'&&systemPreferences.getMediaAccessStatus('screen')!=='granted'){publish('permission-required','Allow Screen Recording in macOS System Settings, then restart FlowTask');return;}
     capturing=true;counters.reset();lastCapture=performance.now();
     const input=startInput();
@@ -149,13 +149,12 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
               if(!source||source.thumbnail.isEmpty()){coverage='unavailable';continue;}
               let image=source.thumbnail;const size=image.getSize();
               if(preferences.blur)image=image.resize({width:Math.max(1,Math.round(size.width/40)),height:Math.max(1,Math.round(size.height/40)),quality:'good'}).resize({...size,quality:'good'});
-              let encoded;try{encoded=await encodeWebP(image.toPNG(),{maxBytes:uploadLimits.maxScreenshotBytes});}catch(error){
-                const original=image.toPNG();images.push({captureId:randomUUID(),displayId:String(display.id),format:'png',conversionPending:true,checksum:checksum(original),contentMd5:checksum(original,'md5'),bytes:original.length,width:size.width,height:size.height,blurred:preferences.blur,data:original.toString('base64')});
-                uploadError=error.message;uploadErrorCode=error.code||'SCREENSHOT_ENCODING_FAILED';publish('monitoring');continue;
-              }
-              const bytes=encoded.data;
-              images.push({captureId:randomUUID(),displayId:String(display.id),checksum:checksum(bytes),contentMd5:checksum(bytes,'md5'),bytes:bytes.length,
-                ...encodedFields(encoded),format:'webp',mimeType:'image/webp',blurred:preferences.blur,data:bytes.toString('base64')});
+              // Checkpoint evidence before encoding; the upload worker replaces
+              // the saved source with the single canonical WebP atomically.
+              const original=image.toPNG();
+              images.push({captureId:randomUUID(),displayId:String(display.id),format:'png',conversionPending:true,
+                checksum:checksum(original),contentMd5:checksum(original,'md5'),bytes:original.length,
+                width:size.width,height:size.height,blurred:preferences.blur,data:original.toString('base64')});
             }
           }
         }
@@ -171,7 +170,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       inputAvailable:hookStarted && coverage!=='excluded',screenshotAvailable:images.some(image=>!image.exceptionCode)};
     if (coverage==='excluded') { payload.mouseCount=null;payload.keyboardCount=null; }
     if(payload.endOffsetMs-payload.startOffsetMs<1)return;
-    try{activeQueue.push({deviceId:activeDevice._id,payload,images,createdAt:Date.now(),expiresAt:policy?.retentionDays===null?null:+new Date(activeDevice.anchor.serverAt)+payload.endOffsetMs+(policy?.retentionDays||365)*86400000,attempts:0,nextAttempt:0});}
+    try{activeQueue.push({deviceId:activeDevice._id,payload,images,createdAt:Date.now(),expiresAt:policy?.retentionDays===null?null:+new Date(activeDevice.anchor.serverAt)+payload.endOffsetMs+(policy?.retentionDays||365)*86400000,attempts:0,nextAttempt:0},{retainOnFull:true});}
     catch(error){capturing=false;stopInput();publish('unavailable',error.message);}
     publish(lastState,lastError);
   }

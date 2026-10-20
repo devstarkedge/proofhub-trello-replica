@@ -193,7 +193,7 @@ export default function ScreenshotDetailsModal({
               ) : imageLoading ? (
                 <div className="flex flex-col items-center gap-2.5 text-gray-400 dark:text-gray-500 py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                  <span className="text-xs">Loading full-resolution screenshot…</span>
+                  <span className="text-xs">Loading screenshot…</span>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-2 p-6 text-center text-xs text-gray-500">
@@ -214,6 +214,11 @@ export default function ScreenshotDetailsModal({
                 <span>{details.bytes ? (details.bytes / 1024).toFixed(1) + ' KiB' : 'N/A'}</span>
                 <span className="capitalize">{details.uploadStatus?.toLowerCase() || 'Uploaded'}</span>
               </div>
+            )}
+            {details?.sizeExceptionReason && (
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                Kept at full resolution to preserve text readability; this capture exceeds the 100 KiB target.
+              </p>
             )}
           </div>
 

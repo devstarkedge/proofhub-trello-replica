@@ -39,17 +39,26 @@ class DurableQueue {
   available() { return this.encryption.isEncryptionAvailable(); }
   damagedFiles(){return fs.readdirSync(this.directory).filter(name=>/\.queue(?:\.tmp)?\.damaged$/.test(name));}
   usedBytes(){return fs.readdirSync(this.directory).filter(name=>/\.queue(?:\.tmp)?(?:\.damaged)?$/.test(name)).reduce((n,name)=>n+fs.statSync(path.join(this.directory,name)).size,0);}
-  push(value) {
+  push(value, { retainOnFull = false } = {}) {
     if (!this.available()) throw new Error('Encrypted offline storage is unavailable');
     const bytes = this.encryption.encryptString(JSON.stringify(value));
     const used = this.usedBytes();
-    if (used+bytes.length>this.maxBytes) throw new Error('Offline screenshot queue is full; reconnect to upload');
-    const name = randomUUID()+'.queue'; this.write(name,bytes); return name;
+    const full = used+bytes.length>this.maxBytes;
+    if (full && (!retainOnFull || used>this.maxBytes)) throw new Error('Offline screenshot queue is full; reconnect to upload');
+    // Keep the capture that crosses the configured capacity, then stop taking
+    // new evidence until uploads free space. Existing evidence is never evicted.
+    const name = randomUUID()+'.queue'; this.write(name,bytes,{allowOverflow:full&&retainOnFull});
+    if(full)throw Object.assign(new Error('Offline screenshot queue is full; latest capture saved; reconnect to upload'),{code:'SCREENSHOT_QUEUE_FULL',savedCapture:name});
+    return name;
   }
-  write(name,bytes) {
+  write(name,bytes,{allowOverflow=false}={}) {
     const target = this.target(name), temp = target+'.tmp';
     const oldSize=fs.existsSync(target)?fs.statSync(target).size:0;
-    if(this.usedBytes()-oldSize+bytes.length>this.maxBytes)throw new Error('Offline screenshot queue is full; saved captures retained');
+    const used=this.usedBytes();
+    // Existing over-capacity entries may shrink or be checkpointed while they
+    // drain; refusing those writes would prevent recovery from a full queue.
+    const checkpoint = oldSize > 0 && bytes.length <= oldSize + 64 * 1024;
+    if(!allowOverflow&&!checkpoint&&used-oldSize+bytes.length>this.maxBytes)throw new Error('Offline screenshot queue is full; saved captures retained');
     const handle = fs.openSync(temp,'w',0o600);
     try { fs.writeFileSync(handle,bytes); fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
     fs.renameSync(temp,target);

@@ -1,15 +1,18 @@
 const {randomUUID}=require('node:crypto');
 const {checksum}=require('./tracking-core.cjs');
-const {encodeWebP}=require('./screenshot-encoder.cjs');
-const encodedFields=e=>({width:e.width,height:e.height,originalWidth:e.originalWidth,originalHeight:e.originalHeight,quality:e.quality,pipelineVersion:e.pipelineVersion,compressionStrategy:e.compressionStrategy,targetBytes:e.targetBytes,targetMet:e.targetMet});
+const {encodeInBackground}=require('./screenshot-background.cjs');
+const encodedFields=e=>({width:e.width,height:e.height,originalWidth:e.originalWidth,originalHeight:e.originalHeight,quality:e.quality,pipelineVersion:e.pipelineVersion,compressionStrategy:e.compressionStrategy,targetBytes:e.targetBytes,targetMet:e.targetMet,sizeExceptionReason:e.sizeExceptionReason});
 
 // A serial background worker bounds network and encoding work. Persist each
 // checkpoint before continuing; a restart can safely repeat every remote step.
 async function uploadEntry({entry,save,request,fetchUpload=fetch,deviceId,maxBytes,isCurrent=()=>true}){
   const current=()=>{if(!isCurrent())throw Object.assign(new Error('Upload identity changed'),{code:'UPLOAD_IDENTITY_CHANGED'});};
   current();
-  const interval=await request(`/devices/${entry.deviceId||deviceId}/intervals`,entry.payload);
-  current();entry.intervalId=interval._id;save();
+  let interval, intervalError;
+  try {
+    interval=await request(`/devices/${entry.deviceId||deviceId}/intervals`,entry.payload);
+    current();entry.intervalId=interval._id;save();
+  } catch(error) { current(); intervalError=error; }
   for(const image of entry.images||[]){
     current();if(image.acknowledged)continue;
     image.captureId||=randomUUID();save();
@@ -17,9 +20,12 @@ async function uploadEntry({entry,save,request,fetchUpload=fetch,deviceId,maxByt
     if(!bytes.length||checksum(bytes)!==image.checksum||checksum(bytes,'md5')!==image.contentMd5)throw Object.assign(new Error('Saved screenshot failed integrity verification; retained for inspection'),{code:'SCREENSHOT_LOCAL_INTEGRITY'});
     if(image.exceptionCode==='SIZE_QUALITY_CONFLICT'||image.exceptionReported){image.recoveredFrom='SIZE_QUALITY_CONFLICT';delete image.exceptionCode;delete image.exceptionReported;delete image.protectedUntil;save();}
     if(image.format!=='webp'){
-      const encoded=await encodeWebP(bytes,{maxBytes});current();bytes=encoded.data;
+      const encoded=await encodeInBackground(bytes,{maxBytes});current();bytes=encoded.data;
       Object.assign(image,encodedFields(encoded),{format:'webp',mimeType:'image/webp',data:bytes.toString('base64'),bytes:bytes.length,checksum:checksum(bytes),contentMd5:checksum(bytes,'md5'),conversionPending:false});save();
     }
+    // Offline evidence still gets optimized and checkpointed, even when the
+    // interval API is unreachable. Never acknowledge it until sync succeeds.
+    if(intervalError)continue;
     const metadata={...image};for(const field of ['data','acknowledged','protectedUntil','measurement','exceptionReported','conversionPending'])delete metadata[field];
     const base=`/devices/${entry.deviceId||deviceId}/screenshots`;
     const prepared=await request(`${base}/prepare`,{intervalId:interval._id,image:metadata});current();
@@ -35,6 +41,7 @@ async function uploadEntry({entry,save,request,fetchUpload=fetch,deviceId,maxByt
     if(confirmed.status!=='READY'||confirmed.uploadStatus!=='UPLOADED')throw new Error('Screenshot finalization was not acknowledged; saved capture will retry');
     image.acknowledged=true;save();
   }
+  if(intervalError)throw intervalError;
   entry.acknowledged=true;save();
 }
 module.exports={uploadEntry,encodedFields};

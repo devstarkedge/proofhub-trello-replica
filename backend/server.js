@@ -103,8 +103,9 @@ const corsHandler = cors({
     }
   },
   credentials: true,
+  exposedHeaders: ['ETag', 'X-Screenshot-Authorized-Until', 'X-Image-Width', 'X-Image-Height'],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'x-workspace-id'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'x-workspace-id', 'If-None-Match'],
 });
 
 // Explicit OPTIONS preflight handler must come BEFORE Helmet and all routes

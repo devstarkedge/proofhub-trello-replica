@@ -4,8 +4,7 @@ import { TrackingDevice, WorkSession, ActivityInterval, TrackingScreenshot,Track
 import { contextFor, policyFor, fail, digest, objectId, reconcileSession, authorizeRecord } from './tracking.service.js';
 import { can } from './tracking.authorization.js';
 import { overlapSeconds } from './tracking.timeline.js';
-import { signedUpload, verifyPrivateUpload, screenshotKey, privateStorage, storageLabels,SCREENSHOT_MAX_BYTES,SCREENSHOT_TARGET_BYTES,screenshotUploadLimits,thumbnailDescriptor,writePrivateThumbnail,privateScreenshotExists,missingStorageObject } from './tracking.storage.js';
-import {makeTrackingThumbnail} from './tracking.thumbnail.js';
+import { signedUpload, verifyPrivateUpload, screenshotKey, privateStorage, storageLabels,SCREENSHOT_MAX_BYTES,SCREENSHOT_TARGET_BYTES,screenshotUploadLimits,privateScreenshotExists,missingStorageObject } from './tracking.storage.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { departmentsOf } from './tracking.visibility.js';
 import { emitToUser } from '../../realtime/emitters.js';
@@ -238,7 +237,7 @@ export async function prepareScreenshot({ workspaceId, userId, deviceId, interva
   if(image.originalWidth&&(!Number.isInteger(image.originalWidth)||image.originalWidth<image.width||image.width/image.originalWidth<0.74)||image.originalHeight&&(!Number.isInteger(image.originalHeight)||image.originalHeight<image.height||image.height/image.originalHeight<0.74))fail('Screenshot dimensions exceed the readability scaling limit');
   if(recovering){
     const metadata={...screenshot.toObject(),...await storageLabels(workspaceId,userId,interval.departmentIdsAtCapture||[],interval.endedAt)};
-    Object.assign(metadata,{checksum:image.checksum,contentMd5:image.contentMd5,bytes:image.bytes,width:image.width,height:image.height,originalWidth:image.originalWidth||image.width,originalHeight:image.originalHeight||image.height,quality:image.quality,pipelineVersion:image.pipelineVersion||2,compressionStrategy:image.compressionStrategy,captureId:image.captureId,recoveredFrom:'SIZE_QUALITY_CONFLICT',targetBytes:SCREENSHOT_TARGET_BYTES,targetMet:image.bytes<=SCREENSHOT_TARGET_BYTES,storageProvider:'cloudflare-r2',storageBucket:privateStorage().config.bucket,format:'webp',mimeType:'image/webp',status:'PENDING',uploadStatus:'RETRY_PENDING'});
+    Object.assign(metadata,{checksum:image.checksum,contentMd5:image.contentMd5,bytes:image.bytes,width:image.width,height:image.height,originalWidth:image.originalWidth||image.width,originalHeight:image.originalHeight||image.height,quality:image.quality,pipelineVersion:image.pipelineVersion||2,compressionStrategy:image.compressionStrategy,captureId:image.captureId,recoveredFrom:'SIZE_QUALITY_CONFLICT',targetBytes:SCREENSHOT_TARGET_BYTES,targetMet:image.bytes<=SCREENSHOT_TARGET_BYTES,sizeExceptionReason:image.bytes>SCREENSHOT_TARGET_BYTES?'READABLE_FULL_RESOLUTION_EXCEEDS_TARGET':undefined,storageProvider:'cloudflare-r2',storageBucket:privateStorage().config.bucket,format:'webp',mimeType:'image/webp',status:'PENDING',uploadStatus:'RETRY_PENDING'});
     metadata.storageKey=screenshotKey(metadata);
     const update={...metadata};for(const field of ['_id','__v','createdAt','updatedAt','workspaceId','compressionException'])delete update[field];
     screenshot=await TrackingScreenshot.findOneAndUpdate({_id:screenshot._id,status:'FAILED',compressionException:'SIZE_QUALITY_CONFLICT'},{$set:update,$unset:{compressionException:1,lastUploadError:1}},{new:true})||await TrackingScreenshot.findById(screenshot._id);
@@ -255,7 +254,7 @@ export async function prepareScreenshot({ workspaceId, userId, deviceId, interva
     workspaceId, user: userId, session: interval.session, device: device._id, interval: interval._id,
     displayId: image.displayId, capturedAt: interval.endedAt, checksum: image.checksum, contentMd5: image.contentMd5,
     bytes: image.bytes, width: image.width, height: image.height, blurred: Boolean(image.blurred),
-    format:'webp',mimeType:'image/webp',quality:image.quality,pipelineVersion:image.pipelineVersion||2,captureId:image.captureId,recoveredFrom:image.recoveredFrom==='SIZE_QUALITY_CONFLICT'?image.recoveredFrom:undefined,targetBytes:SCREENSHOT_TARGET_BYTES,targetMet:image.bytes<=SCREENSHOT_TARGET_BYTES,originalWidth:image.originalWidth||image.width,originalHeight:image.originalHeight||image.height,compressionStrategy:String(image.compressionStrategy||'quality-85').slice(0,80),storageProvider:'cloudflare-r2',storageBucket:privateStorage().config.bucket,
+    format:'webp',mimeType:'image/webp',quality:image.quality,pipelineVersion:image.pipelineVersion||2,captureId:image.captureId,recoveredFrom:image.recoveredFrom==='SIZE_QUALITY_CONFLICT'?image.recoveredFrom:undefined,targetBytes:SCREENSHOT_TARGET_BYTES,targetMet:image.bytes<=SCREENSHOT_TARGET_BYTES,sizeExceptionReason:image.bytes>SCREENSHOT_TARGET_BYTES?'READABLE_FULL_RESOLUTION_EXCEEDS_TARGET':undefined,originalWidth:image.originalWidth||image.width,originalHeight:image.originalHeight||image.height,compressionStrategy:String(image.compressionStrategy||'quality-85').slice(0,80),storageProvider:'cloudflare-r2',storageBucket:privateStorage().config.bucket,
     departmentIdsAtCapture:interval.departmentIdsAtCapture,policyRevision:interval.policyRevision,
     expiresAt: interval.expiresAt
   };Object.assign(metadata,await storageLabels(workspaceId,userId,interval.departmentIdsAtCapture||[],interval.endedAt));metadata.storageKey=screenshotKey(metadata);
@@ -271,7 +270,7 @@ export async function prepareScreenshot({ workspaceId, userId, deviceId, interva
   }
   if(screenshot.status==='DELETED'||screenshot.expiresAt&&screenshot.expiresAt<=new Date())fail('Screenshot was removed',410);
   if(screenshot.status!=='READY'){screenshot.uploadStatus='UPLOADING';await screenshot.save();}
-  return { screenshotId: screenshot._id, ready: screenshot.status === 'READY'&&(!screenshot.pipelineVersion||screenshot.pipelineVersion<3||screenshot.thumbnail?.status==='READY'), upload: screenshot.status === 'READY' ? null : await signedUpload(screenshot) };
+  return { screenshotId: screenshot._id, ready: screenshot.status === 'READY', upload: screenshot.status === 'READY' ? null : await signedUpload(screenshot) };
 }
 export async function completeScreenshot({ workspaceId, userId, deviceId, screenshotId }) {
   const ctx = await contextFor(workspaceId, userId,{includeProjects:false}), device = await ownedDevice(workspaceId, userId, deviceId);
@@ -280,15 +279,14 @@ export async function completeScreenshot({ workspaceId, userId, deviceId, screen
   if (!screenshot || screenshot.status === 'DELETED' || screenshot.expiresAt && screenshot.expiresAt <= new Date()) fail('Screenshot not found', 404);
   if (screenshot.status === 'READY') {
     if(screenshot.storageProvider!=='cloudflare-r2')return screenshot;
-    if(await privateScreenshotExists(screenshot)){if(screenshot.pipelineVersion>=3)await finalizeThumbnail(screenshot);await finalizeScreenshotRecovery(screenshot);void notifyScreenshot(screenshot);return screenshot;}
+    if(await privateScreenshotExists(screenshot)){await finalizeScreenshotRecovery(screenshot);void notifyScreenshot(screenshot);return screenshot;}
     await TrackingScreenshot.updateOne({_id:screenshot._id,status:'READY'},{$set:{status:'PENDING',uploadStatus:'RETRY_PENDING',storageMissingAt:new Date()}});
     fail('Stored screenshot is missing; the desktop will upload its saved copy again.',503,'SCREENSHOT_OBJECT_MISSING');
   }
   const interval=await ActivityInterval.findOne({_id:screenshot.interval,workspaceId,user:userId,device:deviceId}).lean();
   const work=await WorkSession.findOne({_id:screenshot.session,workspaceId,user:userId}).lean();
   if(!interval||!work||!interval.screenshotAvailable&&screenshot.recoveredFrom!=='SIZE_QUALITY_CONFLICT'||+new Date(screenshot.capturedAt)!==+new Date(interval.endedAt)||work.endedAt&&+new Date(screenshot.capturedAt)>+new Date(work.endedAt)||!work.segments.some(s=>+new Date(s.startedAt)<+new Date(screenshot.capturedAt)&&(!s.endedAt||+new Date(s.endedAt)>=+new Date(screenshot.capturedAt))))fail('Capture no longer falls within authorized work time',409);
-  try{const verified=await verifyPrivateUpload(screenshot,{withBytes:screenshot.pipelineVersion>=3});
-    if(screenshot.pipelineVersion>=3)await finalizeThumbnail(screenshot,verified.data);
+  try{await verifyPrivateUpload(screenshot);
   }catch(error){screenshot.uploadStatus='RETRY_PENDING';await screenshot.save();void notifyScreenshot(screenshot);if(missingStorageObject(error))fail('Stored screenshot is missing; retry the saved capture.',503,'SCREENSHOT_OBJECT_MISSING');throw error;}
   screenshot.status = 'READY';screenshot.uploadStatus='UPLOADED';screenshot.uploadedAt=new Date();screenshot.storageMissingAt=undefined;screenshot.lastUploadError=undefined;await screenshot.save();
   await finalizeScreenshotRecovery(screenshot);
@@ -300,19 +298,6 @@ async function finalizeScreenshotRecovery(screenshot){
   const unresolved=await TrackingScreenshot.exists({workspaceId:screenshot.workspaceId,device:screenshot.device,status:'FAILED',compressionException:'SIZE_QUALITY_CONFLICT',$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]});
   await TrackingDevice.updateOne({_id:screenshot.device},unresolved?{$set:{screenshotIssue:'Earlier captures await recovery from retained desktop originals. Originals already discarded cannot be restored.'}}:{$unset:{screenshotIssue:1,screenshotIssueAt:1}});
 }
-async function finalizeThumbnail(screenshot,originalBytes){
-  if(screenshot.thumbnail?.storageKey){
-    try{await verifyPrivateUpload(thumbnailDescriptor(screenshot));
-      if(screenshot.thumbnail.status!=='READY'){screenshot.thumbnail.status='READY';await screenshot.save();}return;
-    }catch(error){if(!missingStorageObject(error))throw error;}
-  }
-  const bytes=originalBytes||(await verifyPrivateUpload(screenshot,{withBytes:true})).data;
-  const thumb=await makeTrackingThumbnail(bytes);
-  screenshot.thumbnail={storageKey:screenshotKey({...screenshot.toObject(),variant:'thumbnail'}),bytes:thumb.bytes.length,width:thumb.width,height:thumb.height,quality:thumb.quality,mimeType:thumb.mimeType,checksum:createHash('sha256').update(thumb.bytes).digest('hex'),contentMd5:createHash('md5').update(thumb.bytes).digest('hex'),status:'PENDING'};
-  await screenshot.save();
-  await writePrivateThumbnail(screenshot,thumb.bytes);
-  screenshot.thumbnail.status='READY';await screenshot.save();
-}
 export async function retryScreenshot({workspaceId,userId,deviceId,screenshotId}){
   await contextFor(workspaceId,userId,{includeProjects:false});await ownedDevice(workspaceId,userId,deviceId);
   const screenshot=await TrackingScreenshot.findOneAndUpdate({_id:objectId(screenshotId),workspaceId,user:userId,device:deviceId,status:'PENDING'},{$set:{uploadStatus:'RETRY_PENDING',lastUploadError:'Upload unavailable; the desktop will retry this capture'}},{new:true});
@@ -323,7 +308,7 @@ async function notifyScreenshot(screenshot){
     const session=await WorkSession.findById(screenshot.session).lean();
     const scoped=session?{...session,departmentIdsAtStart:screenshot.departmentIdsAtCapture}:null;
     for await(const member of WorkspaceMembership.find({workspace:screenshot.workspaceId,status:'active'}).select('user').cursor()){
-      try{const ctx=await contextFor(screenshot.workspaceId,member.user);await authorizeRecord(ctx,scoped,'tracking.view_screenshots');emitToUser(member.user,'tracking:screenshot-updated',{sessionId:screenshot.session,screenshotId:screenshot._id,userId:screenshot.user,capturedAt:screenshot.capturedAt,status:screenshot.status,imageVersion:screenshot.checksum,thumbnailVersion:screenshot.thumbnail?.checksum||screenshot.checksum},screenshot.workspaceId);}catch{/* forbidden or temporarily disconnected */}
+      try{const ctx=await contextFor(screenshot.workspaceId,member.user);await authorizeRecord(ctx,scoped,'tracking.view_screenshots');emitToUser(member.user,'tracking:screenshot-updated',{sessionId:screenshot.session,screenshotId:screenshot._id,userId:screenshot.user,capturedAt:screenshot.capturedAt,status:screenshot.status,imageVersion:screenshot.checksum,thumbnailVersion:screenshot.checksum},screenshot.workspaceId);}catch{/* forbidden or temporarily disconnected */}
     }
   }catch{/* saved status remains authoritative; polling recovers */}
 }

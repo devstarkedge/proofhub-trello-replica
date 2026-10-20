@@ -2,8 +2,8 @@ import { Loader, ImageOff } from 'lucide-react';
 import { useEffect } from 'react';
 import useScreenshotImage from './useScreenshotImage';
 
-// The viewer mounts its own consumer of the same original-image query used by
-// ScreenshotDetailsModal. A cache hit is available during the first render.
+// Every display size consumes the same canonical image query. A valid cache
+// hit is available during the first render, including full-screen previews.
 export default function ScreenshotImagePreview({ attachment, zoom, rotation, onResolved }) {
   const image = useScreenshotImage(attachment, 'original');
   useEffect(() => {

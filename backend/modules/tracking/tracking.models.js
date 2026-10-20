@@ -118,7 +118,7 @@ export const TrackingScreenshot = model('TrackingScreenshot', {
   interval: oid('ActivityInterval', true), displayId: String, capturedAt: Date,
   checksum: String, contentMd5: String, bytes: Number, width: Number, height: Number,
   publicId: String, format: { type: String, default: 'webp' }, blurred: Boolean,
-  captureId: String, recoveredFrom: String, targetBytes: Number, targetMet: Boolean,
+  captureId: String, recoveredFrom: String, targetBytes: Number, targetMet: Boolean, sizeExceptionReason: String,
   pipelineVersion: Number, originalWidth: Number, originalHeight: Number, compressionStrategy: String, compressionException: String,
   storageWorkspaceLabel: String, storageDepartmentLabel: String, storageUserLabel: String,
   storageDateKey: String, storageTimezone: String,

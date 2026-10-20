@@ -94,6 +94,7 @@ export const protect = async (req, res, next) => {
     try {
       // Verify token (CPU-only, no DB call)
       const decoded = jwt.verify(token, config.jwt.secret);
+      req.authExpiresAt = Number.isFinite(decoded.exp) ? decoded.exp * 1000 : undefined;
       const userId = decoded.id;
 
       // Check LRU cache first

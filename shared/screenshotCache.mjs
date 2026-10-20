@@ -1,12 +1,10 @@
 // The application's QueryClient owns the only image cache. This adapter owns
 // resource lifetime, not a second copy of the cached data.
 export const SCREENSHOT_CACHE_TIME = 5 * 60 * 1000;
-export const screenshotVersion = (record, variant) => variant === 'thumbnail'
-  ? record?.thumbnailVersion || record?.imageVersion || 'immutable-v1'
-  : record?.imageVersion || 'immutable-v1';
-export const screenshotImageKey = (scope, record, variant) => [
+export const screenshotVersion = record => record?.imageVersion || 'immutable-v1';
+export const screenshotImageKey = (scope, record) => [
   'tracking-private', scope, 'image', String(record?.user?._id || record?.user || ''),
-  String(record?._id || ''), variant, screenshotVersion(record, variant)
+  String(record?._id || ''), screenshotVersion(record)
 ];
 const isImage = query => query.queryKey[0] === 'tracking-private' && query.queryKey[2] === 'image';
 const abortError = () => new DOMException('Screenshot access changed', 'AbortError');
@@ -60,7 +58,7 @@ export function createScreenshotCache(client, {
       event.query.screenshotResource = undefined;
     }
     if (event.type === 'updated' && event.query.screenshotResource !== event.query.state.data) {
-      release(event.query.screenshotResource);
+      if (event.query.screenshotResource?.url !== event.query.state.data?.url) release(event.query.screenshotResource);
       event.query.screenshotResource = event.query.state.data;
     }
     if (event.type === 'observerAdded') event.query.screenshotLastUsed = Date.now();
@@ -73,8 +71,7 @@ export function createScreenshotCache(client, {
     const matches = q => q.queryKey[0] === 'tracking-private' && (
       isImage(q) ? q.queryKey[4] === String(screenshotId) && (
         update?.status !== 'READY' || Boolean(
-          (q.queryKey[5] === 'thumbnail' ? update.thumbnailVersion || update.imageVersion : update.imageVersion)
-          && q.queryKey[6] !== screenshotVersion(update, q.queryKey[5])
+          update.imageVersion && q.queryKey[5] !== screenshotVersion(update)
         )
       ) : q.queryKey[2] === 'details' && q.queryKey[3] === String(screenshotId)
     );
@@ -88,10 +85,11 @@ export function createScreenshotCache(client, {
     client.resetQueries({ predicate: q => matches(q) && !isImage(q) });
   };
   return {
-    options(scope, record, variant = 'original') {
-      const queryKey = screenshotImageKey(scope, record, variant);
+    options(scope, record) {
+      const queryKey = screenshotImageKey(scope, record);
       return {
-        queryKey, staleTime: Math.max(0, Math.min(cacheTime, record?.expiresAt ? +new Date(record.expiresAt) - Date.now() : cacheTime)),
+        queryKey, staleTime: query => query.state.data
+          ? Math.max(0, query.state.data.authorizedUntil - query.state.dataUpdatedAt) : 0,
         gcTime: cacheTime, retry: false, structuralSharing: false,
         refetchOnWindowFocus: false,
         // Intentionally do not consume Query's observer AbortSignal: a modal
@@ -110,12 +108,26 @@ export function createScreenshotCache(client, {
             acquired = true;
             if (controller.signal.aborted || epoch !== generation) throw abortError();
             if (record?.expiresAt && +new Date(record.expiresAt) <= Date.now()) throw new Error('Screenshot expired');
-            const blob = await loadBlob(record._id, variant, controller.signal);
+            const previous = query.state.data;
+            const response = await loadBlob(record._id, 'canonical', controller.signal, { etag: previous?.etag });
             if (controller.signal.aborted || epoch !== generation) throw abortError();
+            // Blob-only adapters remain supported for tests and older clients.
+            const result = response instanceof Blob ? { blob: response } : response;
+            const authorizedUntil = Math.min(Date.now() + cacheTime,
+              Number.isFinite(result.authorizedUntil) ? result.authorizedUntil : Date.now() + cacheTime,
+              record?.expiresAt ? +new Date(record.expiresAt) : Infinity);
+            if (authorizedUntil <= Date.now()) throw new Error('Screenshot authorization expired');
+            if (result.notModified) {
+              if (!previous?.url) throw new Error('Screenshot validator has no cached image');
+              return { ...previous, authorizedUntil };
+            }
+            const blob = result.blob;
+            if (!blob?.size) throw new Error('Screenshot response is empty');
             url = createUrl(blob);
             const image = await decode(url, controller.signal);
             if (controller.signal.aborted || epoch !== generation) { image?.removeAttribute?.('src'); throw abortError(); }
-            return { url, image, decoded: true, memoryBytes: blob.size + (image.naturalWidth || record.width || 0) * (image.naturalHeight || record.height || 0) * 4 };
+            return { url, image, decoded: true, authorizedUntil, etag: result.etag,
+              memoryBytes: blob.size + (image.naturalWidth || record.width || 0) * (image.naturalHeight || record.height || 0) * 4 };
           } catch (error) {
             releasePending();
             throw error;

@@ -185,7 +185,7 @@ router.get('/reports', asyncHandler(async (req,res) => {
         TrackingScreenshot.find(sFilter)
           .sort({ capturedAt: -1, _id: -1 })
           .limit(4)
-          .select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes compressionException checksum thumbnail.checksum expiresAt')
+          .select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes sizeExceptionReason compressionException checksum expiresAt')
           .lean(),
         TrackingScreenshot.countDocuments(sFilter)
       ]);
@@ -237,7 +237,7 @@ router.get('/reports', asyncHandler(async (req,res) => {
         session: s.session,
         user: s.user,
         imageVersion: s.checksum,
-        thumbnailVersion: s.thumbnail?.checksum || s.checksum,
+        thumbnailVersion: s.checksum,
         expiresAt: s.expiresAt,
         interval: s.interval,
         displayId: s.displayId,
@@ -314,9 +314,13 @@ router.get('/screenshots/:screenshotId/details',asyncHandler(async(req,res)=>{
   res.set('Cache-Control','private, no-store');send(res,result);
 }));
 for(const kind of ['content','thumbnail'])router.get(`/screenshots/:screenshotId/${kind}`,asyncHandler(async(req,res)=>{
-  const {bytes,mimeType,width,height}=await screenshotContent(req.workspaceId,req.user.id,req.params.screenshotId,{thumbnail:kind==='thumbnail'});
+  // The thumbnail endpoint is a compatibility alias; both deliver one object.
+  const {bytes,mimeType,width,height,etag,authorizedUntil,notModified}=await screenshotContent(req.workspaceId,req.user.id,req.params.screenshotId,{ifNoneMatch:req.get('If-None-Match'),credentialExpiresAt:req.authExpiresAt});
   await audit(req,'TRACKING_SCREENSHOT_VIEWED','TrackingScreenshot',req.params.screenshotId,{kind});
   if(width&&height)res.set({'X-Image-Width':String(width),'X-Image-Height':String(height)});
-  res.set({'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','Content-Type':mimeType,'Content-Length':String(bytes.length)});res.send(bytes);
+  res.set({'Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','ETag':etag,'X-Screenshot-Authorized-Until':String(authorizedUntil)});
+  res.vary('Authorization').vary('x-workspace-id');
+  if(notModified){res.status(304).end();return;}
+  res.set({'Content-Type':mimeType,'Content-Length':String(bytes.length)});res.send(bytes);
 }));
 export default router;

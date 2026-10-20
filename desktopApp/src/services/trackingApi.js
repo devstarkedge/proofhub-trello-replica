@@ -22,11 +22,17 @@ export const getScreenshotStorageHealth = () => data(api.get('/storage-health'))
 export const getTaskTrackedTime = taskId => data(api.get(`/tasks/${taskId}/totals`));
 export const getTimeline = (sessionId, before, filters={},signal) => data(api.get(`/sessions/${sessionId}/timeline`, { params: { ...filters,before },signal }));
 // Keep private R2 reads behind the existing authenticated backend proxy.
-export const getScreenshotBlob = async (screenshotId, variant, signal) => {
+export const getScreenshotBlob = async (screenshotId, _variant, signal, { etag } = {}) => {
   const workspaceId = localStorage.getItem('workspaceId'), token = localStorage.getItem('token');
-  const response = await api.get(`/screenshots/${screenshotId}/${variant === 'thumbnail' ? 'thumbnail' : 'content'}`, { responseType: 'blob', signal });
+  const response = await api.get(`/screenshots/${screenshotId}/content`, {
+    responseType: 'blob', signal, headers: etag ? { 'If-None-Match': etag } : {},
+    validateStatus: status => status === 304 || (status >= 200 && status < 300)
+  });
   if (workspaceId !== localStorage.getItem('workspaceId') || token !== localStorage.getItem('token')) throw new DOMException('Tracking identity changed', 'AbortError');
-  return response.data;
+  const authorizedUntil = Number(response.headers['x-screenshot-authorized-until']);
+  if (!Number.isFinite(authorizedUntil) || authorizedUntil <= Date.now()) throw new Error('Screenshot authorization expired');
+  return { blob: response.status === 304 ? undefined : response.data, notModified: response.status === 304,
+    etag: response.headers.etag, authorizedUntil };
 };
 export const revokeDevice = deviceId => data(api.post(`/devices/${deviceId}/revoke`));
 export const saveTrackingPolicy = payload => data(api.put('/policy', payload));
