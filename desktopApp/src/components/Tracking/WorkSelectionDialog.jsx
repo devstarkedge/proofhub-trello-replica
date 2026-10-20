@@ -661,7 +661,7 @@ export default function WorkSelectionDialog({
           </button>
 
           <div className="flex items-center gap-2.5">
-            {checkingIn && (
+            {checkingIn && attendanceOnly && (
               <button
                 type="button"
                 disabled={busy}
@@ -669,7 +669,7 @@ export default function WorkSelectionDialog({
                 className="px-4 py-2.5 rounded-xl text-xs font-semibold border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
               >
                 {busy && attendanceOnly && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />}
-                <span>{busy && attendanceOnly ? 'Checking In…' : 'Check In Only'}</span>
+                <span>{busy ? 'Checking In…' : 'Check In'}</span>
               </button>
             )}
 

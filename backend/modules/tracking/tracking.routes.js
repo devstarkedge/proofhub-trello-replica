@@ -20,6 +20,7 @@ import { registerDevice, acceptMonitoringNotice, releaseDevice, heartbeat, recor
 import { storageHealth } from './tracking.storage.js';
 import { trackingVisibility, historicalDepartmentScope } from './tracking.visibility.js';
 import {gallery,screenshotDetails,screenshotContent} from './tracking.gallery.js';
+import {resolveScreenshotIdentity,SCREENSHOT_IDENTITY_SELECT,timelineScreenshot} from './tracking.screenshotIdentity.js';
 import {readVisibilityScope} from './tracking.visibility.js';
 import { summarize, coverageGaps,overlapSeconds } from './tracking.timeline.js';
 import { summarizeEvidence } from './tracking.evidence.js';
@@ -185,7 +186,7 @@ router.get('/reports', asyncHandler(async (req,res) => {
         TrackingScreenshot.find(sFilter)
           .sort({ capturedAt: -1, _id: -1 })
           .limit(4)
-          .select('_id session user interval capturedAt displayId status uploadStatus blurred width height bytes sizeExceptionReason compressionException checksum expiresAt')
+          .select(`_id session user interval capturedAt displayId status uploadStatus blurred width height bytes sizeExceptionReason compressionException checksum expiresAt ${SCREENSHOT_IDENTITY_SELECT}`)
           .lean(),
         TrackingScreenshot.countDocuments(sFilter)
       ]);
@@ -234,6 +235,7 @@ router.get('/reports', asyncHandler(async (req,res) => {
 
       return {
         _id: s._id,
+        screenshotIdentity: resolveScreenshotIdentity(s),
         session: s.session,
         user: s.user,
         imageVersion: s.checksum,
@@ -293,7 +295,10 @@ router.get('/sessions/:sessionId/timeline', asyncHandler(async (req,res) => {
   const intervals = await ActivityInterval.find({ ...history,...segmentBounds,$and:[validExpiry],session: session._id, endedAt: { $gte:cutoff,...(before?{$lt:before}:{}) } }).sort({ endedAt: -1 }).limit(20).select('-digest -capturePolicy').lean();
   let screenshots = []; 
   try { await authorizeRecord(ctx, session, 'tracking.view_screenshots');
-    if(req.query.summaryOnly!=='true')screenshots = await TrackingScreenshot.find({ ...history,...validExpiry,session: session._id, interval: { $in: intervals.map(i => i._id) }, status: {$ne:'DELETED'} }).select('_id interval displayId capturedAt width height blurred uploadStatus status').lean();
+    if(req.query.summaryOnly!=='true'){
+      const records=await TrackingScreenshot.find({ ...history,...validExpiry,session: session._id, interval: { $in: intervals.map(i => i._id) }, status: {$ne:'DELETED'} }).select(`_id interval displayId capturedAt width height blurred uploadStatus status ${SCREENSHOT_IDENTITY_SELECT}`).lean();
+      screenshots=records.map(timelineScreenshot);
+    }
   } catch (e) { if (e.statusCode !== 404) throw e; }
   const summaryOnly=req.query.summaryOnly==='true';
   const allCoverage=await ActivityInterval.find({...history,...segmentBounds,$and:[validExpiry],session:session._id,endedAt:{$gte:cutoff}}).select(summaryOnly?'_id startedAt endedAt':'_id startedAt endedAt coverage activityBasis inputActiveSeconds inputEligibleSeconds mouseCount keyboardCount').lean();

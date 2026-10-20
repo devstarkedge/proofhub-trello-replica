@@ -56,6 +56,7 @@ export async function dashboard(workspaceId,userId,query){
   }
   members.sort((a,b)=>id(a).localeCompare(id(b)));
   const total=members.length,limit=20;
+  const allAuthorizedMembers=[...members];
   if(query.cursor){objectId(query.cursor);members=members.filter(m=>id(m)>id(query.cursor));}
   const selected=members.slice(0,limit),owners=selected.map(m=>m.user);
   const [rawSessions,attendance,devices,users,departmentDocs]=await Promise.all([
@@ -79,5 +80,37 @@ export async function dashboard(workspaceId,userId,query){
       workSeconds:summarize({segments,endedAt:now}).workSeconds,officeSeconds:office.reduce((n,a)=>n+Math.max(0,(+(a.checkOutAt||new Date(Math.min(+now,a.missedCheckoutCutoffAt?+a.missedCheckoutCutoffAt:Infinity)))-+a.checkInAt)/1000),0),evidence,
       session:last?{_id:last._id,status:last.status,startedAt:last.startedAt,revision:last.revision}:null,devices:devices.filter(d=>id(d.user)===id(member.user)).map(d=>({...d,connected:+now-+new Date(d.lastSeenAt||0)<45000}))};
   });
-  return {workspaceId,users:query.evidenceOnly==='true'?data.map(({userId,evidence})=>({userId,evidence})):data,total,pageSize:limit,nextCursor:members.length>limit?id(selected.at(-1)):null,timezone,dates,serverNow:now};
+  let totals=null;
+  if(!query.cursor){
+    if(allAuthorizedMembers.length<=limit){
+      const totalWorkSeconds=data.reduce((sum,u)=>sum+(u.workSeconds||0),0);
+      const totalOfficeSeconds=data.reduce((sum,u)=>sum+(u.officeSeconds||0),0);
+      const activeCount=data.filter(u=>u.trackingStatus==='RUNNING').length;
+      const checkedInCount=data.filter(u=>u.attendanceStatus==='Checked in').length;
+      totals={workSeconds:totalWorkSeconds,officeSeconds:totalOfficeSeconds,activeUsers:activeCount,checkedInUsers:checkedInCount,totalUsers:allAuthorizedMembers.length,viewerRole:scope.viewerRole};
+    }else{
+      const allOwners=allAuthorizedMembers.map(m=>m.user);
+      const [allRawSessions,allAttendance]=await Promise.all([
+        WorkSession.find({...bounds,user:{$in:allOwners}}).select('-operations -audit').sort({startedAt:-1}).lean(),
+        AttendanceSession.find({workspaceId,user:{$in:allOwners},workDateKey:{$gte:dates.fromDate,$lte:dates.toDate}}).select('_id user status checkInAt checkOutAt missedCheckoutCutoffAt').lean()
+      ]);
+      await scope.markMixed(allRawSessions);
+      const allSessions=await reconcileReadSessions(allRawSessions.filter(s=>scope.canRecord(s)),ctx,scope,allAttendance);
+      let totalWorkSeconds=0,activeCount=0;
+      for(const memberUser of allOwners){
+        const own=allSessions.filter(s=>id(s.user)===id(memberUser));
+        const last=own.find(s=>!s.endedAt)||own[0];
+        if(last&&!last.endedAt&&last.status==='RUNNING')activeCount++;
+        const segments=own.flatMap(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))));
+        totalWorkSeconds+=summarize({segments,endedAt:now}).workSeconds;
+      }
+      let totalOfficeSeconds=0,checkedInCount=0;
+      for(const a of allAttendance){
+        if(a.status==='ACTIVE')checkedInCount++;
+        totalOfficeSeconds+=Math.max(0,(+(a.checkOutAt||new Date(Math.min(+now,a.missedCheckoutCutoffAt?+a.missedCheckoutCutoffAt:Infinity)))-+a.checkInAt)/1000);
+      }
+      totals={workSeconds:totalWorkSeconds,officeSeconds:totalOfficeSeconds,activeUsers:activeCount,checkedInUsers:checkedInCount,totalUsers:allAuthorizedMembers.length,viewerRole:scope.viewerRole};
+    }
+  }
+  return {workspaceId,users:query.evidenceOnly==='true'?data.map(({userId,evidence})=>({userId,evidence})):data,total,totals,pageSize:limit,nextCursor:members.length>limit?id(selected.at(-1)):null,timezone,dates,serverNow:now};
 }

@@ -1,20 +1,21 @@
 import { lazy, Suspense, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, Info, ImageOff, Loader2 } from 'lucide-react';
+import { Camera, ImageOff, Loader2 } from 'lucide-react';
 import { getScreenshotGallery, errorMessage } from '../../services/trackingApi';
 import useTrackingScope from './useTrackingScope';
 import { Button } from '../ui/button';
 import ScreenshotDetailsModal from './ScreenshotDetailsModal';
 import ScreenshotImagePreview from './ScreenshotImagePreview';
 import useScreenshotImage from './useScreenshotImage';
+import { screenshotDisplayName } from '../../../../shared/screenshotIdentity.mjs';
 
 const DocumentViewerModal = lazy(() => import('../DocumentViewerModal'));
 
-const time = (value, zone) => (value ? new Date(value).toLocaleString(undefined, { timeZone: zone || 'UTC' }) : '—');
 const cardStyle = { backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' };
 
 const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
   const { node, url, error, retry } = useScreenshotImage(capture, 'thumbnail', true);
+  const displayName = screenshotDisplayName(capture);
 
   const rate = capture.activityPercent;
   const timeStr = new Date(capture.capturedAt).toLocaleTimeString(undefined, {
@@ -35,15 +36,16 @@ const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
           onSelect(capture._id);
         }
       }}
-      className="group overflow-hidden rounded-xl border shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500 hover:border-blue-400 dark:hover:border-blue-600 select-none flex flex-col"
+      className="group min-w-0 overflow-hidden rounded-xl border shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-500 hover:border-blue-400 dark:hover:border-blue-600 select-none flex flex-col"
       style={cardStyle}
-      aria-label={`Screenshot ${timeStr}, monitor ${capture.displayId}`}
+      aria-label={`${displayName}, ${timeStr}`}
+      title={displayName}
     >
       <div className="relative flex aspect-video w-full items-center justify-center bg-slate-500/10 overflow-hidden">
         {url ? (
           <img
             src={url}
-            alt={`Monitor ${capture.displayId}`}
+            alt={displayName}
             loading="lazy"
             decoding="async"
             className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
@@ -58,11 +60,11 @@ const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
         ) : (
           <Loader2 className="animate-spin opacity-40 text-blue-500" size={20} />
         )}
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white p-1 rounded-md">
-          <Info size={13} />
-        </div>
+        <span className="absolute top-1 left-1 right-1 rounded bg-gray-600/90 px-1.5 py-0.5 text-[10px] leading-tight font-medium text-white break-all">
+          {displayName}
+        </span>
       </div>
-      <div className="space-y-2 p-3 flex-1 flex flex-col justify-between">
+      <div className="p-2">
         <div>
           {error && capture.status === 'READY' && (
             <button
@@ -77,7 +79,7 @@ const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
             </button>
           )}
           <div
-            className="h-2 overflow-hidden rounded-sm bg-slate-400/20 mb-2"
+            className="h-1.5 overflow-hidden rounded-sm bg-slate-400/20 mb-1.5"
             role="meter"
             aria-label="Recorded input activity"
             aria-valuemin={0}
@@ -93,20 +95,12 @@ const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
               }}
             />
           </div>
-          <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
+          <div className="flex items-center justify-between gap-1 text-[11px] text-gray-600 dark:text-gray-300">
             <span className="font-medium">{timeStr}</span>
             <span className="font-semibold text-emerald-600 dark:text-emerald-400">
               {rate === null ? 'Activity N/A' : `${Math.round(rate)}% activity`}
             </span>
           </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 text-xs pt-2 text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-800/60">
-          <span className="min-w-0 truncate text-[11px]">
-            Screen {capture.displayId} · {capture.status === 'READY' ? 'Uploaded' : capture.uploadStatus}
-            {capture.blurred ? ' · blurred' : ''}
-          </span>
-          <Info size={13} className="shrink-0 text-gray-400 group-hover:text-blue-500 transition-colors" />
         </div>
       </div>
     </article>
@@ -172,9 +166,9 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
         .map((s) => ({
           ...s,
           fileType: 'image',
-          originalName: `${s.contexts.map((c) => c.title).join(' • ')} · ${time(s.capturedAt, timezone)}`
+          originalName: screenshotDisplayName(s)
         })),
-    [captures, timezone]
+    [captures]
   );
 
 
@@ -206,8 +200,8 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
       </header>
 
       {query.isPending && (
-        <div role="status" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {[0, 1, 2].map((n) => (
+        <div role="status" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[0, 1, 2, 3].map((n) => (
             <div key={n} className="aspect-video animate-pulse rounded-xl bg-slate-400/15" />
           ))}
         </div>
@@ -236,7 +230,7 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
               {group.title}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {group.records.map((s) => (
               <CaptureCard
                 key={`${scope}:${s._id}`}

@@ -23,6 +23,7 @@ import DailyTrackingDetailsModal from './DailyTrackingDetailsModal';
 import ScreenshotDetailsModal from './ScreenshotDetailsModal';
 import ScreenshotImagePreview from './ScreenshotImagePreview';
 import useScreenshotImage from './useScreenshotImage';
+import { screenshotDisplayName } from '../../../../shared/screenshotIdentity.mjs';
 
 const DocumentViewerModal = lazy(() => import('../DocumentViewerModal'));
 
@@ -69,11 +70,6 @@ const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone
         ) : (
           <Loader2 className="animate-spin text-gray-400" size={16} />
         )}
-
-        {/* Small Monitor Tag */}
-        <span className="absolute top-1 left-1 px-1 py-0.2 rounded text-[9px] font-semibold bg-black/60 text-white backdrop-blur-xs">
-          M{screenshot.displayId || '1'}
-        </span>
 
         {/* Capture Time Tag */}
         <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded text-[9px] font-medium bg-black/60 text-white backdrop-blur-xs">
@@ -195,6 +191,7 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
   );
 
   const error = query.error ? errorMessage(query.error) : '';
+  const previewScreenshot = data?.sessions.flatMap(s => s.latestScreenshots || []).find(s => s._id === fullScreenScreenshotId);
 
   // Realtime updates
   useEffect(() => {
@@ -457,7 +454,7 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
         <Suspense fallback={<p role="status">Opening image viewer…</p>}>
           <DocumentViewerModal
             key={`${scope}:${fullScreenScreenshotId}`}
-            attachments={[{ ...data?.sessions.flatMap(s => s.latestScreenshots || []).find(s => s._id === fullScreenScreenshotId), _id: fullScreenScreenshotId, fileType: 'image' }]}
+            attachments={[{ ...previewScreenshot, _id: fullScreenScreenshotId, fileType: 'image', originalName: screenshotDisplayName(previewScreenshot || fullScreenScreenshotId) }]}
             initialIndex={0}
             ImagePreview={ScreenshotImagePreview}
             privateContent
