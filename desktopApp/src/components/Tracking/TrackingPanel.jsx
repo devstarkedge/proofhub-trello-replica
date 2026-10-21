@@ -12,7 +12,13 @@ import {
   TriangleAlert,
   Settings,
   Link2,
-  Monitor
+  Monitor,
+  ArrowLeft,
+  RefreshCw,
+  HardDrive,
+  AlertCircle,
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import useSessionAction from '../../hooks/useSessionAction';
@@ -68,7 +74,8 @@ function MonitoringStatusDetails({
   device = null,
   error = null,
   onBack,
-  hasBackButton = true
+  hasBackButton = true,
+  backTitle = 'Back'
 }) {
   const hasAttention = Boolean(
     expired ||
@@ -91,8 +98,8 @@ function MonitoringStatusDetails({
               type="button"
               onClick={onBack}
               className="p-1 -ml-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-              title="Back to actions"
-              aria-label="Back to actions"
+              title={backTitle}
+              aria-label={backTitle}
             >
               <ArrowLeft size={15} />
             </button>
@@ -267,22 +274,9 @@ function MonitoringStatusDetails({
         </div>
       )}
 
-      {/* Footer Actions */}
-      <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2">
-        {hasBackButton ? (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors cursor-pointer py-1 px-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
-            onClick={onBack}
-          >
-            <ArrowLeft size={13} />
-            <span>Back to actions</span>
-          </button>
-        ) : (
-          <div />
-        )}
-
-        {isDesktop && scopedNative?.pending > 0 && typeof window.flowtaskDesktop?.tracking?.retryUploads === 'function' && (
+      {/* Footer Actions (Only shown if retry uploads is possible) */}
+      {isDesktop && scopedNative?.pending > 0 && typeof window.flowtaskDesktop?.tracking?.retryUploads === 'function' && (
+        <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end">
           <button
             type="button"
             disabled={retrying}
@@ -292,8 +286,8 @@ function MonitoringStatusDetails({
             <RefreshCw size={12} className={retrying ? 'animate-spin' : ''} />
             <span>{retrying ? 'Retrying…' : 'Retry uploads now'}</span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -310,10 +304,32 @@ export default function TrackingPanel({
     busy = sessionAction.busy || Boolean(error) || expired;
   const [detailsOpen, setDetailsOpen] = useState(false),
     [detailsView, setDetailsView] = useState('actions'),
+    [entrySource, setEntrySource] = useState(null),
     detailsId = useId(),
     detailsFocus = useRef(null);
+
+  const handleOpenChange = open => {
+    setDetailsOpen(open);
+    if (!open) {
+      setDetailsView('actions');
+      setEntrySource(null);
+    }
+  };
+
+  const handleMonitoringBack = () => {
+    if (entrySource === 'trackingActions') {
+      setDetailsView('actions');
+    } else {
+      setDetailsOpen(false);
+      setDetailsView('actions');
+      setEntrySource(null);
+    }
+  };
+
   useEffect(() => {
     setDetailsOpen(false);
+    setDetailsView('actions');
+    setEntrySource(null);
   }, [state?.workspaceId]);
   const [selecting, setSelecting] = useState(() =>
     new URLSearchParams(window.location.search).get('start') === '1' ? 'work' : false
@@ -506,13 +522,14 @@ export default function TrackingPanel({
     );
     const showDetails = event => {
       detailsFocus.current = event.currentTarget;
+      setEntrySource('needsAttention');
       setDetailsView('monitoring');
       setDetailsOpen(true);
     };
 
     return (
       <div className="welcome-controls welcome-tracking-panel">
-        <Popover.Root open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <Popover.Root open={detailsOpen} onOpenChange={handleOpenChange}>
           <div className="welcome-tracking-header">
             <div className="welcome-tracking-state">
               <span className={`welcome-status-dot ${running ? 'is-running' : paused ? 'is-paused' : ''}`} aria-hidden="true" />
@@ -688,6 +705,8 @@ export default function TrackingPanel({
                         disabled={busy}
                         onClick={() => {
                           setDetailsOpen(false);
+                          setDetailsView('actions');
+                          setEntrySource(null);
                           setSelecting('link');
                         }}
                         className="flex items-center gap-2.5 w-full text-left cursor-pointer"
@@ -698,7 +717,10 @@ export default function TrackingPanel({
                     )}
                     <button
                       type="button"
-                      onClick={() => setDetailsView('monitoring')}
+                      onClick={() => {
+                        setEntrySource('trackingActions');
+                        setDetailsView('monitoring');
+                      }}
                       className="flex items-center justify-between gap-2 w-full text-left cursor-pointer"
                     >
                       <span className="flex items-center gap-2.5">
@@ -724,8 +746,9 @@ export default function TrackingPanel({
                   nativeError={nativeError}
                   device={device}
                   error={error}
-                  onBack={() => setDetailsView('actions')}
+                  onBack={handleMonitoringBack}
                   hasBackButton={true}
+                  backTitle={entrySource === 'trackingActions' ? 'Back to actions' : 'Close'}
                 />
               )}
             </Popover.Content>

@@ -55,7 +55,7 @@ export async function readVisibilityScope(ctx){
     if(viewerRole!=='manager')return;
     const ids=sessions.filter(s=>id(s.user)!==id(viewerId)).map(s=>s._id);if(!ids.length)return;
     const grouped=await ActivityInterval.aggregate([{$match:{session:{$in:ids}}},{$group:{_id:'$session',departments:{$addToSet:'$departmentIdsAtCapture'}}}]);
-    const byId=new Map(sessions.map(s=>[id(s),s]));for(const row of grouped){const scope=history(byId.get(id(row))?.user);if(scope!==null&&row.departments.some(ds=>!Array.isArray(ds)||!ds.some(d=>scope.includes(id(d)))))mixedSessions.add(id(row));}
+    const byId=new Map(sessions.map(s=>[id(s),s]));for(const row of grouped){const scope=history(byId.get(id(row))?.user);if(scope!==null&&(row.departments||[]).some(ds=>!Array.isArray(ds)||!(ds||[]).some(d=>scope.includes(id(d)))))mixedSessions.add(id(row));}
   };
   const scope={members,memberMap,roleMap,viewerRole,projectMap,history,canOwner,canRecord,markMixed};ctx.trackingReadScope=scope;return scope;
 }

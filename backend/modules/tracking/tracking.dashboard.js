@@ -44,15 +44,15 @@ export async function dashboard(workspaceId,userId,query){
   const timezone=workspace?.timezone||'UTC',dates=reportDates(query,timezone),sf=segmentFilter(query),now=new Date();
   if(query.userId){objectId(query.userId);if(!scope.canOwner(query.userId))fail('User not found',404);}
   if(query.departmentId)objectId(query.departmentId);
-  let members=scope.members.filter(m=>scope.canOwner(m.user)&&(!query.userId||id(m.user)===id(query.userId))&&(!query.departmentId||departmentsOf(m).includes(id(query.departmentId)))&&(!query.role||m.role===query.role));
+  let members=scope.members.filter(m=>scope.roleMap.get(id(m.user))!=='admin'&&scope.canOwner(m.user)&&(!query.userId||id(m.user)===id(query.userId))&&(!query.departmentId||departmentsOf(m).includes(id(query.departmentId)))&&(!query.role||m.role===query.role));
   if(query.search){const search=literal(String(query.search).trim().slice(0,80));const matches=await User.find({_id:{$in:members.map(m=>m.user)},name:{$regex:search,$options:'i'}}).select('_id').lean();const names=new Set(matches.map(id));members=members.filter(m=>names.has(id(m.user)));}
   const bounds={workspaceId,startedAt:{$lte:dates.end},$or:[{endedAt:null},{endedAt:{$gte:dates.start}}]};
   if(Object.keys(sf).length||query.status){
     if(query.status&&!['RUNNING','PAUSED','NOT_TRACKING'].includes(query.status))fail('Invalid tracking status');
-    const candidates=await WorkSession.find({...bounds,user:{$in:members.map(m=>m.user)},...(Object.keys(sf).length?{segments:{$elemMatch:sf}}:{})}).select('-operations -audit').lean();
+    const candidates=await WorkSession.find({...bounds,user:{$in:members.map(m=>m.user)},...(Object.keys(sf).length?{segments:{$elemMatch:sf}}:{})}).select('-operations').lean();
     await scope.markMixed(candidates);const visible=candidates.filter(s=>scope.canRecord(s));
     if(Object.keys(sf).length){const owners=new Set(visible.filter(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))).length).map(s=>id(s.user)));members=members.filter(m=>owners.has(id(m.user)));}
-    if(query.status){const statuses=new Map(visible.filter(s=>!s.endedAt).map(s=>[id(s.user),s.status==='RUNNING'?'RUNNING':s.status==='PAUSED'&&s.pauses?.some(p=>!p.endedAt)?'PAUSED':'NOT_TRACKING']));members=members.filter(m=>(statuses.get(id(m.user))||'NOT_TRACKING')===query.status);}
+    if(query.status){const statuses=new Map(visible.filter(s=>!s.endedAt).map(s=>[id(s.user),s.status==='RUNNING'?'RUNNING':s.status==='PAUSED'&&(s.pauses||[]).some(p=>!p.endedAt)?'PAUSED':'NOT_TRACKING']));members=members.filter(m=>(statuses.get(id(m.user))||'NOT_TRACKING')===query.status);}
   }
   members.sort((a,b)=>id(a).localeCompare(id(b)));
   const total=members.length,limit=20;
@@ -71,12 +71,12 @@ export async function dashboard(workspaceId,userId,query){
   const evidenceSegments=sessions.flatMap(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))).map(segment=>({session:s._id,startedAt:segment.startedAt,endedAt:segment.endedAt})));
   const evidenceMap=query.summaryOnly==='true'?new Map():await evidenceByUser(workspaceId,sessions,evidenceSegments,dates.start,dates.end);
   const data=selected.map(member=>{
-    const own=sessions.filter(s=>id(s.user)===id(member.user)),last=own.find(s=>!s.endedAt)||own[0],status=last&&!last.endedAt&&last.status==='RUNNING'?'RUNNING':last&&!last.endedAt&&last.status==='PAUSED'&&last.pauses?.some(p=>!p.endedAt)?'PAUSED':'NOT_TRACKING';
+    const own=sessions.filter(s=>id(s.user)===id(member.user)),last=own.find(s=>!s.endedAt)||own[0],status=last&&!last.endedAt&&last.status==='RUNNING'?'RUNNING':last&&!last.endedAt&&last.status==='PAUSED'&&(last?.pauses||[]).some(p=>!p.endedAt)?'PAUSED':'NOT_TRACKING';
     const segments=own.flatMap(s=>selectedSegments(s,query,dates.start,new Date(Math.min(+now,+dates.end))));
     const evidence=query.summaryOnly==='true'?null:evidenceMap.get(id(member.user))||summarizeEvidence([]);
-    const office=attendance.filter(a=>id(a.user)===id(member.user)),latest=last?.segments.filter(s=>matchesSegment(s,query)).at(-1),owner=users.find(u=>id(u)===id(member.user));
+    const office=attendance.filter(a=>id(a.user)===id(member.user)),latest=(last?.segments||[]).filter(s=>matchesSegment(s,query)).at(-1),owner=users.find(u=>id(u)===id(member.user));
     return {userId:member.user,name:owner?.name||'Member',avatar:owner?.avatar,role:member.role,departments:departmentsOf(member).map(d=>({_id:d,name:departmentDocs.find(v=>id(v)===d)?.name||'Department'})),trackingStatus:status,
-      attendanceStatus:office.some(a=>a.status==='ACTIVE')?'Checked in':office.length?'Checked out':'No attendance',title:latest?.agenda?latest.agendaTitle+' — '+latest.description:latest?(latest.projectName||'Project')+' / '+(latest.taskTitle||'Individual'):'No work selected',
+      attendanceStatus:(office||[]).some(a=>a.status==='ACTIVE')?'Checked in':office?.length?'Checked out':'No attendance',title:latest?.agenda?latest.agendaTitle+' — '+latest.description:latest?(latest.projectName||'Project')+' / '+(latest.taskTitle||'Individual'):'No work selected',
       workSeconds:summarize({segments,endedAt:now}).workSeconds,officeSeconds:office.reduce((n,a)=>n+Math.max(0,(+(a.checkOutAt||new Date(Math.min(+now,a.missedCheckoutCutoffAt?+a.missedCheckoutCutoffAt:Infinity)))-+a.checkInAt)/1000),0),evidence,
       session:last?{_id:last._id,status:last.status,startedAt:last.startedAt,revision:last.revision}:null,devices:devices.filter(d=>id(d.user)===id(member.user)).map(d=>({...d,connected:+now-+new Date(d.lastSeenAt||0)<45000}))};
   });
@@ -91,7 +91,7 @@ export async function dashboard(workspaceId,userId,query){
     }else{
       const allOwners=allAuthorizedMembers.map(m=>m.user);
       const [allRawSessions,allAttendance]=await Promise.all([
-        WorkSession.find({...bounds,user:{$in:allOwners}}).select('-operations -audit').sort({startedAt:-1}).lean(),
+        WorkSession.find({...bounds,user:{$in:allOwners}}).select('-operations').sort({startedAt:-1}).lean(),
         AttendanceSession.find({workspaceId,user:{$in:allOwners},workDateKey:{$gte:dates.fromDate,$lte:dates.toDate}}).select('_id user status checkInAt checkOutAt missedCheckoutCutoffAt').lean()
       ]);
       await scope.markMixed(allRawSessions);

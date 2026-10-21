@@ -95,6 +95,7 @@ export async function validateSelection({ workspaceId, userId, selection, dbSess
     assignedAt:assignment?.at || null, assignmentEventId:assignment?.id || null };
 }
 function pushAudit(session, type, at, actor, detail = '') {
+  session.audit = session.audit || [];
   session.audit.push({ id: randomUUID(), type, at, actor, detail });
 }
 export async function emitChanged(session,{strict=false}={}) {
@@ -139,10 +140,10 @@ export async function finalizeAttendanceWork(attendance, dbSession = null) {
   const sessions=await WorkSession.find({workspaceId:attendance.workspaceId,attendanceSession:attendance._id}).session(dbSession).lean();
   let saved=null;
   for(const session of sessions){
-    if(session.status!=='CLOSED'||!session.endedAt||session.segments.some(s=>!s.endedAt)||(session.pauses||[]).some(p=>!p.endedAt)){
+    if(session.status!=='CLOSED'||!session.endedAt||(session.segments||[]).some(s=>!s.endedAt)||(session.pauses||[]).some(p=>!p.endedAt)){
       session.audit ||= [];
       closeTimeline(session,new Date(Math.min(+new Date(at),session.endedAt?+new Date(session.endedAt):Infinity)));
-      if(!session.audit.some(a=>a.type==='ATTENDANCE_CLOSED'))pushAudit(session,'ATTENDANCE_CLOSED',session.endedAt,session.user,attendance.closureReason||attendance.status);
+      if(!(session.audit||[]).some(a=>a.type==='ATTENDANCE_CLOSED'))pushAudit(session,'ATTENDANCE_CLOSED',session.endedAt,session.user,attendance.closureReason||attendance.status);
       saved=await WorkSession.findOneAndUpdate({_id:session._id,workspaceId:session.workspaceId,revision:session.revision??{$exists:false}},
         {$set:{segments:session.segments,pauses:session.pauses||[],status:session.status,endedAt:session.endedAt,audit:session.audit},$inc:{revision:1}},{new:true,session:dbSession});
       if(!saved)fail('Work session changed concurrently; retry checkout',409);
@@ -156,21 +157,26 @@ export async function finalizeAttendanceWork(attendance, dbSession = null) {
 }
 export async function reconcileSession(sessionId,prepared=null) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const cached=attempt===0?prepared:null;
+    // A projected read is not safe to write back: an omitted audit is not an
+    // empty audit. Reload the whole revision before reconciling that snapshot.
+    const cached=attempt===0&&(!prepared?.session||Array.isArray(prepared.session.audit))?prepared:null;
     const session = cached?.session || await WorkSession.findById(sessionId).lean();
     if (!session) return null;
+    session.segments = session.segments || [];
+    session.pauses = session.pauses || [];
+    session.audit = session.audit || [];
     const taskIds = [...new Set(session.segments.flatMap(s => [s.candidateTask, s.task]).filter(Boolean).map(id))];
     const tasks = cached?.tasks ? cached.tasks.filter(t=>taskIds.includes(id(t._id))).map(t=>({...t})) : await Card.find({ _id: { $in: taskIds } }).select('+assignmentEvents').lean();
-    const missing=taskIds.filter(taskId=>!tasks.some(t=>id(t._id)===taskId));
+    const missing=taskIds.filter(taskId=>!(tasks||[]).some(t=>id(t._id)===taskId));
     if(missing.length){
       const archived=cached?.archived ? cached.archived.filter(e=>missing.includes(id(e.task))) : await TaskAssignmentEvent.find({task:{$in:missing}}).sort({at:1,sequence:1}).lean();
       for(const taskId of missing){const events=archived.filter(e=>id(e.task)===taskId);if(events.length)tasks.push({_id:taskId,
         title:events.at(-1).taskTitle,board:events[0].project,isArchived:true,assignees:[],assignmentEvents:events.map(e=>({...e,id:e.eventId}))});}
     }
     let changed = false;
-    for (const task of tasks) for (const event of [...(task.assignmentEvents || [])].sort((a,b) => +new Date(a.at) - +new Date(b.at) || (a.sequence || 0)-(b.sequence || 0) || a.id.localeCompare(b.id))) {
+    for (const task of (tasks || [])) for (const event of [...(task.assignmentEvents || [])].sort((a,b) => +new Date(a.at) - +new Date(b.at) || (a.sequence || 0)-(b.sequence || 0) || a.id.localeCompare(b.id))) {
       if (id(event.user) !== id(session.user)) continue;
-      if (session.audit.some(a => a.id === event.id)) continue;
+      if ((session.audit || []).some(a => a.id === event.id)) continue;
       const before = JSON.stringify(session.segments);
       const linked = event.type === 'ASSIGNED' ? linkAssignment(session.segments, event, task) : endAssignment(session.segments, event, task);
       if (JSON.stringify(linked) === before) continue;
@@ -181,7 +187,7 @@ export async function reconcileSession(sessionId,prepared=null) {
         if (!project || !can(ctx, 'task.view', { ...task, project, taskResource: task }) || !can(ctx, 'time.log', { ...task, project, taskResource: task })) continue;
       }
       session.segments = linked;
-      if (session.status === 'RUNNING' && !session.segments.some(s => !s.endedAt)) session.status = 'PAUSED';
+      if (session.status === 'RUNNING' && !(session.segments || []).some(s => !s.endedAt)) session.status = 'PAUSED';
       session.audit.push({ id: event.id, type: event.type === 'ASSIGNED' ? 'CANDIDATE_ASSIGNED' : 'TASK_UNASSIGNED', at: event.at, actor: session.user, detail: id(task._id) });
       changed = true;
     }
@@ -216,7 +222,7 @@ export async function reconcileReadSessions(sessions,ctx,scope,attendanceRows=nu
   const taskIds=[...new Set(sessions.flatMap(s=>s.segments.flatMap(v=>[v.task,v.candidateTask])).filter(Boolean).map(id))];
   const [tasks,attendance,policy]=await Promise.all([taskIds.length?Card.find({_id:{$in:taskIds}}).select('+assignmentEvents').lean():[],
     attendanceRows||AttendanceSession.find({_id:{$in:sessions.map(s=>s.attendanceSession)}}).lean(),policyFor(ctx.workspaceId)]);
-  const missing=taskIds.filter(key=>!tasks.some(t=>id(t)===key));
+  const missing=taskIds.filter(key=>!(tasks||[]).some(t=>id(t)===key));
   const archived=missing.length?await TaskAssignmentEvent.find({task:{$in:missing}}).sort({at:1,sequence:1}).lean():[];
   const result=[];
   // Bounded writes/reconciliation; closed history uses batched dependencies.
@@ -243,7 +249,7 @@ export async function currentState(workspaceId, userId) {
     WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean()
   ]);
   let session = await WorkSession.findOne({ workspaceId, user: userId, ...(attendance ? { attendanceSession: attendance._id } : {}) }).sort({ startedAt: -1 }).lean();
-  const ctx = await contextFor(workspaceId,userId,{includeProjects:Boolean(session?.segments.some(s=>s.project||s.attributedProject))});
+  const ctx = await contextFor(workspaceId,userId,{includeProjects:Boolean(session?.segments?.some(s=>s.project||s.attributedProject))});
   if (session) session = await reconcileSession(session._id,{session,policy,attendance:attendance||undefined,ownerContext:ctx});
   const {versions:_,...publicPolicy}=policy;
   return { workspaceId, userId:String(userId), serverNow: new Date(), policy:publicPolicy, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),

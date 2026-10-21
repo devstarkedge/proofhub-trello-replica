@@ -105,9 +105,9 @@ function TrackingOverview({ totals, role }) {
         {/* Live Active / Attendance Pill */}
         <div className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-850/60 px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-gray-700/60">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>{totals.activeUsers || 0} tracking actively</span>
+          <span>{totals?.activeUsers || 0} tracking actively</span>
           <span className="text-gray-300 dark:text-gray-600">·</span>
-          <span>{totals.checkedInUsers || 0} checked in</span>
+          <span>{totals?.checkedInUsers || 0} checked in</span>
         </div>
       </div>
 
@@ -120,7 +120,7 @@ function TrackingOverview({ totals, role }) {
             <Clock3 size={15} />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-gray-900 dark:text-white tabular-nums">
-            {duration(totals.workSeconds)}
+            {duration(totals?.workSeconds || 0)}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             {isAdmin
@@ -138,7 +138,7 @@ function TrackingOverview({ totals, role }) {
             <Building2 size={15} />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-gray-800 dark:text-gray-200 tabular-nums">
-            {duration(totals.officeSeconds)}
+            {duration(totals?.officeSeconds || 0)}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Cumulative office attendance check-in duration
@@ -154,14 +154,14 @@ function TrackingOverview({ totals, role }) {
             <Users size={15} />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-gray-800 dark:text-gray-200 tabular-nums">
-            {totals.totalUsers}{' '}
+            {totals?.totalUsers || 0}{' '}
             <span className="text-sm font-medium text-gray-500 font-sans">
-              {totals.totalUsers === 1 ? 'user' : 'users'}
+              {(totals?.totalUsers || 0) === 1 ? 'user' : 'users'}
             </span>
           </div>
           <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">
-            {totals.activeUsers > 0
-              ? `${totals.activeUsers} currently tracking live`
+            {(totals?.activeUsers || 0) > 0
+              ? `${totals?.activeUsers || 0} currently tracking live`
               : 'No active tracking right now'}
           </p>
         </div>
@@ -292,12 +292,12 @@ export default function TimeTrackingPage() {
 
   const data = useMemo(() => {
     if (query.error || !query.data) return null;
-    const evidence = new Map((activity.data || []).flatMap(p => p.users).map(u => [u.userId, u.evidence]));
+    const evidence = new Map((activity.data || []).flatMap(p => p?.users || []).map(u => [u.userId, u.evidence]));
     return {
       ...query.data.pages[0],
       users: [
         ...new Map(
-          query.data.pages.flatMap(p => p.users).map(u => [u.userId, { ...u, evidence: evidence.get(u.userId) || u.evidence }])
+          query.data.pages.flatMap(p => p?.users || []).map(u => [u.userId, { ...u, evidence: evidence.get(u.userId) || u.evidence }])
         ).values()
       ]
     };
@@ -322,7 +322,7 @@ export default function TimeTrackingPage() {
     if (!hasNextPage || isFetchingNextPage || isError) return;
     const observer = new IntersectionObserver(
       entries => {
-        if (entries.some(e => e.isIntersecting)) fetchNextPage();
+        if (Array.isArray(entries) && entries.some(e => e.isIntersecting)) fetchNextPage();
       },
       { rootMargin: '100px' }
     );
@@ -479,7 +479,7 @@ export default function TimeTrackingPage() {
   // Compute aggregated totals for the overview section according to authorized role scope
   const totals = useMemo(() => {
     if (data?.totals) return data.totals;
-    if (!data?.users) {
+    if (!data?.users || !Array.isArray(data.users)) {
       return {
         workSeconds: 0,
         officeSeconds: 0,

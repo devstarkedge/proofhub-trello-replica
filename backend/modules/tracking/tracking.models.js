@@ -41,12 +41,12 @@ export const WorkSession = model('WorkSession', {
   user: oid('User', true), attendanceSession: oid('AttendanceSession', true), workDateKey: String,
   startedAt: { type: Date, required: true, immutable: true }, endedAt: { type: Date, default: null },
   status: { type: String, enum: ['RUNNING', 'PAUSED', 'CLOSED'], required: true },
-  segments: [segment], revision: { type: Number, default: 0 }, evidenceRevision: { type: Number, default: 0 },
-  pauses: [{ startedAt: {type:Date,required:true}, endedAt: {type:Date,default:null}, reason: {type:String,default:'PERSONAL_PAUSE'} }],
+  segments: { type: [segment], default: [] }, revision: { type: Number, default: 0 }, evidenceRevision: { type: Number, default: 0 },
+  pauses: { type: [{ startedAt: {type:Date,required:true}, endedAt: {type:Date,default:null}, reason: {type:String,default:'PERSONAL_PAUSE'} }], default: [] },
   includePreAssignment: { type: Boolean, default: false },
   policyRevision:Number, reminderAt:Date,
-  operations: [{ _id: false, id: String, digest: String, at: Date }],
-  audit: [new mongoose.Schema({ id: String, type: String, at: Date, actor: oid('User'), detail: String }, { _id: false })]
+  operations: { type: [{ _id: false, id: String, digest: String, at: Date }], default: [] },
+  audit: { type: [new mongoose.Schema({ id: String, type: String, at: Date, actor: oid('User'), detail: String }, { _id: false })], default: [] }
 }, [
   [{ workspaceId: 1, attendanceSession: 1 }, { unique: true }],
   [{ workspaceId: 1, user: 1 }, { unique: true, partialFilterExpression: { endedAt: null } }],
