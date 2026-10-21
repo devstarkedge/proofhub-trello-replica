@@ -47,7 +47,7 @@ const initial = {
 
 const initialDetailFilters = { type: '', projectId: '', taskId: '', agendaId: '' };
 
-function TrackingOverview({ totals, role }) {
+function TrackingOverview({ totals, role, loading, error, onRetry }) {
   const effectiveRole = totals?.viewerRole || role || 'employee';
   const isAdmin = effectiveRole === 'admin';
   const isManager = effectiveRole === 'manager';
@@ -105,12 +105,14 @@ function TrackingOverview({ totals, role }) {
         {/* Live Active / Attendance Pill */}
         <div className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-850/60 px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-gray-700/60">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>{totals?.activeUsers || 0} tracking actively</span>
+          <span>{totals?.activeUsers ?? '\u2014'} tracking actively</span>
           <span className="text-gray-300 dark:text-gray-600">·</span>
-          <span>{totals?.checkedInUsers || 0} checked in</span>
+          <span>{totals?.checkedInUsers ?? '\u2014'} checked in</span>
         </div>
       </div>
 
+      {loading&&<p role="status" className="mb-3 text-sm">Loading tracking overview...</p>}
+      {error&&<p role="alert" className="mb-3 text-sm text-rose-600">{error} {totals&&'Showing the last confirmed totals.'} <button type="button" className="underline" onClick={onRetry}>Retry overview</button></p>}
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Total Work Time */}
@@ -120,7 +122,7 @@ function TrackingOverview({ totals, role }) {
             <Clock3 size={15} />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-gray-900 dark:text-white tabular-nums">
-            {duration(totals?.workSeconds || 0)}
+            {totals ? duration(totals.workSeconds) : '\u2014'}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             {isAdmin
@@ -138,7 +140,7 @@ function TrackingOverview({ totals, role }) {
             <Building2 size={15} />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-gray-800 dark:text-gray-200 tabular-nums">
-            {duration(totals?.officeSeconds || 0)}
+            {totals ? duration(totals.officeSeconds) : '\u2014'}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Cumulative office attendance check-in duration
@@ -154,14 +156,14 @@ function TrackingOverview({ totals, role }) {
             <Users size={15} />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-gray-800 dark:text-gray-200 tabular-nums">
-            {totals?.totalUsers || 0}{' '}
+            {totals?.totalUsers ?? '\u2014'}{' '}
             <span className="text-sm font-medium text-gray-500 font-sans">
               {(totals?.totalUsers || 0) === 1 ? 'user' : 'users'}
             </span>
           </div>
           <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1">
-            {(totals?.activeUsers || 0) > 0
-              ? `${totals?.activeUsers || 0} currently tracking live`
+            {!totals ? 'Overview is not confirmed yet' : (totals.activeUsers || 0) > 0
+              ? `${totals?.activeUsers ?? '\u2014'} currently tracking live`
               : 'No active tracking right now'}
           </p>
         </div>
@@ -242,68 +244,46 @@ export default function TimeTrackingPage() {
     queryKey: ['tracking-private', scope, 'dashboard', debounced],
     initialPageParam: null,
     queryFn: ({ pageParam, signal }) =>
-      getTrackingDashboard({ ...debounced, summaryOnly: true, cursor: pageParam || undefined }, signal),
+      getTrackingDashboard({ ...debounced, summaryOnly: false, deferTotals: true, cursor: pageParam || undefined }, signal),
     getNextPageParam: last => last.nextCursor || undefined,
     staleTime: 30000,
-    gcTime: 0,
+    gcTime: 60000,
     retry: false
   });
 
   useEffect(() => {
-    const controller = new AbortController();
     let timer;
     const refresh = e => {
       if (e && !/^(tracking:|attendance:)/.test(e.detail?.type || '')) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        client.invalidateQueries({ queryKey: ['tracking-private', scope, 'dashboard-activity'] });
-        getTrackingDashboard({ ...debounced, summaryOnly: true }, controller.signal)
-          .then(next =>
-            client.setQueryData(['tracking-private', scope, 'dashboard', debounced], old =>
-              old ? { ...old, pages: [next, ...old.pages.slice(1)] } : old
-            )
-          )
-          .catch(() => {});
+        for(const section of ['dashboard','dashboard-activity','dashboard-overview'])client.invalidateQueries({queryKey:['tracking-private',scope,section]},{cancelRefetch:false});
       }, 750);
     };
     window.addEventListener('flowtask:realtime', refresh);
     const poll = setInterval(() => refresh(), 60000);
     return () => {
-      controller.abort();
       clearTimeout(timer);
       clearInterval(poll);
       window.removeEventListener('flowtask:realtime', refresh);
     };
   }, [scope, debounced, client]);
 
-  const activity = useQuery({
-    queryKey: ['tracking-private', scope, 'dashboard-activity', debounced, query.data?.pageParams],
-    enabled: Boolean(query.data),
-    queryFn: async ({ signal }) =>
-      Promise.all(
-        query.data.pageParams.map(cursor =>
-          getTrackingDashboard({ ...debounced, cursor: cursor || undefined, evidenceOnly: true }, signal)
-        )
-      ),
-    staleTime: 15000,
-    gcTime: 60000,
-    retry: false
-  });
-
   const data = useMemo(() => {
-    if (query.error || !query.data) return null;
-    const evidence = new Map((activity.data || []).flatMap(p => p?.users || []).map(u => [u.userId, u.evidence]));
+    if (!query.data) return null;
     return {
       ...query.data.pages[0],
       users: [
         ...new Map(
-          query.data.pages.flatMap(p => p?.users || []).map(u => [u.userId, { ...u, evidence: evidence.get(u.userId) || u.evidence }])
+          query.data.pages.flatMap(p => p?.users || []).map(u => [u.userId, u])
         ).values()
       ]
     };
-  }, [query.data, query.error, activity.data]);
+  }, [query.data]);
 
-  const error = query.error ? errorMessage(query.error) : '';
+  const readError=value=>value?.code==='ECONNABORTED'?'Tracking data took too long to load. Narrow the date range or retry.':errorMessage(value);
+  const error = query.error ? readError(query.error) : '';
+  const overview=useQuery({queryKey:['tracking-private',scope,'dashboard-overview',debounced],queryFn:({signal})=>getTrackingDashboard({...debounced,totalsOnly:true},signal),staleTime:30000,gcTime:60000,retry:false});
 
   useEffect(() => {
     setSelected(null);
@@ -334,6 +314,7 @@ export default function TimeTrackingPage() {
     let live = true;
     setProjects([]);
     setAgendas([]);
+    if (!isFiltersOpen && !selected) return () => { live = false; };
     getWorkOptions()
       .then(next => live && setProjects(next.projects))
       .catch(() => {});
@@ -343,7 +324,7 @@ export default function TimeTrackingPage() {
     return () => {
       live = false;
     };
-  }, [workspaceId, scope]);
+  }, [workspaceId, scope, isFiltersOpen, selected]);
 
   useEffect(() => {
     let live = true;
@@ -476,32 +457,7 @@ export default function TimeTrackingPage() {
     setFilters(initial);
   };
 
-  // Compute aggregated totals for the overview section according to authorized role scope
-  const totals = useMemo(() => {
-    if (data?.totals) return data.totals;
-    if (!data?.users || !Array.isArray(data.users)) {
-      return {
-        workSeconds: 0,
-        officeSeconds: 0,
-        activeUsers: 0,
-        checkedInUsers: 0,
-        totalUsers: 0,
-        viewerRole: authUser?.role || 'employee'
-      };
-    }
-    const workSeconds = data.users.reduce((acc, u) => acc + (u.workSeconds || 0), 0);
-    const officeSeconds = data.users.reduce((acc, u) => acc + (u.officeSeconds || 0), 0);
-    const activeUsers = data.users.filter(u => u.trackingStatus === 'RUNNING').length;
-    const checkedInUsers = data.users.filter(u => u.attendanceStatus?.toLowerCase().includes('in')).length;
-    return {
-      workSeconds,
-      officeSeconds,
-      activeUsers,
-      checkedInUsers,
-      totalUsers: data.total || data.users.length,
-      viewerRole: authUser?.role || 'employee'
-    };
-  }, [data, authUser?.role]);
+  const totals=overview.data?.totals||null;
 
   return (
     <main className="space-y-6 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full transition-colors" style={{ color: 'var(--color-text-primary)' }}>
@@ -516,7 +472,7 @@ export default function TimeTrackingPage() {
       </div>
 
       {/* Role-authorized Compact Read-only Tracking Overview */}
-      <TrackingOverview totals={totals} role={authUser?.role} />
+      <TrackingOverview totals={totals} role={data?.viewerRole||authUser?.role} loading={overview.isPending} error={overview.error?readError(overview.error):''} onRetry={()=>overview.refetch()} />
 
       {/* Workspace Tracking Activity Section */}
       <section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden transition-all">
@@ -678,10 +634,11 @@ export default function TimeTrackingPage() {
         {error && (
           <div className="p-4 m-4 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-sm flex items-center gap-2" role="alert">
             <AlertCircle size={16} />
-            <span>{error}</span>
+            <span>{error} {data&&'Showing the last confirmed rows.'}</span><button type="button" className="underline" onClick={()=>query.refetch()}>Retry tracking</button>
           </div>
         )}
 
+        {data?.activityUnavailable&&<p role="alert" className="px-5 py-2 text-xs text-amber-700">Activity details could not refresh. Attendance and work rows remain available. <button type="button" className="underline" onClick={()=>query.refetch()}>Retry activity</button></p>}
         {/* Table View */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
@@ -818,12 +775,12 @@ export default function TimeTrackingPage() {
                           )}
                         </div>
                         <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-tight">
-                          Keys {u.evidence.keyboardCount ?? '0'} · Mouse {u.evidence.mouseCount ?? '0'} · Captures {u.evidence.capturedWindows}/{u.evidence.eligibleWindows}
+                          Keys {u.evidence.keyboardCount ?? 'N/A'} · Mouse {u.evidence.mouseCount ?? 'N/A'} · Captures {u.evidence.capturedWindows}/{u.evidence.eligibleWindows}
                         </p>
                       </div>
                     ) : (
                       <span className="text-xs text-gray-400 dark:text-gray-500">
-                        {activity.error ? 'Activity unavailable' : 'Loading activity...'}
+                        Activity unavailable
                       </span>
                     )}
                   </td>

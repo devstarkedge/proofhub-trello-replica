@@ -7,6 +7,7 @@ import { CATALOG } from './catalog.js';
 import { TEMPLATES, STRUCTURAL_PERMISSIONS } from './templates.js';
 import { run } from '../modules/workspaces/workspaceContext.js';
 import { id } from './engine.js';
+import mongoose from 'mongoose';
 
 // Dependencies are injectable for fixture tests; no authorization comes from
 // identity mirrors or JWT role claims. Legacy slugs are a shadow-only adapter.
@@ -32,16 +33,36 @@ export function contextFromRecords({ userId, workspace, membership, role, depart
   return ctx;
 }
 
-export async function buildContext(userId, workspaceId, { allowLegacy = false } = {}) {
+export async function buildContext(userId, workspaceId, { allowLegacy = false, includeRecords = false, batchReads = false } = {}) {
   if (!workspaceId || !userId) return { status: 'inactive', grants: {}, denies: {} };
   return run({ workspaceId }, async () => {
-    const [workspace, membership, departments, overrides] = await Promise.all([
+    let workspace, membership, departments, overrides, role;
+    if(batchReads){
+      // One server round trip, using the same canonical evaluator below.
+      // Explicit tenant predicates apply to every joined collection.
+      const tenant=new mongoose.Types.ObjectId(id(workspaceId)),actor=new mongoose.Types.ObjectId(id(userId));
+      const [record]=await Workspace.aggregate([
+        {$match:{_id:tenant}},{$limit:1},
+        {$lookup:{from:WorkspaceMembership.collection.name,pipeline:[{$match:{workspace:tenant,user:actor}},{$limit:1}],as:'_ctxMembership'}},
+        {$set:{_ctxMembership:{$first:'$_ctxMembership'}}},
+        {$lookup:{from:Role.collection.name,let:{role:'$_ctxMembership.roleId'},pipeline:[{$match:{...(allowLegacy?{$or:[{workspaceId:tenant},{workspaceId:null,isSystem:true}]}:{workspaceId:tenant}),$expr:{$eq:['$_id','$$role']}}}],as:'_ctxRole'}},
+        {$lookup:{from:Department.collection.name,pipeline:[{$match:{workspaceId:tenant,managers:actor,isActive:{$ne:false}}},{$project:{_id:1,managers:1}}],as:'_ctxDepartments'}},
+        {$lookup:{from:PermissionOverride.collection.name,pipeline:[{$match:{workspace:tenant,user:actor,status:'active'}}],as:'_ctxOverrides'}}
+      ]).option({maxTimeMS:10000});
+      if(record){const {_ctxMembership,_ctxRole,_ctxDepartments,_ctxOverrides,...storedWorkspace}=record;workspace=storedWorkspace;membership=_ctxMembership;role=_ctxRole?.[0]||null;departments=_ctxDepartments;overrides=_ctxOverrides;}
+      else {workspace=null;membership=null;role=null;departments=[];overrides=[];}
+    }else{
+    [workspace, membership, departments, overrides] = await Promise.all([
       Workspace.findById(workspaceId).lean(),
       WorkspaceMembership.findOne({ workspace: workspaceId, user: userId }).lean(),
       Department.find({ workspaceId, managers: userId, isActive: { $ne: false } }).select('_id managers').lean(),
       PermissionOverride.find({ workspace: workspaceId, user: userId, status: 'active' }).lean()
     ]);
-    const role = membership?.roleId ? await Role.findOne({ _id: membership.roleId, ...(allowLegacy ? {} : { workspaceId }) }).lean() : null;
-    return contextFromRecords({ userId, workspace, membership, role, departments, overrides, allowLegacy });
+    role = membership?.roleId ? await Role.findOne({ _id: membership.roleId, ...(allowLegacy ? {} : { workspaceId }) }).lean() : null;
+    }
+    const ctx = contextFromRecords({ userId, workspace, membership, role, departments, overrides, allowLegacy });
+    // Request-local reuse only. These records never enter serialized contexts.
+    if (includeRecords) Object.defineProperty(ctx, 'resolvedRecords', { value: {workspace,membership,role,departments} });
+    return ctx;
   });
 }

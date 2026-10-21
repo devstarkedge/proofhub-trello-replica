@@ -5,28 +5,19 @@ import { rateLimiter } from '../../middleware/rateLimiter.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import { id } from '../../authz/engine.js';
 import { can } from './tracking.authorization.js';
-import Workspace from '../../models/Workspace.js';
 import User from '../../models/User.js';
-import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import Card from '../../models/Card.js';
 import Board from '../../models/Board.js';
-import AttendanceSession from '../attendance/attendanceSession.model.js';
-import AttendanceDay from '../attendance/attendanceDay.model.js';
-import {effectiveAttendanceSession} from '../attendance/attendanceRegularizationOverlay.js';
 import { emitToUser } from '../../realtime/emitters.js';
-import { WorkSession, ActivityInterval, TrackingScreenshot, TrackingPolicy, TrackingDevice } from './tracking.models.js';
-import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, reconcileSession, reconcileReadSessions, publicWorkSession } from './tracking.service.js';
+import { WorkSession, TrackingPolicy, TrackingDevice } from './tracking.models.js';
+import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, publicWorkSession } from './tracking.service.js';
 import { registerDevice, acceptMonitoringNotice, releaseDevice, heartbeat, recordInterval, prepareScreenshot, completeScreenshot, retryScreenshot } from './tracking.device.js';
 import { storageHealth } from './tracking.storage.js';
-import { trackingVisibility, historicalDepartmentScope } from './tracking.visibility.js';
 import {gallery,screenshotDetails,screenshotContent} from './tracking.gallery.js';
-import {resolveScreenshotIdentity,SCREENSHOT_IDENTITY_SELECT,timelineScreenshot} from './tracking.screenshotIdentity.js';
 import {readVisibilityScope} from './tracking.visibility.js';
-import { summarize, coverageGaps,overlapSeconds } from './tracking.timeline.js';
-import { summarizeEvidence } from './tracking.evidence.js';
-import {evidenceByUser} from './tracking.evidenceRead.js';
 import {updateSettings,requireTrackingAdmin,listAgendas,createAgenda} from './tracking.settings.js';
-import {dashboard,segmentFilter,matchesSegment} from './tracking.dashboard.js';
+import {dashboard} from './tracking.dashboard.js';
+import {readTrackingReports,readTrackingTimeline} from './tracking.reportRead.js';
 
 const router = express.Router();
 router.use(protect);
@@ -40,7 +31,11 @@ const audit = (req, action, targetType, targetId, after = null) => recordAuditLo
 router.get('/me', asyncHandler(async (req,res) => send(res, await currentState(req.workspaceId, req.user.id))));
 router.get('/options', asyncHandler(async (req,res) => {res.set('Cache-Control','private, no-store');send(res, await workOptions(req.workspaceId, req.user.id, req.query.projectId,req.query));}));
 router.get('/agendas',asyncHandler(async(req,res)=>send(res,await listAgendas(req.workspaceId,req.user.id))));
-router.get('/dashboard',asyncHandler(async(req,res)=>send(res,await dashboard(req.workspaceId,req.user.id,req.query))));
+router.get('/dashboard',asyncHandler(async(req,res)=>{
+  const started=performance.now();
+  try{const result=await dashboard(req.workspaceId,req.user.id,req.query);res.set({'Cache-Control':'private, no-store','Server-Timing':`tracking-dashboard;dur=${Math.round(performance.now()-started)}`});send(res,result);}
+  catch(error){if(error.code===50||error.codeName==='MaxTimeMSExpired')fail('Tracking data is taking longer than expected. Narrow the date range or retry.',503,'TRACKING_READ_TIMEOUT');throw error;}
+}));
 router.post('/agendas',asyncHandler(async(req,res)=>send(res,await createAgenda(req.workspaceId,req.user.id,req.body?.title))));
 router.get('/policy/impact',asyncHandler(async(req,res)=>{await requireTrackingAdmin(req.workspaceId,req.user.id);send(res,{activeSessions:await WorkSession.countDocuments({workspaceId:req.workspaceId,endedAt:null,status:'RUNNING'})});}));
 router.get('/agent-release', asyncHandler(async (req,res) => {
@@ -128,150 +123,11 @@ router.post('/devices/:deviceId/screenshots/:screenshotId/complete', asyncHandle
 router.post('/devices/:deviceId/screenshots/:screenshotId/retry',asyncHandler(async(req,res)=>send(res,await retryScreenshot({...actor(req),...req.params}))));
 
 router.get('/reports', asyncHandler(async (req,res) => {
-  const ctx = await contextFor(req.workspaceId, req.user.id);
-  const { fromDate, toDate, userId, team, cursor } = req.query;
-  if (fromDate && !/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || toDate && !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) fail('Invalid report dates');
-  if (userId) objectId(userId);
-  if (team === 'true' && !can(ctx, 'tracking.view_reports')) fail('Team report permission required', 403);
-  const filter = { workspaceId: req.workspaceId, ...(team === 'true' && !userId ? {} : { user: userId || req.user.id }),
-    ...(fromDate || toDate ? { workDateKey: { ...(fromDate ? { $gte: fromDate } : {}), ...(toDate ? { $lte: toDate } : {}) } } : {}),
-    ...(cursor ? { _id: { $lt: objectId(cursor) } } : {}) };
-  const sf=segmentFilter(req.query);if(Object.keys(sf).length)filter.segments={$elemMatch:sf};
-  const scope=await readVisibilityScope(ctx);
-  if(userId&&!scope.canOwner(userId))fail('Record not found',404);
-  if(!userId&&team==='true')filter.user={$in:scope.members.filter(m=>scope.canOwner(m.user)).map(m=>m.user)};
-  const candidates=await WorkSession.find(filter).sort({_id:-1}).limit(20).select('-operations').lean();
-  await scope.markMixed(candidates);
-  const visible=candidates.filter(s=>scope.canRecord(s));
-  if(userId&&candidates.length&&!visible.length)fail('Record not found',404);
-  const sessions=await reconcileReadSessions(visible,ctx,scope);
-  const [attendanceRows,subjects]=await Promise.all([
-    AttendanceSession.find({workspaceId:req.workspaceId,_id:{$in:sessions.map(s=>s.attendanceSession)}}).lean(),
-    User.find({_id:{$in:sessions.map(s=>s.user)}}).select('name').lean()
-  ]);
-  const days=await AttendanceDay.find({workspaceId:req.workspaceId,_id:{$in:attendanceRows.map(a=>a.attendanceDay).filter(Boolean)}}).select('presenceState attendanceStatus workedMinutes').lean();
-  const validExpiry = { $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] };
-  const isFiltered = Object.keys(sf).length > 0;
-
-  const sessionScreenshotsList = await Promise.all(sessions.map(async (session) => {
-    try {
-      const histScope = await historicalDepartmentScope(req.workspaceId, req.user.id, session.user);
-      await authorizeRecord(ctx, session ? { ...session, departmentIdsAtStart: histScope ?? session.departmentIdsAtStart } : null, 'tracking.view_screenshots');
-      
-      const history = histScope === null ? {} : { departmentIdsAtCapture: { $in: histScope } };
-      let intervalConstraint = {};
-      if (isFiltered) {
-        const matchingSegments = session.segments.filter(s => matchesSegment(s, req.query));
-        const intervalFilter = matchingSegments.length ? {
-          $or: matchingSegments.map(s => ({ startedAt: { $lt: s.endedAt || new Date() }, endedAt: { $gt: s.startedAt } }))
-        } : { _id: { $in: [] } };
-        const matchingIntervalIds = await ActivityInterval.find({
-          workspaceId: req.workspaceId,
-          session: session._id,
-          ...history,
-          $and: [intervalFilter, validExpiry]
-        }).distinct('_id');
-        intervalConstraint = { interval: { $in: matchingIntervalIds } };
-      }
-
-      const sFilter = {
-        workspaceId: req.workspaceId,
-        session: session._id,
-        status: { $ne: 'DELETED' },
-        ...history,
-        ...validExpiry,
-        ...intervalConstraint
-      };
-
-      const [records, totalCount] = await Promise.all([
-        TrackingScreenshot.find(sFilter)
-          .sort({ capturedAt: -1, _id: -1 })
-          .limit(4)
-          .select(`_id session user interval capturedAt displayId status uploadStatus blurred width height bytes sizeExceptionReason compressionException checksum expiresAt ${SCREENSHOT_IDENTITY_SELECT}`)
-          .lean(),
-        TrackingScreenshot.countDocuments(sFilter)
-      ]);
-
-      return { sessionId: String(session._id), records, totalCount };
-    } catch (e) {
-      if (e.statusCode === 404 || e.statusCode === 403) {
-        return { sessionId: String(session._id), records: [], totalCount: 0 };
-      }
-      throw e;
-    }
-  }));
-
-  const sessionScreenshotsMap = new Map(sessionScreenshotsList.map(item => [item.sessionId, item]));
-
-  const allIntervalIds = [
-    ...new Set(
-      sessionScreenshotsList.flatMap(item => item.records.map(r => String(r.interval)).filter(Boolean))
-    )
-  ];
-
-  const intervals = allIntervalIds.length > 0 ? await ActivityInterval.find({
-    workspaceId: req.workspaceId,
-    _id: { $in: allIntervalIds }
-  }).select('_id coverage activityBasis inputEligibleSeconds inputActiveSeconds keyboardCount mouseCount').lean() : [];
-  
-  const intervalMap = new Map(intervals.map(i => [String(i._id), i]));
-
-  const data = sessions.map(session => {
-    const rawAttendance = attendanceRows.find(a => id(a) === id(session.attendanceSession));
-    const attendance = rawAttendance ? effectiveAttendanceSession(rawAttendance) : null;
-    const day = attendance ? days.find(d => id(d) === id(attendance.attendanceDay)) : null;
-    const officeEnd = attendance?.checkOutAt || (attendance?.status === 'ACTIVE' ? new Date(Math.min(Date.now(), attendance.missedCheckoutCutoffAt ? +attendance.missedCheckoutCutoffAt : Infinity)) : null);
-    const filteredSegments = session.segments.filter(s => matchesSegment(s, req.query));
-    const filteredSession = { ...session, segments: filteredSegments };
-    const { audit: _, ...summary } = filteredSession;
-
-    const scData = sessionScreenshotsMap.get(String(session._id)) || { records: [], totalCount: 0 };
-    const latestScreenshots = scData.records.map(s => {
-      const interval = intervalMap.get(String(s.interval));
-      const eligible = interval && !['excluded', 'locked', 'sleep'].includes(interval.coverage) &&
-        interval.activityBasis === 'distinct-input-seconds-v1' &&
-        interval.inputEligibleSeconds > 0 &&
-        Number.isFinite(interval.inputActiveSeconds);
-      const activityPercent = eligible ? Math.min(100, Math.max(0, interval.inputActiveSeconds / interval.inputEligibleSeconds * 100)) : null;
-
-      return {
-        _id: s._id,
-        screenshotIdentity: resolveScreenshotIdentity(s),
-        session: s.session,
-        user: s.user,
-        imageVersion: s.checksum,
-        thumbnailVersion: s.checksum,
-        expiresAt: s.expiresAt,
-        interval: s.interval,
-        displayId: s.displayId,
-        capturedAt: s.capturedAt,
-        status: s.status,
-        uploadStatus: s.uploadStatus,
-        blurred: s.blurred,
-        activityPercent,
-        keyboardCount: interval?.keyboardCount ?? null,
-        mouseCount: interval?.mouseCount ?? null,
-        compressionException: s.compressionException
-      };
-    });
-
-    return {
-      ...summary,
-      userName: subjects.find(u => id(u) === id(session.user))?.name || 'Former member',
-      totals: summarize(filteredSession),
-      attendance: {
-        status: attendance?.status,
-        day,
-        checkInAt: attendance?.checkInAt,
-        checkOutAt: attendance?.checkOutAt,
-        measuredOfficeSeconds: officeEnd ? Math.max(0, (+officeEnd - +attendance.checkInAt) / 1000) : null
-      },
-      latestScreenshots,
-      totalScreenshots: scData.totalCount
-    };
-  });
-  const workspace = await Workspace.findById(req.workspaceId).select('timezone').lean();
-  send(res, { workspaceId:req.workspaceId,sessions: data, timezone: workspace?.timezone || 'UTC', nextCursor: candidates.length === 20 ? id(candidates.at(-1)._id) : null });
+  res.setHeader('Cache-Control','private, no-store');
+  const started=performance.now();
+  const result=await readTrackingReports(req.workspaceId,req.user.id,req.query);
+  res.setHeader('Server-Timing',`tracking-report;dur=${(performance.now()-started).toFixed(1)}`);
+  send(res,result);
 }));
 router.get('/sessions/:sessionId/history',asyncHandler(async(req,res)=>{
   const ctx=await contextFor(req.workspaceId,req.user.id),session=await WorkSession.findById(objectId(req.params.sessionId)).select('-operations -audit').lean();
@@ -281,33 +137,8 @@ router.get('/sessions/:sessionId/history',asyncHandler(async(req,res)=>{
   send(res,{events:row.audit.slice(0,50),nextOffset:row.audit.length>50?offset+50:null});
 }));
 router.get('/sessions/:sessionId/timeline', asyncHandler(async (req,res) => {
-  const ctx = await contextFor(req.workspaceId, req.user.id), session = await WorkSession.findById(objectId(req.params.sessionId)).lean();
-  await authorizeRecord(ctx, session);
-  segmentFilter(req.query);
-  const segments=session.segments.filter(s=>matchesSegment(s,req.query));
-  const overlap=segments.map(s=>({startedAt:{$lt:s.endedAt||new Date()},endedAt:{$gt:s.startedAt}}));
-  const segmentBounds=overlap.length?{$or:overlap}:{_id:{$in:[]}};
-  const scope=await historicalDepartmentScope(req.workspaceId,req.user.id,session.user);
-  const history=scope===null?{}:{departmentIdsAtCapture:{$in:scope}};
-  const before = req.query.before ? new Date(req.query.before) : null;
-  if (before && !Number.isFinite(+before)) fail('Invalid timeline cursor');
-  const validExpiry={$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]};
-  const cutoff=new Date(0);
-  const intervals = await ActivityInterval.find({ ...history,...segmentBounds,$and:[validExpiry],session: session._id, endedAt: { $gte:cutoff,...(before?{$lt:before}:{}) } }).sort({ endedAt: -1 }).limit(20).select('-digest -capturePolicy').lean();
-  let screenshots = []; 
-  try { await authorizeRecord(ctx, session, 'tracking.view_screenshots');
-    if(req.query.summaryOnly!=='true'){
-      const records=await TrackingScreenshot.find({ ...history,...validExpiry,session: session._id, interval: { $in: intervals.map(i => i._id) }, status: {$ne:'DELETED'} }).select(`_id interval displayId capturedAt width height blurred uploadStatus status ${SCREENSHOT_IDENTITY_SELECT}`).lean();
-      screenshots=records.map(timelineScreenshot);
-    }
-  } catch (e) { if (e.statusCode !== 404) throw e; }
-  const summaryOnly=req.query.summaryOnly==='true';
-  const allCoverage=await ActivityInterval.find({...history,...segmentBounds,$and:[validExpiry],session:session._id,endedAt:{$gte:cutoff}}).select(summaryOnly?'_id startedAt endedAt':'_id startedAt endedAt coverage activityBasis inputActiveSeconds inputEligibleSeconds mouseCount keyboardCount').lean();
-  const imageStates=summaryOnly?[]:await TrackingScreenshot.find({...history,...validExpiry,session:session._id,interval:{$in:allCoverage.map(i=>i._id)},status:{$ne:'DELETED'}}).select('interval status displayId').lean();
-  const contexts=intervals.map(interval=>({...interval,contexts:session.segments.filter(s=>+new Date(s.startedAt)<+new Date(interval.endedAt)&&(!s.endedAt||+new Date(s.endedAt)>+new Date(interval.startedAt))).map(s=>({segmentId:s._id,title:s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle}`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName} / ${s.taskTitle||'Individual'}`,origin:s.agenda?`${s.agendaTitle} — ${s.description}`:null,task:s.attributedTask||s.task,attributedAt:s.attributedAt}))}));
-  const fullyCovered=allCoverage.filter(i=>overlapSeconds(i.startedAt,i.endedAt,segments)>=(+i.endedAt-+i.startedAt)/1000-0.001);
-  const evidence=summaryOnly?(await evidenceByUser(req.workspaceId,[session],segments.map(s=>({session:session._id,startedAt:s.startedAt,endedAt:s.endedAt||new Date()})),cutoff,new Date())).get(id(session.user))||summarizeEvidence([]):summarizeEvidence(fullyCovered,imageStates);
-  send(res, { intervals:contexts, screenshots, evidence, coverageGaps:coverageGaps(segments,allCoverage), nextBefore: intervals.length === 20 ? intervals.at(-1).endedAt : null });
+  res.setHeader('Cache-Control','private, no-store');
+  send(res,await readTrackingTimeline(req.workspaceId,req.user.id,req.params.sessionId,req.query));
 }));
 router.get('/storage-health',asyncHandler(async(req,res)=>{
   await requireTrackingAdmin(req.workspaceId,req.user.id);

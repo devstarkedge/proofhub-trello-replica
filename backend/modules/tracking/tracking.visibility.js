@@ -3,7 +3,7 @@ import Role from '../../models/Role.js';
 import Department from '../../models/Department.js';
 import Board from '../../models/Board.js';
 import {ActivityInterval} from './tracking.models.js';
-import {can} from './tracking.authorization.js';
+import {can,trackingProjectFields} from './tracking.authorization.js';
 const id=v=>String(v?._id||v||'');
 export const departmentsOf=m=>(m?.departments||m?.department||[]).map(id);
 export async function trackingRole(member,workspaceId,resolvedRole=undefined) {
@@ -32,12 +32,15 @@ export async function trackingVisibility(workspaceId,viewerId,ownerId,historical
 
 // Authorization is shared only within one HTTP request, never across viewers.
 export async function readVisibilityScope(ctx){
+  if(ctx.trackingReadScope)return ctx.trackingReadScope;
   const workspaceId=ctx.workspaceId,viewerId=ctx.userId;
-  const members=await WorkspaceMembership.find({workspace:workspaceId,status:'active',kind:{$ne:'guest'}}).lean();
-  const [roles,assigned,projects]=await Promise.all([
+  const [members,projects]=await Promise.all([
+    ctx.trackingMembers||WorkspaceMembership.find({workspace:workspaceId,status:'active',kind:{$ne:'guest'}}).lean(),
+    ctx.trackingProjectRecords||Board.find({workspaceId}).select(trackingProjectFields).lean()
+  ]);
+  const [roles,assigned]=await Promise.all([
     Role.find({$or:[{_id:{$in:members.map(m=>m.roleId).filter(Boolean)}},{slug:{$in:members.filter(m=>!m.roleId).map(m=>m.role)}}]}).lean(),
-    Department.find({workspaceId,managers:viewerId,isActive:{$ne:false}}).select('_id').lean(),
-    ctx.trackingProjectRecords?Promise.resolve(ctx.trackingProjectRecords):Board.find({workspaceId}).lean()
+    ctx.resolvedRecords?.departments||Department.find({workspaceId,managers:viewerId,isActive:{$ne:false}}).select('_id').lean()
   ]);
   const roleMap=new Map();for(const m of members){const role=m.roleId?roles.find(r=>id(r)===id(m.roleId)):roles.find(r=>r.slug===m.role&&id(r.workspaceId)===id(workspaceId))||roles.find(r=>r.slug===m.role&&r.isSystem);roleMap.set(id(m.user),await trackingRole(m,workspaceId,role||null));}
   const viewerRole=roleMap.get(id(viewerId)),memberMap=new Map(members.map(m=>[id(m.user),m])),projectMap=new Map(projects.map(p=>[id(p),p])),mixedSessions=new Set();

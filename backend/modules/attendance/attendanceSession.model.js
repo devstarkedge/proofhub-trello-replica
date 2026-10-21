@@ -91,6 +91,7 @@ attendanceSessionSchema.index(
   { unique: true, partialFilterExpression: { status: 'ACTIVE' } }
 );
 attendanceSessionSchema.index({ workspaceId: 1, user: 1, checkInAt: -1 });
+attendanceSessionSchema.index({ workspaceId: 1, user: 1, workDateKey: 1 });
 attendanceSessionSchema.index({ workspaceId: 1, attendanceDay: 1 });
 attendanceSessionSchema.index({ workspaceId: 1, status: 1, missedCheckoutCutoffAt: 1 });
 attendanceSessionSchema.index({ status: 1, missedCheckoutCutoffAt: 1, workspaceId: 1 });

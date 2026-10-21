@@ -41,7 +41,7 @@ const processDueSchedules = async () => {
 
 export const startAnalyticsReportScheduler = () => {
   if (task) return;
-  task = cron.schedule('*/5 * * * *', processDueSchedules);
+  task = cron.schedule('*/10 * * * *', processDueSchedules);
   processDueSchedules().catch((error) => logger.error('Analytics scheduler startup failed', { error: error.message }));
 };
 

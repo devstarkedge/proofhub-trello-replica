@@ -56,6 +56,7 @@ export const WorkSession = model('WorkSession', {
   ,[{ workspaceId: 1, 'segments.attributedTask': 1 }, {}]
   ,[{ workspaceId: 1, 'segments.agenda': 1 }, {}]
   ,[{ workspaceId: 1, user:1, workDateKey:1 }, {}]
+  ,[{ workspaceId: 1, user:1, endedAt:1, startedAt:-1 }, {}]
 ]);
 
 export const TrackingDevice = model('TrackingDevice', {
@@ -101,6 +102,7 @@ export const ActivityInterval = model('ActivityInterval', {
   [{ workspaceId: 1, device: 1, operationId: 1 }, { unique: true }],
   [{ workspaceId: 1, session: 1, startedAt: 1 }, {}],
   [{ workspaceId: 1, session: 1, endedAt: -1, _id: -1 }, {}],
+  [{ workspaceId: 1, session: 1, departmentIdsAtCapture: 1 }, {}],
   [{ expiresAt: 1 }, { expireAfterSeconds: 0 }]
 ]);
 // Historical capture authorization survives device restart and lease renewal.

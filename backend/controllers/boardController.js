@@ -405,7 +405,7 @@ export const getWorkflowData = asyncHandler(async (req, res, next) => {
  * 7. User belongs to the same team assigned to the board
  * 8. User is assigned to any card, subtask, or nano-subtask in this board
  */
-export async function canUserAccessBoard(board, user) {
+export async function canUserAccessBoard(board, user, accessFacts = null) {
   if (!board || !user) return false;
 
   // 1. Admin or capability VIEW_ALL_PROJECTS
@@ -452,7 +452,8 @@ export async function canUserAccessBoard(board, user) {
       return true;
     }
     // Also check department roster in DB (members or managers)
-    try {
+    if(accessFacts?.departmentIds?.has(boardDeptId))return true;
+    if(!accessFacts)try {
       const deptDoc = await Department.findOne({
         _id: boardDeptId,
         $or: [
@@ -474,6 +475,10 @@ export async function canUserAccessBoard(board, user) {
   if (boardTeamId && userTeamId && boardTeamId === userTeamId) {
     return true;
   }
+
+  // Request-scoped facts are resolved once for a batch of projects. Other
+  // callers retain the existing individual lookup and fallback behavior.
+  if(accessFacts)return accessFacts.assignedBoardIds.has(board._id.toString());
 
   // 8. Assignment-based: check if user is assigned to any card, subtask, or nano on this board
   try {

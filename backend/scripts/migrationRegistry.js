@@ -1,4 +1,5 @@
 import { runSmartCheckoutMigration } from './migrateSmartCheckout.js';
+import {runTrackingDashboardIndexMigration} from './migrateTrackingDashboardIndexes.js';
 /**
  * Migration Registry
  *
@@ -109,6 +110,7 @@ const MIGRATIONS = [
   },
   {name:'tracking_workspace_configuration_agendas',version:'20261015',description:'Require explicit Admin activation and seed workspace agendas without changing historical retention',run:runTrackingConfigurationMigration},
   {name:'smart_checkout_indexes',version:'20261017',description:'Add durable attendance event and approved-leave coverage indexes without changing historical attendance',run:runSmartCheckoutMigration},
+  {name:'tracking_dashboard_read_indexes',version:'20261021',description:'Add indexes for paged tracking reads, department capture scope and attendance workday totals',run:runTrackingDashboardIndexMigration},
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

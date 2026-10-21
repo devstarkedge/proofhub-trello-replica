@@ -181,13 +181,13 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
 
   const data = useMemo(
     () =>
-      !query.error && query.data
+      query.data
         ? {
             ...query.data.pages[0],
             sessions: [...new Map(query.data.pages.flatMap(page => page.sessions).map(session => [session._id, session])).values()]
           }
         : null,
-    [query.data, query.error]
+    [query.data]
   );
 
   const error = query.error ? errorMessage(query.error) : '';
@@ -199,7 +199,7 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
     const refresh = e => {
       if (!/^(tracking:|attendance:)/.test(e.detail?.type || '')) return;
       clearTimeout(timer);
-      timer = setTimeout(() => client.invalidateQueries({ queryKey: key }), 250);
+      timer = setTimeout(() => client.invalidateQueries({ queryKey: key }, {cancelRefetch:false}), 250);
     };
     window.addEventListener('flowtask:realtime', refresh);
     return () => {
