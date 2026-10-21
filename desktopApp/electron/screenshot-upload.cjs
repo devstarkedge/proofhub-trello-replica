@@ -8,6 +8,7 @@ const encodedFields=e=>({width:e.width,height:e.height,originalWidth:e.originalW
 async function uploadEntry({entry,save,request,fetchUpload=fetch,deviceId,maxBytes,isCurrent=()=>true}){
   const current=()=>{if(!isCurrent())throw Object.assign(new Error('Upload identity changed'),{code:'UPLOAD_IDENTITY_CHANGED'});};
   current();
+  if(entry.acknowledged)return;
   let interval, intervalError;
   try {
     interval=await request(`/devices/${entry.deviceId||deviceId}/intervals`,entry.payload);
@@ -38,7 +39,8 @@ async function uploadEntry({entry,save,request,fetchUpload=fetch,deviceId,maxByt
       if(!response.ok&&![409,412].includes(response.status))throw Object.assign(new Error('R2 upload unavailable; saved capture will retry'),{code:'SCREENSHOT_STORAGE_UNAVAILABLE'});
     }
     const confirmed=await request(`${base}/${prepared.screenshotId}/complete`,{});current();
-    if(confirmed.status!=='READY'||confirmed.uploadStatus!=='UPLOADED')throw new Error('Screenshot finalization was not acknowledged; saved capture will retry');
+    if(!confirmed||confirmed.status!=='READY'||confirmed.uploadStatus!=='UPLOADED')throw Object.assign(new Error('Screenshot finalization was not acknowledged; saved capture will retry. Update the backend if this persists.'),{code:'UPLOAD_CONFIRMATION_REQUIRED'});
+    if(String(confirmed._id)!==String(prepared.screenshotId)||confirmed.checksum&&confirmed.checksum!==image.checksum)throw Object.assign(new Error('Screenshot confirmation did not match this saved capture; retained for retry'),{code:'UPLOAD_CONFIRMATION_MISMATCH'});
     image.acknowledged=true;save();
   }
   if(intervalError)throw intervalError;

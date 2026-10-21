@@ -72,6 +72,8 @@ export default function ScreenshotDetailsModal({
     queryKey: ['tracking-private', scope, 'details', screenshotId],
     queryFn: ({ signal }) => getScreenshotDetails(screenshotId, signal),
     staleTime: 5 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    placeholderData:screenshot?._id===screenshotId?screenshot:undefined,
     retry: false
   });
 
@@ -90,8 +92,8 @@ export default function ScreenshotDetailsModal({
     }
   }, [onOpenFullScreen, screenshotId]);
 
-  const captureFormattedDate = details?.capturedAt
-    ? new Date(details.capturedAt).toLocaleString(undefined, {
+  const captureFormattedDate = (details?.capturedAt||screenshot?.capturedAt)
+    ? new Date(details?.capturedAt||screenshot.capturedAt).toLocaleString(undefined, {
         timeZone: timezone || 'UTC',
         dateStyle: 'medium',
         timeStyle: 'medium'
@@ -141,7 +143,7 @@ export default function ScreenshotDetailsModal({
                 )}
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                {captureFormattedDate || 'Loading timestamp…'}
+                {captureFormattedDate || (detailsError?'Timestamp unavailable':'Loading timestamp…')}
               </p>
             </div>
           </div>
@@ -209,7 +211,7 @@ export default function ScreenshotDetailsModal({
             {details && (
               <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-50/70 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 text-[11px] text-gray-500 dark:text-gray-400">
                 <span>Monitor {details.displayId || '1'}</span>
-                <span>{details.width} × {details.height} px</span>
+                {details.width&&details.height?<span>{details.width} × {details.height} px</span>:null}
                 <span>{details.format?.toUpperCase() || 'WEBP'}</span>
                 <span>{details.bytes ? (details.bytes / 1024).toFixed(1) + ' KiB' : 'N/A'}</span>
                 <span className="capitalize">{details.uploadStatus?.toLowerCase() || 'Uploaded'}</span>
@@ -233,7 +235,7 @@ export default function ScreenshotDetailsModal({
 
             {detailsError && (
               <div role="alert" className="p-3 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400">
-                {detailsError}
+                {detailsError} <button type="button" className="underline" onClick={()=>detailsQuery.refetch()}>Retry capture details</button>
               </div>
             )}
 
@@ -265,7 +267,7 @@ export default function ScreenshotDetailsModal({
                       </div>
                     ))
                   ) : (
-                    <p className="text-xs text-gray-500">Capture context unavailable</p>
+                    <p className="text-xs text-gray-500">{detailsQuery.isFetching&&!details.contexts?'Loading work context...':'Capture context unavailable'}</p>
                   )}
                 </div>
 
@@ -277,7 +279,7 @@ export default function ScreenshotDetailsModal({
                       <span>Activity Performance</span>
                     </div>
                     <span className="text-base font-bold text-gray-900 dark:text-gray-100">
-                      {details.activityPercent !== null ? `${details.activityPercent.toFixed(1)}%` : 'N/A'}
+                      {Number.isFinite(details.activityPercent) ? `${details.activityPercent.toFixed(1)}%` : 'N/A'}
                     </span>
                   </div>
 
@@ -295,7 +297,7 @@ export default function ScreenshotDetailsModal({
                       <Keyboard className="w-4 h-4 text-blue-500 shrink-0" />
                       <div>
                         <p className="text-[10px] text-gray-400">Keydowns</p>
-                        <p className="font-semibold">{activity?.keyboardCount ?? 'N/A'}</p>
+                        <p className="font-semibold">{activity?.keyboardCount ?? details.keyboardCount ?? 'N/A'}</p>
                       </div>
                     </div>
 
@@ -303,7 +305,7 @@ export default function ScreenshotDetailsModal({
                       <MousePointer className="w-4 h-4 text-indigo-500 shrink-0" />
                       <div>
                         <p className="text-[10px] text-gray-400">Mouse Clicks</p>
-                        <p className="font-semibold">{activity?.mouseCount ?? 'N/A'}</p>
+                        <p className="font-semibold">{activity?.mouseCount ?? details.mouseCount ?? 'N/A'}</p>
                       </div>
                     </div>
 

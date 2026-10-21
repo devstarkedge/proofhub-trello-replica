@@ -42,3 +42,5 @@ export const getScreenshotGallery=(params,signal)=>data(api.get('/screenshots',{
 export const getScreenshotDetails=(id,signal)=>data(api.get(`/screenshots/${id}/details`,{signal}));
 
 export const getWorkHistory=(id,offset,signal)=>data(api.get(`/sessions/${id}/history`,{params:{offset},signal}));
+
+export const getReportPreviews=(params,signal)=>data(api.get('/reports/previews',{params,signal}));

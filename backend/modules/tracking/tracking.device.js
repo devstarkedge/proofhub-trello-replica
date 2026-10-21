@@ -269,17 +269,26 @@ export async function prepareScreenshot({ workspaceId, userId, deviceId, interva
     screenshot=await TrackingScreenshot.findOneAndUpdate({_id:screenshot._id,status:'READY'},{$set:{status:'PENDING',uploadStatus:'RETRY_PENDING',storageMissingAt:new Date(),lastUploadError:'Stored image was removed from R2; waiting for the desktop copy.'}},{new:true})||await TrackingScreenshot.findById(screenshot._id);
   }
   if(screenshot.status==='DELETED'||screenshot.expiresAt&&screenshot.expiresAt<=new Date())fail('Screenshot was removed',410);
-  if(screenshot.status!=='READY'){screenshot.uploadStatus='UPLOADING';await screenshot.save();}
+  if(screenshot.status!=='READY')await TrackingScreenshot.updateOne({_id:screenshot._id,status:'PENDING'},{$set:{uploadStatus:'UPLOADING'}});
   return { screenshotId: screenshot._id, ready: screenshot.status === 'READY', upload: screenshot.status === 'READY' ? null : await signedUpload(screenshot) };
 }
 export async function completeScreenshot({ workspaceId, userId, deviceId, screenshotId }) {
   const ctx = await contextFor(workspaceId, userId,{includeProjects:false}), device = await ownedDevice(workspaceId, userId, deviceId);
   if (!can(ctx,'tracking.log',{workspaceId,user:userId}) || !hasMonitoringNotice(device)) fail('Monitoring consent is no longer effective',403);
-  const screenshot = await TrackingScreenshot.findOne({ _id: objectId(screenshotId), workspaceId, user: userId, device: deviceId });
+  let screenshot = await TrackingScreenshot.findOne({ _id: objectId(screenshotId), workspaceId, user: userId, device: deviceId });
   if (!screenshot || screenshot.status === 'DELETED' || screenshot.expiresAt && screenshot.expiresAt <= new Date()) fail('Screenshot not found', 404);
   if (screenshot.status === 'READY') {
     if(screenshot.storageProvider!=='cloudflare-r2')return screenshot;
-    if(await privateScreenshotExists(screenshot)){await finalizeScreenshotRecovery(screenshot);void notifyScreenshot(screenshot);return screenshot;}
+    if(await privateScreenshotExists(screenshot)){
+      if(screenshot.uploadStatus!=='UPLOADED'){
+        screenshot=await TrackingScreenshot.findOneAndUpdate({_id:screenshot._id,workspaceId,user:userId,device:deviceId,status:'READY'},{$set:{uploadStatus:'UPLOADED'},$unset:{storageMissingAt:1,lastUploadError:1}},{new:true});
+        if(!screenshot)fail('Screenshot is no longer available',404);
+      }
+      // A lost HTTP receipt must not repeat notifications and recovery writes
+      // for every replay of an already verified capture.
+      if(screenshot.recoveredFrom==='SIZE_QUALITY_CONFLICT')await finalizeScreenshotRecovery(screenshot);
+      return screenshot;
+    }
     await TrackingScreenshot.updateOne({_id:screenshot._id,status:'READY'},{$set:{status:'PENDING',uploadStatus:'RETRY_PENDING',storageMissingAt:new Date()}});
     fail('Stored screenshot is missing; the desktop will upload its saved copy again.',503,'SCREENSHOT_OBJECT_MISSING');
   }

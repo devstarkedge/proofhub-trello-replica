@@ -3,7 +3,6 @@ import {evidenceByUser} from './tracking.evidenceRead.js';
 import mongoose from 'mongoose';
 import {DateTime} from 'luxon';
 import User from '../../models/User.js';
-import AttendanceSession from '../attendance/attendanceSession.model.js';
 import AttendanceDay from '../attendance/attendanceDay.model.js';
 import {effectiveAttendanceSession} from '../attendance/attendanceRegularizationOverlay.js';
 import {WorkSession,TrackingScreenshot,ActivityInterval} from './tracking.models.js';
@@ -30,26 +29,37 @@ export async function readTrackingReports(workspaceId,viewerId,query){
   if((userId||team!=='true')&&!scope.canOwner(userId||viewerId))fail('Record not found',404);
   const owners=team==='true'&&!userId?scope.members.filter(m=>scope.canOwner(m.user)).map(m=>m.user):[userId||viewerId];
   const now=new Date(),bounds={workspaceId:oid(workspaceId),...(fromDate||toDate?{workDateKey:{...(fromDate?{$gte:fromDate}:{}),...(toDate?{$lte:toDate}:{})}}:{}),...(cursor?{_id:{$lt:oid(cursor)}}:{})};
-  const pipeline=dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates:{start:new Date(0),end:now},now,policy});
+  const pipeline=dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates:{start:new Date(0),end:now},now,policy,attendanceDetails:true});
   if(Object.keys(sf).length)pipeline.push({$match:{'_selected.0':{$exists:true}}});
-  pipeline.push({$sort:{_id:-1}},{$limit:21},{$project:{workspaceId:1,user:1,workDateKey:1,attendanceSession:1,startedAt:1,revision:1,includePreAssignment:1,departmentIdsAtStart:1,
+  pipeline.push({$sort:{_id:-1}},{$limit:21},{$project:{workspaceId:1,user:1,workDateKey:1,attendanceSession:1,startedAt:1,revision:1,includePreAssignment:1,departmentIdsAtStart:1,_attendance:1,
     status:'$_viewStatus',endedAt:{$cond:[{$eq:['$_viewStatus','CLOSED']},'$_cutoff','$endedAt']},
     segments:{$map:{input:'$_selected',as:'s',in:{$mergeObjects:['$$s',{endedAt:{$cond:[{$and:[{$eq:[{$ifNull:['$$s.endedAt',null]},null]},{$gte:['$_cutoff',now]}]},null,{$min:[{$ifNull:['$$s.endedAt','$_cutoff']},'$_cutoff']}]}}]}}},
     pauses:{$map:{input:{$ifNull:['$pauses',[]]},as:'p',in:{startedAt:'$$p.startedAt',endedAt:{$cond:[{$and:[{$eq:[{$ifNull:['$$p.endedAt',null]},null]},{$gte:['$_cutoff',now]}]},null,{$min:[{$ifNull:['$$p.endedAt','$_cutoff']},'$_cutoff']}]}}}}
   }});
+  pipeline.push(
+    {$lookup:{from:User.collection.name,localField:'user',foreignField:'_id',pipeline:[{$project:{name:1}}],as:'_subject'}},
+    {$lookup:{from:AttendanceDay.collection.name,let:{day:'$_attendance.attendanceDay'},pipeline:[{$match:{workspaceId:oid(workspaceId),$expr:{$eq:['$_id','$$day']}}},{$project:{presenceState:1,attendanceStatus:1,workedMinutes:1}}],as:'_day'}}
+  );
   const candidates=await WorkSession.aggregate(pipeline).option({maxTimeMS:10000,allowDiskUse:true}),sessions=candidates.slice(0,20);
-  const [attendanceRows,subjects,previews]=await Promise.all([
-    AttendanceSession.find({workspaceId,_id:{$in:sessions.map(s=>s.attendanceSession)}}).select('user attendanceDay status checkInAt checkOutAt missedCheckoutCutoffAt regularizationResolution').lean(),
-    User.find({_id:{$in:sessions.map(s=>s.user)}}).select('name').lean(),
-    readReportPreviews(workspaceId,sessions,ctx,scope,query,now)
-  ]);
-  const days=await AttendanceDay.find({workspaceId,_id:{$in:attendanceRows.map(a=>a.attendanceDay).filter(Boolean)}}).select('presenceState attendanceStatus workedMinutes').lean();
-  const attendanceMap=new Map(attendanceRows.map(a=>[id(a),effectiveAttendanceSession(a)])),subjectMap=new Map(subjects.map(u=>[id(u),u])),dayMap=new Map(days.map(d=>[id(d),d]));
-  return {workspaceId,timezone:ctx.resolvedRecords.workspace?.timezone||'UTC',serverNow:now,nextCursor:candidates.length>20?id(sessions.at(-1)):null,sessions:sessions.map(session=>{
-    const attendance=attendanceMap.get(id(session.attendanceSession)),officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(+now,attendance.missedCheckoutCutoffAt?+attendance.missedCheckoutCutoffAt:Infinity)):null);
-    const preview=previews.get(id(session))||{records:[],totalCount:0};
-    return {...session,userName:subjectMap.get(id(session.user))?.name||'Former member',totals:summarize(session,now),attendance:{status:attendance?.status,day:dayMap.get(id(attendance?.attendanceDay)),checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null},latestScreenshots:preview.records,totalScreenshots:preview.totalCount};
+  const previews=query.summaryOnly==='true'?new Map():await readReportPreviews(workspaceId,sessions,ctx,scope,query,now);
+  return {workspaceId,timezone:ctx.resolvedRecords.workspace?.timezone||'UTC',serverNow:now,nextCursor:candidates.length>20?id(sessions.at(-1)):null,sessions:sessions.map(record=>{
+    const {_attendance,_subject,_day,...session}=record,attendance=_attendance?effectiveAttendanceSession(_attendance):null,officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(+now,attendance.missedCheckoutCutoffAt?+attendance.missedCheckoutCutoffAt:Infinity)):null);
+    const preview=previews.get(id(session))||{records:[],totalCount:0},previewsLoaded=query.summaryOnly!=='true';
+    return {...session,userName:_subject?.[0]?.name||'Former member',totals:summarize(session,now),attendance:{status:attendance?.status,day:_day?.[0],checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null},previewsLoaded,latestScreenshots:preview.records,totalScreenshots:previewsLoaded?preview.totalCount:null};
   })};
+}
+
+// Separate enrichment: work-day rows never wait for screenshot counts/previews.
+export async function readTrackingReportPreviews(workspaceId,viewerId,query){
+  const ids=String(query.sessionIds||'').split(',').filter(Boolean);
+  if(!ids.length||ids.length>20)fail('Choose between 1 and 20 work sessions');
+  ids.forEach(objectId);segmentFilter(query);
+  const [ctx,sessions]=await Promise.all([contextFor(workspaceId,viewerId,{readOnly:true}),WorkSession.find({workspaceId,_id:{$in:ids}}).select('_id workspaceId user segments departmentIdsAtStart').lean()]);
+  const scope=await readVisibilityScope(ctx);await scope.markMixed(sessions);
+  if(sessions.length!==new Set(ids).size||sessions.some(session=>!scope.canRecord(session)))fail('Record not found',404);
+  const selected=sessions.map(session=>({...session,segments:session.segments.filter(segment=>matchesSegment(segment,query))}));
+  const previews=await readReportPreviews(workspaceId,selected,ctx,scope,query,new Date());
+  return {workspaceId,sessions:selected.map(session=>({_id:session._id,previewsLoaded:true,latestScreenshots:previews.get(id(session))?.records||[],totalScreenshots:previews.get(id(session))?.totalCount||0}))};
 }
 
 async function readReportPreviews(workspaceId,sessions,ctx,scope,query,now){

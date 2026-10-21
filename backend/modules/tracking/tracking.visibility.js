@@ -39,7 +39,7 @@ export async function readVisibilityScope(ctx){
     ctx.trackingProjectRecords||Board.find({workspaceId}).select(trackingProjectFields).lean()
   ]);
   const [roles,assigned]=await Promise.all([
-    Role.find({$or:[{_id:{$in:members.map(m=>m.roleId).filter(Boolean)}},{slug:{$in:members.filter(m=>!m.roleId).map(m=>m.role)}}]}).lean(),
+    ctx.trackingReadRoles||Role.find({$or:[{_id:{$in:members.map(m=>m.roleId).filter(Boolean)}},{slug:{$in:members.filter(m=>!m.roleId).map(m=>m.role)}}]}).lean(),
     ctx.resolvedRecords?.departments||Department.find({workspaceId,managers:viewerId,isActive:{$ne:false}}).select('_id').lean()
   ]);
   const roleMap=new Map();for(const m of members){const role=m.roleId?roles.find(r=>id(r)===id(m.roleId)):roles.find(r=>r.slug===m.role&&id(r.workspaceId)===id(workspaceId))||roles.find(r=>r.slug===m.role&&r.isSystem);roleMap.set(id(m.user),await trackingRole(m,workspaceId,role||null));}

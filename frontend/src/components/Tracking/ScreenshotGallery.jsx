@@ -1,3 +1,4 @@
+import {prefetchScreenshotDetails} from '../../services/trackingReadPrefetch';
 import { lazy, Suspense, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, ImageOff, Loader2 } from 'lucide-react';
@@ -13,7 +14,7 @@ const DocumentViewerModal = lazy(() => import('../DocumentViewerModal'));
 
 const cardStyle = { backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' };
 
-const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
+const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect, onPreview }) {
   const { node, url, error, retry } = useScreenshotImage(capture, 'thumbnail', true);
   const displayName = screenshotDisplayName(capture);
 
@@ -29,6 +30,8 @@ const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect }) {
       ref={node}
       role="button"
       tabIndex={0}
+      onPointerEnter={()=>onPreview(capture._id)}
+      onFocus={()=>onPreview(capture._id)}
       onClick={() => onSelect(capture._id)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -237,6 +240,7 @@ export default function ScreenshotGallery({ sessionId, timezone, filters = {}, h
                 capture={s}
                 timezone={timezone}
                 onSelect={(id) => setSelectedScreenshotId(id)}
+                onPreview={id=>prefetchScreenshotDetails(client,scope,id)}
               />
             ))}
           </div>

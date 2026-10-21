@@ -29,6 +29,7 @@ import { Button } from '../ui/button';
 import WorkSelectionModal from './WorkSelectionModal';
 import { formatTrackingClock as duration } from '../../utils/duration';
 import useSessionClock from '../../hooks/useSessionClock';
+import { monitoringAttention } from '../../../../shared/trackingAttention.mjs';
 
 const TrackingClock = memo(function TrackingClock({ state, kind }) {
   const now = useSessionClock();
@@ -71,23 +72,12 @@ function MonitoringStatusDetails({
   onRetryUploads,
   expired = false,
   nativeError = '',
-  device = null,
+  hasAttention = false,
   error = null,
   onBack,
   hasBackButton = true,
   backTitle = 'Back'
 }) {
-  const hasAttention = Boolean(
-    expired ||
-    scopedNative?.uploadError ||
-    scopedNative?.protectedCopies ||
-    scopedNative?.noticeRequired ||
-    scopedNative?.error ||
-    nativeError ||
-    device?.lastUploadError ||
-    error
-  );
-
   return (
     <div className="space-y-2.5 text-left">
       {/* Header with back button & status pill */}
@@ -243,8 +233,7 @@ function MonitoringStatusDetails({
         !scopedNative?.noticeRequired &&
         (scopedNative?.state === 'permission-required' ||
           scopedNative?.state === 'permission-denied' ||
-          scopedNative?.permission === 'denied' ||
-          (scopedNative?.state === 'monitoring' && scopedNative?.error)) && (
+          scopedNative?.permission === 'denied') && (
           <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs space-y-2">
             <p className="text-[11px] text-amber-800 dark:text-amber-300">
               Screen recording permission is required on this desktop. Review system preferences to continue tracking.
@@ -262,14 +251,14 @@ function MonitoringStatusDetails({
         )}
 
       {/* Generic error alerts */}
-      {(nativeError || device?.lastUploadError || error || (scopedNative?.state === 'error' && scopedNative?.error)) && (
+      {(nativeError || error) && (
         <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 text-xs space-y-1">
           <div className="flex items-center gap-1.5 font-medium text-rose-700 dark:text-rose-400">
             <AlertCircle size={13} className="shrink-0" />
             <span>Monitoring Issue</span>
           </div>
           <p className="text-[11px] text-rose-600 dark:text-rose-300 pl-4.5">
-            {nativeError || device?.lastUploadError || error || scopedNative?.error || 'Restart the FlowTask desktop app if this persists.'}
+            {nativeError || error || 'Restart the FlowTask desktop app if this persists.'}
           </p>
         </div>
       )}
@@ -279,12 +268,12 @@ function MonitoringStatusDetails({
         <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end">
           <button
             type="button"
-            disabled={retrying}
+            disabled={retrying||scopedNative.syncStatus==='uploading'}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-50 cursor-pointer transition-colors"
             onClick={onRetryUploads}
           >
-            <RefreshCw size={12} className={retrying ? 'animate-spin' : ''} />
-            <span>{retrying ? 'Retrying…' : 'Retry uploads now'}</span>
+            <RefreshCw size={12} className={retrying||scopedNative.syncStatus==='uploading' ? 'animate-spin' : ''} />
+            <span>{retrying ? 'Retrying…' : scopedNative.syncStatus==='uploading' ? 'Uploading…' : 'Retry uploads now'}</span>
           </button>
         </div>
       )}
@@ -335,18 +324,30 @@ export default function TrackingPanel({
     new URLSearchParams(window.location.search).get('start') === '1' ? 'work' : false
   );
   const isDesktop = window.flowtaskDesktop?.isDesktop === true;
+  const nativeRevision = useRef(0);
   const [native, setNative] = useState(null),
     [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     const tracking = window.flowtaskDesktop?.tracking;
     if (!isDesktop || !tracking) return;
-    const changed = value => setNative(normalizeDesktopTrackingStatus(value));
+    let active = true;
+    let receivedEvent = false;
+    const changed = value => {
+      receivedEvent = true;
+      nativeRevision.current += 1;
+      if (active) setNative(normalizeDesktopTrackingStatus(value));
+    };
     const outdated = () => changed(null);
-    tracking.getStatus().then(changed).catch(outdated);
     const unsubscribe = tracking.onStatus(changed);
+    tracking.getStatus().then(value => {
+      if (active && !receivedEvent) setNative(normalizeDesktopTrackingStatus(value));
+    }).catch(() => {
+      if (active && !receivedEvent) outdated();
+    });
     window.addEventListener('flowtask:desktop-update-required', outdated);
     return () => {
+      active = false;
       unsubscribe?.();
       window.removeEventListener('flowtask:desktop-update-required', outdated);
     };
@@ -442,16 +443,24 @@ export default function TrackingPanel({
           start: 'Starting...'
         }[sessionAction.action]
       : null;
-  const nativeError =
-    compact && !scopedNative?.errorCode && session?.status !== 'RUNNING' && scopedNative?.error === 'Work is not running'
-      ? ''
-      : scopedNative?.error;
+  const attention = monitoringAttention({
+    native: scopedNative,
+    device,
+    sessionStatus: session?.status,
+    enabled: state.policy.enabled,
+    monitoringEnabled: state.policy.monitoringEnabled,
+    expired,
+    error
+  });
+  const nativeError = attention.monitoringError;
 
   const handleRetryUploads = async () => {
     if (typeof window.flowtaskDesktop?.tracking?.retryUploads !== 'function') return;
     setRetrying(true);
+    const revision = nativeRevision.current;
     try {
-      setNative(normalizeDesktopTrackingStatus(await window.flowtaskDesktop.tracking.retryUploads()));
+      const result = await window.flowtaskDesktop.tracking.retryUploads();
+      if (revision === nativeRevision.current) setNative(normalizeDesktopTrackingStatus(result));
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -468,7 +477,7 @@ export default function TrackingPanel({
       onRetryUploads={handleRetryUploads}
       expired={expired}
       nativeError={nativeError}
-      device={device}
+      hasAttention={attention.needsAttention}
       error={error}
       hasBackButton={false}
     />
@@ -512,14 +521,7 @@ export default function TrackingPanel({
     const task = latest
       ? latest.attributedTaskTitle || (latest.kind === 'TASK' ? latest.taskTitle : 'Individual agenda work')
       : 'Start work after checking in';
-    const warning = Boolean(
-      attendanceWarning ||
-        error ||
-        nativeError ||
-        scopedNative?.uploadError ||
-        device?.lastUploadError ||
-        scopedNative?.protectedCopies
-    );
+    const warning = attention.needsAttention;
     const showDetails = event => {
       detailsFocus.current = event.currentTarget;
       setEntrySource('needsAttention');
@@ -744,7 +746,7 @@ export default function TrackingPanel({
                   onRetryUploads={handleRetryUploads}
                   expired={expired}
                   nativeError={nativeError}
-                  device={device}
+                  hasAttention={attention.needsAttention}
                   error={error}
                   onBack={handleMonitoringBack}
                   hasBackButton={true}
@@ -931,7 +933,7 @@ export default function TrackingPanel({
       </div>
 
       {/* Recovery / Diagnostics notices */}
-      {(recovery || nativeError || scopedNative?.uploadError || device?.lastUploadError || error) && (
+      {(recovery || attention.needsAttention) && (
         <div className="mt-3 pt-2 text-xs border-t border-gray-100 dark:border-gray-800">
           {recovery}
           {diagnostics}

@@ -1,5 +1,7 @@
+import {getWorkspaceDateRange,trackingReportOptions} from '../../../../shared/trackingReportQuery.mjs';
+import {prefetchScreenshotDetails} from '../../services/trackingReadPrefetch';
 import React, { memo, useContext, useEffect, useMemo, useState, lazy, Suspense } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Calendar, 
   Camera, 
@@ -12,7 +14,8 @@ import {
 } from 'lucide-react';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import { 
-  getReports, 
+  getReports,
+  getReportPreviews,
   getReportMembers, 
   errorMessage 
 } from '../../services/trackingApi';
@@ -38,7 +41,7 @@ const workTitle = s => s.attributedTaskTitle
   : s.agenda ? `${s.agendaTitle} — ${s.description}` : `${s.projectName || 'Project'} / ${s.taskTitle || 'Individual'}`;
 
 // Single lazy-loaded timeline thumbnail card with compact activity indicator
-const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone, onClick }) {
+const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone, onClick, onPreview }) {
   const { node, url, error } = useScreenshotImage(screenshot, 'thumbnail', true);
 
   const activityPercent = screenshot.activityPercent;
@@ -50,6 +53,8 @@ const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone
     <div
       ref={node}
       onClick={onClick}
+      onPointerEnter={onPreview}
+      onFocus={onPreview}
       className="group relative flex-shrink-0 flex flex-col w-28 sm:w-32 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xs hover:border-blue-500 hover:shadow-md transition-all cursor-pointer"
       title={`Captured at ${timeFormatted} · Monitor ${screenshot.displayId || '1'} · Activity: ${activityPercent !== null ? Math.round(activityPercent) + '%' : 'N/A'}`}
     >
@@ -97,41 +102,6 @@ const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone
 });
 
 // Calculate date ranges in effective workspace timezone
-function getWorkspaceDateRange(period, timezone = 'UTC') {
-  const now = new Date();
-  const formatYMD = (d) => {
-    try {
-      return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-    } catch {
-      return d.toISOString().slice(0, 10);
-    }
-  };
-
-  const todayKey = formatYMD(now);
-  const [y, m, d] = todayKey.split('-').map(Number);
-  const baseNoonUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-
-  if (period === 'today') {
-    return { fromDate: todayKey, toDate: todayKey };
-  }
-  if (period === 'yesterday') {
-    const prev = new Date(baseNoonUtc);
-    prev.setUTCDate(prev.getUTCDate() - 1);
-    const prevKey = prev.toISOString().slice(0, 10);
-    return { fromDate: prevKey, toDate: prevKey };
-  }
-  if (period === 'last7days' || period === '7days') {
-    // Today and the previous 6 calendar days = 7 days total
-    const start = new Date(baseNoonUtc);
-    start.setUTCDate(start.getUTCDate() - 6);
-    return { fromDate: start.toISOString().slice(0, 10), toDate: todayKey };
-  }
-  if (period === 'month' || period === 'thisMonth') {
-    const startKey = `${y}-${String(m).padStart(2, '0')}-01`;
-    return { fromDate: startKey, toDate: todayKey };
-  }
-  return { fromDate: todayKey, toDate: todayKey };
-}
 
 export default function TrackingReports({ team = false, initialFilters = {} }) {
   const { currentWorkspace } = useContext(WorkspaceContext) || {};
@@ -159,24 +129,16 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
     return () => controller.abort();
   }, [team, scope]);
 
-  const key = useMemo(
-    () => ['tracking-private', scope, 'reports', filterKey, team, fromDate, toDate, userId],
-    [scope, filterKey, team, fromDate, toDate, userId]
-  );
-
-  const query = useInfiniteQuery({
-    queryKey: key,
-    initialPageParam: null,
-    queryFn: ({ pageParam, signal }) =>
-      getReports(
-        { ...JSON.parse(filterKey), team, fromDate, toDate, userId: userId || undefined, cursor: pageParam || undefined },
-        signal
-      ),
-    getNextPageParam: last => last.nextCursor || undefined,
-    staleTime: 15000,
-    gcTime: 60000,
-    retry: false,
-    enabled: Boolean(workspaceId)
+  const options=useMemo(()=>trackingReportOptions(scope,filterKey,team,fromDate,toDate,userId,getReports),[scope,filterKey,team,fromDate,toDate,userId]);
+  const key=options.queryKey;
+  const query=useInfiniteQuery({...options,enabled:Boolean(workspaceId)});
+  const sessionIds=[...new Set(query.data?.pages.flatMap(page=>page.sessions.map(session=>session._id))||[])];
+  const previews=useQuery({
+    queryKey:['tracking-private',scope,'report-previews',filterKey,sessionIds],
+    enabled:sessionIds.length>0&&query.data.pages.some(page=>page.sessions.some(session=>session.previewsLoaded===false)),
+    placeholderData:(previous,previousQuery)=>previousQuery?.queryKey[1]===scope&&previousQuery.queryKey[3]===filterKey?previous:undefined,
+    queryFn:async({signal})=>Promise.all(Array.from({length:Math.ceil(sessionIds.length/20)},(_,index)=>getReportPreviews({...JSON.parse(filterKey),sessionIds:sessionIds.slice(index*20,(index+1)*20).join(',')},signal))),
+    staleTime:15000,gcTime:5*60*1000,retry:false
   });
 
   const data = useMemo(
@@ -184,10 +146,10 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
       query.data
         ? {
             ...query.data.pages[0],
-            sessions: [...new Map(query.data.pages.flatMap(page => page.sessions).map(session => [session._id, session])).values()]
+            sessions: [...new Map(query.data.pages.flatMap(page => page.sessions).map(session => {const enrichment=previews.data?.flatMap(page=>page.sessions||[]).find(row=>row._id===session._id);return [session._id,{...session,...enrichment}];})).values()]
           }
         : null,
-    [query.data]
+    [query.data,previews.data]
   );
 
   const error = query.error ? errorMessage(query.error) : '';
@@ -199,14 +161,14 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
     const refresh = e => {
       if (!/^(tracking:|attendance:)/.test(e.detail?.type || '')) return;
       clearTimeout(timer);
-      timer = setTimeout(() => client.invalidateQueries({ queryKey: key }, {cancelRefetch:false}), 250);
+      timer = setTimeout(() => {client.invalidateQueries({ queryKey: key }, {cancelRefetch:false});client.invalidateQueries({queryKey:['tracking-private',scope,'report-previews']},{cancelRefetch:false});}, 250);
     };
     window.addEventListener('flowtask:realtime', refresh);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('flowtask:realtime', refresh);
     };
-  }, [client, key]);
+  }, [client, key,scope]);
 
   const handlePresetClick = (presetId) => {
     setActivePreset(presetId);
@@ -377,12 +339,13 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
 
               {/* Screenshot Thumbnails Row (Replaces "Timeline and screenshots" button) */}
               <div className="pt-1">
-                {hasScreenshots ? (
+                {s.previewsLoaded===false ? (<div className="text-xs text-gray-500" role="status">{previews.error ? <button type="button" className="underline" onClick={()=>previews.refetch()}>Retry screenshot previews</button> : 'Loading screenshot previews...'} <button type="button" className="ml-2 text-blue-600 underline" onClick={()=>setSelectedSessionForDetails(s)}>View tracking details</button></div>) : hasScreenshots ? (
                   <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 scrollbar-thin">
                     {screenshots.map((sc) => (
                       <TimelineThumbnail
                         key={sc._id}
                         screenshot={sc}
+                        onPreview={()=>prefetchScreenshotDetails(client,scope,sc._id)}
                         timezone={data.timezone}
                         onClick={() => setSelectedScreenshotId(sc._id)}
                       />

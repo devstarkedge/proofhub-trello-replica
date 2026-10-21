@@ -17,7 +17,7 @@ import {gallery,screenshotDetails,screenshotContent} from './tracking.gallery.js
 import {readVisibilityScope} from './tracking.visibility.js';
 import {updateSettings,requireTrackingAdmin,listAgendas,createAgenda} from './tracking.settings.js';
 import {dashboard} from './tracking.dashboard.js';
-import {readTrackingReports,readTrackingTimeline} from './tracking.reportRead.js';
+import {readTrackingReports,readTrackingTimeline,readTrackingReportPreviews} from './tracking.reportRead.js';
 
 const router = express.Router();
 router.use(protect);
@@ -119,7 +119,12 @@ router.post('/devices/:deviceId/claim',asyncHandler(async(req,res)=>{
 }));
 router.post('/devices/:deviceId/intervals', asyncHandler(async (req,res) => send(res, await recordInterval({ ...actor(req), deviceId: req.params.deviceId, payload: req.body }))));
 router.post('/devices/:deviceId/screenshots/prepare', asyncHandler(async (req,res) => send(res, await prepareScreenshot({ ...actor(req), deviceId: req.params.deviceId, intervalId: req.body?.intervalId, image: req.body?.image }))));
-router.post('/devices/:deviceId/screenshots/:screenshotId/complete', asyncHandler(async (req,res) => send(res, { _id: (await completeScreenshot({ ...actor(req), ...req.params }))._id })));
+router.post('/devices/:deviceId/screenshots/:screenshotId/complete', asyncHandler(async (req,res) => {
+  const screenshot=await completeScreenshot({ ...actor(req), ...req.params });
+  // The durable desktop queue only releases bytes after this explicit receipt.
+  // Keep _id for older clients; never expose storage credentials or object keys.
+  send(res,{_id:screenshot._id,status:screenshot.status,uploadStatus:screenshot.uploadStatus,checksum:screenshot.checksum,uploadedAt:screenshot.uploadedAt});
+}));
 router.post('/devices/:deviceId/screenshots/:screenshotId/retry',asyncHandler(async(req,res)=>send(res,await retryScreenshot({...actor(req),...req.params}))));
 
 router.get('/reports', asyncHandler(async (req,res) => {
@@ -128,6 +133,10 @@ router.get('/reports', asyncHandler(async (req,res) => {
   const result=await readTrackingReports(req.workspaceId,req.user.id,req.query);
   res.setHeader('Server-Timing',`tracking-report;dur=${(performance.now()-started).toFixed(1)}`);
   send(res,result);
+}));
+router.get('/reports/previews',asyncHandler(async(req,res)=>{
+  res.setHeader('Cache-Control','private, no-store');
+  send(res,await readTrackingReportPreviews(req.workspaceId,req.user.id,req.query));
 }));
 router.get('/sessions/:sessionId/history',asyncHandler(async(req,res)=>{
   const ctx=await contextFor(req.workspaceId,req.user.id),session=await WorkSession.findById(objectId(req.params.sessionId)).select('-operations -audit').lean();

@@ -16,7 +16,7 @@ export function dashboardSegmentExpression(query){
   return tests.length?{$and:tests}:true;
 }
 
-export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates,now,policy}){
+export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates,now,policy,attendanceDetails=false}){
   const tenant=oid(workspaceId),viewer=oid(ctx.userId),otherOwners=owners.filter(owner=>id(owner)!==id(viewer));
   const projects=[...scope.projectMap.values()].filter(project=>can(ctx,'project.view',project)).map(project=>project._id);
   const projectGuard={segments:{$not:{$elemMatch:{$or:['project','attributedProject'].map(field=>({[field]:{$exists:true,$ne:null,$nin:projects}}))}}}};
@@ -36,7 +36,7 @@ export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query
     ],as:'_foreignHistory'}},{$match:{$or:[{user:viewer},{'_foreignHistory.0':{$exists:false}}]}});
   }
   const end=new Date(Math.min(+now,+dates.end));
-  pipeline.push({$lookup:{from:AttendanceSession.collection.name,let:{attendance:'$attendanceSession',owner:'$user'},pipeline:[{$match:{workspaceId:tenant,$expr:{$and:[{$eq:['$_id','$$attendance']},{$eq:['$user','$$owner']}]}}},{$project:{status:1,checkOutAt:1,missedCheckoutCutoffAt:1,reconciledAt:1}}],as:'_attendance'}},
+  pipeline.push({$lookup:{from:AttendanceSession.collection.name,let:{attendance:'$attendanceSession',owner:'$user'},pipeline:[{$match:{workspaceId:tenant,$expr:{$and:[{$eq:['$_id','$$attendance']},{$eq:['$user','$$owner']}]}}},{$project:{status:1,checkOutAt:1,missedCheckoutCutoffAt:1,reconciledAt:1,...(attendanceDetails?{attendanceDay:1,checkInAt:1,regularizationResolution:1}:{})}}],as:'_attendance'}},
     {$set:{_attendance:{$first:'$_attendance'}}},
     {$set:{_cutoff:{$min:[{$ifNull:['$endedAt',now]},{$ifNull:['$_attendance.checkOutAt',{$ifNull:['$_attendance.missedCheckoutCutoffAt',{$ifNull:['$_attendance.reconciledAt',now]}]}]},...(policy.enabled?[]:[{$literal:policy.disabledAt||now}])]}}},
     {$set:{_rangeEnd:{$min:['$_cutoff',end]},_viewStatus:{$cond:[{$and:[{$eq:[{$ifNull:['$endedAt',null]},null]},{$eq:['$_attendance.status','ACTIVE']},{$eq:[{$ifNull:['$_attendance.checkOutAt',null]},null]},{$gte:['$_cutoff',now]}]},'$status','CLOSED']}}},

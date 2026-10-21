@@ -1,3 +1,4 @@
+import {prefetchTrackingReport} from '../services/trackingReadPrefetch';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -791,6 +792,8 @@ export default function TimeTrackingPage() {
                       size="sm"
                       variant="outline"
                       className="h-8 px-3 text-xs gap-1.5 hover:border-blue-500 hover:text-blue-600 dark:hover:border-blue-400 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                      onPointerEnter={()=>prefetchTrackingReport(client,scope,u.userId,currentWorkspace?.timezone)}
+                      onFocus={()=>prefetchTrackingReport(client,scope,u.userId,currentWorkspace?.timezone)}
                       onClick={() => setSelected({ ...u, scope })}
                     >
                       <span>Open</span>

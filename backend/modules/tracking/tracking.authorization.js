@@ -14,11 +14,13 @@ export const trackingProjectFields='_id workspaceId name visibility owner member
 // the authority for legacy visibility; V2 remains the authority in enforce
 // mode. Both paths use active WorkspaceMembership, never global User.role.
 export async function trackingContext(workspaceId,userId,{includeProjects=true,projectRecords=null,readOnly=false}={}) {
-  const [ctx,members]=await Promise.all([
+  const [ctx,members,projects]=await Promise.all([
     buildContext(userId,workspaceId,{allowLegacy:process.env.AUTHZ_V2!=='enforce',includeRecords:true,batchReads:readOnly}),
-    readOnly?WorkspaceMembership.find({workspace:workspaceId,status:'active',kind:{$ne:'guest'}}).lean():null
+    readOnly?WorkspaceMembership.find({workspace:workspaceId,status:'active',kind:{$ne:'guest'}}).lean():null,
+    readOnly&&includeProjects?Board.find({workspaceId,isDeleted:{$ne:true}}).select(trackingProjectFields).lean():null
   ]);
   if(members)ctx.trackingMembers=members;
+  if(projects)ctx.trackingProjectRecords=projects;
   const readPermissions=['project.view','tracking.view_reports','tracking.view_screenshots'];
   const assignmentsRequired=!readOnly||ctx.restriction?.type==='assigned_only'||readPermissions.some(permission=>[...(ctx.grants[permission]||[]),...(ctx.denies[permission]||[])].some(record=>record.scope==='assigned'));
   if(includeProjects&&assignmentsRequired)await loadAssignments(ctx);
@@ -35,7 +37,11 @@ export async function trackingContext(workspaceId,userId,{includeProjects=true,p
     if(permissions.canCreateTask)grant('task.create','project');
     if(permissions.canAssignMembers)grant('task.assign','project');
   }
-  const resource=await resolveResourceAccess(principal,'tracking',workspaceId);
+  const [resource,readRoles]=await Promise.all([
+    resolveResourceAccess(principal,'tracking',workspaceId),
+    readOnly?Role.find({$or:[{_id:{$in:members.map(member=>member.roleId).filter(Boolean)}},{slug:{$in:members.filter(member=>!member.roleId).map(member=>member.role)}}]}).lean():null
+  ]);
+  if(readRoles)ctx.trackingReadRoles=readRoles;
   // Explicit legacy resource denies override all tracking grants, including
   // structural report access. Fine-grained V2 denies are still evaluated.
   if(resource.source==='deny-override') { ctx.trackingDenied=true; for(const action of ['log','view_reports','view_screenshots','manage_policy'])ctx.denies[`tracking.${action}`]=[{scope:'workspace',sources:['legacy:deny']}]; }
@@ -45,7 +51,7 @@ export async function trackingContext(workspaceId,userId,{includeProjects=true,p
       ...(resource.scopedResourceIds?.length?{scopeIds:resource.scopedResourceIds}:{}),sources:[`legacy:${resource.source}`]});
   }
   if(!includeProjects)return ctx;
-  return withTrackingProjects(ctx,projectRecords || await Board.find({workspaceId,isDeleted:{$ne:true}}).select(trackingProjectFields).lean(),{loadAssignmentData:assignmentsRequired});
+  return withTrackingProjects(ctx,projectRecords || projects || await Board.find({workspaceId,isDeleted:{$ne:true}}).select(trackingProjectFields).lean(),{loadAssignmentData:assignmentsRequired});
 }
 // Resolve only the candidate page using the already authenticated request
 // context. This avoids rebuilding membership, role and override state twice.
