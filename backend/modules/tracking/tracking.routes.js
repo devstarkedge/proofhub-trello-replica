@@ -111,6 +111,7 @@ router.post('/devices/:deviceId/notice',asyncHandler(async(req,res)=>{
 }));
 router.post('/devices/:deviceId/release',asyncHandler(async(req,res)=>send(res,await releaseDevice({...actor(req),deviceId:req.params.deviceId}))));
 router.post('/devices/:deviceId/revoke', asyncHandler(async (req,res) => {
+  await requireTrackingAdmin(req.workspaceId, req.user.id);
   await releaseDevice({...actor(req),deviceId:req.params.deviceId,revoke:true});
   await audit(req, 'TRACKING_DEVICE_REVOKED', 'TrackingDevice', req.params.deviceId); send(res, { revoked: true });
 }));
