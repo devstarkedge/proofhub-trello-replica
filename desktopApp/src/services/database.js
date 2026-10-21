@@ -1169,6 +1169,18 @@ class DatabaseService {
     return await res.json();
   }
 
+  // Team rosters use the centralized department/workspace-scoped directory.
+  // The general users endpoint is reserved for privileged user administration.
+  async getTeamUsers(workspaceId, { signal } = {}) {
+    if (!workspaceId) throw new Error('Select a workspace to load team members');
+    const headers = buildHeaders();
+    headers['x-workspace-id'] = workspaceId;
+    const res = await fetch(`${baseURL}/api/authz/members`, { headers, signal });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.message || 'Failed to load team members');
+    return result;
+  }
+
   async getUsers(departmentId = null) {
     const headers = buildHeaders();
     let url = `${baseURL}/api/users`;

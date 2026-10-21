@@ -37,11 +37,13 @@ export default function WorkSelectionDialog({
   workModeControl = null
 }) {
   const [mode, setMode] = useState('ASSIGNED');
-  const index=useWorkSelectionData(mode==='CREATE'?'CREATE':'ASSIGNED',!attendanceOnly);
+  const assignedIndex=useWorkSelectionData('ASSIGNED',!attendanceOnly);
+  const createIndex=useWorkSelectionData('CREATE',!attendanceOnly&&mode==='CREATE');
+  const index=mode==='CREATE'?createIndex:assignedIndex;
   const agendaData=useWorkSelectionData('agendas',!attendanceOnly);
   const [projectId, setProjectId] = useState(()=>index.value?.projectId||index.value?.projects?.find(p=>p.hasAssignedTasks)?._id||'');
   const projectData=useWorkSelectionData(`project:${projectId}`,!attendanceOnly&&Boolean(projectId)&&!(index.loading&&projectId===index.value?.projectId));
-  const options={projects:index.value?.projects||[],tasks:projectData.value?.tasks||[],lists:projectData.value?.lists||[],canCreateTasks:index.value?.canCreateTasks};
+  const options={projects:index.value?.projects||[],tasks:projectData.value?.tasks||[],lists:projectData.value?.lists||[],canCreateTasks:Boolean(assignedIndex.value?.canCreateTasks&&(createIndex.value?.canCreateTasks??true))};
   const agendas=agendaData.value?.agendas||[];
   const [moreBusy,setMoreBusy]=useState(false);
   const optionsLoading=!index.value&&index.loading;

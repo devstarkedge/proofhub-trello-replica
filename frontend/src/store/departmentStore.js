@@ -39,13 +39,16 @@ const useDepartmentStore = create((set, get) => ({
 
   // Load all users
   loadUsers: async () => {
+    const workspaceId = localStorage.getItem("workspaceId");
     try {
       set({ loading: true, error: null });
-      const response = await api.get("/api/users");
-      const users = response.data.data || [];
+      const response = await Database.getTeamUsers(workspaceId);
+      if (workspaceId !== localStorage.getItem("workspaceId")) return [];
+      const users = response.data || [];
       set({ users, loading: false });
       return users;
     } catch (error) {
+      if (workspaceId !== localStorage.getItem("workspaceId")) return [];
       console.error("Error loading users:", error);
       set({ error: error.message, loading: false });
       throw error;

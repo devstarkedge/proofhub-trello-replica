@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspense, lazy, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspense, lazy, useState, useRef } from 'react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { Building2, Shield, Users } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
@@ -53,7 +53,6 @@ const TeamManagement = () => {
   const isDarkMode = effectiveMode === 'dark';
   const {
     departments,
-    currentDepartment,
     setCurrentDepartment,
     createDepartment,
     updateDepartment,
@@ -62,6 +61,36 @@ const TeamManagement = () => {
     unassignUserFromDepartment,
     loading: departmentsLoading
   } = useDepartmentStore();
+
+  const isAdmin = user && user.role === 'admin';
+  // Permission-driven, not role-name-driven — this page's own route guard
+  // (App.jsx) already lets Manager/Admin/HR through, but this internal gate
+  // used to hardcode admin/manager only, silently excluding HR (despite the
+  // route allowing it) and any custom role granted these permissions. Any
+  // one of this page's actual features (inviting, assigning members,
+  // approving join requests, creating departments) is enough to get in;
+  // each feature's own control is separately permission-gated underneath
+  // (e.g. the Invite button's existing <PermissionGate permission=
+  // "canInviteMembers">), so this is just the outer "does this person have
+  // ANY business being on this page at all" check.
+  const { canAny, loading: permissionsLoading } = usePermissions();
+  const canAccessTeamManagement = canAny(
+    'canInviteMembers', 'canAssignMembers', 'canApproveJoinRequests', 'canCreateDepartment'
+  );
+  // Delegated administration (brief 3.6): an Admin can grant a specific
+  // Manager (or custom role) the access_control.manage permission, which
+  // then unlocks this same Roles & Permissions tab for them — without
+  // making every Manager an implicit role-editor the way `isAdmin` alone
+  // would. Server-side, POST/PUT/DELETE /api/roles already accept this via
+  // requireAccessControlManage; this just lets a delegated Manager reach
+  // the same UI an Admin uses instead of hitting a 403 with no visible path.
+  const { canManageAccessControl } = useAccessControl();
+  const canManageRolesUI = isAdmin || canManageAccessControl;
+
+  const [usersError, setUsersError] = useState(null);
+  const usersRequest = useRef(null);
+  const workspaceId = currentWorkspace?._id;
+  const userId = user?._id || user?.id;
 
   // Role store — only used here for the "+ create a new role" shortcut from
   // AddMemberModal. Full CRUD lives in the centralized module (AccessControlPage).
@@ -108,11 +137,13 @@ const TeamManagement = () => {
     if (!state.currentDepartment) return { assignedEmployees: [], availableEmployees: [] };
 
     const assigned = state.employees.filter(emp =>
-      state.currentDepartment?.members?.some(member => member._id === emp._id)
+      (state.currentDepartment?.members?.some(member => String(member._id || member) === String(emp._id)) ||
+        emp.department?.some(dept => String(dept._id || dept) === String(state.currentDepartment._id)))
     );
 
     const available = state.employees.filter(emp =>
-      !state.currentDepartment?.members?.some(member => member._id === emp._id)
+      !(state.currentDepartment?.members?.some(member => String(member._id || member) === String(emp._id)) ||
+        emp.department?.some(dept => String(dept._id || dept) === String(state.currentDepartment._id)))
     );
 
     return { assignedEmployees: assigned, availableEmployees: available };
@@ -140,28 +171,59 @@ const TeamManagement = () => {
     dispatch({ type: ACTION_TYPES.SHOW_TOAST, payload: { message, type } });
   }, []);
 
-  // Load users from API
+  // Resolve roster visibility on the server; cancel old workspace/role reads.
   const loadUsers = useCallback(async () => {
+    usersRequest.current?.abort();
+    if (!workspaceId || !userId || permissionsLoading || !canAccessTeamManagement) {
+      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+      return;
+    }
+    const controller = new AbortController();
+    usersRequest.current = controller;
+    setUsersError(null);
     dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
     try {
-      const userList = await Database.getUsers();
+      const userList = await Database.getTeamUsers(workspaceId, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       const allUsers = userList.data || [];
       dispatch({ type: ACTION_TYPES.SET_USERS, payload: allUsers });
       dispatch({ type: ACTION_TYPES.SET_MANAGERS, payload: allUsers.filter(u => u.role === 'manager' || u.role === 'admin') });
       dispatch({ type: ACTION_TYPES.SET_EMPLOYEES, payload: allUsers.filter(u => u.isVerified && u.role === 'employee') });
     } catch (error) {
-      console.error('Error loading users:', error);
-      showToast('Failed to load users', 'error');
+      if (controller.signal.aborted) return;
+      dispatch({ type: ACTION_TYPES.SET_USERS, payload: [] });
+      dispatch({ type: ACTION_TYPES.SET_MANAGERS, payload: [] });
+      dispatch({ type: ACTION_TYPES.SET_EMPLOYEES, payload: [] });
+      setUsersError(error.message);
     } finally {
-      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
+      if (!controller.signal.aborted) dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
-  }, [showToast]);
+  }, [workspaceId, userId, permissionsLoading, canAccessTeamManagement]);
 
-  // Load initial data
   useEffect(() => {
+    dispatch({ type: ACTION_TYPES.SET_USERS, payload: [] });
+    dispatch({ type: ACTION_TYPES.SET_MANAGERS, payload: [] });
+    dispatch({ type: ACTION_TYPES.SET_EMPLOYEES, payload: [] });
+    dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: null });
+    dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
     loadUsers();
-    useDepartmentStore.getState().loadDepartments();
+    return () => usersRequest.current?.abort();
   }, [loadUsers]);
+
+  useEffect(() => {
+    if (workspaceId && userId) useDepartmentStore.getState().loadDepartments().catch(() => {});
+  }, [workspaceId, userId]);
+
+  useEffect(() => {
+    const changed = event => {
+      if (event.detail?.workspaceId && String(event.detail.workspaceId) !== String(workspaceId)) return;
+      loadUsers();
+    };
+    const events = ['socket-user-assigned', 'socket-user-unassigned', 'socket-user-verified',
+      'socket-department-bulk-assigned', 'socket-department-bulk-unassigned', 'socket-authz-changed', 'socket-user-role-changed'];
+    events.forEach(name => window.addEventListener(name, changed));
+    return () => events.forEach(name => window.removeEventListener(name, changed));
+  }, [loadUsers, workspaceId]);
 
   // Initialize socket listeners
   useEffect(() => {
@@ -195,6 +257,12 @@ const TeamManagement = () => {
       }
     }
   }, [departments, state.currentDepartment, setCurrentDepartment]);
+
+  const selectedDepartmentId = state.currentDepartment?._id;
+  useEffect(() => {
+    const current = departments.find(dept => dept._id === selectedDepartmentId);
+    if (current) dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: current });
+  }, [departments, selectedDepartmentId]);
 
   useEffect(() => {
     if (state.currentDepartment) {
@@ -280,31 +348,53 @@ const TeamManagement = () => {
       dispatch({ type: ACTION_TYPES.CLOSE_CREATE_MODAL });
       dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
       showToast('Department created successfully!', 'success');
-    } catch (error) {
+    } catch {
       showToast('Failed to create department', 'error');
     } finally {
       dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
   }, [state.formData, user, createDepartment, showToast]);
 
-  const handleEditDepartment = useCallback(async (e) => {
-    e.preventDefault();
-    if (!state.formData.name.trim()) {
-      showToast('Department name is required', 'warning');
-      return;
-    }
+  const performAssignment = useCallback(async (userIds, department) => {
     dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
     try {
-      await updateDepartment(state.currentDepartment._id, state.formData);
-      dispatch({ type: ACTION_TYPES.CLOSE_EDIT_MODAL });
-      dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
-      showToast('Department updated successfully!', 'success');
-    } catch (error) {
-      showToast('Failed to update department', 'error');
+      // Optimistic update
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds, departmentId: department._id, assign: true }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds, assign: true }
+      });
+
+      // API calls
+      for (const userId of userIds) {
+        await assignUserToDepartment(userId, department._id);
+      }
+
+      dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
+      const employeeNames = state.employees.filter(emp => userIds.includes(emp._id)).map(emp => emp.name).join(', ');
+      showToast(`Employees ${employeeNames} successfully assigned to ${department.name}.`, 'success');
+
+      await loadUsers();
+      dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: department });
+      dispatch({ type: ACTION_TYPES.SET_ACTIVE_TAB, payload: 'assigned' });
+    } catch {
+      showToast('Failed to assign users', 'error');
+      // Revert optimistic updates
+      dispatch({
+        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
+        payload: { userIds, departmentId: department._id, assign: false }
+      });
+      dispatch({
+        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
+        payload: { userIds, departmentId: department._id, assign: false }
+      });
     } finally {
       dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
-  }, [state.formData, state.currentDepartment, updateDepartment, showToast]);
+  }, [state.employees, assignUserToDepartment, loadUsers, showToast]);
 
   const handleAssignUsers = useCallback(async () => {
     if (!state.selectedUsers.length || !state.currentDepartment) {
@@ -345,48 +435,7 @@ const TeamManagement = () => {
     }
 
     await performAssignment(state.selectedUsers, state.currentDepartment);
-  }, [state.selectedUsers, state.currentDepartment, state.employees, departments, showToast]);
-
-  const performAssignment = useCallback(async (userIds, department) => {
-    dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
-    try {
-      // Optimistic update
-      dispatch({
-        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
-        payload: { userIds, departmentId: department._id, assign: true }
-      });
-      dispatch({
-        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
-        payload: { userIds, assign: true }
-      });
-
-      // API calls
-      for (const userId of userIds) {
-        await assignUserToDepartment(userId, department._id);
-      }
-
-      dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
-      const employeeNames = state.employees.filter(emp => userIds.includes(emp._id)).map(emp => emp.name).join(', ');
-      showToast(`Employees ${employeeNames} successfully assigned to ${department.name}.`, 'success');
-      
-      await loadUsers();
-      dispatch({ type: ACTION_TYPES.SET_CURRENT_DEPARTMENT, payload: department });
-      dispatch({ type: ACTION_TYPES.SET_ACTIVE_TAB, payload: 'assigned' });
-    } catch (error) {
-      showToast('Failed to assign users', 'error');
-      // Revert optimistic updates
-      dispatch({
-        type: ACTION_TYPES.UPDATE_EMPLOYEES_DEPARTMENT,
-        payload: { userIds, departmentId: department._id, assign: false }
-      });
-      dispatch({
-        type: ACTION_TYPES.UPDATE_CURRENT_DEPARTMENT_MEMBERS,
-        payload: { userIds, departmentId: department._id, assign: false }
-      });
-    } finally {
-      dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
-    }
-  }, [state.employees, assignUserToDepartment, loadUsers, showToast]);
+  }, [state.selectedUsers, state.currentDepartment, state.employees, departments, showToast, performAssignment]);
 
   const handleReassignConfirm = useCallback(async () => {
     if (!state.reassignData) return;
@@ -424,7 +473,7 @@ const TeamManagement = () => {
       dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS });
       showToast(`${state.selectedUsers.length} employee(s) unassigned successfully!`, 'success');
       await loadUsers();
-    } catch (error) {
+    } catch {
       showToast('Failed to unassign users', 'error');
       // Revert optimistic updates
       dispatch({
@@ -469,11 +518,6 @@ const TeamManagement = () => {
     }
   }, [createRole, showToast]);
 
-  // Open Create Role modal from Add Member modal
-  const handleOpenCreateRoleModal = useCallback(() => {
-    setShowCreateRoleModal(true);
-  }, []);
-
   const handleDeleteDepartment = useCallback(async () => {
     if (!state.departmentToDelete) return;
     dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: true });
@@ -482,37 +526,13 @@ const TeamManagement = () => {
       dispatch({ type: ACTION_TYPES.CLOSE_DELETE_MODAL });
       dispatch({ type: ACTION_TYPES.SET_DEPARTMENT_TO_DELETE, payload: null });
       showToast('Department deleted successfully', 'success');
-    } catch (error) {
+    } catch {
       showToast('Failed to delete department', 'error');
     } finally {
       dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
   }, [state.departmentToDelete, deleteDepartment, showToast]);
 
-  const isAdmin = user && user.role === 'admin';
-  // Permission-driven, not role-name-driven — this page's own route guard
-  // (App.jsx) already lets Manager/Admin/HR through, but this internal gate
-  // used to hardcode admin/manager only, silently excluding HR (despite the
-  // route allowing it) and any custom role granted these permissions. Any
-  // one of this page's actual features (inviting, assigning members,
-  // approving join requests, creating departments) is enough to get in;
-  // each feature's own control is separately permission-gated underneath
-  // (e.g. the Invite button's existing <PermissionGate permission=
-  // "canInviteMembers">), so this is just the outer "does this person have
-  // ANY business being on this page at all" check.
-  const { canAny, loading: permissionsLoading } = usePermissions();
-  const canAccessTeamManagement = canAny(
-    'canInviteMembers', 'canAssignMembers', 'canApproveJoinRequests', 'canCreateDepartment'
-  );
-  // Delegated administration (brief 3.6): an Admin can grant a specific
-  // Manager (or custom role) the access_control.manage permission, which
-  // then unlocks this same Roles & Permissions tab for them — without
-  // making every Manager an implicit role-editor the way `isAdmin` alone
-  // would. Server-side, POST/PUT/DELETE /api/roles already accept this via
-  // requireAccessControlManage; this just lets a delegated Manager reach
-  // the same UI an Admin uses instead of hitting a 403 with no visible path.
-  const { canManageAccessControl } = useAccessControl();
-  const canManageRolesUI = isAdmin || canManageAccessControl;
 
   if (departmentsLoading || state.isLoading || permissionsLoading) {
     return <TeamManagementSkeleton />;
@@ -523,7 +543,7 @@ const TeamManagement = () => {
       <div className={`min-h-full ${isDarkMode ? 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0a0a] to-black' : 'bg-gradient-to-br from-gray-50 via-blue-50/30 to-gray-100'}`}>
           <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
             {/* ... */}
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               className={`${isDarkMode ? 'bg-gray-800/80 backdrop-blur-sm border-gray-700' : 'bg-white'} border-l-4 border-red-500 shadow-xl rounded-2xl p-8`}
@@ -540,7 +560,7 @@ const TeamManagement = () => {
                   </p>
                 </div>
               </div>
-            </motion.div>
+            </Motion.div>
           </div>
       </div>
     );
@@ -551,7 +571,7 @@ const TeamManagement = () => {
         <main className="p-3 sm:p-4 md:p-6 lg:p-8 min-h-[calc(100vh-80px)]">
           <ErrorBoundary>
             {/* Header Section */}
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               className="mb-6 md:mb-8"
@@ -588,21 +608,21 @@ const TeamManagement = () => {
                   <TeamStats stats={stats} isLoading={state.isLoading} />
                 </div>
               </div>
-            </motion.div>
+            </Motion.div>
 
             {/* Show Stats on mobile in simplified form */}
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="md:hidden mb-6"
             >
               <TeamStats stats={stats} isLoading={state.isLoading} />
-            </motion.div>
+            </Motion.div>
 
             {/* Departments & team assignment content */}
             <AnimatePresence mode="wait">
               {(
-                <motion.div
+                <Motion.div
                   key="departments"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -630,7 +650,13 @@ const TeamManagement = () => {
 
                   {/* Right Column - Assign Members */}
                   <div className="md:col-span-1 lg:col-span-2">
-                    <EmployeeAssignment
+                    {usersError && (
+                      <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                        <p>{usersError}</p>
+                        <button type="button" className="mt-2 underline" onClick={loadUsers}>Retry team members</button>
+                      </div>
+                    )}
+                    {!usersError && <EmployeeAssignment
                     currentDepartment={state.currentDepartment}
                     assignedEmployees={filteredAssignedEmployees}
                     availableEmployees={filteredAvailableEmployees}
@@ -653,9 +679,9 @@ const TeamManagement = () => {
                     onClearSelection={() => dispatch({ type: ACTION_TYPES.CLEAR_SELECTED_USERS })}
                     onPageChange={(page) => dispatch({ type: ACTION_TYPES.SET_CURRENT_PAGE, payload: page })}
                     onItemsPerPageChange={(count) => dispatch({ type: ACTION_TYPES.SET_ITEMS_PER_PAGE, payload: count })}
-                    />
+                    />}
                   </div>
-                </motion.div>
+                </Motion.div>
               )}
             </AnimatePresence>
           </ErrorBoundary>
@@ -685,7 +711,7 @@ const TeamManagement = () => {
               dispatch({ type: ACTION_TYPES.CLOSE_EDIT_MODAL });
               dispatch({ type: ACTION_TYPES.RESET_FORM_DATA });
               showToast('Department updated successfully!', 'success');
-            } catch (error) {
+            } catch {
               showToast('Failed to update department', 'error');
             } finally {
               dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });

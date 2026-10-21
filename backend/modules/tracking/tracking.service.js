@@ -39,15 +39,24 @@ export async function policyFor(workspaceId, dbSession = null) {
 export async function workOptions(workspaceId, userId, projectId = null, page = {}) {
   // Bound both the database materialization and the response. Authorization is
   // still evaluated on every returned resource and again on work submission.
+  const optionId = (value, field) => {
+    if (value == null || value === '') return null;
+    if (!mongoose.isObjectIdOrHexString(value)) fail(`Invalid ${field} identifier`);
+    return value;
+  };
+  projectId = optionId(projectId, 'project');
+  const limit = 50, cursor = optionId(page.cursor, 'project cursor'), taskCursor = optionId(page.taskCursor, 'task cursor');
   const base = await contextFor(workspaceId, userId, {includeProjects:false});
   const result={workspaceId,userId,projects:[],tasks:[],lists:[],canTrack:false,canCreateTasks:false,nextProjectCursor:null,nextTaskCursor:null};
   if (!can(base,'tracking.log',{workspaceId,user:userId}) || !(await policyFor(workspaceId)).enabled) return result;
   const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),role=await trackingRole(member,workspaceId);
   result.canTrack=true;result.canCreateTasks=['admin','manager'].includes(role);
   const create=page.mode==='CREATE'&&result.canCreateTasks;
-  const limit=50, cursor=page.cursor?objectId(page.cursor):null, taskCursor=page.taskCursor?objectId(page.taskCursor):null;
   const assigned=projectId?[]:await Card.distinct('board',{workspaceId,assignees:userId,isArchived:{$ne:true}});
-  const query={workspaceId,isDeleted:{$ne:true},...(projectId?{_id:objectId(projectId)}:{_id:{...(!create?{$in:assigned}:{}),...(cursor?{$gt:cursor}:{})}})};
+  const query={workspaceId,isDeleted:{$ne:true}};
+  if(projectId)query._id=projectId;
+  else if(!create)query._id={$in:assigned,...(cursor?{$gt:cursor}:{})};
+  else if(cursor)query._id={$gt:cursor};
   const candidates=await Board.find(query).select('_id workspaceId name visibility owner members managers guests department team').sort({_id:1}).limit(limit+1).lean();
   const batch=candidates.slice(0,limit);
   const ctx=await withTrackingProjects(base,batch);
